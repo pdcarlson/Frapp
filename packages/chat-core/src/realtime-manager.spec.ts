@@ -614,6 +614,90 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     expect(firstActions!.teardown).toHaveBeenCalled();
   });
 
+  test("a changed vote reaches every open client as an UPDATE of its one row (#3793)", () => {
+    // A member's vote is one row (ADR-07): changing it, or adding a pick on a
+    // multi-choice poll, updates that row. Only INSERT and DELETE were
+    // subscribed, so nobody but the voter saw it.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    ch.emitPostgresChange({
+      new: {
+        id: "poll-1",
+        channel_id: "channel-1",
+        sender_id: "user-9",
+        kind: "poll",
+        content: "Which days?",
+        created_at: "2026-11-10T00:00:00.000Z",
+      },
+    });
+    const actions = channels.get("chat:actions:global")!;
+    const handler = (event: string) =>
+      (actions.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => (call[1] as { event?: string }).event === event,
+      )![2] as (payload: { new?: unknown }) => void;
+    const vote = (option_id: unknown, created_at: string) => ({
+      id: "vote-1",
+      message_id: "poll-1",
+      user_id: "user-2",
+      action_type: "vote",
+      payload: { option_id },
+      created_at,
+    });
+    const held = () =>
+      queryClient
+        .getQueryData<ChannelCache>(chatMessagesKey("channel-1"))!
+        .byId["poll-1"]!.actions.map((action) => action.payload);
+
+    handler("INSERT")({ new: vote(["fri"], "2026-11-10T00:00:01.000Z") });
+    expect(held()).toEqual([{ option_id: ["fri"] }]);
+
+    handler("UPDATE")({ new: vote(["fri", "sat"], "2026-11-10T00:00:03.000Z") });
+    expect(held()).toEqual([{ option_id: ["fri", "sat"] }]);
+
+    // The echo of an earlier tap, arriving late, doesn't undo a later one.
+    handler("UPDATE")({ new: vote(["fri"], "2026-11-10T00:00:02.000Z") });
+    expect(held()).toEqual([{ option_id: ["fri", "sat"] }]);
+  });
+
+  test("an UPDATE for a vote row the cache never held adds it", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    ch.emitPostgresChange({
+      new: {
+        id: "poll-2",
+        channel_id: "channel-1",
+        sender_id: "user-9",
+        kind: "poll",
+        content: "Which days?",
+        created_at: "2026-11-10T00:00:00.000Z",
+      },
+    });
+    const actions = channels.get("chat:actions:global")!;
+    const update = (
+      actions.on as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find(
+      (call) => (call[1] as { event?: string }).event === "UPDATE",
+    )![2] as (payload: { new?: unknown }) => void;
+
+    update({
+      new: {
+        id: "vote-2",
+        message_id: "poll-2",
+        user_id: "user-2",
+        action_type: "vote",
+        payload: { option_id: ["sat"] },
+        created_at: "2026-11-10T00:00:05.000Z",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    )!;
+    expect(cache.byId["poll-2"]!.actions).toHaveLength(1);
+  });
+
   test("an imported archive row never enters the live cache", () => {
     // The server already keeps these off the wire — the `chat_messages` RLS
     // policy, which is what Realtime evaluates per subscriber, excludes

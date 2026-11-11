@@ -44,14 +44,19 @@ export function pollCloseChoicesFor(canCloseEarly: boolean) {
 }
 
 /**
- * The choice as a sentence fragment, for mobile's collapsed More options row:
- * "Closes in 1 day", or "Doesn't close".
+ * What More options is set to, for mobile's collapsed row: "Closes in 1 day"
+ * or "Doesn't close", then "more than one choice" when that is on (#3793).
  */
-export function pollCloseSummary(choice: PollCloseChoice): string {
+export function pollCloseSummary(
+  choice: PollCloseChoice,
+  multiple = false,
+): string {
   const found =
     POLL_CLOSE_CHOICES.find((each) => each.id === choice) ??
     POLL_CLOSE_CHOICES.find((each) => each.id === DEFAULT_POLL_CLOSE)!;
-  return found.minutes === null ? found.label : `Closes in ${found.label}`;
+  const closes =
+    found.minutes === null ? found.label : `Closes in ${found.label}`;
+  return multiple ? `${closes} · more than one choice` : closes;
 }
 
 /** A day, as web's `/poll` closes when it isn't told otherwise. */
@@ -73,7 +78,11 @@ export interface PollDraft {
   /** The option rows, as typed; blank rows are allowed while editing. */
   options: PollOptionRow[];
   closes: PollCloseChoice;
+  /** A member may pick more than one option (#3793). Off by default. */
+  multiple: boolean;
 }
+
+export const POLL_MULTIPLE_LABEL = "Allow more than one choice";
 
 let nextRowKey = 0;
 function newRow(): PollOptionRow {
@@ -87,6 +96,7 @@ export function emptyPollDraft(): PollDraft {
     question: "",
     options: Array.from({ length: POLL_OPTIONS_MIN }, newRow),
     closes: DEFAULT_POLL_CLOSE,
+    multiple: false,
   };
 }
 
@@ -235,7 +245,7 @@ export function pollDraftFromArgs(args: string): PollDraft {
     nextRowKey += 1;
     options.push({ key: `option-${nextRowKey}`, text });
   }
-  return { question: question.trim(), options, closes };
+  return { ...draft, question: question.trim(), options, closes };
 }
 
 /** The timed choice nearest to `minutes`; "Doesn't close" is never nearest. */

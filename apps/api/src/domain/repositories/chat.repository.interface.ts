@@ -319,16 +319,19 @@ export interface IChatMessageActionRepository {
     payload: Record<string, unknown>,
   ): Promise<ChatMessageAction | null>;
   /**
-   * Which of `messageIds` this member has an `actionType` row on: the batch
-   * form of {@link findOne}, for "which of these polls have I voted on".
-   * Returns message ids only. No chapter argument, like the rest of this
-   * interface: the caller passes ids it has already scoped and authorized.
+   * This member's `actionType` rows on `messageIds`: the batch form of
+   * {@link findOne}, for "which of these polls have I voted on". Each row
+   * carries its payload, because a vote row can outlive the vote: a member who
+   * clears every pick on a multi-choice card keeps the row with an empty list
+   * (#3793), so the caller decides what counts (`cardVoteSelection`). No
+   * chapter argument, like the rest of this interface: the caller passes ids
+   * it has already scoped and authorized.
    */
-  findActedMessageIds(
+  findActionsOnMessages(
     messageIds: string[],
     userId: string,
     actionType: string,
-  ): Promise<string[]>;
+  ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
 }
 
 export interface IMessageReactionRepository {

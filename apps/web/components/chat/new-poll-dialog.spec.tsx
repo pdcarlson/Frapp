@@ -67,6 +67,49 @@ describe("NewPollDialog (#3865)", () => {
     expect(poll.payload.closes_at).toBeNull();
   });
 
+  it("posts a single-choice card unless more than one choice is allowed (#3793)", async () => {
+    const user = userEvent.setup();
+    const onPost = vi.fn(async () => ({ ok: true as const }));
+    const draft = () => pollDraftFromArgs('"Which days?" Fri Sat');
+    const { unmount } = render(
+      <NewPollDialog
+        open
+        onOpenChange={vi.fn()}
+        initialDraft={draft()}
+        onPost={onPost}
+        canCloseEarly
+      />,
+    );
+    const toggle = screen.getByRole("switch", {
+      name: "Allow more than one choice",
+    });
+    expect(toggle).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Post poll" }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
+    unmount();
+
+    render(
+      <NewPollDialog
+        open
+        onOpenChange={vi.fn()}
+        initialDraft={draft()}
+        onPost={onPost}
+        canCloseEarly
+      />,
+    );
+    await user.click(
+      screen.getByRole("switch", { name: "Allow more than one choice" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Post poll" }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledTimes(2));
+
+    const payloads = (
+      onPost.mock.calls as unknown as [{ payload: Record<string, unknown> }][]
+    ).map(([poll]) => poll.payload);
+    expect(payloads[0]).not.toHaveProperty("choice_mode");
+    expect(payloads[1]!.choice_mode).toBe("multi");
+  });
+
   it("withholds Doesn't close from a member who couldn't close the poll", () => {
     render(
       <NewPollDialog

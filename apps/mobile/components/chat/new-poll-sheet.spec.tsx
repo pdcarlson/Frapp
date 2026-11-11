@@ -130,6 +130,31 @@ describe("New poll sheet (#3701)", () => {
     act(() => tree.unmount());
   });
 
+  it("posts a single-choice card unless more than one choice is allowed (#3793)", async () => {
+    const onPost = queued();
+    const tree = render(onPost);
+    fill(tree);
+    await act(async () => postButton(tree).props.onPress());
+    expect(onPost.mock.calls[0]![0].payload).not.toHaveProperty("choice_mode");
+
+    fill(tree);
+    act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Allow more than one choice" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.value).toBe(false);
+    act(() => toggle.props.onValueChange(true));
+    act(() => control(tree, "Fewer options")!.props.onPress());
+    expect(
+      control(tree, "More options: Closes in 1 day · more than one choice"),
+    ).toBeTruthy();
+    await act(async () => postButton(tree).props.onPress());
+    expect(onPost.mock.calls[1]![0].payload.choice_mode).toBe("multi");
+    act(() => tree.unmount());
+  });
+
   it("withholds Doesn't close from a member who couldn't close the poll", () => {
     const tree = render(queued(), false);
     act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());

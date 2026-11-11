@@ -531,7 +531,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `poll-created` | A poll card (`kind: 'poll'`) is sent in chat: web's `/poll`, web's New poll dialog (#3865) or mobile's New poll sheet (#3701). None sets a `choice_mode`, so `single` until one does; `has_expiry` is `false` for a poll either form posted with **Doesn't close** (#3896) | `choice_mode`, `option_count`, `has_expiry` |
+| `poll-created` | A poll card (`kind: 'poll'`) is sent in chat: web's `/poll`, web's New poll dialog (#3865) or mobile's New poll sheet (#3701). `choice_mode` is `multi` when a form's **Allow more than one choice** is on (#3793), otherwise `single`; `has_expiry` is `false` for a poll either form posted with **Doesn't close** (#3896) | `choice_mode`, `option_count`, `has_expiry` |
 | `poll-voted` | A member votes, on the chat card (`surface: card`) or the REST vote route (`page`). No client calls that route since web's `/polls` page was retired (#3871), so `page` should read zero until #3887 removes it. On the card a second vote replaces the first and sets `is_revote`, even for the same option; the REST route can't tell, so it counts requests. Clearing a multi-choice vote is not a vote | `surface`, `selected_count`, `is_revote` |
 
 **Dues (`dues`)**
