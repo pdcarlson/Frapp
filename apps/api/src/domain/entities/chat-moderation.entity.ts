@@ -77,6 +77,12 @@ export interface ChatMessageReport {
   chapter_id: string;
   /** Null once the reported message was hard-deleted; the snapshot survives. */
   message_id: string | null;
+  /**
+   * The channel the message was in when the report was filed, so Chat admin
+   * can list one channel's reports beside its settings. Null once that channel
+   * is deleted. An id only: it opens no channel, and never a DM.
+   */
+  channel_id: string | null;
   reporter_user_id: string;
   /**
    * What the member wrote on the message **as it read when the report was

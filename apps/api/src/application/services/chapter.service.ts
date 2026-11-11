@@ -43,8 +43,13 @@ import type { Member } from '#domain/entities/member.entity';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
+  STARTING_ROLE_TIERS,
   SystemRoleKeys,
 } from '#domain/constants/permissions';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
@@ -136,6 +141,8 @@ export class ChapterService {
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly roleTierRepo: IRoleTierRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
@@ -257,15 +264,52 @@ export class ChapterService {
       ...config,
     });
 
-    const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
-      chapter_id: chapter.id,
-      name: roleDef.name,
-      system_key: roleDef.system_key,
-      permissions: [...roleDef.permissions],
-      is_system: roleDef.is_system,
-      display_order: roleDef.display_order,
-      color: roleDef.color ?? null,
-    }));
+    // The starting tiers are rows from here on: the chapter can rename,
+    // reorder, add and delete them, so they are matched to the seeded roles by
+    // the position they were just inserted with and never looked up by name.
+    const tiers = await this.roleTierRepo.createMany(
+      STARTING_ROLE_TIERS.map((tier, index) => ({
+        chapter_id: chapter.id,
+        position: index + 1,
+        name: tier.name,
+        permissions: [...tier.permissions],
+      })),
+    );
+    const tierIdByPosition = new Map(
+      tiers.map((tier) => [tier.position, tier.id]),
+    );
+
+    const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => {
+      const tierId =
+        roleDef.starting_tier === null
+          ? null
+          : tierIdByPosition.get(roleDef.starting_tier + 1);
+      if (tierId === undefined) {
+        // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
+        this.logger.error(
+          `Starting tier missing for role ${roleDef.system_key} in chapter ${chapter.id}`,
+        );
+        throw new InternalServerErrorException(
+          'Failed to create the starting role tiers',
+        );
+      }
+      return {
+        chapter_id: chapter.id,
+        name: roleDef.name,
+        system_key: roleDef.system_key,
+        tier_id: tierId,
+        // What the role holds beyond its tier. The database writes
+        // `permissions` from the tier and these; the list is sent as well so
+        // the insert states what the role should end up with.
+        permission_overrides: Object.fromEntries(
+          roleDef.extra_permissions.map((permission) => [permission, true]),
+        ),
+        permissions: [...roleDef.permissions],
+        is_system: roleDef.is_system,
+        display_order: roleDef.display_order,
+        color: roleDef.color ?? null,
+      };
+    });
 
     const roles = await this.roleRepo.createMany(rolesData);
 
