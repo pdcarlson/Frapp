@@ -15,6 +15,7 @@ const link = (overrides: Partial<ChatMessageLink> = {}): ChatMessageLink => ({
   chapter_id: CHAPTER,
   channel_id: GENERAL,
   message_id: 'msg-1',
+  thread_root_id: null,
   url: 'https://forms.gle/abc',
   host: 'forms.gle',
   posted_by: OTHER,
@@ -24,15 +25,20 @@ const link = (overrides: Partial<ChatMessageLink> = {}): ChatMessageLink => ({
   ...overrides,
 });
 
+const CHANNELS = [
+  { id: GENERAL, name: 'general', type: 'PUBLIC' as const },
+  {
+    id: ADS,
+    name: 'advertising',
+    type: 'PUBLIC' as const,
+    activity_excluded: true,
+  },
+];
+
 function build() {
-  const chatService = {
-    getChannels: jest.fn().mockResolvedValue([
-      { id: GENERAL, name: 'general', type: 'PUBLIC' },
-      { id: ADS, name: 'advertising', type: 'PUBLIC', activity_excluded: true },
-    ]),
-    getChannel: jest.fn().mockResolvedValue({ id: GENERAL }),
+  const channelAccess = {
+    assertChannelAccess: jest.fn().mockResolvedValue({ id: GENERAL }),
   };
-  const chatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
   const linkRepo = {
     findShowing: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue(null),
@@ -47,20 +53,21 @@ function build() {
       .mockResolvedValue([{ id: OTHER, display_name: 'Other Member' }]),
   };
   const service = new ActivityLinkService(
-    chatService as never,
-    chatBlocks as never,
+    channelAccess as never,
     linkRepo,
     userRepo as never,
   );
-  return { service, chatService, chatBlocks, linkRepo, userRepo };
+  const list = (blockedUserIds: string[] = []) =>
+    service.listFor(CHAPTER, ME, NOW, { channels: CHANNELS, blockedUserIds });
+  return { service, channelAccess, linkRepo, userRepo, list };
 }
 
 describe('ActivityLinkService', () => {
   describe('listFor', () => {
     it('reads only the caller’s channels that feed Activity, over the last 30 days', async () => {
-      const { service, linkRepo } = build();
+      const { list, linkRepo } = build();
 
-      await service.listFor(CHAPTER, ME, NOW);
+      await list();
 
       // #advertising is left out of Activity, so it is never asked for.
       expect(linkRepo.findShowing).toHaveBeenCalledWith(CHAPTER, {
@@ -71,10 +78,10 @@ describe('ActivityLinkService', () => {
     });
 
     it('lists a link with its channel and poster', async () => {
-      const { service, linkRepo } = build();
+      const { list, linkRepo } = build();
       linkRepo.findShowing.mockResolvedValue([link()]);
 
-      const rows = await service.listFor(CHAPTER, ME, NOW);
+      const rows = await list();
 
       expect(rows).toEqual([
         {
@@ -82,6 +89,7 @@ describe('ActivityLinkService', () => {
           url: 'https://forms.gle/abc',
           host: 'forms.gle',
           message_id: 'msg-1',
+          thread_root_id: null,
           channel_id: GENERAL,
           channel_name: 'general',
           channel_type: 'PUBLIC',
@@ -95,32 +103,31 @@ describe('ActivityLinkService', () => {
     it('never lists a link from a channel outside the caller’s list or left out of Activity', async () => {
       // The repository is asked for the right channels; this proves the
       // service holds the rule itself rather than trusting the read.
-      const { service, linkRepo } = build();
+      const { list, linkRepo } = build();
       linkRepo.findShowing.mockResolvedValue([
         link({ id: 'ads', channel_id: ADS }),
         link({ id: 'private', channel_id: 'chan-not-mine' }),
       ]);
 
-      await expect(service.listFor(CHAPTER, ME, NOW)).resolves.toEqual([]);
+      await expect(list()).resolves.toEqual([]);
     });
 
     it('leaves out the caller’s own links and a blocked member’s, but keeps an imported author’s', async () => {
-      const { service, linkRepo, chatBlocks } = build();
-      chatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      const { list, linkRepo } = build();
       linkRepo.findShowing.mockResolvedValue([
         link({ id: 'mine', posted_by: ME }),
         link({ id: 'blocked', posted_by: BLOCKED }),
         link({ id: 'imported', posted_by: null }),
       ]);
 
-      const rows = await service.listFor(CHAPTER, ME, NOW);
+      const rows = await list([BLOCKED]);
 
       expect(rows.map((row) => row.id)).toEqual(['imported']);
       expect(rows[0].posted_by_name).toBe('');
     });
 
     it('leaves out a link the caller marked Done or Hidden', async () => {
-      const { service, linkRepo } = build();
+      const { list, linkRepo } = build();
       linkRepo.findShowing.mockResolvedValue([
         link({ id: 'done' }),
         link({ id: 'hidden' }),
@@ -131,7 +138,7 @@ describe('ActivityLinkService', () => {
         { link_id: 'hidden', state: 'hidden' },
       ]);
 
-      const rows = await service.listFor(CHAPTER, ME, NOW);
+      const rows = await list();
 
       expect(linkRepo.findStates).toHaveBeenCalledWith(CHAPTER, ME, [
         'done',
@@ -141,35 +148,41 @@ describe('ActivityLinkService', () => {
       expect(rows.map((row) => row.id)).toEqual(['open']);
     });
 
+    it('carries a thread reply’s root, so Open in chat can open the thread', async () => {
+      const { list, linkRepo } = build();
+      linkRepo.findShowing.mockResolvedValue([
+        link({ thread_root_id: 'msg-root' }),
+      ]);
+
+      const [row] = await list();
+
+      expect(row.thread_root_id).toBe('msg-root');
+    });
+
     it('carries at most 25 rows', async () => {
-      const { service, linkRepo } = build();
+      const { list, linkRepo } = build();
       linkRepo.findShowing.mockResolvedValue(
         Array.from({ length: 30 }, (_, i) => link({ id: `link-${i}` })),
       );
 
-      await expect(service.listFor(CHAPTER, ME, NOW)).resolves.toHaveLength(25);
-    });
-
-    it('fails rather than list unmasked when the block list can’t be read', async () => {
-      const { service, chatBlocks, linkRepo } = build();
-      chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
-      linkRepo.findShowing.mockResolvedValue([link()]);
-
-      await expect(service.listFor(CHAPTER, ME, NOW)).rejects.toThrow(
-        'db down',
-      );
+      await expect(list()).resolves.toHaveLength(25);
     });
   });
 
   describe('setState and clearState', () => {
     it('records the caller’s state on a link they can read', async () => {
-      const { service, linkRepo, chatService } = build();
+      const { service, linkRepo, channelAccess } = build();
       linkRepo.findById.mockResolvedValue(link());
 
       await service.setState(CHAPTER, ME, 'link-1', 'hidden');
       await service.clearState(CHAPTER, ME, 'link-1');
 
-      expect(chatService.getChannel).toHaveBeenCalledWith(GENERAL, CHAPTER, ME);
+      expect(channelAccess.assertChannelAccess).toHaveBeenCalledWith(
+        GENERAL,
+        CHAPTER,
+        ME,
+        'read',
+      );
       expect(linkRepo.setState).toHaveBeenCalledWith(
         CHAPTER,
         'link-1',
@@ -194,9 +207,9 @@ describe('ActivityLinkService', () => {
     ])(
       'answers 404, not the channel’s %s, for a link in a channel the caller can’t read',
       async (_status, refusal) => {
-        const { service, linkRepo, chatService } = build();
+        const { service, linkRepo, channelAccess } = build();
         linkRepo.findById.mockResolvedValue(link());
-        chatService.getChannel.mockRejectedValue(refusal);
+        channelAccess.assertChannelAccess.mockRejectedValue(refusal);
 
         await expect(
           service.setState(CHAPTER, ME, 'link-1', 'done'),

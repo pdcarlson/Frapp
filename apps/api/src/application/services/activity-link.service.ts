@@ -10,11 +10,12 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type {
   ChannelType,
+  ChatChannel,
   ChatLinkMemberStateValue,
   ChatMessageLink,
 } from '#domain/entities/chat.entity';
-import { ChatBlockService } from './chat-block.service';
-import { ChatService } from './chat.service';
+import { ChannelAccessService } from './channel-access.service';
+import { displayNamesById } from './display-names';
 
 /** How long a link shows on Activity, from when it was posted. */
 export const ACTIVITY_LINK_WINDOW_DAYS = 30;
@@ -27,6 +28,16 @@ const LINK_LIST_LIMIT = 25;
  */
 const LINK_SCAN_LIMIT = 200;
 
+/**
+ * What the Activity read already knows about the caller in chat, read once
+ * per request and shared with the polls section: chat's own channel list for
+ * them (`ChatService.getChannels`, the access rule) and their block list.
+ */
+export interface ChatReads {
+  channels: Pick<ChatChannel, 'id' | 'name' | 'type' | 'activity_excluded'>[];
+  blockedUserIds: string[];
+}
+
 /** A sign-up link on the caller's Activity page. */
 export interface ActivityLink {
   id: string;
@@ -35,6 +46,11 @@ export interface ActivityLink {
   host: string;
   /** The chat message it was posted in, for "Open in chat". */
   message_id: string;
+  /**
+   * Set when that message is a thread reply, which the channel's timeline
+   * doesn't show: "Open in chat" opens this thread instead.
+   */
+  thread_root_id: string | null;
   channel_id: string;
   /** The channel's name; a direct message's is server-generated, so use `channel_type`. */
   channel_name: string;
@@ -52,16 +68,15 @@ export interface ActivityLink {
  * remove for everyone.
  *
  * The channel access rule is chat's own: a link is listed only from a channel
- * in {@link ChatService.getChannels}, the list chat shows this caller, and a
- * state is set only on a link whose channel {@link ChatService.getChannel}
- * lets them read. The index itself is written by database triggers on
- * `chat_messages`, never here.
+ * in the caller's chat channel list (`ChatService.getChannels`, passed in as
+ * {@link ChatReads}), and a state is set only on a link whose channel
+ * {@link ChannelAccessService.assertChannelAccess} lets them read. The index
+ * itself is written by database triggers on `chat_messages`, never here.
  */
 @Injectable()
 export class ActivityLinkService {
   constructor(
-    private readonly chatService: ChatService,
-    private readonly chatBlocks: ChatBlockService,
+    private readonly channelAccess: ChannelAccessService,
     @Inject(CHAT_MESSAGE_LINK_REPOSITORY)
     private readonly linkRepo: IChatMessageLinkRepository,
     @Inject(USER_REPOSITORY)
@@ -73,19 +88,13 @@ export class ActivityLinkService {
    * in a channel they can read that is not left out of Activity, not removed
    * by an officer, not their own, not from a member they blocked, and not
    * marked Done or Hidden by them.
-   *
-   * The block list is read, not defended against: one that cannot be read
-   * fails the read (and the section) rather than listing unmasked.
    */
   async listFor(
     chapterId: string,
     userId: string,
     now: number,
+    { channels, blockedUserIds }: ChatReads,
   ): Promise<ActivityLink[]> {
-    const [channels, blockedUserIds] = await Promise.all([
-      this.chatService.getChannels(chapterId, userId),
-      this.chatBlocks.listBlockedUserIds(chapterId, userId),
-    ]);
     const feeding = new Map(
       channels
         .filter((channel) => channel.activity_excluded !== true)
@@ -116,7 +125,8 @@ export class ActivityLinkService {
       .filter((link) => !settled.has(link.id))
       .slice(0, LINK_LIST_LIMIT);
 
-    const names = await this.namesOf(
+    const names = await displayNamesById(
+      this.userRepo,
       listed.flatMap((link) => (link.posted_by ? [link.posted_by] : [])),
     );
     return listed.flatMap((link) => {
@@ -127,6 +137,7 @@ export class ActivityLinkService {
         url: link.url,
         host: link.host,
         message_id: link.message_id,
+        thread_root_id: link.thread_root_id ?? null,
         channel_id: link.channel_id,
         channel_name: channel.name,
         channel_type: channel.type,
@@ -190,7 +201,12 @@ export class ActivityLinkService {
     const link = await this.linkRepo.findById(chapterId, linkId);
     if (!link) throw new NotFoundException('Link not found');
     try {
-      await this.chatService.getChannel(link.channel_id, chapterId, userId);
+      await this.channelAccess.assertChannelAccess(
+        link.channel_id,
+        chapterId,
+        userId,
+        'read',
+      );
     } catch (error) {
       if (
         error instanceof ForbiddenException ||
@@ -201,13 +217,5 @@ export class ActivityLinkService {
       throw error;
     }
     return link;
-  }
-
-  /** Display names by user id. An id with no user row is simply absent. */
-  private async namesOf(userIds: string[]): Promise<Map<string, string>> {
-    const unique = [...new Set(userIds)];
-    if (unique.length === 0) return new Map();
-    const users = await this.userRepo.findDisplayIdentitiesByIds(unique);
-    return new Map(users.map((user) => [user.id, user.display_name ?? '']));
   }
 }

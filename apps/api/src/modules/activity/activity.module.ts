@@ -18,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
 import { BackworkModule } from '../backwork/backwork.module';
 import { ChapterDocumentModule } from '../chapter-document/chapter-document.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
 import { EventModule } from '../event/event.module';
 import { RbacModule } from '../rbac/rbac.module';
@@ -38,6 +39,8 @@ import { TaskModule } from '../task/task.module';
     BackworkModule,
     ChatModule,
     ChatBlockModule,
+    // `ChannelAccessService`, for the read check behind a member's Done or Hide.
+    ChannelAccessModule,
     RbacModule,
     AuthModule,
   ],

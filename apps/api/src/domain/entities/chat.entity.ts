@@ -637,6 +637,8 @@ export interface ChatMessageLink {
   chapter_id: string;
   channel_id: string;
   message_id: string;
+  /** The message's thread root when it is a thread reply; null otherwise. */
+  thread_root_id: string | null;
   url: string;
   /** The URL's host, lower-cased and without `www.`. */
   host: string;

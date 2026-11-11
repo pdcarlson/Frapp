@@ -157,6 +157,27 @@ describe('SupabaseChatMessageLinkRepository — tenant scope', () => {
       expect(none).toEqual([]);
     });
 
+    it('batches a long channel list and merges newest first, at most limit', async () => {
+      // 250 channel ids would be a 414 in one `in` list (#3265).
+      const many = Array.from(
+        { length: 250 },
+        (_, i) => `0a000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      );
+      const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.findShowing(CHAPTER_A, {
+          since: SINCE,
+          channelIds: [...many, CHANNEL_A],
+          limit: 10,
+        }),
+      );
+
+      expect(rows.map((row) => row.id)).toEqual([LINK_A]);
+      const inLists = harness.ops
+        .filter((op) => op.table === 'chat_message_links')
+        .map((op) => op.filters.find((f) => f.op === 'in'));
+      expect(inLists).toHaveLength(3);
+    });
+
     it('reads nothing for no channels', async () => {
       const rows = await repo.findShowing(CHAPTER_A, {
         since: SINCE,

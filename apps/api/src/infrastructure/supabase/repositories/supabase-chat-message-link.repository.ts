@@ -8,6 +8,7 @@ import type {
   ChatMessageLink,
 } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * `chat_message_links` and `chat_link_member_states` (#3897). Both tables have
@@ -21,22 +22,38 @@ export class SupabaseChatMessageLinkRepository implements IChatMessageLinkReposi
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
+  /**
+   * The channel ids go out in `chunkIds` batches: a member of a
+   * Discord-imported chapter can read hundreds of channels, and one `in`
+   * list that long is a `414` (#3265). Each batch takes the newest `limit`,
+   * so the merge's newest `limit` is the same as one query's would be.
+   */
   async findShowing(
     chapterId: string,
     options: { since: string; channelIds: string[]; limit: number },
   ): Promise<ChatMessageLink[]> {
-    if (options.channelIds.length === 0) return [];
-    const { data, error } = await this.supabase
-      .from('chat_message_links')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .is('removed_at', null)
-      .gt('posted_at', options.since)
-      .in('channel_id', options.channelIds)
-      .order('posted_at', { ascending: false })
-      .limit(options.limit);
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    const batches = await Promise.all(
+      chunkIds(options.channelIds).map(async (channelIds) => {
+        const { data, error } = await this.supabase
+          .from('chat_message_links')
+          .select('*')
+          .eq('chapter_id', chapterId)
+          .is('removed_at', null)
+          .gt('posted_at', options.since)
+          .in('channel_id', channelIds)
+          .order('posted_at', { ascending: false })
+          .limit(options.limit);
+        if (error) throw new SupabaseQueryError(error);
+        return data ?? [];
+      }),
+    );
+    return batches
+      .flat()
+      .sort(
+        (a, b) =>
+          new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime(),
+      )
+      .slice(0, options.limit);
   }
 
   async findById(
@@ -58,15 +75,19 @@ export class SupabaseChatMessageLinkRepository implements IChatMessageLinkReposi
     userId: string,
     linkIds: string[],
   ): Promise<ChatLinkMemberState[]> {
-    if (linkIds.length === 0) return [];
-    const { data, error } = await this.supabase
-      .from('chat_link_member_states')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('user_id', userId)
-      .in('link_id', linkIds);
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    const batches = await Promise.all(
+      chunkIds(linkIds).map(async (ids) => {
+        const { data, error } = await this.supabase
+          .from('chat_link_member_states')
+          .select('*')
+          .eq('chapter_id', chapterId)
+          .eq('user_id', userId)
+          .in('link_id', ids);
+        if (error) throw new SupabaseQueryError(error);
+        return data ?? [];
+      }),
+    );
+    return batches.flat();
   }
 
   async setState(

@@ -263,6 +263,15 @@ export class ActivityLinkDto implements ActivityLink {
   })
   message_id: string;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread.',
+  })
+  thread_root_id: string | null;
+
   @ApiProperty({ format: 'uuid' })
   channel_id: string;
 

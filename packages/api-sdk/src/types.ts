@@ -5824,6 +5824,11 @@ export interface components {
              * @description The chat message it was posted in, for “Open in chat”.
              */
             message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread.
+             */
+            thread_root_id: string | null;
             /** Format: uuid */
             channel_id: string;
             /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */

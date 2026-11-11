@@ -34,8 +34,9 @@ import {
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ActivityLinkService } from './activity-link.service';
-import type { ActivityLink } from './activity-link.service';
+import type { ActivityLink, ChatReads } from './activity-link.service';
 import { BackworkService } from './backwork.service';
+import { displayNamesById } from './display-names';
 import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
@@ -365,6 +366,16 @@ export class ActivityService {
         isAlumni,
       })));
 
+    // Chat's channel list and the caller's block list, read once and shared
+    // by the two sections that list chat messages (polls and links), and only
+    // when one of them runs.
+    let chatRead: Promise<ChatReads> | null = null;
+    const chatReads = () =>
+      (chatRead ??= Promise.all([
+        this.chatService.getChannels(chapterId, userId),
+        this.chatBlocks.listBlockedUserIds(chapterId, userId),
+      ]).then(([channels, blockedUserIds]) => ({ channels, blockedUserIds })));
+
     const [tasks, hours, polls, events, files, madeEvents, links] =
       await Promise.all([
         this.settle('tasks', chapterId, () =>
@@ -379,7 +390,7 @@ export class ActivityService {
         ),
         this.settle('polls', chapterId, () =>
           on('polls')
-            ? this.readPolls(chapterId, userId, now)
+            ? this.readPolls(chapterId, userId, now, chatReads)
             : Promise.resolve({ unvoted: [], mine: [] }),
         ),
         this.settle('coming_up', chapterId, () =>
@@ -397,7 +408,9 @@ export class ActivityService {
         ),
         // Chat has no module switch, so neither does this section.
         this.settle('links', chapterId, () =>
-          this.linkService.listFor(chapterId, userId, now),
+          chatReads().then((reads) =>
+            this.linkService.listFor(chapterId, userId, now, reads),
+          ),
         ),
       ]);
 
@@ -577,6 +590,7 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     now: number,
+    chatReads: () => Promise<ChatReads>,
   ): Promise<{ unvoted: ActivityPoll[]; mine: ActivityPoll[] }> {
     // The channel list is the access rule: `getChannels` is what chat itself
     // shows this caller, filtered through `ChannelAccessService`. A poll in a
@@ -587,8 +601,8 @@ export class ActivityService {
     // that cannot be read is not an empty block list", so a failure fails the
     // section (served empty and named `unavailable`) rather than listing a
     // blocked member's question.
-    const [channels, recent, own, blockedUserIds] = await Promise.all([
-      this.chatService.getChannels(chapterId, userId),
+    const [{ channels, blockedUserIds }, recent, own] = await Promise.all([
+      chatReads(),
       this.messageRepo.findPollCardsByChapter(chapterId, {
         limit: POLL_SCAN_LIMIT,
       }),
@@ -596,7 +610,6 @@ export class ActivityService {
         senderId: userId,
         limit: LIST_LIMIT,
       }),
-      this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
     const nowDate = new Date(now);
     // No deadline sorts last: it is the least pressing.
@@ -883,10 +896,7 @@ export class ActivityService {
   }
 
   /** Display names by user id. An id with no user row is simply absent. */
-  private async namesOf(userIds: string[]): Promise<Map<string, string>> {
-    const unique = [...new Set(userIds)];
-    if (unique.length === 0) return new Map();
-    const users = await this.userRepo.findDisplayIdentitiesByIds(unique);
-    return new Map(users.map((user) => [user.id, user.display_name ?? '']));
+  private namesOf(userIds: string[]): Promise<Map<string, string>> {
+    return displayNamesById(this.userRepo, userIds);
   }
 }

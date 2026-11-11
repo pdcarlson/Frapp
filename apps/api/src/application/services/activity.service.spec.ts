@@ -253,7 +253,7 @@ describe('ActivityService', () => {
       expect(chatBlocks.listBlockedUserIds).toHaveBeenCalledWith(CHAPTER, ME);
     });
 
-    it('serves no polls, and says so, when the block list cannot be read', async () => {
+    it('serves no polls or links, and says so, when the block list cannot be read', async () => {
       const { service, messageRepo, chatBlocks } = build();
       chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
       servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
@@ -262,7 +262,10 @@ describe('ActivityService', () => {
 
       expect(view.needs_you.polls).toEqual([]);
       expect(view.made_by_you.polls).toEqual([]);
-      expect(view.unavailable).toEqual(['polls']);
+      // Links mask by the same block list, so they fail with it rather than
+      // list a blocked member's link.
+      expect(view.links).toEqual([]);
+      expect(view.unavailable).toEqual(['polls', 'links']);
     });
 
     it('serves the caller’s links, uncounted in needs_you_count (#3897)', async () => {
@@ -287,9 +290,22 @@ describe('ActivityService', () => {
         CHAPTER,
         ME,
         expect.any(Number),
+        {
+          channels: [{ id: READABLE, name: 'general', type: 'PUBLIC' }],
+          blockedUserIds: [],
+        },
       );
       expect(view.links).toEqual([row]);
       expect(view.needs_you_count).toBe(0);
+    });
+
+    it('reads chat’s channel list and the block list once for polls and links', async () => {
+      const { service, chatService, chatBlocks } = build();
+
+      await service.getActivity(CHAPTER, ME, null);
+
+      expect(chatService.getChannels).toHaveBeenCalledTimes(1);
+      expect(chatBlocks.listBlockedUserIds).toHaveBeenCalledTimes(1);
     });
 
     it('serves no links, and says so, when the links read fails', async () => {
@@ -304,9 +320,10 @@ describe('ActivityService', () => {
 
     it('reports a failed section to Sentry at error level, not only the log (#4096)', async () => {
       const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
-      const { service, messageRepo, chatBlocks } = build();
-      chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
-      servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
+      const { service, messageRepo } = build();
+      messageRepo.findPollCardsByChapter.mockRejectedValue(
+        new Error('db down'),
+      );
 
       try {
         await service.getActivity(CHAPTER, ME, null);
@@ -414,7 +431,6 @@ describe('ActivityService', () => {
 
       expect(view.needs_you.polls).toEqual([]);
       expect(messageRepo.findPollCardsByChapter).not.toHaveBeenCalled();
-      expect(chatService.getChannels).not.toHaveBeenCalled();
     });
   });
 

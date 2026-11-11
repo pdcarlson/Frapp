@@ -18076,6 +18076,12 @@
             "format": "uuid",
             "description": "The chat message it was posted in, for “Open in chat”."
           },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread."
+          },
           "channel_id": {
             "type": "string",
             "format": "uuid"
@@ -18114,6 +18120,7 @@
           "url",
           "host",
           "message_id",
+          "thread_root_id",
           "channel_id",
           "channel_name",
           "channel_type",
