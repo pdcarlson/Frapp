@@ -493,12 +493,38 @@ describe("PollCard with more than one choice (#3793)", () => {
 
     expect(flat).toContain("Select one or more");
     expect(flat).toContain("2 people voted · your choices are highlighted");
+    // Shares are of the two voters, so they needn't add up to 100.
+    expect(flat).toContain('"2"," · ","100","%"');
+    expect(flat).toContain('"1"," · ","50","%"');
     const [fri, sat, sun] = optionRows(tree);
     expect(fri.props.accessibilityState.selected).toBe(true);
     expect(sat.props.accessibilityState.selected).toBe(false);
     act(() => sun.props.onPress());
     expect(onVote).toHaveBeenCalledWith("msg-1", "vote", {
       option_id: ["fri", "sun"],
+    });
+  });
+
+  it("highlights every one of the viewer's picks", () => {
+    const tree = renderPoll(
+      multi([vote("a-1", VIEWER, ["fri", "sun"]), vote("a-2", OTHER, ["sat"])]),
+    );
+    expect(
+      optionRows(tree).map((row) => row.props.accessibilityState.selected),
+    ).toEqual([true, false, true]);
+  });
+
+  it("keeps both picks when the second tap lands before the first answer", () => {
+    const onVote = vi.fn();
+    const tree = renderPoll(multi([]), onVote);
+
+    act(() => optionRows(tree)[0].props.onPress());
+    act(() => optionRows(tree)[1].props.onPress());
+    expect(onVote).toHaveBeenNthCalledWith(1, "msg-1", "vote", {
+      option_id: ["fri"],
+    });
+    expect(onVote).toHaveBeenNthCalledWith(2, "msg-1", "vote", {
+      option_id: ["fri", "sat"],
     });
   });
 

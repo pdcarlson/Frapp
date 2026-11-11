@@ -263,10 +263,8 @@ export interface PollTally {
   total: number;
   /** Members with at least one pick. Equals `total` on a single-choice card. */
   voters: number;
-  /** The viewer's picks, in the card's option order. */
+  /** The viewer's picks, in the card's option order: one at most on a single-choice card. */
   myVotes: string[];
-  /** The viewer's pick on a single-choice card: the first of `myVotes`. */
-  myVote: string | null;
 }
 
 /**
@@ -312,7 +310,40 @@ export function tallyPollVotes(
     if (viewerId && action.user_id === viewerId) mine = new Set(picks);
   }
   const myVotes = options.map((o) => o.id).filter((id) => mine.has(id));
-  return { byOption, total, voters, myVotes, myVote: myVotes[0] ?? null };
+  return { byOption, total, voters, myVotes };
+}
+
+/**
+ * The picks a member's last tap on a multi-choice card asked for, while the
+ * card may not show them yet. A vote isn't optimistic: the card redraws from
+ * the API's answer (`actOnCard`), and each tap sends the member's whole list,
+ * so a second tap made before the first answer would be built from the old
+ * list and drop the first pick. The card keeps what it last sent and builds
+ * the next tap on that (`currentPollPicks`).
+ */
+export interface PendingPollPicks {
+  picks: string[];
+  /** `Date.now()` at the tap. */
+  at: number;
+}
+
+/**
+ * How long a tap's picks stand in for the card's. Long enough for a slow
+ * answer and its re-read (web's Activity panel re-reads after the POST); after
+ * it the card's own picks are the truth again, so a refused vote isn't
+ * carried into a tap made much later.
+ */
+export const POLL_PICKS_PENDING_MS = 10_000;
+
+/** The viewer's picks to build the next tap on: the last tap's while fresh. */
+export function currentPollPicks(
+  myVotes: readonly string[],
+  pending: PendingPollPicks | null,
+  now: number,
+): readonly string[] {
+  return pending && now - pending.at < POLL_PICKS_PENDING_MS
+    ? pending.picks
+    : myVotes;
 }
 
 /**
@@ -333,6 +364,29 @@ export function pollVotePayload(
   return {
     option_id: payload.options.map((o) => o.id).filter((id) => picked.has(id)),
   };
+}
+
+/**
+ * The vote a tap sends from a card, built on the member's last tap while that
+ * tap is fresh ({@link PendingPollPicks}), and remembered in `pending` for the
+ * next one. A single-choice tap depends on nothing earlier, so it forgets.
+ */
+export function castPollVote(
+  payload: PollPayload,
+  myVotes: readonly string[],
+  pending: { current: PendingPollPicks | null },
+  optionId: string,
+  now: number = Date.now(),
+): Record<string, unknown> {
+  const vote = pollVotePayload(
+    payload,
+    currentPollPicks(myVotes, pending.current, now),
+    optionId,
+  );
+  pending.current = Array.isArray(vote.option_id)
+    ? { picks: vote.option_id as string[], at: now }
+    : null;
+  return vote;
 }
 
 /**

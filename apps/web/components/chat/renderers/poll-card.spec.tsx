@@ -454,6 +454,29 @@ describe("PollCard with more than one choice (#3793)", () => {
     });
   });
 
+  it("highlights every one of the viewer's picks", () => {
+    renderPoll(multi([vote(VIEWER, ["fri", "sun"]), vote(OTHER, ["sat"])]));
+
+    expect(optionButton("Fri")).toHaveAttribute("aria-pressed", "true");
+    expect(optionButton("Sat")).toHaveAttribute("aria-pressed", "false");
+    expect(optionButton("Sun")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps both picks when the second tap lands before the first answer", () => {
+    // The card doesn't redraw until the API answers, so the second tap is
+    // built on the first, not on the card's still-empty picks.
+    const { onVote } = renderPoll(multi([]));
+
+    fireEvent.click(optionButton("Fri"));
+    fireEvent.click(optionButton("Sat"));
+    expect(onVote).toHaveBeenNthCalledWith(1, "msg-1", "vote", {
+      option_id: ["fri"],
+    });
+    expect(onVote).toHaveBeenNthCalledWith(2, "msg-1", "vote", {
+      option_id: ["fri", "sat"],
+    });
+  });
+
   it("clears a pick on a second tap, down to none", () => {
     const { onVote } = renderPoll(multi([vote(VIEWER, ["fri"])]));
 

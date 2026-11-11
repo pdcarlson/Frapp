@@ -86,19 +86,22 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     return data;
   }
 
-  async findActedMessageIds(
+  async findActionsOnMessages(
     messageIds: string[],
     userId: string,
     actionType: string,
-  ): Promise<string[]> {
+  ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]> {
     if (messageIds.length === 0) return [];
     const { data, error } = await this.supabase
       .from('chat_message_actions')
-      .select('message_id')
+      .select('message_id, payload')
       .in('message_id', messageIds)
       .eq('user_id', userId)
       .eq('action_type', actionType);
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).map((row) => row.message_id);
+    return (data ?? []).map((row) => ({
+      message_id: row.message_id,
+      payload: row.payload ?? {},
+    }));
   }
 }

@@ -2,8 +2,9 @@
  * Poll vote rules, shared by the two paths that accept a vote, which are NOT
  * the same code path and cannot be merged into one: `PollService.vote` writes
  * `poll_votes` keyed by a numeric `option_index`, while
- * `ChatReactionService.recordMessageAction` writes `chat_message_actions` with a
- * string `payload.option_id`. Two storage shapes, two encodings, one set of
+ * `ChatReactionService.recordMessageAction` writes `chat_message_actions` with
+ * `payload.option_id`, one option id or, on a multi-choice card, a list of
+ * them (#3793). Two storage shapes, two encodings, one set of
  * rules.
  *
  * Only the chat-card path was unguarded (#871): it checked channel access and

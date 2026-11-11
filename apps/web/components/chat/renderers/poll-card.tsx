@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useId, useMemo, useRef } from "react";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -15,16 +15,17 @@ import {
   CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
+  castPollVote,
   isPollCardClosed,
   pollCardEyebrow,
   pollCardFooter,
   pollChoiceHint,
   pollOptionPercent,
-  pollVotePayload,
   pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
+  type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
 import { useMyPermissions, useNow } from "@repo/hooks";
@@ -63,7 +64,7 @@ export function PollCard({
   onVote,
   onClosePoll,
 }: PollCardProps) {
-  const payload = readPollPayload(message);
+  const payload = useMemo(() => readPollPayload(message), [message]);
   const now = useNow();
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
@@ -91,6 +92,7 @@ export function PollCard({
     () => tallyPollVotes(message, payload?.options ?? [], viewerId),
     [message, payload, viewerId],
   );
+  const pendingPicks = useRef<PendingPollPicks | null>(null);
 
   if (!payload) {
     return (
@@ -123,10 +125,12 @@ export function PollCard({
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
+    // Built on the member's last tap while its answer is still on the way
+    // (`castPollVote`), so two quick taps on a multi-choice card keep both.
     onVote(
       message.id,
       POLL_VOTE_ACTION_TYPE,
-      pollVotePayload(payload, tally.myVotes, option.id),
+      castPollVote(payload, tally.myVotes, pendingPicks, option.id),
     );
   };
 

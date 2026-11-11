@@ -7,7 +7,9 @@ import {
   canClosePoll,
   isPollCardClosed,
   isMultiChoicePoll,
+  currentPollPicks,
   makePollOptionId,
+  POLL_PICKS_PENDING_MS,
   pollCardFooter,
   pollChoiceHint,
   pollOptionPercent,
@@ -204,7 +206,6 @@ describe("a multi-choice poll card (#3793)", () => {
       total: 3,
       voters: 3,
       myVotes: ["b"],
-      myVote: "b",
     });
     expect(pollOptionPercent(single, tally, "a")).toBe(67);
     expect(pollCardFooter(single, tally, true)).toBe(
@@ -229,7 +230,6 @@ describe("a multi-choice poll card (#3793)", () => {
       total: 5,
       voters: 3,
       myVotes: ["a", "c"],
-      myVote: "a",
     });
     // A share of the three voters, so the options needn't add up to 100.
     expect(pollOptionPercent(multi, tally, "a")).toBe(67);
@@ -259,6 +259,22 @@ describe("a multi-choice poll card (#3793)", () => {
     expect(pollVotePayload(multi, ["c"], "a")).toEqual({ option_id: ["a", "c"] });
     expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({ option_id: ["c"] });
     expect(pollVotePayload(multi, ["c"], "c")).toEqual({ option_id: [] });
+  });
+
+  it("builds a quick second tap on the first, not on a card that hasn't caught up", () => {
+    const NOW = 1_000_000;
+    // Tap Fri: the card still shows no picks, and the tap is remembered.
+    const first = pollVotePayload(multi, currentPollPicks([], null, NOW), "a");
+    expect(first).toEqual({ option_id: ["a"] });
+    const pending = { picks: first.option_id as string[], at: NOW };
+    // Tap Sat before the answer lands: both picks go, not Sat alone.
+    expect(
+      pollVotePayload(multi, currentPollPicks([], pending, NOW + 300), "b"),
+    ).toEqual({ option_id: ["a", "b"] });
+    // Much later the card's own picks are the truth again.
+    expect(
+      currentPollPicks(["c"], pending, NOW + POLL_PICKS_PENDING_MS),
+    ).toEqual(["c"]);
   });
 
   it("tells a member they can pick several", () => {

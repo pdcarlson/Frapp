@@ -151,7 +151,6 @@ describe("Activity card messages", () => {
       total: 2,
       voters: 2,
       myVotes: ["a"],
-      myVote: "a",
     });
     expect(message.id).toBe("poll-1");
   });
