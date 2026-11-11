@@ -78,8 +78,8 @@ export function isDirectChannel(
  * level and for the push's title, URGENT priority and category.
  *
  * A PUBLIC, read-only channel whose name contains `announcements`, the seeded
- * `#announcements` included. Everyone reads it and only `announcements:post`
- * holders write it, so a chapter-wide URGENT push, which skips quiet hours and
+ * `#announcements` included. Everyone reads it and only the holders on its
+ * who-can-post list write it, so a chapter-wide URGENT push, which skips quiet hours and
  * every category preference, is sound there and nowhere else.
  *
  * The shape is required of the exact name too. The push worker used to accept

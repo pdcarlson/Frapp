@@ -52,9 +52,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 
-/** A row that opens the sheet: a file row goes to its own screen instead. */
-export type ActivitySheetRow = Exclude<ActivityRow, { kind: "file" }>;
-
 /**
  * What a sign-up link's sheet can do. The screen owns these, not the sheet:
  * Done, Hide and Remove take the row off the list at once, which closes the
@@ -123,7 +120,7 @@ export function ActivitySheet({
   onActed,
   linkActions,
 }: {
-  row: ActivitySheetRow | null;
+  row: ActivityRow | null;
   viewerId: string | null;
   onClosed: () => void;
   onActed: () => void;
@@ -196,7 +193,7 @@ function SheetCard({
   onNavigate,
   linkActions,
 }: {
-  row: ActivitySheetRow;
+  row: ActivityRow;
   viewerId: string;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDueEntry, parseDueEntry } from "./due-entry";
+import {
+  dueEntryFields,
+  dueEntryFromTask,
+  formatDueEntry,
+  parseDueEntry,
+  parseDueEntryWithTime,
+} from "./due-entry";
 
 // Monday, 9 November 2026, mid-afternoon local.
 const NOW = new Date(2026, 10, 9, 15, 30);
@@ -118,5 +124,65 @@ describe("formatDueEntry", () => {
     } finally {
       Date.prototype.toLocaleDateString = real;
     }
+  });
+});
+
+describe("parseDueEntryWithTime (#4003)", () => {
+  it.each([
+    ["Fri 5pm", "2026-11-13T17:00"],
+    ["friday 5 pm", "2026-11-13T17:00"],
+    ["5pm friday", "2026-11-13T17:00"],
+    ["11/14 9:30am", "2026-11-14T09:30"],
+    ["Nov 14 at 11:59 PM", "2026-11-14T23:59"],
+    ["tomorrow noon", "2026-11-10T12:00"],
+    ["tomorrow 17:30", "2026-11-10T17:30"],
+    ["today 12am", "2026-11-09T00:00"],
+    // A time alone: today while it's still ahead, tomorrow once it has gone.
+    ["6pm", "2026-11-09T18:00"],
+    ["9am", "2026-11-10T09:00"],
+    // Its own output reads back.
+    ["Fri, Nov 13 · 5 PM", "2026-11-13T17:00"],
+    ["Fri, Nov 13 · 5:30 PM", "2026-11-13T17:30"],
+    // No time: just the date, as before.
+    ["Nov 14", "2026-11-14"],
+  ])("reads %j as %s", (raw, expected) => {
+    expect(parseDueEntryWithTime(raw, NOW)).toBe(expected);
+  });
+
+  it.each(["fri 5", "13pm", "5:75pm", "24:00", "Feb 30 5pm", "soon 5pm"])(
+    "refuses %j",
+    (raw) => {
+      expect(parseDueEntryWithTime(raw, NOW)).toBe(null);
+    },
+  );
+});
+
+describe("formatDueEntry with a time", () => {
+  it("adds the time after the day, minutes only when there are some", () => {
+    expect(formatDueEntry("2026-11-13T17:00", NOW)).toBe("Fri, Nov 13 · 5 PM");
+    expect(formatDueEntry("2026-11-13T09:05", NOW)).toBe(
+      "Fri, Nov 13 · 9:05 AM",
+    );
+    expect(formatDueEntry("2026-11-13T00:00", NOW)).toBe("Fri, Nov 13 · 12 AM");
+    expect(formatDueEntry("2026-11-13T12:00", NOW)).toBe("Fri, Nov 13 · 12 PM");
+  });
+});
+
+describe("dueEntryFields / dueEntryFromTask", () => {
+  it("sends a day alone as a day", () => {
+    expect(dueEntryFields("2026-11-13")).toEqual({ due_date: "2026-11-13" });
+  });
+
+  it("sends a time as the device-local instant, and reads it back", () => {
+    const fields = dueEntryFields("2026-11-13T17:00");
+    // The suite runs in America/Los_Angeles (PST, UTC-8).
+    expect(fields).toEqual({
+      due_date: "2026-11-13",
+      due_at: "2026-11-14T01:00:00.000Z",
+    });
+    expect(dueEntryFromTask(fields)).toBe("2026-11-13T17:00");
+    expect(dueEntryFromTask({ due_date: "2026-11-13", due_at: null })).toBe(
+      "2026-11-13",
+    );
   });
 });

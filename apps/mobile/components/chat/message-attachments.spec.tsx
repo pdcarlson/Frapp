@@ -701,3 +701,114 @@ describe("several photos and the sender's own", () => {
     });
   });
 });
+
+// #3879: a message sent since then carries its photos' size and blur in its
+// own metadata, so the pending state is the photo's box, not a bet on one.
+describe("the box before the read returns (#3879)", () => {
+  const tiles = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "attachment-loading-tile",
+    );
+  const fileRows = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "attachment-loading-file",
+    );
+  const sized = {
+    width: 1600,
+    height: 800,
+    thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI",
+  };
+
+  it("draws a lone sized photo's own box, the one the loaded photo takes", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const loading = render({ count: 1, photos: [sized] });
+    const tile = tiles(loading)[0]!;
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({ content_type: "image/jpeg", width: 1600, height: 800 }),
+      ],
+    };
+    const loaded = render({ count: 1, photos: [sized] });
+    const row = loaded.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+
+    expect(JSON.stringify(tile.props.style)).toBe(
+      JSON.stringify(row.props.style),
+    );
+  });
+
+  it("fills that box with the photo's blur", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 1, photos: [sized] });
+    const image = tree.root.findAllByType(
+      "ExpoImage" as unknown as React.ElementType,
+    )[0]!;
+
+    expect(image.props.placeholder).toEqual({ thumbhash: sized.thumbhash });
+    expect(image.props.source).toBeNull();
+  });
+
+  it("draws a file as a file row, not a photo tile, when the message says it is one", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 2, photos: [sized] });
+
+    expect(tiles(tree)).toHaveLength(1);
+    expect(fileRows(tree)).toHaveLength(1);
+    expect(JSON.stringify(fileRows(tree)[0]!.props.style)).toContain(
+      '"borderWidth":1',
+    );
+  });
+
+  it("draws a grid only for the photos among several files, each tile with its blur", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 3, photos: [sized, sized] });
+
+    expect(tiles(tree)).toHaveLength(2);
+    expect(fileRows(tree)).toHaveLength(1);
+    for (const tile of tiles(tree)) {
+      const [blur] = tile.findAllByType(
+        "ExpoImage" as unknown as React.ElementType,
+      );
+      expect(blur!.props.placeholder).toEqual({ thumbhash: sized.thumbhash });
+    }
+  });
+
+  it("never hands the decoder a hash it can't read in full, which crashes iOS", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({
+          content_type: "image/jpeg",
+          width: 1600,
+          height: 800,
+          thumbhash: "AAAA",
+        }),
+      ],
+    };
+    const tree = render({ count: 1 });
+    const image = tree.root.findAllByType(
+      "ExpoImage" as unknown as React.ElementType,
+    )[0]!;
+
+    expect(image.props.placeholder).toBeNull();
+  });
+
+  it("keeps the photo bet for a message with no geometry", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 2 });
+
+    expect(tiles(tree)).toHaveLength(2);
+    expect(fileRows(tree)).toHaveLength(0);
+  });
+});

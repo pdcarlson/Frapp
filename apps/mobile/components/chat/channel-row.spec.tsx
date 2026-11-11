@@ -272,7 +272,7 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
       );
       const flat = JSON.stringify(sigil.props.style);
       expect(flat).toContain(
-        `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+        `"color":"${signetDarkTokens.color.text.muted}"`,
       );
       expect(flat).not.toContain("#CB9FFF");
     }
@@ -303,8 +303,8 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
   });
 });
 
-// The board draws unread as type alone: a 700 title in foreground over a read
-// row's 600 in muted-foreground. The row itself never takes a fill at rest;
+// Unread is a 700 title in foreground with a white pip; read is a 400 title in
+// muted-foreground (owner, 2026-11-08). The row itself never takes a fill at rest;
 // the surface lift is only the iOS press state, shared with every list row.
 describe("ChannelRow unread emphasis and press feedback", () => {
   function pressable(tree: ReactTestRenderer) {
@@ -324,15 +324,32 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     return flatten(title.props.style);
   }
 
-  // A read name stays bright (owner, 2026-11-07): weight alone tells them apart.
-  it("draws an unread title bold, a read one regular, both bright", () => {
+  // Read is grey, unread is white and bold (owner, 2026-11-08), so the two
+  // differ by colour and weight, not weight alone.
+  it("draws an unread title bold and white, a read one regular and grey", () => {
     const unread = titleStyle(renderRow({ unreadCount: 7 }));
     const read = titleStyle(renderRow({}));
 
     expect(unread.fontFamily).toBe("Figtree_700Bold");
     expect(unread.color).toBe(signetDarkTokens.color.text.foreground);
     expect(read.fontFamily).toBe("Figtree_400Regular");
-    expect(read.color).toBe(signetDarkTokens.color.text.foreground);
+    expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+
+  it("draws the unread pip only on a row that reads as unread", () => {
+    const pips = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown as string) === "View" &&
+          node.props.testID === "channel-row-unread-pip",
+      );
+    expect(pips(renderRow({ unreadCount: 3 }))).toHaveLength(1);
+    expect(pips(renderRow({}))).toHaveLength(0);
+    // A muted channel's plain unread stays quiet; a mention gets past it.
+    expect(pips(renderRow({ unreadCount: 3, isMuted: true }))).toHaveLength(0);
+    expect(
+      pips(renderRow({ unreadCount: 3, mentionCount: 1, isMuted: true })),
+    ).toHaveLength(1);
   });
 
   it("draws a muted unread row's title quiet, with the crossed-out bell", () => {

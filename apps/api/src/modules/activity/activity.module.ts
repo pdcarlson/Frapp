@@ -3,6 +3,8 @@ import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
+import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
+import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
 import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
@@ -15,8 +17,6 @@ import {
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
 import { AuthModule } from '../auth/auth.module';
-import { BackworkModule } from '../backwork/backwork.module';
-import { ChapterDocumentModule } from '../chapter-document/chapter-document.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
@@ -35,8 +35,6 @@ import { TaskModule } from '../task/task.module';
     TaskModule,
     ServiceEntryModule,
     EventModule,
-    ChapterDocumentModule,
-    BackworkModule,
     ChatModule,
     ChatBlockModule,
     // `ChannelAccessService`, for the read check behind a member's Done or Hide.
@@ -53,6 +51,12 @@ import { TaskModule } from '../task/task.module';
     {
       provide: CHAT_MESSAGE_LINK_REPOSITORY,
       useClass: SupabaseChatMessageLinkRepository,
+    },
+    // Which items each member opened, for unread dots (#4173). This module
+    // is the table's only reader and writer.
+    {
+      provide: ACTIVITY_ITEM_READ_REPOSITORY,
+      useClass: SupabaseActivityItemReadRepository,
     },
     // The two chat repositories are provided here, as `ChannelAccessModule`
     // does, rather than exported from `ChatModule`: they are stateless query

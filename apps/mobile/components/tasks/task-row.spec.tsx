@@ -42,12 +42,16 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     storedStatus: "TODO",
     displayStatus: "TODO",
     dueDate: "2026-08-18",
+    dueDay: "2026-08-18",
+    dueAt: null,
+    assigneeId: "me",
     completedAt: null,
     confirmedAt: null,
     pointReward: 5,
     pointsAwarded: false,
     isDone: false,
     isOverdue: false,
+    subtasks: [],
     ...overrides,
   };
 }

@@ -343,9 +343,9 @@ describe('SemesterRolloverService', () => {
     });
 
     it('lets the wildcard (President) through', async () => {
-      // getEffectivePermissions preserves `*` from live roles (it is only
-      // stripped from custom-role capabilities), and `can()` honors it — so the
-      // check must not lock out the one role that holds every permission.
+      // getEffectivePermissions preserves `*` from roles, and `can()` honors
+      // it, so the check must not lock out the one role that holds every
+      // permission.
       mockRbacService.getEffectivePermissions.mockResolvedValue([
         SystemPermissions.WILDCARD,
       ]);

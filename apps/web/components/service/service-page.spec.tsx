@@ -593,7 +593,7 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     const file = new File(["%PDF-1.4"], "receipt.pdf", {
       type: "application/pdf",
     });
-    fireEvent.change(within(dialog).getByLabelText(/proof file/i), {
+    fireEvent.change(within(dialog).getByTestId("proof-file-input"), {
       target: { files: [file] },
     });
   };
@@ -758,7 +758,7 @@ describe("ServiceHoursPage duration guard (#2206)", () => {
   }
 
   const submitLog = () =>
-    fireEvent.submit(document.getElementById("service-log-form")!);
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form")!);
 
   it("keeps the last whole number of minutes through a negative or a decimal", async () => {
     const { minutes } = await openLog();
@@ -810,11 +810,11 @@ describe("ServiceHoursPage duration guard (#2206)", () => {
     fireEvent.change(minutes, { target: { value: "" } });
     submitLog();
 
-    await waitFor(() =>
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Enter a duration" }),
-      ),
-    );
+    // Named in place under the field (#3983), not in a toast.
+    expect(
+      await screen.findByText("Enter at least one minute of time."),
+    ).toBeInTheDocument();
+    expect(mockToast).not.toHaveBeenCalled();
     expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });
@@ -864,7 +864,7 @@ describe("ServiceHoursPage pre-filled date (#3167)", () => {
     fireEvent.change(within(dialog).getByLabelText(/what did you do/i), {
       target: { value: "Campus cleanup" },
     });
-    fireEvent.submit(document.getElementById("service-log-form")!);
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form")!);
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );

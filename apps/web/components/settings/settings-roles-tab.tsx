@@ -1,14 +1,7 @@
 "use client";
 
-import { permissionLabel } from "@repo/validation";
-import type { ReactNode } from "react";
-
-import { useMemo, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
-import type { ChapterCustomRole } from "@repo/validation";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -22,15 +15,8 @@ import {
   anyReadUncached,
   OfflineState,
 } from "@/components/shared/async-states";
-import { useToast } from "@/lib/hooks/use-toast";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
-import {
-  dashboardCheckboxHitAreaClassName,
-  dashboardTableCheckboxClassName,
-} from "@/components/shared/table-controls";
-import { asArray, getErrorMessage } from "@/lib/utils";
-import { keyFromLabel } from "@/lib/key-from-label";
+import { asArray } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { can } from "@repo/validation";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
@@ -40,25 +26,16 @@ import {
   type MatrixRole,
 } from "@/components/roles/roles-matrix";
 import {
-  useCustomRoles,
-  useCreateCustomRole,
-  useUpdateCustomRole,
-  useDeleteCustomRole,
   useMembers,
   useMyPermissions,
   usePermissionsCatalog,
   useRoles,
 } from "@repo/hooks";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
-import { InlineNote } from "@/components/shared/inline-note";
-
-type PermissionCatalogEntry = { key: string; permission: string };
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
-  /** The system permission catalog (capability rows + custom-role multi-select). */
-  catalog: PermissionCatalogEntry[];
   /** Persisted `chapters.default_invite_role_id` (#422); null = no default set. */
   defaultInviteRoleId: string | null;
   /** Persist the default invite role through the config PATCH mutation. */
@@ -96,20 +73,10 @@ type Props = {
  * | **Matrix** | Replaced by `RolesMatrix` (`4e`), which is live rather than read-only. The old one rendered `n/a` in every pack-role cell |
  * | **Live roles** | Still `RolesAndPermissionsPage`, but no longer a permissions editor — the matrix took that. It keeps role create, rename, recolour, reorder, delete and presidency transfer |
  * | **Pack** | Gone as a view, and its header label went too (2026-11-06): which pack seeded the roles is a setup detail |
- * | **Custom** | Still here, as a section rather than a tab. See below |
- *
- * **Custom roles are a section, not matrix columns**, and the board does not
- * settle this. `4e`'s pin 1 says "Custom roles append as columns", but its
- * columns are the `roles` table and custom roles are `chapter_custom_roles` —
- * a different table, with capabilities rather than permissions, enforced
- * through the bridge model in `spec/behavior/rbac.md`. Appending them as
- * columns would draw two incompatible grants in one grid and imply a cell in
- * the wrong one is editable. They keep their own section until the two models
- * are actually one.
+ * | **Custom** | Gone (#4075, 2026-11-11): custom roles were folded into ordinary roles, so they are columns of the matrix like any other role |
  */
 export function SettingsRolesTab({
   canManage,
-  catalog,
   configUnavailable,
   defaultInviteRoleId,
   onSaveDefaultInviteRole,
@@ -131,8 +98,6 @@ export function SettingsRolesTab({
         presidency transfer. Permissions are deliberately not here any more.
       */}
       <RolesAndPermissionsPage />
-
-      <CustomView canManage={canManage} catalog={catalog} />
 
       {configUnavailable ? null : (
         <DefaultInviteRoleCard
@@ -288,7 +253,7 @@ const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
  * Settings → Roles → Default invite role (#422).
  *
  * Its own card rather than part of the matrix: it is a chapter-level setting
- * about roles, not a view of the roles or the custom catalog.
+ * about roles, not a view of the roles.
  *
  * The picker carries an explicit "No default" option because clearing is a
  * real operation: it writes `null` and returns invites to the seeded Member
@@ -390,308 +355,5 @@ function DefaultInviteRoleCard({
         ) : null}
       </div>
     </ProfileSection>
-  );
-}
-
-const EMPTY_DRAFT = {
-  label: "",
-  capabilities: [] as string[],
-};
-
-function CustomView({
-  canManage,
-  catalog,
-}: {
-  canManage: boolean;
-  catalog: PermissionCatalogEntry[];
-}) {
-  const { toast } = useToast();
-  const { confirm, confirmDialog } = useConfirmDialog();
-  const { isOffline } = useNetwork();
-  const customRolesQuery = useCustomRoles();
-  const createRole = useCreateCustomRole();
-  const updateRole = useUpdateCustomRole();
-  const deleteRole = useDeleteCustomRole();
-
-  const roles = customRolesQuery.data ?? [];
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
-
-  // The wildcard is reserved for the live President role — the API rejects it
-  // on custom roles (400), so don't offer the checkbox at all.
-  const assignableCatalog = useMemo(
-    () => catalog.filter((entry) => entry.permission !== "*"),
-    [catalog],
-  );
-
-  function toggleDraftCapability(permission: string) {
-    setDraft((prev) => ({
-      ...prev,
-      capabilities: prev.capabilities.includes(permission)
-        ? prev.capabilities.filter((p) => p !== permission)
-        : [...prev.capabilities, permission],
-    }));
-  }
-
-  async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const label = draft.label.trim();
-    if (!label || !customRolesQuery.isSuccess) return;
-    // The key and the order are the system's, not the officer's: the key is
-    // derived from the name, and a new role goes after the existing ones.
-    const rank = roles.reduce((max, role) => Math.max(max, role.rank), 0) + 1;
-    try {
-      await createRole.mutateAsync({
-        key: keyFromLabel(
-          label,
-          roles.map((role) => role.key),
-        ),
-        label,
-        rank,
-        capabilities: draft.capabilities,
-      });
-      toast({
-        title: "Custom role created",
-        description: "An entry was written to the chapter audit log.",
-      });
-      setDraft(EMPTY_DRAFT);
-    } catch (error) {
-      toast({
-        title: "Couldn't create custom role",
-        description: getErrorMessage(error, "Check the name and try again."),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function handleDelete(role: ChapterCustomRole) {
-    const confirmed = await confirm({
-      title: `Delete the custom role "${role.label}"?`,
-      description:
-        "Members holding it lose its capabilities on their next request. This cannot be undone.",
-      confirmLabel: "Delete custom role",
-    });
-    if (!confirmed) return;
-    try {
-      await deleteRole.mutateAsync(role.id);
-      toast({ title: "Custom role deleted" });
-    } catch (error) {
-      toast({
-        title: "Couldn't delete custom role",
-        description: getErrorMessage(error, "Core roles cannot be deleted."),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function handleToggleCapability(
-    role: ChapterCustomRole,
-    permission: string,
-  ) {
-    // Strip any legacy wildcard before building the payload: the API rejects
-    // `*` on custom roles, and the chip no longer renders, so echoing a
-    // pre-bridge `*` back would make the role permanently uneditable. The
-    // first toggle on such a role also cleans the stored row.
-    const current = role.capabilities.filter((p) => p !== "*");
-    const next = current.includes(permission)
-      ? current.filter((p) => p !== permission)
-      : [...current, permission];
-    try {
-      await updateRole.mutateAsync({
-        id: role.id,
-        body: { capabilities: next },
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't update custom role",
-        description: getErrorMessage(error, "Retry in a moment."),
-        variant: "destructive",
-      });
-    }
-  }
-
-  /*
-    §4's flags, and the two things this tab was missing.
-
-    `isPending` alone was the spinner gate, but `useCustomRoles` is
-    `enabled: !!chapterId`, so it is true for a query that is not running —
-    and a query paused offline shares it. And there was no offline state at
-    all, so a member with a dropped connection sat on the skeleton until the
-    retry budget ran out. Gated on "no cached data", not on `isOffline`: a blip
-    must not replace a rendered list with "unavailable offline".
-
-    The states render *below* `{confirmDialog}` rather than above it, so a
-    background refetch failure cannot unmount an open confirmation and settle
-    its promise `null` behind the member's back.
-  */
-  const paused =
-    customRolesQuery.isPending && customRolesQuery.fetchStatus === "paused";
-
-  let body: ReactNode;
-  if (isOffline && anyReadUncached(customRolesQuery)) {
-    body = (
-      <OfflineState
-        title="Custom roles unavailable offline"
-        description="Reconnect to load this chapter's custom roles and edit their capabilities."
-        onRetry={() => void customRolesQuery.refetch()}
-      />
-    );
-  } else if (customRolesQuery.isLoading || paused) {
-    body = <SettingsListCardSkeleton label="Loading custom roles" />;
-  } else if (customRolesQuery.isError) {
-    body = (
-      <ErrorState
-        title="Couldn't load custom roles"
-        description="Retry to fetch this chapter's custom roles."
-        onRetry={() => void customRolesQuery.refetch()}
-      />
-    );
-  } else {
-    body = (
-      <>
-        <ProfileSection id="settings-custom-roles" title="Custom roles">
-          <div>
-            {roles.length === 0 ? (
-              <InlineNote>No custom roles yet.</InlineNote>
-            ) : (
-              <ul className="space-y-3">
-                {roles.map((role) => (
-                  <li
-                    key={role.id}
-                    className="rounded-md border border-border p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium">
-                          {role.label}
-                        </span>
-                      </div>
-                      {!role.core ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={!canManage || deleteRole.isPending}
-                          onClick={() => void handleDelete(role)}
-                          aria-label={`Delete ${role.label}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {assignableCatalog.map((entry) => {
-                        const held = role.capabilities.includes(
-                          entry.permission,
-                        );
-                        return (
-                          <label
-                            key={entry.permission}
-                            className="flex items-center gap-1.5 text-xs"
-                          >
-                            <span className={dashboardCheckboxHitAreaClassName}>
-                              <input
-                                type="checkbox"
-                                className={dashboardTableCheckboxClassName}
-                                checked={held}
-                                disabled={!canManage || updateRole.isPending}
-                                onChange={() =>
-                                  void handleToggleCapability(
-                                    role,
-                                    entry.permission,
-                                  )
-                                }
-                                aria-label={`${role.label}: ${permissionLabel(entry.permission)}`}
-                              />
-                            </span>
-                            <span>{permissionLabel(entry.permission)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </ProfileSection>
-
-        <ProfileSection
-          id="settings-create-a-custom-role"
-          title="Create a custom role"
-        >
-          <form onSubmit={handleCreate}>
-            <div className="space-y-4">
-              <div className="grid gap-1.5 sm:max-w-sm">
-                <Label htmlFor="custom-role-label">Name</Label>
-                <Input
-                  id="custom-role-label"
-                  value={draft.label}
-                  disabled={!canManage}
-                  placeholder="e.g. Pledge Educator"
-                  onChange={(event) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      label: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <span className="text-sm font-medium">Capabilities</span>
-                <div className="flex flex-wrap gap-2">
-                  {assignableCatalog.map((entry) => (
-                    <label
-                      key={entry.permission}
-                      className="flex items-center gap-1.5 text-xs"
-                    >
-                      <span className={dashboardCheckboxHitAreaClassName}>
-                        <input
-                          type="checkbox"
-                          className={dashboardTableCheckboxClassName}
-                          checked={draft.capabilities.includes(
-                            entry.permission,
-                          )}
-                          disabled={!canManage}
-                          onChange={() =>
-                            toggleDraftCapability(entry.permission)
-                          }
-                          aria-label={`New role: ${permissionLabel(entry.permission)}`}
-                        />
-                      </span>
-                      <span>{permissionLabel(entry.permission)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button
-                type="submit"
-                disabled={
-                  !canManage ||
-                  createRole.isPending ||
-                  !draft.label.trim() ||
-                  // The key and rank derive from the loaded list.
-                  !customRolesQuery.isSuccess
-                }
-              >
-                {createRole.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                Create role
-              </Button>
-            </div>
-          </form>
-        </ProfileSection>
-      </>
-    );
-  }
-
-  return (
-    <div className="space-y-10">
-      {/* Above the branch, so no state change unmounts an open confirmation. */}
-      {confirmDialog}
-      {body}
-    </div>
   );
 }

@@ -112,8 +112,9 @@ export type NavItem = {
   /**
    * A last check for a row whose destination depends on more than one
    * permission or module: the row shows only when this returns true. It runs
-   * after the permission rule, and only once permissions have resolved, since
-   * every nav gate fails open until then (`isNavItemVisible`).
+   * after the permission rule, and only once permissions have resolved; until
+   * then a row with `showWhen` is hidden, like any permission-gated row
+   * (`isNavItemVisible`, #3854).
    */
   showWhen?: (
     permissions: readonly string[],

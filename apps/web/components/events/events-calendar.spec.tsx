@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
+import {
+  ALL_CALENDAR_LAYERS,
+  calendarTasksByDay,
+  selectCalendarTasks,
+} from "@repo/hooks/calendar-tasks";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
 
 // Local wall-clock parts, so the event lands in the anchor month's grid in any
@@ -331,5 +336,109 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
       screen.queryByRole("button", { name: /^New event on/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Nothing on this day.")).toBeInTheDocument();
+  });
+});
+
+describe("EventsCalendar with tasks (#4144)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const items = selectCalendarTasks(
+    [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "officer",
+        due_date: "2026-11-06",
+        status: "OVERDUE",
+      },
+      ...["m1", "m2", "m3"].map((assignee, index) => ({
+        id: `t-${assignee}`,
+        title: "Dues form",
+        assignee_id: assignee,
+        created_by: "me",
+        due_date: "2026-11-06",
+        status: index === 0 ? "COMPLETED" : "TODO",
+      })),
+    ],
+    "me",
+  );
+
+  function renderWithTasks() {
+    return render(
+      <EventsCalendar
+        events={[
+          {
+            id: "evt-1",
+            name: "Chapter Meeting",
+            start_time: start,
+            is_mandatory: true,
+          },
+        ]}
+        tasksByDay={calendarTasksByDay(items, ALL_CALENDAR_LAYERS)}
+        nameOf={(id) =>
+          ({ m1: "Sam Lee", m2: "Ana Ruiz", m3: "Jo Park", officer: "Marcus" })[
+            id
+          ] ?? "A member"
+        }
+        monthAnchor={anchor}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+  }
+
+  it("draws tasks after the day's events, saying whose and where they stand", () => {
+    stubCalendarWidth(900);
+    renderWithTasks();
+
+    expect(
+      screen.getByRole("button", {
+        name: "Clean the kitchen, your task, overdue",
+      }),
+    ).toBeInTheDocument();
+    const assigned = screen.getByRole("button", {
+      name: "Dues form, assigned by you, 1 of 3 done",
+    });
+    expect(assigned).toHaveTextContent("1/3");
+  });
+
+  it("opens an assigned task's card with each assignee's status", async () => {
+    stubCalendarWidth(900);
+    renderWithTasks();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Dues form, assigned by you, 1 of 3 done",
+      }),
+    );
+    expect(await screen.findByText("1 of 3 done")).toBeInTheDocument();
+    expect(screen.getByText("Sam Lee")).toBeInTheDocument();
+    expect(screen.getByText("Waiting on an officer")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Tasks" })).toHaveAttribute(
+      "href",
+      "/tasks",
+    );
+  });
+
+  it("counts tasks on a compact day and lists them under its events", () => {
+    stubCalendarWidth(480);
+    renderWithTasks();
+
+    const day = screen.getByRole("button", {
+      name: "November 6, 1 event, 2 tasks",
+    });
+    fireEvent.click(day);
+    expect(
+      screen.getByRole("button", {
+        name: "Clean the kitchen, your task, overdue",
+      }),
+    ).toHaveTextContent("Overdue");
   });
 });

@@ -1299,9 +1299,10 @@ After any rollback event:
   ) x
   WHERE m.id = x.message_id;
 
+  -- `attachment_photos` (#3879) describes the same rows, so it goes too.
   UPDATE chat_messages
-  SET metadata = metadata - 'attachment_count'
-  WHERE metadata ? 'attachment_count';
+  SET metadata = metadata - 'attachment_count' - 'attachment_photos'
+  WHERE metadata ? 'attachment_count' OR metadata ? 'attachment_photos';
   ```
   Rows written *after* the migration are also restored by this — they were never
   in the sigil format, but the pre-change composer produced exactly that format,
@@ -3536,6 +3537,21 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
+## Rollback the Important strip (20261111235900)
+
+* **Migration**: `20261111235900_chat_important_seen.sql`
+
+The table `chat_message_important_seen`, the partial index `idx_chat_messages_channel_important` on `chat_messages`, and `anonymize_user` redefined to also delete `chat_message_important_seen`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/important` routes, so clients that ask for the strip get a 404 and draw none. Seen rows written before the revert stay, and count again when the API ships.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which Important messages each member has seen, so every one flagged in the last 14 days shows on the strip again once it is rebuilt. First redefine `anonymize_user` without its `chat_message_important_seen` delete (the `20261111220000_activity_item_reads.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.chat_message_important_seen;
+drop index if exists public.idx_chat_messages_channel_important;
+```
+
 ## Rollback event types (20261111200000)
 
 * **Migration**: `20261111200000_event_types.sql`
@@ -3586,4 +3602,90 @@ One nullable column on `chat_channels`, `display_order`, and the functions `reor
 drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
 drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
+```
+
+## Rollback Unread dots on Activity (20261111220000)
+
+* **Migration**: `20261111220000_activity_item_reads.sql`
+
+The tables `activity_item_reads` and `activity_unread_starts`, the nullable column `tasks.sent_back_at`, and `anonymize_user` redefined to also delete both tables' rows. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads or writes the tables or the column (it reads tasks with `select('*')` and returns `sent_back_at` as a plain field older clients ignore) and serves no `unread`; the reverted clients draw no dots.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which items every member opened and when their dots began, and when tasks were sent back. First redefine `anonymize_user` without its two deletes (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the tables are gone:
+
+```sql
+drop table if exists public.activity_item_reads;
+drop table if exists public.activity_unread_starts;
+alter table public.tasks drop column if exists sent_back_at;
+```
+
+## Rollback custom roles fold (20261111210000)
+
+* **Migration**: `20261111210000_fold_custom_roles.sql`
+
+Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `roles` row for each custom role; each member's `custom_role_ids` moved into `role_ids` and emptied; `transfer_presidency` redefined without its custom-role clause. `chapter_custom_roles` itself is untouched apart from the new column.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `roles` and `chapter_custom_roles` both; with `custom_role_ids` empty everywhere, it reads only roles, so every member keeps exactly what they have, and the folded roles show on the Roles page as ordinary roles. The reverted Settings page lists the custom roles again, unassigned. **Before rolling forward again, re-run this file by hand** (`db push` won't re-apply it): an assignment or a custom role the reverted API wrote in the meantime lives only in `custom_role_ids` or an unfolded row, which the forward API doesn't read.
+
+**Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
+
+If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
+
+## Rollback Task due times and subtasks (20261111230000)
+
+* **Migration**: `20261111230000_task_due_time_and_subtasks.sql`
+
+One nullable column on `tasks`, `due_at`, and one new table, `task_subtasks`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads tasks with `select('*')` and returns the column as a plain field clients ignore; tasks created with a time keep their `due_date` and fall back to day-based overdue and reminders, and the reverted API never reads `task_subtasks`, so steps stay stored but unseen.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses the time on every timed task, their days stay; dropping the table loses every task's steps:
+
+```sql
+drop table if exists public.task_subtasks;
+alter table public.tasks drop column if exists due_at;
+```
+
+## Rollback channel access lists (20261111233000)
+
+* **Migration**: `20261111233000_chat_channel_access_lists.sql`
+
+Two new columns on `chat_channels` and `chat_channel_categories`, `who_can_see` and `who_can_post`, backfilled from the old settings; five checks on the two tables; the functions `chat_access_list_valid`, `chat_channel_access_from_legacy`, `chat_channels_legacy_access`, `set_chat_category_access` and `chat_access_strip_entry`; triggers on `chat_channels`, `roles` and `role_tiers`; and `can_read_chat_channel` rewritten on the lists. `required_permissions` and `type` were not changed by the backfill. `is_read_only` was, in one case: a ROLE_GATED channel the Alumni role could read without `alumni:post` got a who-can-post list (its readers minus Alumni) and so `is_read_only` true. The reverted API reads that as read-only, so in those channels only `announcements:post` holders can post until the API rolls forward again. The check `chat_channels_read_only_follows_who_can_post` and the bridge trigger keep the flag tied to the list, so it can't simply be switched off: if the rollback must last, a forward migration drops that check and the trigger, then sets `is_read_only` false on these rows:
+
+```sql
+select c.id, c.chapter_id, c.name
+  from public.chat_channels c
+  join public.roles r on r.chapter_id = c.chapter_id and r.system_key = 'ALUMNI'
+ where c.type = 'ROLE_GATED'
+   and not c.is_audit_log
+   and ('role:' || r.id) = any (c.who_can_see)
+   and c.who_can_post = array_remove(c.who_can_see, 'role:' || r.id);
+```
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `required_permissions`, `is_read_only` and `announcements:post` again, and `chat_channels_legacy_access` keeps the lists following what it writes, so the database's read check (`can_read_chat_channel`, which message RLS and realtime topics use) agrees with it for every channel it touches. A channel the newer API created or changed holds its access only in the lists: under the reverted API a ROLE_GATED one it made has no `required_permissions`, so only `*` holders can open it there, and a read-only one is postable by `announcements:post` holders. That fails closed; re-save those channels' settings, or roll forward again.
+
+**Keep the columns and functions unless they are themselves the problem.** Dropping them loses every list an officer set. To remove them, do it in a later forward migration after the code revert has shipped, and restore `can_read_chat_channel` from `20260906203000_realtime_presence_private.sql` in the same migration:
+
+```sql
+drop trigger if exists chat_channels_legacy_access on public.chat_channels;
+drop trigger if exists roles_strip_chat_access on public.roles;
+drop trigger if exists role_tiers_strip_chat_access on public.role_tiers;
+drop function if exists public.chat_channels_legacy_access();
+drop function if exists public.chat_access_strip_entry();
+drop function if exists public.set_chat_category_access(uuid, uuid, text[], text[]);
+-- then re-create can_read_chat_channel(uuid) from 20260906203000
+alter table public.chat_channels
+  drop constraint if exists chat_channels_access_lists_valid,
+  drop constraint if exists chat_channels_access_lists_where_they_apply,
+  drop constraint if exists chat_channels_type_follows_who_can_see,
+  drop constraint if exists chat_channels_read_only_follows_who_can_post,
+  drop column if exists who_can_see,
+  drop column if exists who_can_post;
+alter table public.chat_channel_categories
+  drop constraint if exists chat_channel_categories_access_lists_valid,
+  drop column if exists who_can_see,
+  drop column if exists who_can_post;
+drop function if exists public.chat_channel_access_from_legacy(uuid, text, text[], boolean, boolean);
+drop function if exists public.chat_access_list_valid(text[]);
 ```

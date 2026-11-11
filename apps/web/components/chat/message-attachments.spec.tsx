@@ -591,3 +591,130 @@ describe("photo previews (2026-11-07)", () => {
     expect(image.style.backgroundImage).toBe("");
   });
 });
+
+/**
+ * #3879: a photo's box before the attachments read returns. The row used to
+ * draw one "Loading attachment…" line until the read landed, then grow to the
+ * photo's box, up to 256px, shifting every row above it. A message now
+ * carries each photo's size and blur (`metadata.attachment_photos`), and the
+ * pending state draws the box the loaded photo takes. jsdom has no layout, so
+ * these pin that the pending box and the loaded image get the same sizing
+ * and the same frame; same CSS, same height.
+ */
+describe("the box before the read returns (#3879)", () => {
+  const geometry = {
+    width: 2560,
+    height: 1920,
+    thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI",
+  };
+  const loaded = attachment({
+    id: "att-photo",
+    filename: "IMG_1.jpg",
+    content_type: "image/jpeg",
+    width: 2560,
+    height: 1920,
+    thumbhash: geometry.thumbhash,
+    preview_url: "https://storage.test/signed/preview.jpg",
+    download_url: "https://storage.test/signed/IMG_1.jpg",
+  });
+
+  type Photo = {
+    width: number | null;
+    height: number | null;
+    thumbhash: string | null;
+  };
+
+  function rowWith(photos: Photo[] | undefined, count = 1) {
+    return (
+      <MessageAttachments
+        channelId="chan-1"
+        messageId="msg-1"
+        count={count}
+        photos={photos}
+      />
+    );
+  }
+
+  it("draws a sized photo's box, with its blur, while the read is out", () => {
+    render(rowWith([geometry]));
+
+    expect(screen.queryByText("Loading attachment…")).toBeNull();
+    const box = screen.getByTestId("attachment-photo-box");
+    expect(box.style.aspectRatio).toBe("2560 / 1920");
+    expect(box.style.width).toBe(`${(256 * 2560) / 1920}px`);
+    expect(box.style.backgroundImage).toBe('url("data:image/png;base64,BLUR")');
+    expect(screen.getByRole("list")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("takes the loaded photo's size, frame and list, so the row does not grow", () => {
+    const { rerender } = render(rowWith([geometry]));
+    const box = screen.getByTestId("attachment-photo-box");
+    const pending = {
+      width: box.style.width,
+      aspectRatio: box.style.aspectRatio,
+      tag: box.tagName,
+      className: box.className,
+      frame: box.parentElement!.className,
+      list: screen.getByRole("list").className,
+    };
+
+    hookState.result = { isPending: false, isError: false, data: [loaded] };
+    rerender(rowWith([geometry]));
+    const image = screen.getByRole("img", { name: "IMG_1.jpg" });
+
+    expect(image.style.width).toBe(pending.width);
+    expect(image.style.aspectRatio).toBe(pending.aspectRatio);
+    // An image like the loaded one, with the same sizing classes: a span
+    // with the same CSS did not shrink with a narrow column, measured in
+    // Chromium.
+    // Compared as sets both ways: a class dropped from either side (the
+    // pending box's `max-w-full`, the frame's 2px border) is a shift.
+    const classes = (names: string) => [...new Set(names.split(" "))].sort();
+    expect(pending.tag).toBe("IMG");
+    expect(classes(pending.className)).toEqual(classes(image.className));
+    const loadedFrame = classes(image.parentElement!.className);
+    for (const c of ["block", "overflow-hidden", "rounded-md", "border"]) {
+      expect(loadedFrame).toContain(c);
+    }
+    expect(classes(pending.frame)).toEqual(
+      loadedFrame.filter((c) => classes(pending.frame).includes(c)),
+    );
+    expect(classes(pending.frame)).toEqual(
+      classes("block overflow-hidden rounded-md border border-transparent"),
+    );
+    expect(screen.getByRole("list").className).toBe(pending.list);
+  });
+
+  it("draws the files beside the photos as chips, the height of a loaded one", () => {
+    render(rowWith([geometry], 3));
+
+    expect(screen.getAllByTestId("attachment-photo-box")).toHaveLength(1);
+    const chips = screen.getAllByTestId("attachment-file-chip");
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) {
+      for (const c of ["border", "px-2", "py-1.5", "text-caption"]) {
+        expect(chip).toHaveClass(c);
+      }
+    }
+  });
+
+  it("can't reserve an unsized photo, and says it is loading", () => {
+    render(rowWith([{ width: null, height: null, thumbhash: null }]));
+
+    expect(screen.queryByTestId("attachment-photo-box")).toBeNull();
+    expect(screen.getByText("Loading photo…")).toBeInTheDocument();
+  });
+
+  it("draws an older message, with no geometry, as it always did", () => {
+    render(rowWith(undefined));
+
+    expect(screen.getByText("Loading attachment…")).toBeInTheDocument();
+    expect(screen.queryByTestId("attachments-pending")).toBeNull();
+  });
+
+  it("ignores geometry that claims more photos than the message has files", () => {
+    render(rowWith([geometry, geometry], 1));
+
+    expect(screen.getByText("Loading attachment…")).toBeInTheDocument();
+  });
+});

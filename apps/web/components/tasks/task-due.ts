@@ -1,4 +1,4 @@
-import { formatDay, formatDueLabel } from "@repo/formatting";
+import { formatDueLabel, formatDueOn } from "@repo/formatting";
 import type { TaskStatus } from "@repo/hooks";
 
 /**
@@ -15,16 +15,22 @@ import type { TaskStatus } from "@repo/hooks";
  * line rather than printing a placeholder.
  */
 export function taskDueClause(
-  task: { due_date: string | null | undefined; status: TaskStatus },
+  task: {
+    due_date: string | null | undefined;
+    due_at?: string | null;
+    status: TaskStatus;
+  },
   now: Date = new Date(),
 ): { text: string; overdue: boolean } | null {
-  const label = formatDueLabel(task.due_date, now);
+  // A task due at a time counts down to that minute (#4003).
+  const due = task.due_at ?? task.due_date;
+  const label = formatDueLabel(due, now);
   if (!label) return null;
   const pastDue = label.startsWith("Overdue");
   if (task.status === "COMPLETED") {
     if (!pastDue) return { text: label, overdue: false };
-    const day = formatDay(task.due_date, now);
-    return day ? { text: `Due ${day}`, overdue: false } : null;
+    const on = formatDueOn(due, now);
+    return on ? { text: on, overdue: false } : null;
   }
   return { text: label, overdue: pastDue || task.status === "OVERDUE" };
 }

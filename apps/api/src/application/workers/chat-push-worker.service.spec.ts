@@ -21,6 +21,7 @@ import {
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { RbacService } from '../services/rbac.service';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { ChatBlockService } from '../services/chat-block.service';
 import {
   ChannelCacheService,
@@ -41,6 +42,7 @@ describe('ChatPushWorkerService', () => {
   let findByChapter: jest.Mock;
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
+  let getChapterMemberAccess: jest.Mock;
   let filterOutBlockers: jest.Mock;
   let findDisplayIdentitiesByIds: jest.Mock;
   let claim: jest.Mock;
@@ -61,7 +63,8 @@ describe('ChatPushWorkerService', () => {
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
   } satisfies CachedChannelRow;
 
   const ANNOUNCEMENT_CHANNEL = {
@@ -88,6 +91,7 @@ describe('ChatPushWorkerService', () => {
     // `__setChannelForTest`, so the read never runs for them.
     findPushRouting = jest.fn().mockResolvedValue(null);
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
+    getChapterMemberAccess = jest.fn().mockResolvedValue([]);
     // Default: nobody has blocked the sender. Answered from the recipients
     // actually passed in rather than a fixed array, for the reason `setPrefs`
     // gives below — a static answer would stay green if the worker started
@@ -151,7 +155,7 @@ describe('ChatPushWorkerService', () => {
         { provide: CHAT_PUSH_DISPATCH_REPOSITORY, useValue: dispatches },
         {
           provide: RbacService,
-          useValue: { getEffectivePermissions },
+          useValue: { getEffectivePermissions, getChapterMemberAccess },
         },
         {
           provide: ChatBlockService,
@@ -771,7 +775,8 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     });
     setMembers(['alice', 'bob', 'carol']);
 
@@ -799,7 +804,8 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     });
     setMembers(['alice', 'bob', 'carol']);
 
@@ -816,7 +822,7 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['bob']);
   });
 
-  it('gates a ROLE_GATED channel on the recipient holding the permission', async () => {
+  it('gates a channel with a who-can-see list on the recipient holding an entry in it', async () => {
     service.__setChannelForTest({
       id: 'ch-exec',
       chapter_id: 'chap-1',
@@ -825,12 +831,19 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'ROLE_GATED',
       member_ids: null,
-      required_permissions: ['exec:view'],
+      who_can_see: ['tier:00000000-0000-4000-8000-0000000000e1'],
+      who_can_post: null,
     });
     setMembers(['sender', 'officer', 'pledge']);
-    getEffectivePermissions.mockImplementation(async (_chap, uid) =>
-      uid === 'officer' ? ['exec:view'] : [],
-    );
+    const exec = {
+      ...EMPTY_ACCESS_HOLDER,
+      entries: new Set(['tier:00000000-0000-4000-8000-0000000000e1']),
+    };
+    getChapterMemberAccess.mockResolvedValue([
+      { user_id: 'sender', channel_access: exec },
+      { user_id: 'officer', channel_access: exec },
+      { user_id: 'pledge', channel_access: EMPTY_ACCESS_HOLDER },
+    ]);
 
     await service.handleMessage({
       id: 'm1',

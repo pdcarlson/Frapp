@@ -18,6 +18,8 @@ function channel(over: Partial<ChatChannel> = {}): ChatChannel {
     description: null,
     type: 'PUBLIC',
     required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
     member_ids: null,
     category_id: null,
     is_read_only: false,

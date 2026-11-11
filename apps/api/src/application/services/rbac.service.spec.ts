@@ -1,3 +1,4 @@
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -17,7 +18,6 @@ import {
   SystemPermissions,
   SystemRoleKeys,
 } from '#domain/constants/permissions';
-import { CustomRoleService } from './custom-role.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
   createAuditLogServiceMock,
@@ -39,7 +39,6 @@ describe('RbacService', () => {
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
-  let mockCustomRoleService: { findByIds: jest.Mock; findByChapter: jest.Mock };
   let mockChapterAuditLogService: AuditLogServiceMock;
 
   beforeEach(async () => {
@@ -81,11 +80,6 @@ describe('RbacService', () => {
       update: jest.fn(),
     };
 
-    mockCustomRoleService = {
-      findByIds: jest.fn().mockResolvedValue([]),
-      findByChapter: jest.fn().mockResolvedValue([]),
-    };
-
     mockChapterAuditLogService = createAuditLogServiceMock();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -94,7 +88,6 @@ describe('RbacService', () => {
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
-        { provide: CustomRoleService, useValue: mockCustomRoleService },
         {
           provide: ChapterAuditLogService,
           useValue: mockChapterAuditLogService,
@@ -1337,13 +1330,9 @@ describe('RbacService', () => {
   });
 
   describe('getEffectivePermissions', () => {
-    const buildMember = (
-      role_ids: string[],
-      custom_role_ids: string[] = [],
-    ): Member =>
+    const buildMember = (role_ids: string[]): Member =>
       memberFixture({
         role_ids,
-        custom_role_ids,
         has_completed_onboarding: true,
       });
 
@@ -1446,120 +1435,6 @@ describe('RbacService', () => {
 
       const result = await service.getEffectivePermissions('ch-1', 'user-1');
 
-      expect(result).toEqual([]);
-    });
-
-    // Bridge model (spec/behavior/rbac.md): custom-role capabilities flatten
-    // into the same effective set as live-role permissions.
-    it('includes custom-role capabilities alongside live-role permissions', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
-        buildMember(['role-a'], ['custom-1']),
-      );
-      mockRoleRepo.findByIds.mockResolvedValue([
-        buildRole('role-a', [SystemPermissions.MEMBERS_VIEW]),
-      ]);
-      mockCustomRoleService.findByIds.mockResolvedValue([
-        {
-          id: 'custom-1',
-          chapter_id: 'ch-1',
-          key: 'social_chair',
-          label: 'Social Chair',
-          rank: 5,
-          capabilities: [
-            SystemPermissions.EVENTS_CREATE,
-            SystemPermissions.EVENTS_UPDATE,
-          ],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-      ]);
-
-      const result = await service.getEffectivePermissions('ch-1', 'user-1');
-
-      expect(mockCustomRoleService.findByIds).toHaveBeenCalledWith(
-        ['custom-1'],
-        'ch-1',
-      );
-      expect(result).toEqual(
-        [
-          SystemPermissions.EVENTS_CREATE,
-          SystemPermissions.EVENTS_UPDATE,
-          SystemPermissions.MEMBERS_VIEW,
-        ].sort(),
-      );
-    });
-
-    it('resolves capabilities for a member holding only custom roles', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
-        buildMember([], ['custom-1']),
-      );
-      mockCustomRoleService.findByIds.mockResolvedValue([
-        {
-          id: 'custom-1',
-          chapter_id: 'ch-1',
-          key: 'historian',
-          label: 'Historian',
-          rank: 9,
-          capabilities: [SystemPermissions.CHAPTER_DOCS_UPLOAD],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-      ]);
-
-      const result = await service.getEffectivePermissions('ch-1', 'user-1');
-
-      expect(result).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
-      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
-    });
-
-    it('drops the wildcard from custom-role capabilities (pre-validation data)', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
-        buildMember([], ['custom-evil']),
-      );
-      mockCustomRoleService.findByIds.mockResolvedValue([
-        {
-          id: 'custom-evil',
-          chapter_id: 'ch-1',
-          key: 'shadow_president',
-          label: 'Shadow President',
-          rank: 0,
-          capabilities: [
-            SystemPermissions.WILDCARD,
-            SystemPermissions.MEMBERS_VIEW,
-          ],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-      ]);
-
-      const result = await service.getEffectivePermissions('ch-1', 'user-1');
-
-      // Only the live President role may carry `*`; a custom role must never
-      // mint a second wildcard holder outside the presidency-transfer flow.
-      expect(result).toEqual([SystemPermissions.MEMBERS_VIEW]);
-
-      const granted = await service.memberHasAnyPermission('ch-1', 'user-1', [
-        SystemPermissions.BILLING_MANAGE,
-      ]);
-      expect(granted).toBe(false);
-    });
-
-    it('scopes custom-role resolution to the chapter so a foreign id grants nothing', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
-        buildMember([], ['custom-foreign']),
-      );
-      // The chapter-scoped lookup drops the cross-chapter id.
-      mockCustomRoleService.findByIds.mockResolvedValue([]);
-
-      const result = await service.getEffectivePermissions('ch-1', 'user-1');
-
-      expect(mockCustomRoleService.findByIds).toHaveBeenCalledWith(
-        ['custom-foreign'],
-        'ch-1',
-      );
       expect(result).toEqual([]);
     });
   });
@@ -1750,16 +1625,11 @@ describe('RbacService', () => {
         display_order: 10,
       });
 
-    const member = (
-      user_id: string,
-      role_ids: string[],
-      custom_role_ids: string[] = [],
-    ): Member =>
+    const member = (user_id: string, role_ids: string[]): Member =>
       memberFixture({
         id: `member-${user_id}`,
         user_id,
         role_ids,
-        custom_role_ids,
         has_completed_onboarding: true,
       });
 
@@ -1787,60 +1657,11 @@ describe('RbacService', () => {
       expect(result.sort()).toEqual(['user-mod', 'user-president']);
       expect(mockMemberRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(mockRoleRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(mockCustomRoleService.findByChapter).toHaveBeenCalledWith('ch-1');
     });
 
     it('is all-of: holding only one required permission is not enough', async () => {
       mockMemberRepo.findByChapter.mockResolvedValue([
         member('user-manage-only', ['role-manage-only']),
-      ]);
-
-      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
-
-      expect(result).toEqual([]);
-    });
-
-    it('combines live roles and custom-role capabilities, as the guard does', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        member('user-bridge', ['role-member'], ['custom-mod']),
-      ]);
-      mockCustomRoleService.findByChapter.mockResolvedValue([
-        {
-          id: 'custom-mod',
-          chapter_id: 'ch-1',
-          key: 'moderator',
-          label: 'Moderator',
-          rank: 5,
-          capabilities: [SystemPermissions.CHANNELS_MANAGE],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-      ]);
-
-      const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
-
-      expect(result).toEqual(['user-bridge']);
-    });
-
-    it('never honours a wildcard carried by a custom role', async () => {
-      // `flattenPermissionSets` drops `*` from custom roles so pre-validation
-      // data cannot mint a second President; the roster walk must agree.
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        member('user-custom-star', [], ['custom-star']),
-      ]);
-      mockCustomRoleService.findByChapter.mockResolvedValue([
-        {
-          id: 'custom-star',
-          chapter_id: 'ch-1',
-          key: 'legacy',
-          label: 'Legacy',
-          rank: 5,
-          capabilities: ['*'],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
       ]);
 
       const result = await service.findUserIdsWithPermissions('ch-1', REQUIRED);
@@ -1916,6 +1737,67 @@ describe('RbacService', () => {
     });
   });
 
+  describe('getChannelAccessHolder (#3722)', () => {
+    const TIER = '00000000-0000-4000-8000-0000000000e1';
+
+    it('holds each role, its tier, and marks the Alumni role and the wildcard', async () => {
+      mockRoleRepo.findByIds.mockResolvedValue([
+        roleFixture({ id: 'r-officer', chapter_id: 'ch-1', tier_id: TIER }),
+        roleFixture({
+          id: 'r-alumni',
+          chapter_id: 'ch-1',
+          system_key: 'ALUMNI',
+          tier_id: null,
+        }),
+        roleFixture({ id: 'r-pres', chapter_id: 'ch-1', permissions: ['*'] }),
+      ]);
+
+      const holder = await service.getChannelAccessHolder('ch-1', [
+        'r-officer',
+        'r-alumni',
+        'r-pres',
+      ]);
+
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
+        ['r-officer', 'r-alumni', 'r-pres'],
+        'ch-1',
+      );
+      expect(holder.entries).toEqual(
+        new Set([
+          'role:r-officer',
+          `tier:${TIER}`,
+          'role:r-alumni',
+          'role:r-pres',
+        ]),
+      );
+      expect(holder.wildcard).toBe(true);
+      expect(holder.alumniEntries).toEqual(new Set(['role:r-alumni']));
+    });
+
+    it('drops a role the repository returns from another chapter', async () => {
+      mockRoleRepo.findByIds.mockResolvedValue([
+        roleFixture({
+          id: 'r-foreign',
+          chapter_id: 'ch-2',
+          permissions: ['*'],
+        }),
+      ]);
+
+      const holder = await service.getChannelAccessHolder('ch-1', [
+        'r-foreign',
+      ]);
+
+      expect(holder).toEqual(EMPTY_ACCESS_HOLDER);
+    });
+
+    it('reads nothing for a member with no roles', async () => {
+      await expect(service.getChannelAccessHolder('ch-1', [])).resolves.toBe(
+        EMPTY_ACCESS_HOLDER,
+      );
+      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getChapterMemberAccess', () => {
     const role = (
       id: string,
@@ -1954,13 +1836,41 @@ describe('RbacService', () => {
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
           top_role_order: 2,
           top_role: { id: 'role-officer', name: 'role-role-officer' },
+          channel_access: {
+            entries: new Set(['role:role-member', 'role:role-officer']),
+            wildcard: false,
+            alumniEntries: null,
+          },
         },
         {
           user_id: 'user-none',
           permissions: new Set(),
           top_role_order: null,
           top_role: null,
+          channel_access: EMPTY_ACCESS_HOLDER,
         },
+      ]);
+    });
+
+    // `role_ids` isn't foreign-keyed; the per-member read and the database
+    // match an uppercase id, so the push audience must too.
+    it('matches a role id stored in uppercase', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([role('role-officer', 2)]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-1',
+          role_ids: ['ROLE-OFFICER', 'role-officer'],
+        }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({
+        id: 'role-officer',
+        name: 'role-role-officer',
+      });
+      expect([...(entry?.channel_access.entries ?? [])]).toEqual([
+        'role:role-officer',
       ]);
     });
 
@@ -1979,6 +1889,8 @@ describe('RbacService', () => {
         permissions: new Set(),
         top_role_order: null,
         top_role: null,
+        // A foreign role's `*` must not pass a channel's lists either.
+        channel_access: EMPTY_ACCESS_HOLDER,
       });
     });
 
@@ -2003,6 +1915,11 @@ describe('RbacService', () => {
           ]),
           top_role_order: 1,
           top_role: { id: 'role-b', name: 'role-role-b' },
+          channel_access: {
+            entries: new Set(['role:role-a', 'role:role-b']),
+            wildcard: false,
+            alumniEntries: null,
+          },
         },
       ]);
     });

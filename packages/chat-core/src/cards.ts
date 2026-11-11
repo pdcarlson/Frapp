@@ -101,6 +101,7 @@ export function readTaskPayload(message: ChatMessage): TaskPayload | null {
       typeof r.assignee_user_id === "string" ? r.assignee_user_id : "",
     assignee_name: r.assignee_name,
     due_date: r.due_date,
+    due_at: typeof r.due_at === "string" ? r.due_at : null,
     status: "TODO",
     point_reward: finiteNumber(r.point_reward),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
