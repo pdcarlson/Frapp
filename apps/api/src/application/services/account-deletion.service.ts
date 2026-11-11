@@ -116,8 +116,8 @@ export class AccountDeletionService {
     if (!tombstone) throw new NotFoundException('User not found');
 
     // Account deletion is the other orphaning cause spec/behavior/rbac.md's
-    // Presidency Transfer "Edge case" names (the first is MemberService.remove
-    // via members:remove). Best-effort, per chapter (see
+    // Presidency Transfer "Edge case" names (the first is MemberService.remove,
+    // which since 2026-11-11 only another `*` holder can aim at a President). Best-effort, per chapter (see
     // flagOrphanedPresidencies): erasure must complete even if this
     // bookkeeping step fails — there is no equivalent of the report sweep's
     // independent backstop for it, but blocking a right-to-erasure request on

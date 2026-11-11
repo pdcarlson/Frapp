@@ -9,6 +9,7 @@
     "./channel-start": "./src/channel-start.ts",
     "./field-reveal": "./src/field-reveal.ts",
     "./error-copy": "./src/error-copy.ts",
+    "./member-removal-copy": "./src/member-removal-copy.ts",
     "./activity-rows": "./src/activity-rows.ts",
     "./event-series": "./src/event-series.ts",
     "./calendar-tasks": "./src/calendar-tasks.ts",

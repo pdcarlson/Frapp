@@ -46,7 +46,17 @@ describe("selectMemberDetail", () => {
       ],
       pledgeClassId: null,
       orderNumber: null,
+      canRemove: false,
     });
+  });
+
+  it("carries the API's viewer_can_remove, and only a literal true", () => {
+    expect(
+      selectMemberDetail(profile({ viewer_can_remove: true }))?.canRemove,
+    ).toBe(true);
+    expect(
+      selectMemberDetail(profile({ viewer_can_remove: "true" }))?.canRemove,
+    ).toBe(false);
   });
 
   it("carries the member's pledge class and order number when set (#3939)", () => {

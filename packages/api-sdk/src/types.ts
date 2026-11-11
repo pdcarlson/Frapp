@@ -4686,6 +4686,8 @@ export interface components {
             is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
+            /** @description Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads. */
+            viewer_can_remove?: boolean;
         };
         MemberRosterEntryDto: {
             /** @description users.id — the id chat carries as sender_id */

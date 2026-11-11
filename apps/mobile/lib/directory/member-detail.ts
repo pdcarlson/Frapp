@@ -57,6 +57,12 @@ export interface MemberDetail {
   /** The member's pledge class and order number (#3939), each `null` when unset. */
   pledgeClassId: string | null;
   orderNumber: number | null;
+  /**
+   * The API's `viewer_can_remove`: whether this viewer may remove this member
+   * from the chapter (`members:remove`, not their own profile, and the member
+   * ranks below them). `false` when the read doesn't say.
+   */
+  canRemove: boolean;
 }
 
 export function selectMemberDetail(data: unknown): MemberDetail | null {
@@ -86,6 +92,7 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     customFields: parseCustomFields(data.custom_fields),
     pledgeClassId: str(data, "pledge_class_id"),
     orderNumber: num(data, "order_number"),
+    canRemove: data.viewer_can_remove === true,
   };
 }
 

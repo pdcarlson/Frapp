@@ -2,7 +2,12 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, MessageSquare, Trash2 } from "lucide-react";
+import {
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  UserMinus,
+} from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
@@ -28,6 +33,13 @@ import { chatDeepLink } from "@/lib/chat/chat-links";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetTitle } from "@/components/ui/sheet";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
@@ -39,8 +51,17 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
+import {
+  memberMenuButtonLabel,
+  REMOVE_CONFIRM_BODY,
+  REMOVE_FROM_CHAPTER_LABEL,
+  removeConfirmTitle,
+} from "@repo/hooks/member-removal-copy";
 import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
-import { DETAIL_LIST, DetailRow } from "@/components/members/member-detail-rows";
+import {
+  DETAIL_LIST,
+  DetailRow,
+} from "@/components/members/member-detail-rows";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 
 type MemberRecord = Record<string, unknown>;
@@ -230,8 +251,15 @@ function RoleChip({ chip }: { chip: MemberRoleChip }) {
  * (the gate on `PATCH /v1/members/{id}/roles`) also gets Edit, which swaps the
  * chips for the checklists and puts Save and Cancel in the footer; this is how
  * an officer changes a member's roles from chat without leaving it (tester
- * report on #3726). **Remove member** sits in the footer for a viewer holding
- * `members:remove`, and is absent for anyone else.
+ * report on #3726).
+ *
+ * **Remove from chapter** sits behind the `⋯` beside the close, never on the
+ * face of the profile (Paul, 2026-11-11: nobody opens a profile to remove
+ * someone, and it was drawn as a big red button on his own). The `⋯` is drawn
+ * only when the API says this viewer may remove this member
+ * (`viewer_can_remove`: `members:remove`, not their own profile, and the
+ * member ranks below them), so it is never on your own profile, and a chair
+ * never sees it on an officer's. It still asks before removing.
  *
  * **Pledge class and order number** (#3939) sit under the roles, in the
  * chapter's own words; `MemberPledgeClassSection` owns them.
@@ -352,8 +380,14 @@ export function MemberDetailSheet({
     !memberQuery.isError &&
     rolesQuery.isSuccess &&
     can("roles:manage", myPermissions);
+  // The API's answer, read from the profile itself (never the directory row
+  // that seeded the sheet, which carries none): it applies the rank rules the
+  // removal does, which the client can't see (#4071).
   const canRemove =
-    !!memberId && !memberQuery.isError && can("members:remove", myPermissions);
+    !!memberId &&
+    !memberQuery.isError &&
+    fetched?.viewer_can_remove === true &&
+    dmTargetUserId !== currentUserId;
 
   function startEditingRoles() {
     setSelectedRoleIds(memberRoleIds);
@@ -406,13 +440,12 @@ export function MemberDetailSheet({
   async function handleRemoveMember() {
     if (!memberId) return;
     // `confirmLabel` names the verb and its object rather than saying
-    // "Confirm" (`writing.md` §2), which also keeps it unambiguous next to the
-    // footer's "Remove member" trigger. Browser-chrome dialogs are banned on
-    // every surface (`design-system/README.md` §2).
+    // "Confirm" (`writing.md` §2). Browser-chrome dialogs are banned on every
+    // surface (`design-system/README.md` §2).
     const confirmed = await confirm({
-      title: `Remove ${displayName}?`,
-      description: "They can rejoin only with a new invite.",
-      confirmLabel: "Remove from chapter",
+      title: removeConfirmTitle(displayName),
+      description: REMOVE_CONFIRM_BODY,
+      confirmLabel: REMOVE_FROM_CHAPTER_LABEL,
       tone: "destructive",
     });
     if (!confirmed) return;
@@ -469,8 +502,6 @@ export function MemberDetailSheet({
     }
   }
 
-  const showFooter = editingRoles || canRemove;
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
@@ -480,10 +511,42 @@ export function MemberDetailSheet({
       */}
       <PanelContent aria-describedby={undefined}>
         {/*
-          The title row's band with no title in it: the close button
-          `SheetContent` draws sits here alone, and the name heads the body.
+          The title row's band with no title in it: the name heads the body.
+          The close button `SheetContent` draws sits at its end, and the `⋯`
+          beside it holds what a viewer only now and then reaches for
+          (components.md § Settings live a couple of taps away), never on the
+          profile's face. Absent when it would hold nothing.
         */}
-        <div aria-hidden="true" className="h-14 shrink-0" />
+        <div className="flex h-14 shrink-0 items-start justify-end py-[15px] pr-14">
+          {canRemove ? (
+            <div className="flex h-[26px] items-center">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <IconButton
+                    label={memberMenuButtonLabel(displayName)}
+                    className="text-muted-foreground"
+                    disabled={removeMemberMutation.isPending}
+                  >
+                    {removeMemberMutation.isPending ? (
+                      <Loader2 className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <MoreHorizontal aria-hidden="true" />
+                    )}
+                  </IconButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[220px]">
+                  <DropdownMenuItem
+                    onSelect={() => void handleRemoveMember()}
+                    className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
+                  >
+                    <UserMinus aria-hidden="true" />
+                    {REMOVE_FROM_CHAPTER_LABEL}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : null}
+        </div>
         {/* `gap-0`: the blocks below carry their own top margins. */}
         <PanelBody className="gap-0">
           <div className="flex flex-col items-center gap-2 text-center">
@@ -707,41 +770,24 @@ export function MemberDetailSheet({
           ) : null}
         </PanelBody>
 
-        {showFooter ? (
+        {editingRoles ? (
           <PanelFooter>
-            {editingRoles ? (
-              <>
-                <Button
-                  variant="secondary"
-                  onClick={() => setEditingUserId(null)}
-                  disabled={updateRolesMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveRoles}
-                  disabled={updateRolesMutation.isPending}
-                >
-                  {updateRolesMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Save roles
-                </Button>
-              </>
-            ) : (
-              <Button
-                variant="destructive"
-                onClick={handleRemoveMember}
-                disabled={removeMemberMutation.isPending}
-              >
-                {removeMemberMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                Remove member
-              </Button>
-            )}
+            <Button
+              variant="secondary"
+              onClick={() => setEditingUserId(null)}
+              disabled={updateRolesMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveRoles}
+              disabled={updateRolesMutation.isPending}
+            >
+              {updateRolesMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              Save roles
+            </Button>
           </PanelFooter>
         ) : null}
         {/*
