@@ -728,6 +728,7 @@ export function MessageItem({
         roleColorFor={roleColorFor}
         onPress={onOpenThread}
         align={align}
+        onImportantRow={flag?.important === true}
       />
     ) : null;
   const chrome = deliveryChrome(message);

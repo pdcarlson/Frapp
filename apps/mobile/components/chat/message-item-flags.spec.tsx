@@ -6,7 +6,9 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { messageFlagView } from "@repo/chat-core/flags";
 import type { BlockState } from "@repo/chat-core/blocks";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider } from "@/lib/theme";
+import { StyleSheet, Text } from "react-native";
+import { FrappThemeProvider, tint } from "@/lib/theme";
+import { AlertGlyph } from "@/components/control-glyphs";
 import { screenText } from "@/test/screen-text";
 import {
   resetChatDensityForTests,
@@ -133,6 +135,43 @@ describe("MessageItem flags (#3921)", () => {
     const [caption] = byTestId(tree, "message-flag");
     expect(caption?.props.accessibilityLabel).toBe(
       "Important · flagged by Marcus",
+    );
+  });
+
+  it("fills the row with the danger tint, a 2px bar and a red caption with its glyph", () => {
+    const tree = renderRow(message());
+    const style = StyleSheet.flatten(
+      byTestId(tree, "message-flag-important")[0]!.props.style,
+    );
+    expect(style.backgroundColor).toBe(
+      tint(signetDarkTokens.color.semantic.destructive),
+    );
+    expect(style.borderLeftWidth).toBe(2);
+    const [caption] = byTestId(tree, "message-flag");
+    expect(caption!.findAllByType(AlertGlyph)).toHaveLength(1);
+    const label = caption!.findAllByType(Text)[0]!;
+    expect(StyleSheet.flatten(label.props.style).color).toBe(
+      signetDarkTokens.color.semantic.destructiveText,
+    );
+  });
+
+  it("draws a thread's reply count in the foreground tone on an Important row", () => {
+    const thread = {
+      reply_count: 3,
+      last_reply_at: "2026-11-11T14:00:00.000Z",
+      recent_sender_ids: [],
+    };
+    const replies = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(Text)
+        .find((node) => node.props.children === "3 replies");
+    const important = renderRow(message({ thread }));
+    expect(StyleSheet.flatten(replies(important)!.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const plain = renderRow(message({ thread, flag: null, flagged_by: null }));
+    expect(StyleSheet.flatten(replies(plain)!.props.style).color).toBe(
+      "#C49A3A",
     );
   });
 

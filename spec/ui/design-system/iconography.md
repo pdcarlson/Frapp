@@ -273,7 +273,7 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 
 The verbs an icon-only control draws ([components.md § Icon-only
 actions](components.md#icon-only-actions)), plus share's companion mark for an
-invite link, live in one file,
+invite link and the alert mark on an Important chat message (#3921), live in one file,
 `apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
 same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
 size) unless a caller passes another size. Color comes from the surface: the
@@ -289,6 +289,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
+| Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 

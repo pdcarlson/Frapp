@@ -2399,3 +2399,77 @@ describe("message threads (#3785)", () => {
     act(() => audit.unmount());
   });
 });
+
+// The sheet's Flag row (#3921): offered where the viewer may change the
+// flag, reading the current flag live, and a refusal said aloud.
+describe("chat thread flags from the actions sheet", () => {
+  const openSheetOn = (tree: ReturnType<typeof render>, index = 0) => {
+    const row = rows(tree)[index]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Flag on an unflagged message and sends the pick", () => {
+    const flag = vi.fn(async () => {});
+    channel = channelState({ messages: [message("m1")], flag });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    expect(sheet.props.target.flag).toEqual({ current: null });
+    act(() =>
+      (sheet.props.onFlag as (id: string, f: string | null) => void)(
+        "m1",
+        "important",
+      ),
+    );
+    expect(flag).toHaveBeenCalledWith("m1", "important");
+    act(() => tree.unmount());
+  });
+
+  it("offers no Flag on someone else's flag, unless the viewer is an officer", () => {
+    const flagged = message("m1", {
+      flag: "important",
+      flagged_by: "someone-else",
+    });
+    channel = channelState({ messages: [flagged] });
+    let tree = render();
+    expect(openSheetOn(tree).props.target.flag).toBeUndefined();
+    act(() => tree.unmount());
+
+    permissionList = ["channels:manage"];
+    tree = render();
+    expect(openSheetOn(tree).props.target.flag).toEqual({
+      current: "important",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says so when the server refuses the flag", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    const flag = vi.fn(async () => {
+      throw new Error("This message’s flag changed just now.");
+    });
+    channel = channelState({ messages: [message("m1")], flag });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    await act(async () => {
+      (sheet.props.onFlag as (id: string, f: string | null) => void)(
+        "m1",
+        "funny",
+      );
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't flag message",
+      expect.any(String),
+    );
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+});

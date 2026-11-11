@@ -273,6 +273,7 @@ function ThreadMessageRowBody({
             nameFor={nameFor}
             roleColorFor={roleColorFor}
             onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
+            onImportantRow={flag?.important === true}
           />
         ) : null}
       </MessageRowFrame>
