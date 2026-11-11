@@ -97,6 +97,7 @@ import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -1034,6 +1035,8 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // What's new in the threads the viewer follows here, for each card (#4297).
+  const threadUnread = useThreadUnread(activeChannelId, channel.messages);
   // The top bar's connection pill says what this channel's realtime transport
   // is doing, folded with the app's own connection state, so the header no
   // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
@@ -3119,6 +3122,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
                   onReloadMasked={handleReloadMasked}
