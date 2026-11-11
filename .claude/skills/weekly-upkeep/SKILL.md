@@ -1,34 +1,37 @@
 ---
 name: weekly-upkeep
 description: >
-  Run the Weekly Upkeep routine (3 of 3): once a week, alternating weeks, either sweep a
-  slice of the docs (docs-upkeep) or fix one hygiene theme in the code (hygiene-scan), opening at
-  most one PR and never a second while one is open. Use when the scheduled "Weekly Upkeep" routine
-  fires.
+  Run the Weekly Upkeep routine (3 of 3): once a week, fix one hygiene theme in the code
+  (hygiene-scan), except on the first Wednesday of the month, which sweeps a slice of the docs
+  (docs-upkeep) instead; open at most one PR and never a second while one is open. Use when the
+  scheduled "Weekly Upkeep" routine fires.
 ---
 
 # Weekly Upkeep (routine 3 of 3)
 
 Until 2026-11-06 Docs Upkeep ran weekly and the Hygiene Scan daily. The scan opened one PR in a
-month and then sat behind it, so the two now share one weekly slot and alternate
-([ADR-16](../../../spec/architecture/adr/adr-16.md) amendment 11). The phase's skill owns the work;
-this skill owns which one runs, the open-PR rule, and the record.
+month and then sat behind it, so the two came to share one weekly slot, alternating
+([ADR-16](../../../spec/architecture/adr/adr-16.md) amendment 11). On 2026-11-11, after Shawn asked
+for regular code cleanup back, the owner gave the code the larger share: four people merge every
+day, so hygiene debt builds weekly. The phase's skill owns the
+work; this skill owns which one runs, the open-PR rule, and the record.
 
 ## This week's job
 
 ```sh
-echo $(( $(date -u +%s) / 604800 % 2 ))
+D=$(TZ=America/New_York date +%d); [ $(( 10#$D )) -le 7 ] && echo docs || echo hygiene
 ```
 
-- `1`: follow [`docs-upkeep`](../docs-upkeep/SKILL.md).
-- `0`: follow [`hygiene-scan`](../hygiene-scan/SKILL.md).
+- `docs`: the first Wednesday of the month (its day of the month is 7 or less). Follow
+  [`docs-upkeep`](../docs-upkeep/SKILL.md).
+- `hygiene`: every later Wednesday (day 8 or more). Follow [`hygiene-scan`](../hygiene-scan/SKILL.md).
 
-That is whole weeks since the Unix epoch, which start on Thursday 00:00 UTC, just before the
-scheduled fire (Wednesday 23:07 ET is Thursday in UTC). It counts straight through New Year, where
-ISO week numbers don't: 2026 has a week 53, so ISO-week parity would run the same phase twice in a
-row. A manual run before Thursday 00:00 UTC lands in the previous week and gets the other phase.
-Both skills derive their own slice from the calendar, and stepping 14 days still walks every one
-of their five groups (docs-upkeep's New Year skew aside).
+The day comes from the Eastern date, the zone the task is scheduled in, because the Wednesday
+23:07 ET fire is already Thursday in UTC, and a UTC day could tip the 7th into the 8th. `%d` is
+zero-padded, so parse it base 10 (`10#$D`), or `08` and `09` fail as octal. A manual run on another
+day uses the same rule: in the first seven days of the month it sweeps docs. Both phase skills
+derive their own slice from the calendar: the hygiene slice steps two groups a week, so five
+weekly runs still read all five groups, and the docs slice comes from the month.
 
 ## One upkeep PR at a time
 
