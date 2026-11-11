@@ -12,7 +12,7 @@ import type { Role } from '../entities/role.entity';
  * a list or the Alumni rule can decide, what the caller holds) and feed them
  * in here. Centralizing the rule prevents the layers from drifting apart,
  * which is how cross-tenant authorization holes appear. Its database twin is
- * `can_read_chat_channel` (migration 20261111230000).
+ * `can_read_chat_channel` (migration 20261111233000).
  *
  * Moved out of `@repo/validation` (#3268). The lists' entry spelling is still
  * shared from there (`channel-access-lists.ts`), so the editor and this
@@ -296,7 +296,7 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   if (operation === 'thread') return true;
 
   // A DM or group DM has no who-can-post list. A private channel does only
-  // when someone made it read-only before #3722 (migration 20261111230000).
+  // when someone made it read-only before #3722 (migration 20261111233000).
   if (MEMBER_LIST_TYPES.has(channel.type) && channel.type !== 'PRIVATE') {
     return true;
   }

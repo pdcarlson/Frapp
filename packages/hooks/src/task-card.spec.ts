@@ -17,6 +17,7 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     status: "TODO",
     stored_status: "TODO",
     points_awarded: false,
+    subtasks: [],
     ...overrides,
   };
 }

@@ -9077,6 +9077,171 @@
         ]
       }
     },
+    "/v1/tasks/{id}/subtasks": {
+      "post": {
+        "operationId": "TaskController_addSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskSubtaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSubtaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a subtask to the end of a task (#4003)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/subtasks/{subtaskId}": {
+      "patch": {
+        "operationId": "TaskController_updateSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtaskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskSubtaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSubtaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check off or uncheck a subtask (assignee or admin, #4003)",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "delete": {
+        "operationId": "TaskController_deleteSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtaskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a subtask (#4003)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/pledge-classes": {
       "get": {
         "operationId": "PledgeClassController_list_v1",
@@ -18131,6 +18296,19 @@
             "type": "string",
             "description": "Due date (YYYY-MM-DD)"
           },
+          "due_at": {
+            "type": "string",
+            "description": "The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.",
+            "format": "date-time"
+          },
+          "subtasks": {
+            "description": "Subtasks, in order: a checklist of steps the assignee ticks off (#4003). Blank lines are dropped.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
@@ -18179,6 +18357,11 @@
           "due_date": {
             "type": "string",
             "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "status": {
             "type": "string",
@@ -18229,6 +18412,7 @@
           "assignee_id",
           "created_by",
           "due_date",
+          "due_at",
           "status",
           "point_reward",
           "points_awarded",
@@ -18263,6 +18447,73 @@
             "description": "Optional comment for rejection"
           }
         }
+      },
+      "CreateTaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "TaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number",
+            "description": "Order under the task, 0 first."
+          },
+          "done_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When it was checked off; null while it is still to do."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "chapter_id",
+          "title",
+          "position",
+          "done_at",
+          "created_at"
+        ]
+      },
+      "UpdateTaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "boolean",
+            "description": "True to check it off, false to uncheck it."
+          }
+        },
+        "required": [
+          "done"
+        ]
       },
       "PledgeClassDto": {
         "type": "object",
@@ -19194,6 +19445,12 @@
             "format": "date",
             "example": "2026-11-20"
           },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The moment it is due, when it has a time of day."
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -19264,6 +19521,7 @@
           "id",
           "title",
           "due_date",
+          "due_at",
           "status",
           "stored_status",
           "assignee_id",

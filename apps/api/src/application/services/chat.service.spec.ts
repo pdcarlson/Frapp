@@ -492,7 +492,7 @@ describe('ChatService', () => {
       });
 
       // A private channel made read-only before #3722 keeps its posters as a
-      // list (migration 20261111230000): an officer may clear it, not set one.
+      // list (migration 20261111233000): an officer may clear it, not set one.
       it('clears a read-only private channel and refuses setting one', async () => {
         const locked = {
           ...baseChannel,

@@ -8,7 +8,7 @@
  * rule (no NaN propagation) holds.
  */
 
-import { parseDueEntry } from "@repo/formatting";
+import { dueEntryFields, parseDueEntryWithTime } from "@repo/formatting";
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -37,6 +37,11 @@ export interface TaskArgs {
   assigneeToken: string;
   /** Due date as `YYYY-MM-DD` (validated calendar date). */
   dueDate: string;
+  /**
+   * The moment it is due when a time was typed (`fri 5pm`, #4003), as an ISO
+   * instant read in the device's zone; `null` for a date alone.
+   */
+  dueAt: string | null;
   /** Optional points awarded on confirmed completion; `null` when omitted. */
   pointReward: number | null;
 }
@@ -270,12 +275,14 @@ function parseIsoDate(token: string | undefined): string | null {
 }
 
 /**
- * A `/task` due date: what web's task forms read (#3928, `parseDueEntry`), so
- * `11/14`, `Friday` and `tomorrow` work with no year typed, the year being the
- * next time the date comes round. `YYYY-MM-DD` still reads as before.
+ * A `/task` due date: what web's task forms read (#3928,
+ * `parseDueEntryWithTime`), so `11/14`, `Friday` and `tomorrow` work with no
+ * year typed, the year being the next time the date comes round, and a time
+ * may go with it (`fri 5pm`, #4003). `YYYY-MM-DD` still reads as before.
+ * A bare number is never a time, so `fri 5` stays Friday worth 5 points.
  */
 function parseTaskDue(text: string, now: Date): string | null {
-  return parseIsoDate(text) ?? parseDueEntry(text, now);
+  return parseIsoDate(text) ?? parseDueEntryWithTime(text, now);
 }
 
 /**
@@ -345,7 +352,7 @@ export function parseTaskArgs(
   if (due === null) {
     return { ok: false, error: "Add a due date, like 11/14 or Friday" };
   }
-  const dueDate = due.date;
+  const { due_date: dueDate, due_at: dueAt = null } = dueEntryFields(due.date);
 
   let pointReward: number | null = null;
   if (due.pointsToken !== null) {
@@ -361,7 +368,7 @@ export function parseTaskArgs(
 
   return {
     ok: true,
-    value: { title, assigneeToken, dueDate, pointReward },
+    value: { title, assigneeToken, dueDate, dueAt, pointReward },
   };
 }
 

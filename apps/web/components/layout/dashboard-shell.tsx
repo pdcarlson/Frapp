@@ -227,6 +227,18 @@ export function DashboardShell({
     } else setAnimateOpen(true);
     setChatOpen(!chatOpen);
   }, [chatOpen]);
+  /*
+    The X in chat's channel header (#4223): closes chat and leaves the tool
+    page, which fills the row. The X goes with the panel, so focus moves to
+    the page rather than dropping to `<body>`, and Escape there still closes
+    the page.
+  */
+  const toolColumnRef = useRef<HTMLDivElement>(null);
+  const closeChatPanel = useCallback(() => {
+    if (!chatOpen) return;
+    toggleChat();
+    toolColumnRef.current?.focus();
+  }, [chatOpen, toggleChat]);
   const closeTool = useCallback(() => {
     setClosingTool(true);
     router.push("/chat");
@@ -553,6 +565,9 @@ export function DashboardShell({
                   <ChatPage
                     defaultMembersHidden={defaultMembersHidden}
                     toolBeside={hasTool}
+                    onClose={
+                      hasTool && split === true ? closeChatPanel : undefined
+                    }
                   />
                 ) : (
                   <ChatRouteSkeleton />
@@ -582,6 +597,7 @@ export function DashboardShell({
           */}
           {hasTool ? (
             <div
+              ref={toolColumnRef}
               data-tool-column=""
               onKeyDown={onToolKeyDown}
               // Focusable by click only, so a click on the page's blank space

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
 import { setAuth } from "../probe.mjs";
 
-// ─── Functional: who can see and post (20261111230000, #3722) ───────────────
+// ─── Functional: who can see and post (20261111233000, #3722) ───────────────
 //
 // Replay runs the backfill against an empty `chat_channels`, so replay alone
 // proves nothing about it. This tier seeds a chapter the way it looked before
@@ -23,7 +23,7 @@ import { setAuth } from "../probe.mjs";
 // of the whole file changing nothing.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: who can see and post (20261111230000) ===");
+console.log("\n=== Functional: who can see and post (20261111233000) ===");
 {
   const CH = "c3722000-0000-4000-8000-00000000000a";
   const T_EXEC = "c3722000-0000-4000-8000-0000000000e1";
@@ -45,7 +45,7 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261111230000_chat_channel_access_lists.sql",
+      "supabase/migrations/20261111233000_chat_channel_access_lists.sql",
     ),
     "utf8",
   );

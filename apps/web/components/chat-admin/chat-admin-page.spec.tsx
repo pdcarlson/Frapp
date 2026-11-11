@@ -1000,7 +1000,7 @@ describe("ChatAdminPage — who can see and post", () => {
     expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
   });
 
-  // Migration 20261111230000 gives a channel nobody but the President could
+  // Migration 20261111233000 gives a channel nobody but the President could
   // see an empty list, which the form can't build; renaming it still saves.
   it("saves a channel whose list was already empty", async () => {
     reads.channels = settled([

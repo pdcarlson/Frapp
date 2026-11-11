@@ -43,7 +43,7 @@ export interface ChannelAccessListsInput {
 
 /**
  * The columns a channel's access is written as: the lists, and the two old
- * columns kept equal to them (migration 20261111230000 checks both).
+ * columns kept equal to them (migration 20261111233000 checks both).
  */
 export type ChannelAccessColumns = Pick<
   ChatChannel,
@@ -155,7 +155,7 @@ export class ChannelAccessListService {
 
     if (!LISTED_TYPES.has(existing.type)) {
       // A private channel made read-only before #3722 keeps the roles that
-      // could post as a who-can-post list (migration 20261111230000). It can
+      // could post as a who-can-post list (migration 20261111233000). It can
       // be cleared, so everyone in it posts, but never set.
       if (
         existing.type === 'PRIVATE' &&

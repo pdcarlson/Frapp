@@ -17,9 +17,9 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
-import type { TaskStatus } from "@repo/hooks";
+import type { TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatWeekdayDay, nextUpLine } from "@repo/formatting";
+import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ import {
 } from "@repo/hooks";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
+import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
@@ -58,6 +59,10 @@ type Task = {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at?: string | null;
+  /** Its checklist, in order (#4003). */
+  subtasks?: TaskSubtask[];
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -210,9 +215,13 @@ export function TasksBoard() {
     recent.sort((a, b) => confirmedAt(b) - confirmedAt(a));
     for (const [, list] of grouped) {
       list.sort((a, b) => {
-        const aMs = new Date(a.due_date).getTime();
-        const bMs = new Date(b.due_date).getTime();
-        return aMs - bMs;
+        // By day, then by time within the day, a task with no time last
+        // (it is due by the end of the day).
+        const byDay = a.due_date.localeCompare(b.due_date);
+        if (byDay !== 0) return byDay;
+        const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
+        const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
+        return aMs === bMs ? 0 : aMs < bMs ? -1 : 1;
       });
     }
     return { columns: grouped, confirmed: recent };
@@ -504,6 +513,7 @@ export function TasksBoard() {
                           memberFallbackLabel(task.assignee_id)
                         }
                         myUserId={myUserId}
+                        canManage={canManage}
                         gate={gate}
                         lifecycleWritePending={lifecycleWritePending}
                         onChangeStatus={(next) => void changeStatus(task, next)}
@@ -545,6 +555,7 @@ export function TasksBoard() {
                   memberFallbackLabel(task.assignee_id)
                 }
                 myUserId={myUserId}
+                canManage={canManage}
                 gate={gate}
                 lifecycleWritePending={lifecycleWritePending}
                 onChangeStatus={(next) => void changeStatus(task, next)}
@@ -561,9 +572,7 @@ export function TasksBoard() {
               className="justify-self-start"
               onClick={() => setShowAllConfirmed((open) => !open)}
             >
-              {showAllConfirmed
-                ? "Show fewer"
-                : `Show all ${confirmed.length}`}
+              {showAllConfirmed ? "Show fewer" : `Show all ${confirmed.length}`}
             </Button>
           ) : null}
         </section>
@@ -578,6 +587,7 @@ function TaskTile({
   task,
   assigneeName,
   myUserId,
+  canManage,
   gate,
   lifecycleWritePending,
   onChangeStatus,
@@ -588,6 +598,8 @@ function TaskTile({
   task: Task;
   assigneeName: string;
   myUserId: string;
+  /** Holds `tasks:manage`: may check off and edit anyone's subtasks. */
+  canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
   onChangeStatus: (next: TaskStatus) => void;
@@ -611,6 +623,7 @@ function TaskTile({
   const cannotConfirm = isMine || viewerUnknown;
   const due = taskDueClause(task);
   const status = actionStatus(task);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
 
   return (
     <li className="rounded-[14px] border border-border p-3">
@@ -629,7 +642,11 @@ function TaskTile({
           <>
             <span
               className={due.overdue ? "text-destructive-text" : undefined}
-              title={formatWeekdayDay(task.due_date) ?? undefined}
+              title={
+                (task.due_at
+                  ? formatDayTime(task.due_at)
+                  : formatWeekdayDay(task.due_date)) ?? undefined
+              }
             >
               {due.text}
             </span>
@@ -637,10 +654,30 @@ function TaskTile({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {/* No `·` before it: its checklist icon separates it, the way
+            Todoist's sub-task count sits, so a wrapped line never starts or
+            ends on a dangling dot. */}
+        {task.subtasks && task.subtasks.length > 0 ? (
+          <TaskSubtasksToggle
+            subtasks={task.subtasks}
+            open={subtasksOpen}
+            onToggle={() => setSubtasksOpen((open) => !open)}
+          />
+        ) : null}
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
       </div>
+      {subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
+        <TaskSubtaskList
+          taskId={task.id}
+          subtasks={task.subtasks}
+          canCheck={isMine || canManage}
+          canEdit={canManage}
+          closed={task.points_awarded}
+          gate={gate}
+        />
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {/*
           The inline status controls are writes too

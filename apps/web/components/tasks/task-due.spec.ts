@@ -36,4 +36,23 @@ describe("taskDueClause", () => {
     expect(taskDueClause({ due_date: "", status: "TODO" }, NOW)).toBeNull();
     expect(taskDueClause({ due_date: null, status: "TODO" }, NOW)).toBeNull();
   });
+
+  it("counts down to a due time, and gives handed-in work its day and time (#4003)", () => {
+    const dueAt = new Date(NOW.getTime() + 3 * 60 * 60_000);
+    dueAt.setMinutes(0, 0, 0);
+    const open = taskDueClause(
+      { due_date: "2026-11-03", due_at: dueAt.toISOString(), status: "TODO" },
+      NOW,
+    );
+    expect(open?.text).toMatch(/^Due (today|tomorrow) at \d{1,2} (AM|PM)$/);
+    const late = taskDueClause(
+      {
+        due_date: "2026-11-03",
+        due_at: new Date(NOW.getTime() - 90 * 60_000).toISOString(),
+        status: "IN_PROGRESS",
+      },
+      NOW,
+    );
+    expect(late).toEqual({ text: "Overdue by 1 hour", overdue: true });
+  });
 });

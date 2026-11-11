@@ -2702,6 +2702,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/subtasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a subtask to the end of a task (#4003) */
+        post: operations["TaskController_addSubtask_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/subtasks/{subtaskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a subtask (#4003) */
+        delete: operations["TaskController_deleteSubtask_v1"];
+        options?: never;
+        head?: never;
+        /** Check off or uncheck a subtask (assignee or admin, #4003) */
+        patch: operations["TaskController_updateSubtask_v1"];
+        trace?: never;
+    };
     "/v1/pledge-classes": {
         parameters: {
             query?: never;
@@ -5768,6 +5803,13 @@ export interface components {
             assignee_id: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.
+             */
+            due_at?: string;
+            /** @description Subtasks, in order: a checklist of steps the assignee ticks off (#4003). Blank lines are dropped. */
+            subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
@@ -5788,6 +5830,8 @@ export interface components {
             created_by: string;
             /** Format: date */
             due_date: string;
+            /** Format: date-time */
+            due_at: string | null;
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
             point_reward: number | null;
@@ -5813,6 +5857,31 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
+        };
+        CreateTaskSubtaskDto: {
+            title: string;
+        };
+        TaskSubtaskDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            title: string;
+            /** @description Order under the task, 0 first. */
+            position: number;
+            /**
+             * Format: date-time
+             * @description When it was checked off; null while it is still to do.
+             */
+            done_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        UpdateTaskSubtaskDto: {
+            /** @description True to check it off, false to uncheck it. */
+            done: boolean;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -6170,6 +6239,11 @@ export interface components {
              * @example 2026-11-20
              */
             due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day.
+             */
+            due_at: string | null;
             /**
              * @description Display status: OVERDUE for an open task past its due date.
              * @enum {string}
@@ -12919,6 +12993,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_addSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskSubtaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_deleteSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                subtaskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_updateSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                subtaskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskSubtaskDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
             };
             /** @description Error */
             default: {

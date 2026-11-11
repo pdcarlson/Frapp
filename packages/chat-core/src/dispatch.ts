@@ -798,6 +798,7 @@ async function dispatchTask(
     title: parsed.value.title,
     assignee_id: member.user_id,
     due_date: parsed.value.dueDate,
+    due_at: parsed.value.dueAt ?? undefined,
     point_reward: parsed.value.pointReward ?? undefined,
   });
 }
@@ -809,6 +810,10 @@ export interface TaskInput {
   assignee_id: string;
   /** `YYYY-MM-DD`. */
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at?: string;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number;
 }
 
@@ -841,6 +846,8 @@ export async function postTask(
         description: input.description,
         assignee_id: input.assignee_id,
         due_date: input.due_date,
+        due_at: input.due_at,
+        subtasks: input.subtasks,
         point_reward: input.point_reward,
         channel_id: channelId,
         client_message_id: clientMessageId,

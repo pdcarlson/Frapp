@@ -319,7 +319,8 @@ describe("formatEventTime", () => {
 describe("formatDueDate", () => {
   it("names the near states explicitly", () => {
     expect(formatDueDate(at(2026, 6, 1), NOW)).toBe("Overdue");
-    expect(formatDueDate(at(2026, 7, 16, 23), NOW)).toBe("Due today");
+    // A timestamp is a task due at a time (#4003): today, it says when.
+    expect(formatDueDate(at(2026, 7, 16, 23), NOW)).toBe("Due at 11 PM");
     expect(formatDueDate(at(2026, 7, 17, 9), NOW)).toBe("Due tomorrow");
   });
 

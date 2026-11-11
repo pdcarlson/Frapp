@@ -120,13 +120,13 @@ alter table public.chat_channel_categories
   add column if not exists who_can_post text[];
 
 comment on column public.chat_channels.who_can_see is
-  'Who can see the channel: null is everyone in the chapter; a list holds tier:<id> and role:<id> entries. Null on PRIVATE, DM and GROUP_DM. See 20261111230000_chat_channel_access_lists.sql.';
+  'Who can see the channel: null is everyone in the chapter; a list holds tier:<id> and role:<id> entries. Null on PRIVATE, DM and GROUP_DM. See 20261111233000_chat_channel_access_lists.sql.';
 comment on column public.chat_channels.who_can_post is
-  'Who can post: null is everyone who can see it; a list holds tier:<id> and role:<id> entries. Null on DM and GROUP_DM, and on PRIVATE except one made read-only before this migration. See 20261111230000_chat_channel_access_lists.sql.';
+  'Who can post: null is everyone who can see it; a list holds tier:<id> and role:<id> entries. Null on DM and GROUP_DM, and on PRIVATE except one made read-only before this migration. See 20261111233000_chat_channel_access_lists.sql.';
 comment on column public.chat_channel_categories.who_can_see is
-  'What a new channel in this category copies for who can see it, and what a channel that matches it follows. See 20261111230000_chat_channel_access_lists.sql.';
+  'What a new channel in this category copies for who can see it, and what a channel that matches it follows. See 20261111233000_chat_channel_access_lists.sql.';
 comment on column public.chat_channel_categories.who_can_post is
-  'What a new channel in this category copies for who can post, and what a channel that matches it follows. See 20261111230000_chat_channel_access_lists.sql.';
+  'What a new channel in this category copies for who can post, and what a channel that matches it follows. See 20261111233000_chat_channel_access_lists.sql.';
 
 -- Every entry is a kind and a lowercase uuid. Groups (#4076) add their kind
 -- here.

@@ -207,7 +207,7 @@ describe('canAccessChannel', () => {
       expect(check(announcements, holding(roles.president), 'post')).toBe(true);
     });
 
-    // Migration 20261111230000 gives a private channel made read-only before
+    // Migration 20261111233000 gives a private channel made read-only before
     // #3722 the roles that could post there; its members still decide reads.
     it('a read-only private channel lets only its listed members post', () => {
       const locked = channel({

@@ -67,6 +67,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskSubtask,
   PledgeClass,
   EventType,
   PledgeClassAssignment,
@@ -163,6 +164,7 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
       rush_candidates: TableDefinition<RushCandidate>;
@@ -470,7 +472,7 @@ export interface Database {
         Returns: ChatChannelCategory[];
       };
       /**
-       * `20261111230000` (#3722). Sets a category's who-can-see and
+       * `20261111233000` (#3722). Sets a category's who-can-see and
        * who-can-post lists, and the same lists on every channel in it that
        * matched the category before, in one transaction. Returns the ids of
        * the channels that followed.

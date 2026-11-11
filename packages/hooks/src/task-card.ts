@@ -88,6 +88,8 @@ export interface LiveTask {
    */
   stored_status: TaskStatus | undefined;
   points_awarded: boolean;
+  /** Whether each subtask is done, in order (#4003); empty for none. */
+  subtasks: { done_at: string | null }[];
 }
 
 /**
@@ -118,6 +120,16 @@ export function readLiveTask(data: unknown): LiveTask | null {
     status: r.status,
     stored_status: isTaskStatus(r.stored_status) ? r.stored_status : undefined,
     points_awarded: r.points_awarded === true,
+    subtasks: Array.isArray(r.subtasks)
+      ? r.subtasks
+          .filter(
+            (row): row is Record<string, unknown> =>
+              !!row && typeof row === "object",
+          )
+          .map((row) => ({
+            done_at: typeof row.done_at === "string" ? row.done_at : null,
+          }))
+      : [],
   };
 }
 

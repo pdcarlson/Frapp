@@ -47,6 +47,8 @@ export interface SweepTaskRow {
   created_by: string;
   title: string;
   due_date: string;
+  /** Set only on a task due at a time of day (#4003). */
+  due_at?: string | null;
 }
 
 export interface SweepPollRow {
@@ -101,6 +103,14 @@ export interface IScheduledJobsRepository {
   findIncompleteTasksDueBetween(
     dueOnOrAfter: string,
     dueOnOrBefore: string,
+  ): Promise<SweepTaskRow[]>;
+  /**
+   * Open tasks due at a time of day whose `due_at` falls in `[from, to]`. The
+   * day-based read above leaves these out: they are reminded by the hour.
+   */
+  findIncompleteTimedTasksDueBetween(
+    from: Date,
+    to: Date,
   ): Promise<SweepTaskRow[]>;
   findExpiredPollsPendingNotice(
     expiredAfter: Date,

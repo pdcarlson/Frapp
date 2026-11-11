@@ -90,6 +90,7 @@ import {
 } from "@/lib/chat/members-panel";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
+import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -407,6 +408,7 @@ export function ChatShell({
   initialMessageId = null,
   defaultMembersHidden = false,
   toolBeside = false,
+  onClose,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
@@ -422,6 +424,13 @@ export function ChatShell({
    * comes back with chat alone.
    */
   toolBeside?: boolean;
+  /**
+   * Closes the chat panel and leaves the tool page beside it (#4223). The
+   * shell passes it only while chat sits beside a page from the side-by-side
+   * width up: alone, or below that width, there is nothing to close chat
+   * into, so the header draws no X.
+   */
+  onClose?: () => void;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -2845,6 +2854,9 @@ export function ChatShell({
                   : undefined
               }
             />
+            {onClose ? (
+              <PanelCloseButton label="Close chat" onClick={onClose} />
+            ) : null}
           </div>
         </header>
         {/*
@@ -3304,6 +3316,7 @@ export function ChatShell({
             <ThreadPanel
               key={threadRootId}
               className="absolute inset-0 z-10"
+              onClosePanel={onClose}
               channelId={activeChannel.id}
               channelName={activeChannel.name ?? null}
               rootId={threadRootId}
