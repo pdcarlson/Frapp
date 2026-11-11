@@ -35,11 +35,22 @@
  * notification with nothing failing. The shape is load-bearing; do not
  * "simplify" it to bare values.
  */
+import type { Href } from "expo-router";
+import { asRoute, openHref } from "../href";
 import { isRecord, str } from "../more/narrow";
 
 export interface NotificationTarget {
   pathname: string;
   params?: Record<string, string>;
+  /**
+   * A screen that must sit under this one on the stack, opened first. Only a
+   * message thread (#3785) has one: its channel. The thread screen only
+   * listens on the channel's realtime topic and never attaches it
+   * (`components/chat/message-thread-screen.tsx`, `realtime-resilience`
+   * rules 1 and 2), so a thread opened with nothing under it would get no live
+   * replies or typing, and its back would skip the channel (#4054).
+   */
+  under?: NotificationTarget;
 }
 
 /**
@@ -146,10 +157,49 @@ export function resolveNotificationTarget(data: unknown): NotificationTarget {
   const value = str(target, route.param);
   if (!value) return FALLBACK;
 
-  return {
+  const resolved: NotificationTarget = {
     pathname: route.pathname,
     params: { [route.as ?? route.param]: value },
   };
+
+  // A thread reply's push names its root too (`spec/behavior/chat/README.md`
+  // § Message threads → Notifications). The thread is the channel's route
+  // pushed again with the root, over the channel (#4054).
+  const threadRootId = screen === "chat" ? str(target, "threadRootId") : null;
+  if (!threadRootId) return resolved;
+  return {
+    pathname: route.pathname,
+    params: { channelId: value, threadRootId },
+    under: resolved,
+  };
+}
+
+/** The slice of expo-router's router `openNotificationTarget` calls. */
+type NotificationRouter = Parameters<typeof openHref>[0];
+
+/**
+ * Opens a resolved target, the screen it needs under it first.
+ *
+ * The screen under goes through `openHref`, so a thread push tapped while a
+ * channel is open replaces that channel as a channel push would, and the
+ * thread is then pushed over it. The thread itself is always pushed: its path
+ * is a channel's, so `openHref` would otherwise replace the channel it was just
+ * stacked on. Both calls run in one tick: expo-router queues them
+ * (`routingQueue`) and dispatches each against the root state the one before
+ * it left.
+ */
+export function openNotificationTarget(
+  router: NotificationRouter,
+  target: NotificationTarget,
+  currentPathname?: string,
+): void {
+  const href: Href = asRoute(notificationHref(target));
+  if (!target.under) {
+    openHref(router, href, currentPathname);
+    return;
+  }
+  openHref(router, asRoute(notificationHref(target.under)), currentPathname);
+  router.push(href);
 }
 
 /**

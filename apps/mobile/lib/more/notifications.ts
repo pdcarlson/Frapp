@@ -17,8 +17,8 @@
 import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
 import { isRecord, records, str } from "./narrow";
 import {
-  notificationHref,
   resolveNotificationTarget,
+  type NotificationTarget,
 } from "../notifications/targets";
 
 export interface NotificationRow {
@@ -34,9 +34,11 @@ export interface NotificationRow {
    * handler uses — an in-app tap and a notification tap name the same
    * destination, so they must not grow two rules. Never `null`: an
    * unrecognized target resolves to the notification list, which is where the
-   * member already is, so the row simply does not navigate away.
+   * member already is, so the row simply does not navigate away. Opened with
+   * `openNotificationTarget`, so a thread reply's row lands on the thread over
+   * its channel, as its push does (#4054).
    */
-  href: string;
+  target: NotificationTarget;
   /** Local clock time, e.g. `"4:00 PM"`. */
   time: string;
   createdAt: string;
@@ -146,7 +148,7 @@ function toRow(
     title,
     body: str(row, "body"),
     categoryLabel: categoryLabelFor(row.data),
-    href: notificationHref(resolveNotificationTarget(row.data)),
+    target: resolveNotificationTarget(row.data),
     time: (isToday ? formatTime(createdAt) : formatDay(createdAt, now)) ?? "",
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.

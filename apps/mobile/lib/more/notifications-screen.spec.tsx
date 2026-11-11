@@ -192,6 +192,32 @@ describe("Notifications row target", () => {
     act(() => row("About billing").props.onPress());
     expect(router.push).toHaveBeenCalledWith("/dues");
   });
+
+  it("opens a thread reply's thread over its channel (#4054)", () => {
+    inbox.data = [
+      {
+        ...read("n-thread", "chat"),
+        title: "About a thread",
+        data: {
+          target: { screen: "chat", channelId: "c1", threadRootId: "m1" },
+        },
+      },
+    ];
+    const router = vi.mocked(useRouter)();
+    vi.mocked(router.push).mockClear();
+    const tree = render();
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown as string) === "Pressable" &&
+        drawnText(node).includes("About a thread"),
+    );
+
+    act(() => row.props.onPress());
+    expect(vi.mocked(router.push).mock.calls).toEqual([
+      ["/chat-thread?channelId=c1"],
+      ["/chat-thread?channelId=c1&threadRootId=m1"],
+    ]);
+  });
 });
 
 /**
@@ -271,7 +297,7 @@ describe("Notification row press feedback", () => {
               title: "Dues reminder",
               body,
               categoryLabel: "Dues",
-              href: "/dues",
+              target: { pathname: "/dues" },
               time: "4:00 PM",
               createdAt: CREATED_AT.toISOString(),
               isUnread,
