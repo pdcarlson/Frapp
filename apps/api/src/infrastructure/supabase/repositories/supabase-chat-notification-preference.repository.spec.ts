@@ -553,6 +553,42 @@ describe('SupabaseChatNotificationPreferenceRepository — tenant scope', () => 
    * Pinned here rather than in `chat-notification-preference.service.spec.ts`,
    * where the repository is mocked and the filter chain is therefore invisible.
    */
+  it('deleteChapterLevel binds user, chapter and the chapter scope (#3840)', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deleteChapterLevel(USER_SHARED, CHAPTER_B),
+    );
+
+    const op = harness.ops.at(-1);
+    expect(op?.mode).toBe('delete');
+    const bound = Object.fromEntries(
+      (op?.filters ?? [])
+        .filter((f) => f.op === 'eq')
+        .map((f) => [f.column, f.value]),
+    );
+    // `scope` is what keeps "All messages" from deleting the member's channel
+    // mutes and kind overrides in the same chapter.
+    expect(bound).toEqual({
+      user_id: USER_SHARED,
+      chapter_id: CHAPTER_B,
+      scope: 'chapter',
+    });
+  });
+
+  it('upsertChapterLevel writes a chapter row with both keys null (#3840)', async () => {
+    const row = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.upsertChapterLevel(USER_SHARED, CHAPTER_B, 'mentions'),
+    );
+
+    expect(row).toMatchObject({
+      user_id: USER_SHARED,
+      chapter_id: CHAPTER_B,
+      scope: 'chapter',
+      scope_id: null,
+      scope_kind: null,
+      level: 'mentions',
+    });
+  });
+
   it('deleteKindLevel binds user, chapter and scope', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.deleteKindLevel(USER_SHARED, CHAPTER_B, 'system_audit'),

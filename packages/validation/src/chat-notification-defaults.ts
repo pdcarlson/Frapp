@@ -14,6 +14,50 @@
 export const CHAT_NOTIFICATION_LEVELS = ["all", "mentions", "off"] as const;
 export type ChatNotificationLevel = (typeof CHAT_NOTIFICATION_LEVELS)[number];
 
+/**
+ * A member's chapter-wide chat level (#3840), set in Settings → Notifications.
+ *
+ * - `all`: "All messages", each channel at its own default.
+ * - `mentions`: "Mentions and DMs only". Every ordinary channel acts as
+ *   `mentions` (a reply counts as a mention, #3844); DMs, group DMs and
+ *   the announcements channel keep notifying. A level the member set on one
+ *   channel still wins.
+ *
+ * No `off`: the owner dropped the switch that silenced all of chat on
+ * 2026-11-06 (`notification-categories.ts` says why), and quiet hours are how
+ * a member goes silent.
+ */
+export const CHAT_CHAPTER_LEVELS = ["all", "mentions"] as const;
+export type ChatChapterLevel = (typeof CHAT_CHAPTER_LEVELS)[number];
+
+/** The words both settings screens draw for each {@link ChatChapterLevel}. */
+export const CHAT_CHAPTER_LEVEL_OPTIONS: readonly {
+  level: ChatChapterLevel;
+  label: string;
+  description: string;
+}[] = [
+  {
+    level: "all",
+    label: "All messages",
+    description:
+      "Each channel notifies as it's set, #general for every message.",
+  },
+  {
+    level: "mentions",
+    label: "Mentions and DMs only",
+    description:
+      "Channels notify only when someone @mentions you or replies to you. DMs and announcements still notify.",
+  },
+];
+
+/** The short name for a level, as a settings row's value. */
+export function chatChapterLevelLabel(level: ChatChapterLevel): string {
+  return (
+    CHAT_CHAPTER_LEVEL_OPTIONS.find((option) => option.level === level)
+      ?.label ?? level
+  );
+}
+
 /** The channel fields the default reads. Structural, so any channel row fits. */
 export interface NotificationDefaultChannel {
   name: string;
