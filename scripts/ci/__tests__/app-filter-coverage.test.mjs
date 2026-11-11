@@ -164,7 +164,7 @@ describe("the mobile and API path filters list every file their specs read from 
       assert.match(
         text,
         new RegExp(
-          `^ {6}${name}: \\$\\{\\{ steps\\.apps\\.outputs\\.${name} == 'true' \\|\\| steps\\.filter\\.outputs\\.${app.reads} == 'true' \\}\\}$`,
+          `^ {6}${name}: \\$\\{\\{ steps\\.apps\\.outputs\\.${name} == 'true' \\|\\| steps\\.filter\\.outputs\\.${app.reads} == 'true' \\|\\| github\\.event\\.pull_request\\.changed_files > 3000 \\}\\}$`,
           "m",
         ),
       );
