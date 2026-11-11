@@ -9,6 +9,7 @@ import {
 import {
   AccessibilityInfo,
   Alert,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -292,7 +293,15 @@ export const MessageActionsSheet = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      present: () => menuRef.current?.present(),
+      // The keyboard goes first (#4142). gorhom lifts a sheet over the
+      // keyboard only for a focus inside the sheet (a `BottomSheetTextInput`),
+      // so with the composer focused the menu opened at the bottom of the
+      // screen, under the iOS keyboard, and only the scrim showed over the
+      // chat. Every other sheet in the thread closes the keyboard the same way.
+      present: () => {
+        Keyboard.dismiss();
+        menuRef.current?.present();
+      },
       // The picker too: it replaced the menu and acts on the same message.
       dismiss: () => {
         menuRef.current?.dismiss();

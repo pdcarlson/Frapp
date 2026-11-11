@@ -2,7 +2,7 @@
 import React, { createRef } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { AccessibilityInfo, Alert } from "react-native";
+import { AccessibilityInfo, Alert, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { SheetHeader } from "@/components/sheet-scaffold";
@@ -511,6 +511,30 @@ describe("MessageActionsSheet — quick reactions", () => {
     expect(onReact).toHaveBeenCalledWith("m4", "🎉");
     act(() => picker.props.onPick("🔥", true));
     expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+  });
+
+  it("closes the keyboard before it opens, so the menu isn't drawn under it (#4142)", () => {
+    const order: string[] = [];
+    const dismissKeyboard = vi
+      .spyOn(Keyboard, "dismiss")
+      .mockImplementation(() => order.push("keyboard"));
+    const handle = createRef<MessageActionsSheetHandle>();
+    act(() => {
+      create(
+        <FrappThemeProvider>
+          <MessageActionsSheet ref={handle} target={TARGET} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal"
+              ? { present: () => order.push("menu"), dismiss: vi.fn() }
+              : null,
+        },
+      );
+    });
+    act(() => handle.current?.present());
+    expect(order).toEqual(["keyboard", "menu"]);
+    dismissKeyboard.mockRestore();
   });
 
   it("draws no picks when the thread wires no reaction handlers", () => {
