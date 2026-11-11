@@ -1,11 +1,14 @@
-/** The API's cap on a custom role key (`ROLE_KEY_MAX_LENGTH`, custom-role.dto.ts). */
+/**
+ * The longest key `keyFromLabel` returns. It was the API's cap on a custom role
+ * key; custom roles went in #4075, and custom field keys keep it as a sane bound.
+ */
 const KEY_MAX_LENGTH = 64;
 
 /**
- * The key for a new custom role or custom field, derived from its name so the
+ * The key for a new custom field, derived from its name so the
  * officer never types one (principles.md P2.2): `"Pledge Educator"` becomes
  * `pledge_educator`, and a key the chapter already uses gets `_2`, `_3`, ….
- * Both APIs accept `^[a-z0-9_]+$`; a name with no letters or digits falls back
+ * The API accepts `^[a-z0-9_]+$`; a name with no letters or digits falls back
  * to `fallback`.
  */
 export function keyFromLabel(
