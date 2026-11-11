@@ -44,11 +44,7 @@ export function ActivitySummary({
         {nextLine ? <Text style={styles.next}>{nextLine}</Text> : null}
       </View>
       {summary.tiles.length > 0 ? (
-        <View
-          style={styles.tiles}
-          accessibilityLabel="Needs you by kind"
-          accessibilityRole="none"
-        >
+        <View style={styles.tiles}>
           {pairs(summary.tiles).map((pair) => (
             <View key={pair[0].id} style={styles.tileRow}>
               {pair.map((tile) => {
@@ -61,6 +57,14 @@ export function ActivitySummary({
                     // A section that could not be read is unknown, never 0.
                     accessibilityValue={{ text: tile.count ?? "Couldn't load" }}
                     accessibilityState={{ selected: pressed }}
+                    // A React Native view can't name a group of buttons the
+                    // way web names its tile group, so each tile says what
+                    // pressing it does.
+                    accessibilityHint={
+                      pressed
+                        ? "Shows everything again."
+                        : "Shows only these in the list below."
+                    }
                     onPress={() => onFilter(pressed ? "all" : tile.filter)}
                     onCard
                     testID={`activity-tile-${tile.id}`}

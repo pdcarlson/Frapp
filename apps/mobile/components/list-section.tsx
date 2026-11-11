@@ -54,11 +54,29 @@ export function SectionHeader({
   if (count == null)
     return <Text style={styles.sectionHeader}>{children}</Text>;
   return (
-    <View style={styles.sectionHeaderRow}>
+    // One element to a screen reader, "Needs you, 8", as the caption and its
+    // count were when the count was part of the caption's text.
+    <View
+      accessible
+      accessibilityLabel={`${children}, ${count}`}
+      style={styles.sectionHeaderRow}
+    >
       <Text style={styles.sectionHeader}>{children}</Text>
-      <Text style={styles.sectionHeaderCount}>{String(count)}</Text>
+      <SectionCount count={count} />
     </View>
   );
+}
+
+/**
+ * A section's count, drawn beside its heading as a separate muted number, the
+ * way web's `SectionLabel` draws it. {@link SectionHeader}'s `count` draws
+ * one; a smaller heading inside a section (Activity's "Now" and "Later")
+ * draws its own with this, so the count's tone and size live in one place.
+ */
+export function SectionCount({ count }: { count: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <Text style={styles.sectionHeaderCount}>{String(count)}</Text>;
 }
 
 /**

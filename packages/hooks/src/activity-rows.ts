@@ -507,8 +507,11 @@ export function activityGroups(
                 cap(ACTIVITY_NEEDS_YOU_LIMIT),
               ),
             ]
-          : part(
-              "all",
+          : // The lone part keeps the id of the side it holds, so a client
+            // that keys its Show all state by part id keeps it open when
+            // the other side empties (the last Now row acted on) or fills.
+            part(
+              needsNow.length > 0 ? "now" : "later",
               null,
               [...needsNow, ...needsLater],
               cap(ACTIVITY_NEEDS_YOU_LIMIT),

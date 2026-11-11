@@ -18,7 +18,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * floating button, which the sentence can point to instead.
  *
  * Errors and offline keep their cards (`state-block.tsx`), because there the
- * list really can't show anything.
+ * list really can't show anything. The one exception is a list that loaded
+ * but is missing a part: its line takes `tone="warning"` ("Couldn't load
+ * polls. Pull down to try again."), in the warning hue as web's note draws
+ * it, so a part that failed never reads as a part that's empty.
  */
 export function InlineNote({
   children,

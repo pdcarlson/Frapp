@@ -38,7 +38,7 @@ import {
 import { BACK_TO_MORE } from "@/components/back-row";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
-import { SectionHeader } from "@/components/list-section";
+import { SectionCount, SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
@@ -378,11 +378,14 @@ function GroupPart({
   return (
     <View>
       {part.label ? (
-        <View style={styles.partHeading}>
-          <Text accessibilityRole="header" style={styles.partLabel}>
-            {part.label}
-          </Text>
-          <Text style={styles.partCount}>{String(part.rows.length)}</Text>
+        <View
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={`${part.label}, ${part.rows.length}`}
+          style={styles.partHeading}
+        >
+          <Text style={styles.partLabel}>{part.label}</Text>
+          <SectionCount count={part.rows.length} />
         </View>
       ) : null}
       {rows.map((row, index) => {
@@ -436,11 +439,6 @@ function createStyles(tokens: SignetTokens) {
         weight: tokens.typography.weight.semibold,
       }),
       color: tokens.color.text.mutedForeground,
-    },
-    partCount: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      fontVariant: ["tabular-nums"],
     },
     // The touch floor, with the text on the gutter line.
     showAll: {

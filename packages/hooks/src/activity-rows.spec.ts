@@ -545,6 +545,42 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
     ]);
   });
 
+  it("keeps a part's id when the other side empties, so an open Show all stays open", () => {
+    const needsIds = (data: Activity) =>
+      activityGroups(data, "all", NOW)
+        .find((group) => group.id === "needs-you")!
+        .parts.map((part) => part.id);
+    const later = task({ id: "later", due_date: "2026-11-30" });
+    const split = activity({
+      needs_you: {
+        tasks: [later],
+        task_confirmations: [task({ id: "c1", title: "Confirm me" })],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    expect(needsIds(split)).toEqual(["now", "later"]);
+    // The confirmation is acted on and leaves: Later is still "later".
+    const laterOnly = activity({
+      needs_you: {
+        tasks: [later],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    expect(needsIds(laterOnly)).toEqual(["later"]);
+    const nowOnly = activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [task({ id: "c1", title: "Confirm me" })],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    expect(needsIds(nowOnly)).toEqual(["now"]);
+  });
+
   it("splits Made by you by kind, a few rows each, and leaves out an empty kind", () => {
     const data = activity({
       made_by_you: {

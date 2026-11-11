@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
+import { StyleSheet } from "react-native";
+import { getSignetTokens } from "@repo/theme/signet";
 
 /**
  * The phone's Activity screen (#3897; its redesign, #4173 step 2), rendered
@@ -91,6 +93,11 @@ const activity = vi.hoisted(() => ({
   },
 }));
 
+/** The chapter read: its module switches, which hide a module's tile. */
+const chapter = vi.hoisted(() => ({
+  data: undefined as undefined | { enabled_modules: Record<string, boolean> },
+}));
+
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
 const links = vi.hoisted(() => ({
   permissions: [] as string[],
@@ -107,7 +114,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
   // Read by the back row and the chips for the chapter's accent.
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({ data: chapter.data }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
@@ -144,7 +151,7 @@ import {
 } from "@/components/activity/activity-row";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
-import { SectionHeader } from "@/components/list-section";
+import { SectionCount, SectionHeader } from "@/components/list-section";
 import { StatusChip } from "@/components/status-chip";
 import { ScreenShell } from "@/components/screen-shell";
 import { UndoBar } from "@/components/tasks/undo-bar";
@@ -180,11 +187,30 @@ const row = (tree: ReactTestRenderer, label: string) =>
     .findAllByType(ActivityListRow)
     .find((node) => node.props.row.title === label)!;
 
-/** The count a group's header draws beside its caption, if any. */
-const sectionCount = (tree: ReactTestRenderer, label: string) =>
-  tree.root
+/**
+ * The count a group's header draws beside its caption, as drawn (`null` when
+ * it draws none), checked against what a screen reader hears.
+ */
+const sectionCount = (tree: ReactTestRenderer, label: string) => {
+  const header = tree.root
     .findAllByType(SectionHeader)
-    .find((node) => node.props.children === label)?.props.count;
+    .find((node) => node.props.children === label)!;
+  const drawn = header.findAllByType(SectionCount);
+  if (drawn.length === 0) return null;
+  const count = drawn[0]!.props.count as number;
+  expect(drawnText(drawn[0]!)).toBe(String(count));
+  expect(
+    header.find((node) => node.props.accessible === true).props
+      .accessibilityLabel,
+  ).toBe(`${label}, ${count}`);
+  return count;
+};
+
+/** A tile's resting style, flattened. */
+const tileStyle = (tree: ReactTestRenderer, id: string) =>
+  StyleSheet.flatten(tile(tree, id).props.style({ pressed: false }));
+
+const tokens = getSignetTokens("dark");
 
 /** The pressable a tile draws, by its summary id. */
 const tile = (tree: ReactTestRenderer, id: string) =>
@@ -202,6 +228,10 @@ describe("Activity screen (#3897)", () => {
   beforeEach(() => {
     queryClient = new QueryClient();
     sheet.props = null;
+    // Reset here, not at a test's end: a failing test must not leave the
+    // next one rendering as an officer.
+    links.permissions = [];
+    chapter.data = undefined;
     activity.value = {
       data: read(),
       isPending: false,
@@ -339,7 +369,6 @@ describe("Activity screen (#3897)", () => {
       expect(tile(tree, "approve").props.accessibilityValue).toEqual({
         text: "1",
       });
-      links.permissions = [];
     });
 
     it("sets its chip from a tile, and clears it from the lit tile", () => {
@@ -384,7 +413,6 @@ describe("Activity screen (#3897)", () => {
       expect(tile(tree, "tasks").props.accessibilityState).toEqual({
         selected: false,
       });
-      links.permissions = [];
     });
 
     it("is all caught up at zero, and never over a section that failed", () => {
@@ -413,10 +441,28 @@ describe("Activity screen (#3897)", () => {
       const text = screenText(failed);
       expect(text).not.toContain("You're all caught up");
       expect(text).toContain("Some of what needs you couldn't load");
-      // Unknown, never 0.
+      // Unknown, never 0: a dash on the tile, "Couldn't load" to a reader.
       expect(tile(failed, "polls").props.accessibilityValue).toEqual({
         text: "Couldn't load",
       });
+      expect(drawnText(tile(failed, "polls"))).toBe("–Polls to vote on");
+    });
+
+    it("dims a tile with nothing waiting, and not one that has something", () => {
+      const tree = render();
+      expect(tileStyle(tree, "polls").opacity).toBe(0.6);
+      expect(tileStyle(tree, "tasks").opacity).toBeUndefined();
+    });
+
+    it("shows no tile for a module the chapter has off", () => {
+      chapter.data = { enabled_modules: { polls: false } };
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-tile-polls",
+        ),
+      ).toHaveLength(0);
+      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
     });
 
     it("names the next event under the headline", () => {
@@ -470,6 +516,29 @@ describe("Activity screen (#3897)", () => {
       });
       expect(assigned()).toHaveLength(5);
       expect(screenText(tree)).toContain("Show fewer");
+    });
+
+    it("holds nothing back under a chip", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            ...read().made_by_you,
+            files: [],
+            tasks: Array.from({ length: 5 }, (_, index) =>
+              task({ id: `made-${index}`, title: `Assigned ${index}` }),
+            ),
+          },
+        }),
+      };
+      const tree = render();
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("task");
+      });
+      expect(
+        rowLabels(tree).filter((label) => label.startsWith("Assigned")),
+      ).toHaveLength(5);
+      expect(screenText(tree)).not.toMatch(/Show all/);
     });
   });
 
@@ -604,8 +673,11 @@ describe("Activity screen (#3897)", () => {
     // In the warning hue, as web says it, so it can't read as an empty list.
     const note = tree.root
       .findAllByType(InlineNote)
-      .find((node) => node.props.tone === "warning");
-    expect(note).toBeDefined();
+      .find((node) => node.props.tone === "warning")!;
+    const line = note.findByType("Text" as never);
+    expect(StyleSheet.flatten(line.props.style).color).toBe(
+      tokens.color.semantic.warning,
+    );
   });
 
   it("shows the loading rows before the first read, and no list", () => {
