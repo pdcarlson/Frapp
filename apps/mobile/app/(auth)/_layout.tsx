@@ -1,15 +1,4 @@
-import { useEffect } from "react";
-import {
-  Redirect,
-  Stack,
-  useGlobalSearchParams,
-  usePathname,
-} from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import {
-  inviteFromRouteParams,
-  memberInviteWebUrl,
-} from "@/lib/onboarding/member-invite";
+import { Redirect, Stack, usePathname } from "expo-router";
 import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 
 /**
@@ -53,20 +42,6 @@ const PRE_CHAPTER_ROUTES = DELIBERATE_AUTH_ROUTES;
 export default function AuthLayout() {
   const pathname = usePathname();
   const destination = useAuthGateDestination();
-  const params = useGlobalSearchParams();
-  // An invite link a member with a chapter opened (#4002): s02 can't take it,
-  // so it goes to web `/join` in an in-app browser while the member stays on
-  // their chapter (`lib/onboarding/member-invite.ts`).
-  const memberInvite =
-    destination === "tabs" && pathname === "/join"
-      ? inviteFromRouteParams(params)
-      : null;
-  useEffect(() => {
-    if (!memberInvite) return;
-    WebBrowser.openBrowserAsync(memberInviteWebUrl(memberInvite)).catch(
-      () => {},
-    );
-  }, [memberInvite]);
 
   if (destination === "hold") {
     return null;

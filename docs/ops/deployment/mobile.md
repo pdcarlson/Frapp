@@ -467,6 +467,15 @@ nothing is still building.
   `github-deploy-production` (role Developer) on the `pdcarlson` Expo account, so it isn't tied to
   a person. To rotate it, create a new token for that robot on that page, replace the secret, then
   revoke the old token.
+- **The Associated Domains capability on the App ID, before the first build of 0.11.0** (#4002).
+  `apps/mobile/app.json` declares `applinks:app.frapp.live` from 0.11.0, which adds the
+  `com.apple.developer.associated-domains` entitlement. The App Store profile in EAS predates it,
+  and a non-interactive run has no Apple sign-in to turn the capability on or make a new profile,
+  so the archive would fail on signing. Before Deploy production builds 0.11.0 for iOS, run one
+  interactive `npm run eas -- build --platform ios --profile production` (EAS turns the capability on
+  and makes the profile), or enable **Associated Domains** on the `live.frapp.mobile` identifier in
+  the Apple developer console and refresh the profile with `npm run eas -- credentials --platform ios`.
+  *Derived from how eas-cli syncs capabilities, not run; correct this from the first build.*
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
   One interactive `npm run eas -- build --platform ios --profile production` creates it. *Status
