@@ -1,7 +1,10 @@
 name: PR base sync
 
 # Keeps the open-PR fleet in sync with main (docs/ci-cd/pr-babysitting.md
-# § Base-branch sync). Branch protection sets `strict: true`, so every merge to
+# § Base-branch sync). Since 2026-11-11 a PR need not be up to date to merge
+# (REQUIRE_UP_TO_DATE in scripts/ci/lib/required-checks.mjs), so the script
+# handles only conflicts, and a slot run below exits at once; the rest of this
+# comment is what turning the rule back on restores. With `strict: true`, every merge to
 # main outdates every other open PR; this sweep either updates each one via the
 # update-branch API (only when the base-sync GitHub App is installed and its two
 # secrets are set — the default GITHUB_TOKEN's pushes trigger no CI, which would

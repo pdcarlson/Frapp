@@ -125,7 +125,7 @@ Live branch protection is whatever an admin last applied and can lag the script,
 per-check whether a gate is live today; read live state per
 [`github-branch-protection-runbook.md`](../../docs/ops/github-branch-protection-runbook.md).
 
-`pglite-migrations` is also path-gated, and required since #2538. `duplicate-detection` is advisory, for the reason in [`quality-gates.md` § The gates, and why each has the posture it does](../../docs/ci-cd/quality-gates.md#the-gates-and-why-each-has-the-posture-it-does).
+`pglite-migrations` is also path-gated, and required since #2538. So, since 2026-11-11, are `api-tests`, `mobile-validate` and `mobile-tests-tokyo`, which skip a PR only when every file it changes is in an area they never read (`ci.yml`, the `changes` job's `apps` step). `duplicate-detection` is advisory, for the reason in [`quality-gates.md` § The gates, and why each has the posture it does](../../docs/ci-cd/quality-gates.md#the-gates-and-why-each-has-the-posture-it-does).
 
 There was a second advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
 

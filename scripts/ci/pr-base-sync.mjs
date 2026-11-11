@@ -40,6 +40,14 @@
 // runs this sweep when CI completes on one of this repo's PRs, and on a schedule
 // (`mode: "checks"`), which fills the slot and writes little else (advanceSlot).
 //
+// Up to date no longer required (2026-11-11, REQUIRE_UP_TO_DATE in
+// lib/required-checks.mjs). A PR that is behind but merges cleanly can merge as
+// it is, so updating it would only restart its CI. While the flag is off the
+// sweep updates no clean PR and runs no slot: it handles conflicts (the wake,
+// or the registry merge) and clears wakes that no longer apply, and a slot
+// sweep (`mode: "checks"`) does nothing. Points 1 and 3 above, and the slot,
+// are what turning it back on restores.
+//
 // Verdicts fail SAFE: a PR whose mergeability cannot be established (API error,
 // mergeable still null after bounded polling) is skipped — never blind-updated
 // and never falsely accused of conflicts. The next push to main re-sweeps.
@@ -86,7 +94,7 @@ import { requireEnv } from "./lib/env.mjs";
 import { REGISTRY_PATH } from "./lib/shipped-builds-registry.mjs";
 import { planRegistryConflict, pushRegistryMerge } from "./resolve-registry-conflict.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "./lib/required-checks.mjs";
 import { ACCEPTED_CONCLUSIONS, fetchCheckRuns, latestRunsByName } from "./lib/check-runs.mjs";
 
 // One live comment per PR. No workflow-name suffix (unlike ci-wake's per-workflow
@@ -776,7 +784,15 @@ export async function processBaseMove({
   // and the base did NOT move; only the auto-merge slot is advanced.
   mode = "push",
   now = Date.now,
+  // Branch protection's up-to-date rule; tests set it both ways.
+  requireUpToDate = REQUIRE_UP_TO_DATE,
 }) {
+  if (mode === "checks" && !requireUpToDate) {
+    logger.log?.(
+      "[pr-base-sync] checks completed — branches need not be up to date to merge, so there is no update slot to advance",
+    );
+    return [];
+  }
   if (mode === "checks" && !updateToken) {
     logger.log?.(
       "[pr-base-sync] checks completed, but no app token minted — the update slot cannot advance; the next push to main sweeps (and raises the alert)",
@@ -801,7 +817,7 @@ export async function processBaseMove({
 
   // Without an app token nothing is updated, so there is no slot to share: every
   // behind PR gets its wake, as before.
-  const queue = updateToken
+  const queue = updateToken && requireUpToDate
     ? await assessAutoMergeQueue({
         token,
         repo,
@@ -881,6 +897,7 @@ export async function processBaseMove({
       updateBranch,
       updateBranchTimeoutMs,
       queue,
+      requireUpToDate,
     }).catch((error) => {
       logger.log?.(
         `[pr-base-sync] #${number}: unexpected error (${error.message}) — skipping, fail safe`,
@@ -1150,6 +1167,7 @@ async function processOnePr({
   updateBranch,
   updateBranchTimeoutMs,
   queue = null,
+  requireUpToDate = REQUIRE_UP_TO_DATE,
 }) {
   // An auto-merge PR was already read by assessAutoMergeQueue; reuse it,
   // including an unresolved mergeability (pr: null), which must not be polled
@@ -1227,6 +1245,17 @@ async function processOnePr({
   };
 
   if (pr.mergeable === false) return postConflictComment();
+
+  // Merges cleanly, and need not be up to date to merge: leave it, whether or
+  // not it is behind. An update would only restart its CI. A wake left from an
+  // earlier conflict or behind verdict no longer applies.
+  if (!requireUpToDate) {
+    const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+    logger.log?.(
+      `[pr-base-sync] #${number}: merges cleanly with ${baseRef} — left as is, up to date not required${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+    );
+    return { number, verdict: "clean", action: "none" };
+  }
 
   // An auto-merge PR whose compare failed during assessment is skipped, not
   // compared again: a second read that succeeded would update it outside the

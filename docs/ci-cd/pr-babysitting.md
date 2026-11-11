@@ -233,6 +233,16 @@ introduces them (unit tests + this doc are the pre-merge verification).
 
 ## Base-branch sync (`scripts/ci/pr-base-sync.mjs`)
 
+**Since 2026-11-11 a PR need not be up to date to merge** (Paul). Branch protection's "Require
+branches to be up to date before merging" is off, written by `REQUIRE_UP_TO_DATE` in
+[`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), because with it on every merge
+restarted CI on every other open PR and PRs merged no faster than one CI run each. A PR now merges on
+the checks of its own test merge; a break that only two PRs cause together shows up on `main`'s push
+run. While the flag is off the sweep below handles **conflicts only** (the wake comment, or the
+registry merge), leaves a clean PR alone whether or not it is behind, deletes base-sync comments that
+no longer apply, and runs no auto-merge slot: a slot run (`mode: "checks"`) exits at once. The rest
+of this section describes the sweep with the flag on, which is what turning it back on restores.
+
 Branch protection on `main` sets `strict: true`, so every merge to `main` outdates every other
 open PR. `pr-base-sync.yml` fires on each push to `main` (and, for the auto-merge slot below, on
 each of this repo's PR CI completions and on a 15-minute schedule) and sweeps open PRs targeting it —

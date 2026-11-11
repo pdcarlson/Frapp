@@ -13,8 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # ---------------------------------------------------------------------------
-# `packages-build` runs first. web-tests, web-responsive-floor, landing-fold and
-# pglite-migrations are path-gated on PRs by `changes` and run in full on push.
+# `packages-build` runs first. web-tests, web-responsive-floor, landing-fold,
+# pglite-migrations, api-tests, mobile-validate and mobile-tests-tokyo are
+# path-gated on PRs by `changes` and run in full on push.
 # They are still required checks, because a job skipped by a job-level `if:` reports
 # Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
 # `web-production-build` deliberately prebuild nothing.
@@ -40,6 +41,10 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       landing: ${{ steps.filter.outputs.landing }}
       pglite: ${{ steps.filter.outputs.pglite }}
+      # Either an area the job reads changed, or one of the few files it reads
+      # from an area it otherwise skips (`apps` below).
+      mobile: ${{ steps.apps.outputs.mobile == 'true' || steps.filter.outputs.mobile_reads == 'true' }}
+      api: ${{ steps.apps.outputs.api == 'true' || steps.filter.outputs.api_reads == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -97,6 +102,42 @@ jobs:
               - 'package.json'
               # The job installs through node-setup.
               - '.github/actions/**'
+            # What a mobile spec reads from apps/api, which `mobile` below skips
+            # (pinned by app-filter-coverage.test.mjs).
+            mobile_reads:
+              - 'apps/api/src/application/services/attendance.service.ts'
+              - 'apps/api/src/interface/dtos/attendance.dto.ts'
+              - 'apps/api/src/domain/utils/check-in-token.ts'
+            # What an API spec reads from apps/mobile and spec/, which `api` skips.
+            api_reads:
+              - 'apps/mobile/app.json'
+              - 'spec/behavior/observability.md'
+      # The other way round from `filter`: these skip a PR only when EVERY file it
+      # changes is in an area the job never reads, so a file nobody listed (a new
+      # root config, a script) runs the job rather than slipping past a required
+      # check. mobile-validate and api-tests were the slowest jobs every PR ran.
+      - name: Detect changes the mobile and API jobs read
+        id: apps
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          predicate-quantifier: every
+          filters: |
+            mobile:
+              - '**'
+              - '!apps/web/**'
+              - '!apps/landing/**'
+              - '!apps/api/**'
+              - '!docs/**'
+              - '!spec/**'
+              - '!supabase/**'
+            api:
+              - '**'
+              - '!apps/web/**'
+              - '!apps/landing/**'
+              - '!apps/mobile/**'
+              - '!docs/**'
+              - '!spec/**'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
@@ -106,10 +147,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Also the one job that saves node_modules (node-setup's save-modules).
       - name: Setup Node and install dependencies
         uses: ./.github/actions/node-setup
         with:
           install: ci
+          save-modules: "true"
 
       # The one job that writes the cache; every other job restores it.
       - name: Build shared packages
@@ -208,7 +251,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # `install: ci` restores only the npm download cache, never node_modules or dist.
+      # `install: ci` restores node_modules as `npm ci` left it, never a built dist/.
       - name: Setup Node and install dependencies
         uses: ./.github/actions/node-setup
         with:
@@ -289,7 +332,8 @@ jobs:
 
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -619,7 +663,8 @@ jobs:
 
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -666,13 +711,6 @@ jobs:
       - name: Mobile unit tests
         run: npm run test -w apps/mobile
 
-      # CI is UTC; also run east of Greenwich to catch UTC/local date bugs (#1058).
-      # Specs asserting calendar days use local-time constructors.
-      - name: Mobile unit tests (Asia/Tokyo)
-        env:
-          TZ: Asia/Tokyo
-        run: npm run test -w apps/mobile
-
       # An OTA update reaches every store build of the same expo.version, so a
       # native change under a version that has shipped would crash those
       # builds. Fails a PR that makes one without a bump; warns on a push, and
@@ -699,6 +737,33 @@ jobs:
           CI: "1"
           EXPO_NO_TELEMETRY: "1"
         run: npx expo prebuild --no-install --clean --platform all
+
+  # ── Mobile unit tests east of Greenwich ─────────────────────────────────
+  # CI is UTC; this runs the mobile suite again in Tokyo to catch UTC/local date
+  # bugs (#1058). Specs asserting calendar days use local-time constructors. Its
+  # own job, beside mobile-validate rather than after its last step, so it adds
+  # no time to a run.
+  mobile-tests-tokyo:
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Build shared packages
+        uses: ./.github/actions/turbo-packages-build
+
+      - name: Mobile unit tests (Asia/Tokyo)
+        env:
+          TZ: Asia/Tokyo
+        run: npm run test -w apps/mobile
 
   # ── Deploy-gate script unit tests ───────────────────────────────────────
   ci-scripts-tests:

@@ -30,8 +30,9 @@ export const CI_CHECKS = [
   "lint-and-typecheck",
   // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
-  // API Jest suites: `test`, `test:e2e` and `test:ai-evals`, all three
-  // unconditional (`.github/workflows/ci.yml`). Not unit tests alone.
+  // API Jest suites: `test`, `test:e2e` and `test:ai-evals`, all three run
+  // whenever the job does (`.github/workflows/ci.yml`). Not unit tests alone.
+  // Skipped on a PR whose every file is outside what it reads (`changes.api`).
   "api-tests",
   // openapi.json + api-sdk freshness, and oasdiff compatibility with every
   // shipped mobile build in apps/mobile/store/shipped-builds.json.
@@ -39,8 +40,13 @@ export const CI_CHECKS = [
   // Migration filename + promotion/rollback doc validation.
   "migration-safety",
   // Mobile iOS production bundle (`expo export`, before any package build) +
-  // lint + typecheck + Vitest unit tests + `expo prebuild`.
+  // lint + typecheck + Vitest unit tests + `expo prebuild`. Skipped on a PR
+  // whose every file is outside what it reads (`changes.mobile`).
   "mobile-validate",
+  // The mobile Vitest suite again with TZ=Asia/Tokyo (#1058), split out of
+  // mobile-validate to run beside it. Same `changes.mobile` gate. ROLLOUT: same
+  // caveat as secret-scan.
+  "mobile-tests-tokyo",
   // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
   // covering the gate and deploy scripts under both `scripts/` and
   // `scripts/ci/`, plus every `*.test.sh` shell suite (#802).
@@ -136,3 +142,13 @@ export const DRIFT_CHECKS = [
 ];
 
 export const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECKS];
+
+// Branch protection's "Require branches to be up to date before merging"
+// (`required_status_checks.strict`). Off since 2026-11-11 (Paul): with it on,
+// every merge to `main` restarted CI on every other open PR, so PRs merged no
+// faster than one CI run each. A PR now merges on the checks of its own test
+// merge; a break that only two PRs together cause shows up on `main`'s push
+// run. `configure-branch-protection.mjs` writes it, and `pr-base-sync.mjs`
+// stops updating clean behind PRs and holding the auto-merge slot (#3599)
+// while it is off. Turn it back on here, and both follow.
+export const REQUIRE_UP_TO_DATE = false;

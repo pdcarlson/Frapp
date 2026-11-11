@@ -76,7 +76,13 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     assert.doesNotMatch(command, /\|\||set\s+\+e|;\s*(true|exit\s+0)\b/);
     const job = workflowJobs(CI_YML).find((j) => j.jobId === JOB);
     assert.ok(job, `${JOB} job not found`);
-    assert.equal(job.if, null, `${JOB} runs on every event`);
+    // Path-gated on a PR since 2026-11-11 (ci.yml `changes.mobile`, whose
+    // coverage app-filter-coverage.test.mjs pins); every push still runs it.
+    assert.equal(
+      job.if,
+      "${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}",
+      `${JOB} runs on every push, and on every PR that touches what it reads`,
+    );
     assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);
     assert.ok(CI_CHECKS.includes(JOB), `${JOB} is a required check`);
   });

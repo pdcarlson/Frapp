@@ -21,7 +21,7 @@ import {
   readRequiredChecks,
   sweepModeFor,
 } from "../pr-base-sync.mjs";
-import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "../lib/required-checks.mjs";
 
 const REPO = "pdcarlson/Frapp";
 const BASE_REF = "main";
@@ -80,9 +80,13 @@ function sweep({
   mode = "push",
   now = () => NOW,
   updateBranchTimeoutMs,
+  // The tests below were written for the up-to-date rule and the slot it needs;
+  // the ones for the rule off pass false.
+  requireUpToDate = true,
 }) {
   const { fetchImpl, calls } = makeFetchMock(routes);
   const run = processBaseMove({
+    requireUpToDate,
     token: "t",
     updateToken,
     repo: REPO,
@@ -804,6 +808,7 @@ test("caps the sweep at MAX_PRS and logs the dropped remainder", async () => {
     { method: "GET", path: "/pulls/1", body: { mergeable: null } },
   ]);
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: null,
     repo: REPO,
@@ -835,6 +840,7 @@ test("a failed PR list does nothing and reports nothing done", async () => {
     { method: "GET", path: "/pulls?base=", status: 500, body: {} },
   ]);
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     repo: REPO,
     baseRef: BASE_REF,
@@ -948,6 +954,7 @@ test("a stalled update-branch API stops being called, and the sweep still files 
     { method: "GET", path: "/issues?state=all", body: [] },
   ]);
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: "app",
     repo: REPO,
@@ -990,6 +997,7 @@ test("a stalled update-branch is attempted only until the stop threshold", STALL
   const attempted = [];
   const stalled = stallUpdateBranch(fetchImpl);
   await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: "app",
     repo: REPO,
@@ -1022,6 +1030,7 @@ test("one stalled update among working ones stops nothing and files no alert", S
     { method: "GET", path: "/issues?state=all", body: [] },
   ]);
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: "app",
     repo: REPO,
@@ -1062,6 +1071,7 @@ test("a stall, an update, then a stall does not stop the sweep: stalls count in 
     except: (url) => !/\/pulls\/35[02]\//.test(url),
   });
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: "app",
     repo: REPO,
@@ -1104,6 +1114,7 @@ test("an update-branch that fails fast without an answer does not stop the sweep
       ? Promise.reject(new TypeError("fetch failed", { cause: new Error("read ECONNRESET") }))
       : fetchImpl(url, init);
   const results = await processBaseMove({
+    requireUpToDate: true,
     token: "t",
     updateToken: "app",
     repo: REPO,
@@ -2040,4 +2051,106 @@ test("a refused registry merge never closes the token alert", async () => {
     updateToken: "app",
   });
   assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")));
+});
+
+// ── Up to date not required (REQUIRE_UP_TO_DATE false, 2026-11-11) ──────────
+// A clean PR can merge while behind, so the sweep leaves it alone: an update
+// would only restart its CI. Conflicts are still the sweep's to report.
+
+test("the sweep follows the roster's up-to-date rule by default", async () => {
+  const pr = makePr(12);
+  const { fetchImpl, calls } = makeFetchMock([listRoute([pr]), detailRoute(pr), emptyCommentsRoute]);
+  const results = await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl,
+    sleep: makeSleep().sleep,
+    logger: quiet,
+  });
+  if (REQUIRE_UP_TO_DATE) {
+    assert.ok(calls.some((c) => c.url.includes("/compare/")), "with the rule on, a clean PR is compared");
+  } else {
+    assert.deepEqual(results, [{ number: 12, verdict: "clean", action: "none" }]);
+  }
+});
+
+test("rule off: a behind, clean PR is left as is, with no update, no compare and no wake", async () => {
+  const pr = makePr(12);
+  const { results, calls } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    updateToken: "app",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, [{ number: 12, verdict: "clean", action: "none" }]);
+  assert.ok(!calls.some((c) => c.method === "PUT"), "no update-branch");
+  assert.ok(!calls.some((c) => c.url.includes("/compare/")), "behind or not doesn't matter");
+  assert.equal(commentPosts(calls).length, 0);
+  assert.equal(filedIssues(calls).length, 0, "nothing blocked, so no alert");
+});
+
+test("rule off: no app token is not an alert, because nothing needs updating", async () => {
+  const pr = makePr(12);
+  const { results, calls } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, [{ number: 12, verdict: "clean", action: "none" }]);
+  assert.equal(commentPosts(calls).length, 0);
+  assert.equal(filedIssues(calls).length, 0);
+});
+
+test("rule off: a stale wake on a clean PR is deleted", async () => {
+  const pr = makePr(52);
+  const { calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      {
+        method: "GET",
+        path: "/issues/52/comments",
+        body: [{ id: 9052, body: `${BASE_SYNC_MARKER}\n**Base-branch sync** — merge it yourself` }],
+      },
+      { method: "DELETE", path: "/issues/comments/9052", status: 204, body: {} },
+    ],
+    updateToken: "app",
+    requireUpToDate: false,
+  });
+  assert.ok(calls.some((c) => c.method === "DELETE" && c.url.includes("/comments/9052")));
+});
+
+test("rule off: a conflicted PR still gets its wake", async () => {
+  const pr = makePr(11, { mergeable: false, mergeable_state: "dirty" });
+  const { results, calls } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    updateToken: "app",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, [{ number: 11, verdict: "conflict", action: "commented" }]);
+  assert.ok(!calls.some((c) => c.method === "PUT"));
+});
+
+test("rule off: auto-merge PRs get no slot, and none is held", async () => {
+  const prs = [autoPr(63), autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs),
+    updateToken: "app",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(puts(calls), [], "nothing is updated");
+  assert.ok(!calls.some((c) => c.url.includes("/check-runs")), "no slot assessment");
+  assert.ok(results.every((r) => r.action === "none" && r.verdict === "clean"));
+});
+
+test("rule off: a slot sweep does nothing at all", async () => {
+  const { results, calls } = await sweep({
+    routes: slotRoutes([autoPr(41)]),
+    updateToken: "app",
+    mode: "checks",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, []);
+  assert.deepEqual(calls, [], "not even the PR list");
 });
