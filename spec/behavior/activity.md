@@ -112,3 +112,33 @@ the same rule search and the poll list follow
   that is rare; if one exists it is not listed here and is still in its channel.
 - Only poll cards (`kind = 'poll'`) are read. The older poll format ([`polls.md`](polls.md)) is
   one no client creates or can draw as a card, so it is not listed.
+
+## Links
+
+Sign-up links posted in chat, gathered so a member stops scrolling channels for them (#3897:
+Shawn, 2026-11-09). **Status 2026-11-11: the index and its rules are in the database
+(`20261111030000_activity_links.sql`); the read and the routes are being built, and nothing
+serves this section yet.**
+
+- **What counts.** An http(s) URL in a message body whose host is a sign-up host: Google Forms,
+  Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, `forms.gle`),
+  Microsoft Forms, Typeform, SignUpGenius and Calendly. The list lives once, in
+  `activity_action_links` in the database, and is flagged for Paul to change or widen. Any other
+  link is not gathered.
+- **How they are found.** A trigger on chat messages indexes every write path the same way (a
+  member's send, the Discord importer, the bridge): an edit drops the links it removed and keeps
+  the rest, and a deleted message takes its links with it. The index went in with the last 30
+  days of history.
+- **How long one shows.** 30 days from when it was posted.
+- **Who sees one.** Only a member who can read the channel it was posted in, through the same
+  predicate every chat read uses, with their block list applied, enforced on the server. Never a
+  link from a channel set to **Leave out of Activity**: an officer (`channels:manage`) sets that
+  per channel, for channels like #advertising whose links are not chapter business. Every other
+  channel feeds Activity by default.
+- **Officer remove.** A `channels:manage` holder can remove one link from everyone's Activity,
+  for the one or two that slip through.
+- **Done and Hide.** Each member can mark a link Done (they filled it in) or Hide it (not chapter
+  business for them). Both are per member and clear it from their own list; they read
+  differently because they mean different things. Frapp can't see whether a member filled in an
+  outside form, so this is the only way one leaves the list (#3926 and #3927 track Frapp's own
+  sign-up cards and a Google Forms connection).
