@@ -7,6 +7,7 @@ import {
   useCurrentUser,
   useMemberDisplayNames,
   useNotificationPreferences,
+  usePermissionList,
   useUpdateNotificationPreference,
   useUpdateOnboarding,
   useUpdateUser,
@@ -114,6 +115,8 @@ export function ProfilePanel() {
   const chapterId = useActiveChapterId();
   const preferencesQuery = useNotificationPreferences(chapterId ?? "");
   const updatePreference = useUpdateNotificationPreference();
+  // Decides which audience-gated switches are drawn (New members, #4008).
+  const permissions = usePermissionList();
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
@@ -860,7 +863,7 @@ export function ProfilePanel() {
           {categoriesState ?? (
             <div className="space-y-4">
               <ul className={denseListClassName}>
-                {shownNotificationCategories().map((category) => {
+                {shownNotificationCategories(permissions).map((category) => {
                   const switchId = `notification-category-${category.key}`;
                   const descriptionId = `${switchId}-description`;
                   return (

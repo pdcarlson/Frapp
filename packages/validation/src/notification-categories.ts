@@ -1,4 +1,5 @@
 import { isBetaOffModule } from "./beta-off-modules";
+import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
 
 /**
  * The member-facing notification categories, shared so every surface offers the
@@ -15,8 +16,8 @@ import { isBetaOffModule } from "./beta-off-modules";
  *
  * ## What the API actually emits
  *
- * Grepping `category: '…'` across `apps/api/src` yields eight distinct values.
- * Five are here. The other three are deliberately absent:
+ * Grepping `category: '…'` across `apps/api/src` yields nine distinct values.
+ * Six are here. The other three are deliberately absent:
  *
  * - **`chat`** — dropped as a switch on 2026-11-06 (the owner's iOS testing:
  *   "Do we really want users to be able to turn off chat?"). It silenced every
@@ -44,16 +45,15 @@ import { isBetaOffModule } from "./beta-off-modules";
  *   once routine announcements are distinguishable from emergency ones; see
  *   #1323. (Earlier versions of this docblock named `chat.service.ts` as an
  *   emitter and a `kind` arm in the predicate; neither exists any more.)
- * - **`admin`** — "new member joined" / "invite accepted" / "role change", and
- *   "message reported" to the officers who can open the chat report queue
- *   (`ChatReportService`, via `notifyUser`). Its pushes go only to the members
- *   who can act on them: "new member joined" reaches whoever can open the
- *   roster and invite or assign roles (`InviteService`, via `notifyMembers`;
- *   the audience is the trigger row in `spec/behavior/notifications.md`,
- *   #3656). It is chapter operations rather than something a member opts into
- *   per-category, and it has no drawn row in the reference. The report alert
- *   uses it rather than `chat` for the same reason: it is moderation work, not
- *   a message.
+ * - **`admin`** — "message reported" to the officers who can open the chat
+ *   report queue (`ChatReportService`, via `notifyUser`), and "Discord import
+ *   finished" to the admin who started it. A report-queue officer must not be
+ *   able to silence reports by flipping a switch, and the import notice
+ *   answers a job the admin started themselves, so neither gets one. The
+ *   report alert uses it rather than `chat` because it is moderation work, not
+ *   a message. "New member joined" was here too until #4008 moved it to its
+ *   own `members` switch; "invite accepted" is a system line in the inviter's
+ *   DM, not a push, and "role change" sends nothing yet.
  *
  * `default` is the fallback the service substitutes when a payload omits a
  * category — never a member preference. There is no `study` category at all
@@ -94,6 +94,13 @@ export interface NotificationCategory {
    * module docblock for why that is derived from the server, not chosen here.
    */
   defaultEnabled: boolean;
+  /**
+   * Who is shown the switch, as sets of permissions any one of which admits a
+   * member (the wildcard admits all). Absent means every member: only a
+   * category whose pushes go to a permission-gated audience carries one, so
+   * a member never sees a switch for something they are never sent.
+   */
+  audience?: readonly (readonly string[])[];
 }
 
 export const NOTIFICATION_CATEGORIES = [
@@ -135,6 +142,17 @@ export const NOTIFICATION_CATEGORIES = [
     description: "Approvals and rejections on service entries you submit.",
     defaultEnabled: true,
   },
+  {
+    // "<Name> joined" (#4008). Only the members who are sent it see the
+    // switch: `MEMBER_JOINED_AUDIENCE` is both who `InviteService` pushes and
+    // who `shownNotificationCategories` draws this row for. Chat reports and
+    // the Discord import notice stay on `admin`, unswitchable (docblock above).
+    key: "members",
+    label: "New members",
+    description: "When someone joins the chapter.",
+    defaultEnabled: true,
+    audience: MEMBER_JOINED_AUDIENCE,
+  },
 ] as const satisfies readonly NotificationCategory[];
 
 /** The `key` of a category a member can actually switch. */
@@ -152,11 +170,22 @@ const CATEGORY_KEYS: ReadonlySet<string> = new Set(
  * only invoice and dues pushes, and none are sent. The stored preference is
  * kept and still saved; only the row is hidden. Read at render time, not at
  * import, so specs can empty the beta list.
+ *
+ * A category with an `audience` is drawn only when `permissions` (the
+ * member's flattened set for the active chapter) satisfies one of its sets.
+ * No permissions, or a list still loading, draws none of them: the row
+ * appears once the set arrives rather than flashing for a member who will
+ * never get the push.
  */
-export function shownNotificationCategories(): readonly (typeof NOTIFICATION_CATEGORIES)[number][] {
-  return NOTIFICATION_CATEGORIES.filter(
-    (category) => category.key !== "billing" || !isBetaOffModule("dues"),
-  );
+export function shownNotificationCategories(
+  permissions?: readonly string[] | null,
+): readonly (typeof NOTIFICATION_CATEGORIES)[number][] {
+  return NOTIFICATION_CATEGORIES.filter((category) => {
+    if (category.key === "billing" && isBetaOffModule("dues")) return false;
+    const audience: NotificationCategory["audience"] =
+      "audience" in category ? category.audience : undefined;
+    return !audience || canAllOfAny(audience, permissions);
+  });
 }
 
 /**

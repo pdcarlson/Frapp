@@ -25,12 +25,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
-import {
-  InviteService,
-  inviteStatus,
-  MEMBER_JOINED_AUDIENCE,
-  verifiedEmailOf,
-} from './invite.service';
+import { InviteService, inviteStatus, verifiedEmailOf } from './invite.service';
+import { MEMBER_JOINED_AUDIENCE } from '@repo/validation';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -1765,16 +1762,19 @@ describe('InviteService', () => {
         expect.objectContaining({
           title: 'Alex Smith joined',
           priority: 'NORMAL',
-          category: 'admin',
+          category: 'members',
           data: { target: { screen: 'members' } },
         }),
       );
     });
 
     it('asks for roster access plus the invite or role-management permission', () => {
+      // Spelled as strings in `@repo/validation`, so pin them to the
+      // server's own constants: a renamed permission must fail here, not
+      // quietly hide the New members switch from everyone.
       expect(MEMBER_JOINED_AUDIENCE).toEqual([
-        ['members:view', 'members:invite'],
-        ['members:view', 'roles:manage'],
+        [SystemPermissions.MEMBERS_VIEW, SystemPermissions.MEMBERS_INVITE],
+        [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ROLES_MANAGE],
       ]);
     });
 

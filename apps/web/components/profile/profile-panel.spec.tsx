@@ -81,6 +81,8 @@ const mocks = vi.hoisted(() => {
     // and a disabled query reports `isLoading: false` (v5 derives it as
     // `isPending && isFetching`), so it never reaches the loading rung at all.
     chapterId: "chap-1" as string | null,
+    // The wildcard draws every switch, New members (#4008) included.
+    permissions: ["*"] as string[],
     preferencesQuery: {
       data: undefined as unknown,
       isPending: false,
@@ -134,6 +136,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateOnboarding: () => mocks.noopMutation,
   useDeleteAccount: () => mocks.deleteAccount,
   useActiveChapterId: () => mocks.chapterId,
+  usePermissionList: () => mocks.permissions,
   useNotificationPreferences: () => mocks.preferencesQuery,
   useUpdateNotificationPreference: () => ({
     mutateAsync: mocks.updatePreferenceMutateAsync,
@@ -869,6 +872,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.updatePreferenceMutateAsync.mockResolvedValue({});
     mockOffline.value = false;
     mocks.chapterId = "chap-1";
+    mocks.permissions = ["*"];
     mocks.preferencesQuery.data = [];
     mocks.preferencesQuery.isPending = false;
     mocks.preferencesQuery.isLoading = false;
@@ -901,6 +905,19 @@ describe("ProfilePanel — notification categories (#564)", () => {
         }),
       ).toBeTruthy();
     }
+  });
+
+  // #4008: the switch follows the push, so a member who is never told about
+  // a join is never shown a switch for it.
+  it("draws New members only for officers who are told about joins", () => {
+    mocks.permissions = ["members:view"];
+    const { unmount } = render(<ProfilePanel />);
+    expect(screen.queryByRole("switch", { name: /^new members$/i })).toBeNull();
+    unmount();
+
+    mocks.permissions = ["members:view", "roles:manage"];
+    render(<ProfilePanel />);
+    expect(categorySwitch(/^new members$/i)).toBeTruthy();
   });
 
   it("draws no Billing switch while dues is beta-off", () => {
@@ -1168,7 +1185,9 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.chapterId = null;
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/pick a chapter to set its notifications/i)).toBeTruthy();
+    expect(
+      screen.getByText(/pick a chapter to set its notifications/i),
+    ).toBeTruthy();
     expect(screen.queryByText(/no active chapter/i)).toBeNull();
     expect(screen.queryByText(/you have no chapter/i)).toBeNull();
     expect(categorySwitches()).toHaveLength(0);
