@@ -360,7 +360,7 @@ export function ChatComposer({
           accessibilityLabel={placeholder}
           editable={canSend}
           multiline
-          onChangeText={onChangeText}
+          onChangeText={mention.onChangeText}
           onSelectionChange={mention.onSelectionChange}
           onFocus={mention.onFocus}
           onBlur={mention.onBlur}
@@ -423,6 +423,17 @@ function useMentionPicker(
 ) {
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState<number | null>(null);
+  // The last text the keyboard wrote. The list opens only on text the member
+  // is typing, never on text put in the box for them: starting an edit of a
+  // message that ends in `@shawn` used to pop the list up over the message the
+  // moment Edit was tapped (tester report 2026-11-11), and so did a restored
+  // draft. Discord's edit box opens it only once you type. A pick writes text
+  // too, and the list should close after one, which this gives for free.
+  const [typed, setTyped] = useState<string | null>(null);
+  // Anything else that changes the text (a send clearing it, an edit loading,
+  // a pick) forgets what was typed, so the same text coming back later, such
+  // as the message just sent opening for an edit, is not taken for typing.
+  if (typed !== null && value !== typed) setTyped(null);
   // Where the caret goes once a pick's text has reached the input. Set
   // straight away it would land in the old, shorter draft.
   const pendingCaret = useRef<number | null>(null);
@@ -447,7 +458,9 @@ function useMentionPicker(
     [candidates, roles],
   );
   const active =
-    focused && candidates ? activeMentionQuery(value, at, spacedNames) : null;
+    focused && candidates && value === typed
+      ? activeMentionQuery(value, at, spacedNames)
+      : null;
   // A filter over one chapter's roster, cheap enough to run every render.
   const suggestions: PickerEntry[] =
     active && candidates
@@ -479,6 +492,10 @@ function useMentionPicker(
     open: active !== null,
     suggestions,
     pick,
+    onChangeText: (next: string) => {
+      setTyped(next);
+      onChangeText(next);
+    },
     onSelectionChange: (event: {
       nativeEvent: { selection: { start: number; end: number } };
     }) => {

@@ -18,8 +18,8 @@
  * classes and the nav glyphs) so the picture cannot drift far from the app.
  * The renderers themselves are not mounted: each one reads a real message and
  * mutates through the API. The words follow the app's too: the task badge
- * reads `@repo/hooks`' labels, and the typing line names nobody, sitting above
- * the composer as `chat-shell.tsx` puts it.
+ * reads `@repo/hooks`' labels, and the typing line names its typist, sitting
+ * above the composer as `chat-shell.tsx` puts it.
  *
  * **It is an officer's view of a meeting in progress.** The checked-in count
  * is shown only to members who can read attendance (`event-card.tsx`), and
@@ -85,6 +85,8 @@ const AT = {
 export const SHOWCASE_FINAL = 12900;
 const HOLD_UNTIL = SHOWCASE_FINAL + 3400;
 const FADE_MS = 500;
+/** Who the scene shows typing: one of its own authors, named as the app names them. */
+const SHOWCASE_TYPIST = "Sam Okafor";
 const LOOP_AT = HOLD_UNTIL + FADE_MS;
 
 const CHECKED_IN = { from: 12, to: 31 } as const;
@@ -313,11 +315,11 @@ function PollCard({ t }: { t: number }) {
   );
 }
 
-/** `chat-shell.tsx`'s line, word for word: typing names nobody. */
+/** `chat-shell.tsx`'s line: it names who is typing (`typingLabel`). */
 function Typing() {
   return (
     <p className="shrink-0 px-5 pb-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
-      Someone is typing…
+      {SHOWCASE_TYPIST} is typing…
     </p>
   );
 }

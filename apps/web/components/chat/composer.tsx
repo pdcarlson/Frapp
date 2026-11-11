@@ -15,11 +15,7 @@ import {
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Mention from "@tiptap/extension-mention";
-import { Extension } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
@@ -35,10 +31,16 @@ import {
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { MENTION_CHIP } from "./chip";
 import {
-  useChapterRoster,
-  useMentionRoles,
+  buildEditDoc,
+  chatMentionExtension,
+  chatText,
+  chatTextKit,
+  createKeymap,
+  pasteAsLines,
+  useMentionSourceRefs,
+} from "./chat-editor";
+import {
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
@@ -77,11 +79,6 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
-import {
-  createMentionSuggestion,
-  type MentionRoleEntry,
-  type MentionRosterEntry,
-} from "./mention-suggestion";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -300,22 +297,18 @@ export function ComposerShell({
             /*
               Never during IME composition. There, Enter commits the candidate
               the member is composing — swallowing it makes Japanese, Chinese
-              and Korean input impossible to complete. `createSubmitKeymap`
-              below avoids this by being a ProseMirror extension with real
+              and Korean input impossible to complete. The real composer's
+              Enter keymap (`createKeymap` in `./chat-editor`) avoids this by being a ProseMirror extension with real
               composition state; a DOM `keydown` is the "flaky" path its comment
               warns about, so it has to ask.
             */
             if (event.nativeEvent.isComposing) return;
             /*
-              Shift+Enter is swallowed too, which the real composer does not do.
-              A newline here would not survive the handoff intact:
-              `buildDocFromPlainText` splits the draft into one paragraph per
-              line and Tiptap's `getText` rejoins blocks with its default
-              `"\n\n"`, so every line break the shell contributes comes back
-              doubled — and doubles again on each save/restore cycle. That
-              asymmetry is older than this component and belongs to the draft
-              path generally; what is new is the shell being able to feed it, so
-              the shell stays single-line rather than widening the fix.
+              Shift+Enter is swallowed too, which the real composer does not do:
+              the shell is a one-line stand-in for the moment before the editor
+              loads, and a line break typed into it is not worth carrying over.
+              (The draft path itself keeps line breaks now: `buildEditDoc` loads
+              them as hard breaks, which `getText` gives back one for one.)
             */
             event.preventDefault();
             setPressedEnter(true);
@@ -575,53 +568,6 @@ interface ComposerBaseProps {
  * same fact, free to disagree with the strip the member can see.
  */
 type ComposerProps = ComposerBaseProps & ComposerReplyProps;
-
-/**
- * Submit on Enter; let Shift+Enter fall through to StarterKit's default
- * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
- * (composition state, etc.) instead of a flaky DOM keydown. The extension
- * reads a ref that holds the latest submit handler, so the keymap always calls
- * the current one without re-binding the extension.
- */
-function createSubmitKeymap(sendRef: { current: () => void }) {
-  return Extension.create({
-    name: "submit-on-enter",
-    addKeyboardShortcuts() {
-      return {
-        Enter: () => {
-          sendRef.current();
-          return true;
-        },
-      };
-    },
-  });
-}
-
-/**
- * Build a Tiptap doc JSON from plain text so chars like `<`, `&`, and
- * newlines round-trip safely (Tiptap's `setContent(string)` would parse the
- * value as HTML and lose escapes / mangle reserved chars). Each line becomes
- * a paragraph; consecutive newlines yield empty paragraphs.
- */
-function buildDocFromPlainText(text: string): JSONContent {
-  // An empty draft is one empty paragraph, not an empty doc: the Placeholder
-  // extension paints "Message #name" on the first empty paragraph, so a doc
-  // with no paragraph drew a blank box (principles.md P6.5).
-  if (text.length === 0)
-    return { type: "doc", content: [{ type: "paragraph" }] };
-  const lines = text.split("\n");
-  return {
-    type: "doc",
-    content: lines.map((line) =>
-      line.length === 0
-        ? { type: "paragraph" }
-        : {
-            type: "paragraph",
-            content: [{ type: "text", text: line }],
-          },
-    ),
-  };
-}
 
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
@@ -1030,27 +976,10 @@ export function Composer({
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
   const uploadSignedUrl = useUploadSignedUrl();
-  const chapterRoster = useChapterRoster();
   const fileInput = useRef<HTMLInputElement | null>(null);
-  /**
-   * Live roster for `@`-mention autocomplete, read through a ref rather than
-   * closed over directly. `useEditor`'s extensions array is only evaluated
-   * once (this composer passes no deps array), so a plain closure would see
-   * whichever roster page had loaded — usually none — at first render and
-   * never again. The `suggestion.items()` callback inside
-   * `createMentionSuggestion` reads `rosterRef.current` on every keystroke
-   * instead, so it always sees the latest fetched roster.
-   */
-  const rosterRef = useRef<MentionRosterEntry[]>([]);
-  useEffect(() => {
-    rosterRef.current = chapterRoster.data ?? [];
-  }, [chapterRoster.data]);
-  // The roles this member may `@`, read through a ref for the same reason.
-  const mentionRoles = useMentionRoles();
-  const rolesRef = useRef<MentionRoleEntry[]>([]);
-  useEffect(() => {
-    rolesRef.current = mentionRoles.data ?? [];
-  }, [mentionRoles.data]);
+  // The `@` list's roster and roles (`useMentionSourceRefs`, shared with the
+  // inline editor a message turns into on Edit).
+  const { rosterRef, rolesRef } = useMentionSourceRefs();
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -1125,32 +1054,29 @@ export function Composer({
   const uploadsStartedRef = useRef(0);
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // Hard break stays on Shift+Enter via StarterKit defaults.
-      }),
+      // Hard break stays on Shift+Enter via StarterKit defaults.
+      chatTextKit(),
       Placeholder.configure({
         placeholder: composerPlaceholder(channelName, isDirect),
       }),
-      Mention.configure({
-        // The same chip the timeline paints (`chip.ts`), not a second recipe.
-        // It used to be an accent tint here, which meant a handle changed
-        // colour the instant you pressed Enter — and worse, the accent tint was
-        // exactly the paint the old self bubble's fill was derived from, so the
-        // authored mention and the sent one could not both read.
-        HTMLAttributes: { class: MENTION_CHIP },
-        // Same shape as the submit keymap below: `createMentionSuggestion`
-        // only reads `rosterRef.current` later, inside `items()` callbacks
-        // invoked from keystroke events — never synchronously during render.
-        // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
-        suggestion: createMentionSuggestion(rosterRef, rolesRef),
-      }),
-      // Tiptap registers this shortcut while constructing the editor. The
-      // closure reads `sendRef.current` only on Enter, not during render.
+      // The same chip the timeline paints (`chip.ts`), not a second recipe.
+      // It used to be an accent tint here, which meant a handle changed
+      // colour the instant you pressed Enter. `createMentionSuggestion`
+      // only reads the refs later, inside `items()` callbacks invoked from
+      // keystroke events, never synchronously during render.
+      chatMentionExtension(rosterRef, rolesRef),
+      // Submit on Enter; Shift+Enter falls through to StarterKit's hard
+      // break. Tiptap registers this shortcut while constructing the editor;
+      // the handler reads `sendRef.current` only on Enter, not during render.
       // eslint-disable-next-line react-hooks/refs -- Enter keymap; latest submit lives in a ref
-      createSubmitKeymap(sendRef),
+      createKeymap("submit-on-enter", {
+        current: { Enter: () => sendRef.current() },
+      }),
     ],
-    content: buildDocFromPlainText(draft),
+    content: buildEditDoc(draft),
     editorProps: {
+      clipboardTextParser: (text, _context, _plain, view) =>
+        pasteAsLines(text, view),
       attributes: {
         // `prose prose-sm` used to lead this list and did nothing at all —
         // `@tailwindcss/typography` is not installed in this app or in the
@@ -1174,9 +1100,12 @@ export function Composer({
       },
     },
     onUpdate({ editor }) {
-      const text = editor.getText();
+      const text = chatText(editor);
       onChangeDraft(text);
-      onTyping();
+      // An empty box is nobody typing: the clear after a send, or the last
+      // character erased. Announcing it showed "is typing…" to everyone else
+      // for four seconds under the message that had just landed.
+      if (text.trim().length > 0) onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
         parsed.isSlash &&
@@ -1260,9 +1189,9 @@ export function Composer({
   // Keep the editor in sync if the draft is restored from Dexie after mount.
   useEffect(() => {
     if (!editor) return;
-    const current = editor.getText();
+    const current = chatText(editor);
     if (current === draft) return;
-    editor.commands.setContent(buildDocFromPlainText(draft), {
+    editor.commands.setContent(buildEditDoc(draft), {
       emitUpdate: false,
     });
   }, [draft, editor]);
@@ -1398,7 +1327,7 @@ export function Composer({
   );
   const submit = useCallback(() => {
     if (!editor) return;
-    const text = editor.getText().trim();
+    const text = chatText(editor).trim();
     // An attachment-only message is a real message. Returning early on empty
     // text would have been correct while the filename WAS the text; now that a
     // file travels beside the body it would silently swallow the send.
@@ -1498,7 +1427,7 @@ export function Composer({
       // the draft is reported by hand instead, which also keeps the
       // draft-sync effect above from treating it as a stale restore.
       editor.commands.setContent(sentDoc, { emitUpdate: false });
-      onChangeDraft(editor.getText());
+      onChangeDraft(chatText(editor));
       setPending(sentPending);
       if (sentReplyId) onRestoreReply?.(sentReplyId);
       toast({
@@ -1843,7 +1772,7 @@ export function Composer({
         toast({ ...refusal, variant: "destructive" });
         return;
       }
-      const text = editor?.getText() ?? "";
+      const text = (editor ? chatText(editor) : "");
       const parsed = parseSlashInput(text);
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })

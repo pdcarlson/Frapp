@@ -4,6 +4,8 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { Reflector } from '@nestjs/core';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
@@ -14,11 +16,18 @@ import {
   safeAuthErrorCode,
   tokenExpired,
 } from './auth-rejected.exception';
+import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
+import { PermissionsGuard } from './permissions.guard';
+import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,7 +45,28 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
-    const { data, error } = await this.supabase.auth.getUser(token);
+    // The session check is the slowest call a request makes (#3728). While it
+    // is in flight, the chapter guard's lookups start on the `sub` the global
+    // throttler already verified (`prefetchChapterContext`), so they no longer
+    // queue behind it. Nothing they read is used unless this check passes for
+    // that same user. No second verifier runs here: the throttler's is the one
+    // that bounds unknown `kid`s (`custom-throttler.guard.ts`).
+    const sessionCheck = this.supabase.auth.getUser(token);
+    const verified = request.throttlerVerifiedClaims;
+    if (
+      typeof verified?.sub === 'string' &&
+      this.chapterGuardFollows(context)
+    ) {
+      prefetchChapterContext(
+        this.supabase,
+        verified.sub,
+        verified,
+        request.headers,
+        { roles: this.permissionsWillBeChecked(context) },
+      );
+    }
+
+    const { data, error } = await sessionCheck;
 
     // An Auth outage is not a verdict on the token (#3143): `isAuthOutage`.
     if (error && isAuthOutage(error)) {
@@ -52,6 +82,38 @@ export class SupabaseAuthGuard implements CanActivate {
     request.supabaseUser = data.user;
     request.jwtClaims = await this.readClaims(token);
     return true;
+  }
+
+  /**
+   * Whether `ChapterGuard` runs after this guard on the route, so a prefetch
+   * of its reads would be used. Routes such as `GET /v1/users/me` carry this
+   * guard alone and would only pay for reads nobody makes.
+   */
+  private chapterGuardFollows(context: ExecutionContext): boolean {
+    const guards = this.reflector.getAllAndMerge<unknown[]>(GUARDS_METADATA, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return guards.includes(ChapterGuard);
+  }
+
+  /**
+   * Whether `PermissionsGuard` will read the caller's roles on this route: it
+   * is on the route and the route requires a permission. Without a
+   * requirement that guard returns before reading anything (attendance
+   * check-in carries no `PermissionsGuard` at all), so prefetching roles
+   * there would be a read nobody uses.
+   */
+  private permissionsWillBeChecked(context: ExecutionContext): boolean {
+    const targets = [context.getHandler(), context.getClass()];
+    const guards = this.reflector.getAllAndMerge<unknown[]>(
+      GUARDS_METADATA,
+      targets,
+    );
+    if (!guards.includes(PermissionsGuard)) return false;
+    return [PERMISSIONS_KEY, PERMISSIONS_ANY_KEY].some(
+      (key) => this.reflector.getAllAndMerge<string[]>(key, targets).length > 0,
+    );
   }
 
   /**

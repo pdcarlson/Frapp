@@ -7,6 +7,14 @@ on:
     branches: [main]
 
 concurrency:
+  # Keyed on the ref on main too, unlike migration-drift-gate.yml, and on
+  # purpose. Main runs here therefore go one at a time, and GitHub drops a
+  # waiting run when a newer one queues, so in a burst of merges some commits
+  # get no CI and no staging deploy. Those commits can't be picked by Deploy
+  # production, which ships the newest one that can. Running main CI in
+  # parallel would fix that but let CI finish out of order, and Deploy staging
+  # fires on CI completion: an older commit's run would then apply migrations
+  # from a tree that lacks ones a newer run already applied, and fail.
   group: ci-${{ github.ref }}
   # Never cancel on main: a cancelled push run leaves required checks
   # `cancelled`, which validate-deploy-sha.mjs refuses (§ CANCELLED_CONCLUSIONS).

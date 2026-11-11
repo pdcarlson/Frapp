@@ -8,6 +8,30 @@ import type {
 import { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { readOncePerRequest } from '../request-reads';
+
+/**
+ * The caller's membership row in one chapter. `ChapterGuard` and the access
+ * checks behind every chat route both ask this, so it is read once per request
+ * (`request-reads.ts`, #3728) and exported for the guard, which is wired into
+ * every module and so cannot inject the repository.
+ */
+export function readMemberByUserAndChapter(
+  supabase: FrappSupabaseClient,
+  userId: string,
+  chapterId: string,
+): Promise<Member | null> {
+  return readOncePerRequest(`members:${userId}:${chapterId}`, async () => {
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  });
+}
 
 /**
  * The wire shape of the `users!inner(id, display_name)` embed, written out
@@ -45,14 +69,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
     userId: string,
     chapterId: string,
   ): Promise<Member | null> {
-    const { data, error } = await this.supabase
-      .from('members')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return data;
+    return readMemberByUserAndChapter(this.supabase, userId, chapterId);
   }
 
   async findByUser(userId: string): Promise<Member[]> {

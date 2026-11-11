@@ -144,4 +144,27 @@ describe("apps/web/proxy.ts", () => {
       "/join?token=abc&utm_source=officer",
     );
   });
+
+  test("an invite link opened on a phone reaches /join signed out, and nothing else does (#4002)", async () => {
+    const { isPhoneInviteVisit } = await import("../proxy");
+    const { NextRequest } = await import("next/server");
+    const IPHONE =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1";
+    const DESKTOP =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15";
+    const visit = (url: string, ua: string) =>
+      isPhoneInviteVisit(
+        new NextRequest(url, { headers: { "user-agent": ua } }),
+      );
+
+    expect(visit("https://app.frapp.live/join?token=abc", IPHONE)).toBe(true);
+    expect(visit("https://app.frapp.live/join?code=abc", IPHONE)).toBe(true);
+    // No invite to hand over: the page has nothing to offer the app.
+    expect(visit("https://app.frapp.live/join", IPHONE)).toBe(false);
+    expect(visit("https://app.frapp.live/join?token=", IPHONE)).toBe(false);
+    expect(visit("https://app.frapp.live/join?from=sign-in", IPHONE)).toBe(false);
+    // Only /join: every other gated page still bounces to sign-in.
+    expect(visit("https://app.frapp.live/chat?token=abc", IPHONE)).toBe(false);
+    expect(visit("https://app.frapp.live/join?token=abc", DESKTOP)).toBe(false);
+  });
 });

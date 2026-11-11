@@ -7,7 +7,10 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { PostgrestMaybeSingleResponse } from '@supabase/supabase-js';
+import type {
+  JwtPayload,
+  PostgrestMaybeSingleResponse,
+} from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   MemberContext,
@@ -30,6 +33,12 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { InFlightLookups, lookupUnavailable } from './guard-lookup';
+import { readMemberByUserAndChapter } from '../../infrastructure/supabase/repositories/supabase-member.repository';
+import { readRolesByIds } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import {
+  readOncePerRequest,
+  requestReadsActive,
+} from '../../infrastructure/supabase/request-reads';
 
 /**
  * Every lookup here tells "no row" (`.maybeSingle()`'s `null`, the 4xx it
@@ -71,16 +80,48 @@ const chapterLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<ChapterRow>
 >();
 
+/** Carries a failed PostgREST answer out of `readOncePerRequest` as a rejection. */
+class FailedLookup<T> extends Error {
+  constructor(readonly response: T) {
+    super('lookup failed');
+  }
+}
+
+/**
+ * `readOncePerRequest` for a PostgREST answer, keeping only a real one. A
+ * failed lookup resolves (`{ data: null, error }`) rather than rejecting, so
+ * it is turned into a rejection the store forgets, and the guard's own call
+ * reads again instead of reusing a failure the prefetch hit (#3728). Each
+ * caller still gets the failed answer itself, as it always did.
+ */
+async function keepAnswerForRequest<T extends { error: unknown }>(
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await readOncePerRequest(key, async () => {
+      const response = await load();
+      if (response.error) throw new FailedLookup(response);
+      return response;
+    });
+  } catch (failure) {
+    if (failure instanceof FailedLookup) return failure.response as T;
+    throw failure;
+  }
+}
+
 function lookupAppUser(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
 ): Promise<PostgrestMaybeSingleResponse<{ id: string }>> {
-  return appUserLookups.run(supabaseAuthId, () =>
-    supabase
-      .from('users')
-      .select('id')
-      .eq('supabase_auth_id', supabaseAuthId)
-      .maybeSingle<{ id: string }>(),
+  return keepAnswerForRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
+    appUserLookups.run(supabaseAuthId, () =>
+      supabase
+        .from('users')
+        .select('id')
+        .eq('supabase_auth_id', supabaseAuthId)
+        .maybeSingle<{ id: string }>(),
+    ),
   );
 }
 
@@ -88,13 +129,138 @@ function lookupChapter(
   supabase: FrappSupabaseClient,
   chapterId: string,
 ): Promise<PostgrestMaybeSingleResponse<ChapterRow>> {
-  return chapterLookups.run(chapterId, () =>
-    supabase
-      .from('chapters')
-      .select('subscription_status, past_due_since, enabled_modules')
-      .eq('id', chapterId)
-      .maybeSingle<ChapterRow>(),
+  return keepAnswerForRequest(`chapter-guard:chapter:${chapterId}`, () =>
+    chapterLookups.run(chapterId, () =>
+      supabase
+        .from('chapters')
+        .select('subscription_status, past_due_since, enabled_modules')
+        .eq('id', chapterId)
+        .maybeSingle<ChapterRow>(),
+    ),
   );
+}
+
+/**
+ * Starts this guard's reads while `SupabaseAuthGuard` is still waiting on
+ * `auth.getUser` (#3728), so the user, chapter, membership and role lookups
+ * overlap the session check instead of queueing behind it. On a resume burst
+ * that check is the slowest call a request makes, and the three lookups after
+ * it were three more round trips in a row.
+ *
+ * Nothing here decides anything. The reads land in the request's own store
+ * (`request-reads.ts`), and `ChapterGuard` and `PermissionsGuard` pick them up
+ * only once the session check has passed, under the user id `getUser`
+ * returned. They are keyed by that id, so a token whose verified `sub` were
+ * somehow not the user `getUser` answers with would find nothing to reuse.
+ * Every request still reads its own membership and roles; this changes when
+ * the reads start, not whether they happen (#3752). A failed read is not
+ * kept (`keepAnswerForRequest`, and the member and role reads throw), so the
+ * guard that needs it reads again.
+ *
+ * It reads only what the route's guards will ask for: the caller decides
+ * whether `PermissionsGuard` will read roles (`options.roles`). Without a
+ * store (no request, or past the guards of a write) it does nothing.
+ */
+export function prefetchChapterContext(
+  supabase: FrappSupabaseClient,
+  supabaseAuthId: string,
+  claims: JwtPayload | undefined,
+  headers: RequestContext['headers'],
+  options: { roles: boolean },
+): void {
+  if (!requestReadsActive()) return;
+
+  const appUser = lookupAppUser(supabase, supabaseAuthId);
+  const requested = readRequestedChapter(claims, headers);
+  if (requested.kind !== 'explicit') {
+    appUser.catch(ignorePrefetchFailure);
+    return;
+  }
+
+  const { chapterId } = requested;
+  lookupChapter(supabase, chapterId).catch(ignorePrefetchFailure);
+  appUser
+    .then(({ data }) =>
+      data ? readMemberByUserAndChapter(supabase, data.id, chapterId) : null,
+    )
+    .then((member) =>
+      options.roles && member?.role_ids?.length
+        ? readRolesByIds(supabase, member.role_ids, chapterId)
+        : null,
+    )
+    .catch(ignorePrefetchFailure);
+}
+
+/** The guard that needs the read makes it again and reports its failure. */
+function ignorePrefetchFailure(): void {}
+
+/**
+ * Reads the active chapter the caller named, per
+ * spec/behavior/multi-tenancy.md:
+ *
+ * 1. The JWT `active_chapter_id` claim is authoritative.
+ * 2. `x-chapter-id` is a fallback for clients that have not refreshed their
+ *    token since the claim was introduced.
+ * 3. Both present and disagreeing is a hard `403 chapter.context.mismatch` —
+ *    the header never overrides the JWT.
+ * 4. Neither present: a single-chapter user is auto-resolved server-side
+ *    (`resolveSoleChapter`); anyone else gets `400 chapter.context.required`.
+ *
+ * A refusal is returned, not thrown, so the caller can report it in its
+ * place after the user lookup. A plain function of the claims and headers,
+ * so `prefetchChapterContext` resolves the same chapter the guard will.
+ */
+function readRequestedChapter(
+  claims: JwtPayload | undefined,
+  headers: RequestContext['headers'],
+):
+  | { kind: 'explicit'; chapterId: string }
+  | { kind: 'auto' }
+  | { kind: 'refused'; refusal: ForbiddenException } {
+  const jwtChapterId = getActiveChapterClaim(claims);
+  const headerChapterId = getHeaderValue(headers, 'x-chapter-id');
+
+  if (
+    jwtChapterId &&
+    headerChapterId &&
+    jwtChapterId.toLowerCase() !== headerChapterId.toLowerCase()
+  ) {
+    return {
+      kind: 'refused',
+      refusal: new ForbiddenException({
+        code: 'chapter.context.mismatch',
+        message:
+          'The x-chapter-id header disagrees with the active chapter in your token.',
+      }),
+    };
+  }
+
+  const explicit = jwtChapterId ?? headerChapterId;
+  if (!explicit) return { kind: 'auto' };
+
+  // A chapter id that is not a uuid names no chapter, so it is refused as
+  // one the caller is not a member of. Checked here because Postgres
+  // answers a malformed uuid comparison with an error (22P02), not zero
+  // rows, which the membership lookup would now report as a 503 (#3143).
+  if (!UUID_PATTERN.test(explicit)) {
+    return {
+      kind: 'refused',
+      refusal: new ForbiddenException({
+        code: 'chapter.context.invalid',
+        message: 'You are not a member of the requested chapter.',
+      }),
+    };
+  }
+  // #688: Postgres `uuid` comparison is case-insensitive, so an
+  // uppercase-cased header/claim is authorized normally — but storage
+  // prefix math (profileFolderPrefix, backwork/chapter-document/chat
+  // attachment paths, the chapter logo path) is exact-case string
+  // concatenation. Normalizing once here, at the single place every
+  // `@CurrentChapterId()` consumer reads from, keeps every write path
+  // canonical without patching each storage key builder individually —
+  // and matches what a chapter-id column read back from the DB already
+  // is, since `chapters.id` is always generated lowercase.
+  return { kind: 'explicit', chapterId: explicit.toLowerCase() };
 }
 
 @Injectable()
@@ -118,7 +284,7 @@ export class ChapterGuard implements CanActivate {
     // alongside the user's, one round trip instead of two (#3728). A refusal
     // is held until the user lookup has been judged, which keeps the order
     // callers always saw: a missing profile is reported before a bad chapter.
-    const requested = this.readRequestedChapter(request);
+    const requested = readRequestedChapter(request.jwtClaims, request.headers);
     const explicitChapterId =
       requested.kind === 'explicit' ? requested.chapterId : undefined;
 
@@ -198,73 +364,6 @@ export class ChapterGuard implements CanActivate {
     return true;
   }
 
-  /**
-   * Reads the active chapter the caller named, per
-   * spec/behavior/multi-tenancy.md:
-   *
-   * 1. The JWT `active_chapter_id` claim is authoritative.
-   * 2. `x-chapter-id` is a fallback for clients that have not refreshed their
-   *    token since the claim was introduced.
-   * 3. Both present and disagreeing is a hard `403 chapter.context.mismatch` —
-   *    the header never overrides the JWT.
-   * 4. Neither present: a single-chapter user is auto-resolved server-side
-   *    (`resolveSoleChapter`); anyone else gets `400 chapter.context.required`.
-   *
-   * A refusal is returned, not thrown, so the caller can report it in its
-   * place after the user lookup.
-   */
-  private readRequestedChapter(
-    request: RequestContext,
-  ):
-    | { kind: 'explicit'; chapterId: string }
-    | { kind: 'auto' }
-    | { kind: 'refused'; refusal: ForbiddenException } {
-    const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
-    const headerChapterId = getHeaderValue(request.headers, 'x-chapter-id');
-
-    if (
-      jwtChapterId &&
-      headerChapterId &&
-      jwtChapterId.toLowerCase() !== headerChapterId.toLowerCase()
-    ) {
-      return {
-        kind: 'refused',
-        refusal: new ForbiddenException({
-          code: 'chapter.context.mismatch',
-          message:
-            'The x-chapter-id header disagrees with the active chapter in your token.',
-        }),
-      };
-    }
-
-    const explicit = jwtChapterId ?? headerChapterId;
-    if (!explicit) return { kind: 'auto' };
-
-    // A chapter id that is not a uuid names no chapter, so it is refused as
-    // one the caller is not a member of. Checked here because Postgres
-    // answers a malformed uuid comparison with an error (22P02), not zero
-    // rows, which the membership lookup would now report as a 503 (#3143).
-    if (!UUID_PATTERN.test(explicit)) {
-      return {
-        kind: 'refused',
-        refusal: new ForbiddenException({
-          code: 'chapter.context.invalid',
-          message: 'You are not a member of the requested chapter.',
-        }),
-      };
-    }
-    // #688: Postgres `uuid` comparison is case-insensitive, so an
-    // uppercase-cased header/claim is authorized normally — but storage
-    // prefix math (profileFolderPrefix, backwork/chapter-document/chat
-    // attachment paths, the chapter logo path) is exact-case string
-    // concatenation. Normalizing once here, at the single place every
-    // `@CurrentChapterId()` consumer reads from, keeps every write path
-    // canonical without patching each storage key builder individually —
-    // and matches what a chapter-id column read back from the DB already
-    // is, since `chapters.id` is always generated lowercase.
-    return { kind: 'explicit', chapterId: explicit.toLowerCase() };
-  }
-
   /** Rule 4 of `readRequestedChapter`: neither the claim nor the header. */
   private async resolveSoleChapter(
     appUserId: string,
@@ -301,17 +400,22 @@ export class ChapterGuard implements CanActivate {
     appUserId: string,
     chapterId: string,
   ): Promise<MemberContext | null> {
-    const { data, error } = await this.supabase
-      .from('members')
-      .select('id, role_ids')
-      .eq('user_id', appUserId)
-      .eq('chapter_id', chapterId)
-      .maybeSingle<MemberContext>();
-
-    if (error) {
-      throw lookupUnavailable(LOOKUP_FAILED, new SupabaseQueryError(error));
+    let row: Awaited<ReturnType<typeof readMemberByUserAndChapter>>;
+    try {
+      // The same read the handler's access checks make, so a GET shares it
+      // with them instead of repeating it (`request-reads.ts`, #3728).
+      row = await readMemberByUserAndChapter(
+        this.supabase,
+        appUserId,
+        chapterId,
+      );
+    } catch (error) {
+      if (error instanceof SupabaseQueryError) {
+        throw lookupUnavailable(LOOKUP_FAILED, error);
+      }
+      throw error;
     }
-    return data ?? null;
+    return row ? { id: row.id, role_ids: row.role_ids } : null;
   }
 
   /** Overridable seam so tests can pin "now" without real clocks. */

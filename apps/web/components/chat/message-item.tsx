@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { SYSTEM_SENDER_ID, type ChatMessageFlag } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Textarea } from "@/components/ui/textarea";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,6 +61,10 @@ import {
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
+import {
+  InlineMessageEditor,
+  type InlineMessageEditorHandle,
+} from "./inline-message-editor";
 import { MentionOpenerContext } from "./renderers/message-markdown";
 import {
   authorProfileUserId,
@@ -517,8 +521,12 @@ export function MessageItem({
     !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
 
   const [isEditing, setIsEditing] = useState(false);
+  // The tokens the row paints as chips, which the editor opens as chips.
+  const mentionChips = useMentionChips(message);
   const [editValue, setEditValue] = useState(message.content);
   const [editDirty, setEditDirty] = useState(false);
+  // Bumped to load `message.content` into the open editor again (below).
+  const [editResetKey, setEditResetKey] = useState(0);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -588,7 +596,7 @@ export function MessageItem({
     bar.style.marginLeft = `${Math.max(0, Math.min(beside, flush))}px`;
   }
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const editFieldRef = useRef<InlineMessageEditorHandle | null>(null);
   const restoreFocusOnExit = useRef(false);
   const restoreFocusOnFailedSave = useRef(false);
   useEffect(() => {
@@ -613,6 +621,7 @@ export function MessageItem({
   // loss.
   if (isEditing && !editDirty && editValue !== message.content) {
     setEditValue(message.content);
+    setEditResetKey((key) => key + 1);
   }
   // Someone else with `channels:manage` (or the sender from another tab) can
   // delete this message out from under an editor that's already open — the
@@ -1127,52 +1136,25 @@ export function MessageItem({
    *
    * In place, not a dialog or popover: it renders where the body was, between
    * the same reply quote and attachment list (`components.md` §11 § Editing (web)).
-   * It is the §4 text input at the full width of the body column. The bubble
-   * editor this replaced had to fight a circular width, because a `<textarea>`
-   * inside a shrink-wrapped bubble sizes itself from its own ~20-character
-   * default; the body column has a definite width, so the field just fills it.
+   * It is the §4 text input at the full width of the body column, and since
+   * 2026-11-11 it is the composer's own rich editor (`InlineMessageEditor`,
+   * #2236): mentions stay chips and `@` opens the member list, where the
+   * textarea before it showed raw `@Name` text and offered nothing.
    */
   const editForm = (
     <div className="mt-0.5 flex w-full flex-col gap-1.5">
-      <Textarea
-        autoFocus
+      <InlineMessageEditor
         ref={editFieldRef}
-        aria-label="Edit message"
         value={editValue}
-        onChange={(event) => {
-          setEditValue(event.target.value);
+        chips={mentionChips}
+        resetKey={editResetKey}
+        disabled={isSavingEdit}
+        onChange={(text) => {
+          setEditValue(text);
           setEditDirty(true);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            cancelEdit(true);
-          }
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            void saveEdit(true);
-          }
-        }}
-        disabled={isSavingEdit}
-        /*
-          Width comes from the column; height comes from the draft.
-
-          `leading-[25px]` matches the body's 16 / 25 type, so the draft wraps
-          close to where the message wrapped rather than re-flowing on the way
-          in (the field's own padding moves it by a few pixels).
-
-          `field-sizing-content` grows the field with what is typed, so a
-          message that rendered as six lines is edited as six lines rather than
-          through a porthole. It is a progressive enhancement: an engine
-          without `field-sizing` keeps the fixed 60px floor.
-
-          `max-h-40` is the composer's own cap for a growing chat field
-          (`COMPOSER_INPUT_CLASS`), and it is an absolute length deliberately:
-          this field lives inside the timeline's scroller, which is always
-          shorter than the viewport, so a `vh` cap would let a long draft push
-          Save and Cancel below the fold on a short window.
-        */
-        className="field-sizing-content max-h-40 min-h-[60px] resize-none leading-[25px]"
+        onSave={() => void saveEdit(true)}
+        onCancel={() => cancelEdit(true)}
       />
       <div className="flex items-center justify-end gap-1.5">
         <button

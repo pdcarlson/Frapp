@@ -1,0 +1,1 @@
+Editing a message on the web keeps its mentions as highlighted names, and typing @ while editing opens the same member list as a new message. On your phone, editing a message that ends in a mention no longer pops the member list open. On the web, pasted lines no longer gain blank lines between them, and typing ** or a dash at the start of a line sends exactly what you typed.
