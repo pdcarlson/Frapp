@@ -30,7 +30,10 @@ import {
   useActiveChapterId,
   useChannels,
   useChapterScope,
+  canSetChannelBackground,
   canSetChannelDisplayLock,
+  useRequestChatBackgroundPhotoUrl,
+  useSetChannelBackground,
   useSetChannelDisplayLock,
   useChapterSetupChecklist,
   useChapterRoster,
@@ -113,6 +116,7 @@ import {
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
 import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
+import { saveChatBackgroundPick } from "@/lib/chat/chat-background-photo";
 import {
   ChannelActionsMenu,
   type ChannelActionsMenuTarget,
@@ -172,6 +176,8 @@ export default function ChatHomeScreen() {
   // never go out, so the list would otherwise sit on its skeleton.
   const chapterScope = useChapterScope();
   const setDisplayLock = useSetChannelDisplayLock();
+  const setChannelBackground = useSetChannelBackground();
+  const requestBackgroundPhotoUrl = useRequestChatBackgroundPhotoUrl();
   const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
@@ -526,6 +532,7 @@ export default function ChatHomeScreen() {
               viewerId,
               permissions,
             ),
+            canSetBackground: canSetChannelBackground(channel, permissions),
             onTogglePin: togglePin,
           });
         }}
@@ -821,6 +828,26 @@ export default function ChatHomeScreen() {
                 "Nothing changed. Check your connection and try again.",
               ),
             );
+        }}
+        onSetBackground={(channelId, pick) => {
+          void saveChatBackgroundPick(pick, {
+            requestPhotoUrl: ({ filename, contentType }) =>
+              requestBackgroundPhotoUrl.mutateAsync({
+                scope: "channel",
+                filename,
+                contentType,
+              }),
+            save: ({ background, storagePath }) =>
+              setChannelBackground.mutateAsync({
+                channelId,
+                background,
+                storagePath,
+              }),
+          }).then((result) => {
+            if (result.status === "refused") {
+              Alert.alert("Couldn't change the background", result.reason);
+            }
+          });
         }}
         onSetLevel={(channelId, level) => {
           // Per call, not `mutate`'s per-call `onError`: TanStack runs that

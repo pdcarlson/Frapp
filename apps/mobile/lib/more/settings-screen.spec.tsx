@@ -79,7 +79,29 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useGeofences: () => ({ data: [], isPending: false, isError: false }),
   usePermissionList: () => state.permissions,
+  useChapterChatBackground: () => ({
+    data: { background: "midnight", photo_url: null },
+    isPending: false,
+    isError: false,
+  }),
 }));
+
+// The chat background sheet (#4031) as a stand-in whose `present` a spec can see.
+const backgroundSheet = vi.hoisted(() => ({ present: vi.fn() }));
+vi.mock("@/components/settings/chat-background-sheet", async () => {
+  const React = await import("react");
+  return {
+    ChatBackgroundSheet: React.forwardRef(function ChatBackgroundSheet(
+      _props: object,
+      ref: React.Ref<{ present: () => void }>,
+    ) {
+      React.useImperativeHandle(ref, () => ({
+        present: backgroundSheet.present,
+      }));
+      return null;
+    }),
+  };
+});
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ signOut: vi.fn() }),
@@ -388,6 +410,36 @@ describe("Settings copy", () => {
         (node) =>
           (node.type as unknown) === "Pressable" &&
           node.props.accessibilityLabel === "Chapter accent",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("opens the chat background sheet for an editor, showing the default (#4031)", () => {
+    state.permissions = ["*"];
+    backgroundSheet.present.mockClear();
+    const tree = render();
+    expect(screenText(tree)).toContain("Chat background");
+    expect(screenText(tree)).toContain("Midnight");
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityHint ===
+          "Choose the background every channel shows unless it has its own." &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+    expect(backgroundSheet.present).toHaveBeenCalled();
+  });
+
+  it("gives a member who can't edit the chapter no way into the background sheet", () => {
+    state.permissions = ["chapter-config:view"];
+    const tree = render();
+    expect(screenText(tree)).toContain("Chat background");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Choose the background every channel shows unless it has its own." &&
+          typeof node.props.onPress === "function",
       ),
     ).toHaveLength(0);
   });

@@ -1,5 +1,9 @@
 import { throwUnlessOk } from "@repo/api-sdk";
-import type { ChatBackgroundKey } from "@repo/validation";
+import {
+  can,
+  isDirectChannel,
+  type ChatBackgroundKey,
+} from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
@@ -17,6 +21,94 @@ export interface ChatBackgroundPhotoInput {
   body: Blob;
   filename: string;
   contentType: string;
+}
+
+/**
+ * Who may set a channel's own background: `channels:manage` (the route's
+ * guard), and never on a DM or group DM, which stay plain, nor on the audit
+ * log or an archived channel, which the API refuses
+ * (`ChatBackgroundService.setChannelBackground`). Web's channel menu and
+ * mobile's long-press menu both read this.
+ */
+export function canSetChannelBackground(
+  channel: {
+    type?: string | null;
+    is_audit_log?: boolean | null;
+    archived_at?: string | null;
+  },
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (isDirectChannel({ type: channel.type ?? "" })) return false;
+  if (channel.is_audit_log || channel.archived_at) return false;
+  return can("channels:manage", permissions);
+}
+
+/**
+ * The photo half of a set: either the bytes (web, a DOM `File`), uploaded
+ * here, or a path the caller already uploaded (mobile, which PUTs a
+ * `file://` URI with `FileSystem.uploadAsync` after minting the URL through
+ * {@link useRequestChatBackgroundPhotoUrl}).
+ */
+export interface ChatBackgroundPhotoSource {
+  photo?: ChatBackgroundPhotoInput;
+  /** Wins over `photo` when both are given: the bytes are already there. */
+  storagePath?: string;
+}
+
+/** Where a photo is for: a channel's own background, or the chapter default. */
+export type ChatBackgroundPhotoScope = "channel" | "default";
+
+const PHOTO_URL_ROUTE = {
+  channel: "/v1/chat-backgrounds/channels/photo-url",
+  default: "/v1/chat-backgrounds/default/photo-url",
+} as const;
+
+/**
+ * Mint the signed upload URL for a background photo, for a caller that PUTs
+ * the bytes itself (mobile). Returns `{ upload_url, storage_path }`.
+ */
+export function useRequestChatBackgroundPhotoUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["chat-backgrounds", "photo-url"],
+    mutationFn: async ({
+      scope,
+      filename,
+      contentType,
+    }: {
+      scope: ChatBackgroundPhotoScope;
+      filename: string;
+      contentType: string;
+    }) => {
+      const result = await client.POST(PHOTO_URL_ROUTE[scope], {
+        body: { filename, content_type: contentType },
+      });
+      throwUnlessOk(result);
+      return result.data!;
+    },
+  });
+}
+
+/** Upload `source.photo` when given; otherwise the caller's own path. */
+async function resolvePhotoPath(
+  client: ReturnType<typeof useFrappClient>,
+  scope: ChatBackgroundPhotoScope,
+  source: ChatBackgroundPhotoSource,
+): Promise<string> {
+  if (source.storagePath) return source.storagePath;
+  const photo = source.photo;
+  if (!photo) throw new Error("Pick a photo first.");
+  const ticket = await client.POST(PHOTO_URL_ROUTE[scope], {
+    body: { filename: photo.filename, content_type: photo.contentType },
+  });
+  throwUnlessOk(ticket);
+  const { upload_url, storage_path } = ticket.data!;
+  await putSignedUpload({
+    signedUrl: upload_url,
+    body: photo.body,
+    contentType: photo.contentType,
+  });
+  return storage_path;
 }
 
 /** The resolved background for one channel (the channel's own, else the chapter default). */
@@ -64,30 +156,15 @@ export function useSetChannelBackground() {
     mutationFn: async ({
       channelId,
       background,
-      photo,
+      ...source
     }: {
       channelId: string;
       background: ChatBackgroundKey | null;
-      photo?: ChatBackgroundPhotoInput;
-    }) => {
-      let storagePath: string | undefined;
-      if (background === "photo") {
-        if (!photo) throw new Error("Pick a photo first.");
-        const ticket = await client.POST(
-          "/v1/chat-backgrounds/channels/photo-url",
-          {
-            body: { filename: photo.filename, content_type: photo.contentType },
-          },
-        );
-        throwUnlessOk(ticket);
-        const { upload_url, storage_path } = ticket.data!;
-        await putSignedUpload({
-          signedUrl: upload_url,
-          body: photo.body,
-          contentType: photo.contentType,
-        });
-        storagePath = storage_path;
-      }
+    } & ChatBackgroundPhotoSource) => {
+      const storagePath =
+        background === "photo"
+          ? await resolvePhotoPath(client, "channel", source)
+          : undefined;
       const result = await client.PUT("/v1/chat-backgrounds/channels/{id}", {
         params: { path: { id: channelId } },
         body: { background, storage_path: storagePath },
@@ -114,29 +191,14 @@ export function useSetChapterChatBackground() {
     mutationKey: ["chat-backgrounds", "set-default"],
     mutationFn: async ({
       background,
-      photo,
+      ...source
     }: {
       background: ChatBackgroundKey;
-      photo?: ChatBackgroundPhotoInput;
-    }) => {
-      let storagePath: string | undefined;
-      if (background === "photo") {
-        if (!photo) throw new Error("Pick a photo first.");
-        const ticket = await client.POST(
-          "/v1/chat-backgrounds/default/photo-url",
-          {
-            body: { filename: photo.filename, content_type: photo.contentType },
-          },
-        );
-        throwUnlessOk(ticket);
-        const { upload_url, storage_path } = ticket.data!;
-        await putSignedUpload({
-          signedUrl: upload_url,
-          body: photo.body,
-          contentType: photo.contentType,
-        });
-        storagePath = storage_path;
-      }
+    } & ChatBackgroundPhotoSource) => {
+      const storagePath =
+        background === "photo"
+          ? await resolvePhotoPath(client, "default", source)
+          : undefined;
       const result = await client.PUT("/v1/chat-backgrounds/default", {
         body: { background, storage_path: storagePath },
       });

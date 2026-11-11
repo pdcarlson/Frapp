@@ -36,11 +36,7 @@ export function ChatBackground({ channelId }: { channelId: string | null }) {
   const { tokens } = useFrappTheme();
   // The same text mark the rest of the app shows, which hides the letters
   // of an organization that never displays them (#3421), as web does.
-  // Initials when there is no text mark, as web's `chapterMarkFor` falls back.
-  const branding = useChapterBranding();
-  const letters =
-    branding.textMark ??
-    (branding.chapterName ? chapterInitials(branding.chapterName) : "");
+  const letters = useChapterLetters();
 
   // An unknown key (a newer API than this build) draws plain, never throws.
   const stored = data?.background ?? "plain";
@@ -73,26 +69,49 @@ export function ChatBackground({ channelId }: { channelId: string | null }) {
       </View>
     );
   }
-  return <BuiltIn paintKey={key} letters={letters} />;
+  return <ChatBackgroundPaint paintKey={key} letters={letters} />;
 }
 
-function BuiltIn({
+/**
+ * The chapter's letters for the Letters background: its text mark, else its
+ * initials, as web's `chapterMarkFor` falls back.
+ */
+export function useChapterLetters(): string {
+  const branding = useChapterBranding();
+  return (
+    branding.textMark ??
+    (branding.chapterName ? chapterInitials(branding.chapterName) : "")
+  );
+}
+
+/**
+ * One built-in background, filling its parent: the thread draws it full
+ * screen, and the picker's swatches (`chat-background-picker.tsx`) draw the
+ * same component small, so what is picked is what members see.
+ *
+ * `idPrefix` keeps the SVG definition ids apart when several are on screen.
+ */
+export function ChatBackgroundPaint({
   paintKey,
   letters,
+  idPrefix = "bg",
+  testID,
 }: {
   paintKey: ChatBackgroundBuiltInKey;
   letters: string;
+  idPrefix?: string;
+  testID?: string;
 }) {
   const paint = CHAT_BACKGROUND_PAINTS[paintKey];
   return (
     <View
       pointerEvents="none"
       style={[StyleSheet.absoluteFill, { backgroundColor: paint.base }]}
-      testID={`chat-background-${paintKey}`}
+      testID={testID ?? `chat-background-${paintKey}`}
     >
       <Svg width="100%" height="100%">
         {paint.layers.map((layer, i) => {
-          const id = `bg-${paintKey}-${i}`;
+          const id = `${idPrefix}-${paintKey}-${i}`;
           switch (layer.kind) {
             case "linear": {
               // CSS angles: 0deg points up, clockwise.

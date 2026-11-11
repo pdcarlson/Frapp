@@ -61,8 +61,10 @@ const {
   deleteMutateAsync,
   connection,
   latestCalls,
+  setChannelBackground,
 } = vi.hoisted(() => ({
   setDisplayLock: vi.fn(),
+  setChannelBackground: vi.fn(),
   latestCalls: vi.fn(),
   permissionList: { value: [] as string[] },
   markReadMutate: vi.fn(),
@@ -181,6 +183,13 @@ vi.mock("@repo/hooks", async () => {
     canHideConversation: actual.canHideConversation,
     canSetChannelDisplayLock: actual.canSetChannelDisplayLock,
     useSetChannelDisplayLock: () => ({ mutateAsync: setDisplayLock }),
+    // Chat backgrounds (#4031): the rule runs for real; the reads and writes
+    // are the menu's own, stubbed quiet.
+    canSetChannelBackground: actual.canSetChannelBackground,
+    useSetChannelBackground: () => ({ mutateAsync: setChannelBackground }),
+    useRequestChatBackgroundPhotoUrl: () => ({ mutateAsync: vi.fn() }),
+    useChatBackground: () => query(undefined),
+    useChapterChatBackground: () => query(undefined),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
@@ -1004,6 +1013,62 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       }),
     );
     expect(menu(tree).props.target?.channelId).toBe(general.id);
+  });
+
+  it("gives a channel manager Background beside Display, and sets it once the menu has closed (#4031)", async () => {
+    permissionList.value = ["channels:manage"];
+    setChannelBackground.mockResolvedValue(undefined);
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    const labels = menuLabels(tree);
+    expect(labels.indexOf("Background")).toBe(
+      labels.indexOf("Display, Default") + 1,
+    );
+    pressItem(tree, "Background");
+    const midnight = menu(tree).find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.testID === "chat-background-swatch-midnight",
+    );
+    expect(midnight.props.accessibilityRole).toBe("radio");
+    act(() => midnight.props.onPress());
+    expect(menu(tree).props.target).toBeNull();
+    // iOS: nothing is written until the modal reports it has gone.
+    expect(setChannelBackground).not.toHaveBeenCalled();
+    const modal = menu(tree).find(
+      (node) => (node.type as unknown) === "Modal",
+    );
+    await act(async () => {
+      modal.props.onDismiss();
+    });
+    expect(setChannelBackground).toHaveBeenCalledWith({
+      channelId: general.id,
+      background: "midnight",
+      storagePath: undefined,
+    });
+  });
+
+  it("offers Background to no one without channels:manage, and never on the audit log (#4031)", () => {
+    const audit = {
+      id: "c-audit",
+      name: "chapter-audit",
+      type: "PUBLIC",
+      is_audit_log: true,
+    };
+    channelsData.value = [general, audit];
+    permissionList.value = [];
+    const member = render();
+    longPress(member, "general");
+    expect(menuLabels(member)).not.toContain("Background");
+
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    longPress(officer, "general");
+    expect(menuLabels(officer)).toContain("Background");
+    longPress(officer, "chapter-audit");
+    expect(menuLabels(officer)).not.toContain("Background");
   });
 
   it("offers Delete channel only with channels:manage, and asks first", () => {

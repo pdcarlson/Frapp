@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -25,7 +26,13 @@ import {
   type ChannelRowActionGroups,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
+  useChapterChatBackground,
+  useChatBackground,
 } from "@repo/hooks";
+import {
+  CHAT_BACKGROUND_LABELS,
+  type ChatBackgroundKey,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
@@ -34,6 +41,7 @@ import { useFocusOnOpen } from "@/lib/overlay";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
+import { ChatBackgroundSwatches } from "./chat-background-picker";
 import {
   ALWAYS_FORMAL_LABEL,
   CHANNEL_DISPLAY_LOCKED_NOTE,
@@ -47,8 +55,11 @@ import {
   useChatDensity,
 } from "@/lib/chat/chat-density";
 
-/** The menu's own row: this channel's display on this phone (#3787). */
-type MenuRowKey = ChannelRowActionKey | "display";
+/**
+ * The menu's own rows: this channel's display on this phone (#3787), and its
+ * background for everyone (#4031).
+ */
+type MenuRowKey = ChannelRowActionKey | "display" | "background";
 
 export interface ChannelActionsMenuTarget {
   channelId: string;
@@ -67,6 +78,11 @@ export interface ChannelActionsMenuTarget {
    * (#3787).
    */
   canSetDisplayLock?: boolean;
+  /**
+   * The viewer holds `channels:manage` and this isn't a DM
+   * (`canSetChannelBackground`), so the menu offers Background (#4031).
+   */
+  canSetBackground?: boolean;
 }
 
 /** The menu's width, and the gap it keeps from the press and the screen edge. */
@@ -95,6 +111,7 @@ export function ChannelActionsMenu({
   onAction,
   onSetLevel,
   onSetDisplayLock,
+  onSetBackground,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget | null;
@@ -108,12 +125,34 @@ export function ChannelActionsMenu({
   /** Sets or clears Always formal (#3787); offered only with `canSetDisplayLock`. */
   onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   /**
+   * Sets a channel's background, or with null follows the chapter default
+   * (#4031); offered only with `canSetBackground`. Runs once the menu has
+   * finished closing, because `photo` opens the library, and presenting it
+   * while this modal animates out can leave it drawing nothing.
+   */
+  onSetBackground?: (channelId: string, pick: ChatBackgroundKey | null) => void;
+  /**
    * Why a queueless write is blocked right now (`useConnection`), or `null`.
    * A level pick is one, so Notifications locks with it, as the thread
    * header's level control does.
    */
   writeBlockedReason: string | null;
 }) {
+  // A background pick waits here until the modal is gone (see
+  // `onSetBackground`). iOS reports that through `onDismiss`; Android's
+  // library is its own activity, so it can run on the close.
+  const afterClose = useRef<(() => void) | null>(null);
+  const runAfterClose = () => {
+    const run = afterClose.current;
+    afterClose.current = null;
+    run?.();
+  };
+  const closeThen = (run: () => void) => {
+    afterClose.current = run;
+    onClose();
+    if (Platform.OS !== "ios") runAfterClose();
+  };
+
   return (
     <Modal
       visible={target !== null}
@@ -121,6 +160,7 @@ export function ChannelActionsMenu({
       animationType="none"
       statusBarTranslucent
       onRequestClose={onClose}
+      onDismiss={runAfterClose}
     >
       {target ? (
         <MenuBody
@@ -131,6 +171,12 @@ export function ChannelActionsMenu({
           onAction={onAction}
           onSetLevel={onSetLevel}
           onSetDisplayLock={onSetDisplayLock}
+          onSetBackground={
+            onSetBackground
+              ? (channelId, pick) =>
+                  closeThen(() => onSetBackground(channelId, pick))
+              : undefined
+          }
           writeBlockedReason={writeBlockedReason}
         />
       ) : null}
@@ -144,6 +190,7 @@ function MenuBody({
   onAction,
   onSetLevel,
   onSetDisplayLock,
+  onSetBackground,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget;
@@ -154,6 +201,8 @@ function MenuBody({
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
   onSetDisplayLock?: (channelId: string, locked: boolean) => void;
+  /** Closes the menu itself, then sets (see `ChannelActionsMenu`). */
+  onSetBackground?: (channelId: string, pick: ChatBackgroundKey | null) => void;
   writeBlockedReason: string | null;
 }) {
   const { tokens } = useFrappTheme();
@@ -162,7 +211,18 @@ function MenuBody({
   const reduceMotion = useReducedMotion();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [view, setView] = useState<"menu" | "levels" | "display">("menu");
+  const [view, setView] = useState<
+    "menu" | "levels" | "display" | "background"
+  >("menu");
+  const showBackground =
+    target.canSetBackground === true && onSetBackground !== undefined;
+  // Only read for someone who can change it: the row's detail and the
+  // view's selected swatch.
+  const background = useChatBackground(
+    showBackground ? target.channelId : null,
+  );
+  const channelBackground: ChatBackgroundKey | null =
+    background.data?.source === "channel" ? background.data.background : null;
   const defaultDensity = useChatDensity();
   const densityOverride = useChannelDensityOverride(target.channelId);
   const displayLocked = useChannelDisplayLocked(target.channelId);
@@ -191,8 +251,8 @@ function MenuBody({
       : "Loading your notification settings.";
 
   const run = (key: MenuRowKey) => {
-    if (key === "display") {
-      setView("display");
+    if (key === "display" || key === "background") {
+      setView(key);
       return;
     }
     if (key === "notifications") {
@@ -208,6 +268,8 @@ function MenuBody({
     switch (key) {
       case "display":
         return "Display";
+      case "background":
+        return "Background";
       case "mark-read":
         return MARK_AS_READ_LABEL;
       case "toggle-pin":
@@ -229,6 +291,11 @@ function MenuBody({
     ...target.actions.member.map((key, i) => ({ key, divided: i > 0 })),
     // Every member's, and local: it writes nothing to the server.
     { key: "display", divided: target.actions.member.length > 0 },
+    // Beside Display, as on web's channel menu; it changes the channel for
+    // everyone, so only a manager sees it.
+    ...(showBackground
+      ? [{ key: "background" as const, divided: true }]
+      : []),
     // The officer's rows sit under a thicker break, so Delete is never the
     // row right under the thumb that pressed.
     ...target.actions.officer.map((key) => ({ key, divided: true })),
@@ -266,13 +333,21 @@ function MenuBody({
               </Text>
               {rows.map(({ key, divided }, index) => {
                 const destructive = key === "delete";
-                const firstOfficer = index === target.actions.member.length + 1;
+                const firstOfficer =
+                  index ===
+                  target.actions.member.length + 1 + (showBackground ? 1 : 0);
                 const disabled =
                   key === "notifications" && levelsBlockedReason !== null;
                 const detail =
                   key === "display"
                     ? channelDensityDetail(densityOverride, displayLocked)
-                    : key === "notifications" && target.level
+                    : key === "background"
+                      ? background.data
+                        ? channelBackground
+                          ? CHAT_BACKGROUND_LABELS[channelBackground]
+                          : "Chapter default"
+                        : null
+                      : key === "notifications" && target.level
                       ? CHANNEL_LEVEL_DETAIL[target.level]
                       : null;
                 return (
@@ -304,7 +379,9 @@ function MenuBody({
                     >
                       {label(key)}
                     </Text>
-                    {key === "notifications" || key === "display" ? (
+                    {key === "notifications" ||
+                    key === "display" ||
+                    key === "background" ? (
                       <View style={styles.trailing}>
                         {detail ? (
                           <Text style={styles.detail}>{detail}</Text>
@@ -319,6 +396,22 @@ function MenuBody({
                 );
               })}
             </View>
+          ) : view === "background" ? (
+            <BackgroundView
+              name={target.name}
+              value={channelBackground}
+              loaded={background.data !== undefined || background.isError}
+              onBack={() => setView("menu")}
+              onPick={(pick) => {
+                // Re-picking a built-in already in place writes nothing; a
+                // photo always opens the library, to replace it.
+                if (pick !== "photo" && pick === channelBackground) {
+                  onClose();
+                  return;
+                }
+                onSetBackground?.(target.channelId, pick);
+              }}
+            />
           ) : view === "display" ? (
             <View accessibilityRole="menu">
               <Pressable
@@ -470,6 +563,55 @@ function MenuBody({
   );
 }
 
+/**
+ * The Background view (#4031): the swatches web's channel menu shows, with
+ * "Chapter default" first. The chapter default is read here, only once the
+ * view opens, for that swatch's preview.
+ */
+function BackgroundView({
+  name,
+  value,
+  loaded,
+  onBack,
+  onPick,
+}: {
+  name: string;
+  value: ChatBackgroundKey | null;
+  /** The channel's setting has been read; until then nothing is marked or pickable. */
+  loaded: boolean;
+  onBack: () => void;
+  onPick: (pick: ChatBackgroundKey | null) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const chapterDefault = useChapterChatBackground();
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Back to ${name}`}
+        onPress={onBack}
+        style={({ pressed }) => [styles.backRow, pressed ? styles.pressed : null]}
+      >
+        <ChevronGlyph
+          direction="left"
+          color={tokens.color.text.mutedForeground}
+        />
+        <Text style={styles.backLabel}>Background</Text>
+      </Pressable>
+      <View style={[styles.divided, styles.swatches]}>
+        <ChatBackgroundSwatches
+          value={value}
+          allowInherit
+          inheritPreview={chapterDefault.data?.background}
+          disabled={!loaded}
+          onPick={onPick}
+        />
+      </View>
+    </View>
+  );
+}
+
 /** The menu's entrance: a small lift out of the pressed row, to full size. */
 function popIn() {
   "worklet";
@@ -545,5 +687,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     check: { width: 16, alignItems: "center" },
+    swatches: {
+      paddingHorizontal: tokens.spacing.sm,
+      paddingTop: tokens.spacing.sm,
+      paddingBottom: tokens.spacing.md,
+    },
   });
 }

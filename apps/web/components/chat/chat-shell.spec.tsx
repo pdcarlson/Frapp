@@ -437,6 +437,7 @@ vi.mock("@repo/hooks", async () => ({
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
       ({
+        canSetChannelBackground,
         claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
@@ -450,6 +451,7 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        canSetChannelBackground,
         claimViewedChannel,
         deleteChannelConfirmTitle,
         DELETE_CHANNEL_CONFIRM_BODY,

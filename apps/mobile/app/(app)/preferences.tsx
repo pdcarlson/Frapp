@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
+  useChapterChatBackground,
   useCurrentChapter,
   useDeleteAccount,
   useGeofences,
@@ -15,6 +16,7 @@ import {
   can,
   canAll,
   CHAPTER_PROFILE_PERMISSIONS,
+  CHAT_BACKGROUND_LABELS,
   isModuleEnabled,
   shownNotificationCategories,
 } from "@repo/validation";
@@ -24,6 +26,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
+import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
@@ -198,6 +201,7 @@ export default function PreferencesScreen() {
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
   const accentSheetRef = useRef<BottomSheetModal>(null);
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
+  const chatBackgroundSheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
@@ -281,6 +285,7 @@ export default function PreferencesScreen() {
   const canSeeChapterAdmin = can("chapter-config:view", permissions);
   // The guard on `PATCH /v1/chapters/current`, which the accent save calls.
   const canEditAccent = canAll(CHAPTER_PROFILE_PERMISSIONS, permissions);
+  const chapterBackground = useChapterChatBackground();
 
   const chapterQuery = useCurrentChapter();
   const enabledModules = chapterQuery.data?.enabled_modules;
@@ -476,6 +481,31 @@ export default function PreferencesScreen() {
                 />
               }
             />
+            <ListRow
+              label="Chat background"
+              // The same guard as the accent: the default's route requires
+              // `CHAPTER_PROFILE_PERMISSIONS` (#4031).
+              value={
+                chapterBackground.data
+                  ? CHAT_BACKGROUND_LABELS[chapterBackground.data.background]
+                  : undefined
+              }
+              description={
+                canEditAccent
+                  ? null
+                  : "Set by an officer with chapter settings access."
+              }
+              accessibilityHint={
+                canEditAccent
+                  ? "Choose the background every channel shows unless it has its own."
+                  : undefined
+              }
+              onPress={
+                canEditAccent
+                  ? () => chatBackgroundSheetRef.current?.present()
+                  : undefined
+              }
+            />
             {geofencesEnabled ? (
               // Read-only here (the phone has no zone editor), so it says
               // where zones are changed: the dashboard's Study zones tool.
@@ -551,6 +581,7 @@ export default function PreferencesScreen() {
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
       <AccentSheet ref={accentSheetRef} />
       <ChatDensitySheet ref={chatDensitySheetRef} />
+      <ChatBackgroundSheet ref={chatBackgroundSheetRef} />
     </ScreenShell>
   );
 }
