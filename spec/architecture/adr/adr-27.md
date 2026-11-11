@@ -13,14 +13,18 @@
      - `/whats-new`;
      - `/join`, `/start` (a new chapter or council), `/no-access`, `/new-account`, sign-in and sign-up.
    - Public pages need no account: `/f/<form-slug>` is a chapter's interest form and the target of its QR code.
+     - The route has no session and no `ChapterGuard`. The page reads only the form's public fields: the chapter's name and crest, and the questions.
+     - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter becomes a school member with status `pnm`.
+     - Requests are rate-limited per IP and per address. A form lives under `/f/`, not `/c/`, so a printed code survives a chapter rename and a form can be replaced without renaming anything.
 2. **The URL supplies each request's chapter context.** The client resolves the slug in its path to a chapter id, using the person's own membership list, and sends it as `x-chapter-id` on every request from that page. The value is per tab: it is read from the tab's URL, never from storage that tabs share.
 3. **`ChapterGuard` treats an explicit header as authoritative and the JWT claim as a default, and it checks the tenant's kind.**
    - **Header present:** the guard validates membership in that chapter, as it does today, and serves it. The claim is ignored for that request.
    - **Header absent:** the claim decides, then the sole membership, as today.
    - **The mismatch branch goes.** The guard stops refusing a header that differs from the claim, because two tabs in two tenants now share one token. `chapter.context.mismatch` itself stays: `ChapterConfigController.assertMatchesActiveChapter` (`apps/api/src/interface/controllers/chapter-config.controller.ts`) still throws it when a `:id` path segment disagrees with the resolved chapter, so its client handlers and its `packages/observability` entry stay too.
-   - **New: tenant kind.** A route declares the kinds it serves, with route metadata such as `@TenantKinds('council')`. The default is `chapter` alone, so every existing route refuses a council tenant without being edited. A tenant of the wrong kind is refused with the same `403 chapter.context.invalid` a non-member gets, so the response doesn't reveal what the id is.
+   - **New: tenant kind.** Kind comes from `chapters.kind` (`chapter` or `council`), never from `org_archetype`, where `ifc` already means an IFC-member fraternity. A route declares the kinds it serves, with route metadata such as `@TenantKinds('council')`. The default is `chapter` alone, so every existing route refuses a council tenant without being edited. A tenant of the wrong kind is refused with the same `403 chapter.context.invalid` a non-member gets, so the response doesn't reveal what the id is.
    - **Unchanged:** `chapter.context.invalid` for a non-member, `chapter.context.required` for a multi-chapter member who sent nothing, and the 503 on a failed lookup.
    - **The other claim-first reader flips with it.** `getOptionalChapterId` (`apps/api/src/interface/types/request-context.types.ts`, behind `GET /v1/analytics/identity`) changes to header first, so each tab's analytics group is its own tenant's.
+   - **Campus pages aren't chapter tenants.** `/s/<school>` requests carry `x-school-id` to a separate `SchoolGuard`, which checks for a `school_members` row. Campus endpoints read only what chapters push up through the affiliation tables, never chapter tables live, which follows [#4068](https://github.com/pdcarlson/Frapp/issues/4068) decision 11. The schema is the data-model design's, on #4192.
 4. **`users.active_chapter_id` means "the tenant you last chose", and only an explicit choice writes it.**
    - The switcher, a join and a create write it, exactly as today. Opening a tenant by URL, or having it open in a tab, doesn't.
    - This is load-bearing for mobile. Shipped builds read the claim on every token refresh, send it as `x-chapter-id`, and clear their cache when it changes (`apps/mobile/lib/frapp-client.tsx`, `lib/auth-session.tsx`). If merely opening a web tab moved the claim, the member's phone would switch chapters mid-use at its next refresh.
@@ -47,7 +51,8 @@
 7. **Switching tenants is a navigation.**
    - The switcher is a rail on web and a sheet on mobile, and it navigates to `/c/<slug>`. Because a choice made there is explicit, it also writes `active_chapter_id`.
    - The tenant layout (`app/c/[slug]/layout.tsx`) owns everything keyed to one tenant: the query cache, realtime subscriptions and the chat shell's state. It is keyed on the chapter id.
-   - Rollout step 2 keeps today's full page load on a switch, so the cache-clearing invariant in `multi-tenancy.md` keeps holding. Step 4 replaces the reload with a keyed remount.
+   - **A switch can be a soft navigation once step 4 lands.** Because the URL carries the context and the tenant layout is keyed on the chapter id, a remount drops the query cache and tears down realtime with no reload. Rollout step 2 keeps today's full page load until a test proves no module-level singleton outlives the remount; step 4 then switches to the soft navigation. Microsoft Teams reloads the whole app on every org switch, which is what this avoids.
+   - **Unread counts span every space.** A per-user `GET /v1/me/unread` (auth only, scoped to the caller's own memberships) returns counts per tenant for the switcher's mention dot, and one per-user realtime channel keeps them live. A tab doesn't subscribe to every space it isn't showing.
 
 **Rollout steps** (each its own PR or short series; none ships a UI change before step 2):
 
@@ -112,6 +117,7 @@ Schools (`/s/`) and councils (kind `council`) follow #4192's phases on top of st
   - **Shared links.** Mobile and web route names differ today (`event-details?id=` against `/events`, `directory` against `/members`, `dues` against `/billing`). A shared link uses the web path, and the app maps it to its own route in Expo Router's `+native-intent` rewrite. The https form, `https://app.frapp.live/c/fiji-rpi/events/<id>`, opens the app only once it declares the domain (iOS `associatedDomains`, Android `intentFilters`, and the two `.well-known` files on the web origin). Today `app.json` sets only the `frapp://` scheme, so https links, invites included, open the web app.
   - **Shipped builds.** They keep working: they send the claim's chapter as the header, which the guard still honors, and item 4 stops the web from moving that claim behind their back.
 - **Push payloads gain the tenant.** `data.target` adds `chapterId` and `chapterSlug`. Mobile's `resolveNotificationTarget` and web's `deepLinkFor` open `/c/<slug>/<path>`. A payload from before the change has no tenant and opens in the last-chosen tenant, as it does today. The web drawer also starts using the `eventId` and `taskId` it ignores today.
+- **Cross-chapter sweeps get a `kind` filter.** Once councils are rows in `chapters`, every job that reads all tenants must say which kinds it means: the scheduled-job sweeps, the stale-palette sweep, the chapter directory and any chapter count.
 - **A chapter's interest-form QR code points at `/f/<form-slug>`, not at the chapter's slug,** so a form can be replaced, and the chapter renamed, without reprinting codes.
 
 **Alternatives considered and not chosen:**
