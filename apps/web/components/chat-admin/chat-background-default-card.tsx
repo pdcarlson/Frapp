@@ -53,7 +53,7 @@ function DefaultBackgroundSection() {
                 ? {
                     body: pick.photo,
                     filename: pick.photo.name,
-                    contentType: pick.photo.type,
+                    contentType: pick.contentType,
                   }
                 : undefined,
             });

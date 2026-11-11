@@ -6,6 +6,7 @@ import {
 } from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
+import { errorCopy, MemberFacingError } from "./error-copy";
 import { putSignedUpload } from "./put-signed-upload";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -88,6 +89,42 @@ export function useRequestChatBackgroundPhotoUrl() {
   });
 }
 
+/**
+ * What a member reads when a step of setting a background fails and the
+ * failure itself says nothing more specific (a 5xx, or a refusal the copy map
+ * doesn't know). Each names the step, so "Try again in a moment" never stands
+ * in for a failure that has a reason (#4262).
+ */
+export const CHAT_BACKGROUND_FAILURE_COPY = {
+  /** Minting the signed upload URL. */
+  prepare: "Couldn't start the photo upload. Try again, or pick another photo.",
+  /** Storage refused the PUT (any status but 413, which says "too large"). */
+  upload:
+    "The photo didn't upload. Pick a JPEG, PNG, GIF or WebP up to 25 MB and try again.",
+  /** The photo is up; saving it as the background failed. */
+  savePhoto:
+    "The photo uploaded, but it couldn't be saved as the background. Try again.",
+  /** Saving a built-in background, or clearing a channel's own. */
+  save: "Couldn't save the background. Try again.",
+} as const;
+
+/**
+ * Runs one step; a failure with nothing specific to say is rethrown as the
+ * step's own sentence, keeping the original as its `cause`. A failure that
+ * does say something (no connection, signed out, a known refusal, a refused
+ * upload) passes through for `errorCopy` to show.
+ */
+async function step<T>(run: () => Promise<T>, failure: string): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (errorCopy(error, "") !== "") throw error;
+    const wrapped = new MemberFacingError(failure);
+    (wrapped as Error & { cause?: unknown }).cause = error;
+    throw wrapped;
+  }
+}
+
 /** Upload `source.photo` when given; otherwise the caller's own path. */
 async function resolvePhotoPath(
   client: ReturnType<typeof useFrappClient>,
@@ -97,15 +134,18 @@ async function resolvePhotoPath(
   if (source.storagePath) return source.storagePath;
   const photo = source.photo;
   if (!photo) throw new Error("Pick a photo first.");
-  const ticket = await client.POST(PHOTO_URL_ROUTE[scope], {
-    body: { filename: photo.filename, content_type: photo.contentType },
-  });
-  throwUnlessOk(ticket);
-  const { upload_url, storage_path } = ticket.data!;
+  const { upload_url, storage_path } = await step(async () => {
+    const ticket = await client.POST(PHOTO_URL_ROUTE[scope], {
+      body: { filename: photo.filename, content_type: photo.contentType },
+    });
+    throwUnlessOk(ticket);
+    return ticket.data!;
+  }, CHAT_BACKGROUND_FAILURE_COPY.prepare);
   await putSignedUpload({
     signedUrl: upload_url,
     body: photo.body,
     contentType: photo.contentType,
+    describeRejection: () => CHAT_BACKGROUND_FAILURE_COPY.upload,
   });
   return storage_path;
 }
@@ -164,12 +204,22 @@ export function useSetChannelBackground() {
         background === "photo"
           ? await resolvePhotoPath(client, "channel", source)
           : undefined;
-      const result = await client.PUT("/v1/chat-backgrounds/channels/{id}", {
-        params: { path: { id: channelId } },
-        body: { background, storage_path: storagePath },
-      });
-      throwUnlessOk(result);
-      return result.data!;
+      return step(
+        async () => {
+          const result = await client.PUT(
+            "/v1/chat-backgrounds/channels/{id}",
+            {
+              params: { path: { id: channelId } },
+              body: { background, storage_path: storagePath },
+            },
+          );
+          throwUnlessOk(result);
+          return result.data!;
+        },
+        background === "photo"
+          ? CHAT_BACKGROUND_FAILURE_COPY.savePhoto
+          : CHAT_BACKGROUND_FAILURE_COPY.save,
+      );
     },
     onSuccess: () => {
       if (chapterId) {
@@ -198,11 +248,18 @@ export function useSetChapterChatBackground() {
         background === "photo"
           ? await resolvePhotoPath(client, "default", source)
           : undefined;
-      const result = await client.PUT("/v1/chat-backgrounds/default", {
-        body: { background, storage_path: storagePath },
-      });
-      throwUnlessOk(result);
-      return result.data!;
+      return step(
+        async () => {
+          const result = await client.PUT("/v1/chat-backgrounds/default", {
+            body: { background, storage_path: storagePath },
+          });
+          throwUnlessOk(result);
+          return result.data!;
+        },
+        background === "photo"
+          ? CHAT_BACKGROUND_FAILURE_COPY.savePhoto
+          : CHAT_BACKGROUND_FAILURE_COPY.save,
+      );
     },
     onSuccess: () => {
       if (chapterId) {

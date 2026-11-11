@@ -6,8 +6,9 @@ import {
   CHAT_BACKGROUND_LABELS,
   CHAT_BACKGROUND_PHOTO_NOTE,
   chatBackgroundDefaultLabel,
-  isAllowedUploadMime,
+  inspectUploadFile,
   acceptAttribute,
+  MAX_UPLOAD_LABEL,
   type ChatBackgroundKey,
 } from "@repo/validation";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,12 @@ import { paintStyle } from "./chat-background";
 /** What the picker hands back: a key, or null to follow the chapter default. */
 export type ChatBackgroundPick =
   | { background: ChatBackgroundKey | null; photo?: undefined }
-  | { background: "photo"; photo: File };
+  | { background: "photo"; photo: File; contentType: string };
+
+/** The `image` allowlist and its size cap, as the member reads them (#4262). */
+export const BACKGROUND_PHOTO_TYPE_REFUSAL =
+  "Pick a JPEG, PNG, GIF or WebP image.";
+export const BACKGROUND_PHOTO_SIZE_REFUSAL = `That photo is too large. Pick one up to ${MAX_UPLOAD_LABEL}.`;
 
 /**
  * The background swatches (#3973), for a channel (the channel menu) and for
@@ -61,7 +67,11 @@ export function ChatBackgroundPicker({
       role="radio"
       aria-checked={value === key}
       disabled={saving}
-      onClick={() => onPick({ background: key })}
+      onClick={() => {
+        // A refused file is no longer what the member is doing.
+        setTypeError(null);
+        onPick({ background: key });
+      }}
       className={cn(
         "flex flex-col items-center gap-1 rounded-md p-1 text-caption text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
         value === key && "text-foreground",
@@ -131,12 +141,25 @@ export function ChatBackgroundPicker({
           const file = event.target.files?.[0];
           event.target.value = "";
           if (!file) return;
-          if (!isAllowedUploadMime("image", file.type)) {
-            setTypeError("Pick a JPEG, PNG, GIF or WebP image.");
+          // The same gate as every other web upload: the extension the API
+          // checks as well as the type, and the size the bucket enforces, so
+          // a `.jfif` or a 30 MB photo is refused here, by name, instead of
+          // by a server step (#4262).
+          const inspected = inspectUploadFile("image", file);
+          if (!inspected.ok) {
+            setTypeError(
+              inspected.reason === "size"
+                ? BACKGROUND_PHOTO_SIZE_REFUSAL
+                : BACKGROUND_PHOTO_TYPE_REFUSAL,
+            );
             return;
           }
           setTypeError(null);
-          onPick({ background: "photo", photo: file });
+          onPick({
+            background: "photo",
+            photo: file,
+            contentType: inspected.contentType,
+          });
         }}
       />
       <p className="text-caption text-muted-foreground">

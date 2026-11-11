@@ -60,7 +60,50 @@ describe("ChatBackgroundPicker (#3973)", () => {
     fireEvent.change(document.querySelector('input[type="file"]')!, {
       target: { files: [file] },
     });
-    expect(onPick).toHaveBeenCalledWith({ background: "photo", photo: file });
+    expect(onPick).toHaveBeenCalledWith({
+      background: "photo",
+      photo: file,
+      contentType: "image/jpeg",
+    });
+  });
+
+  // #4262: the picker checked only the browser's type, so a file the API
+  // then refused by its extension, or the bucket by its size, failed a server
+  // step and read "Try again in a moment".
+  it("refuses a JPEG whose extension the API refuses (.jfif), by name", () => {
+    const onPick = renderPicker();
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: {
+        files: [new File(["x"], "house.jfif", { type: "image/jpeg" })],
+      },
+    });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Pick a JPEG, PNG, GIF or WebP image.",
+    );
+  });
+
+  it("refuses a photo over the upload cap, saying it is too large", () => {
+    const onPick = renderPicker();
+    const big = new File(["x"], "house.jpg", { type: "image/jpeg" });
+    Object.defineProperty(big, "size", { value: 30 * 1024 * 1024 });
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [big] },
+    });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That photo is too large. Pick one up to 25 MB.",
+    );
+  });
+
+  it("clears a refused file's error when a built-in is picked", () => {
+    renderPicker();
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["x"], "x.svg", { type: "image/svg+xml" })] },
+    });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Letters" }));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 
