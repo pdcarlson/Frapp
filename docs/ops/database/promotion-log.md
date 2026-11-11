@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Unread badges count per channel (#3728)
+
+### 20261112010000_chat_unread_counts_per_channel.sql
+
+- **Purpose**: Rewrites `get_channel_unread_counts(uuid, uuid)` (behind `GET /v1/channels/unread`) as one lateral count per channel, so the planner reads each channel's messages from the caller's read cursor through `(channel_id, created_at)` instead of scanning all of `chat_messages`. Same filters, same signature, same rows. Adds the partial index `idx_chat_messages_channel_countable` on `(channel_id, created_at) where thread_root_id is null and is_deleted = false and kind <> 'imported'`, which holds only rows that can ever be unread. Changes no row.
+- **Checks**: Before `db push` on production, the old and new bodies were compared for every member of every chapter (324 rows) with no difference; the new body ran in 7.4 ms where the old took 86 ms as a function and 1.7 s inlined. After `db push`, `select indexname from pg_indexes where indexname = 'idx_chat_messages_channel_countable';` returns 1 row, `select has_function_privilege('authenticated', 'public.get_channel_unread_counts(uuid, uuid)', 'execute');` returns `false`, and the Sentry p50 of `POST /rest/v1/rpc/get_channel_unread_counts` spans in `frapp-api` drops.
+- **Promoter notes**: Ship it with or before the API; the API's call is unchanged, so either order works. The index is built with a plain `create index`, which blocks writes to `chat_messages` (sends) for the build; production has about 44,000 rows, so expect well under a second. `create or replace` and `if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-unread-badges-per-channel-20261112010000) § Rollback unread badges per channel.
+
 ## 2026-11-12: Rank rules for role tiers (#4071, part 2)
 
 ### 20261112001000_reorder_role_tiers.sql

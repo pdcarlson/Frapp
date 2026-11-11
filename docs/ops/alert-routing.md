@@ -262,8 +262,20 @@ conformance run both leave an open alert open. Mechanics and rationale:
 - push notification delivery failure spikes
 - a chat worker's Realtime subscription down for a minute or more (no chat pushes, or no `#chapter-audit` mirror)
 - database latency saturation impacting request SLAs
+- API median or p95 latency regressing for an hour ([§ API latency](#api-latency))
 
 ## Thresholds
+
+### API latency
+
+Two Sentry metric monitors on `frapp-api` (created 2026-11-11), each over a 1-hour window of production `http.server` spans, feed the email rule *Frapp prod alert: API got slow* (`6330068`, at most every 6 hours, to the owner):
+
+| Monitor | Warning | Critical | Resolves at |
+| --- | --- | --- | --- |
+| *Frapp prod: API p50 latency* (`10926161`) | > 700 ms | > 1,000 ms | ≤ 600 ms |
+| *Frapp prod: API p95 latency* (`10926162`) | > 3,500 ms | > 5,000 ms | ≤ 3,000 ms |
+
+The lines were set at that week's regression level (p50 608 ms, p95 3.0 s), not at the [speed budget](../../spec/behavior/observability.md#speed-budget) (150 ms / 600 ms), so they catch a step backwards today without firing all day. Lower them toward the budget as speed work reaches production. An hour with little traffic, such as overnight, makes p95 noisy; the 6-hour notification interval keeps that from repeating.
 
 ### Push notification delivery
 

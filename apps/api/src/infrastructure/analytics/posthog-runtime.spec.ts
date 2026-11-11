@@ -1,6 +1,8 @@
 import { SENTRY_ERROR_CORRELATED_EVENT } from '@repo/observability';
+import * as Sentry from '@sentry/nestjs';
 import { hashUserIdForAnalytics } from '#domain/utils/analytics-keying';
 import {
+  defaultFetch,
   enqueueSanitizedLog,
   PosthogRuntime,
   resetPosthogRuntimeForTests,
@@ -9,6 +11,13 @@ import {
 } from './posthog-runtime';
 import { RecordingPosthogTransport } from './posthog-transport';
 import { runWithRequestLogStore } from '../observability/request-als';
+
+// Only `suppressTracing` is replaced, and it still runs its callback, so the
+// upload below is real apart from the span it would have made.
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  suppressTracing: jest.fn(<T>(callback: () => T): T => callback()),
+}));
 
 const HEX = 'a'.repeat(64);
 const USER_UUID = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
@@ -281,5 +290,29 @@ describe('PosthogRuntime', () => {
       expect(kept).toBeGreaterThan(60);
       expect(kept).toBeLessThan(140);
     });
+  });
+});
+
+describe('defaultFetch', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('uploads to PostHog with Sentry tracing suppressed, so a flush is never its own transaction', async () => {
+    const suppress = jest.mocked(Sentry.suppressTracing);
+    suppress.mockClear();
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"status":1}', { status: 200 }));
+
+    const res = await defaultFetch('https://ph.example.test/i/v1/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(suppress).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
