@@ -22,9 +22,19 @@ import {
   pseudonymizeUserId,
 } from '../../infrastructure/observability/pseudonyms';
 import {
+  authFailureAttributes,
+  authFailureFields,
   buildSecurityEvent,
   securityEventKind,
+  type AuthFailureContext,
+  type AuthFailureDetail,
 } from '../../infrastructure/observability/security-events';
+import {
+  CLIENT_VERSION_HEADER,
+  clientVersionForLog,
+} from '#domain/constants/client-version';
+import { authFailureDetail } from '../guards/auth-rejected.exception';
+import { requestApp } from '../http/request-app';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -186,7 +196,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.reportToSentry(exception, request, status, requestId);
       this.enqueueSanitizedErrorLog(request, status, requestId);
     } else {
-      this.recordSecurityEvent(request, status, requestId);
+      this.recordSecurityEvent(
+        request,
+        status,
+        requestId,
+        authFailureDetail(exception),
+      );
       this.enqueueUnmatchedClientErrorLog(request, status);
     }
 
@@ -213,12 +228,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
     request: RequestContext,
     status: number,
     requestId: string,
+    authFailure: AuthFailureDetail | undefined,
   ): void {
     const kind = securityEventKind(status);
     if (!kind) return;
 
     try {
       const originHash = pseudonymizeIp(clientIp(request));
+      // Which app, from what the clients already send (#3907): enough to tell
+      // a stale mobile build from a dashboard tab. Never the raw header.
+      const context: AuthFailureContext = {
+        authFailure,
+        clientApp: request.headers ? requestApp(request) : undefined,
+        clientVersion: clientVersionForLog(
+          request.headers?.[CLIENT_VERSION_HEADER],
+        ),
+      };
       this.logger.warn(
         JSON.stringify(
           buildSecurityEvent({
@@ -232,6 +257,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
             userId: request.appUser?.id,
             chapterId: request.chapterId,
             originHash,
+            ...context,
           }),
         ),
       );
@@ -242,6 +268,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         status,
         requestId,
         originHash,
+        context,
       );
 
       if (kind !== 'auth_failure') return;
@@ -256,9 +283,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       // unauthenticated request into one bucket.
       const originKey =
         request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';
-      const trip = this.spikeDetector.record(originKey);
+      // An absent reason counts under the detector's `other`.
+      const trip = this.spikeDetector.record(
+        originKey,
+        undefined,
+        authFailure?.reason,
+      );
       if (!trip) return;
 
+      // Which 401s tripped it (#3907): the window's mix, and the tripping
+      // request's detail and client, which a burst from one origin shares.
+      // The record keeps the per-request field names, which here describe the
+      // tripping request, and adds the mix as one flat string.
+      const reasons = describeReasons(trip.labels);
       this.logger.warn(
         JSON.stringify({
           event: 'security_event',
@@ -267,6 +304,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
           threshold: trip.threshold,
           windowMs: trip.windowMs,
           originHash,
+          ...authFailureFields(context),
+          reasons: reasons.summary,
           timestamp: new Date().toISOString(),
         }),
       );
@@ -281,6 +320,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ...(originHash ? { origin: originHash } : {}),
           failure_count: String(trip.count),
           window_ms: String(trip.windowMs),
+          ...spikeTags(context),
+          auth_failure_reason: reasons.reason,
+          auth_failure_reasons: reasons.summary,
         },
         fingerprint: ['auth-failure-spike'],
       }));
@@ -422,6 +464,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     status: number,
     requestId: string,
     originHash: string | undefined,
+    context: AuthFailureContext,
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
@@ -439,9 +482,44 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ...(originHash ? { origin_hash: originHash } : {}),
         ...(userHash ? { user_hash: userHash } : {}),
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        ...authFailureAttributes(context),
       },
     });
   }
+}
+
+/**
+ * The tripping request's detail as Sentry tags: the shared attributes, with
+ * values as strings (tags take nothing else) and `client_app` always present,
+ * so a spike from a client neither header places reads `unknown`. The 401's
+ * own `reason` stays off: the window's mix below replaces it.
+ */
+function spikeTags(context: AuthFailureContext): Record<string, string> {
+  const tags: Record<string, string> = { client_app: 'unknown' };
+  for (const [key, value] of Object.entries(authFailureAttributes(context))) {
+    if (key !== 'reason') tags[key] = String(value);
+  }
+  return tags;
+}
+
+/**
+ * A spike's reason mix as Sentry tags (#3907). `reason` is the one reason when
+ * every failure in the window shared it, else `mixed`; `summary` lists each
+ * with its count, largest first (`token_rejected:18,no_bearer:2`). The labels
+ * are the guard's two reasons plus the detector's `other`, so the summary stays
+ * short.
+ */
+function describeReasons(labels: Readonly<Record<string, number>>): {
+  reason: string;
+  summary: string;
+} {
+  const entries = Object.entries(labels).sort(
+    ([a, countA], [b, countB]) => countB - countA || a.localeCompare(b),
+  );
+  return {
+    reason: entries.length === 1 ? entries[0][0] : 'mixed',
+    summary: entries.map(([label, count]) => `${label}:${count}`).join(','),
+  };
 }
 
 /** Client address as Express resolved it — hashed before it goes anywhere. */

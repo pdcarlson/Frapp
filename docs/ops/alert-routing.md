@@ -290,7 +290,7 @@ Only the first is currently **implemented**, as an in-process counter that emits
 
 The in-process counter is per-instance, reset by deploys, and evadable by origin rotation (reasoning in the spec section linked above). It is a first-alert mechanism, not a complete count, and a provider-side rule over the same records is the layer that closes those gaps.
 
-**A denial spike is not automatically an attack.** A botched deploy that invalidates sessions, an expired signing key, or a client shipping a bad token all present as an auth-failure spike. Check whether the failures share one `originHash` (an attacker) or fan out across many (something of ours broke) before escalating.
+**A denial spike is not automatically an attack.** A botched deploy that invalidates sessions, an expired signing key, or a client shipping a bad token all present as an auth-failure spike. Check whether the failures share one `originHash` (an attacker) or fan out across many (something of ours broke) before escalating. Then read the spike event's tags, which say which 401 tripped it and from which client ([spec § Auth-failure spikes](../../spec/behavior/observability.md#auth-failure-spikes)): `token_rejected` with `token_expired: true` from one `client_app` is a client sending a lapsed token, not an attack.
 
 ### Billing webhooks
 
