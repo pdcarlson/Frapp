@@ -10,6 +10,7 @@ import {
   pickSentryErrorCorrelatedProperties,
 } from '@repo/observability';
 import type { AnalyticsEvent } from '@repo/validation';
+import * as Sentry from '@sentry/nestjs';
 import { PostHog, type EventMessage } from 'posthog-node';
 import type { IAnalyticsProvider } from '#domain/adapters/analytics.interface';
 import { NoopAnalyticsProvider } from './noop-analytics.provider';
@@ -436,19 +437,29 @@ function buildOtlpLogs(records: SanitizedLogRecord[]): Record<string, unknown> {
   };
 }
 
-const defaultFetch: PosthogFetch = async (url, options) => {
-  const response = await fetch(url, {
-    method: options.method,
-    headers: options.headers,
-    body: options.body,
-    signal: options.signal,
+/**
+ * The real network path for every PostHog upload (events and logs), run with
+ * Sentry tracing suppressed. Without it Sentry's fetch instrumentation turned
+ * each log flush, which a timer starts outside any request, into its own
+ * `POST /i/v1/logs` transaction: 98k of them in the week to 2026-11-11, about
+ * a third of every span the org accepted on Sentry's free plan, and all of
+ * them about telemetry rather than about a member's request. Suppression also
+ * drops the upload's fetch breadcrumb. Exported for its spec.
+ */
+export const defaultFetch: PosthogFetch = (url, options) =>
+  Sentry.suppressTracing(async () => {
+    const response = await fetch(url, {
+      method: options.method,
+      headers: options.headers,
+      body: options.body,
+      signal: options.signal,
+    });
+    return {
+      status: response.status,
+      text: () => response.text(),
+      json: () => response.json() as Promise<unknown>,
+      headers: {
+        get: (name: string) => response.headers.get(name),
+      },
+    };
   });
-  return {
-    status: response.status,
-    text: () => response.text(),
-    json: () => response.json() as Promise<unknown>,
-    headers: {
-      get: (name: string) => response.headers.get(name),
-    },
-  };
-};
