@@ -2995,6 +2995,10 @@ export function ChatShell({
                   }
                   onDelete={handleDeleteMessage}
                   onClosePoll={handleClosePoll}
+                  onFlag={(messageId, flag) =>
+                    // The action toasts a refusal itself; nothing to add here.
+                    void channel.flag(messageId, flag).catch(() => {})
+                  }
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}

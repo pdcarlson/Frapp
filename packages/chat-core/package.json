@@ -35,7 +35,8 @@
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
     "./attachments": "./src/attachments.ts",
     "./threads": "./src/threads.ts",
-    "./typing-label": "./src/typing-label.ts"
+    "./typing-label": "./src/typing-label.ts",
+    "./flags": "./src/flags.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
