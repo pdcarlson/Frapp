@@ -113,14 +113,14 @@ describe("OpsSetupNudge", () => {
     ).toBeInTheDocument();
   });
 
-  it("links to the Modules tab targeting the module it names", () => {
+  it("links to the module's own Settings page, focusing its switch", () => {
     render(<OpsSetupNudge />);
 
     // `?module=` is what lands the officer on the row rather than at the top
     // of the list; losing it silently degrades the click to a generic jump.
     expect(screen.getByRole("link", { name: /enable dues/i })).toHaveAttribute(
       "href",
-      "/settings?tab=modules&module=dues",
+      "/settings?tab=dues&module=dues",
     );
   });
 
@@ -187,7 +187,9 @@ describe("OpsSetupNudge", () => {
     );
     // The card is gone on the optimistic local state — `GET /v1/chapters` has
     // not refetched, so a card that waited for it would sit under the cursor.
-    expect(screen.queryByText(/collect dues in frapp/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/collect dues in frapp/i),
+    ).not.toBeInTheDocument();
   });
 
   it("falls through to the next nudge after one is dismissed in-session", async () => {
@@ -220,7 +222,9 @@ describe("OpsSetupNudge", () => {
     };
     act(() => options.onError(new Error("403")));
 
-    expect(screen.queryByText(/collect dues in frapp/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/collect dues in frapp/i),
+    ).not.toBeInTheDocument();
   });
 
   // Each dismiss button must be distinguishable by name alone: a screen-reader
@@ -268,7 +272,9 @@ describe("OpsSetupNudgeCard", () => {
   it("renders from a nudge alone", () => {
     render(<OpsSetupNudgeCard module={duesNudge} onDismiss={vi.fn()} />);
     expect(screen.getByText(/collect dues in frapp/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /enable dues/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /enable dues/i }),
+    ).toBeInTheDocument();
   });
 
   it("hands the dismissed module key back to its caller", async () => {
@@ -286,9 +292,9 @@ describe("OpsSetupNudgeCard", () => {
  * The nudge catalog carries keys and pitch copy; the module's *name* belongs to
  * `MODULE_CATALOG`. Nothing else ties the two together, and both failure modes
  * are silent: a relabel would leave the card saying "Enable Dues" while every
- * other surface said something new, and a key rename would make `?module=` match
- * no row, quietly degrading the deep link to a plain Modules tab — the exact
- * thing `?module=` exists to prevent.
+ * other surface said something new, and a key rename would make `?tab=` match
+ * no module page, quietly dropping the officer on the first Settings tab — the
+ * exact thing the deep link exists to prevent.
  */
 describe("nudge keys against MODULE_CATALOG", () => {
   it("every nudge key resolves to a real catalog entry", () => {

@@ -1,12 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
-import { FOCUS_RING } from "@/components/ui/focus";
-import { RAIL_LINK_CLASS } from "@/components/settings/settings-nav-rail";
-import { type SettingsTool } from "@/components/settings/settings-access";
+import { MODULE_SETTINGS } from "@/components/settings/settings-modules";
 import { InlineNote } from "@/components/shared/inline-note";
 
 // Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
@@ -55,6 +52,8 @@ export type SettingsTab = {
   value: string;
   label: string;
   group: SettingsTabGroup;
+  /** A module row whose module the chapter has switched off. */
+  off?: boolean;
 };
 
 /*
@@ -76,9 +75,13 @@ export type SettingsTab = {
     there (`SETTINGS_TAB_ALIASES`).
   - **No `joincode`.** The board `4d` rail drew it; `apps/web` has no
     join-code surface. The board's `subscription` row is Plan and billing.
-  - **`dues`, `workflows` and `classes` are ours.** Each is live chapter
-    configuration with no other home. `classes` takes the chapter's own word
-    for a class, which the page sets.
+  - **One row per module** (#4073). The Modules group used to be three rows:
+    a Modules list of switches whose ~50 sub-feature labels saved nothing
+    (#1760), Dues, and a Workflows list where seven of nine switches were read
+    by nothing (#3439). Each module now opens its own page
+    (`MODULE_SETTINGS`), and the live workflows moved onto theirs.
+  - **`classes` is ours**, live chapter configuration with no other home. It
+    takes the chapter's own word for a class, which the page sets.
 
   `beta` and `audit` are gone rather than reordered. They rendered
   `SettingsComingSoon` stubs naming "Chunk 08", generated chrome advertising
@@ -92,18 +95,26 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { value: "roles", label: "Roles", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },
-  { value: "modules", label: "Modules", group: "modules" },
-  { value: "dues", label: "Dues", group: "modules" },
-  { value: "workflows", label: "Workflows", group: "modules" },
+  ...MODULE_SETTINGS.map((module): SettingsTab => ({
+    value: module.key,
+    label: module.label,
+    group: "modules",
+  })),
 ];
 
 /**
  * Old `?tab=` values that now open another row: Accent folded into Chapter,
- * and Danger zone into Plan and billing. Old links and bookmarks keep working.
+ * Danger zone into Plan and billing, the Modules list into the module pages
+ * (Events, the first one with a switch), and Workflows into Service hours,
+ * where its one switch that is live for the beta went. Old links and
+ * bookmarks keep working. `?tab=modules&module=<key>` opens that module's
+ * page instead (`settings-page.tsx`).
  */
 export const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
   theme: "org",
   danger: "billing",
+  modules: "events",
+  workflows: "hours",
 };
 
 /** Resolves a `?tab=` value to a row, or `null` when it names none. */
@@ -115,12 +126,9 @@ export function resolveSettingsTabParam(
   return SETTINGS_TABS.some((tab) => tab.value === value) ? value : null;
 }
 
-// The officer tools (`settings-access.ts`) are links, not tabs: each keeps its
-// own full-width page, so they take the link row (`RAIL_LINK_CLASS`), since
-// clicking one leaves this page rather than switching a tab.
-
 /**
- * The left rail: officer-tool links, then the setup rows in their groups.
+ * The left rail: the setup rows in their groups. The officer tools that sat
+ * above them as links are on their module's page now (#4073).
  * Renders inside the page's `<Tabs>`, since its lists drive the
  * panels beside it.
  *
@@ -130,10 +138,8 @@ export function resolveSettingsTabParam(
  * own only on a window too short to hold it.
  */
 export function SettingsRail({
-  tools,
   visibleTabs,
 }: {
-  tools: readonly SettingsTool[];
   visibleTabs: readonly SettingsTab[];
 }) {
   const groups = (Object.keys(SETTINGS_TAB_GROUP_LABELS) as SettingsTabGroup[])
@@ -145,18 +151,6 @@ export function SettingsRail({
     .filter((entry) => entry.tabs.length > 0);
   return (
     <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-1">
-      {tools.length > 0 ? (
-        <nav aria-label="Officer tools" className="flex flex-col gap-0.5">
-          <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>Tools</p>
-          <div className="flex flex-row flex-wrap gap-0.5 lg:flex-col">
-            {tools.map((tool) => (
-              <Link key={tool.id} href={tool.href} className={RAIL_LINK_CLASS}>
-                {tool.label}
-              </Link>
-            ))}
-          </div>
-        </nav>
-      ) : null}
       {groups.map((entry) => (
         <div key={entry.group} className="flex flex-col gap-0.5">
           <p
@@ -175,7 +169,12 @@ export function SettingsRail({
                 value={tab.value}
                 className={RAIL_TRIGGER_CLASS}
               >
-                {tab.label}
+                <span className="min-w-0 truncate">{tab.label}</span>
+                {tab.off ? (
+                  <span className="ml-auto pl-2 text-caption font-normal text-muted">
+                    Off
+                  </span>
+                ) : null}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -186,55 +185,16 @@ export function SettingsRail({
 }
 
 /**
- * Settings for a viewer who holds officer tools but no setup tabs, such as a
- * treasurer with `reports:export`. A rail of one link beside an empty panel
- * would be a page that says nothing, so the tools are listed as the page
- * itself. With no tools either, the viewer reached this URL with nothing to do
- * here, and the empty state says who can change that.
+ * Chapter settings for a viewer it holds nothing for: no setup row, and no
+ * module page through a tool (a tool-only viewer, such as a treasurer with
+ * `reports:export`, gets that tool's module page since #4073). They reached
+ * this URL with nothing to do here, so it says who can change that.
  */
-export function SettingsToolsOnly({
-  tools,
-}: {
-  tools: readonly SettingsTool[];
-}) {
-  if (tools.length === 0) {
-    return (
-      <InlineNote>
-        Nothing in Settings for your role. Officer tools come with an officer
-        role; ask your chapter president if you need one.
-      </InlineNote>
-    );
-  }
+export function SettingsNothingHere() {
   return (
-    <nav aria-label="Officer tools" className="space-y-2">
-      <p className={cn(EYEBROW, "text-muted")}>Tools</p>
-      <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
-        {tools.map((tool) => (
-          <li key={tool.id} className="group">
-            <Link
-              href={tool.href}
-              className={cn(
-                // A row in a card list hovers like a table row
-                // (`ui/table.tsx`): `--card-hover`, the step above the whole
-                // ladder, where `bg-accent`, the elevated step, moved 1.105:1. The end rows
-                // take the list's inner radius (14px less its 1px border) so
-                // the visible tint stays inside its corners; clipping the list
-                // with `overflow-hidden` instead would clip the focus ring too.
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-card-hover",
-                "group-first:rounded-t-[13px] group-last:rounded-b-[13px]",
-                FOCUS_RING,
-              )}
-            >
-              <span className="text-sm font-semibold text-foreground">
-                {tool.label}
-              </span>
-              <span className="text-caption text-muted-foreground">
-                {tool.description}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <InlineNote>
+      Nothing in Chapter settings for your role. Officer tools come with an
+      officer role; ask your chapter president if you need one.
+    </InlineNote>
   );
 }
