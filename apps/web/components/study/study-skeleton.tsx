@@ -11,10 +11,10 @@ import { Skeleton } from "@/components/shared/async-states";
  */
 export function StudyPageSkeleton() {
   return (
-    <PageSkeleton label="Loading study hours">
+    <PageSkeleton label="Loading study hours" className="@container space-y-6">
       <section className="space-y-3">
         <SkeletonSectionLabel width="w-28" />
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end">
+        <div className="grid gap-3 @md:grid-cols-[minmax(0,20rem)_auto] @md:items-end">
           <div className="grid gap-2">
             <Skeleton className="h-[11px] w-20" />
             <Skeleton className="h-11 w-full rounded-md" />

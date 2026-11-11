@@ -18,7 +18,7 @@ function PlanPanelFrame() {
   return (
     <div
       aria-hidden="true"
-      className="flex flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 sm:flex-row sm:items-center sm:gap-6"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 @xl:flex-row @xl:items-center @xl:gap-6"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="flex items-center gap-2.5">
@@ -67,7 +67,7 @@ export function InvoiceRowsSkeleton() {
  */
 export function BillingPageSkeleton() {
   return (
-    <PageSkeleton label="Loading billing">
+    <PageSkeleton label="Loading billing" className="@container space-y-6">
       <PlanPanelFrame />
       {/*
         The real matrix: it is static (the module catalogue, no query), so the
@@ -79,7 +79,7 @@ export function BillingPageSkeleton() {
           <div className="mr-auto">
             <SkeletonSectionLabel width="w-20" count />
           </div>
-          <SkeletonControl className="w-full sm:w-64" />
+          <SkeletonControl className="w-full @md:w-64" />
           <SkeletonControl className="w-[92px]" />
           <SkeletonControl className="w-[132px]" />
         </div>

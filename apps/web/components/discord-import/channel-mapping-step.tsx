@@ -1026,7 +1026,7 @@ function ChannelRow({
       </div>
 
       {action === "create_new" ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 @xl:grid-cols-2">
           <div className="grid gap-1">
             <Label
               htmlFor={`new-name-${channel.channelId}`}

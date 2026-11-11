@@ -165,7 +165,7 @@ export function ImportLanding({
         intro={false}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 @xl:grid-cols-2">
         <div className="space-y-1.5">
           <p className={cn(EYEBROW, "text-muted-foreground")}>Comes over</p>
           <ul className="space-y-1 text-sm">
@@ -223,7 +223,7 @@ function CategoryTiles({ categories }: { categories: CategoryProgress[] }) {
   return (
     <ul
       aria-label="Progress by Discord category"
-      className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+      className="grid grid-cols-2 gap-2 @xl:grid-cols-4"
     >
       {tiles.map((tile) => (
         <Tile key={tile.key} tile={tile} />
@@ -422,7 +422,7 @@ export function ImportFinished({
         <dl
           className={cn(
             "grid grid-cols-2 gap-3",
-            totals ? "sm:grid-cols-4" : "sm:grid-cols-3",
+            totals ? "@xl:grid-cols-4" : "@xl:grid-cols-3",
           )}
         >
           <Figure

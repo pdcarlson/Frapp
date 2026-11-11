@@ -11,14 +11,14 @@ export function DiscordImportSkeleton() {
   return (
     <SectionSkeleton
       label="Loading the import"
-      className="mx-auto max-w-2xl space-y-4"
+      className="@container mx-auto max-w-2xl space-y-4"
     >
       <div aria-hidden="true" className="space-y-2">
         <Skeleton className="h-[11px] w-28" />
         <Skeleton className="h-7 w-80 max-w-full" />
         <Skeleton className="h-[13px] w-96 max-w-full" />
       </div>
-      <div aria-hidden="true" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div aria-hidden="true" className="grid grid-cols-2 gap-3 @xl:grid-cols-3">
         {[0, 1, 2].map((figure) => (
           <Skeleton key={figure} className="h-[68px] rounded-lg" />
         ))}
