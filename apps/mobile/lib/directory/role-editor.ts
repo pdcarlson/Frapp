@@ -15,6 +15,7 @@
 import {
   memberAccessRoleIds,
   removesMemberAccess,
+  roleColorOrNull,
   WILDCARD_PERMISSION,
 } from "@repo/validation";
 import { records, str } from "../more/narrow";
@@ -51,7 +52,7 @@ export function parseRoleOptions(rolesData: unknown): RoleOption[] {
     options.push({
       id,
       name,
-      color: str(row, "color"),
+      color: roleColorOrNull(row.color),
       locked: permissions.includes(WILDCARD_PERMISSION),
       // The shared rule web's member sheet uses too (`@repo/validation`).
       grantsBase: memberAccessRoleIds([{ id, permissions }]).has(id),
