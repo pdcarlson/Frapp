@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { useEffect } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 /**
  * Overrides folded into the `useChannels()` mock, so a case can drive the
@@ -296,30 +296,35 @@ const mockPostTask = vi.fn(async (): Promise<Record<string, unknown>> => ({
 const mockPostHours = vi.fn(async () => ({ ok: true }));
 const mockPostPoints = vi.fn(async () => ({ ok: true }));
 
-// The + menu's Task, Service hours and Points forms (#3865) have their own
-// specs; here each is only what the shell opens and what it does on submit.
-vi.mock("@/components/tasks/new-task-dialog", () => ({
-  NewTaskDialog: (props: {
-    open: boolean;
-    prefill?: { title?: string; dueDate?: string };
-    initialAssigneeId?: string;
-    onPost: (input: unknown) => Promise<unknown>;
+const mockPostEvent = vi.fn(async () => ({ ok: true }));
+
+// The + card's Event, Task, Service hours and Points forms (#3865, #3983) have
+// their own specs; here each is only what the shell renders in the card, what
+// it seeds the form with, and what it does on submit. The draft helpers stay
+// real, since the shell builds each form's draft from them.
+vi.mock("@/components/tasks/task-form", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/tasks/task-form")>()),
+  TaskForm: (props: {
+    initialDraft?: { title: string; dueDate: string; assigneeId: string };
+    onPost: (input: unknown) => Promise<{ ok: boolean }>;
+    onDone: () => void;
   }) => (
     <div
       data-testid="task-form"
-      data-open={String(props.open)}
-      data-title={props.prefill?.title ?? ""}
-      data-due={props.prefill?.dueDate ?? ""}
-      data-assignee={props.initialAssigneeId ?? ""}
+      data-title={props.initialDraft?.title ?? ""}
+      data-due={props.initialDraft?.dueDate ?? ""}
+      data-assignee={props.initialDraft?.assigneeId ?? ""}
     >
       <button
         data-testid="task-form-post"
         onClick={() =>
-          void props.onPost({
-            title: "Sweep",
-            assignee_id: "u-1",
-            due_date: "2026-11-12",
-          })
+          void props
+            .onPost({
+              title: "Sweep",
+              assignee_id: "u-1",
+              due_date: "2026-11-12",
+            })
+            .then((result) => result.ok && props.onDone())
         }
       >
         post
@@ -327,15 +332,16 @@ vi.mock("@/components/tasks/new-task-dialog", () => ({
     </div>
   ),
 }));
-vi.mock("@/components/service/log-hours-dialog", () => ({
-  LogHoursDialog: (props: {
-    open: boolean;
+vi.mock("@/components/service/log-hours-form", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/service/log-hours-form")
+  >()),
+  LogHoursForm: (props: {
     showSubscriptionNotice?: boolean;
     submitToChannel?: (input: unknown) => Promise<unknown>;
   }) => (
     <div
       data-testid="hours-form"
-      data-open={String(props.open)}
       data-notice={String(Boolean(props.showSubscriptionNotice))}
     >
       <button
@@ -353,12 +359,14 @@ vi.mock("@/components/service/log-hours-dialog", () => ({
     </div>
   ),
 }));
-vi.mock("@/components/points/points-adjustment-dialog", () => ({
-  PointsAdjustmentDialog: (props: {
-    open: boolean;
+vi.mock("@/components/points/points-adjustment-form", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/points/points-adjustment-form")
+  >()),
+  PointsAdjustmentForm: (props: {
     submitToChannel?: (input: unknown) => Promise<unknown>;
   }) => (
-    <div data-testid="points-form" data-open={String(props.open)}>
+    <div data-testid="points-form">
       <button
         data-testid="points-form-post"
         onClick={() =>
@@ -371,6 +379,49 @@ vi.mock("@/components/points/points-adjustment-dialog", () => ({
         }
       >
         post
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./event-quick-form", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./event-quick-form")>()),
+  EventQuickForm: (props: {
+    initialDraft?: {
+      name: string;
+      date: string;
+      startTime: string;
+      endTime: string;
+    };
+    onPost: (input: unknown) => Promise<{ ok: boolean }>;
+    onMoreOptions: (draft: unknown) => void;
+    onDone: () => void;
+  }) => (
+    <div
+      data-testid="event-quick-form"
+      data-name={props.initialDraft?.name ?? ""}
+      data-date={props.initialDraft?.date ?? ""}
+      data-start={props.initialDraft?.startTime ?? ""}
+      data-end={props.initialDraft?.endTime ?? ""}
+    >
+      <button
+        data-testid="event-quick-post"
+        onClick={() =>
+          void props
+            .onPost({
+              name: props.initialDraft?.name ?? "Formal",
+              start_time: "2026-11-20T23:00:00.000Z",
+              end_time: "2026-11-21T01:00:00.000Z",
+            })
+            .then((result) => result.ok && props.onDone())
+        }
+      >
+        post
+      </button>
+      <button
+        data-testid="event-quick-more"
+        onClick={() => props.onMoreOptions(props.initialDraft)}
+      >
+        more
       </button>
     </div>
   ),
@@ -855,9 +906,16 @@ vi.mock("./composer", () => ({
     recruitmentVocab,
     onOpenCommandForm,
     commandForms,
+    renderPlusForm,
+    plusDrafts,
     isAuditLog,
   }: {
     channelId: string;
+    renderPlusForm?: (
+      command: "poll" | "event" | "task" | "hours" | "points",
+      card: { close: () => void; back: () => void },
+    ) => ReactNode;
+    plusDrafts?: ReadonlySet<string>;
     isAuditLog?: boolean;
     commandForms?: readonly { command: string; roleAllows: unknown }[];
     onOpenCommandForm?: (
@@ -882,6 +940,17 @@ vi.mock("./composer", () => ({
     onCancelReply?: () => void;
     onRestoreReply?: (messageId: string) => void;
   }) => {
+    // The + card the real composer opens when the shell answers "opened":
+    // its form is whatever the shell renders for that command.
+    const [plusView, setPlusView] = useState<string | null>(null);
+    const offer = (name: string, args: string) => {
+      const took = onOpenCommandForm?.(
+        { name: name as "event", implemented: true },
+        args,
+      );
+      if (took === "opened") setPlusView(name);
+      return took;
+    };
     // Deliberately mount-only: the assertion below needs "did this
     // component get a fresh instance", which an exhaustive `[channelId]`
     // dep array would defeat by firing on every prop update too.
@@ -942,10 +1011,7 @@ vi.mock("./composer", () => ({
             key={args}
             data-testid={`composer-event:${args}`}
             onClick={(event) => {
-              const took = onOpenCommandForm?.(
-                { name: "event", implemented: true },
-                args,
-              );
+              const took = offer("event", args);
               event.currentTarget.dataset.took = String(took);
             }}
           >
@@ -957,10 +1023,7 @@ vi.mock("./composer", () => ({
             key={`poll:${args}`}
             data-testid={`composer-poll:${args}`}
             onClick={(event) => {
-              const took = onOpenCommandForm?.(
-                { name: "poll", implemented: true },
-                args,
-              );
+              const took = offer("poll", args);
               event.currentTarget.dataset.took = String(took);
             }}
           >
@@ -979,16 +1042,30 @@ vi.mock("./composer", () => ({
             key={`${name}:${args}`}
             data-testid={`composer-${name}:${args}`}
             onClick={(event) => {
-              const took = onOpenCommandForm?.(
-                { name: name as "task", implemented: true },
-                args!,
-              );
+              const took = offer(name!, args!);
               event.currentTarget.dataset.took = String(took);
             }}
           >
             /{name} {args}
           </button>
         ))}
+        <span data-testid="composer-plus-drafts">
+          {[...(plusDrafts ?? [])].sort().join(",")}
+        </span>
+        {plusView ? (
+          <div data-testid="plus-card" data-view={plusView}>
+            {renderPlusForm?.(plusView as "poll", {
+              close: () => setPlusView(null),
+              back: () => setPlusView(null),
+            })}
+            <button
+              data-testid="plus-card-close"
+              onClick={() => setPlusView(null)}
+            >
+              close
+            </button>
+          </div>
+        ) : null}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
         </button>
@@ -1304,6 +1381,7 @@ function chatChannelResult(
     trackEventCard: mockTrackEventCard,
     sendPoll: mockSendPoll,
     postTask: mockPostTask,
+    postEvent: mockPostEvent,
     postHours: mockPostHours,
     postPointsAdjustment: mockPostPoints,
     act: vi.fn(),
@@ -4849,57 +4927,73 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
   });
 });
 
-describe("ChatShell opens the event form for an /event it can't read (#3773)", () => {
+describe("ChatShell opens the + card's event form for an /event it can't read (#3773, #3983)", () => {
   function eventButton(args: string) {
     return screen.getByTestId(`composer-event:${args}`);
   }
 
-  it("opens the form, filled in, for the active channel", () => {
+  beforeEach(() => {
     mockUseMyPermissions.mockReturnValue({
       data: { permissions: ["events:create", "members:view"] },
     });
+  });
+
+  it("opens the card's form, filled in, and posts into the active channel", async () => {
+    mockPostEvent.mockClear();
     render(<ChatShell />);
-    expect(screen.queryByTestId("event-form")).toBeNull();
+    expect(screen.queryByTestId("event-quick-form")).toBeNull();
 
     fireEvent.click(eventButton("Chapter Dinner"));
 
     expect(eventButton("Chapter Dinner").dataset.took).toBe("opened");
-    const form = screen.getByTestId("event-form");
-    expect(form).toHaveAttribute("data-open", "true");
+    const form = screen.getByTestId("event-quick-form");
     expect(form).toHaveAttribute("data-name", "Chapter Dinner");
+    // The full editor is not what opens: it waits behind More options.
+    expect(screen.queryByTestId("event-form")).toBeNull();
+    fireEvent.click(screen.getByTestId("event-quick-post"));
+    await waitFor(() => expect(mockPostEvent).toHaveBeenCalled());
     // The composer stub prints its `channelId` first: the card goes there.
-    const channelId = form.getAttribute("data-channel")!;
-    expect(channelId).not.toBe("");
+    const [channelId] = mockPostEvent.mock.calls[0] as unknown as [string];
     expect(screen.getByTestId("composer").textContent).toMatch(
       new RegExp(`^${channelId}`),
     );
+    // Posted: the card closes and the draft is gone.
+    await waitFor(() => expect(screen.queryByTestId("plus-card")).toBeNull());
+    expect(screen.getByTestId("composer-plus-drafts")).toHaveTextContent("");
   });
 
-  it("hands the typed date and times to the form as start and end", () => {
-    mockUseMyPermissions.mockReturnValue({
-      data: { permissions: ["events:create", "members:view"] },
-    });
+  it("hands the typed date and times to the form", () => {
     render(<ChatShell />);
     fireEvent.click(eventButton("Chapter Dinner 2026-11-20 9:00-11:00"));
 
-    const form = screen.getByTestId("event-form");
+    const form = screen.getByTestId("event-quick-form");
     expect(form).toHaveAttribute("data-name", "Chapter Dinner");
-    expect(form).toHaveAttribute("data-start", "2026-11-20T09:00");
-    expect(form).toHaveAttribute("data-end", "2026-11-20T11:00");
+    expect(form).toHaveAttribute("data-date", "2026-11-20");
+    expect(form).toHaveAttribute("data-start", "09:00");
+    expect(form).toHaveAttribute("data-end", "11:00");
   });
 
-  it("hands the form the chat's card tracker, so the card gets its placeholder and recorded row", () => {
-    mockUseMyPermissions.mockReturnValue({
-      data: { permissions: ["events:create", "members:view"] },
-    });
+  it("carries the draft into the full editor on More options, with the chat's card tracker", () => {
     mockTrackEventCard.mockClear();
     render(<ChatShell />);
-    fireEvent.click(eventButton("Chapter Dinner"));
-    fireEvent.click(screen.getByTestId("event-form-track"));
+    fireEvent.click(eventButton("Chapter Dinner 2026-11-20 9:00-11:00"));
+    fireEvent.click(screen.getByTestId("event-quick-more"));
 
-    const channelId = screen
-      .getByTestId("event-form")
-      .getAttribute("data-channel");
+    expect(screen.queryByTestId("plus-card")).toBeNull();
+    const editor = screen.getByTestId("event-form");
+    expect(editor).toHaveAttribute("data-open", "true");
+    expect(editor).toHaveAttribute("data-name", "Chapter Dinner");
+    expect(editor).toHaveAttribute("data-start", "2026-11-20T09:00");
+    expect(editor).toHaveAttribute("data-end", "2026-11-20T11:00");
+    const channelId = editor.getAttribute("data-channel")!;
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+    // Cancelling the editor loses nothing: the + still holds the draft.
+    expect(screen.getByTestId("composer-plus-drafts")).toHaveTextContent(
+      "event",
+    );
+    fireEvent.click(screen.getByTestId("event-form-track"));
     expect(mockTrackEventCard).toHaveBeenCalledWith(channelId, "Formal");
   });
 
@@ -4910,22 +5004,16 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     render(<ChatShell />);
     fireEvent.click(eventButton(""));
 
-    expect(screen.getByTestId("event-form")).toHaveAttribute(
-      "data-open",
-      "true",
-    );
+    expect(screen.getByTestId("event-quick-form")).toBeInTheDocument();
   });
 
   it("leaves a one-liner it can read to the dispatcher", () => {
-    mockUseMyPermissions.mockReturnValue({
-      data: { permissions: ["events:create", "members:view"] },
-    });
     render(<ChatShell />);
     const oneLiner = '"Formal" 2026-11-20 18:00-20:00';
     fireEvent.click(eventButton(oneLiner));
 
     expect(eventButton(oneLiner).dataset.took).toBe("null");
-    expect(screen.queryByTestId("event-form")).toBeNull();
+    expect(screen.queryByTestId("event-quick-form")).toBeNull();
   });
 
   it("says a member without the grant can't create events, instead of opening a form the server refuses", () => {
@@ -4937,7 +5025,7 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     fireEvent.click(eventButton("Chapter Dinner"));
 
     expect(eventButton("Chapter Dinner").dataset.took).toBe("refused");
-    expect(screen.queryByTestId("event-form")).toBeNull();
+    expect(screen.queryByTestId("event-quick-form")).toBeNull();
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "You can't create events" }),
     );
@@ -4955,8 +5043,7 @@ describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", 
     fireEvent.click(pollButton('"Who drives?" Sam'));
 
     expect(pollButton('"Who drives?" Sam').dataset.took).toBe("opened");
-    expect(await screen.findByText("New poll")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Ask a question")).toHaveValue(
+    expect(await screen.findByPlaceholderText("Ask a question")).toHaveValue(
       "Who drives?",
     );
     fireEvent.change(screen.getByLabelText("Option 2"), {
@@ -5003,7 +5090,7 @@ describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", 
     render(<ChatShell />);
     fireEvent.click(pollButton('"Who drives?" Sam Alex'));
     expect(pollButton('"Who drives?" Sam Alex').dataset.took).toBe("null");
-    expect(screen.queryByText("New poll")).toBeNull();
+    expect(screen.queryByPlaceholderText("Ask a question")).toBeNull();
   });
 });
 
@@ -5040,7 +5127,6 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
       "opened",
     );
     const form = screen.getByTestId("task-form");
-    expect(form.dataset.open).toBe("true");
     expect(form.dataset.title).toBe("Sweep the porch");
     expect(form.dataset.due).toBe("2026-11-12");
     expect(form.dataset.assignee).toBe("u-bobby");
@@ -5066,11 +5152,11 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     expect(screen.getByTestId("composer").textContent).toMatch(
       new RegExp(`^${channelId}`),
     );
-    // The typed command's own notice, so a lost card reads the same either way.
+    // The typed command's notice, named for the form ("Task", not "/task").
     await waitFor(() =>
       expect(mockNotifyOutcome).toHaveBeenCalledWith(
         expect.any(Function),
-        "task",
+        "Task",
         expect.objectContaining({ warning: expect.any(String) }),
       ),
     );
@@ -5101,21 +5187,39 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     expect(channelId).toBeTruthy();
   });
 
-  it("posts into the channel a form was opened in, even after a switch", async () => {
-    mockPostHours.mockClear();
+  it("keeps a typed draft when the card closes, resumes it bare, and drops it once posted (#3983)", async () => {
+    mockChapterRoster.mockReturnValue({
+      data: [{ user_id: "u-bobby", display_name: "Bobby Member" }],
+    });
+    render(<ChatShell />);
+    click("composer-task:Sweep the porch @bobby 2026-11-12");
+    expect(screen.getByTestId("composer-plus-drafts")).toHaveTextContent(
+      "task",
+    );
+    // A click away, Escape or the X: the card goes, the draft stays.
+    fireEvent.click(screen.getByTestId("plus-card-close"));
+    expect(screen.queryByTestId("task-form")).toBeNull();
+    expect(screen.getByTestId("composer-plus-drafts")).toHaveTextContent(
+      "task",
+    );
+    // A bare /task (or the menu row) picks it back up.
+    click("composer-task:");
+    expect(screen.getByTestId("task-form").dataset.title).toBe(
+      "Sweep the porch",
+    );
+    fireEvent.click(screen.getByTestId("task-form-post"));
+    await waitFor(() => expect(screen.queryByTestId("task-form")).toBeNull());
+    expect(screen.getByTestId("composer-plus-drafts")).toHaveTextContent("");
+  });
+
+  it("closes the card on a channel switch, and carries the hours form's gate notice", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     click("composer-hours:");
-    // Chat has no notice of its own for the hours form's gate; the dialog
+    // Chat has no notice of its own for the hours form's gate; the form
     // carries it (the Service page shows its own).
     expect(screen.getByTestId("hours-form").dataset.notice).toBe("true");
     fireEvent.click(screen.getByTestId("pick-random"));
-    fireEvent.click(screen.getByTestId("hours-form-post"));
-    await waitFor(() => expect(mockPostHours).toHaveBeenCalled());
-    const [channelId] = mockPostHours.mock.calls[0] as unknown as [string];
-    expect(channelId).toBe("chan-general");
-    expect(screen.getByTestId("composer").textContent).not.toMatch(
-      /^chan-general/,
-    );
+    expect(screen.queryByTestId("hours-form")).toBeNull();
   });
 
   it("reads a form write that threw as unconfirmed, never as a refusal to resubmit", async () => {
@@ -5127,7 +5231,7 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     await waitFor(() =>
       expect(mockNotifyOutcome).toHaveBeenCalledWith(
         expect.any(Function),
-        "points",
+        "Points",
         expect.objectContaining({ ok: true, unconfirmed: true }),
       ),
     );
@@ -5138,9 +5242,9 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     expect(click("composer-hours:log 2h")).toBe("null");
     expect(screen.queryByTestId("hours-form")).toBeNull();
     expect(click("composer-hours:")).toBe("opened");
-    expect(screen.getByTestId("hours-form").dataset.open).toBe("true");
+    expect(screen.getByTestId("hours-form")).toBeInTheDocument();
     expect(click("composer-points:")).toBe("opened");
-    expect(screen.getByTestId("points-form").dataset.open).toBe("true");
+    expect(screen.getByTestId("points-form")).toBeInTheDocument();
   });
 
   it("refuses a role that can't, before any form opens", () => {
