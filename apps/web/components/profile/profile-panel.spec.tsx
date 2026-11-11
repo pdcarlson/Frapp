@@ -81,7 +81,7 @@ const mocks = vi.hoisted(() => {
     // and a disabled query reports `isLoading: false` (v5 derives it as
     // `isPending && isFetching`), so it never reaches the loading rung at all.
     chapterId: "chap-1" as string | null,
-    // The wildcard draws every switch, New members (#4008) included.
+    // The wildcard draws every switch, the join one (#4008) included.
     permissions: ["*"] as string[],
     preferencesQuery: {
       data: undefined as unknown,
@@ -909,15 +909,17 @@ describe("ProfilePanel — notification categories (#564)", () => {
 
   // #4008: the switch follows the push, so a member who is never told about
   // a join is never shown a switch for it.
-  it("draws New members only for officers who are told about joins", () => {
+  it("draws the join switch only for officers who are told about joins", () => {
     mocks.permissions = ["members:view"];
     const { unmount } = render(<ProfilePanel />);
-    expect(screen.queryByRole("switch", { name: /^new members$/i })).toBeNull();
+    expect(
+      screen.queryByRole("switch", { name: /^someone joins the chapter$/i }),
+    ).toBeNull();
     unmount();
 
     mocks.permissions = ["members:view", "roles:manage"];
     render(<ProfilePanel />);
-    expect(categorySwitch(/^new members$/i)).toBeTruthy();
+    expect(categorySwitch(/^someone joins the chapter$/i)).toBeTruthy();
   });
 
   it("draws no Billing switch while dues is beta-off", () => {

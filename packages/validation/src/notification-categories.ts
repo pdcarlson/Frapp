@@ -148,8 +148,10 @@ export const NOTIFICATION_CATEGORIES = [
     // who `shownNotificationCategories` draws this row for. Chat reports and
     // the Discord import notice stay on `admin`, unswitchable (docblock above).
     key: "members",
-    label: "New members",
-    description: "When someone joins the chapter.",
+    // Named for what sets it off rather than a noun like the rows above:
+    // Shawn found "New members" didn't say what the switch does (#4008).
+    label: "Someone joins the chapter",
+    description: "A notice each time a new member joins.",
     defaultEnabled: true,
     audience: MEMBER_JOINED_AUDIENCE,
   },

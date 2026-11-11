@@ -258,7 +258,7 @@ describe("Settings switches", () => {
     );
 
     // Push, quiet hours, then one per notification category this member is
-    // shown (no permissions here, so not the officers' New members switch).
+    // shown (no permissions here, so not the officers' join switch).
     expect(pushSwitches(tree)).toHaveLength(1);
     expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 1);
     for (const node of switches) {
@@ -289,11 +289,11 @@ describe("Settings copy", () => {
   });
 
   // #4008: only the members sent "<Name> joined" get a switch for it.
-  it("draws New members only for officers who are told about joins", () => {
-    expect(screenText(render())).not.toContain("New members");
+  it("draws the join switch only for officers who are told about joins", () => {
+    expect(screenText(render())).not.toContain("Someone joins the chapter");
 
     state.permissions = ["members:view", "members:invite"];
-    expect(screenText(render())).toContain("New members");
+    expect(screenText(render())).toContain("Someone joins the chapter");
   });
 
   it("draws no Billing switch while dues is beta-off", () => {

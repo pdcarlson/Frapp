@@ -93,8 +93,8 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
 ] as const;
 
 /**
- * Who is told a member joined the chapter (#3656), and so who gets the "New
- * members" notification switch (#4008): whoever can open the roster the push
+ * Who is told a member joined the chapter (#3656), and so who gets the
+ * "Someone joins the chapter" notification switch (#4008): whoever can open the roster the push
  * links to (`members:view`) **and** can act on the join, by inviting more
  * people (`members:invite`) or by giving the new member a role
  * (`roles:manage`). Any one set admits a member; the wildcard admits all.

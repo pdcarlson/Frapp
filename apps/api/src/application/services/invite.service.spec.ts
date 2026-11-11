@@ -1771,7 +1771,7 @@ describe('InviteService', () => {
     it('asks for roster access plus the invite or role-management permission', () => {
       // Spelled as strings in `@repo/validation`, so pin them to the
       // server's own constants: a renamed permission must fail here, not
-      // quietly hide the New members switch from everyone.
+      // quietly hide the join switch from everyone.
       expect(MEMBER_JOINED_AUDIENCE).toEqual([
         [SystemPermissions.MEMBERS_VIEW, SystemPermissions.MEMBERS_INVITE],
         [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ROLES_MANAGE],

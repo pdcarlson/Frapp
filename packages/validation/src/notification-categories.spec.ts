@@ -198,7 +198,7 @@ describe("shownNotificationCategories", () => {
 
   // #4008: the switch follows the push. A member outside the join audience is
   // never sent "<Name> joined", so a switch for it would govern nothing.
-  it("draws New members only for the join notification's audience", () => {
+  it("draws the join switch only for the join notification's audience", () => {
     expect(shownKeys(["members:view", "members:invite"])).toContain("members");
     expect(shownKeys(["members:view", "roles:manage"])).toContain("members");
     expect(shownKeys(["*"])).toContain("members");

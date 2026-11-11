@@ -115,7 +115,7 @@ export function ProfilePanel() {
   const chapterId = useActiveChapterId();
   const preferencesQuery = useNotificationPreferences(chapterId ?? "");
   const updatePreference = useUpdateNotificationPreference();
-  // Decides which audience-gated switches are drawn (New members, #4008).
+  // Decides which audience-gated switches are drawn (the join switch, #4008).
   const permissions = usePermissionList();
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
