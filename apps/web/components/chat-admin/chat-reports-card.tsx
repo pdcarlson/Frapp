@@ -93,10 +93,8 @@ import { InlineNote } from "@/components/shared/inline-note";
 export function ChatReportsCard({
   channelId,
 }: {
-  /**
-   * One channel's reports, beside that channel's settings. Omitted, the whole
-   * chapter's queue: the only place a report about a DM appears.
-   */
+  // One channel's reports, beside that channel's settings. Omitted, the whole
+  // chapter's queue: the only place a report about a DM appears.
   channelId?: string;
 } = {}) {
   return (

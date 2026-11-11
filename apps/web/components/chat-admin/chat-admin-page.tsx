@@ -229,19 +229,14 @@ export function ChatAdminPage({
       {/*
         The report queue last, and outside `ChatAdminBody`, so a failed
         channels read (which replaces the body with an error) does not take it
-        down. Behind channels:manage with no denied or offline line of its
-        own: the page's gate above already says either. The new-report notification
-        links to its anchor (`/chat-admin#reported-messages`).
+        down. The card carries its own gate (`CHAT_REPORT_QUEUE_PERMISSIONS`,
+        which includes channels:manage) and renders nothing for an officer it
+        refuses. The new-report notification links to its anchor
+        (`/chat-admin#reported-messages`).
       */}
-      <Can
-        permission="channels:manage"
-        deniedFallback={null}
-        offlineFallback={null}
-      >
-        <div className="mt-10">
-          <ChatReportsCard channelId={initialChannelId ?? undefined} />
-        </div>
-      </Can>
+      <div className="mt-10">
+        <ChatReportsCard channelId={initialChannelId ?? undefined} />
+      </div>
     </>
   );
 }
