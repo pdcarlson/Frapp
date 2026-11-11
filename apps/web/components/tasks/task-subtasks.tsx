@@ -47,7 +47,7 @@ export function TaskSubtasksToggle({
       aria-expanded={open}
       onClick={onToggle}
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1 -mx-1 transition-colors hover:text-foreground",
+        "inline-flex items-center gap-1 rounded transition-colors hover:text-foreground",
         allDone ? "text-success" : undefined,
       )}
     >

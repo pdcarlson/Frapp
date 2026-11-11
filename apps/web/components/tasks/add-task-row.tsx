@@ -168,7 +168,9 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, title: event.target.value }))
         }
       />
-      <div className="grid grid-cols-2 gap-2">
+      {/* Stacked, not side by side: a column is narrow, and a due field
+          holding a time ("Fri, Nov 13 · 7 PM") doesn't fit half of one. */}
+      <div className="grid grid-cols-1 gap-2">
         <div className="min-w-0">
           <Select
             value={draft.assignee_id}

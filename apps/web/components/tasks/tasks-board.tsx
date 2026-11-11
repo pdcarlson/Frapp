@@ -654,15 +654,15 @@ function TaskTile({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {/* No `·` before it: its checklist icon separates it, the way
+            Todoist's sub-task count sits, so a wrapped line never starts or
+            ends on a dangling dot. */}
         {task.subtasks && task.subtasks.length > 0 ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <TaskSubtasksToggle
-              subtasks={task.subtasks}
-              open={subtasksOpen}
-              onToggle={() => setSubtasksOpen((open) => !open)}
-            />
-          </>
+          <TaskSubtasksToggle
+            subtasks={task.subtasks}
+            open={subtasksOpen}
+            onToggle={() => setSubtasksOpen((open) => !open)}
+          />
         ) : null}
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
