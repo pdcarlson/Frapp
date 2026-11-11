@@ -1219,6 +1219,44 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 });
 
+describe('ChapterConfigService module switches (#3028, #4073)', () => {
+  it('reports a module with no stored key as on, the way ChapterGuard reads it', async () => {
+    // The mocked seed carries only `chat`; a seed that switched `tasks` off
+    // would no longer matter, since the guard lets a missing key through.
+    const repos = makeRepos([], null, { events: false });
+    const service = await buildService(repos);
+
+    const config = await service.getConfig(CHAPTER_ID);
+
+    expect(config.enabled_modules.tasks).toBe(true);
+    expect(config.enabled_modules.events).toBe(false);
+    expect(config.enabled_modules.chat).toBe(true);
+  });
+
+  it('keeps a beta-off module at its stored value, so a save cannot store it off', async () => {
+    const repos = makeRepos([], null, {});
+    const service = await buildService(repos);
+
+    const config = await service.getConfig(CHAPTER_ID);
+
+    expect(config.enabled_modules.dues).toBe(true);
+  });
+
+  it('refuses switching an always-on module off', async () => {
+    const repos = makeRepos([], null, { chat: true });
+    const service = await buildService(repos);
+
+    await expect(
+      service.patchConfig(CHAPTER_ID, 'user-1', {
+        enabled_modules: { chat: false },
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'chapter.config.module_always_on' },
+    });
+    expect(repos.chapterUpdate).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * #422. `default_invite_role_id` is a nullable scalar FK on the chapters row.
  * The database FK proves the role exists; only this service can prove it is

@@ -49,7 +49,9 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useMyPermissions: () => ({
-    data: permissions.current ? { permissions: permissions.current } : undefined,
+    data: permissions.current
+      ? { permissions: permissions.current }
+      : undefined,
     isPending: false,
     isError: false,
   }),
@@ -68,6 +70,8 @@ vi.mock("@repo/hooks", () => ({
   }),
   usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePendingConfigKeys: () => new Set<string>(),
+  useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -83,7 +87,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 // The Roles tab's matrix has its own reads and its own spec; here it only has
 // to be the tab a deep link lands on.
@@ -113,18 +119,34 @@ function tabNames() {
   return screen.queryAllByRole("tab").map((tab) => tab.textContent);
 }
 
+/** The tool links on the open module page (#4073), label and href. */
 function tools() {
-  const nav = screen.queryByRole("navigation", { name: "Officer tools" });
-  return nav
-    ? within(nav)
+  const section = document.querySelector('[id$="-tools"]');
+  return section
+    ? within(section as HTMLElement)
         .getAllByRole("link")
-        // The label, not the description the tools-only list adds under it.
         .map((link) => [
-          (link.querySelector("span") ?? link).textContent,
+          (link.querySelector("span span") ?? link).textContent,
           link.getAttribute("href"),
         ])
     : [];
 }
+
+const MODULE_ROWS = [
+  "Chat",
+  "Announcements",
+  "Events",
+  "Points",
+  "Service hours",
+  "Study zones",
+  "Tasks",
+  "Polls",
+  "Documents",
+  "Backwork",
+  "Reports",
+  "Recruitment",
+  "Dues",
+];
 
 describe("Settings shows each viewer what they can use", () => {
   beforeEach(() => {
@@ -138,15 +160,9 @@ describe("Settings shows each viewer what they can use", () => {
     } as typeof currentChapter.current;
   });
 
-  it("gives the President every tool above every setup tab", () => {
+  it("gives the President every setup row and a page for every module (#4073)", () => {
     permissions.current = ["*"];
     render(<SettingsPage />);
-    expect(tools()).toEqual([
-      ["Chat admin", "/chat-admin"],
-      ["Discord import", "/discord-import"],
-      ["Study zones", "/geofences"],
-      ["Reports", "/reports"],
-    ]);
     expect(tabNames()).toEqual([
       "Chapter",
       "Semester",
@@ -155,44 +171,60 @@ describe("Settings shows each viewer what they can use", () => {
       "Roles",
       "Pledge class",
       "Member fields",
-      "Modules",
-      "Dues",
-      "Workflows",
+      ...MODULE_ROWS,
+    ]);
+    // No Tools group in the rail: each tool is on its module's page.
+    expect(
+      screen.queryByRole("navigation", { name: "Officer tools" }),
+    ).toBeNull();
+  });
+
+  it("puts Chat admin and Discord import on the Chat page", () => {
+    permissions.current = ["*"];
+    search.current = "tab=chat";
+    render(<SettingsPage />);
+    expect(tools()).toEqual([
+      ["Chat admin", "/chat-admin"],
+      ["Discord import", "/discord-import"],
     ]);
   });
 
-  it("drops the Dues tab while dues is beta-off", () => {
+  it("drops the Dues page while dues is beta-off", () => {
     permissions.current = ["*"];
     betaOff.keys = ["dues"];
     render(<SettingsPage />);
     expect(tabNames()).not.toContain("Dues");
-    expect(tabNames()).toContain("Workflows");
+    expect(tabNames()).not.toContain("DuesOff");
   });
 
-  it("keeps the Dues tab for a chapter that switched dues off itself", () => {
+  it("marks a module the chapter switched off in the rail, and keeps its page", () => {
     permissions.current = ["*"];
     currentChapter.current = {
       ...currentChapter.current,
-      enabled_modules: { dues: false },
+      enabled_modules: { events: false },
     };
     render(<SettingsPage />);
-    expect(tabNames()).toContain("Dues");
+    expect(tabNames()).toContain("EventsOff");
   });
 
-  it("lists a tools-only viewer's one tool as the page, with no setup tabs to fail", () => {
+  it("gives a tools-only viewer the page their tool lives on, and nothing that would fail", () => {
     permissions.current = ["members:view", "reports:export"];
+    search.current = "tab=reports";
     render(<SettingsPage />);
-    expect(tabNames()).toEqual([]);
-    expect(screen.queryByText(/couldn't load chapter configuration/i)).toBeNull();
+    expect(tabNames()).toEqual(["Reports"]);
+    expect(
+      screen.queryByText(/couldn't load chapter configuration/i),
+    ).toBeNull();
     expect(tools()).toEqual([["Reports", "/reports"]]);
   });
 
-  it("gives a treasurer Plan and billing beside their tool, and no config tab (#3827)", () => {
+  it("gives a treasurer Plan and billing beside their tool's page (#3827)", () => {
     permissions.current = ["members:view", "billing:view", "reports:export"];
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Plan and billing"]);
-    expect(screen.queryByText(/couldn't load chapter configuration/i)).toBeNull();
-    expect(tools()).toEqual([["Reports", "/reports"]]);
+    expect(tabNames()).toEqual(["Plan and billing", "Reports"]);
+    expect(
+      screen.queryByText(/couldn't load chapter configuration/i),
+    ).toBeNull();
   });
 
   it("opens Plan and billing from an old Danger zone link", () => {
@@ -208,14 +240,13 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["members:view"];
     render(<SettingsPage />);
     expect(
-      screen.getByText(/nothing in settings for your role/i),
+      screen.getByText(/nothing in chapter settings for your role/i),
     ).toBeInTheDocument();
-    expect(tools()).toEqual([]);
   });
 
   it("lands a deep link to a tab the viewer lacks on the first tab they have", () => {
     permissions.current = ["roles:manage"];
-    search.current = "tab=modules";
+    search.current = "tab=events";
     render(<SettingsPage />);
     expect(tabNames()).toEqual(["Roles", "Pledge class"]);
     expect(screen.getByRole("tab", { name: "Roles" })).toHaveAttribute(
@@ -239,22 +270,36 @@ describe("Settings shows each viewer what they can use", () => {
     search.current = "tab=classes";
     render(<SettingsPage />);
     expect(
-      screen.getByText("classes tab: can manage, Pledge class, Fraternal order"),
+      screen.getByText(
+        "classes tab: can manage, Pledge class, Fraternal order",
+      ),
     ).toBeInTheDocument();
   });
 
   it("hides a tool whose module the chapter switched off", () => {
     permissions.current = ["*"];
+    search.current = "tab=reports";
     currentChapter.current = {
       ...currentChapter.current,
       enabled_modules: { reports: false },
     };
     render(<SettingsPage />);
-    expect(tools().map(([label]) => label)).not.toContain("Reports");
+    expect(tools()).toEqual([]);
+    expect(screen.getByText(/reports is off/i)).toBeInTheDocument();
+  });
+
+  it("drops a tools-only viewer's page when its tool's module is off", () => {
+    permissions.current = ["members:view", "reports:export"];
+    currentChapter.current = {
+      ...currentChapter.current,
+      enabled_modules: { reports: false },
+    };
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual([]);
   });
 
   it("shows every tab while permissions are still loading, so nothing flashes out", () => {
     render(<SettingsPage />);
-    expect(tabNames()).toHaveLength(10);
+    expect(tabNames()).toHaveLength(7 + MODULE_ROWS.length);
   });
 });

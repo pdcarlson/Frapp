@@ -123,6 +123,7 @@ import {
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
 import { ChatBackground, useChapterLetters } from "./chat-background";
+import { ChatDropTarget } from "./chat-drop-target";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -2024,6 +2025,10 @@ export function ChatShell({
   ) {
     setOpenThread(null);
   }
+  // The chat column, and the live composer's attach path, for the drop
+  // target over the column (#4143).
+  const chatColumnRef = useRef<HTMLElement | null>(null);
+  const dropAttachRef = useRef<((files: File[]) => void) | null>(null);
   const threadRootId =
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId
@@ -2523,6 +2528,7 @@ export function ChatShell({
         the bottom of the viewport.
       */}
       <section
+        ref={chatColumnRef}
         className={cn(
           // `isolate` + `relative`: the chat background (#3973) sits at
           // `-z-10` inside this column, and only this column (#3779).
@@ -2531,6 +2537,18 @@ export function ChatShell({
         )}
       >
         <ChatBackground channelId={activeChannel?.id ?? null} />
+        {/* Files dropped anywhere on this column attach to the composer (#4143). */}
+        <ChatDropTarget
+          containerRef={chatColumnRef}
+          attachRef={dropAttachRef}
+          label={
+            activeChannel?.type === "DM" || activeChannel?.type === "GROUP_DM"
+              ? activeChannelName
+              : `#${activeChannelName}`
+          }
+          // A thread covers the column, and its replies take no files.
+          disabled={!!threadRootId}
+        />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -3074,6 +3092,7 @@ export function ChatShell({
             // never during render, and it answers `true` at most once — see
             // `claimShellFocus` above and `Composer`'s own prop doc.
             claimShellFocus={claimShellFocus}
+            dropAttachRef={dropAttachRef}
             channelId={activeChannel.id}
             channelName={activeChannelName}
             isDirect={

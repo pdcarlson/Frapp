@@ -37,10 +37,46 @@ import { eyebrowStyle } from "@/components/eyebrow";
  * none, and nothing documents which is canonical.
  */
 
-export function SectionHeader({ children }: { children: string }) {
+export function SectionHeader({
+  children,
+  count,
+}: {
+  children: string;
+  /**
+   * How many rows the section holds, drawn after the caption as a separate
+   * muted count, as web's `SectionLabel` draws it, rather than inside the
+   * caption's own text. Omit it (or pass `null`) for nothing to count.
+   */
+  count?: number | null;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  return <Text style={styles.sectionHeader}>{children}</Text>;
+  if (count == null)
+    return <Text style={styles.sectionHeader}>{children}</Text>;
+  return (
+    // One element to a screen reader, "Needs you, 8", as the caption and its
+    // count were when the count was part of the caption's text.
+    <View
+      accessible
+      accessibilityLabel={`${children}, ${count}`}
+      style={styles.sectionHeaderRow}
+    >
+      <Text style={styles.sectionHeader}>{children}</Text>
+      <SectionCount count={count} />
+    </View>
+  );
+}
+
+/**
+ * A section's count, drawn beside its heading as a separate muted number, the
+ * way web's `SectionLabel` draws it. {@link SectionHeader}'s `count` draws
+ * one; a smaller heading inside a section (Activity's "Now" and "Later")
+ * draws its own with this, so the count's tone and size live in one place.
+ */
+export function SectionCount({ count }: { count: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <Text style={styles.sectionHeaderCount}>{String(count)}</Text>;
 }
 
 /**
@@ -501,6 +537,18 @@ function createStyles(tokens: SignetTokens) {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
       marginTop: sectionHeaderMarginTop,
+    },
+    // The caption and its count on one baseline. The caption keeps its own
+    // top margin, so a counted header sits where an uncounted one does.
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: tokens.spacing.sm,
+    },
+    sectionHeaderCount: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      fontVariant: ["tabular-nums"],
     },
     // The caption's line box with its top margin; the uppercase tracking
     // doesn't change its height.

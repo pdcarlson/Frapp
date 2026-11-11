@@ -10,11 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
+import { StyleSheet } from "react-native";
+import { getSignetTokens } from "@repo/theme/signet";
 
 /**
- * The phone's Activity screen (#3897), rendered for real over a stubbed read
- * and a stubbed sheet: the groups and rows it draws, what a row opens, and
+ * The phone's Activity screen (#3897; its redesign, #4173 step 2), rendered
+ * for real over a stubbed read and a stubbed sheet: the summary and its
+ * tiles, the groups and their parts, the rows it draws, what a row opens, and
  * when it reads again. The sheet has its own spec
  * (`activity-sheet.spec.tsx`); the row model's is in `@repo/hooks`.
  *
@@ -90,6 +93,11 @@ const activity = vi.hoisted(() => ({
   },
 }));
 
+/** The chapter read: its module switches, which hide a module's tile. */
+const chapter = vi.hoisted(() => ({
+  data: undefined as undefined | { enabled_modules: Record<string, boolean> },
+}));
+
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
 const links = vi.hoisted(() => ({
   permissions: [] as string[],
@@ -106,7 +114,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
   // Read by the back row and the chips for the chapter's accent.
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({ data: chapter.data }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
@@ -137,8 +145,14 @@ vi.mock("@/components/activity/activity-sheet", () => ({
 }));
 
 import ActivityScreen from "@/app/(app)/activity";
+import {
+  ActivityAsk,
+  ActivityListRow,
+} from "@/components/activity/activity-row";
 import { FilterChips } from "@/components/filter-chips";
-import { ListRow } from "@/components/list-section";
+import { InlineNote } from "@/components/inline-note";
+import { SectionCount, SectionHeader } from "@/components/list-section";
+import { StatusChip } from "@/components/status-chip";
 import { ScreenShell } from "@/components/screen-shell";
 import { UndoBar } from "@/components/tasks/undo-bar";
 
@@ -166,15 +180,58 @@ function render(): ReactTestRenderer {
 }
 
 const rowLabels = (tree: ReactTestRenderer) =>
-  tree.root.findAllByType(ListRow).map((row) => row.props.label);
+  tree.root.findAllByType(ActivityListRow).map((row) => row.props.row.title);
 
 const row = (tree: ReactTestRenderer, label: string) =>
-  tree.root.findAllByType(ListRow).find((node) => node.props.label === label)!;
+  tree.root
+    .findAllByType(ActivityListRow)
+    .find((node) => node.props.row.title === label)!;
+
+/**
+ * The count a group's header draws beside its caption, as drawn (`null` when
+ * it draws none), checked against what a screen reader hears.
+ */
+const sectionCount = (tree: ReactTestRenderer, label: string) => {
+  const header = tree.root
+    .findAllByType(SectionHeader)
+    .find((node) => node.props.children === label)!;
+  const drawn = header.findAllByType(SectionCount);
+  if (drawn.length === 0) return null;
+  const count = drawn[0]!.props.count as number;
+  expect(drawnText(drawn[0]!)).toBe(String(count));
+  expect(
+    header.find((node) => node.props.accessible === true).props
+      .accessibilityLabel,
+  ).toBe(`${label}, ${count}`);
+  return count;
+};
+
+/** A tile's resting style, flattened. */
+const tileStyle = (tree: ReactTestRenderer, id: string) =>
+  StyleSheet.flatten(tile(tree, id).props.style({ pressed: false }));
+
+const tokens = getSignetTokens("dark");
+
+/** The pressable a tile draws, by its summary id. */
+const tile = (tree: ReactTestRenderer, id: string) =>
+  tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.testID === `activity-tile-${id}`,
+  );
+
+/** The chip `FilterChips` shows as on (`null` is All). */
+const litChip = (tree: ReactTestRenderer) =>
+  tree.root.findByType(FilterChips).props.selected;
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
     queryClient = new QueryClient();
     sheet.props = null;
+    // Reset here, not at a test's end: a failing test must not leave the
+    // next one rendering as an officer.
+    links.permissions = [];
+    chapter.data = undefined;
     activity.value = {
       data: read(),
       isPending: false,
@@ -196,24 +253,293 @@ describe("Activity screen (#3897)", () => {
 
   it("lists what needs the member first, then what they made, each group with its count", () => {
     const tree = render();
+    // The approval is for now and the task, due in 2099, is for later.
     expect(rowLabels(tree)).toEqual([
-      "Book the venue",
       "Food bank",
+      "Book the venue",
       "Bylaws",
       "CS 101 midterm",
     ]);
-    const text = screenText(tree);
-    expect(text).toContain("Needs you · 2");
-    expect(text).toContain("Made by you · 2");
+    expect(sectionCount(tree, "Needs you")).toBe(2);
+    expect(sectionCount(tree, "Made by you")).toBe(2);
+    // The count is its own muted text, not part of the caption.
+    expect(screenText(tree)).not.toContain("Needs you · 2");
     // Nothing is coming up, and the group says so instead of vanishing.
-    expect(text).toContain("No events in the next two weeks.");
+    expect(sectionCount(tree, "Coming up")).toBeNull();
+    expect(screenText(tree)).toContain("No events in the next two weeks.");
   });
 
-  it("names what a row asks of the member, for the eye and for a screen reader", () => {
+  it("splits Needs you into Now and Later, and Made by you by kind", () => {
+    const text = screenText(render());
+    expect(text).toMatch(
+      /Now\n1\n[\s\S]*Food bank[\s\S]*Later\n1\n[\s\S]*Book the venue/,
+    );
+    expect(text).toContain("Files you uploaded");
+  });
+
+  it("draws one part with no heading when everything is for now", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: { ...read().needs_you, tasks: [] },
+      }),
+    };
+    const text = screenText(render());
+    expect(text).toContain("Food bank");
+    expect(text).not.toMatch(/^Now$/m);
+    expect(text).not.toMatch(/^Later$/m);
+  });
+
+  it("names what a row asks of the member as the action, for the eye and for a screen reader", () => {
     const tree = render();
-    expect(row(tree, "Food bank").props.accessibilityValue).toBe("Approve");
-    expect(row(tree, "Food bank").props.description).toBe("Sam Hill · 1h 30m");
-    expect(screenText(tree)).toContain("Approve");
+    const approval = row(tree, "Food bank");
+    expect(approval.findByType(ActivityAsk).props.label).toBe("Approve");
+    expect(approval.findAllByType(StatusChip)).toHaveLength(0);
+    const pressable = approval.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(pressable.props.accessibilityValue).toEqual({ text: "Approve" });
+    expect(pressable.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
+    // A state is a status chip, never the ask.
+    const task = row(tree, "Book the venue");
+    expect(task.findByType(StatusChip).props.label).toBe("To do");
+    expect(task.findAllByType(ActivityAsk)).toHaveLength(0);
+  });
+
+  it("leads a row with its kind's glyph, and an event with its date", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        coming_up: [
+          {
+            id: "ev-1",
+            name: "Chapter",
+            start_time: "2099-03-07T19:00:00.000Z",
+            end_time: null,
+            location: "Great Hall",
+            attendance: "optional",
+            check_in_open: false,
+            checked_in: false,
+          },
+        ],
+      }),
+    };
+    const tree = render();
+    const lead = (label: string, id: string) =>
+      row(tree, label).findAll((node) => node.props.testID === id);
+    expect(lead("Food bank", "activity-glyph-hours").length).toBeGreaterThan(0);
+    expect(
+      lead("Book the venue", "activity-glyph-task").length,
+    ).toBeGreaterThan(0);
+    expect(lead("Bylaws", "activity-glyph-document").length).toBeGreaterThan(0);
+    const block = row(tree, "Chapter").findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "activity-date-block",
+    );
+    expect(block).toHaveLength(1);
+    // The block is decoration; the detail still says the day in words.
+    expect(block[0]!.props.accessibilityElementsHidden).toBe(true);
+    expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
+  });
+
+  describe("summary", () => {
+    it("says how much is waiting, with a tile per kind of ask", () => {
+      const tree = render();
+      expect(screenText(tree)).toContain("2 things need you");
+      // A member who confirms nothing and approves nothing gets neither tile.
+      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
+      expect(tile(tree, "tasks").props.accessibilityValue).toEqual({
+        text: "1",
+      });
+      expect(tile(tree, "polls").props.accessibilityValue).toEqual({
+        text: "0",
+      });
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-tile-confirm",
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("gives an officer the To confirm and Hours to approve tiles", () => {
+      links.permissions = ["tasks:manage", "service:approve"];
+      const tree = render();
+      expect(tile(tree, "confirm").props.accessibilityLabel).toBe("To confirm");
+      expect(tile(tree, "approve").props.accessibilityValue).toEqual({
+        text: "1",
+      });
+    });
+
+    it("sets its chip from a tile, and clears it from the lit tile", () => {
+      const tree = render();
+      act(() => {
+        tile(tree, "tasks").props.onPress();
+      });
+      expect(litChip(tree)).toBe("task");
+      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
+        selected: true,
+      });
+      expect(rowLabels(tree)).toEqual(["Book the venue"]);
+      act(() => {
+        tile(tree, "tasks").props.onPress();
+      });
+      expect(litChip(tree)).toBeNull();
+    });
+
+    it("keeps the Tasks chip lit under To confirm, which narrows to the confirmations", () => {
+      links.permissions = ["tasks:manage"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            task_confirmations: [
+              task({
+                id: "task-2",
+                title: "Sweep the porch",
+                status: "COMPLETED",
+              }),
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      expect(litChip(tree)).toBe("task");
+      expect(rowLabels(tree)).toEqual(["Sweep the porch"]);
+      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
+        selected: false,
+      });
+    });
+
+    it("is all caught up at zero, and never over a section that failed", () => {
+      const empty = {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      };
+      activity.value = {
+        ...activity.value,
+        data: read({ needs_you: empty, needs_you_count: 0 }),
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain("You're all caught up");
+      act(() => tree.unmount());
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: empty,
+          needs_you_count: 0,
+          unavailable: ["polls"],
+        }),
+      };
+      const failed = render();
+      const text = screenText(failed);
+      expect(text).not.toContain("You're all caught up");
+      expect(text).toContain("Some of what needs you couldn't load");
+      // Unknown, never 0: a dash on the tile, "Couldn't load" to a reader.
+      expect(tile(failed, "polls").props.accessibilityValue).toEqual({
+        text: "Couldn't load",
+      });
+      expect(drawnText(tile(failed, "polls"))).toBe("–Polls to vote on");
+    });
+
+    it("dims a tile with nothing waiting, and not one that has something", () => {
+      const tree = render();
+      expect(tileStyle(tree, "polls").opacity).toBe(0.6);
+      expect(tileStyle(tree, "tasks").opacity).toBeUndefined();
+    });
+
+    it("shows no tile for a module the chapter has off", () => {
+      chapter.data = { enabled_modules: { polls: false } };
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-tile-polls",
+        ),
+      ).toHaveLength(0);
+      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
+    });
+
+    it("names the next event under the headline", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            {
+              id: "ev-1",
+              name: "Exec Board Sync",
+              start_time: "2099-03-07T19:00:00.000Z",
+              end_time: null,
+              location: null,
+              attendance: "optional",
+              check_in_open: false,
+              checked_in: false,
+            },
+          ],
+        }),
+      };
+      expect(screenText(render())).toMatch(/Next up: Exec Board Sync · /);
+    });
+  });
+
+  describe("Show all", () => {
+    it("draws the first few of a long part, then all of them on Show all", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            ...read().made_by_you,
+            files: [],
+            tasks: Array.from({ length: 5 }, (_, index) =>
+              task({ id: `made-${index}`, title: `Assigned ${index}` }),
+            ),
+          },
+        }),
+      };
+      const tree = render();
+      const assigned = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Assigned"));
+      expect(assigned()).toHaveLength(3);
+      const showAll = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityState?.expanded === false,
+      );
+      expect(screenText(tree)).toContain("Show all 5");
+      act(() => {
+        showAll.props.onPress();
+      });
+      expect(assigned()).toHaveLength(5);
+      expect(screenText(tree)).toContain("Show fewer");
+    });
+
+    it("holds nothing back under a chip", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            ...read().made_by_you,
+            files: [],
+            tasks: Array.from({ length: 5 }, (_, index) =>
+              task({ id: `made-${index}`, title: `Assigned ${index}` }),
+            ),
+          },
+        }),
+      };
+      const tree = render();
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("task");
+      });
+      expect(
+        rowLabels(tree).filter((label) => label.startsWith("Assigned")),
+      ).toHaveLength(5);
+      expect(screenText(tree)).not.toMatch(/Show all/);
+    });
   });
 
   it("opens a row's record in the sheet, with the viewer's id", () => {
@@ -340,16 +666,38 @@ describe("Activity screen (#3897)", () => {
         unavailable: ["polls"],
       }),
     };
-    const text = screenText(render());
+    const tree = render();
+    const text = screenText(tree);
     expect(text).toContain("Couldn't load polls. Pull down to try again.");
     expect(text).not.toContain("Nothing is waiting on you.");
+    // In the warning hue, as web says it, so it can't read as an empty list.
+    const note = tree.root
+      .findAllByType(InlineNote)
+      .find((node) => node.props.tone === "warning")!;
+    const line = note.findByType("Text" as never);
+    expect(StyleSheet.flatten(line.props.style).color).toBe(
+      tokens.color.semantic.warning,
+    );
   });
 
   it("shows the loading rows before the first read, and no list", () => {
     activity.value = { ...activity.value, data: undefined, isPending: true };
     const tree = render();
     expect(rowLabels(tree)).toEqual([]);
-    expect(screenText(tree)).not.toContain("Needs you");
+    // The skeleton mirrors the screen: the fixed caption is real, the
+    // headline and the tiles are not drawn until the read lands.
+    const text = screenText(tree);
+    expect(text).not.toMatch(/need you|caught up/);
+    expect(
+      tree.root.findAll((node) =>
+        String(node.props.testID ?? "").startsWith("activity-tile-"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Loading activity",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("offers a retry when the first read fails", () => {
@@ -421,7 +769,7 @@ describe("Activity screen (#3897)", () => {
 
     it("lists them in their own group, and opens one in the sheet", () => {
       const tree = render();
-      expect(screenText(tree)).toContain("Links · 1");
+      expect(sectionCount(tree, "Links")).toBe(1);
       act(() => {
         row(tree, "Google Form").props.onPress();
       });

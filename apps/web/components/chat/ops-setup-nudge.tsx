@@ -191,10 +191,7 @@ export function OpsSetupNudgeCard({
       className="flex items-start gap-3 border-b border-accent-border bg-accent-subtle px-4 py-3"
     >
       <div className="min-w-0 flex-1">
-        <p
-          id={headingId}
-          className="text-sm font-bold text-accent-text"
-        >
+        <p id={headingId} className="text-sm font-bold text-accent-text">
           {module.headline}
         </p>
         <p className="mt-0.5 text-caption text-muted-foreground">
@@ -205,14 +202,12 @@ export function OpsSetupNudgeCard({
       <div className="flex shrink-0 items-center gap-1">
         <Button asChild variant="tinted" size="sm">
           {/*
-            `?module=` alongside `?tab=` so the destination can focus the row
-            this card names, rather than dropping the officer at the top of the
-            full module list to find it themselves — `settings-page.tsx` reads
-            both and hands the key to `SettingsModulesTab`. (No row count here:
-            it is `MODULE_CATALOG.length`, which the tab already renders, and a
-            hand-copied figure would be a future contradiction.)
+            `?tab=` opens the module's own Settings page (#4073), and `?module=`
+            tells it to focus that page's switch, so the officer lands on the
+            control this card asks them to flip — `settings-page.tsx` reads both
+            and hands the focus to `ModuleSettingsPage`.
           */}
-          <Link href={`/settings?tab=modules&module=${module.key}`}>
+          <Link href={`/settings?tab=${module.key}&module=${module.key}`}>
             Enable {label}
           </Link>
         </Button>

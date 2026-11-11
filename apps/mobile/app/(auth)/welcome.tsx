@@ -245,7 +245,7 @@ export default function Welcome() {
     >
       {/* The profile beat's name field opens the keyboard, which must not
           cover it or the pinned Continue (#3354). */}
-      <KeyboardAvoidingArea style={styles.flex}>
+      <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         <ScrollView
           style={styles.flex}
           contentContainerStyle={styles.scroll}

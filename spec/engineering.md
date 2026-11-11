@@ -44,7 +44,7 @@ This document is the canonical statement of Frapp's engineering standard: first 
 ## Accessibility on interactive elements
 
 - **Interactive controls use semantic elements.** `<button>` for actions, `<a>` (or the framework's `Link`) for navigation. Never `<div onClick>` for a clickable nav row, message action, settings tab, list item, or form control. Reaction chips are `<button>` with `aria-pressed` reflecting the viewer's vote state.
-- **Soft-disabled items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled items use the native `disabled` attribute on `<button>`. "Soon" / "coming-in-trial" items (e.g. in the Modules tab) are soft-disabled.
+- **Soft-disabled items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled items use the native `disabled` attribute on `<button>`. "Soon" / "coming-in-trial" items are soft-disabled.
 - **Root document layout sets `<html lang="en">`** (or the appropriate locale once internationalization is in scope).
 
 ## Aggregations in dashboards

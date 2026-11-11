@@ -130,9 +130,7 @@ describe("SettingsFieldsTab", () => {
   it("disables editing controls when the caller cannot manage", () => {
     render(<SettingsFieldsTab canManage={false} />);
     expect(screen.getByLabelText("Name")).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /add field/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /add field/i })).toBeDisabled();
   });
 });
 
