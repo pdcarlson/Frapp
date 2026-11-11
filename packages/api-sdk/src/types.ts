@@ -1834,6 +1834,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/important": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unseen Important messages in a channel, for the "1 important message" strip */
+        get: operations["ChatImportantController_listUnseen_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Important messages seen (jumped to or scrolled past) */
+        post: operations["ChatImportantController_markSeen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a channel's Important strip: mark every one seen */
+        post: operations["ChatImportantController_dismissAll_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -5228,6 +5279,33 @@ export interface components {
         ReorderCategoriesDto: {
             /** @description The chapter’s categories, top to bottom. A category not listed keeps its relative order after them. */
             category_ids: string[];
+        };
+        ImportantMessageRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            flagged_at: string;
+            /**
+             * Format: uuid
+             * @description The sender, or null for an imported Discord row.
+             */
+            sender_id: string | null;
+            /** @description An imported row's Discord name; null for a member's message. */
+            author_name: string | null;
+            /** @description The message's first words on one line, at most 140 characters, for the strip's preview. */
+            excerpt: string;
+        };
+        ImportantMessagesDto: {
+            /** @description Unseen Important messages flagged in the last 14 days, oldest first, at most 50. */
+            messages: components["schemas"]["ImportantMessageRefDto"][];
+            /** @description How many unseen Important messages there are. */
+            total: number;
+        };
+        MarkImportantSeenDto: {
+            /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
+            message_ids: string[];
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -10916,6 +10994,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReorderResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_listUnseen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_markSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkImportantSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_dismissAll_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
                 };
             };
             /** @description Error */

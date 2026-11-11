@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: The Important strip (#4186)
+
+### 20261111230000_chat_important_seen.sql
+
+- **Purpose**: Adds `chat_message_important_seen`: one row per member per Important message they have seen (`user_id`, `message_id`, `chapter_id`, `seen_at`; primary key `(user_id, message_id)`; cascading with the user, the message and the chapter). RLS on, no policies (API only, service role). Adds the partial index `idx_chat_messages_channel_important` on `chat_messages (channel_id, flagged_at) where flag = 'important' and not is_deleted and thread_root_id is null`, for `GET /v1/channels/{id}/important`. Redefines `anonymize_user` in full from `20261111180000_document_pins_and_stars.sql` with one added line deleting the member's `chat_message_important_seen` rows. No existing row changes. The rule is [`spec/behavior/chat/README.md` § Message flags](../../../spec/behavior/chat/README.md#message-flags).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'chat_message_important_seen';` returns `true`, `select count(*) from pg_policies where tablename = 'chat_message_important_seen';` returns `0`, `select count(*) from pg_indexes where indexname = 'idx_chat_messages_channel_important';` returns `1`, and `select prosrc like '%chat_message_important_seen%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table or uses the index. The newer API against an unmigrated database fails the three `/important` routes (500), so the strip doesn't draw; the timeline and flags are unaffected. The file runs in one transaction. The index is built without `CONCURRENTLY` (not possible inside one), so its `SHARE` lock on `chat_messages` holds until commit: reads go on, but every send, edit, delete and flag waits for one scan of `chat_messages` plus a sort of its few Important rows. Promote it outside the chapters' busy evening hours. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-important-strip-20261111230000) § Rollback the Important strip.
+
 ## 2026-11-11: Event types (#3730)
 
 ### 20261111200000_event_types.sql

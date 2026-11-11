@@ -3536,6 +3536,21 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
+## Rollback the Important strip (20261111230000)
+
+* **Migration**: `20261111230000_chat_important_seen.sql`
+
+The table `chat_message_important_seen`, the partial index `idx_chat_messages_channel_important` on `chat_messages`, and `anonymize_user` redefined to also delete `chat_message_important_seen`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/important` routes, so clients that ask for the strip get a 404 and draw none. Seen rows written before the revert stay, and count again when the API ships.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which Important messages each member has seen, so every one flagged in the last 14 days shows on the strip again once it is rebuilt. First redefine `anonymize_user` without its `chat_message_important_seen` delete (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.chat_message_important_seen;
+drop index if exists public.idx_chat_messages_channel_important;
+```
+
 ## Rollback event types (20261111200000)
 
 * **Migration**: `20261111200000_event_types.sql`

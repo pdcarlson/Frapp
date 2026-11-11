@@ -253,6 +253,25 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     ).toContainEqual(['thread_root_id', null]);
   });
 
+  it('findImportantInChannel reads one channel’s live, recent, Important timeline messages (#4186)', async () => {
+    await repo.findImportantInChannel(
+      CHANNEL_A,
+      '2026-10-28T00:00:00.000Z',
+      100,
+    );
+
+    const op = harness.ops[0];
+    expect(op.filters.map((f) => [f.column, f.op, f.value])).toEqual(
+      expect.arrayContaining([
+        ['channel_id', 'eq', CHANNEL_A],
+        ['flag', 'eq', 'important'],
+        ['is_deleted', 'eq', false],
+        ['thread_root_id', 'is', null],
+        ['flagged_at', 'gte', '2026-10-28T00:00:00.000Z'],
+      ]),
+    );
+  });
+
   it('update stays inside the caller chapter subtree', async () => {
     // `chat_messages` has no chapter, so the guard leans entirely on
     // `parentTenant` resolving through the channel. An edit matched on
