@@ -1098,13 +1098,23 @@ export function EventsPage() {
         onEventDeleted={async () => {
           await eventsQuery.refetch();
         }}
+        docked
       />
 
       <EventEditorDialog
         open={editorDialog.open}
-        onOpenChange={editorDialog.setOpen}
+        onOpenChange={(open) => {
+          editorDialog.setOpen(open);
+          // Edit opened from the event's own view, so leaving it (Back,
+          // Cancel or Save) goes back there, as Google Calendar does.
+          if (!open && editorMode === "edit" && activeEvent) {
+            setDetailSheetOpen(true);
+          }
+        }}
         onCloseAutoFocus={editorDialog.contentProps.onCloseAutoFocus}
         mode={editorMode}
+        docked
+        backLabel={editorMode === "edit" ? "Back to event" : "Back to events"}
         event={activeEvent}
         usingPreviewData={false}
         initialStartAt={calendarCreateDefaults?.startAt}
