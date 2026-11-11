@@ -14,7 +14,7 @@
      - `/join`, `/start` (a new chapter or council), `/no-access`, `/new-account`, sign-in and sign-up.
    - Public pages need no account: `/f/<form-slug>` is a chapter's interest form and the target of its QR code.
      - The route has no session and no `ChapterGuard`. The page reads only the form's public fields: the chapter's name and crest, and the questions.
-     - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter becomes a school member with status `pnm`.
+     - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter is recorded as a PNM for the school. They become a school member (status `pnm`) when they create an account. A `school_members` row needs an account; the data-model design (`spec/architecture/school-layer.md`, #4222) owns that rule.
      - Requests are rate-limited per IP and per address. A form lives under `/f/`, not `/c/`, so a printed code survives a chapter rename and a form can be replaced without renaming anything.
 2. **The URL supplies each request's chapter context.** The client resolves the slug in its path to a chapter id, using the person's own membership list, and sends it as `x-chapter-id` on every request from that page. The value is per tab: it is read from the tab's URL, never from storage that tabs share.
 3. **`ChapterGuard` treats an explicit header as authoritative and the JWT claim as a default, and it checks the tenant's kind.**
