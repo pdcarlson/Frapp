@@ -34,11 +34,20 @@ inputs:
       Required; there is no default, so every call site says what it installs.
       `ci`: `npm ci`. `omit-dev`: `npm ci --omit=dev`, the production-pruned
       tree Vercel builds from (`web-production-build`). `none`: Node only, for
-      a job that runs repo scripts with no dependencies. Both installing modes
-      restore the `~/.npm` download cache, which holds tarballs only, never
-      `node_modules` or a package's `dist/`, so a cold-tree job stays cold.
-      `none` restores no cache.
+      a job that runs repo scripts with no dependencies. `ci` restores
+      `node_modules` as `npm ci` left it, saved before anything was built, so
+      it holds no package's `dist/` and a cold-tree job stays cold; on a miss,
+      and for `omit-dev`, it restores the `~/.npm` download cache, which holds
+      tarballs only. `none` restores no cache.
     required: true
+  save-modules:
+    description: >
+      "true" saves `node_modules` after an `install: ci` that missed the
+      cache. Only ci.yml's `packages-build` sets it: every other CI job waits
+      for that one, so they all restore what it saved, and one job pays the
+      upload instead of twenty.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -59,6 +68,22 @@ runs:
             ;;
         esac
 
+    # `node_modules` exactly as `npm ci` left it for this lockfile and these
+    # manifests (2026-11-11, about a minute off every job). The key holds every
+    # package.json because a hit skips `npm ci`, which is what refuses a
+    # manifest that disagrees with the lockfile. No restore-keys: `npm ci`
+    # deletes a partial match anyway. `24` is the Node major below.
+    - name: Restore node_modules
+      id: modules
+      if: inputs.install == 'ci'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: node-modules-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('package-lock.json', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+
     # `package-manager-cache: false` keeps `cache:` the only switch. From v5,
     # setup-node turns npm caching on by itself whenever `cache` is empty and
     # the root package.json's `packageManager` names npm, which it does, so
@@ -67,13 +92,25 @@ runs:
       uses: actions/setup-node@v7
       with:
         node-version: 24
-        cache: ${{ inputs.install != 'none' && 'npm' || '' }}
+        cache: ${{ inputs.install != 'none' && steps.modules.outputs.cache-hit != 'true' && 'npm' || '' }}
         package-manager-cache: false
 
     - name: Install dependencies
-      if: inputs.install == 'ci'
+      if: inputs.install == 'ci' && steps.modules.outputs.cache-hit != 'true'
       shell: bash
       run: npm ci
+
+    # Straight after the install, before any step of the job writes a build
+    # output, so the entry is the bare install tree.
+    - name: Save node_modules
+      if: inputs.install == 'ci' && steps.modules.outputs.cache-hit != 'true' && inputs.save-modules == 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: ${{ steps.modules.outputs.cache-primary-key }}
 
     - name: Install production dependencies only
       if: inputs.install == 'omit-dev'
