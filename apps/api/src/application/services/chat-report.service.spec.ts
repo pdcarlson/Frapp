@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
@@ -686,9 +687,39 @@ describe('ChatReportService', () => {
 
     it('still files the report when the officer roster cannot be read', async () => {
       rbac.findUserIdsWithPermissions.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
       await expect(file()).resolves.toBe(baseReport);
       expect(notificationService.notifyUser).not.toHaveBeenCalled();
+      // No officer heard about it: an error, not a log line (#4096).
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'error',
+          site: 'chat-report-notify-officers',
+        }),
+      );
+      reported.mockRestore();
+    });
+
+    it('reports the officers a delivery missed at warning level (#4096)', async () => {
+      rbac.findUserIdsWithPermissions.mockResolvedValue([PRESIDENT, MODERATOR]);
+      notificationService.notifyUser
+        .mockRejectedValueOnce(new Error('delivery failed'))
+        .mockResolvedValueOnce(undefined);
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await file();
+
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'chat-report-notify-officers-partial',
+          error: expect.objectContaining({ message: 'delivery failed' }),
+        }),
+      );
+      reported.mockRestore();
     });
   });
 

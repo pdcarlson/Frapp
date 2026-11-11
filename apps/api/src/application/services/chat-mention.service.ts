@@ -14,7 +14,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
 import type { Role } from '#domain/entities/role.entity';
 import { RbacService } from './rbac.service';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** A chapter role as the mention picker and the resolver see it. */
 export interface MentionRoleView extends MentionRole {
@@ -87,12 +87,14 @@ export class ChatMentionService {
       const [candidates, roles] = await Promise.all([
         this.memberRepo.findChapterMemberIdentities(chapterId),
         this.rbac.findByChapter(chapterId).catch((error: unknown) => {
-          logThrowable(
-            this.logger,
-            'warn',
-            `Failed to read roles for mentions in chapter ${chapterId}; resolving members only`,
+          // Only the role mentions are lost, and the member ones still
+          // land: `warning` (#4096).
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'chat-mention-roles-read',
+            message: `Failed to read roles for mentions in chapter ${chapterId}; resolving members only`,
             error,
-          );
+          });
           return [];
         }),
       ]);
@@ -125,12 +127,16 @@ export class ChatMentionService {
         views.map((view) => withMentionable(view, officer)),
       );
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to resolve mentions in chapter ${chapterId}; sending without them`,
+      // `error`: the message still sends, but everyone it named goes
+      // unpinged and is never pinged later, so a fault here (a broken query,
+      // a schema the code no longer matches) silently breaks every mention
+      // in the chapter (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-mention-resolve',
+        message: `Failed to resolve mentions in chapter ${chapterId}; sending without them`,
         error,
-      );
+      });
       return [];
     }
   }

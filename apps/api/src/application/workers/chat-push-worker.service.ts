@@ -5,7 +5,8 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { ReportedCron } from './reported-cron.decorator';
 import * as Sentry from '@sentry/nestjs';
 import type {
   RealtimeChannel,
@@ -336,7 +337,7 @@ export class ChatPushWorkerService
    * `@Cron` reaches only Nest's raw `logger.error`; a failed purge costs one
    * tick and reports to Sentry.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleDispatchClaimPurge(): Promise<void> {
     await this.purgeDispatchClaims(new Date());
   }

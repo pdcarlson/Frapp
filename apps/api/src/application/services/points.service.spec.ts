@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -709,6 +710,24 @@ describe('PointsService', () => {
           expect.objectContaining({ title: 'Points Deducted' }),
         );
         expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps the row and the card when the push fails, and reports it (#4096)', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(committed);
+        mockNotificationService.notifyUser.mockRejectedValueOnce(
+          new Error('notifications insert failed'),
+        );
+        const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+        await expect(fine()).resolves.toEqual({
+          ...committed,
+          card_posted: true,
+        });
+        expect(reported).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ level: 'warning', site: 'points-granted-notify' }),
+        );
+        reported.mockRestore();
       });
 
       it('a replay of a member’s committed adjustment still returns the original row', async () => {

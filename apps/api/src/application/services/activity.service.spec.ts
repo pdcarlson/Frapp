@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
@@ -254,6 +255,28 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls).toEqual([]);
       expect(view.made_by_you.polls).toEqual([]);
       expect(view.unavailable).toEqual(['polls']);
+    });
+
+    it('reports a failed section to Sentry at error level, not only the log (#4096)', async () => {
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+      const { service, messageRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
+      servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
+
+      try {
+        await service.getActivity(CHAPTER, ME, null);
+        expect(reported).toHaveBeenCalledTimes(1);
+        expect(reported).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            level: 'error',
+            site: 'activity-section:polls',
+            error: expect.any(Error),
+          }),
+        );
+      } finally {
+        reported.mockRestore();
+      }
     });
 
     it('leaves out polls that are voted on, closed, expired, the caller’s own, or unreadable as a card', async () => {
@@ -610,6 +633,7 @@ describe('ActivityService', () => {
         }),
       ]);
       attendanceRepo.findByEventAndUser.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -618,6 +642,14 @@ describe('ActivityService', () => {
       );
       expect(view.needs_you_count).toBe(1);
       expect(view.unavailable).toEqual([]);
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'activity-attendance-read',
+        }),
+      );
+      reported.mockRestore();
     });
   });
 

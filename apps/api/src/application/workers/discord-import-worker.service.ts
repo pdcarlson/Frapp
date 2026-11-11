@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { ReportedCron } from './reported-cron.decorator';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -283,7 +284,7 @@ export class DiscordImportWorkerService {
    * `consumeState` refuses it on `expires_at` regardless of whether it is still
    * on disk. This is housekeeping, not a control.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleOAuthStateSweep(): Promise<void> {
     try {
       const reaped = await this.connectionRepo.deleteExpiredStates(new Date());
@@ -311,7 +312,7 @@ export class DiscordImportWorkerService {
    * PostgREST `details`. Caught here, a failed sweep costs one tick and reports
    * to Sentry as `discord-import-sweep-tick`.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @ReportedCron(CronExpression.EVERY_MINUTE)
   async handleImportSweep(): Promise<void> {
     try {
       await this.sweepImports(new Date());

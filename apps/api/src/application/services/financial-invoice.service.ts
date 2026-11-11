@@ -267,7 +267,16 @@ export class FinancialInvoiceService {
           category: 'billing',
           data: { target: { screen: 'billing' } },
         });
-      } catch {}
+      } catch (error) {
+        // A notification nobody retries (#4096): best-effort for the caller,
+        // reported so a failing notifications write isn't silent.
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'invoice-opened-notify',
+          message: `Could not notify member ${invoice.user_id} of invoice ${invoice.id}`,
+          error,
+        });
+      }
     }
 
     return updated;
@@ -447,7 +456,16 @@ export class FinancialInvoiceService {
         category: 'billing',
         data: { target: { screen: 'billing' } },
       });
-    } catch {}
+    } catch (error) {
+      // A notification nobody retries (#4096): best-effort for the caller,
+      // reported so a failing notifications write isn't silent.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'invoice-paid-notify',
+        message: `Could not notify member ${paid.user_id} that invoice ${paid.id} was paid`,
+        error,
+      });
+    }
   }
 
   /**

@@ -1,3 +1,4 @@
+import { isClientContractErrorCode } from "./api-error-codes";
 import { httpStatusClass } from "./sentry-http";
 
 /**
@@ -14,7 +15,9 @@ import { httpStatusClass } from "./sentry-http";
  * so this package takes no `@tanstack` dependency either.
  *
  * **What is reported.** Every final failure (after retries), at `warning`
- * level, except:
+ * level, except a 4xx whose `code` is a client-contract code
+ * (`api-error-codes.ts`), which is a bug and goes at `error` (#4096). Not
+ * reported at all:
  * - a 401 or 403, which is the auth flow answering, not a bug;
  * - a cancelled query, or an error named `AbortError`;
  * - a failure with no HTTP status while the app reads offline. A response, any
@@ -45,11 +48,16 @@ import { httpStatusClass } from "./sentry-http";
  *   {@link QUERY_KEY_PLACEHOLDER} is sent instead whenever it appears.
  *
  * Tags carry those identifiers because the scrubber drops `extra` and custom
- * contexts, and keeps tags and the fingerprint (swept).
+ * contexts, and keeps tags and the fingerprint (swept). A client-contract
+ * failure also carries `api_error_class: client-contract`, and its `Error` is
+ * named `ClientContractError` rather than `ApiError`, so its Sentry title says
+ * what it is.
  *
  * **Grouping.** `react-query`, the kind, the key root, then the status class
  * (`4xx`, `5xx`) or `network`, then the API's `code` when there is one: one
- * Sentry issue per feature and kind of failure. An `exception` keeps Sentry's
+ * Sentry issue per feature and kind of failure. A client-contract failure ends
+ * its fingerprint with `client-contract`, so it opens an issue of its own at
+ * `error` level rather than joining a `warning` one an older build opened. An `exception` keeps Sentry's
  * own grouping (`{{ default }}`) ahead of the kind and root, so two different
  * bugs under one root stay two issues.
  *
@@ -119,7 +127,8 @@ export type QueryErrorKind = "query" | "mutation";
 /** What each app's Sentry binding passes to `captureException`. */
 export interface QueryErrorReport {
   readonly error: Error;
-  readonly level: "warning";
+  /** `error` only for a client-contract 4xx; every other failure is `warning`. */
+  readonly level: "warning" | "error";
   readonly fingerprint: string[];
   readonly tags: Record<string, string>;
 }
@@ -247,23 +256,28 @@ function buildReport(
   if (failure.kind === "http") {
     const statusClass = httpStatusClass(failure.status) ?? "unknown";
     const code = codeOf(error);
+    // A 5xx is the server's fault whatever its code; the API reports it.
+    const clientContract =
+      statusClass === "4xx" && isClientContractErrorCode(code);
     tags["http.status_code"] = String(failure.status);
     tags.status_class = statusClass;
     if (code) tags.error_code = code;
+    if (clientContract) tags.api_error_class = "client-contract";
     const fingerprint = [
       "react-query",
       kind,
       root,
       statusClass,
       ...(code ? [code] : []),
+      ...(clientContract ? ["client-contract"] : []),
     ];
     return {
       report: {
         error: namedError(
-          "ApiError",
+          clientContract ? "ClientContractError" : "ApiError",
           `${kind} "${root}" answered ${failure.status}${code ? ` (${code})` : ""}`,
         ),
-        level: "warning",
+        level: clientContract ? "error" : "warning",
         fingerprint,
         tags,
       },

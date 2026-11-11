@@ -83,6 +83,12 @@ export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";
 export { headerValue, httpStatusClass } from "./sentry-http";
 
 export {
+  CLIENT_CONTRACT_ERROR_CODES,
+  isClientContractErrorCode,
+  MEMBER_CAUSED_ERROR_CODES,
+} from "./api-error-codes";
+export type { ClientContractErrorCode } from "./api-error-codes";
+export {
   createQueryErrorReporter,
   DEFAULT_REPORT_INTERVAL_MS,
   UNKEYED_ROOT,

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { ReportedCron } from './reported-cron.decorator';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { AttendanceService } from '../services/attendance.service';
@@ -111,6 +112,18 @@ function toDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * The UTC date key of a row's timestamp, or null when the row holds no valid
+ * one (#3498). `toISOString` throws a `RangeError` on an invalid date, so a
+ * sweep that converted outside its per-row `try` stopped at the first bad
+ * row and skipped every row after it.
+ */
+function dateKeyOf(timestamp: string | null | undefined): string | null {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : toDateKey(date);
+}
+
 function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * MS_PER_DAY);
 }
@@ -159,12 +172,12 @@ export class ScheduledJobsService {
     private readonly chatReports: ChatReportService,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleAutoAbsentSweep(): Promise<void> {
     await this.sweepAutoAbsent(new Date());
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @ReportedCron(CronExpression.EVERY_5_MINUTES)
   async handlePollExpirySweep(): Promise<void> {
     await this.sweepExpiredPolls(new Date());
   }
@@ -175,17 +188,17 @@ export class ScheduledJobsService {
    * tick would land anywhere from 30 down to 0 minutes out, which is the one
    * thing it must not do.
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @ReportedCron(CronExpression.EVERY_5_MINUTES)
   async handleEventReminderSweep(): Promise<void> {
     await this.sweepEventReminders(new Date());
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
   async handleInvoiceReminderSweep(): Promise<void> {
     await this.sweepInvoiceReminders(new Date());
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
   async handleTaskReminderSweep(): Promise<void> {
     await this.sweepTaskReminders(new Date());
   }
@@ -199,7 +212,7 @@ export class ScheduledJobsService {
    * below: the candidate read goes through `fetchAllPages`, and every per-row
    * step sits inside a `try`.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleStalePaletteSweep(): Promise<void> {
     await this.sweepStalePalettes();
   }
@@ -223,7 +236,7 @@ export class ScheduledJobsService {
    * sweep's own fingerprint and logs it scrubbed, so a sweep that cannot start
    * skips the tick loudly.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
     try {
       await this.sweepExpiredReports(new Date());
@@ -250,7 +263,7 @@ export class ScheduledJobsService {
    * release is caught inside the service. Safe on every replica: a release
    * deletes only what nothing holds, and deleting a gone object succeeds.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleChatReportEvidenceSweep(): Promise<void> {
     try {
       const released = await this.chatReports.sweepPendingEvidenceReleases(
@@ -404,7 +417,15 @@ export class ScheduledJobsService {
       //
       // `endedOn` derives from the event row, never from `now`, so every tick
       // in the lookback window computes the same claim key.
-      const endedOn = toDateKey(new Date(event.end_time));
+      const endedOn = dateKeyOf(event.end_time);
+      if (endedOn === null) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'auto-absent-sweep-invalid-end-time',
+          message: `auto-absent sweep: event ${event.id} has no valid end_time; skipping it`,
+        });
+        continue;
+      }
 
       try {
         const claimed = await this.repository.claimDispatch(
@@ -630,8 +651,13 @@ export class ScheduledJobsService {
   ): Promise<boolean> {
     // Derived from the event row, never from `now`, so every tick inside the
     // window computes the same claim key — the same discipline the
-    // auto-absent sweep applies to `end_time`.
-    const startsOn = toDateKey(new Date(event.start_time));
+    // auto-absent sweep applies to `end_time`. A row without a valid one is
+    // skipped, reported by the caller's per-event catch like any other
+    // failure of this one event.
+    const startsOn = dateKeyOf(event.start_time);
+    if (startsOn === null) {
+      throw new RangeError(`event ${event.id} has no valid start_time`);
+    }
 
     return this.claimAndNotify({
       chapterId: event.chapter_id,

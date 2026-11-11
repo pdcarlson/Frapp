@@ -2,6 +2,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -43,7 +44,10 @@ export class CreatePollDto {
     description: 'Expiration time (ISO 8601)',
   })
   @IsOptional()
-  @IsString()
+  // A string the expiry sweep can't parse used to be stored, then logged as
+  // `poll-expiry-sweep-unparseable-expires-at` every five minutes for a day
+  // (#3498). Refused here instead.
+  @IsISO8601()
   expires_at?: string;
 
   @ApiPropertyOptional({ enum: ['single', 'multi'], default: 'single' })

@@ -307,12 +307,15 @@ export class ChatService {
     try {
       return await this.readReceiptRepo.findHiddenChannelIds(chapterId, userId);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not read hidden channels for chapter ${chapterId}; showing them all`,
+      // `warning`: failing open is the design (above), but a read that keeps
+      // failing would leave every member's hides ignored with nothing but a
+      // log line to show for it (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-hidden-channels-read',
+        message: `Could not read hidden channels for chapter ${chapterId}; showing them all`,
         error,
-      );
+      });
       return new Set();
     }
   }

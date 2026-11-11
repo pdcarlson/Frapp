@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -848,6 +849,27 @@ describe('ServiceEntryService', () => {
   });
 
   describe('approve', () => {
+    it('approves when the member notice fails, and reports it (#4096)', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue({
+        ...baseEntry,
+        status: 'APPROVED' as const,
+      });
+      mockNotificationService.notifyUser.mockRejectedValueOnce(
+        new Error('notifications insert failed'),
+      );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'admin-1', null),
+      ).resolves.toMatchObject({ status: 'APPROVED' });
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ level: 'warning', site: 'service-entry-approved-notify' }),
+      );
+      reported.mockRestore();
+    });
+
     it('should approve entry and award points in a single atomic call', async () => {
       const approved = {
         ...baseEntry,
@@ -1274,6 +1296,27 @@ describe('ServiceEntryService', () => {
   });
 
   describe('reject', () => {
+    it('rejects when the member notice fails, and reports it (#4096)', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.update.mockResolvedValue({
+        ...baseEntry,
+        status: 'REJECTED' as const,
+      });
+      mockNotificationService.notifyUser.mockRejectedValueOnce(
+        new Error('notifications insert failed'),
+      );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.reject('se-1', 'ch-1', 'admin-1', null),
+      ).resolves.toMatchObject({ status: 'REJECTED' });
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ level: 'warning', site: 'service-entry-rejected-notify' }),
+      );
+      reported.mockRestore();
+    });
+
     it('should reject entry without creating point transaction', async () => {
       const rejected = {
         ...baseEntry,

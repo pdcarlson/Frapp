@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ChapterWorkflowsService,
@@ -122,6 +123,7 @@ describe('ChapterWorkflowsService', () => {
         )
         .mockImplementation(() => undefined);
 
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
       const result = await service.getWorkflow(CHAPTER_ID, 'wf_hours_receipt');
 
       // The chapter's explicit disable is unreadable during the outage; the
@@ -134,6 +136,11 @@ describe('ChapterWorkflowsService', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('chapter_workflows read failed'),
       );
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ level: 'warning', site: 'chapter-workflows-read' }),
+      );
+      reported.mockRestore();
     });
 
     it('reads the override for the requested chapter and key', async () => {

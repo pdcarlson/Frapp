@@ -399,20 +399,25 @@ export class ChatReportService {
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
-        this.logger.warn('Some officers were not notified of a chat report', {
-          reportId: report.id,
-          chapterId,
-          failed,
-          recipients: recipients.length,
+        // Some recipients of the fan-out: `warning` (#4096).
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chat-report-notify-officers-partial',
+          message: `${failed} of ${recipients.length} officers were not notified of chat report ${report.id}`,
+          error: results.find(
+            (r): r is PromiseRejectedResult => r.status === 'rejected',
+          )?.reason,
         });
       }
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not notify officers of chat report ${report.id}`,
+      // `error`: a member's report reached no officer, and nothing retries
+      // the notice. The report is filed, but nobody is told to look (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-report-notify-officers',
+        message: `Could not notify officers of chat report ${report.id}`,
         error,
-      );
+      });
     }
   }
 

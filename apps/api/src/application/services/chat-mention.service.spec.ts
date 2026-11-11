@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import type { Role } from '#domain/entities/role.entity';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import {
@@ -190,8 +191,45 @@ describe('ChatMentionService.resolveForSend', () => {
     } as unknown as RbacService;
     const mentions = new ChatMentionService(memberRepo, rbac);
 
+    const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
     await expect(
       mentions.resolveForSend('ch-1', 'u2', '@Ann and @Officers'),
     ).resolves.toEqual(['u1']);
+    expect(reported).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        level: 'warning',
+        site: 'chat-mention-roles-read',
+      }),
+    );
+    reported.mockRestore();
+  });
+
+  it('sends without mentions, and reports it at error level, when members cannot be read (#4096)', async () => {
+    const memberRepo = {
+      findChapterMemberIdentities: jest
+        .fn()
+        .mockRejectedValue(new Error('column members.role_ids does not exist')),
+    } as unknown as IMemberRepository;
+    const rbac = {
+      findByChapter: jest.fn().mockResolvedValue([]),
+      getEffectivePermissions: jest.fn(),
+    } as unknown as RbacService;
+    const mentions = new ChatMentionService(memberRepo, rbac);
+    const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+    await expect(
+      mentions.resolveForSend('ch-1', 'u2', '@Ann'),
+    ).resolves.toEqual([]);
+    expect(reported).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        level: 'error',
+        site: 'chat-mention-resolve',
+        error: expect.any(Error),
+      }),
+    );
+    reported.mockRestore();
   });
 });
