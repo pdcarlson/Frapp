@@ -145,7 +145,12 @@ export class ChatReportController {
     @CurrentUser('id') userId: string,
     @Query() query: ListChatReportsQueryDto,
   ): Promise<ChatReportDto[]> {
-    return this.reportService.listReports(chapterId, userId, query.status);
+    return this.reportService.listReports(
+      chapterId,
+      userId,
+      query.status,
+      query.channel_id,
+    );
   }
 
   /**

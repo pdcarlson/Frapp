@@ -16,13 +16,14 @@ import { networkMock } from "@/tests/network";
  * states from the nested family, a background read that fails keeps what is
  * already loaded, and the create panel tells the three types apart truthfully.
  *
- * The report queue above it has its own spec (`chat-reports-card.spec.tsx`)
+ * The report queue below it has its own spec (`chat-reports-card.spec.tsx`)
  * and is stubbed here; so is the screen-level `<Can>`, whose fallbacks
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(
-  () => ({
+const { mockOffline, reads, updateChannel, mockCreateChannel, router } =
+  vi.hoisted(() => ({
+    router: { push: vi.fn(), replace: vi.fn() },
     mockCreateChannel: vi.fn(),
     mockOffline: { value: false },
     updateChannel: {
@@ -36,8 +37,9 @@ const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(
       pins: {} as Record<string, unknown>,
       catalog: {} as Record<string, unknown>,
     },
-  }),
-);
+  }));
+
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -80,7 +82,9 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 vi.mock("./chat-reports-card", () => ({
-  ChatReportsCard: () => <div data-testid="report-queue" />,
+  ChatReportsCard: ({ channelId }: { channelId?: string }) => (
+    <div data-testid="report-queue" data-channel={channelId ?? "chapter"} />
+  ),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
@@ -140,8 +144,8 @@ const CHANNELS_STALE =
 const PINS_STALE =
   "Couldn't refresh the pins. These are the last ones that loaded.";
 
-const selectExec = () =>
-  fireEvent.click(screen.getByRole("button", { name: /^#exec/ }));
+/** #exec's own settings page: `?channel=ch-2`. */
+const exec = () => <ChatAdminPage initialChannelId="ch-2" />;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -157,8 +161,9 @@ describe("ChatAdminPage — on the page surface (#2500)", () => {
     const { container } = render(<ChatAdminPage />);
 
     expect(
-      within(screen.getByRole("region", { name: "Channels" })).getByText(
-        "#general",
+      within(screen.getByRole("region", { name: "Channels" })).getByRole(
+        "button",
+        { name: "New channel" },
       ),
     ).toBeInTheDocument();
     expect(
@@ -171,30 +176,75 @@ describe("ChatAdminPage — on the page surface (#2500)", () => {
   });
 
   it("shows the channel's type beside the edit heading, on the page surface", () => {
-    const { container } = render(<ChatAdminPage />);
-    selectExec();
+    const { container } = render(exec());
     expect(cardFilledContainers(container)).toEqual([]);
 
-    const pane = screen.getByRole("region", { name: "Edit #exec" });
+    const pane = screen.getByRole("region", { name: "#exec" });
     expect(
-      within(pane).getByRole("heading", { level: 3, name: "Edit #exec" }),
+      within(pane).getByRole("heading", { level: 2, name: "#exec" }),
     ).toBeInTheDocument();
     expect(within(pane).getByText("Private")).toBeInTheDocument();
   });
 });
 
-describe("ChatAdminPage — row heights", () => {
-  // The Directory's row-as-control recipe for a channel (the button sets the
-  // height: 36, 44 on touch) and the 44px floor for a category. Padding on
-  // either row puts 8px on top of that.
-  it("lets the controls set the row height, with no padding around them", () => {
+// Paul, 2026-11-11: "scope the chat admin panel to whatever channel you're
+// editing", reports at the bottom, and no list of every channel.
+describe("ChatAdminPage — scoped to the channel being edited", () => {
+  it("lists no channels on either page: the chat rail is the list", () => {
+    render(<ChatAdminPage />);
+    expect(screen.queryByText("#general")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^#/ })).toBeNull();
+  });
+
+  it("shows only that channel on a channel's page: no other channel, no categories, no chapter background", () => {
+    render(exec());
+
+    expect(screen.getByRole("heading", { name: "#exec" })).toBeInTheDocument();
+    expect(screen.queryByText("#general")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Categories" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New channel" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "All chat settings" }),
+    ).toHaveAttribute("href", "/chat-admin");
+  });
+
+  it("puts that channel's settings, then its pins, then its own reports last", () => {
+    render(exec());
+
+    const settings = screen.getByLabelText("Name");
+    const pins = screen.getByRole("heading", { name: /^Pinned messages/ });
+    const queue = screen.getByTestId("report-queue");
+    expect(queue).toHaveAttribute("data-channel", "ch-2");
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(settings, pins)).toBe(true);
+    expect(follows(pins, queue)).toBe(true);
+  });
+
+  it("puts the whole chapter's report queue last on the chapter's page", () => {
     render(<ChatAdminPage />);
 
-    const channelButton = screen.getByRole("button", { name: /^#exec/ });
-    expect(channelButton.className).toContain("min-h-9");
-    expect(channelButton.className).toContain("pointer-coarse:min-h-11");
-    const channelRow = channelButton.closest("li") as HTMLElement;
-    expect(channelRow.className).not.toMatch(/\bpy-/);
+    const queue = screen.getByTestId("report-queue");
+    expect(queue).toHaveAttribute("data-channel", "chapter");
+    const categories = screen.getByRole("region", { name: "Categories" });
+    expect(
+      categories.compareDocumentPosition(queue) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("offers Delete channel on the channel's own page", () => {
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+    expect(
+      screen.getByRole("button", { name: "Delete channel" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — row heights", () => {
+  // The 44px floor for a category row. Padding on it puts 8px on top.
+  it("lets the controls set the row height, with no padding around them", () => {
+    render(<ChatAdminPage />);
 
     const categoryRow = within(
       screen.getByRole("region", { name: "Categories" }),
@@ -204,13 +254,11 @@ describe("ChatAdminPage — row heights", () => {
     expect(categoryRow.className).toContain("min-h-11");
     expect(categoryRow.className).not.toMatch(/\bpy-/);
 
-    // Neither row has padding or a border of its own, so the lists' dividers
-    // are what separate them.
-    for (const item of [channelRow, categoryRow]) {
-      expect((item.closest("ul") as HTMLElement).className).toContain(
-        denseListClassName,
-      );
-    }
+    // The row has no padding or border of its own, so the list's dividers
+    // are what separate the rows.
+    expect((categoryRow.closest("ul") as HTMLElement).className).toContain(
+      denseListClassName,
+    );
   });
 });
 
@@ -306,9 +354,11 @@ describe("ChatAdminPage — the create panel", () => {
 describe("ChatAdminPage — the channel structure's states", () => {
   it("keeps the loaded channels through a failed background read, and says they are the last that loaded", () => {
     reads.channels = { ...settled(CHANNELS), isError: true };
-    render(<ChatAdminPage />);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
 
-    expect(screen.getByText("#general")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "#general" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
     expect(screen.getByText(CHANNELS_STALE)).toBeInTheDocument();
   });
@@ -351,8 +401,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
 
   it("keeps a role-gated channel's permission grid through a failed catalog refresh", () => {
     reads.catalog = { ...settled(CATALOG), isError: true };
-    render(<ChatAdminPage />);
-    fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
+    render(<ChatAdminPage initialChannelId="ch-3" />);
 
     expect(screen.queryByText(/Couldn.t load the permission list/)).toBeNull();
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
@@ -388,8 +437,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     (_, read, offline, text) => {
       mockOffline.value = offline;
       reads.catalog = empty(read);
-      const { container } = render(<ChatAdminPage />);
-      fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
+      const { container } = render(<ChatAdminPage initialChannelId="ch-3" />);
 
       expect(screen.getByText(text)).toBeInTheDocument();
       expect(cardFilledContainers(container)).toEqual([]);
@@ -400,7 +448,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = { ...settled(CATEGORIES), isError: true };
     render(<ChatAdminPage />);
 
-    expect(screen.getByText("#general")).toBeInTheDocument();
+    expect(screen.getByText("Chapter")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
     // The categories are what went stale, so the notice says so for them too.
     expect(screen.getByText(CHANNELS_STALE)).toBeInTheDocument();
@@ -436,8 +484,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
 describe("ChatAdminPage — a channel's pins", () => {
   it("says a failed read failed, rather than that nothing is pinned", () => {
     reads.pins = empty({ isError: true });
-    const { container } = render(<ChatAdminPage />);
-    selectExec();
+    const { container } = render(exec());
     expect(cardFilledContainers(container)).toEqual([]);
 
     expect(screen.getByText("Couldn't load pins")).toBeInTheDocument();
@@ -445,7 +492,7 @@ describe("ChatAdminPage — a channel's pins", () => {
     expect(screen.queryByText("Nothing pinned")).toBeNull();
     // No count when there is no list to count.
     expect(
-      screen.getByRole("heading", { level: 4, name: "Pinned messages" }),
+      screen.getByRole("heading", { level: 3, name: "Pinned messages" }),
     ).toBeInTheDocument();
   });
 
@@ -455,8 +502,7 @@ describe("ChatAdminPage — a channel's pins", () => {
       isLoading: true,
       fetchStatus: "fetching",
     });
-    const { container } = render(<ChatAdminPage />);
-    selectExec();
+    const { container } = render(exec());
 
     expect(screen.getByText("Loading pins...")).toBeInTheDocument();
     expect(screen.queryByText("Nothing pinned")).toBeNull();
@@ -468,8 +514,7 @@ describe("ChatAdminPage — a channel's pins", () => {
     // than pausing, and must say offline, not show a load error.
     mockOffline.value = true;
     reads.pins = empty({ isError: true });
-    render(<ChatAdminPage />);
-    selectExec();
+    render(exec());
 
     expect(screen.getByText("Pins unavailable offline")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load pins")).toBeNull();
@@ -477,8 +522,7 @@ describe("ChatAdminPage — a channel's pins", () => {
 
   it("says the pins are unavailable offline when the read is paused", () => {
     reads.pins = empty({ isPending: true, fetchStatus: "paused" });
-    const { container } = render(<ChatAdminPage />);
-    selectExec();
+    const { container } = render(exec());
     expect(cardFilledContainers(container)).toEqual([]);
 
     expect(screen.getByText("Pins unavailable offline")).toBeInTheDocument();
@@ -499,8 +543,7 @@ describe("ChatAdminPage — a channel's pins", () => {
       ]),
       isError: true,
     };
-    render(<ChatAdminPage />);
-    selectExec();
+    render(exec());
 
     expect(screen.getByText("Dues are due Friday")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load pins")).toBeNull();
@@ -519,12 +562,11 @@ describe("ChatAdminPage — a channel's pins", () => {
       },
     ];
     reads.pins = settled(pinned);
-    const { container, rerender } = render(<ChatAdminPage />);
-    selectExec();
+    const { container, rerender } = render(exec());
     const regions = [...container.querySelectorAll('[role="status"]')];
 
     reads.pins = { ...settled(pinned), isError: true };
-    rerender(<ChatAdminPage />);
+    rerender(exec());
 
     expect(regions).toContain(
       screen.getByText(PINS_STALE).closest('[role="status"]'),
@@ -532,15 +574,14 @@ describe("ChatAdminPage — a channel's pins", () => {
   });
 
   it("says nothing is pinned when the read succeeded empty", () => {
-    const { container } = render(<ChatAdminPage />);
-    selectExec();
+    const { container } = render(exec());
     expect(cardFilledContainers(container)).toEqual([]);
 
     expect(
       screen.getByText("Nothing pinned. Pin a message from the channel."),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
+      screen.getByRole("heading", { level: 3, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();
   });
 });
@@ -660,9 +701,11 @@ describe("ChatAdminPage — saving a channel", () => {
     expect(
       screen.getByRole("switch", { name: "Chapter default channel" }),
     ).toBeChecked();
-    expect(screen.getByRole("button", { name: /^#general/ })).toHaveTextContent(
-      "Default",
-    );
+    expect(
+      within(screen.getByRole("region", { name: "#general" })).getByText(
+        "Default",
+      ),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
 
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
@@ -702,10 +745,7 @@ describe("ChatAdminPage — opened from a channel start", () => {
   it("selects ?channel= and puts the cursor in its description", () => {
     render(<ChatAdminPage initialChannelId="ch-2" />);
 
-    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("heading", { name: "#exec" })).toBeInTheDocument();
     expect(document.activeElement).toBe(
       document.getElementById("ca-description"),
     );
@@ -726,38 +766,29 @@ describe("ChatAdminPage — opened from a channel start", () => {
     reads.channels = settled(CHANNELS);
     rerender(<ChatAdminPage initialChannelId="ch-2" />);
 
-    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("heading", { name: "#exec" })).toBeInTheDocument();
     expect(document.activeElement).toBe(
       document.getElementById("ca-description"),
     );
   });
 
-  it("doesn't take the cursor back to the description on a later pick", () => {
+  it("says the channel is gone when it was deleted under the page, and links back", () => {
     const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
 
-    // The opened channel goes away (deleted), so the editor unmounts; the
-    // next pick mounts it afresh.
     reads.channels = settled(CHANNELS.filter((c) => c.id !== "ch-2"));
     rerender(<ChatAdminPage initialChannelId="ch-2" />);
-    const general = screen.getByRole("button", { name: /^#general/ });
-    general.focus();
-    fireEvent.click(general);
 
-    expect(document.activeElement).not.toBe(
-      document.getElementById("ca-description"),
-    );
+    expect(screen.getByText(/isn.t here anymore/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "All chat settings" }),
+    ).toHaveAttribute("href", "/chat-admin");
   });
 
-  it("selects nothing for a channel id it doesn't know", () => {
+  it("says so for a channel id it doesn't know", () => {
     render(<ChatAdminPage initialChannelId="nope" />);
 
-    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expect(screen.getByText(/isn.t here anymore/)).toBeInTheDocument();
   });
 });
 
@@ -776,27 +807,20 @@ describe("ChatAdminPage — the audit log", () => {
   });
 
   it("locks its name and shows the audit log line in place of the read-only switch", () => {
-    render(<ChatAdminPage />);
-    fireEvent.click(screen.getByRole("button", { name: /^#chapter-audit/ }));
+    render(<ChatAdminPage initialChannelId="ch-4" />);
 
-    const pane = screen.getByRole("region", { name: "Edit #chapter-audit" });
+    const pane = screen.getByRole("region", { name: "#chapter-audit" });
     expect(within(pane).getByLabelText("Name")).toBeDisabled();
     expect(within(pane).getByText(AUDIT_LOG_SETTINGS_NOTE)).toBeInTheDocument();
     expect(within(pane).queryByText(/^Read-only/)).toBeNull();
     // The server refuses deleting it, so no Delete control is offered.
-    expect(
-      screen.queryByRole("button", { name: "Delete #chapter-audit" }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Delete #general" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete channel" })).toBeNull();
   });
 
   it("keeps the name and the read-only switch open on an ordinary channel", () => {
-    render(<ChatAdminPage />);
-    selectExec();
+    render(exec());
 
-    const pane = screen.getByRole("region", { name: "Edit #exec" });
+    const pane = screen.getByRole("region", { name: "#exec" });
     expect(within(pane).getByLabelText("Name")).toBeEnabled();
     expect(within(pane).getByText(/^Read-only/)).toBeInTheDocument();
     expect(within(pane).queryByText(AUDIT_LOG_SETTINGS_NOTE)).toBeNull();

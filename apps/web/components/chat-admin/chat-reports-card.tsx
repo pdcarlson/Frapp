@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import {
   memberFallbackLabel,
@@ -90,7 +90,15 @@ import { InlineNote } from "@/components/shared/inline-note";
  * exception), so the writes here are not subscription-gated — only disabled
  * offline, where a queueless write cannot land.
  */
-export function ChatReportsCard() {
+export function ChatReportsCard({
+  channelId,
+}: {
+  /**
+   * One channel's reports, beside that channel's settings. Omitted, the whole
+   * chapter's queue: the only place a report about a DM appears.
+   */
+  channelId?: string;
+} = {}) {
   return (
     <Can
       allOf={CHAT_REPORT_QUEUE_PERMISSIONS}
@@ -118,7 +126,7 @@ export function ChatReportsCard() {
         />
       )}
     >
-      <ChatReportsQueue />
+      <ChatReportsQueue channelId={channelId} />
     </Can>
   );
 }
@@ -180,8 +188,21 @@ function resolutionFailureMessage(error: unknown, next: Resolution): string {
     : FAILED_TOAST[next];
 }
 
-function ChatReportsQueue() {
+/** The queue's anchor: the new-report notification links to it. */
+export const CHAT_REPORTS_ANCHOR = "reported-messages";
+
+function ChatReportsQueue({ channelId }: { channelId?: string }) {
   const [status, setStatus] = useState<ChatReportStatus>("open");
+  // The queue sits last on the page, under the channel settings, so a
+  // new-report notification (`/chat-admin#reported-messages`) scrolls to it
+  // once it mounts: the browser's own jump ran before the permission gate let
+  // the section render.
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (window.location.hash === `#${CHAT_REPORTS_ANCHOR}`) {
+      sectionRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, []);
   const { confirm, confirmDialog } = useConfirmDialog();
   const { toast } = useToast();
   const resolve = useResolveChatReport();
@@ -255,7 +276,12 @@ function ChatReportsQueue() {
     // section label; the line under it is kept, because it is not the queue
     // describing itself but the two facts a row cannot show — that its text is
     // the snapshot taken at report time, and that the reporter is never named.
-    <section aria-labelledby="chat-reports-label" className="space-y-3">
+    <section
+      ref={sectionRef}
+      id={CHAT_REPORTS_ANCHOR}
+      aria-labelledby="chat-reports-label"
+      className="scroll-mt-4 space-y-3"
+    >
       {confirmDialog}
       <div className="space-y-1">
         <h2
@@ -291,6 +317,7 @@ function ChatReportsQueue() {
             {/* Radix unmounts inactive panels, so one slice is read at a time. */}
             <ReportList
               tab={tab}
+              channelId={channelId}
               busy={busy}
               onResolve={(report, next) => void handleResolve(report, next)}
               onRemove={(report, author) => void handleRemove(report, author)}
@@ -304,13 +331,14 @@ function ChatReportsQueue() {
 
 interface ReportListProps {
   tab: ChatReportTab;
+  channelId?: string;
   busy: Readonly<Record<string, RowAction>>;
   onResolve: (report: ChatReport, next: Resolution) => void;
   onRemove: (report: ChatReport, author: string) => void;
 }
 
 function ReportList(props: ReportListProps) {
-  const query = useChatReports(props.tab.status);
+  const query = useChatReports(props.tab.status, props.channelId);
   // Above every branch the read can switch between, so the notice's live
   // region is already mounted when a refetch fails, and an empty tab says it
   // is stale as plainly as a full one: "No open reports" from a failed read

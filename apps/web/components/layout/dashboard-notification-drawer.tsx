@@ -91,9 +91,9 @@ function deepLinkFor(notification: Notification): string {
     case "members":
       return "/members";
     // The officer report queue (#2257): the API's new-report notification
-    // targets it with a bare screen, and the queue lives on Chat Admin.
+    // targets it with a bare screen, and the queue sits last on Chat Admin.
     case CHAT_REPORTS_NOTIFICATION_SCREEN:
-      return "/chat-admin";
+      return "/chat-admin#reported-messages";
     // A Discord import that finished or stopped on an error, sent to the
     // admin who set it up.
     case DISCORD_IMPORT_NOTIFICATION_SCREEN:

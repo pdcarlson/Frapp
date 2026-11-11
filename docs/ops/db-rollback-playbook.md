@@ -3384,6 +3384,21 @@ where capabilities && array[
 ];
 ```
 
+## Rollback Reports remember their channel (20261111150000)
+
+* **Migration**: `20261111150000_chat_report_channel.sql`
+
+One nullable column on `chat_message_reports`, `channel_id`, and its index. Code without it neither reads nor writes the column, so it is harmless left in place.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A web client with the per-channel Chat admin page against the reverted API sends `channel_id` to `GET /v1/chat/reports`, which the older DTO rejects (400, unknown property), so the channel page's report list shows its load error; the chapter page's queue is unaffected.
+
+**To remove the column**, in a later forward migration after the code revert has shipped. It holds only an id the report's message already named:
+
+```sql
+drop index if exists public.idx_chat_message_reports_channel_status;
+alter table public.chat_message_reports drop column if exists channel_id;
+```
+
 ## Rollback What's new seen on the account (20261111130000)
 
 * **Migration**: `20261111130000_user_whats_new_seen.sql`

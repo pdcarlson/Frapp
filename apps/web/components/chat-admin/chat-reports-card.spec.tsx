@@ -29,6 +29,7 @@ const {
   mockRemove,
   mockRefetch,
   requestedStatuses,
+  requestedChannels,
   removeTimeline,
   attachmentsQuery,
   attachmentRequests,
@@ -43,6 +44,7 @@ const {
   mockRemove: vi.fn(),
   mockRefetch: vi.fn(),
   requestedStatuses: [] as string[],
+  requestedChannels: [] as (string | undefined)[],
   removeTimeline: { value: undefined as unknown },
   attachmentsQuery: { value: {} as Record<string, unknown> },
   attachmentRequests: [] as { reportId: string; enabled: boolean }[],
@@ -65,8 +67,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       fetchStatus: "idle",
       refetch: vi.fn(),
     }),
-    useChatReports: (status: ChatReportStatus) => {
+    useChatReports: (status: ChatReportStatus, channelId?: string) => {
       requestedStatuses.push(status);
+      requestedChannels.push(channelId);
       return {
         data: undefined,
         isPending: false,
@@ -119,6 +122,7 @@ function report(overrides: Partial<ChatReport> = {}): ChatReport {
     id: "r-1",
     chapter_id: "chap-1",
     message_id: "m-1",
+    channel_id: "ch-1",
     reported_content: "You should quit the chapter, nobody wants you here",
     reported_sender_id: "u-sender",
     reported_author_name: null,
@@ -151,6 +155,7 @@ beforeEach(() => {
   mockOffline.value = false;
   permissions.value = ["members:view", "channels:manage"];
   requestedStatuses.length = 0;
+  requestedChannels.length = 0;
   attachmentRequests.length = 0;
   attachmentsQuery.value = {};
   reportsByStatus.value = { open: settled([report()]) };
@@ -385,6 +390,16 @@ describe("ChatReportsCard — status tabs", () => {
       "true",
     );
     expect(new Set(requestedStatuses)).toEqual(new Set(["open"]));
+  });
+
+  it("reads the whole chapter's queue on its own, and one channel's beside that channel", () => {
+    const { unmount } = render(<ChatReportsCard />);
+    expect(new Set(requestedChannels)).toEqual(new Set([undefined]));
+    unmount();
+
+    requestedChannels.length = 0;
+    render(<ChatReportsCard channelId="ch-1" />);
+    expect(new Set(requestedChannels)).toEqual(new Set(["ch-1"]));
   });
 
   it("switches slice per tab and shows who resolved a closed report, with no actions", async () => {
