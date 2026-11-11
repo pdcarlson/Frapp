@@ -13,6 +13,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
+import {
+  messageFlagCaption,
+  type MessageFlagView,
+} from "@repo/chat-core/flags";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
@@ -36,6 +40,7 @@ import {
   avatarRadius,
   fontFamilyFor,
   italicFontFamilyFor,
+  tint,
   typeRole,
   useFrappTheme,
 } from "@/lib/theme";
@@ -48,6 +53,7 @@ import {
 } from "@repo/hooks";
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MemberAvatar } from "@/components/member-avatar";
+import { AlertGlyph } from "@/components/control-glyphs";
 import { ThreadChip } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
@@ -172,6 +178,12 @@ export interface MessageItemProps {
    * chip as a plain label.
    */
   onOpenThread?: () => void;
+  /**
+   * The flag a member put on the message (#3921), as the thread resolved it
+   * against the viewer's block list (`messageFlagView` in
+   * `@repo/chat-core/flags`), or `null`/absent for none.
+   */
+  flag?: MessageFlagView | null;
 }
 
 /** The author's profile, as a named action beside the message actions. */
@@ -339,6 +351,7 @@ export function MessageRowFrame({
   onJumpToParent,
   authorInline = false,
   onOpenProfile,
+  flag,
   children,
 }: {
   message: ChatMessage;
@@ -367,6 +380,8 @@ export function MessageRowFrame({
   onJumpToParent?: () => void;
   /** `users.id` → opens their profile; see `MessageItemProps`. */
   onOpenProfile?: (userId: string) => void;
+  /** The row's flag (#3921); see `MessageItemProps`. */
+  flag?: MessageFlagView | null;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -422,6 +437,7 @@ export function MessageRowFrame({
         onOpenActions={onOpenActions}
         onJumpToParent={onJumpToParent}
         onOpenProfile={onOpenProfile}
+        flag={flag}
         styles={styles}
       >
         {children}
@@ -451,7 +467,9 @@ export function MessageRowFrame({
           : styles.rowFollows,
       ]}
     >
-      {mentionsViewer ? (
+      {flag?.important ? (
+        <ImportantHighlight style={styles.mentionHighlight} />
+      ) : mentionsViewer ? (
         <MentionHighlight style={styles.mentionHighlight} />
       ) : null}
       {quote ? (
@@ -496,6 +514,7 @@ export function MessageRowFrame({
               </Text>
             </View>
           ) : null}
+          {flag ? <FlagCaption view={flag} styles={styles} /> : null}
           {children}
         </>
       ) : (
@@ -544,6 +563,7 @@ export function MessageRowFrame({
                 <Text style={styles.time}>{time}</Text>
               </View>
             ) : null}
+            {flag ? <FlagCaption view={flag} styles={styles} /> : null}
             {children}
           </View>
         </View>
@@ -686,6 +706,7 @@ export function MessageItem({
   onJumpToParent,
   onOpenProfile,
   onOpenThread,
+  flag,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -842,6 +863,7 @@ export function MessageItem({
         onOpenActions={onOpenActions}
         onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
         onOpenProfile={onOpenProfile}
+        flag={flag}
         styles={styles}
       >
         {text ? (
@@ -933,6 +955,7 @@ export function MessageItem({
       avatarFor={avatarFor}
       startsRun={startsRun}
       quote={quote}
+      flag={flag}
       authorInline={leadsWithAuthor}
       onOpenActions={onOpenActions}
       onOpenProfile={onOpenProfile}
@@ -1069,6 +1092,7 @@ function BubbleRowFrame({
   onOpenActions,
   onJumpToParent,
   onOpenProfile,
+  flag,
   styles,
   children,
 }: {
@@ -1085,6 +1109,8 @@ function BubbleRowFrame({
   /** As `MessageRowFrame`'s: the quote's jump, for a row with no text to carry it. */
   onJumpToParent?: () => void;
   onOpenProfile?: (userId: string) => void;
+  /** The row's flag (#3921), drawn above the bubble, never on its fill. */
+  flag?: MessageFlagView | null;
   styles: ReturnType<typeof createStyles>;
   children: ReactNode;
 }) {
@@ -1117,7 +1143,9 @@ function BubbleRowFrame({
         startsRun ? styles.bubbleRowStartsRun : styles.rowFollows,
       ]}
     >
-      {mentionsViewer ? (
+      {flag?.important ? (
+        <ImportantHighlight style={styles.mentionHighlight} />
+      ) : mentionsViewer ? (
         <MentionHighlight style={styles.mentionHighlight} />
       ) : null}
       {startsRun ? null : (
@@ -1180,6 +1208,7 @@ function BubbleRowFrame({
             </View>
           ) : null}
           {quote ? <View style={styles.bubbleQuote}>{quote}</View> : null}
+          {flag ? <FlagCaption view={flag} styles={styles} /> : null}
           {children}
         </View>
       </View>
@@ -1390,6 +1419,64 @@ function MentionHighlight({ style }: { style: StyleProp<ViewStyle> }) {
 }
 
 /**
+ * An Important row (#3921): the danger tint behind the whole row with a 2px
+ * danger bar on its leading edge, the shape `MentionHighlight` takes in the
+ * chapter accent (components.md §11 § A flagged row). It outranks the
+ * mention highlight on a row that is both.
+ */
+function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
+  const { tokens } = useFrappTheme();
+  const danger = tokens.color.semantic.destructive;
+  return (
+    <View
+      testID="message-flag-important"
+      pointerEvents="none"
+      style={[style, { backgroundColor: tint(danger), borderLeftColor: danger }]}
+    />
+  );
+}
+
+/**
+ * The flag's caption above the body: "Important" in the danger text tone
+ * with its alert glyph, or a lighter flag muted with none, then "· flagged by
+ * Name" when the flagger isn't the sender. One phrase to a screen reader.
+ */
+function FlagCaption({
+  view,
+  styles,
+}: {
+  view: MessageFlagView;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const { tokens } = useFrappTheme();
+  return (
+    <View
+      style={styles.flagCaption}
+      accessible
+      accessibilityLabel={messageFlagCaption(view)}
+      testID="message-flag"
+    >
+      {view.important ? (
+        <AlertGlyph size={14} color={tokens.color.semantic.destructiveText} />
+      ) : null}
+      <Text
+        style={[
+          styles.flagLabel,
+          view.important
+            ? { color: tokens.color.semantic.destructiveText }
+            : null,
+        ]}
+      >
+        {view.label}
+        {view.flaggedBy ? (
+          <Text style={styles.flagBy}>{` · flagged by ${view.flaggedBy}`}</Text>
+        ) : null}
+      </Text>
+    </View>
+  );
+}
+
+/**
  * Text in the chapter's accent (step 11). Its own component so that only a
  * row that draws the accent calls `useChapterBranding()`: the hook reaches for
  * `FrappClientProvider` (#1007), so a row that never fails never needs it.
@@ -1580,6 +1667,22 @@ function createStyles(tokens: SignetTokens) {
     rowFollows: { paddingTop: 2 },
     // Behind the whole row, edge to edge, so the gutter and text stay where
     // every other row has them; the 2pt bar sits inside the 16pt inset.
+    flagCaption: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 2,
+    },
+    flagLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      // Weight comes from the Figtree family, never `fontWeight` (`typeRole`).
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.mutedForeground,
+    },
+    flagBy: {
+      fontFamily: fontFamilyFor(400),
+      color: tokens.color.text.mutedForeground,
+    },
     mentionHighlight: {
       position: "absolute",
       top: 0,
