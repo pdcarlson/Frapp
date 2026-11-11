@@ -5,6 +5,7 @@ import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { useNotificationSyncRuntime } from "@/lib/notifications/use-notification-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
+import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
 
 /**
  * The app-wide runtimes that have no screen to live on.
@@ -46,6 +47,10 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * change ping, so a notification read on another device reads here within
  * seconds, and reads the notices about whichever screen is open
  * (`lib/notifications/use-notification-sync.ts`).
+ *
+ * **Chapter presence** (#3917) publishes the member on the chapter's
+ * presence topic and reads everyone's dot off it, while the app is in the
+ * foreground; screens read the result (`lib/presence/chapter-presence.ts`).
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
@@ -57,5 +62,6 @@ export function AppRuntime(): null {
   useUnreadFirstPaintRuntime();
   useBadgeSyncRuntime();
   useNotificationSyncRuntime();
+  useChapterPresenceRuntime();
   return null;
 }

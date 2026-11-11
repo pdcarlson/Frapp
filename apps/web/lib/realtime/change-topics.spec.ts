@@ -13,7 +13,7 @@ import {
   changeTopic,
   type ChangeTable,
 } from "@repo/chat-core/change-topics";
-import { chapterPresenceTopic } from "./presence-topics";
+import { chapterPresenceTopic } from "@repo/hooks/presence-topics";
 
 /**
  * Pins the database → client change-ping contract.
@@ -282,7 +282,7 @@ async function checkPingTriggers(db: PGlite) {
  * Every topic family `realtime_messages_scoped_select` admits, with the scope
  * function its arm must ask. The three change-ping families come from
  * `change-topics.ts`; the other two share the policy, so an arm broken there
- * breaks it for all. Directory presence is `presence-topics.ts`; the chat topic
+ * breaks it for all. Directory presence is `@repo/hooks/presence-topics`; the chat topic
  * is built inline in `packages/chat-core/src/realtime-manager.ts`.
  *
  * `writes` is the client extensions `realtime_messages_scoped_insert` must

@@ -617,7 +617,7 @@ The same TanStack Query mutations and Supabase Realtime subscriptions run on bot
 
 - **Foreground:** resubscribe Realtime and REST-backfill since the last cursor **before** rendering the channel, so the user never sees a stale thread.
 - **Background:** persist per-channel cursors.
-- **Presence states — specified, not built.** As designed: active → `online`; backgrounded → `idle`; force-quit → `offline`. Today the tracked payload is exactly `{ userId, ts }` — no status field, pinned by key-set equality in `packages/chat-core/src/presence-contract.spec.ts` — and nothing in `apps/mobile` binds `AppState` to presence. Presence is Supabase Realtime Presence on the channel topic (ADR-10); [`../behavior/chat/README.md`](../behavior/chat/README.md) owns that status. Web derives `idle` from timestamp age on the *chapter* topic rather than from a tracked status, so "consistent with web" would describe the transport, not the mechanism.
+- **Presence states — specified, not built.** As designed: active → `online`; backgrounded → `idle`; force-quit → `offline`. Today the tracked payload is exactly `{ userId, ts }` — no status field, pinned by key-set equality in `packages/chat-core/src/presence-contract.spec.ts` — and nothing in `apps/mobile` binds `AppState` to presence on that topic (the *chapter* presence topic is bound since #3917: a backgrounded phone leaves it). Presence is Supabase Realtime Presence on the channel topic (ADR-10); [`../behavior/chat/README.md`](../behavior/chat/README.md) owns that status. Web derives `idle` from timestamp age on the *chapter* topic rather than from a tracked status, so "consistent with web" would describe the transport, not the mechanism.
 
 ### Push delivery
 

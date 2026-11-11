@@ -43,7 +43,11 @@ vi.mock("@/lib/realtime/supabase-realtime", () => ({
 }));
 
 import { useChapterPresence } from "./use-chapter-presence";
-import { IDLE_AFTER_MS, PRESENCE_HEARTBEAT_MS } from "./presence-status";
+import {
+  AWAY_GRACE_MS,
+  IDLE_AFTER_MS,
+  PRESENCE_HEARTBEAT_MS,
+} from "@repo/hooks/presence-status";
 import type { OwnStatus } from "@repo/hooks/member-status";
 
 function ownStatus(patch: Partial<OwnStatus> = {}): OwnStatus {
@@ -735,5 +739,92 @@ describe("useChapterPresence, the viewer's own status", () => {
     expect(result.current.lineOf("me")).toBeNull();
     expect(result.current.statusOf("u1")).toBe("dnd");
     expect(result.current.lineOf("u1")).toBe("In class");
+  });
+});
+
+/**
+ * The phone's away grace (#3917): a member who switched away from the phone
+ * app publishes `away`, then leaves. Readers keep them Idle for five minutes
+ * after the leave they saw, then Offline. A leave without `away` (Invisible,
+ * a closed tab) is Offline at once.
+ */
+describe("useChapterPresence, the away grace", () => {
+  async function joined() {
+    vi.useFakeTimers();
+    const hook = renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    return hook;
+  }
+
+  test("an away member reads Idle, stays Idle for the grace after leaving, then Offline", async () => {
+    const { result } = await joined();
+    fake.setState({ a: [{ userId: "u1", ts: Date.now(), away: true }] });
+    act(() => fake.fire("sync"));
+    expect(result.current.statusOf("u1")).toBe("idle");
+
+    fake.setState({});
+    act(() => fake.fire("leave"));
+    expect(result.current.statusOf("u1")).toBe("idle");
+    expect(result.current.lineOf("u1")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AWAY_GRACE_MS + PRESENCE_HEARTBEAT_MS);
+    });
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  test("a picked status still wins through the grace: DND stays DND", async () => {
+    const { result } = await joined();
+    fake.setState({
+      a: [{ userId: "u1", ts: Date.now(), away: true, status: "dnd" }],
+    });
+    act(() => fake.fire("sync"));
+    expect(result.current.statusOf("u1")).toBe("dnd");
+    fake.setState({});
+    act(() => fake.fire("leave"));
+    expect(result.current.statusOf("u1")).toBe("dnd");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AWAY_GRACE_MS + PRESENCE_HEARTBEAT_MS);
+    });
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  test("a leave without away is Offline at once", async () => {
+    const { result } = await joined();
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    act(() => fake.fire("sync"));
+    fake.setState({});
+    act(() => fake.fire("leave"));
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  test("coming back ends the grace", async () => {
+    const { result } = await joined();
+    fake.setState({ a: [{ userId: "u1", ts: Date.now(), away: true }] });
+    act(() => fake.fire("sync"));
+    fake.setState({});
+    act(() => fake.fire("leave"));
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    act(() => fake.fire("join"));
+    expect(result.current.statusOf("u1")).toBe("online");
+  });
+
+  test("the viewer publishes away when told to, and nothing extra otherwise", async () => {
+    vi.useFakeTimers();
+    const { rerender } = renderHook(
+      ({ away }: { away: boolean }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId: "me", away }),
+      { initialProps: { away: false } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fake.track.mock.calls.at(-1)![0]).not.toHaveProperty("away");
+    rerender({ away: true });
+    expect(fake.track.mock.calls.at(-1)![0]).toMatchObject({ away: true });
   });
 });

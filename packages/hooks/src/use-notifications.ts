@@ -266,10 +266,13 @@ export function useNotificationPreferences(chapterId: string) {
  * empty body is now a contract break, so it rejects under a name that says so
  * rather than tripping TanStack's generic guard.
  */
-export function useUserSettings() {
+export function useUserSettings(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: userSettingsKey,
+    // The phone's presence runtime sits above the auth gate (#3917) and holds
+    // the read until someone is signed in.
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/settings");
       if (error) throw error;
