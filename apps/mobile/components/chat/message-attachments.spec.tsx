@@ -769,12 +769,39 @@ describe("the box before the read returns (#3879)", () => {
     );
   });
 
-  it("draws a grid only for the photos among several files", () => {
+  it("draws a grid only for the photos among several files, each tile with its blur", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
     const tree = render({ count: 3, photos: [sized, sized] });
 
     expect(tiles(tree)).toHaveLength(2);
     expect(fileRows(tree)).toHaveLength(1);
+    for (const tile of tiles(tree)) {
+      const [blur] = tile.findAllByType(
+        "ExpoImage" as unknown as React.ElementType,
+      );
+      expect(blur!.props.placeholder).toEqual({ thumbhash: sized.thumbhash });
+    }
+  });
+
+  it("never hands the decoder a hash it can't read in full, which crashes iOS", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({
+          content_type: "image/jpeg",
+          width: 1600,
+          height: 800,
+          thumbhash: "AAAA",
+        }),
+      ],
+    };
+    const tree = render({ count: 1 });
+    const image = tree.root.findAllByType(
+      "ExpoImage" as unknown as React.ElementType,
+    )[0]!;
+
+    expect(image.props.placeholder).toBeNull();
   });
 
   it("keeps the photo bet for a message with no geometry", () => {

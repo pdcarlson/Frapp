@@ -667,15 +667,21 @@ describe("the box before the read returns (#3879)", () => {
     // An image like the loaded one, with the same sizing classes: a span
     // with the same CSS did not shrink with a narrow column, measured in
     // Chromium.
+    // Compared as sets both ways: a class dropped from either side (the
+    // pending box's `max-w-full`, the frame's 2px border) is a shift.
+    const classes = (names: string) => [...new Set(names.split(" "))].sort();
     expect(pending.tag).toBe("IMG");
-    for (const c of pending.className.split(" ")) {
-      expect(image).toHaveClass(c);
+    expect(classes(pending.className)).toEqual(classes(image.className));
+    const loadedFrame = classes(image.parentElement!.className);
+    for (const c of ["block", "overflow-hidden", "rounded-md", "border"]) {
+      expect(loadedFrame).toContain(c);
     }
-    // The frame's border is what makes the loaded control 2px taller than its
-    // picture; the pending box sits in the same one.
-    for (const c of pending.frame.split(" ")) {
-      expect(image.parentElement).toHaveClass(c);
-    }
+    expect(classes(pending.frame)).toEqual(
+      loadedFrame.filter((c) => classes(pending.frame).includes(c)),
+    );
+    expect(classes(pending.frame)).toEqual(
+      classes("block overflow-hidden rounded-md border border-transparent"),
+    );
     expect(screen.getByRole("list").className).toBe(pending.list);
   });
 

@@ -1063,13 +1063,15 @@ export class ChatService {
         // for everyone except its sender. `attachment_photos` rides beside it
         // for the same reason: each photo's size, so a reader draws its box
         // before the attachments read returns (#3879).
+        // Both keys are the server's: a client's own copies are dropped, so a
+        // text message can't claim files, or photo boxes, it doesn't have.
         metadata:
           attachments.length > 0
             ? {
-                ...(input.metadata ?? {}),
+                ...clientMetadata(input.metadata),
                 ...attachmentMetadataOf(attachments),
               }
-            : (input.metadata ?? {}),
+            : clientMetadata(input.metadata),
         mentions,
       });
     } catch (error) {
@@ -1819,6 +1821,21 @@ export class ChatService {
       (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
     );
   }
+}
+
+/**
+ * A send's own `metadata`, without the keys only the server stamps.
+ * `attachment_count` and `attachment_photos` describe the attachment rows, so
+ * they come from `attachmentMetadataOf`, never the client: a forged count
+ * drew a placeholder per claimed file on every reader (#3879 review).
+ */
+function clientMetadata(
+  metadata: Record<string, any> | undefined,
+): Record<string, any> {
+  const own = { ...(metadata ?? {}) };
+  delete own.attachment_count;
+  delete own.attachment_photos;
+  return own;
 }
 
 /**

@@ -866,6 +866,7 @@ export {
   inspectUploadFile,
 } from "./upload-allowlists";
 export type { UploadKind, InspectedUpload } from "./upload-allowlists";
+export { isDecodableThumbhash } from "./thumbhash";
 
 // Discord export (DCE) preamble parsing, shared between the import wizard
 // (apps/web) and the import worker (apps/api). See ./discord-export for why

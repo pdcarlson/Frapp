@@ -9,7 +9,11 @@
  */
 
 import type { components } from "@repo/api-sdk/types";
-import { isChatMessageFlag, type ChatMessageFlag } from "@repo/validation";
+import {
+  isChatMessageFlag,
+  isDecodableThumbhash,
+  type ChatMessageFlag,
+} from "@repo/validation";
 
 export const CHAT_MESSAGE_QUERY_ROOT = "chat" as const;
 
@@ -601,8 +605,15 @@ export interface AttachmentPhoto {
   thumbhash: string | null;
 }
 
-function positiveInteger(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
+/** The API's own bounds (`ChatAttachmentService`): at most 10 files, edges 1 to 20000 px. */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+const MAX_PHOTO_EDGE = 20_000;
+
+function photoEdge(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_PHOTO_EDGE
     ? value
     : null;
 }
@@ -612,29 +623,38 @@ function positiveInteger(value: unknown): number | null {
  *
  * Absent (an older message, an import, a masked row) or malformed reads as no
  * field at all, so the reader draws as it did before geometry existed. More
- * entries than `attachment_count` is a row this can't trust either. A lone
- * width or height says nothing about the shape, so an entry keeps both or none.
+ * entries than `attachment_count`, or a count past the API's 10, is a row this
+ * can't trust either: the API now drops a client's own copies of both keys,
+ * but older rows stored them verbatim, and a forged count drew one placeholder
+ * per claimed file. Each entry gets the API's own checks: a lone width or
+ * height says nothing about the shape, so it keeps both or none, and a
+ * ThumbHash a decoder can't read in full is dropped, because expo-image's iOS
+ * decoder crashes on a short one (`isDecodableThumbhash`).
  */
 function attachmentPhotosField(metadata: unknown): {
   attachment_photos?: AttachmentPhoto[];
 } {
   if (!metadata || typeof metadata !== "object") return {};
   const raw = (metadata as Record<string, unknown>)["attachment_photos"];
-  if (!Array.isArray(raw) || raw.length > attachmentCount(metadata)) return {};
+  const count = attachmentCount(metadata);
+  if (
+    !Array.isArray(raw) ||
+    raw.length > count ||
+    count > MAX_ATTACHMENTS_PER_MESSAGE
+  ) {
+    return {};
+  }
   const photos: AttachmentPhoto[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") return {};
     const { width, height, thumbhash } = entry as Record<string, unknown>;
-    const w = positiveInteger(width);
-    const h = positiveInteger(height);
+    const w = photoEdge(width);
+    const h = photoEdge(height);
     const sized = w !== null && h !== null;
     photos.push({
       width: sized ? w : null,
       height: sized ? h : null,
-      thumbhash:
-        typeof thumbhash === "string" && thumbhash.length > 0
-          ? thumbhash
-          : null,
+      thumbhash: isDecodableThumbhash(thumbhash) ? thumbhash : null,
     });
   }
   return { attachment_photos: photos };

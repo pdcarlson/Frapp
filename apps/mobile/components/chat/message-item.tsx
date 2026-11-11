@@ -1433,7 +1433,10 @@ function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
     <View
       testID="message-flag-important"
       pointerEvents="none"
-      style={[style, { backgroundColor: tint(danger), borderLeftColor: danger }]}
+      style={[
+        style,
+        { backgroundColor: tint(danger), borderLeftColor: danger },
+      ]}
     />
   );
 }

@@ -10,6 +10,7 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
+  isDecodableThumbhash,
 } from '@repo/validation';
 import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
@@ -118,12 +119,13 @@ export interface AttachmentPhotoGeometry {
  *
  * `attachment_count` says there is anything to fetch. `attachment_photos` has
  * one entry per photo (an `image/` attachment) with the size and ThumbHash
- * `validateAttachmentInputs` kept, so a reader draws each photo's box, blurred,
+ * `validateAttachmentInputs` kept, so a reader can reserve each photo's box
  * before the attachments read returns, and a Realtime echo, which cannot carry
  * a join, still has it. Every photo gets an entry, a sized one or not, so the
  * count minus the entries is the number of files: a reader can lay out both.
  * Live chat accepts only images every client draws (`document` uploads), so
- * `image/` here means a photo the clients render inline.
+ * `image/` here means a photo the clients render inline; chat-core's
+ * `attachments.spec.ts` fails if `document` ever admits one they don't.
  *
  * Display metadata, not a copy of the rows: the rows stay the source of truth.
  * Readers lay the entries out in any order, so this list's order need not match
@@ -364,9 +366,14 @@ export class ChatAttachmentService {
     const width = edge(attachment.width);
     const height = edge(attachment.height);
     const sized = width !== null && height !== null;
+    // The pattern bounds the length; `isDecodableThumbhash` checks the header's
+    // own sizes are all there, because a short hash (`AAAA` passes the pattern)
+    // crashes expo-image's iOS decoder, and the stamp hands it to every reader
+    // before the attachments read returns (#3879).
     const thumbhash =
       attachment.thumbhash != null &&
-      THUMBHASH_BASE64.test(attachment.thumbhash)
+      THUMBHASH_BASE64.test(attachment.thumbhash) &&
+      isDecodableThumbhash(attachment.thumbhash)
         ? attachment.thumbhash
         : null;
     const preview =

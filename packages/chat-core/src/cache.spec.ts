@@ -439,7 +439,11 @@ describe("message flags (#3921)", () => {
 // boxes before the attachments read returns. It has to survive the round trip
 // a persisted cache makes, and an untrustworthy stamp must read as none.
 describe("photo geometry (#3879)", () => {
-  const photo = { width: 1200, height: 800, thumbhash: "1QcSHQRnh4" };
+  const photo = {
+    width: 1200,
+    height: 800,
+    thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI",
+  };
 
   test("reads metadata.attachment_photos beside the count", () => {
     const message = normalizeRow(
@@ -492,6 +496,53 @@ describe("photo geometry (#3879)", () => {
     expect(
       normalizeRow(row({ kind: "text", metadata })).attachment_photos,
     ).toBeUndefined();
+  });
+
+  test("reads a count past the API's 10 as no geometry, so a forged row draws one caption", () => {
+    expect(
+      normalizeRow(
+        row({
+          kind: "text",
+          metadata: { attachment_count: 10_000_000, attachment_photos: [] },
+        }),
+      ).attachment_photos,
+    ).toBeUndefined();
+  });
+
+  test("drops a ThumbHash a decoder can't read in full, which crashes iOS", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 2,
+          attachment_photos: [
+            { ...photo, thumbhash: "AAAA" },
+            { ...photo, thumbhash: "!!" },
+          ],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos?.map((p) => p.thumbhash)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  test("drops an edge past the API's 20000 px", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 1,
+          attachment_photos: [{ width: 1, height: 20_001, thumbhash: null }],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos).toEqual([
+      { width: null, height: null, thumbhash: null },
+    ]);
   });
 
   test("keeps both edges or neither", () => {
