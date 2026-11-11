@@ -3708,3 +3708,17 @@ alter table public.chat_channel_categories
 drop function if exists public.chat_channel_access_from_legacy(uuid, text, text[], boolean, boolean);
 drop function if exists public.chat_access_list_valid(text[]);
 ```
+
+## Rollback role tier reorder (20261112001000)
+
+* **Migration**: `20261112001000_reorder_role_tiers.sql`
+
+One function, `reorder_role_tiers(uuid, uuid[], uuid[])`, which `PUT /v1/role-tiers/order` calls. It writes nothing on apply and changes no table.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function. A reorder made before the revert stays: tier positions are ordinary rows, and the older API reads none of them.
+
+To remove the function, do it in a later forward migration:
+
+```sql
+drop function if exists public.reorder_role_tiers(uuid, uuid[], uuid[]);
+```

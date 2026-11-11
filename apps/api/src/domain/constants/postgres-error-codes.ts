@@ -17,6 +17,12 @@ export const PG_UNIQUE_VIOLATION = '23505';
 export const PG_FOREIGN_KEY_VIOLATION = '23503';
 
 /**
+ * Postgres `check_violation` (SQLSTATE 23514): a check constraint, or a
+ * function that raises it on purpose (`reorder_role_tiers` for a stale order).
+ */
+export const PG_CHECK_VIOLATION = '23514';
+
+/**
  * Whether an unknown throwable is a Postgres unique violation.
  *
  * Use this where the caught value is untyped — a rejected repository promise,

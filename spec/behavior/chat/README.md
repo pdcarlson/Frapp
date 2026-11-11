@@ -1068,8 +1068,9 @@ channel that reports a different one fails the import rather than being skipped.
   would close the gap below, is [#4286](https://github.com/pdcarlson/Frapp/issues/4286).* **Known gaps:** Discord
   answers per role and Frapp has only
   read-only or not, so the roles a read-only channel let talk in Discord can
-  post in Frapp only if they hold `announcements:post`, which by default only
-  the President does; the admin grants it in Settings → Roles. A channel that
+  post in Frapp only if they hold `announcements:post`, which by default the
+  two top tiers hold in a chapter created since #4071's second PR and only the
+  President holds in an older one; the admin grants it in Settings → Roles. A channel that
   denies `@everyone` and allows a member role is indistinguishable from
   `#announcements` with an exec allow, and comes out read-only until the
   admin turns it off. The reverse: on a server that lets nobody talk by

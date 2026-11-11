@@ -128,6 +128,7 @@ export class MemberController {
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
@@ -140,7 +141,7 @@ export class MemberController {
         "This member's roles changed since the page loaded. Reload and try again.",
       );
     }
-    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
+    return this.memberService.updateRoles(id, dto.role_ids, chapterId, userId);
   }
 
   @Patch('me/onboarding')

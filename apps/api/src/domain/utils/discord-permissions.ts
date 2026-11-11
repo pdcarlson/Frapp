@@ -228,7 +228,8 @@ export function readerRoleIds(
  *  - a role the channel itself allows to talk (an overwrite allow on that
  *    role): the exec of an `#announcements`, which Frapp has no per-channel
  *    way to express. They are why a read-only channel needs its posters to
- *    hold `announcements:post`, which only the President does by default.
+ *    hold `announcements:post`, which the two top tiers hold by default in a
+ *    chapter created since #4071 (only the President, in an older one).
  *
  * The channel is read-only when none of the remaining readers can talk in it,
  * and it is the channel that stopped them: it took talking away from one of

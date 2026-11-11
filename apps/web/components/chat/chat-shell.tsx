@@ -472,7 +472,7 @@ export function ChatShell({
   */
   const { userId: liveUserId } = useFrappUser();
   // From the member view, like the slash gate below: `useOrgConfig()` needs
-  // `chapter-config:view`, which no seeded role below President holds (#2957),
+  // `chapter-config:view`, which no seeded role below the Exec board holds (#2957),
   // so members got `/rush` in place of their chapter's recruitment word.
   // `undefined` until the read answers, which the palette shows as `/rush`.
   const chapterVocabulary = useChapterVocabulary();

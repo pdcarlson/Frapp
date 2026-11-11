@@ -368,6 +368,15 @@ export interface Database {
         Args: { p_chapter_id: string; p_ids: string[] };
         Returns: PledgeClass[];
       };
+      /**
+       * `20261112001000` (#4071) — `returns setof role_tiers`. Raises
+       * `check_violation` when `p_ids` is not exactly the chapter's tiers or
+       * its order no longer starts with `p_fixed_ids`.
+       */
+      reorder_role_tiers: {
+        Args: { p_chapter_id: string; p_ids: string[]; p_fixed_ids: string[] };
+        Returns: RoleTier[];
+      };
       /** `20261110170000` (#3939) — `p_assignments` is `jsonb`; `returns setof members`. */
       assign_member_pledge_classes: {
         Args: { p_chapter_id: string; p_assignments: PledgeClassAssignment[] };

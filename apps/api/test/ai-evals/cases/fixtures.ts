@@ -81,7 +81,7 @@ export const DOC_UPLOADER: EvalCaller = {
 
 /**
  * Seeded Treasurer role: what its starting tier gives every role in it
- * (#4071), then the Treasurer's own billing, points, reports and events grants.
+ * (#4071, the Exec board's officer defaults included), then the Treasurer's own billing, points, reports and events grants.
  */
 export const TREASURER: EvalCaller = {
   memberId: 'member-treasurer',
@@ -90,6 +90,14 @@ export const TREASURER: EvalCaller = {
   permissions: [
     'members:view',
     'polls:view_all',
+    'announcements:post',
+    'channels:create',
+    'channels:manage',
+    'chapter-config:manage',
+    'chapter-config:view',
+    'roles:manage',
+    'service:approve',
+    'tasks:manage',
     'billing:view',
     'billing:manage',
     'points:adjust',
@@ -112,5 +120,17 @@ export const PRESIDENT: EvalCaller = {
   memberId: 'member-president',
   chapterId: CHAPTER,
   roleName: 'President',
-  permissions: ['members:view', 'polls:view_all', '*'],
+  permissions: [
+    'members:view',
+    'polls:view_all',
+    'announcements:post',
+    'channels:create',
+    'channels:manage',
+    'chapter-config:manage',
+    'chapter-config:view',
+    'roles:manage',
+    'service:approve',
+    'tasks:manage',
+    '*',
+  ],
 };

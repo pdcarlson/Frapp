@@ -17,14 +17,26 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
   });
 });
 
-// #4071: tiers arrived without changing what a new chapter's roles can do.
-// The lists are spelled out as they stood before tiers (Member with the
-// recruitment keys #4070 gave it) so that a change to a
-// starting tier or a seeded role fails here and has to be meant. Beside its
-// wildcard the President now also lists its tier's two permissions, which the
-// wildcard already covered.
+// #4071: what a new chapter's seeded roles hold, spelled out so that a change
+// to a starting tier or a seeded role fails here and has to be meant. The
+// exec roles carry the officer defaults Paul set on 2026-11-10 (#4068
+// decision 9) on top of what they held before tiers; Member, New Member and
+// Alumni are unchanged.
+const EXEC_BOARD = [
+  'announcements:post',
+  'channels:create',
+  'channels:manage',
+  'chapter-config:manage',
+  'chapter-config:view',
+  'members:view',
+  'polls:view_all',
+  'roles:manage',
+  'service:approve',
+  'tasks:manage',
+];
+
 describe('DEFAULT_SYSTEM_ROLES permissions', () => {
-  it('gives each seeded role what it held before tiers', () => {
+  it('gives each seeded role its tier plus its own', () => {
     expect(
       Object.fromEntries(
         DEFAULT_SYSTEM_ROLES.map((role) => [
@@ -33,20 +45,19 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         ]),
       ),
     ).toEqual({
-      PRESIDENT: ['*', 'members:view', 'polls:view_all'],
+      PRESIDENT: ['*', ...EXEC_BOARD],
       TREASURER: [
+        ...EXEC_BOARD,
         'billing:manage',
         'billing:view',
         'events:create',
         'events:update',
-        'members:view',
         'points:adjust',
         'points:view_all',
-        'polls:view_all',
         'reports:export',
-      ],
-      VICE_PRESIDENT: ['members:view', 'polls:view_all'],
-      SECRETARY: ['members:view', 'polls:view_all'],
+      ].sort(),
+      VICE_PRESIDENT: EXEC_BOARD,
+      SECRETARY: EXEC_BOARD,
       MEMBER: [
         'backwork:upload',
         'members:view',
@@ -62,6 +73,36 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       NEW_MEMBER: ['backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
     });
+  });
+
+  // #4068 decision 9: the top two starting tiers approve service hours, post
+  // announcements and manage tasks and channels; only the top one manages
+  // roles and chapter settings.
+  it('gives the officer defaults to the top two starting tiers only', () => {
+    const officer = [
+      'announcements:post',
+      'channels:create',
+      'channels:manage',
+      'service:approve',
+      'tasks:manage',
+    ];
+    const [exec, chairs, members, newMembers] = STARTING_ROLE_TIERS.map(
+      (tier) => new Set<string>(tier.permissions),
+    );
+    for (const permission of officer) {
+      expect(exec.has(permission)).toBe(true);
+      expect(chairs.has(permission)).toBe(true);
+      expect(members.has(permission)).toBe(false);
+      expect(newMembers.has(permission)).toBe(false);
+    }
+    for (const permission of [
+      'roles:manage',
+      'chapter-config:view',
+      'chapter-config:manage',
+    ]) {
+      expect(exec.has(permission)).toBe(true);
+      expect(chairs.has(permission)).toBe(false);
+    }
   });
 
   it('never puts the wildcard on a starting tier', () => {

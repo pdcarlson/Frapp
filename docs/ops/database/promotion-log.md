@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Rank rules for role tiers (#4071, part 2)
+
+### 20261112001000_reorder_role_tiers.sql
+
+- **Purpose**: Adds `reorder_role_tiers(uuid, uuid[], uuid[])` (security invoker, EXECUTE for `service_role` only), which `PUT /v1/role-tiers/order` calls. With the chapter's tiers locked it sets each tier's `position` to its place in the list, 1 to n, in one statement, and raises `check_violation` (23514) unless the list names each of the chapter's tiers once and both the current order and the new one start with the tiers the caller may not move. Writes no row on apply and changes no table. The rule is [`spec/behavior/rbac.md` § Rank](../../../spec/behavior/rbac.md#rank).
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.reorder_role_tiers(uuid, uuid[], uuid[])', 'execute');` returns `false` and `select has_function_privilege('service_role', 'public.reorder_role_tiers(uuid, uuid[], uuid[])', 'execute');` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never calls it. The newer API against an unmigrated database fails only the reorder route. `create or replace` makes re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/role-tier-reorder.mjs`). The same PR changes what a **new** chapter's top two tiers give (the officer defaults, #4068 decision 9) in API code only; no existing chapter's roles or tiers change. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-role-tier-reorder-20261112001000) § Rollback role tier reorder.
+
 ## 2026-11-11: Link titles on Activity (#4187)
 
 ### 20261112000000_activity_link_titles.sql
