@@ -1845,10 +1845,13 @@ describe("Chat home opens the last channel on launch", () => {
     // Held behind the skeleton while the jump may still happen, so the list
     // never flashes before a channel opens over it (2026-11-07)…
     expect(rows(tree)).toHaveLength(0);
+    // …which is still loading as far as the member can tell (#4342)…
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(false);
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
     // …and shown once the launch settles with nowhere to go.
     expect(rows(tree).map((row) => row.props.name)).toEqual(["general"]);
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
   });
 
   it("stands aside for a notification tap", async () => {

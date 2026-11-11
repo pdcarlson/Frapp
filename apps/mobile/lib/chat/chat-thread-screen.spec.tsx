@@ -1200,6 +1200,21 @@ describe("chat thread loading state (components.md §10)", () => {
     const failed = render();
     expect(ready(failed)).toBe(true);
     act(() => failed.unmount());
+
+    // Messages from cache before `/users/me` answers: still the skeleton (#2250).
+    channel = channelState({ viewerId: null });
+    const noViewer = render();
+    expect(skeletons(noViewer)).toHaveLength(1);
+    expect(ready(noViewer)).toBe(false);
+    act(() => noViewer.unmount());
+
+    // `/users/me` failed: its error state is what the member is left with.
+    channel = channelState({ viewerId: null });
+    viewerQuery = { ...viewerQuery, isError: true };
+    const noAccount = render();
+    expect(screenText(noAccount)).toContain("Couldn't load your account");
+    expect(ready(noAccount)).toBe(true);
+    act(() => noAccount.unmount());
   });
 
   it("sits the shapes at the bottom, where an inverted thread's rows land", () => {

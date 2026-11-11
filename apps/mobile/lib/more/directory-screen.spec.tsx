@@ -76,6 +76,7 @@ function read(data: unknown, refetch = vi.fn()) {
 }
 
 const state = vi.hoisted(() => ({
+  chapterId: "c-1" as string | null,
   search: [] as unknown[],
   pending: false,
   permissions: [] as string[],
@@ -105,7 +106,7 @@ const refetches = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useActiveChapterId: () => "c-1",
+  useActiveChapterId: () => state.chapterId,
   usePermissionList: () => state.permissions,
   useRoles: () =>
     state.rolesError
@@ -304,6 +305,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
+  state.chapterId = "c-1";
   state.search = [];
   state.pending = false;
   state.permissions = [];
@@ -951,6 +953,13 @@ describe("s13's loading label", () => {
     const loaded = render();
     expect(loaded.root.findByType(ScreenReady).props.ready).toBe(true);
     act(() => loaded.unmount());
+
+    // No chapter: its reads never go out, so the query stays pending for good.
+    state.pending = true;
+    state.chapterId = null;
+    const noChapter = render();
+    expect(noChapter.root.findByType(ScreenReady).props.ready).toBe(true);
+    act(() => noChapter.unmount());
   });
 
   it("names the tab's list, or the search", () => {

@@ -541,8 +541,7 @@ vi.mock("@sentry/react-native", () => ({
   captureMessage: vi.fn(),
   mobileReplayIntegration: vi.fn(),
   // Navigation timing (`app/_layout.tsx`, `lib/sentry/screen-ready.tsx`). A
-  // spy that renders nothing, so a screen spec can read the `record` it was
-  // last given.
+  // spy that renders nothing, so a spec can read the `ready` it was last given.
   expoRouterIntegration: vi.fn(),
   TimeToFullDisplay: vi.fn(() => null),
 }));

@@ -66,10 +66,13 @@ if (sentryDsn) {
   );
   Sentry.init({
     ...options,
-    // One navigation span per route change, named by route, with the time to
-    // its first frame; screens add time to full display (`ScreenReady`). The
+    // Replaces the SDK's default Expo Router integration (one navigation span
+    // per route change) with one that also times each route's first frame;
+    // screens add time to full display (`lib/sentry/screen-ready.tsx`). The
     // speed budget is measured from these (#4342). Route params stay out of
-    // the spans while `sendDefaultPii` is false.
+    // the spans while `sendDefaultPii` is false. The one integration set here
+    // rather than in `lib/sentry/options.ts`, which can't build one: it
+    // imports the SDK for types only.
     integrations: [
       Sentry.expoRouterIntegration({ enableTimeToInitialDisplay: true }),
     ],
