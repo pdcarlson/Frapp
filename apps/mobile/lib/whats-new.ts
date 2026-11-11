@@ -32,6 +32,13 @@
  * build that ships the feature would show nobody anything. It gets the newest
  * entry only; what it saw before is unknown.
  *
+ * Across devices (#4043): the account records the newest entry any of the
+ * member's devices has shown (`useAccountWhatsNewSeen` in `@repo/hooks`). When
+ * it already holds the entry this phone would open, the phone records it
+ * without opening and marks Settings → What's new instead
+ * ({@link markWhatsNewQuiet}) until that screen is opened. Offline, the
+ * phone's own marker decides, as it did before.
+ *
  * "Chat state at launch" is read once, at module load, which the root layout
  * triggers ({@link startWhatsNewBootRead}). Read later, a fresh install's own
  * first minutes of chat (read cursors, the last channel) would already be on
@@ -40,9 +47,17 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
+import { createStoredPreference } from "@/lib/stored-preference";
 
 /** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
+
+/**
+ * Set while Settings → What's new carries the quiet mark: another device
+ * showed the newest entry, and this phone hasn't opened What's new since.
+ * Holds `"quiet"` while set.
+ */
+export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.mobile.whats-new-quiet";
 
 /**
  * Keys only a phone that has been in a chapter's chat holds: the read cursor
@@ -114,4 +129,56 @@ export async function recordWhatsNewSeen(
   } catch {
     // It shows once more at worst.
   }
+}
+
+// ── Quiet mark ──────────────────────────────────────────────────────────────
+
+/** On the shared per-device store; anything but `"quiet"` reads as no mark. */
+const quietMark = createStoredPreference<"quiet" | "none">({
+  key: WHATS_NEW_QUIET_STORAGE_KEY,
+  parse: (raw) => (raw === "quiet" ? "quiet" : "none"),
+  fallback: "none",
+});
+
+/**
+ * Another device showed the notes up to `version`: record it here so they
+ * never open by themselves on this phone, and mark Settings → What's new.
+ */
+export async function markWhatsNewQuiet(
+  version: string,
+  storage: Storage = AsyncStorage,
+): Promise<void> {
+  quietMark.set("quiet");
+  await recordWhatsNewSeen(version, storage);
+}
+
+/**
+ * What's new was read on this phone (the sheet presented, or the screen
+ * opened): record the newest entry and drop the mark.
+ */
+export async function markWhatsNewRead(
+  version: string,
+  storage: Storage = AsyncStorage,
+): Promise<void> {
+  quietMark.set("none");
+  await recordWhatsNewSeen(version, storage);
+}
+
+/**
+ * Drops the mark without recording anything: the signed-in account hasn't
+ * seen the newest entry, so a mark left by another account on this phone, or
+ * by a rolled-back account version, isn't backed by anything.
+ */
+export function clearWhatsNewQuiet(): void {
+  quietMark.set("none");
+}
+
+/** Whether Settings → What's new carries the quiet mark. */
+export function useWhatsNewQuiet(): boolean {
+  return quietMark.use() === "quiet";
+}
+
+/** Test seam: a fresh process. */
+export function resetWhatsNewQuietForTests(): void {
+  quietMark.resetForTests();
 }

@@ -144,19 +144,22 @@ describe("AccountMenu", () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it("links notification settings at the section that actually exists", async () => {
-    // Notification preferences are a section of the profile screen, not a route
-    // of their own. A `?tab=` link would be a dead affordance the screen would
-    // silently ignore (spec/ui/design-system/README.md §5, rule 2), so this
-    // must stay an anchor.
+  it("opens the member's own Settings page, the second door (#3856)", async () => {
+    // The nav's row is "Chapter settings"; this one is the member's, and it
+    // replaced the "Notification settings" anchor into `/profile`, whose
+    // settings sections moved to this page.
     const user = userEvent.setup();
     render(<AccountMenu variant="topbar" />);
 
     await user.click(screen.getByRole("button", { name: /account menu/i }));
 
+    expect(screen.getByRole("menuitem", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/preferences",
+    );
     expect(
-      screen.getByRole("menuitem", { name: /notification settings/i }),
-    ).toHaveAttribute("href", "/profile#notification-settings");
+      screen.queryByRole("menuitem", { name: /notification settings/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens What's new, the same changelog mobile Settings shows", async () => {
@@ -289,7 +292,9 @@ describe("AccountMenu", () => {
 
     it("turns on DND for 1 hour with an end time an hour out", async () => {
       const user = await openStatus();
-      (await screen.findByRole("menuitem", { name: /do not disturb/i })).focus();
+      (
+        await screen.findByRole("menuitem", { name: /do not disturb/i })
+      ).focus();
       await user.keyboard("{ArrowRight}");
       const before = Date.now();
       await choose(/for 1 hour/i);
@@ -305,7 +310,9 @@ describe("AccountMenu", () => {
 
     it("turns on DND until I turn it off with no end time", async () => {
       const user = await openStatus();
-      (await screen.findByRole("menuitem", { name: /do not disturb/i })).focus();
+      (
+        await screen.findByRole("menuitem", { name: /do not disturb/i })
+      ).focus();
       await user.keyboard("{ArrowRight}");
       await choose(/until i turn it off/i);
       expect(save).toHaveBeenCalledWith({
@@ -336,7 +343,9 @@ describe("AccountMenu", () => {
       const end = new Date(body.custom_status_expires_at);
       expect([end.getHours(), end.getMinutes()]).toEqual([0, 0]);
       expect(end.getTime()).toBeGreaterThan(Date.now());
-      expect(end.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+      expect(end.getTime() - Date.now()).toBeLessThanOrEqual(
+        24 * 60 * 60 * 1000,
+      );
     });
 
     it("shows the current line and clears it from the dialog", async () => {
@@ -354,7 +363,9 @@ describe("AccountMenu", () => {
 
     it("puts DND's default first, so opening the submenu lands on it", async () => {
       const user = await openStatus();
-      (await screen.findByRole("menuitem", { name: /do not disturb/i })).focus();
+      (
+        await screen.findByRole("menuitem", { name: /do not disturb/i })
+      ).focus();
       await user.keyboard("{ArrowRight}");
       await user.keyboard("{Enter}");
       expect(save).toHaveBeenCalledWith({
@@ -404,7 +415,9 @@ describe("AccountMenu", () => {
       const dialog = await screen.findByRole("dialog");
       const field = within(dialog).getByRole("textbox", { name: "Status" });
       fireEvent.change(field, { target: { value: "x".repeat(81) } });
-      expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(
+        within(dialog).getByRole("button", { name: "Save" }),
+      ).toBeDisabled();
       expect(dialog).toHaveTextContent("Keep it to 80 characters.");
       fireEvent.submit(field.closest("form")!);
       expect(save).not.toHaveBeenCalled();

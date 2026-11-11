@@ -40,7 +40,7 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
 
 /**
  * Start linking. Returns Discord's authorize URL; the caller navigates to it.
- * Discord brings the browser back to `/profile?discord=…&handshake=…`.
+ * Discord brings the browser back to `/preferences?section=discord&discord=…&handshake=…`.
  */
 export function useBeginDiscordAuthorLink() {
   const client = useFrappClient();

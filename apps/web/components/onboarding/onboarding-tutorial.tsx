@@ -29,6 +29,10 @@ import {
 } from "@/components/ui/dialog";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
+import {
+  DISPLAY_STEP_DESCRIPTION,
+  DISPLAY_STEP_TITLE,
+} from "@/components/onboarding/display-step";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -75,9 +79,8 @@ const STEPS: Step[] = [
     // decision): the browser's current display is preselected (Cozy on a
     // fresh browser), so Next keeps it.
     id: "chat-display",
-    title: "Pick your chat display",
-    description:
-      "Choose how messages look on this browser. You can change it anytime in your profile.",
+    title: DISPLAY_STEP_TITLE,
+    description: DISPLAY_STEP_DESCRIPTION,
     glyph: <ChatGlyph className={GLYPH} />,
     body: <ChatDensityControl />,
   },

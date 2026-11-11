@@ -54,8 +54,8 @@ const ROLE_BY_SIZE = new Map(
 
 const DRAWN_MARK =
   "Avatar initials are a drawn mark sized to their circle, not a run of " +
-  "text (`profile-panel.tsx` gives the reason; `components.md` § App bar " +
-  "chips quotes the 30px avatar's 11px initials).";
+  "text (`components.md` § App bar chips quotes the 30px avatar's 11px " +
+  "initials).";
 
 /**
  * Every arbitrary size `apps/web` still writes, with how many times and why.
@@ -77,7 +77,6 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
   { file: "components/roles/roles-matrix.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/alumni/alumni-directory.tsx", literal: "text-[9px]", count: 1, reason: DRAWN_MARK },
   { file: "components/members/members-directory.tsx", literal: "text-[9px]", count: 1, reason: DRAWN_MARK },
-  { file: "components/profile/profile-panel.tsx", literal: "text-[26px]", count: 1, reason: DRAWN_MARK },
   {
     file: "components/layout/crest-tile.tsx",
     literal: "text-[9.5px]",

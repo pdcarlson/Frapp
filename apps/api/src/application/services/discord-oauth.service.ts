@@ -80,10 +80,13 @@ export const OAUTH_STATE_TTL_MS = 15 * 60_000;
 export const DEFAULT_RETURN_PATH = '/discord-import';
 
 /**
- * Where a member's link handshake returns (#2878): the profile page that
- * started it, which confirms the parked account from the member's own session.
+ * Where a member's link handshake returns (#2878): the Discord history section
+ * of the web personal Settings page that started it, which confirms the parked
+ * account from the member's own session. It was `/profile` until that section
+ * moved (#3856). A handshake lives minutes, so one minted before the move and
+ * finished after it lands on `/profile` unspent, and the member links again.
  */
-export const AUTHOR_LINK_RETURN_PATH = '/profile';
+export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=discord';
 
 /**
  * How long the browser has to activate what the callback parked.
@@ -608,7 +611,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         );
         this.reportSwallowedCallback(error, 'failed');
         // Same best-effort lookup as the `expired` branch below: a member's
-        // link attempt goes back to `/profile`, not the officer wizard
+        // link attempt goes back to the member's Settings, not the officer wizard
         // (#2878). With the store fully down it fails too, and the default
         // path stands.
         return {
@@ -636,7 +639,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     if (!consumed) {
       // Nothing to consume, but the row may still say where this handshake
       // was going: a member's expired link attempt belongs back on
-      // `/profile`, not in the officer import wizard (#2878). Best-effort,
+      // the member's Settings, not in the officer import wizard (#2878). Best-effort,
       // and never an oracle: every unconsumable state answers `expired`, and
       // the path is one this server stored, sanitised again on the way out.
       return {

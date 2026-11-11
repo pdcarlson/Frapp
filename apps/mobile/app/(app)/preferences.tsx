@@ -6,10 +6,12 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
   useChapterChatBackground,
+  useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
   useGeofences,
   usePermissionList,
+  useSetChapterChatLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -17,6 +19,7 @@ import {
   canAll,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_BACKGROUND_LABELS,
+  chatChapterLevelLabel,
   isModuleEnabled,
   shownNotificationCategories,
 } from "@repo/validation";
@@ -29,6 +32,7 @@ import { AccentSheet } from "@/components/settings/accent-sheet";
 import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
+import { ChatLevelSheet } from "@/components/settings/chat-level-sheet";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
@@ -51,6 +55,7 @@ import {
 } from "@/lib/notifications/push-state";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useLatestTrack } from "@/lib/use-latest-track";
+import { useWhatsNewQuiet } from "@/lib/whats-new";
 import {
   deviceTimeZone,
   useNotificationPreferencesSync,
@@ -155,6 +160,7 @@ export default function PreferencesScreen() {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
+  const whatsNewQuiet = useWhatsNewQuiet();
   const { signOut } = useAuthSession();
   const [linkFailed, setLinkFailed] = useState<string | null>(null);
   const deleteAccount = useDeleteAccount();
@@ -203,6 +209,11 @@ export default function PreferencesScreen() {
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatBackgroundSheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
+  // The chapter-wide chat level (#3840). Unknown until read, so the row
+  // states no level rather than claiming "All messages" before it knows.
+  const chatLevelSheetRef = useRef<BottomSheetModal>(null);
+  const chatLevel = useChapterChatLevel();
+  const setChatLevel = useSetChapterChatLevel();
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
     blockList.status !== "ready"
@@ -402,6 +413,14 @@ export default function PreferencesScreen() {
       />
 
       <ListSection>
+        <ListRow
+          label="Chat messages"
+          value={chatLevel.data ? chatChapterLevelLabel(chatLevel.data) : "—"}
+          accessibilityHint="Choose whether every message or only mentions and DMs notify you."
+          disabled={!chatLevel.data}
+          busy={setChatLevel.isPending}
+          onPress={() => chatLevelSheetRef.current?.present()}
+        />
         {shownNotificationCategories(permissions).map((category) => (
           // No description. The shared catalog carries one per category for
           // web's Profile card, but on the phone five two-line hints pushed
@@ -424,6 +443,11 @@ export default function PreferencesScreen() {
           level for #announcements, or a block, still stops an announcement
           push (`spec/behavior/chat/README.md`). Why there is no switch: the
           docblock's `announcements` bullet. */}
+      {setChatLevel.isError ? (
+        <Text style={styles.footnoteError}>
+          Couldn&apos;t change chat messages. Try again.
+        </Text>
+      ) : null}
       <Text style={styles.footnote}>
         Mute a channel or DM from the chat itself. Chapter announcements
         can&apos;t be switched off here.
@@ -531,6 +555,13 @@ export default function PreferencesScreen() {
         <ListRow
           label="What's new"
           accessibilityHint="Shows the latest changes to the app."
+          // Another device showed the newest entry first (#4043). Neutral, as
+          // every unread mark is (components.md § Chrome weight), and the
+          // same dot web's account menu draws.
+          trailing={
+            whatsNewQuiet ? <View style={styles.unreadDot} /> : undefined
+          }
+          accessibilityValue={whatsNewQuiet ? "New" : undefined}
           onPress={() => router.push("/whats-new")}
         />
         <ListRow
@@ -582,6 +613,11 @@ export default function PreferencesScreen() {
       <AccentSheet ref={accentSheetRef} />
       <ChatDensitySheet ref={chatDensitySheetRef} />
       <ChatBackgroundSheet ref={chatBackgroundSheetRef} />
+      <ChatLevelSheet
+        ref={chatLevelSheetRef}
+        level={chatLevel.data}
+        onPick={(level) => setChatLevel.mutate(level)}
+      />
     </ScreenShell>
   );
 }
@@ -597,6 +633,12 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
       paddingHorizontal: tokens.spacing.xs,
+    },
+    unreadDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: tokens.color.text.foreground,
     },
     swatch: {
       width: tokens.spacing.xl,

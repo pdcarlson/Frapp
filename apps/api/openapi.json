@@ -284,6 +284,90 @@
         ]
       }
     },
+    "/v1/users/me/whats-new": {
+      "get": {
+        "description": "So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.",
+        "operationId": "UserController_getMyWhatsNewSeen_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The newest What's new entry the caller has seen on any device",
+        "tags": [
+          "Users"
+        ]
+      },
+      "put": {
+        "description": "Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.",
+        "operationId": "UserController_recordMyWhatsNewSeen_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordWhatsNewSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that a device showed the caller What's new",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
@@ -3223,6 +3307,88 @@
           }
         ],
         "summary": "Clear the caller's override for one message kind, returning it to the default",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/chapter": {
+      "get": {
+        "operationId": "ChatController_getChapterChatLevel_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatController_setChapterChatLevel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterChatLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's chapter-wide chat level",
         "tags": [
           "Chat"
         ]
@@ -11958,7 +12124,7 @@
     },
     "/v1/discord/author-link/start": {
       "post": {
-        "description": "Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.",
+        "description": "Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.",
         "operationId": "DiscordAuthorLinkController_begin_v1",
         "parameters": [],
         "responses": {
@@ -12255,6 +12421,33 @@
         },
         "required": [
           "accept_terms_privacy"
+        ]
+      },
+      "WhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "nullable": true,
+            "description": "A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
+        ]
+      },
+      "RecordWhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "description": "The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
         ]
       },
       "UpdateUserDto": {
@@ -14256,6 +14449,10 @@
               "mentions",
               "off"
             ]
+          },
+          "from_chapter_level": {
+            "type": "boolean",
+            "description": "True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it \"your default\"."
           }
         },
         "required": [
@@ -14349,6 +14546,37 @@
         },
         "required": [
           "kind",
+          "level"
+        ]
+      },
+      "ChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ]
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "SetChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ],
+            "description": "all = each channel at its own default; mentions = \"Mentions and DMs only\": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins."
+          }
+        },
+        "required": [
           "level"
         ]
       },
@@ -19070,7 +19298,7 @@
         "properties": {
           "handshake": {
             "type": "string",
-            "description": "The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in."
+            "description": "The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in."
           }
         },
         "required": [

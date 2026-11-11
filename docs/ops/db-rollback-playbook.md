@@ -3384,6 +3384,20 @@ where capabilities && array[
 ];
 ```
 
+## Rollback What's new seen on the account (20261111130000)
+
+* **Migration**: `20261111130000_user_whats_new_seen.sql`
+
+One nullable column on `users`, `whats_new_seen_version` (#4043). Nothing existing changed, and code without #4043 neither reads nor writes it, so it is harmless left in place.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A phone build with #4043 against the reverted API gets a 404 on `GET /v1/users/me/whats-new`, treats it as "the account doesn't know", and falls back to its own marker: What's new opens once per device again, as before #4043. A Settings mark already set on a phone stays until What's new is opened there.
+
+**To remove the column**, in a later forward migration after the code revert has shipped. It holds only which release notes a member has seen:
+
+```sql
+alter table public.users drop column if exists whats_new_seen_version;
+```
+
 ## Rollback Events record their maker (20261111020000)
 
 * **Migration**: `20261111020000_events_created_by.sql`
@@ -3426,3 +3440,26 @@ drop function if exists public.activity_action_links(text);
 alter table public.chat_channels drop column if exists activity_excluded;
 ```
 
+## Rollback Chapter-wide chat level (20261111120000)
+
+* **Migration**: `20261111120000_chat_notif_prefs_chapter_scope.sql`
+
+Widens two CHECKs on `chat_notification_preferences` to admit `scope = 'chapter'` rows and adds the `idx_chat_notif_prefs_chapter_unique` index. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The push worker reads every row for a member, so a reverted `resolveLevel` simply ignores `scope = 'chapter'` rows (it matches only `channel` and `kind`), and those members get each channel's default again.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Deleting the rows loses each member's "Mentions and DMs only" choice; nothing else depends on them:
+
+```sql
+delete from public.chat_notification_preferences where scope = 'chapter';
+drop index if exists public.idx_chat_notif_prefs_chapter_unique;
+alter table public.chat_notification_preferences
+  drop constraint chat_notif_prefs_scope_id_when_channel,
+  drop constraint chat_notification_preferences_scope_check;
+alter table public.chat_notification_preferences
+  add constraint chat_notification_preferences_scope_check
+    check (scope in ('channel', 'kind')),
+  add constraint chat_notif_prefs_scope_id_when_channel
+    check ((scope = 'channel' and scope_id is not null and scope_kind is null)
+        or (scope = 'kind' and scope_kind is not null and scope_id is null));
+```

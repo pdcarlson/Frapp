@@ -9,10 +9,7 @@ import {
   View,
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import {
-  setChannelLocked,
-  syncLockedChannels,
-} from "@repo/chat-core/density";
+import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   arrangeChannelSidebar,
   foldedSectionAnnouncement,
@@ -69,6 +66,7 @@ import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { StatusSheet } from "@/components/account/status-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
+import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
   AccountButton,
   AccountMenu,
@@ -518,6 +516,10 @@ export default function ChatHomeScreen() {
             pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
             pinned,
             level: levelFor(channel.id),
+            fromChapterLevel: selectFromChapterLevel(
+              notificationPrefsQuery.data,
+              channel.id,
+            ),
             actions: channelRowActions({
               channel,
               unread:

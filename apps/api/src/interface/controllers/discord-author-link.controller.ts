@@ -70,7 +70,7 @@ export class DiscordAuthorLinkController {
   @ApiOperation({
     summary: 'Start linking your Discord account',
     description:
-      'Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.',
+      'Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.',
   })
   @ApiCreatedResponse({ type: BeginDiscordAuthorLinkResponseDto })
   begin(

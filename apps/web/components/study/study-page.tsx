@@ -573,7 +573,9 @@ export function StudyPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so the zone picker and session rows count its own width.
+    <div className="@container space-y-6">
       {/*
         Disable, don't hide (§5 rule 4): session history is a read and stays
         visible, so the notice sits above both the live session and the starter
@@ -712,7 +714,7 @@ export function StudyPage() {
             </InlineNote>
           ) : (
             <div className="space-y-2">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end sm:justify-start">
+              <div className="grid gap-3 @md:grid-cols-[minmax(0,20rem)_auto] @md:items-end @md:justify-start">
                 <div className="grid gap-1">
                   <label
                     htmlFor="study-geofence"
@@ -788,7 +790,7 @@ export function StudyPage() {
               return (
                 <li
                   key={session.id}
-                  className="flex min-h-11 flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                  className="flex min-h-11 flex-col gap-1 py-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold tabular-nums">

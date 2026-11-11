@@ -104,6 +104,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/me/whats-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The newest What's new entry the caller has seen on any device
+         * @description So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.
+         */
+        get: operations["UserController_getMyWhatsNewSeen_v1"];
+        /**
+         * Record that a device showed the caller What's new
+         * @description Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.
+         */
+        put: operations["UserController_recordMyWhatsNewSeen_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/avatar-url": {
         parameters: {
             query?: never;
@@ -1022,6 +1046,24 @@ export interface paths {
         post?: never;
         /** Clear the caller's override for one message kind, returning it to the default */
         delete: operations["ChatController_clearKindNotificationLevel_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/notification-preferences/chapter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only) */
+        get: operations["ChatController_getChapterChatLevel_v1"];
+        /** Set the caller's chapter-wide chat level */
+        put: operations["ChatController_setChapterChatLevel_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3626,7 +3668,7 @@ export interface paths {
         put?: never;
         /**
          * Start linking your Discord account
-         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.
+         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.
          */
         post: operations["DiscordAuthorLinkController_begin_v1"];
         delete?: never;
@@ -3747,6 +3789,20 @@ export interface components {
         AcceptLegalTermsDto: {
             /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
+        };
+        WhatsNewSeenDto: {
+            /**
+             * @description A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.
+             * @example 2026-11-10#6
+             */
+            seen_version: string | null;
+        };
+        RecordWhatsNewSeenDto: {
+            /**
+             * @description The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.
+             * @example 2026-11-10#6
+             */
+            seen_version: string;
         };
         UpdateUserDto: {
             display_name?: string;
@@ -4451,6 +4507,8 @@ export interface components {
             channel_id: string;
             /** @enum {string} */
             level: "all" | "mentions" | "off";
+            /** @description True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it "your default". */
+            from_chapter_level?: boolean;
         };
         KindNotificationPreferenceDto: {
             /**
@@ -4482,6 +4540,17 @@ export interface components {
              * @enum {string|null}
              */
             level: "all" | "mentions" | "off" | null;
+        };
+        ChapterChatLevelDto: {
+            /** @enum {string} */
+            level: "all" | "mentions";
+        };
+        SetChapterChatLevelDto: {
+            /**
+             * @description all = each channel at its own default; mentions = "Mentions and DMs only": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins.
+             * @enum {string}
+             */
+            level: "all" | "mentions";
         };
         CreateChannelDto: {
             name: string;
@@ -6166,7 +6235,7 @@ export interface components {
             expires_at: string;
         };
         ConfirmDiscordAuthorLinkDto: {
-            /** @description The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
+            /** @description The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
             handshake: string;
         };
         ConfirmDiscordAuthorLinkResponseDto: {
@@ -6417,6 +6486,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalAcceptanceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_getMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_recordMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordWhatsNewSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
                 };
             };
             /** @description Error */
@@ -8496,6 +8625,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterChatLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
                 };
             };
             /** @description Error */

@@ -199,7 +199,13 @@ function DiscordImportBody(props: BodyProps) {
   return (
     <>
       {confirmDialog}
-      <DiscordImportView {...props} confirm={confirm} />
+      {/*
+        A container (#4033): beside chat (#3779) the page is narrow while the
+        window is wide, so every stage's grids count the page's own width.
+      */}
+      <div className="@container">
+        <DiscordImportView {...props} confirm={confirm} />
+      </div>
     </>
   );
 }

@@ -132,6 +132,7 @@ const READ = {
       },
     ],
   },
+  links: [],
   coming_up: [
     {
       id: "event-1",
@@ -161,6 +162,14 @@ function rowOf(kind: ActivitySheetRow["kind"]): ActivitySheetRow {
 const mounted: ReactTestRenderer[] = [];
 const onActed = vi.fn();
 const onClosed = vi.fn();
+const linkActions = {
+  canRemove: false,
+  open: vi.fn(),
+  done: vi.fn(),
+  hide: vi.fn(),
+  openInChat: vi.fn(),
+  remove: vi.fn(),
+};
 
 const present = vi.fn();
 const dismiss = vi.fn();
@@ -173,6 +182,7 @@ function sheetElement(row: ActivitySheetRow | null, viewerId: string | null) {
         viewerId={viewerId}
         onActed={onActed}
         onClosed={onClosed}
+        linkActions={linkActions}
       />
     </FrappThemeProvider>
   );
@@ -217,6 +227,7 @@ describe("Activity sheet (#3897)", () => {
     review.isPending = false;
     review.mutateAsync.mockResolvedValue({});
     writeBlockedReason = null;
+    linkActions.canRemove = false;
   });
 
   afterEach(() => {
@@ -458,6 +469,69 @@ describe("Activity sheet (#3897)", () => {
           "You're offline.",
         );
       }
+    });
+  });
+
+  describe("a sign-up link", () => {
+    const linkRow = {
+      kind: "link",
+      key: "link:l1",
+      title: "Google Form",
+      detail: "Olive · #rush · Tue 3:00 PM",
+      badge: null,
+      link: {
+        id: "l1",
+        url: "https://forms.gle/abc",
+        host: "forms.gle",
+        message_id: "m1",
+        thread_root_id: null,
+        channel_id: "chan-1",
+        channel_name: "rush",
+        channel_type: "PUBLIC",
+        posted_by: "olive",
+        posted_by_name: "Olive",
+        posted_at: "2026-11-10T15:00:00.000Z",
+      },
+    } as unknown as ActivitySheetRow;
+
+    it("says what it is and where it goes, and opens it without closing the sheet", () => {
+      const tree = render(linkRow);
+      const text = screenText(tree);
+      expect(text).toContain("Google Form");
+      expect(text).toContain("https://forms.gle/abc");
+      act(() => {
+        button(tree, "Open link").props.onPress();
+      });
+      expect(linkActions.open).toHaveBeenCalledWith(linkRow);
+      expect(dismiss).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["Done", "done"],
+      ["Hide", "hide"],
+      ["Open in chat", "openInChat"],
+    ] as const)(
+      "closes the sheet, then hands %s to the screen",
+      (label, key) => {
+        const tree = render(linkRow);
+        act(() => {
+          button(tree, label).props.onPress();
+        });
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        expect(linkActions[key]).toHaveBeenCalledWith(linkRow);
+      },
+    );
+
+    it("offers Remove for everyone only to an officer", () => {
+      const member = render(linkRow);
+      expect(() => button(member, "Remove for everyone")).toThrow();
+
+      linkActions.canRemove = true;
+      const officer = render(linkRow);
+      act(() => {
+        button(officer, "Remove for everyone").props.onPress();
+      });
+      expect(linkActions.remove).toHaveBeenCalledWith(linkRow);
     });
   });
 });

@@ -41,6 +41,7 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   event: "Event",
   hours: "Service hours",
   file: "File",
+  link: "Link",
 };
 
 /**
@@ -130,7 +131,9 @@ function PanelCard({
         />
       );
     case "file":
-      // A file row is a link to where the file lives; it never opens the panel.
+    case "link":
+      // A file row is a link to where the file lives, and a sign-up link row
+      // opens the link; neither opens the panel.
       return null;
   }
 }

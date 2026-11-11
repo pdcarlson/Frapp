@@ -584,7 +584,11 @@ export function ReportsPage() {
           </p>
         }
       >
-        <div className="space-y-6">
+        {/*
+          A container (#4033): beside chat (#3779) the page is narrow while the
+          window is wide, so the field grids count the page's own width.
+        */}
+        <div className="@container space-y-6">
           {/*
             No description paragraph: the top bar already names the route, and
             the report picker below says what it generates.
@@ -607,7 +611,7 @@ export function ReportsPage() {
               — as gone one route over.
             */}
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 @2xl:grid-cols-2">
                 <div className="grid gap-1">
                   <Label htmlFor="report-kind">Report</Label>
                   <Select
@@ -651,7 +655,7 @@ export function ReportsPage() {
               </div>
 
               {kind === "attendance" ? (
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 @2xl:grid-cols-3">
                   <PickerField
                     idPrefix="report-event"
                     label="Event (optional)"
@@ -688,7 +692,7 @@ export function ReportsPage() {
               ) : null}
 
               {kind === "points" ? (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 @2xl:grid-cols-2">
                   <PickerField
                     idPrefix="report-member"
                     label="Member (optional)"
@@ -725,7 +729,7 @@ export function ReportsPage() {
               ) : null}
 
               {kind === "service" ? (
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 @2xl:grid-cols-3">
                   <PickerField
                     idPrefix="service-report-member"
                     label="Member (optional)"

@@ -95,7 +95,7 @@ export interface IDiscordConnectionRepository {
    * Where a handshake that could not be consumed (expired, spent) was going to
    * return the browser, read without consuming anything. Only for choosing
    * which page shows the "expired" sentence: a member's link attempt belongs
-   * back on `/profile`, not in the officer import wizard (#2878). Null when the
+   * back on the member's Settings page, not in the officer import wizard (#2878). Null when the
    * state does not exist.
    */
   findStateReturnPath(id: string): Promise<string | null>;

@@ -35,6 +35,7 @@ describe('UserService', () => {
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
     };
 
     mockStorageProvider = {
@@ -132,6 +133,99 @@ describe('UserService', () => {
       service.update('user-1', { display_name: 'Sneaky Comeback' }),
     ).rejects.toThrow(GoneException);
     expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
+  describe("What's new seen version (#4043)", () => {
+    const withVersion = (v: string | null) =>
+      userFixture({ id: 'user-1', whats_new_seen_version: v });
+
+    it('reads null until a device records one', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture({ id: 'user-1' }));
+      await expect(service.whatsNewSeen('user-1')).resolves.toBeNull();
+    });
+
+    it('records the first version on an account that has none (every account when this ships)', async () => {
+      mockRepo.findById.mockResolvedValue(withVersion(null));
+      mockRepo.compareAndSetWhatsNewSeen.mockResolvedValue(true);
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#1'),
+      ).resolves.toBe('2026-11-10#1');
+      expect(mockRepo.compareAndSetWhatsNewSeen).toHaveBeenCalledWith(
+        'user-1',
+        null,
+        '2026-11-10#1',
+      );
+    });
+
+    it('moves the version forward against the one it read', async () => {
+      mockRepo.findById.mockResolvedValue(withVersion('2026-11-09#3'));
+      mockRepo.compareAndSetWhatsNewSeen.mockResolvedValue(true);
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#1'),
+      ).resolves.toBe('2026-11-10#1');
+      expect(mockRepo.compareAndSetWhatsNewSeen).toHaveBeenCalledWith(
+        'user-1',
+        '2026-11-09#3',
+        '2026-11-10#1',
+      );
+    });
+
+    it('counts lines added to the same day as newer', async () => {
+      mockRepo.findById.mockResolvedValue(withVersion('2026-11-10#3'));
+      mockRepo.compareAndSetWhatsNewSeen.mockResolvedValue(true);
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#5'),
+      ).resolves.toBe('2026-11-10#5');
+    });
+
+    it('never moves it back: an older build answers with what the account holds', async () => {
+      mockRepo.findById.mockResolvedValue(withVersion('2026-11-10#5'));
+      for (const older of ['2026-11-10#5', '2026-11-10#4', '2026-11-09#9']) {
+        await expect(service.recordWhatsNewSeen('user-1', older)).resolves.toBe(
+          '2026-11-10#5',
+        );
+      }
+      expect(mockRepo.compareAndSetWhatsNewSeen).not.toHaveBeenCalled();
+    });
+
+    it('loses a race to a newer write without lowering it', async () => {
+      // Both devices read #3; the other one's #6 lands first.
+      mockRepo.findById
+        .mockResolvedValueOnce(withVersion('2026-11-09#3'))
+        .mockResolvedValueOnce(withVersion('2026-11-10#6'));
+      mockRepo.compareAndSetWhatsNewSeen.mockResolvedValue(false);
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#5'),
+      ).resolves.toBe('2026-11-10#6');
+      expect(mockRepo.compareAndSetWhatsNewSeen).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries after losing a race to an older write', async () => {
+      mockRepo.findById
+        .mockResolvedValueOnce(withVersion(null))
+        .mockResolvedValueOnce(withVersion('2026-11-09#3'));
+      mockRepo.compareAndSetWhatsNewSeen
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#5'),
+      ).resolves.toBe('2026-11-10#5');
+      expect(mockRepo.compareAndSetWhatsNewSeen).toHaveBeenLastCalledWith(
+        'user-1',
+        '2026-11-09#3',
+        '2026-11-10#5',
+      );
+    });
+
+    it('refuses a deleted account', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', deleted_at: '2026-11-01T00:00:00Z' }),
+      );
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#1'),
+      ).rejects.toThrow(GoneException);
+      expect(mockRepo.compareAndSetWhatsNewSeen).not.toHaveBeenCalled();
+    });
   });
 
   describe('requestAvatarUploadUrl', () => {

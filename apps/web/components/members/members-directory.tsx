@@ -748,7 +748,7 @@ export function MembersDirectory() {
           3 deleted the channels column's field would remove a capability, so
           it stays, as `/documents` and `/backwork` kept theirs.
         */}
-          <div className="relative w-full sm:w-56">
+          <div className="relative w-full @md:w-56">
             {/*
             "Search members", not "Search by member name": `GET
             /v1/members/search` matches name, email and custom-field values
@@ -856,7 +856,7 @@ export function MembersDirectory() {
           <p className="text-caption font-semibold text-foreground">
             {selectedCount} selected
           </p>
-          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 @md:ml-auto">
             <FilterChip
               label="Assign role"
               anyLabel="No role"
@@ -1074,7 +1074,7 @@ export function MembersDirectory() {
                       <AvatarPresenceDot status={status} />
                     </div>
                     {/*
-                      Name over meta below `sm`, side by side above it — the
+                      Name over meta below the page's `@xl` (576px), side by side above it — the
                       stacking shape lane 4's document row uses. An earlier
                       draft hid the meta line outright on a phone (`hidden
                       sm:block`), which puts the role, join date and email in no
@@ -1083,12 +1083,12 @@ export function MembersDirectory() {
                       too, so the row's own `aria-label` was the only place they
                       survived.
                     */}
-                    <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
+                    <span className="flex min-w-0 flex-1 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
                       {/*
                         The custom status line (#3845) stacks under the name in
                         both layouts, one muted caption line that truncates.
                       */}
-                      <span className="flex min-w-0 flex-col sm:flex-1">
+                      <span className="flex min-w-0 flex-col @xl:flex-1">
                         <span className="min-w-0 truncate text-sm font-semibold">
                           {name}
                         </span>
@@ -1101,7 +1101,7 @@ export function MembersDirectory() {
                         is what survives a narrow row, and an email is the field
                         that can run long.
                       */}
-                      <span className="min-w-0 truncate text-caption text-muted sm:flex-1">
+                      <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
                         {[roleName, className, joined, member.email]
                           .filter(Boolean)
                           .join(" · ")}

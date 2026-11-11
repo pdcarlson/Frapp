@@ -801,4 +801,47 @@ describe("ChatAdminPage — the audit log", () => {
     expect(within(pane).getByText(/^Read-only/)).toBeInTheDocument();
     expect(within(pane).queryByText(AUDIT_LOG_SETTINGS_NOTE)).toBeNull();
   });
+
+  describe("Leave out of Activity (#3897)", () => {
+    const bodyOf = (spy: ReturnType<typeof vi.fn>) =>
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body;
+
+    it("shows the channel's setting and sends it only when the officer flips it", async () => {
+      const spy = vi.fn(() => Promise.resolve());
+      updateChannel.mutateAsync = spy;
+      reads.channels = settled([
+        { ...CHANNELS[0], activity_excluded: true },
+        ...CHANNELS.slice(1),
+      ]);
+      render(<ChatAdminPage initialChannelId="ch-1" />);
+
+      const toggle = screen.getByRole("switch", {
+        name: "Leave out of Activity",
+      });
+      expect(toggle).toBeChecked();
+      fireEvent.click(toggle);
+      fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+      expect(bodyOf(spy)).toMatchObject({ activity_excluded: false });
+    });
+
+    it("doesn't undo another officer's setting when another field is saved", async () => {
+      const spy = vi.fn(() => Promise.resolve());
+      updateChannel.mutateAsync = spy;
+      const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+      // Another officer left #general out of Activity; the list refetched.
+      reads.channels = settled([
+        { ...CHANNELS[0], activity_excluded: true },
+        ...CHANNELS.slice(1),
+      ]);
+      rerender(<ChatAdminPage initialChannelId="ch-1" />);
+      fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+      expect(bodyOf(spy)).not.toHaveProperty("activity_excluded");
+    });
+  });
 });
