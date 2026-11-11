@@ -6,8 +6,6 @@ export interface ChapterDocumentFilter {
   folder?: string | null;
   /** Case-insensitive substring match on `title`. */
   search?: string;
-  /** Only documents this member uploaded. Set by the API, never from a query string. */
-  uploaded_by?: string;
 }
 
 export interface IChapterDocumentRepository {

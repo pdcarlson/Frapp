@@ -662,7 +662,7 @@ describe("Activity screen (#3897)", () => {
     act(() => {
       row(tree, "Old vote").props.onPress();
     });
-    expect(sheet.props?.row?.key).toBe("archived:poll:p-closed");
+    expect(sheet.props?.row?.key).toBe("made:poll:p-closed");
   });
 
   it("narrows every group to one kind under a chip, keeping Needs you", () => {

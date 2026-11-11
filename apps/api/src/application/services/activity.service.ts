@@ -209,8 +209,19 @@ export interface ActivityView {
    */
   links: ActivityLink[];
   made_by_you: {
+    /**
+     * The caller's poll cards, newest first: up to 25 open and the 25 most
+     * recent closed, so a run of closed polls never pushes an open one out
+     * (#4258). A client lists the open ones and archives the closed.
+     */
     polls: ActivityPoll[];
     tasks: ActivityTask[];
+    /**
+     * Always empty. Uploads left Activity (#4291); the field stays only so a
+     * client built before that, an open web tab or a phone's over-the-air
+     * bundle, does not fail on its absence. Removal is tracked separately.
+     */
+    files: never[];
     /**
      * Events the caller made that have not ended, soonest first. A recurring
      * series is one row, its next meeting. Events made before creators were
@@ -483,8 +494,10 @@ export class ActivityService {
       coming_up: comingUp,
       links: myLinks,
       made_by_you: {
-        polls: pollLists.mine.slice(0, LIST_LIMIT),
+        // Capped per state in `readPolls`: 25 open and 25 closed.
+        polls: pollLists.mine,
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
+        files: [],
         events: myEvents.slice(0, LIST_LIMIT),
       },
       needs_you_count: needsYouCount,
@@ -822,7 +835,9 @@ export class ActivityService {
       }),
       this.messageRepo.findPollCardsByChapter(chapterId, {
         senderId: userId,
-        limit: LIST_LIMIT,
+        // Wider than the list: the open and closed lists are cut apart below,
+        // so closed polls can't crowd an open one out of the read.
+        limit: POLL_SCAN_LIMIT,
       }),
     ]);
     const nowDate = new Date(now);
@@ -889,7 +904,15 @@ export class ActivityService {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
-      mine: rowsOf(mine),
+      // Newest first, as read: the open ones, then the closed, 25 of each.
+      mine: [
+        ...rowsOf(mine)
+          .filter((row) => !row.is_closed)
+          .slice(0, LIST_LIMIT),
+        ...rowsOf(mine)
+          .filter((row) => row.is_closed)
+          .slice(0, LIST_LIMIT),
+      ].sort(byNewest),
     };
   }
 

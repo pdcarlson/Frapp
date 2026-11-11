@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
@@ -24,7 +24,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
     activitySummary: actual.activitySummary,
-    useActivityClock: actual.useActivityClock,
+    useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
     useMyPermissions: () => mockPermissions(),
@@ -229,6 +229,74 @@ describe("ActivityPage", () => {
       within(archive).getByRole("button", { name: /Closed one/ }),
     );
     expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
+  });
+
+  it("keeps Made by you under the Polls chip while every posted poll is closed, for its archive", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        made_by_you: {
+          polls: [
+            {
+              ...poll,
+              message_id: "m-closed",
+              question: "All done",
+              sender_id: "me",
+              is_closed: true,
+              closed_at: "2026-11-02T00:00:00.000Z",
+            },
+          ],
+          tasks: [],
+          events: [],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Polls" }));
+
+    const made = screen.getByRole("region", { name: "Made by you" });
+    expect(
+      within(made).getByRole("button", { name: "Archived polls (1)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves a poll to the archive when its time runs out while the page is open", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+      mockActivity.mockReturnValue(
+        loaded({
+          made_by_you: {
+            polls: [
+              {
+                ...poll,
+                message_id: "m-soon",
+                question: "Closing soon",
+                sender_id: "me",
+                closes_at: "2026-11-11T12:00:20.000Z",
+              },
+            ],
+            tasks: [],
+            events: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      const made = screen.getByRole("region", { name: "Made by you" });
+      expect(within(made).getByText("Closing soon")).toBeInTheDocument();
+
+      // One tick of the shared clock, past the closing time, with no re-read.
+      act(() => {
+        vi.advanceTimersByTime(31_000);
+      });
+
+      expect(within(made).queryByText("Closing soon")).toBeNull();
+      expect(
+        within(made).getByRole("button", { name: "Archived polls (1)" }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says a section could not be loaded instead of calling it empty", () => {

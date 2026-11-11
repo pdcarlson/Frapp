@@ -54,15 +54,19 @@ member's own answer, not the event's default:
 
 **Made by you**
 
-- **Polls:** poll cards the caller posted, newest first, open or closed. The read serves both;
-  the page lists the open ones and keeps the closed ones (closed by hand, or past their closing
-  time, including one whose time runs out while the page is open) behind **Archived polls**
-  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11).
+- **Polls:** poll cards the caller posted, newest first: up to 25 open and the 25 most recently
+  posted closed ones, each cut separately so a run of closed polls never pushes an open one out
+  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11: the page lists the
+  open ones and archives the closed, per
+  [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)). The
+  caller's 100 newest poll cards are read to find them.
 - **Tasks:** tasks the caller assigned, newest first. Only while the caller still holds
   `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row
   that opens to a refusal is worse than no row.
 - **Files:** none. The read listed the chapter documents and backwork the caller uploaded
-  (#3897's ask, "documents and backwork you uploaded").
+  (#3897's ask, "documents and backwork you uploaded"). `made_by_you.files` is still served,
+  always empty and marked deprecated, so a client built before the change (an open web tab, a
+  phone's over-the-air bundle) does not fail on its absence; its removal is tracked separately.
   Changed in [#4291](https://github.com/pdcarlson/Frapp/issues/4291) by `pdcarlson` for Shawn,
   2026-11-11: removed from the page and the read ("I don't think that files uploaded by you
   needs to be a part of the activity page"). No ability went with it: a member's uploads are in
@@ -89,7 +93,7 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
   chapter has it off ([`../product/modules.md`](../product/modules.md)). Links come from chat, which has no
   switch, so they are always read.
-- **Each list carries at most 25 rows.**
+- **Each list carries at most 25 rows**, except Made by you's polls: 25 open and 25 closed.
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
   rather than show it as empty.

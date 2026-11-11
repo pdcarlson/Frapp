@@ -26,8 +26,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * hairlines, the way the phone's Events and Tasks lists draw theirs
  * (`components/events/event-rows.tsx`), not in a rounded card.
  *
- * The whole row is the one hit target. A row with no `onPress` draws the
- * same, with no chevron.
+ * The whole row is the one hit target, and every row opens something.
  */
 export function ActivityListRow({
   row,
@@ -37,7 +36,7 @@ export function ActivityListRow({
   row: ActivityRow;
   /** The first row of its run draws no hairline above it. */
   isFirst: boolean;
-  onPress?: () => void;
+  onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
@@ -67,24 +66,10 @@ export function ActivityListRow({
           />
         )
       ) : null}
-      {onPress ? <Text style={styles.chevron}>›</Text> : null}
+      <Text style={styles.chevron}>›</Text>
     </>
   );
 
-  if (!onPress) {
-    // One element to a screen reader, as a pressable row is.
-    return (
-      <View
-        accessible
-        accessibilityLabel={row.title}
-        accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
-        accessibilityHint={listRowHint(row.detail || null, undefined)}
-        style={rowStyle}
-      >
-        {content}
-      </View>
-    );
-  }
   return (
     <PressableRow
       accessibilityRole="button"

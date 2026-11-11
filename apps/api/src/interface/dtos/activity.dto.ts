@@ -283,6 +283,21 @@ export class ActivityEventDto implements ActivityEvent {
   unread: boolean;
 }
 
+/** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
+export class ActivityFileDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ enum: ['document', 'backwork'] })
+  source: 'document' | 'backwork';
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+}
+
 export class ActivityLinkDto implements ActivityLink {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -421,7 +436,7 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
     description:
-      'Poll cards the caller posted, open or closed, newest first. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
+      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
   })
   polls: ActivityPollDto[];
 
@@ -431,6 +446,14 @@ export class ActivityMadeByYouDto {
       'Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
+
+  @ApiProperty({
+    type: [ActivityFileDto],
+    deprecated: true,
+    description:
+      'Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.',
+  })
+  files: ActivityFileDto[];
 
   @ApiProperty({
     type: [ActivityEventDto],

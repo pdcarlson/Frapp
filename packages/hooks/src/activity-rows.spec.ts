@@ -6,7 +6,6 @@ import {
   activityGroups,
   activityLinkKind,
   activityNeedsYouHeadline,
-  activityNextPollClose,
   activityNextUpLine,
   activityPollIsOpen,
   activityRowIsNow,
@@ -435,13 +434,6 @@ describe("activityGroups", () => {
         "1",
       );
       expect(summary.needsYou).toBe(1);
-    });
-
-    it("says when the next open poll closes, so the page can redraw then", () => {
-      expect(activityNextPollClose(data, NOW)).toBe(60 * 60 * 1000);
-      expect(
-        activityNextPollClose(data, new Date("2026-11-11T14:00:00.000Z")),
-      ).toBeNull();
     });
 
     it("reads a poll as open until its closing time and closed from then on", () => {

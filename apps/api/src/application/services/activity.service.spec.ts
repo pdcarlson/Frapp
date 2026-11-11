@@ -428,6 +428,45 @@ describe('ActivityService', () => {
       expect(view.needs_you_count).toBe(0);
     });
 
+    it('caps the caller’s open and closed polls apart, so closed ones never push an open one out (#4258)', async () => {
+      const { service, messageRepo } = build();
+      const closedPayload = {
+        ...pollCard({ id: 'x' }).payload,
+        closed_at: iso(-HOUR),
+      };
+      // Thirty newer polls, all closed, then one older poll still open.
+      const closed = Array.from({ length: 30 }, (_, index) =>
+        pollCard({
+          id: `closed-${index}`,
+          sender_id: ME,
+          payload: closedPayload,
+          created_at: iso(-(index + 1) * HOUR),
+        }),
+      );
+      const open = pollCard({
+        id: 'old-open',
+        sender_id: ME,
+        payload: { ...pollCard({ id: 'y' }).payload, closes_at: null },
+        created_at: iso(-100 * HOUR),
+      });
+      servePolls(messageRepo, [], [...closed, open]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+      const ids = view.made_by_you.polls.map((poll) => poll.message_id);
+
+      expect(ids).toContain('old-open');
+      expect(ids.filter((id) => id.startsWith('closed-'))).toEqual(
+        closed.slice(0, 25).map((poll) => poll.id),
+      );
+      // Newest first, the open one last since it is the oldest.
+      expect(ids.at(-1)).toBe('old-open');
+      expect(messageRepo.findPollCardsByChapter).toHaveBeenCalledWith(CHAPTER, {
+        senderId: ME,
+        limit: 100,
+      });
+      expect(view.made_by_you.files).toEqual([]);
+    });
+
     it('reads no polls while the Polls module is off', async () => {
       const { service, messageRepo, chatService } = build();
       servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);

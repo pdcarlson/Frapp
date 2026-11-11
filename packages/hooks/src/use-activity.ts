@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { activityNextPollClose, type Activity } from "./activity-rows";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -39,35 +37,4 @@ export function useActivity(options: { enabled?: boolean } = {}) {
     staleTime: 0,
     enabled: !!chapterId && (options.enabled ?? true),
   });
-}
-
-/** The longest `setTimeout` accepts; a later close is waited for in steps. */
-const MAX_TIMER_MS = 2_147_483_647;
-
-/**
- * The time the Activity page draws against: now, moved on whenever an open
- * poll on the page reaches its closing time, so the poll leaves its section
- * (and its tile's count) without a re-read (#4258). Pass it to
- * `activityGroups` and `activitySummary`.
- */
-export function useActivityClock(activity: Activity | undefined): Date {
-  // Bumped when a poll's time runs out; a fresh read also takes a fresh now.
-  const [tick, setTick] = useState(0);
-  const now = useMemo(
-    () => new Date(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on purpose: a new read or a tick is a new now
-    [activity, tick],
-  );
-  useEffect(() => {
-    if (!activity) return undefined;
-    const wait = activityNextPollClose(activity, now);
-    if (wait === null) return undefined;
-    // A beat past the closing time, so the poll reads as closed when drawn.
-    const timer = setTimeout(
-      () => setTick((count) => count + 1),
-      Math.min(Math.max(wait, 0) + 250, MAX_TIMER_MS),
-    );
-    return () => clearTimeout(timer);
-  }, [activity, now]);
-  return now;
 }

@@ -38,7 +38,7 @@ import {
   activitySummary,
   useActiveChapterId,
   useActivity,
-  useActivityClock,
+  useNowDate,
   useMyPermissions,
   type ActivityFilter,
   type ActivityGroup,
@@ -295,8 +295,10 @@ function GroupPart({
  */
 export function ActivityPage() {
   const activity = useActivity();
-  // Moves on when a poll's time runs out, so it leaves its section live.
-  const now = useActivityClock(activity.data);
+  // The shared 30s clock the poll cards read: a poll whose time runs out
+  // leaves its section within a tick, without a re-read (#4258), and Now and
+  // Later and Next up stay current while the page is open.
+  const now = useNowDate();
   const { isOffline } = useNetwork();
   const { userId } = useFrappUser();
   const chapterId = useActiveChapterId();

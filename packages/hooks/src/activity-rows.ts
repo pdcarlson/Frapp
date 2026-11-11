@@ -246,34 +246,7 @@ function pollClosedAt(poll: ActivityPoll): number {
   return at ? at.getTime() : 0;
 }
 
-/**
- * How long until the next open poll on the page closes by time, in ms, or
- * `null` when none will. A client re-draws the page then, so the poll leaves
- * its section without a re-read (#4258).
- */
-export function activityNextPollClose(
-  activity: Activity,
-  now: Date,
-): number | null {
-  let next: number | null = null;
-  for (const poll of [
-    ...activity.needs_you.polls,
-    ...activity.made_by_you.polls,
-  ]) {
-    if (!activityPollIsOpen(poll, now) || !poll.closes_at) continue;
-    const at = parseInstant(poll.closes_at);
-    if (!at) continue;
-    const wait = at.getTime() - now.getTime();
-    if (next === null || wait < next) next = wait;
-  }
-  return next;
-}
-
-function pollRow(
-  poll: ActivityPoll,
-  group: string,
-  now: Date,
-): ActivityRow {
+function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
   const closed = !activityPollIsOpen(poll, now);
   const closes = poll.closes_at ? formatRelativeDayTime(poll.closes_at) : null;
   return {
@@ -521,7 +494,11 @@ export function activityGroups(
     activity.made_by_you.polls
       .filter((poll) => !activityPollIsOpen(poll, now))
       .sort((a, b) => pollClosedAt(b) - pollClosedAt(a))
-      .map((poll) => pollRow(poll, "archived", now)),
+      .map((poll) =>
+        // The same key as when it was listed, so a panel open on the
+        // poll keeps finding it after it closes.
+        pollRow(poll, "made", now),
+      ),
   );
   const madeEvents = keep(
     activity.made_by_you.events.map((event) => eventRow(event, "made")),
