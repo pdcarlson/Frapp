@@ -181,6 +181,20 @@ create trigger chat_messages_reindex_links
 
 revoke execute on function public.chat_messages_index_links() from public;
 
+-- Supabase grants new functions to `anon` and `authenticated` directly, so
+-- revoking from `public` alone leaves them callable. A trigger function has
+-- no caller but the trigger.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function public.chat_messages_index_links() from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function public.chat_messages_index_links() from authenticated;
+  end if;
+end
+$$;
+
 -- 6. Backfill ------------------------------------------------------------------
 
 insert into public.chat_message_links
