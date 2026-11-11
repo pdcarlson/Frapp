@@ -9,8 +9,11 @@ import {
   AuthSessionMissingError,
   AuthUnknownError,
 } from '@supabase/supabase-js';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { ChapterGuard } from './chapter.guard';
+import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -18,9 +21,23 @@ describe('SupabaseAuthGuard', () => {
   let guard: SupabaseAuthGuard;
   let mockGetUser: jest.Mock;
   let mockGetClaims: jest.Mock;
+  let mockFrom: jest.Mock;
+
+  /** A route guarded by this guard alone, as `GET /v1/users/me` is. */
+  class AuthOnlyController {}
+  Reflect.defineMetadata(GUARDS_METADATA, [SupabaseAuthGuard], AuthOnlyController);
+
+  /** A chapter route: the usual class-level chain. */
+  class ChapterController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard, ChapterGuard],
+    ChapterController,
+  );
 
   const mockExecutionContext = (
     headers: Record<string, string> = {},
+    controller: new () => unknown = AuthOnlyController,
   ): ExecutionContext => {
     const request = {
       headers,
@@ -31,12 +48,24 @@ describe('SupabaseAuthGuard', () => {
       switchToHttp: () => ({
         getRequest: () => request,
       }),
+      getHandler: () => () => undefined,
+      getClass: () => controller,
     } as unknown as ExecutionContext;
   };
 
   beforeEach(async () => {
     mockGetUser = jest.fn();
     mockGetClaims = jest.fn().mockResolvedValue({ data: null, error: null });
+    // Only the chapter-context prefetch reads tables; it never settles here,
+    // which is all these cases need to see whether it started.
+    mockFrom = jest.fn(() => {
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.in = () => chain;
+      chain.maybeSingle = () => new Promise(() => undefined);
+      return chain;
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,6 +74,7 @@ describe('SupabaseAuthGuard', () => {
           provide: SUPABASE_CLIENT,
           useValue: {
             auth: { getUser: mockGetUser, getClaims: mockGetClaims },
+            from: mockFrom,
           },
         },
       ],
@@ -257,6 +287,134 @@ describe('SupabaseAuthGuard', () => {
       await expect(guard.canActivate(bearer())).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+  // The session check is the slowest call a request makes; the chapter
+  // guard's reads start while it is in flight, on the token's verified sub.
+  describe('chapter lookups overlap the session check (#3728)', () => {
+    const CHAPTER = '33333333-3333-4333-8333-333333333333';
+    // A fresh sub per case: the user lookup is shared across requests for
+    // `IN_FLIGHT_JOIN_WINDOW_MS` (#3753), and these mocks never settle, so a
+    // reused sub would join the previous case's read instead of starting one.
+    let claims: { sub: string; active_chapter_id: string };
+    let caseNo = 0;
+    beforeEach(() => {
+      caseNo += 1;
+      claims = { sub: `auth-overlap-${caseNo}`, active_chapter_id: CHAPTER };
+    });
+
+    const pendingSession = () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return (user: { id: string } | null) =>
+        release(
+          user
+            ? { data: { user }, error: null }
+            : { data: { user: null }, error: new Error('session revoked') },
+        );
+    };
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('starts them before getUser answers, on a chapter route', async () => {
+      const answer = pendingSession();
+      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        ChapterController,
+      );
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockFrom).toHaveBeenCalledWith('users');
+        expect(mockFrom).toHaveBeenCalledWith('chapters');
+
+        answer({ id: claims.sub });
+        await expect(verdict).resolves.toBe(true);
+      });
+      expect(ctx.switchToHttp().getRequest().jwtClaims).toEqual(claims);
+    });
+
+    it('starts nothing on a route without ChapterGuard', async () => {
+      const answer = pendingSession();
+      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          mockExecutionContext({ authorization: 'Bearer valid-token' }),
+        );
+        await settle();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('starts nothing when the claims cannot be verified', async () => {
+      const answer = pendingSession();
+      mockGetClaims.mockResolvedValue({ data: null, error: new Error('jwks') });
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          mockExecutionContext(
+            { authorization: 'Bearer valid-token' },
+            ChapterController,
+          ),
+        );
+        await settle();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a revoked session whose lookups already started', async () => {
+      const answer = pendingSession();
+      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        ChapterController,
+      );
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockFrom).toHaveBeenCalled();
+        answer(null);
+        await expect(verdict).rejects.toThrow(UnauthorizedException);
+      });
+      expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
+      expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
+    });
+
+    it('surfaces a getUser that throws before the claims are read', async () => {
+      const boom = new Error('socket hang up');
+      mockGetUser.mockRejectedValue(boom);
+      let releaseClaims!: (value: unknown) => void;
+      mockGetClaims.mockReturnValue(
+        new Promise((resolve) => {
+          releaseClaims = resolve;
+        }),
+      );
+      const unhandled = jest.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        const verdict = guard.canActivate(
+          mockExecutionContext({ authorization: 'Bearer valid-token' }),
+        );
+        await settle();
+        releaseClaims({ data: { claims }, error: null });
+        await expect(verdict).rejects.toBe(boom);
+        await settle();
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+      }
     });
   });
 });

@@ -34,6 +34,15 @@ joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its an
 that. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
 [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
 
+*Within* one request those reads happen once (`infrastructure/supabase/request-reads.ts`, #3728). The
+caller's membership row and roles that `ChapterGuard` and `PermissionsGuard` read are the ones the handler's
+channel access checks (`ChannelAccessService`, `RbacService.getChannelAccessHolder`) reuse, and the guards'
+reads start while `auth.getUser` is still in flight, on the token's locally verified `sub`
+(`prefetchChapterContext`); they are used only once the session check passes for that same user. A `GET`
+or `HEAD` keeps the store to its end. Any other method keeps it only through its guards:
+`RequestReadsInterceptor` seals it before the handler, so a handler that writes a membership or a role
+and reads it back reads the database. The store is created per request and never outlives it.
+
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard
 `403 chapter.context.mismatch` (`readRequestedChapter`) — the header cannot override the claim. A user with no

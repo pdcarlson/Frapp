@@ -6,7 +6,11 @@ import {
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ChapterGuard } from './chapter.guard';
+import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
+import {
+  runWithRequestReads,
+  sealRequestReadsForWrites,
+} from '../../infrastructure/supabase/request-reads';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   SUBSCRIPTION_EXEMPT_KEY,
@@ -1133,6 +1137,151 @@ describe('ChapterGuard', () => {
       await expect(guard.canActivate(ctx)).rejects.toMatchObject({
         message: 'User profile not found',
       });
+    });
+  });
+  // The guard's reads start while `SupabaseAuthGuard` waits on `getUser`, and
+  // land in the request's own store; the guard picks them up afterwards.
+  describe('reads started during the session check (#3728)', () => {
+    const CHAPTER = '22222222-2222-4222-8222-222222222222';
+
+    /** One mock for users, chapters, members and roles, counting reads. */
+    const tables = (
+      memberResults: Array<{ data: unknown; error: unknown }> = [],
+    ) => {
+      const reads: string[] = [];
+      mockFrom.mockImplementation((table: string) => {
+        reads.push(table);
+        const row =
+          table === 'users'
+            ? { id: 'user-p' }
+            : table === 'chapters'
+              ? { subscription_status: 'active', enabled_modules: null }
+              : table === 'members'
+                ? { id: 'member-p', role_ids: ['role-p'], points: 3 }
+                : [{ id: 'role-p', permissions: ['members:view'] }];
+        const answer = () =>
+          Promise.resolve(
+            table === 'members' && memberResults.length
+              ? memberResults.shift()
+              : { data: row, error: null },
+          );
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.in = () => chain;
+        chain.maybeSingle = answer;
+        chain.then = (
+          resolve: (value: unknown) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => answer().then(resolve, reject);
+        return chain;
+      });
+      return reads;
+    };
+
+    const request = (authId: string) =>
+      buildRequest({
+        headers: { 'x-chapter-id': CHAPTER },
+        supabaseUser: { id: authId },
+      });
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('reads user, chapter, membership and roles once, and the guard reuses them', async () => {
+      const reads = tables();
+      const req = request('auth-p1');
+
+      await runWithRequestReads('GET', async () => {
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-p1',
+          undefined,
+          req.headers,
+        );
+        await settle();
+        expect(reads.sort()).toEqual(['chapters', 'members', 'roles', 'users']);
+
+        await expect(guard.canActivate(mockExecutionContext(req))).resolves.toBe(
+          true,
+        );
+      });
+
+      expect(reads).toHaveLength(4);
+      // The guard keeps its own shape, whatever the shared row carries.
+      expect(req.member).toEqual({ id: 'member-p', role_ids: ['role-p'] });
+      expect(req.chapterId).toBe(CHAPTER);
+    });
+
+    it('reuses nothing when the session belongs to a different user than the token’s sub', async () => {
+      const reads = tables();
+      const req = request('auth-real');
+
+      await runWithRequestReads('GET', async () => {
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-claimed',
+          undefined,
+          req.headers,
+        );
+        await settle();
+        await guard.canActivate(mockExecutionContext(req));
+      });
+
+      // Keyed by auth id, so the guard looked its own user up.
+      expect(reads.filter((t) => t === 'users')).toHaveLength(2);
+    });
+
+    it('does nothing outside a request, or once a write request has reached its handler', async () => {
+      const reads = tables();
+      prefetchChapterContext(
+        { from: mockFrom } as never,
+        'auth-p2',
+        undefined,
+        { 'x-chapter-id': CHAPTER },
+      );
+      await runWithRequestReads('POST', async () => {
+        sealRequestReadsForWrites();
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-p2',
+          undefined,
+          { 'x-chapter-id': CHAPTER },
+        );
+      });
+      await settle();
+      expect(reads).toEqual([]);
+    });
+
+    it('starts only the user lookup when no chapter is named', async () => {
+      const reads = tables();
+      await runWithRequestReads('GET', async () => {
+        prefetchChapterContext({ from: mockFrom } as never, 'auth-p3', undefined, {});
+        await settle();
+      });
+      expect(reads).toEqual(['users']);
+    });
+
+    it('drops a failed membership read, and the guard reads it again', async () => {
+      const reads = tables([
+        { data: null, error: { code: '57014', message: 'timeout' } },
+      ]);
+      const req = request('auth-p4');
+
+      await runWithRequestReads('GET', async () => {
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-p4',
+          undefined,
+          req.headers,
+        );
+        await settle();
+        await expect(guard.canActivate(mockExecutionContext(req))).resolves.toBe(
+          true,
+        );
+      });
+
+      expect(reads.filter((t) => t === 'members')).toHaveLength(2);
+      expect(req.member).toEqual({ id: 'member-p', role_ids: ['role-p'] });
     });
   });
 });

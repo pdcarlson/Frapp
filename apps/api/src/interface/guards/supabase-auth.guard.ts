@@ -4,6 +4,8 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { Reflector } from '@nestjs/core';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
@@ -14,11 +16,13 @@ import {
   safeAuthErrorCode,
   tokenExpired,
 } from './auth-rejected.exception';
+import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,7 +40,22 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
-    const { data, error } = await this.supabase.auth.getUser(token);
+    // The session check is the slowest call a request makes (#3728). It
+    // starts first, and while it is in flight the chapter guard's lookups
+    // start on the token's verified `sub` (`prefetchChapterContext`), so they
+    // no longer queue behind it. Nothing they read is used unless this check
+    // passes for that same user.
+    const sessionCheck = this.supabase.auth.getUser(token);
+    // Awaited below; this only keeps an early failure from being reported as
+    // an unhandled rejection while the claims are read.
+    sessionCheck.catch(() => undefined);
+
+    const claims = await this.readClaims(token);
+    if (claims?.sub && this.chapterGuardFollows(context)) {
+      prefetchChapterContext(this.supabase, claims.sub, claims, request.headers);
+    }
+
+    const { data, error } = await sessionCheck;
 
     // An Auth outage is not a verdict on the token (#3143): `isAuthOutage`.
     if (error && isAuthOutage(error)) {
@@ -50,8 +69,21 @@ export class SupabaseAuthGuard implements CanActivate {
     }
 
     request.supabaseUser = data.user;
-    request.jwtClaims = await this.readClaims(token);
+    request.jwtClaims = claims;
     return true;
+  }
+
+  /**
+   * Whether `ChapterGuard` runs after this guard on the route, so a prefetch
+   * of its reads would be used. Routes such as `GET /v1/users/me` carry this
+   * guard alone and would only pay for reads nobody makes.
+   */
+  private chapterGuardFollows(context: ExecutionContext): boolean {
+    const guards = this.reflector.getAllAndMerge<unknown[]>(GUARDS_METADATA, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return guards.includes(ChapterGuard);
   }
 
   /**
@@ -61,10 +93,11 @@ export class SupabaseAuthGuard implements CanActivate {
    * (cached), which also covers the asymmetric ES256 keys Supabase now issues by
    * default; `SUPABASE_JWT_SECRET` would not verify those.
    *
-   * Failure is deliberately non-fatal: `getUser()` above has already
-   * authenticated the request, so a JWKS hiccup or a token predating the hook
-   * should degrade to the `x-chapter-id` fallback that
-   * spec/behavior/multi-tenancy.md sanctions, not reject a valid caller.
+   * Failure is deliberately non-fatal: `getUser()` is what authenticates the
+   * request, so a JWKS hiccup or a token predating the hook should degrade to
+   * the `x-chapter-id` fallback that spec/behavior/multi-tenancy.md
+   * sanctions, not reject a valid caller. It runs while `getUser()` is in
+   * flight, and its claims are only kept once that check has passed.
    */
   private async readClaims(token: string): Promise<JwtPayload | undefined> {
     try {
