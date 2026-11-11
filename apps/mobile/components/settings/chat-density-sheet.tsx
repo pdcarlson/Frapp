@@ -56,9 +56,9 @@ export const ChatDensitySheet = forwardRef<BottomSheetModal>(
 );
 
 /**
- * The three density cards, saved on the tap. Shared by the Settings sheet and
+ * The three density cards, saved on the tap. Shared by the Settings sheet,
  * s03's display beat (#3787), where a new member picks their display while
- * setting up.
+ * setting up, and chapter setup's display step, where a founder does (#4056).
  */
 export function ChatDensityOptions({ onPicked }: { onPicked?: () => void }) {
   const { tokens } = useFrappTheme();
