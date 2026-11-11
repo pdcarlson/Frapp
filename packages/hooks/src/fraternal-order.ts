@@ -8,8 +8,8 @@
  * number, and members with neither come last, by name.
  *
  * One definition, so every surface that sorts this way agrees: the web
- * Directory's sort, and the Settings class editor, which lists a class's
- * members in it.
+ * Directory's sort, the mobile Directory's, and the Settings class editor,
+ * which lists a class's members in it.
  */
 
 import { memberLabel } from "./display-names";

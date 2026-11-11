@@ -14,7 +14,7 @@
  * roster projection carries no role or graduation year, so it cannot draw the
  * meta line the reference specifies.
  */
-import { memberLabel } from "@repo/hooks";
+import { fraternalOrderComparator, memberLabel } from "@repo/hooks";
 import { initialsFor, metaLine, num, records, str } from "./narrow";
 import { formatGraduationYear } from "./profile";
 
@@ -32,9 +32,30 @@ export interface DirectoryRow {
   /** e.g. `"CS '27"`, or `null` when nothing is known. */
   meta: string | null;
   avatarUrl: string | null;
+  /** The member's pledge class and order number (#3939), each `null` when unset. */
+  pledgeClassId: string | null;
+  orderNumber: number | null;
 }
 
-function toRow(row: Record<string, unknown>): DirectoryRow | null {
+export interface DirectoryRowOptions {
+  /**
+   * The chapter's pledge class names by id. A member's class leads their meta
+   * line when its name is here; leave it out (the list failed, or hasn't
+   * answered) and no row names a class.
+   */
+  classNames?: ReadonlyMap<string, string>;
+  /**
+   * The chapter's classes, oldest first, to list the rows in fraternal order
+   * (`fraternalOrderComparator`, the one definition of that sort) instead of
+   * by name.
+   */
+  fraternalOrder?: readonly { id: string }[];
+}
+
+function toRow(
+  row: Record<string, unknown>,
+  classNames?: ReadonlyMap<string, string>,
+): DirectoryRow | null {
   const memberId = str(row, "id");
   const userId = str(row, "user_id");
   if (!memberId || !userId) return null;
@@ -43,26 +64,47 @@ function toRow(row: Record<string, unknown>): DirectoryRow | null {
   // case and both fall back rather than rendering a blank row — to the label
   // web shows for the same member, so the two platforms agree on who it is.
   const displayName = memberLabel(str(row, "display_name"), userId);
+  const pledgeClassId = str(row, "pledge_class_id");
   return {
     memberId,
     userId,
     displayName,
     initials: initialsFor(str(row, "display_name")),
     meta: metaLine([
+      pledgeClassId ? (classNames?.get(pledgeClassId) ?? null) : null,
       str(row, "current_company"),
       str(row, "current_city"),
       formatGraduationYear(num(row, "graduation_year")),
     ]),
     avatarUrl: str(row, "avatar_url"),
+    pledgeClassId,
+    orderNumber: num(row, "order_number"),
   };
 }
 
-/** Rows for either tab, alphabetical so the list is scannable by name. */
-export function selectDirectoryRows(data: unknown): DirectoryRow[] {
-  return records(data)
-    .map(toRow)
-    .filter((row): row is DirectoryRow => !!row)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+/**
+ * Rows for either tab, alphabetical so the list is scannable by name, or in
+ * the chapter's fraternal order when `fraternalOrder` carries its classes.
+ */
+export function selectDirectoryRows(
+  data: unknown,
+  { classNames, fraternalOrder }: DirectoryRowOptions = {},
+): DirectoryRow[] {
+  const rows = records(data)
+    .map((row) => toRow(row, classNames))
+    .filter((row): row is DirectoryRow => !!row);
+  if (!fraternalOrder) {
+    return rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+  const compare = fraternalOrderComparator(fraternalOrder);
+  const sortable = (row: DirectoryRow) => ({
+    pledge_class_id: row.pledgeClassId,
+    order_number: row.orderNumber,
+    // Already the label the row shows, which is what the sort ties on.
+    display_name: row.displayName,
+    user_id: row.userId,
+  });
+  return rows.sort((a, b) => compare(sortable(a), sortable(b)));
 }
 
 /**

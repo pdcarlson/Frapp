@@ -26,6 +26,7 @@ import {
   resolveRoleChips,
   type MemberRoleChip,
 } from "@repo/validation";
+import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
 import {
   confirmBlockMember,
@@ -166,6 +167,9 @@ export const MemberDetailSheet = forwardRef<
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
+  // The member's pledge class and order number (#3939), each drawn only when
+  // set.
+  const classRows = usePledgeClassRows(detail);
   const roleChips = useMemo(
     () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
@@ -447,6 +451,14 @@ export const MemberDetailSheet = forwardRef<
                     }
                   />
                 ) : null}
+                {classRows.map((row) => (
+                  <ListRow
+                    key={row.key}
+                    variant="detail"
+                    label={row.label}
+                    value={row.value}
+                  />
+                ))}
                 <ListRow
                   variant="detail"
                   label="Member since"

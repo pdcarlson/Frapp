@@ -45,7 +45,17 @@ describe("selectMemberDetail", () => {
         { fieldId: "f-1", label: "Shirt size", value: "M" },
         { fieldId: "f-2", label: "Vaccinated", value: "Yes" },
       ],
+      pledgeClassId: null,
+      orderNumber: null,
     });
+  });
+
+  it("carries the member's pledge class and order number when set (#3939)", () => {
+    const detail = selectMemberDetail(
+      profile({ pledge_class_id: "pc-1", order_number: 12 }),
+    );
+    expect(detail?.pledgeClassId).toBe("pc-1");
+    expect(detail?.orderNumber).toBe(12);
   });
 
   it("falls back to the shared member label for an empty display_name", () => {
