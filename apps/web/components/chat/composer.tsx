@@ -1176,7 +1176,10 @@ export function Composer({
     onUpdate({ editor }) {
       const text = editor.getText();
       onChangeDraft(text);
-      onTyping();
+      // An empty box is nobody typing: the clear after a send, or the last
+      // character erased. Announcing it showed "is typing…" to everyone else
+      // for four seconds under the message that had just landed.
+      if (text.trim().length > 0) onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
         parsed.isSlash &&

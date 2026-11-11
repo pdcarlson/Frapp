@@ -257,6 +257,11 @@ interface PerChannelState {
   typingSnapshot: readonly string[];
   typingLastEmit: number;
   /**
+   * Who this client last announced as typing here (the viewer), so their own
+   * message arriving can reset the send throttle (`endTyping`).
+   */
+  typingSelf?: string;
+  /**
    * Typing inside this channel's message threads (#3785), keyed by thread
    * root: kept apart from `typingUsers` so a thread typist never shows on the
    * channel's own typing line. Each thread has its own snapshot and throttle,
@@ -622,6 +627,7 @@ class ChatRealtimeManager {
   ): void {
     const state = this.channels.get(channelId);
     if (!state || !state.channel) return;
+    state.typingSelf = userId;
     const now = Date.now();
     if (threadRootId) {
       const thread = this.threadTypingState(state, threadRootId);
@@ -690,6 +696,28 @@ class ChatRealtimeManager {
     }
     state.typingSnapshot = liveTypists(state.typingUsers, state.typingSnapshot);
     return state.typingSnapshot;
+  }
+
+  /**
+   * `userId` sent a message in this channel, or in the thread off
+   * `threadRootId`: they are not typing there any more. When it is the viewer's
+   * own message, their send throttle resets too, so starting the next message
+   * straight away is announced at once rather than up to 3s later.
+   */
+  private endTyping(
+    state: PerChannelState,
+    userId: string,
+    threadRootId: string | null,
+  ): void {
+    if (threadRootId) {
+      const thread = state.threadTyping.get(threadRootId);
+      if (!thread) return;
+      if (userId === state.typingSelf) thread.lastEmit = 0;
+      if (thread.users.delete(userId)) this.emitStatus();
+      return;
+    }
+    if (userId === state.typingSelf) state.typingLastEmit = 0;
+    if (state.typingUsers.delete(userId)) this.emitStatus();
   }
 
   private threadTypingState(
@@ -926,6 +954,12 @@ class ChatRealtimeManager {
         // and move the last-seen cursor to a row the timeline read never
         // returns. The parent's own UPDATE echo carries the new reply count.
         // A thread panel takes it instead, through `onThreadReply`.
+        // A message from someone ends their typing there, as Discord's does:
+        // the line would otherwise keep saying they are typing for up to four
+        // seconds under the message they just sent.
+        if (payload.eventType === "INSERT" && next?.sender_id) {
+          this.endTyping(state, next.sender_id, next.thread_root_id ?? null);
+        }
         if (next?.thread_root_id) {
           if (
             payload.eventType === "INSERT" ||

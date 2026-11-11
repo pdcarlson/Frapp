@@ -36,6 +36,7 @@ import {
   messageCanStartThread,
 } from "@repo/chat-core/message-actions";
 import { setChannelLocked } from "@repo/chat-core/density";
+import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { canFlagMessage } from "@repo/chat-core/flags";
 import { useQueryClient } from "@tanstack/react-query";
@@ -578,8 +579,9 @@ function ChannelThreadScreen() {
     (next: string) => {
       setDraft(next);
       // The manager throttles to one broadcast per 3s, so this can ride every
-      // keystroke without flooding the channel.
-      emitTyping();
+      // keystroke without flooding the channel. An emptied box is nobody
+      // typing, as in the thread composer.
+      if (next.trim().length > 0) emitTyping();
     },
     [setDraft, emitTyping],
   );
@@ -601,6 +603,8 @@ function ChannelThreadScreen() {
     blockState,
     viewerId,
   );
+  // Who, by name, as Discord says it and the thread line already does.
+  const typingLine = typingLabel(shownTypingUsers, nameFor);
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
@@ -1451,11 +1455,7 @@ function ChannelThreadScreen() {
             }
           >
             <Text style={styles.typing} numberOfLines={1}>
-              {shownTypingUsers.length === 0
-                ? TYPING_LINE_BLANK
-                : shownTypingUsers.length === 1
-                  ? "Someone is typing…"
-                  : `${shownTypingUsers.length} people are typing…`}
+              {typingLine ?? TYPING_LINE_BLANK}
             </Text>
           </View>
 

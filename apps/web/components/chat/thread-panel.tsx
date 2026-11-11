@@ -499,11 +499,14 @@ export function ThreadPanel({
       </div>
       <ImageViewer viewer={rootViewer} />
 
-      {typing ? (
-        <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-          {typing}
-        </p>
-      ) : null}
+      {/* Always one line tall, like the channel's, so it never moves the reply box. */}
+      <p
+        data-testid="typing-line"
+        aria-hidden={typing ? undefined : true}
+        className="h-5 shrink-0 truncate px-4 text-caption leading-5 text-muted-foreground"
+      >
+        {typing}
+      </p>
       <div className="shrink-0 border-t border-border p-3">
         {canReply ? (
           <>

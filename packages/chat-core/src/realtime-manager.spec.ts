@@ -1495,6 +1495,64 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
     expect(ch.send).toHaveBeenCalledTimes(2);
   });
 
+  function insert(
+    ch: FakeChannel,
+    senderId: string,
+    extra: Record<string, unknown> = {},
+  ): void {
+    ch.emitPostgresChange({
+      eventType: "INSERT",
+      new: {
+        id: `msg-${senderId}-${Math.random()}`,
+        channel_id: "c1",
+        sender_id: senderId,
+        kind: "text",
+        content: "sent",
+        created_at: "2026-11-11T22:00:00.000Z",
+        ...extra,
+      },
+    });
+  }
+
+  test("a typist's message ends their typing at once, not 4s later", () => {
+    const ch = joined("c1");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    ch.emitBroadcast("typing", { userId: B, displayName: null });
+    expect(chatRealtime.getTypingUsers("c1")).toEqual([A, B]);
+    insert(ch, A);
+    // B is still typing; A's message landed, so A is not.
+    expect(chatRealtime.getTypingUsers("c1")).toEqual([B]);
+  });
+
+  test("a thread reply ends its sender's typing in that thread only", () => {
+    const ch = joined("c1");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    ch.emitBroadcast("thread_typing", {
+      userId: A,
+      displayName: null,
+      threadRootId: "root-1",
+    });
+    insert(ch, A, { thread_root_id: "root-1" });
+    expect(chatRealtime.getTypingUsers("c1", "root-1")).toEqual([]);
+    expect(chatRealtime.getTypingUsers("c1")).toEqual([A]);
+  });
+
+  test("the viewer's own message resets their send throttle", () => {
+    const ch = joined("c1");
+    ch.send.mockClear();
+    chatRealtime.emitTyping("c1", A);
+    chatRealtime.emitTyping("c1", A);
+    expect(ch.send).toHaveBeenCalledTimes(1);
+    // A sends; starting the next message straight away is announced at once.
+    insert(ch, A);
+    chatRealtime.emitTyping("c1", A);
+    expect(ch.send).toHaveBeenCalledTimes(2);
+    // Someone else's message does not reset it.
+    insert(ch, B);
+    chatRealtime.emitTyping("c1", A);
+    expect(ch.send).toHaveBeenCalledTimes(2);
+  });
+
   test("an unknown channel's empty list is one identity", () => {
     expect(chatRealtime.getTypingUsers("nobody")).toEqual([]);
     expect(chatRealtime.getTypingUsers("nobody")).toBe(

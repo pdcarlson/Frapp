@@ -17,6 +17,7 @@ import { hydrateRoot } from "react-dom/client";
 const {
   capturedExtensions,
   capturedEditorProps,
+  capturedOnUpdate,
   editorDouble,
   mockDescribePhoto,
   mockRequestUploadUrl,
@@ -24,6 +25,11 @@ const {
   mockToast,
 } = vi.hoisted(() => ({
   capturedExtensions: [] as unknown[][],
+  // Each `onUpdate` the composer built, so a spec can run it with an editor
+  // reading back any text, without a contenteditable.
+  capturedOnUpdate: [] as Array<
+    ((args: { editor: { getText: () => string } }) => void) | undefined
+  >,
   // Each `editorProps` the composer built, so the paste suite (#2246) can
   // call the real `handlePaste` without a contenteditable.
   capturedEditorProps: [] as Array<{
@@ -67,8 +73,10 @@ vi.mock("@tiptap/react", async () => {
     useEditor: (options: {
       extensions: unknown[];
       editorProps?: (typeof capturedEditorProps)[number];
+      onUpdate?: (typeof capturedOnUpdate)[number];
     }) => {
       capturedExtensions.push(options.extensions);
+      capturedOnUpdate.push(options.onUpdate);
       capturedEditorProps.push(options.editorProps ?? {});
       return editorDouble.current;
     },
@@ -148,6 +156,33 @@ function placeholderTextFrom(extensions: unknown[]) {
   ) as { options: { placeholder: string } } | undefined;
   return placeholder?.options.placeholder;
 }
+
+describe("Composer typing pings", () => {
+  function update(text: string) {
+    const onUpdate = capturedOnUpdate.at(-1);
+    if (!onUpdate) throw new Error("no onUpdate captured");
+    onUpdate({ editor: { getText: () => text } });
+  }
+
+  it("says the member is typing while there is text", () => {
+    const props = baseProps();
+    render(<Composer {...props} />);
+    update("hey");
+    expect(props.onTyping).toHaveBeenCalledTimes(1);
+  });
+
+  it("never for an empty box: the clear after a send, or the last character erased", () => {
+    // Announcing the clear showed "is typing…" to everyone else under the
+    // message that had just landed (tester report 2026-11-11).
+    const props = baseProps();
+    render(<Composer {...props} />);
+    update("");
+    update("   ");
+    expect(props.onTyping).not.toHaveBeenCalled();
+    // The draft still follows the box.
+    expect(props.onChangeDraft).toHaveBeenLastCalledWith("   ");
+  });
+});
 
 describe("composerPlaceholder", () => {
   it("takes the channel sigil for a real channel", () => {
