@@ -30,6 +30,13 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `polls:create`        | Create polls in channels                               |
 | `polls:view_all`      | List polls chapter-wide with aggregate vote tallies    |
 | `tasks:manage`        | Create, assign, and confirm tasks                      |
+| `rush:view`           | Look up a recruitment prospect and see their bid status ([`rush.md`](rush.md#permissions) owns the recruitment rows and their default grant) |
+| `rush:add`            | Add a prospect                                         |
+| `rush:notes`          | Write notes on a prospect (gates nothing until notes are built) |
+| `rush:vote`           | Vote on a prospect                                     |
+| `rush:view_results`   | See a prospect's vote count (gates nothing yet, [#4084](https://github.com/pdcarlson/Frapp/issues/4084)) |
+| `rush:bid`            | Record a bid                                           |
+| `rush:manage`         | Delete prospects and export the list (gates nothing until those are built) |
 | `chapter_docs:upload` | Upload documents to Chapter Files                      |
 | `chapter_docs:manage` | Delete/organize documents in Chapter Files             |
 | `service:log`         | Log service hours (typically all members)              |
@@ -75,7 +82,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
   - **Vice President:** `members:view`, `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887).
   - **Secretary:** `members:view`, `polls:view_all` (same as Vice President).
-  - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
+  - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`, and the six member recruitment keys (`rush:view`, `rush:add`, `rush:notes`, `rush:vote`, `rush:view_results`, `rush:bid`; [`rush.md`](rush.md#permissions)).
   - **New Member:** `members:view`, `backwork:upload`.
   - **Alumni:** `members:view`, `alumni:post`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.

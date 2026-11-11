@@ -37,6 +37,12 @@ import {
 } from '../dtos/rush-candidate.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 
+/**
+ * Recruitment. Every route needs the `rush` module on, `members:view`, and
+ * its own `rush:*` permission (#4070); `PermissionsGuard` requires the class
+ * and handler lists together. The slash commands and the chat card call these
+ * routes, so they carry the same gates.
+ */
 @ApiTags('Rush')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
@@ -47,6 +53,7 @@ export class RushController {
   constructor(private readonly rushService: RushService) {}
 
   @Get()
+  @RequirePermissions(SystemPermissions.RUSH_VIEW)
   @ApiOperation({ summary: 'Look up a candidate by display name' })
   @ApiOkResponse({ type: RushCandidateViewDto })
   async lookup(
@@ -58,6 +65,7 @@ export class RushController {
   }
 
   @Get(':id')
+  @RequirePermissions(SystemPermissions.RUSH_VIEW)
   @ApiOperation({ summary: 'Get a candidate with live vote and bid status' })
   @ApiOkResponse({ type: RushCandidateViewDto })
   async getOne(
@@ -69,6 +77,7 @@ export class RushController {
   }
 
   @Post()
+  @RequirePermissions(SystemPermissions.RUSH_ADD)
   @ApiOperation({ summary: 'Add a recruitment candidate' })
   @ApiCreatedResponse({ type: CreateRushCandidateResponseDto })
   @FeatureEvent(
@@ -101,6 +110,7 @@ export class RushController {
   }
 
   @Post(':id/vote')
+  @RequirePermissions(SystemPermissions.RUSH_VOTE)
   @ApiOperation({
     summary:
       'Cast a vote on a candidate (idempotent; a repeat vote returns 201 again, not a conflict)',
@@ -116,6 +126,7 @@ export class RushController {
   }
 
   @Post(':id/bid')
+  @RequirePermissions(SystemPermissions.RUSH_BID)
   @ApiOperation({
     summary:
       'Extend a bid (idempotent; a repeat bid returns 201 again, not a conflict)',
