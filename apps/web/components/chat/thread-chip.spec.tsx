@@ -44,13 +44,20 @@ describe("ThreadChip (#3785)", () => {
   });
 
   it("draws each replier's face apart, with their initials or photo (#4297)", () => {
+    const avatarFor = vi.fn((id: string) =>
+      id === "u1" ? "https://example.test/p.png" : null,
+    );
     const { container } = render(
       <ThreadChip
         summary={summary}
         nameFor={nameFor}
-        avatarFor={(id) => (id === "u1" ? "https://example.test/p.png" : null)}
+        avatarFor={avatarFor}
       />,
     );
+    // A photo is asked for each replier (jsdom never loads one, so the
+    // initials below are what it draws until it does).
+    expect(avatarFor).toHaveBeenCalledWith("u1");
+    expect(avatarFor).toHaveBeenCalledWith("u2");
     expect(screen.getByText("PC")).toBeInTheDocument();
     expect(screen.getByText("SK")).toBeInTheDocument();
     // Side by side, never stacked over one another.

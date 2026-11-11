@@ -1035,8 +1035,6 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
-  // What's new in the threads the viewer follows here, for each card (#4297).
-  const threadUnread = useThreadUnread(activeChannelId, channel.messages);
   // The top bar's connection pill says what this channel's realtime transport
   // is doing, folded with the app's own connection state, so the header no
   // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
@@ -2184,6 +2182,13 @@ export function ChatShell({
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId
       : null;
+  // What's new in the threads the viewer follows here, for each card
+  // (#4297). The open thread is left out: reading it re-reads this.
+  const threadUnread = useThreadUnread(
+    activeChannelId,
+    channel.messages,
+    threadRootId,
+  );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {

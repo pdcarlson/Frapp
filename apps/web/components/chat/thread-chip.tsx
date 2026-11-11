@@ -16,7 +16,12 @@ import { cn, initials } from "@/lib/utils";
  * line runs to it from the author's photo (`MessageItem`'s `thread-spine`).
  *
  * The faces sit apart rather than overlapping: at this size an overlap hid
- * half of each replier's initials (Shawn, 2026-11-11).
+ * half of each replier's initials (Shawn, 2026-11-11). On a narrow card
+ * "last reply" drops out whole first, then the faces; the count, "2 new"
+ * and the chevron always show.
+ *
+ * On an Important row the count draws in the foreground, as every
+ * chapter-accent text on that row does (`IMPORTANT_ROW`), matching mobile.
  */
 export function ThreadChip({
   summary,
@@ -47,11 +52,19 @@ export function ThreadChip({
   const content = (
     <>
       {summary.recent_sender_ids.length > 0 ? (
-        <span className="flex shrink-0 gap-0.5" aria-hidden="true">
+        // On a narrow card the faces go after the time, before the count,
+        // one at a time from the right: each is its own item in a clipped
+        // wrapping box, behind a zero-width lead (a line's first item never
+        // wraps).
+        <span
+          className="flex h-6 min-w-0 shrink-[100] flex-wrap gap-0.5 overflow-hidden"
+          aria-hidden="true"
+        >
+          <span className="-mr-0.5 h-6 w-0" />
           {summary.recent_sender_ids.map((id) => {
             const src = avatarFor?.(id) ?? null;
             return (
-              <Avatar key={id} className="h-6 w-6">
+              <Avatar key={id} className="h-6 w-6 shrink-0">
                 {src ? <AvatarImage src={src} alt="" /> : null}
                 <AvatarFallback
                   className="text-label"
@@ -79,8 +92,8 @@ export function ThreadChip({
       {lastReply ? (
         // All or nothing: where it doesn't fit it wraps to a clipped second
         // line rather than shrinking to "l…". A line's first item never
-        // wraps, so a zero-width one leads.
-        <span className="flex h-5 min-w-0 flex-wrap overflow-hidden">
+        // wraps, so a zero-width one leads. It gives way first of all.
+        <span className="flex h-5 min-w-0 shrink-[10000] flex-wrap overflow-hidden">
           <span className="h-5 w-0" />
           <span className="shrink-0 whitespace-nowrap text-muted-foreground">
             {lastReply}
@@ -94,7 +107,9 @@ export function ThreadChip({
     </>
   );
   const className = cn(
-    "mt-1.5 inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
+    // `self-start`: in cozy and compact the card sits in a stretching
+    // column, and a bordered card as wide as a long message reads wrong.
+    "mt-1.5 inline-flex min-w-0 max-w-full self-start items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
   );
   const label = [replies, fresh, lastReply].filter(Boolean).join(", ");
   if (!onOpen) {
