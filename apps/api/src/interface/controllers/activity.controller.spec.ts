@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from '../../application/services/activity.service';
+import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -12,11 +13,19 @@ import { SystemPermissions } from '#domain/constants/permissions';
 describe('ActivityController', () => {
   let controller: ActivityController;
   const activityService = { getActivity: jest.fn() };
+  const linkService = {
+    setState: jest.fn(),
+    clearState: jest.fn(),
+    setRemoved: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ActivityController],
-      providers: [{ provide: ActivityService, useValue: activityService }],
+      providers: [
+        { provide: ActivityService, useValue: activityService },
+        { provide: ActivityLinkService, useValue: linkService },
+      ],
     }).compile();
     controller = module.get(ActivityController);
   });
@@ -57,5 +66,60 @@ describe('ActivityController', () => {
       enabledModules,
     );
     expect(result).toBe(view);
+  });
+
+  describe('links (#3897)', () => {
+    const LINK = '0a000000-0000-4000-8000-000000000390';
+
+    it('sets and clears the caller’s own state, open to any member', async () => {
+      // Only the class's members:view: a member's Done or Hide needs no more.
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.setLinkState),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.clearLinkState),
+      ).toBeUndefined();
+
+      await controller.setLinkState('chapter-1', 'user-1', LINK, {
+        state: 'done',
+      });
+      await controller.clearLinkState('chapter-1', 'user-1', LINK);
+
+      expect(linkService.setState).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        LINK,
+        'done',
+      );
+      expect(linkService.clearState).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        LINK,
+      );
+    });
+
+    it('gates remove and restore on channels:manage', async () => {
+      for (const handler of [controller.removeLink, controller.restoreLink]) {
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual([
+          SystemPermissions.CHANNELS_MANAGE,
+        ]);
+      }
+
+      await controller.removeLink('chapter-1', 'user-1', LINK);
+      await controller.restoreLink('chapter-1', LINK);
+
+      expect(linkService.setRemoved).toHaveBeenNthCalledWith(
+        1,
+        'chapter-1',
+        LINK,
+        'user-1',
+      );
+      expect(linkService.setRemoved).toHaveBeenNthCalledWith(
+        2,
+        'chapter-1',
+        LINK,
+        null,
+      );
+    });
   });
 });
