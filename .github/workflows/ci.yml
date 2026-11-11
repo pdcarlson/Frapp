@@ -833,9 +833,7 @@ jobs:
 
       - name: Resolve Playwright version
         id: pw
-        run: |
-          echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "image=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       # Version-keyed. A concurrent run's "Unable to reserve cache" warning is harmless.
       - name: Cache Playwright browsers
@@ -845,66 +843,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # Playwright's OS deps on this runner image are a handful of font packages. Their
-      # .debs are cached so most runs install them with dpkg and never touch the apt
-      # mirrors, which have failed us three ways: Hash Sum mismatches, a two-hour hang
-      # (#3129), and a DNS outage on 2026-11-11 that held every PR red for 12 minutes.
-      # Keyed on the image's OS and the Playwright version; a miss falls back to apt.
-      - name: Restore Playwright OS deps
-        id: pw-debs
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.cache/pw-os-debs
-          key: playwright-os-debs-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
-
-      # On a miss, drop Google's apt source, whose Hash Sum mismatches retries can't
-      # absorb. OS deps aren't in the browser cache, so never `|| true` this step.
+      # Cached .debs first, apt only when Playwright's own check finds a package
+      # missing: .github/actions/playwright-os-deps. Never skip this on a browser
+      # cache hit or `|| true` it, since OS deps aren't in the browser cache.
       - name: Install Playwright OS deps
         # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
-        run: |
-          DEBS="$HOME/.cache/pw-os-debs"
-          shopt -s nullglob
-          if [ -f "$DEBS/complete" ]; then
-            debs=("$DEBS"/*.deb)
-            if [ "${#debs[@]}" -eq 0 ] || sudo dpkg -i "${debs[@]}"; then
-              echo "Installed ${#debs[@]} cached package(s) without apt."
-              exit 0
-            fi
-            echo "::warning::cached Playwright OS deps did not install; falling back to apt."
-          fi
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-            /etc/apt/sources.list.d/google-chrome.list.save \
-            /etc/apt/sources.list.d/google-chrome.sources \
-            /etc/apt/sources.list.d/google.list
-          # Keep what apt downloads, so the save step below can cache it.
-          echo 'Binary::apt-get::APT::Keep-Downloaded-Packages "true"; APT::Keep-Downloaded-Packages "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99-keep-playwright-debs > /dev/null
-          sudo rm -f /var/cache/apt/archives/*.deb
-          for i in 1 2 3; do
-            if npx playwright install-deps chromium; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
-              exit 1
-            fi
-            echo "Attempt $i/3 failed — retrying in 20s..."
-            sudo rm -rf /var/lib/apt/lists/* || true
-            sleep 20
-          done
-          rm -rf "$DEBS" && mkdir -p "$DEBS"
-          debs=(/var/cache/apt/archives/*.deb)
-          if [ "${#debs[@]}" -gt 0 ]; then cp "${debs[@]}" "$DEBS/"; fi
-          touch "$DEBS/complete"
-          echo "Cached ${#debs[@]} package(s) for the next run."
-
-      - name: Save Playwright OS deps
-        if: steps.pw-debs.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.cache/pw-os-debs
-          key: ${{ steps.pw-debs.outputs.cache-primary-key }}
+        uses: ./.github/actions/playwright-os-deps
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
@@ -940,9 +885,7 @@ jobs:
 
       - name: Resolve Playwright version
         id: pw
-        run: |
-          echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "image=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       # Same version-keyed entry as web-responsive-floor; the reserve warning is harmless.
       - name: Cache Playwright browsers
@@ -952,61 +895,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # Same OS-deps cache as web-responsive-floor, so either job can fill it.
-      - name: Restore Playwright OS deps
-        id: pw-debs
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.cache/pw-os-debs
-          key: playwright-os-debs-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
-
-      # Same apt workaround as web-responsive-floor, pinned by playwright-install-deps-retry.test.mjs.
+      # Cached .debs first, apt only when Playwright's own check finds a package
+      # missing: .github/actions/playwright-os-deps. Never skip this on a browser
+      # cache hit or `|| true` it, since OS deps aren't in the browser cache.
       - name: Install Playwright OS deps
         # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
-        run: |
-          DEBS="$HOME/.cache/pw-os-debs"
-          shopt -s nullglob
-          if [ -f "$DEBS/complete" ]; then
-            debs=("$DEBS"/*.deb)
-            if [ "${#debs[@]}" -eq 0 ] || sudo dpkg -i "${debs[@]}"; then
-              echo "Installed ${#debs[@]} cached package(s) without apt."
-              exit 0
-            fi
-            echo "::warning::cached Playwright OS deps did not install; falling back to apt."
-          fi
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-            /etc/apt/sources.list.d/google-chrome.list.save \
-            /etc/apt/sources.list.d/google-chrome.sources \
-            /etc/apt/sources.list.d/google.list
-          # Keep what apt downloads, so the save step below can cache it.
-          echo 'Binary::apt-get::APT::Keep-Downloaded-Packages "true"; APT::Keep-Downloaded-Packages "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99-keep-playwright-debs > /dev/null
-          sudo rm -f /var/cache/apt/archives/*.deb
-          for i in 1 2 3; do
-            if npx playwright install-deps chromium; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
-              exit 1
-            fi
-            echo "Attempt $i/3 failed — retrying in 20s..."
-            sudo rm -rf /var/lib/apt/lists/* || true
-            sleep 20
-          done
-          rm -rf "$DEBS" && mkdir -p "$DEBS"
-          debs=(/var/cache/apt/archives/*.deb)
-          if [ "${#debs[@]}" -gt 0 ]; then cp "${debs[@]}" "$DEBS/"; fi
-          touch "$DEBS/complete"
-          echo "Cached ${#debs[@]} package(s) for the next run."
-
-      - name: Save Playwright OS deps
-        if: steps.pw-debs.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.cache/pw-os-debs
-          key: ${{ steps.pw-debs.outputs.cache-primary-key }}
+        uses: ./.github/actions/playwright-os-deps
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
