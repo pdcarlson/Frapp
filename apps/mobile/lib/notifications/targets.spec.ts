@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   chatChannelIdFrom,
   notificationHref,
   notificationIdFrom,
+  openNotificationTarget,
   replaceablePathname,
   resolveNotificationTarget,
 } from "./targets";
@@ -102,6 +103,117 @@ describe("resolveNotificationTarget", () => {
         ),
       ),
     ).toEqual({ pathname: "/chat-thread", params: { channelId: "c2" } });
+  });
+});
+
+describe("resolveNotificationTarget, thread replies (#4054)", () => {
+  it("opens a thread reply's thread, with its channel under it", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1", threadRootId: "m1" }),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", threadRootId: "m1" },
+      under: { pathname: "/chat-thread", params: { channelId: "c1" } },
+    });
+  });
+
+  it("still opens the channel for a timeline push", () => {
+    // No root, or an empty one: the channel, with nothing stacked under it.
+    for (const extra of [{}, { threadRootId: "" }, { threadRootId: 7 }]) {
+      expect(
+        resolveNotificationTarget(
+          payload({ screen: "chat", channelId: "c1", ...extra }),
+        ),
+      ).toEqual({ pathname: "/chat-thread", params: { channelId: "c1" } });
+    }
+  });
+
+  it("falls back for a thread reply with no channel", () => {
+    // The thread screen needs its channel, and so does the screen under it.
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", threadRootId: "m1" }),
+      ),
+    ).toEqual({ pathname: "/notifications" });
+  });
+
+  it("reads a root only on a chat push", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "events", eventId: "e1", threadRootId: "m1" }),
+      ),
+    ).toEqual({ pathname: "/event-details", params: { id: "e1" } });
+  });
+});
+
+describe("openNotificationTarget", () => {
+  function fakeRouter() {
+    const calls: string[] = [];
+    const record = (kind: string) =>
+      vi.fn((href: unknown) => {
+        calls.push(`${kind} ${String(href)}`);
+      });
+    return {
+      calls,
+      router: {
+        push: record("push"),
+        replace: record("replace"),
+        navigate: record("navigate"),
+        dismissTo: record("dismissTo"),
+      },
+    };
+  }
+  const thread = resolveNotificationTarget(
+    payload({ screen: "chat", channelId: "c1", threadRootId: "m1" }),
+  );
+
+  it("opens a target with nothing under it as openHref does", () => {
+    const { calls, router } = fakeRouter();
+    openNotificationTarget(router, { pathname: "/tasks" }, "/profile");
+    openNotificationTarget(
+      router,
+      { pathname: "/chat-thread", params: { channelId: "c2" } },
+      "/chat-thread",
+    );
+    expect(calls).toEqual([
+      "dismissTo /tasks",
+      "replace /chat-thread?channelId=c2",
+    ]);
+  });
+
+  it("pushes the channel, then the thread over it", () => {
+    const { calls, router } = fakeRouter();
+    openNotificationTarget(router, thread, "/profile");
+    expect(calls).toEqual([
+      "push /chat-thread?channelId=c1",
+      "push /chat-thread?channelId=c1&threadRootId=m1",
+    ]);
+  });
+
+  it("replaces an open channel with the thread's, then pushes the thread", () => {
+    // The thread is never what replaces: its path is a channel's, and
+    // replacing would take the channel just opened under it back off.
+    const { calls, router } = fakeRouter();
+    openNotificationTarget(router, thread, "/chat-thread");
+    expect(calls).toEqual([
+      "replace /chat-thread?channelId=c1",
+      "push /chat-thread?channelId=c1&threadRootId=m1",
+    ]);
+  });
+
+  it("stacks both over an open thread, which is never replaced", () => {
+    const { calls, router } = fakeRouter();
+    openNotificationTarget(
+      router,
+      thread,
+      replaceablePathname("/chat-thread", "m0"),
+    );
+    expect(calls).toEqual([
+      "push /chat-thread?channelId=c1",
+      "push /chat-thread?channelId=c1&threadRootId=m1",
+    ]);
   });
 });
 
