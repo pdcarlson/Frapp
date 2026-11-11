@@ -158,13 +158,22 @@ describe("StatusSheet", () => {
   });
 
   it("shows DND's end under it while it runs", () => {
-    state.settings = {
-      ...ONLINE,
-      status: "dnd",
-      status_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    };
-    const tree = render();
-    expect(screenText(tree)).toMatch(/Until (\d|[A-Z][a-z]{2} \d)/);
+    // Local noon, so the end stays today in any zone: from 23:30 local, half an
+    // hour on is tomorrow and reads differently (the Asia/Tokyo pass failed
+    // there at 14:37 UTC on 2026-11-11).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 0, 15, 12, 0));
+    try {
+      state.settings = {
+        ...ONLINE,
+        status: "dnd",
+        status_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      };
+      const tree = render();
+      expect(screenText(tree)).toMatch(/Until \d/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("saves a custom line that clears today by default", async () => {
