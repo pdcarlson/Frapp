@@ -54,6 +54,13 @@ jobs:
             main)
               echo "Base branch is 'main' — CI, Docs checks, and Links all run on this PR."
               ;;
+            ai-integration)
+              # Temporary (Paul, 2026-11-11): the AI build-out lands slice by
+              # slice on `ai-integration`, whose CI, Docs and Links filters list
+              # it too, and reaches `main` as one PR. Remove this arm before that
+              # PR merges.
+              echo "Base branch is 'ai-integration' — the AI build-out's integration branch; CI, Docs checks, and Links run on this PR."
+              ;;
             *)
               echo "::error title=PR targets the wrong base::Base is '$BASE_REF', not 'main'."
               cat <<'MSG'

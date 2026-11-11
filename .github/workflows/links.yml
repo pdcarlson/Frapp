@@ -2,7 +2,9 @@ name: Links
 
 on:
   pull_request:
-    branches: [main]
+    # `ai-integration` is temporary: the AI build-out's slice PRs target it so
+    # they get these checks. Remove it before the ai-integration -> main PR merges.
+    branches: [main, ai-integration]
   push:
     branches: [main]
 

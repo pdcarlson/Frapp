@@ -8,7 +8,9 @@ name: Docs checks
 
 on:
   pull_request:
-    branches: [main]
+    # `ai-integration` is temporary: the AI build-out's slice PRs target it so
+    # they get these checks. Remove it before the ai-integration -> main PR merges.
+    branches: [main, ai-integration]
     # `labeled`/`unlabeled` were here while a label could waive a required
     # check: the default trigger set does not fire on a label change, so the
     # waiver had to be able to re-run the check it waived. That gate is gone
