@@ -61,20 +61,42 @@ A council's `council_type` selects a **council profile**: code data, like the ch
 | Seeded tiers and role titles | [§ Default role titles](#default-role-titles) | Yes. Every title renames, as #4222 § 5.3 says |
 | Module map (what the nav shows) | NPHC has no Recruitment | Yes, within the recruitment model below |
 | **Recruitment model** | `open_bidding`, `formal`, `none` | Only to the models its type allows |
-| Which chapter archetypes are offered a link | IFC → `ifc`, `colony` | No. A council can still accept any chapter that asks |
+| Which chapter archetypes are offered a link | [Below](#link-offers) | No. A council can still accept any chapter that asks |
 | Mobile tab set and campus-home card | [§ What each council's space shows](#what-each-councils-space-shows) | No |
+
+The profile replaces #4222 § 2.3's single `council` archetype and its one module map: each council type gets its own module map, so an NPHC council's nav never shows Recruitment.
+
+### Link offers
+
+Which chapters a council is offered as members, by archetype. It's an explicit map, not `Archetype.council` ([§ Organizations outside the councils](#organizations-outside-the-councils) says why).
+
+| Council type | Offered to chapters of archetype |
+| --- | --- |
+| IFC | `ifc`, `colony` |
+| Panhellenic | `npc`, `colony` |
+| NPHC | `nphc` |
+| MGC | `mgc`, `nphc` (some schools seat NPHC organizations in their MGC) |
+| `other` | Any archetype |
+
+A colony is offered both IFC and Panhellenic, because nothing records which national it's colonizing for; the council decides whether to accept it.
 
 ### Recruitment models
 
 The model is the one setting that decides whether a council handles PNMs at all. It's a council setting whose default and allowed values come from the type:
 
-| Model | What it turns on | Types that may use it |
+| Model | What it turns on | Allowed for |
 | --- | --- | --- |
-| `open_bidding` | #4218 as written: the master list, interest forms that push up, eligibility, bid rules, the PNM's own view | IFC (default). Panhellenic, for COB only. `other` |
-| `formal` | `open_bidding`, plus rounds, schedules, release figures, mutual selection, matching results and binding agreements ([§ Panhellenic](#panhellenic)) | Panhellenic (default) |
-| `none` | No master list, no PNM records at the council, no council registration form, no Recruitment area. Chapters' own forms feed only the chapter | NPHC (only value). MGC (default). `other` (default). IFC and Panhellenic, if they choose |
+| `open_bidding` | #4218 as written: the master list, interest forms that push up, eligibility, bid rules, the PNM's own view | IFC (default), `other` |
+| `formal` | Everything in `open_bidding`, plus rounds, schedules, release figures, mutual selection, matching results, binding agreements, and COB with its total cap ([§ Panhellenic](#panhellenic)) | Panhellenic (default) |
+| `none` | No master list, no PNM records at the council, no council registration form, no Recruitment area | Every type. It is the **only** value for NPHC and MGC, and the default for `other` |
+
+Panhellenic doesn't get `open_bidding` on its own: COB is part of `formal`, because it needs the total cap and the COB binding agreement that plain open bidding lacks.
 
 **`none` is enforced on the API, not just in the nav.** A council whose model is `none` is refused on every `council-recruitment` route, and no push-up event creates a `pnms` row for it. #4222 § 2.3 already notes that a module map can't lock anything, because `isModuleEnabled` reads a missing key as on; the model check sits beside ADR-27's `@TenantKinds` check for the same reason.
+
+**A chapter's archetype can also refuse push-up, whatever its council's model.** An `nphc`-archetype chapter never pushes anything up and never has a public form ([§ What Frapp must not do](#what-frapp-must-not-do)), even inside an `other` council that runs `open_bidding`. So push-up is allowed only when the council's model allows it **and** the chapter's archetype does.
+
+**Switching a council to `none` keeps its duties to the data it already holds.** The switch is refused while a season is open. After it, the deletion, retention, season-close and export routes still serve the council until its last PNM record is gone; only new intake (forms, registration, imports, bids) is refused.
 
 **What's configurable and what's a separate flow.**
 - **Configurable** (settings on one flow): the bid window, eligibility before bids, one acceptance per PNM, bid-day release, quiet period, the eligibility rule, retention, role titles, which modules show. These all exist in #4218.
@@ -86,7 +108,7 @@ The model is the one setting that decides whether a council handles PNMs at all.
 #4218 is the IFC design, and this file changes nothing in it beyond [§ Changes](#changes-the-sibling-designs-need). The IFC profile:
 - recruitment model `open_bidding`;
 - modules: chat, members, events, documents, announcements, roles, audit log, billing, Recruitment, and (later) judicial;
-- offered links: chapters whose archetype is `ifc`, and `colony` chapters that choose IFC.
+- offered links: per [§ Link offers](#link-offers).
 
 ## Panhellenic
 
@@ -157,12 +179,17 @@ Panhellenic reuses #4218's records (`pnms`, interests, eligibility, the PNM's vi
 | **Matching** | Explicit-grant `council:matching_operate` | See [below](#matching-import-first-build-later) |
 | **Quota additions and snap bids** | `council:matching_operate` | Recorded against the match, within the rules above |
 | **Bid day** | `council:recruitment_manage` | #4218's **release** mode, required for `formal` |
-| **COB** | Chapters below total | #4218's open bidding, allowed only while `members + accepted bids < total`, with the COB binding agreement and the one-year rule applied to eligibility |
+| **COB** | Chapters below total | #4218's open bidding, checked **on the chapter's side** against the total the council pushes down: a bid can be extended only while active members + bids outstanding + bids accepted this season < total. So a chapter at 220 with total 225 can have at most five bids out at once. The COB binding agreement and the one-year rule apply to eligibility. The council sees only the push-up bid events it already receives, never the member count |
+
+**Who reads the selection data.** Invitation lists (with their flex lists), PNM preferences, preference-round bid lists and match results are readable only with `council:matching_operate`, during the season and after. `council:recruitment_view`, `council:recruitment_manage` and the Council admin's `*` don't reach them, because `matching_operate` is explicit-grant. A PNM's computed schedule is visible to her, to her counselor, and to `matching_operate`; a chapter sees only the PNMs scheduled at its own parties.
 
 **Counselors and disaffiliation.**
-- **Recruitment counselors are a council role**, seeded as their own tier ([§ Default role titles](#default-role-titles)). A counselor sees her assigned PNM group's logistics: names, schedules, attendance. She sees no rankings, no chapter data, and no PNM's preferences.
-- **Disaffiliation is a dated record the council publishes:** member, chapter, start, end. While it runs and the chapter's council link is accepted, the **chapter's** permission resolution drops that member's `rush:*` keys and hides recruitment channels from her. The chapter sees the record and can't edit it.
-- That is a council fact changing what a chapter member can see. Decision 11 forbids the council *reading* a chapter, and this reads nothing, but it does reach down. It's [decision 3](#decisions-for-paul).
+- **Recruitment counselors are a council role**, seeded as their own tier ([§ Default role titles](#default-role-titles)). A counselor sees her assigned PNM group's names and schedules. She sees no rankings, no invitation lists, no attendance (that's chapter-private under #4218, with no push-up event), and no chapter data.
+- **Disaffiliation is a dated record the council publishes:** member, chapter, start, end. It can name only a person who holds a council role in the Recruitment counselors or Executive board tier, and who is a member of an accepted chapter.
+- **While it runs, it holds against the wildcard.** The chapter's permission check treats a disaffiliated member as lacking every `rush:*` key, checked **before** the `*` short-circuit, the same way #4222's explicit-grant keys are. So a counselor who is also her chapter's President still can't open its pipeline.
+- **Recruitment channels need their own rule.** Channel visibility is a see list by tier, role and group, not a permission key, so dropping keys hides no channel. The chapter marks a channel as a recruitment channel, and a disaffiliated member is left out of every such channel's see list while the record runs.
+- **The chapter sees the record and can't edit it.** It can dispute it, which goes to Frapp staff (later the FSL office).
+- This is a council write that changes a chapter member's access. It reads nothing from the chapter, so it fits decision 11 as written, but it reaches down. It's ⚑ [decision 3](#decisions-for-paul).
 - The same record covers a disaffiliated executive board.
 
 **Season limits on council officers** (#4218 § Council officers are also chapter members) stay as written. Disaffiliation is in addition to them, not instead.
@@ -196,8 +223,11 @@ Why: matching errors are public, the method is NPC's, and the vendors already se
 These are design rules, derived from the research. Each holds regardless of settings:
 
 1. **No council-side intake data.** An NPHC council's recruitment model is `none`, with no way to change it. It has no master list, no PNM records, no registration form and no Recruitment area. Not even counts: "Chapter X has 12 aspirants" is itself intake information.
-2. **No public interest capture for NPHC chapters by default.** Chapter interest forms (`/f/<form-slug>`) and QR codes are off for archetype `nphc` (its `rush` module is already `false` in `packages/org-archetypes/src/index.ts`). A chapter can turn its module on; the form then feeds only the chapter, and the settings toggle says the records are chapter-private and deleted at intake's end.
-3. **No aspirant in the chapter before they're a member.** Frapp has no "aspirant" membership state: no roster row, no chat channel, no role. An aspirant is not invited into the chapter's Frapp until the chapter makes them a member. Group chats with candidates are where hazing evidence and hazing itself tend to live (derived); Frapp shouldn't host that space.
+2. **No public interest capture for NPHC chapters, at all.** An `nphc`-archetype chapter has no interest form (`/f/<form-slug>`) and no QR code, even if it turns its `rush` module on (the module is `false` by default in `packages/org-archetypes/src/index.ts`). A form would not stay chapter-private: under #4218 and #4222 every form submission creates a school-wide `pnms` row and, for a submitter with an account, a `school_members` row with status `pnm`, and its consent text names the council. A chapter that turns `rush` on gets only the private pipeline its members add names to, with no `pnm_id` link and no push-up.
+3. **Frapp doesn't invite aspirants into the chapter, and today's defaults point the other way.** Every chapter is seeded a `NEW_MEMBER` system role (`apps/api/src/domain/constants/permissions.ts`), and the `nphc` archetype names that stage "Aspirant" (`pledgeLanguage`, `packages/org-archetypes/src/index.ts`), so the dues and rollover settings already speak of aspirants. Putting candidates in a chapter's roster and chat during intake would make Frapp the group chat where hazing evidence, and hazing itself, tends to live (derived). Proposed, as [decision 1](#decisions-for-paul):
+   - the `nphc` archetype's word for the `NEW_MEMBER` stage becomes one for a member who has just crossed (for example "Neophyte"), so the role means "new member after intake", not "candidate in intake";
+   - the invite flow, for an `nphc` chapter, says that people are invited once they've crossed;
+   - nothing in Frapp creates a membership for someone in intake.
 4. **Nothing that reveals intake to anyone else.** No activity rows, notifications, campus-home cards, calendar markers or search results that name an aspirant or say a chapter is in intake. Intake dates aren't campus events unless the chapter publishes an interest meeting as an ordinary public event.
 5. **The `lines` module records lines after crossing only.** Its catalog entry is "NPHC/MGC line tracking — cohort, crossing date, line name" (`packages/org-archetypes/src/index.ts`). It never holds anyone who hasn't crossed.
 6. **The council never sees intake paperwork.** If Frapp ever carries the candidate verification packet (grade consents, the candidate list), it goes from the chapter straight to the school's FSL office, never through the council. That needs the school-office tenant (#4222 Q8) and is [decision 1](#decisions-for-paul).
@@ -208,13 +238,13 @@ These are design rules, derived from the research. Each holds regardless of sett
 | --- | --- | --- |
 | **Council events:** Meet the Greeks, step shows, yard shows, NPHC week, homecoming ([Ole Miss](https://olemiss.edu/departments/student-affairs/greeks/nphc/index.php), [Western Michigan](https://wmich.edu/studentengagement/greek/chapters/nphc)) | The council's own Events, shown on campus home and offered to linked chapters as read-only rows | Events, yes. Campus home is planned |
 | **Step show logistics:** team sign-up, order, rules, judges, scoring | A sign-up form per event (#3926's chat form cards) and documents. A scoring tool is later and only if asked | Partly |
-| **Service:** council service projects, a week of service ([UNC](https://dailytarheel.com/article/2015/03/national-pan-hellenic-council-week-of-service-gets-back-to-origins)) | Events marked as service. Each linked chapter can push its service-hour total up, never member detail | Service hours exist per chapter ([`service-hours.md`](service-hours.md)) |
-| **Council meetings and votes** | Council chat, documents (constitution, minutes) and polls among delegates | Yes, as tenant features |
+| **Service:** council service projects, a week of service ([UNC](https://dailytarheel.com/article/2015/03/national-pan-hellenic-council-week-of-service-gets-back-to-origins)) | Events marked as service. Each linked chapter can push its service-hour total up, never member detail | No. Service hours exist per chapter ([`service-hours.md`](service-hours.md)); the total push-up is a new event |
+| **Council meetings and votes** | Council chat, documents (constitution, minutes) and polls among delegates | Chat and documents, yes. Polls aren't among #4222's council features, so their routes need opening to the council kind |
 | **Announcements to chapter officers** | #4222's `council:announce` | Planned |
-| **Each organization's information** | A public chapter page with how to contact the chapter about membership. No "I'm interested" button that records anyone | No |
+| **Each organization's information** | Campus home's chapter list, with the officer contact the chapter chooses to show. No "I'm interested" button that records anyone. A full public chapter page is later | No |
 | **Plots and yard spaces** | Out of scope. Campus monuments some NPHC organizations maintain; no source found in this pass | — |
 
-The NPHC council is the cheapest council to support: everything it needs is tenant features that already exist plus campus home. That's a reason to ship it early (derived): [§ Phasing](#phasing).
+The NPHC council is the cheapest council to support: chat, events, documents and announcements come with the tenant, and only polls and the service-total push-up are new. That's a reason to ship it early (derived): [§ Phasing](#phasing).
 
 ## MGC
 
@@ -226,9 +256,9 @@ The NPHC council is the cheapest council to support: everything it needs is tena
 - **Some MGC organizations recruit rather than hold intake,** per student reporting of a "less formal process… word of mouth, Facebook events and in-person conversations" ([Daily Northwestern](https://dailynorthwestern.com/2019/03/08/campus/in-focus-as-the-multicultural-greek-council-evolves-students-still-face-institutional-hurdles-lack-of-name-recognition)).
 
 **Design:**
-- **Council model `none` by default,** changeable to nothing else in the MVP. The council's space is programming, events, meetings and announcements, like NPHC's.
-- **Each chapter decides its own joining process.** The `mgc` archetype's `rush` module is `false` today. A chapter that recruits openly turns it on and gets the chapter pipeline from #4218, private to the chapter. A chapter that holds intake keeps it off and follows the [NPHC rules](#what-frapp-must-not-do).
-- **NPHC rules follow the chapter's archetype, not its council.** An NPHC organization sitting in an MGC (UTEP's case) or a combined council keeps every rule in [§ What Frapp must not do](#what-frapp-must-not-do).
+- **Council model `none`, its only value.** The council's space is programming, events, meetings and announcements, like NPHC's. If an MGC later asks for council-run recruitment, widening its allowed models is a new decision, not a setting.
+- **Each chapter decides its own joining process.** The `mgc` archetype's `rush` module is `false` today. A chapter that recruits openly turns it on and gets the chapter pipeline and interest forms from #4218; with its council on `none`, nothing pushes up, though a form still creates the school-wide PNM record #4222 describes. A chapter that holds intake keeps it off.
+- **NPHC rules follow the chapter's archetype, not its council.** An NPHC organization sitting in an MGC (UTEP's case) or a combined `other` council keeps every rule in [§ What Frapp must not do](#what-frapp-must-not-do), whatever that council's model ([§ Recruitment models](#recruitment-models)).
 - **Board composition rules are later.** A per-council setting, "at most N officers from one chapter", checked when a role is assigned, would cover the Texas A&M rule. Officers' captions already name the chapter they represent (#4192 UI design).
 - **Later, opt-in: an information-night sign-up** that a student fills in once and that sends their contact only to the organizations they tick, with no list kept at the council. It's the one recruitment-like feature an MGC might want. Not designed further until an MGC asks.
 
@@ -248,38 +278,39 @@ The NPHC council is the cheapest council to support: everything it needs is tena
 | `professional` | Yes | Only to a council of type `other` the school has, such as a PFC | Its own chapter pipeline, private |
 | `service` | Yes | The same | The same |
 | `honor` | Yes | No | None. Inducting from a school GPA list is out of scope: it would need the school-office tenant and a separate legal review |
-| `colony` | Yes | To the council of its national's type, if the council accepts. The council decides whether colonies get recruitment access | Its own pipeline. On a council with `open_bidding`, the same as any linked chapter |
+| `colony` | Yes | IFC and Panhellenic ([§ Link offers](#link-offers)); the council decides whether to accept | Its own pipeline. On an accepted link, the same as any linked chapter |
 
 - **`other` is a real council type,** for a PFC, a combined "United Greek Council", or anything else a school has. Its label is the council's name, its default model is `none`, and it may switch to `open_bidding`.
 - **More than one `other` council per school is allowed.** #4222 § 2.3 allows one council of each type per school; that rule shouldn't count `other` ([§ Changes](#changes-the-sibling-designs-need)).
-- **`Archetype.council` is not a campus council for these archetypes.** It reads "Professional Fraternity Association", "Service Fraternity" and "Association of College Honor Societies", which are national bodies or labels. The link offer uses an explicit map from council type to archetypes instead of that string.
+- **`Archetype.council` is not a campus council for these archetypes.** It reads "Professional Fraternity Association", "Service Fraternity" and "Association of College Honor Societies", which are national bodies or labels, and "—" for a colony. That's why link offers use the explicit map in [§ Link offers](#link-offers).
 - **Clubs** stay out of scope, as #4192 records.
 
 ## Default role titles
 
-Every council gets #4222 § 5.3's structure: three tiers, a Council admin role holding `*`, and one floor role with `system_key = MEMBER`. Only the seeded titles, and where noted an extra tier, change by type. Every title renames.
+Every council gets #4222 § 5.3's structure: the Executive board, Officers and Delegates tiers, a Council admin role holding `*`, and one floor role with `system_key = MEMBER`. The seeded titles change by type, Panhellenic adds a fourth tier, and a council whose model is `none` has the `council-recruitment` keys removed from every tier (#4222 seeds `council:recruitment_view` on the Executive board). Every title renames.
 
-| Type | Executive board | Officers | Floor tier |
+| Type | Executive board | Extra tier | Delegates tier |
 | --- | --- | --- | --- |
 | **IFC** (#4222) | President, VP Recruitment, VP Judicial, Treasurer, Secretary | — | Delegate |
-| **Panhellenic** | President, VP Recruitment, VP Recruitment Counselors, VP Judicial, VP Finance, VP Philanthropy, VP Public Relations | **Recruitment counselors** tier: Recruitment Counselor | Delegate |
+| **Panhellenic** | President, VP Recruitment, VP Recruitment Counselors, VP Judicial, VP Finance, VP Philanthropy, VP Public Relations | **Recruitment counselors:** Recruitment Counselor | Delegate |
 | **NPHC** | President, Vice President, Secretary, Treasurer, Parliamentarian, Public Relations | — | Delegate, Alternate delegate |
 | **MGC** | President, Vice President, Secretary, Treasurer, VP Programming, VP Judicial | — | Delegate |
 | **Other** | President, Vice President, Secretary, Treasurer | — | Delegate |
 
 Titles are common ones from campus pages, not a standard: Panhellenic from [Ole Miss](https://olemiss.edu/departments/student-affairs/greeks/cph/exec-board) and [Kent State](https://www.kentstatefsl.com/panhellenic-1), NPHC from [Ohio](https://www.ohio.edu/greek/nphc-constitution-bylaws) and [Murray State](https://www.murraystate.edu/campus/orgsRecreation/StudentOrganizations/greek/media/nphc-governing-documents-02-11-16.pdf), MGC from [Ohio](https://www.ohio.edu/greek/multicultural-greek-council-constitution-bylaws-0) and [Cornell](https://archive.assembly.cornell.edu/uploads/SA/SAF1618APP-Multicultural-Greek-Letter-Council.pdf).
 
-**Keys the titles start with** (#4222's council keys, plus two new ones):
+**Keys the titles start with** (#4222 § 5.1's council keys, plus three new ones):
 
 | Role | Keys beyond its tier |
 | --- | --- |
-| VP Recruitment (IFC, Panhellenic) | `council:pnm_manage`, `council:recruitment_manage`. Eligibility keys only by explicit grant, as #4222 says |
+| VP Recruitment (IFC, Panhellenic) | `council:recruitment_manage`, as #4222 seeds it. The eligibility keys only by explicit grant |
 | VP Recruitment Counselors (Panhellenic) | **New** `council:counselors_manage`: assign counselors to PNM groups, publish disaffiliation records |
-| Recruitment Counselor (Panhellenic) | **New** `council:pnm_group_view`: her assigned group's names, schedules and attendance only |
-| VP Programming, Public Relations | `council:calendar_manage`, `council:announce` |
-| Running the match (Panhellenic) | **New** `council:matching_operate`, **explicit grant**, like the eligibility keys: `*` doesn't satisfy it. Usually the VP Recruitment and the FSL advisor |
+| Recruitment Counselor (Panhellenic) | **New** `council:pnm_group_view`: her assigned group's names and schedules only |
+| Running the match (Panhellenic) | **New** `council:matching_operate`, **explicit grant**: `*` doesn't satisfy it and no role edit can add it |
 
-An NPHC or MGC council's role editor shows no `council-recruitment` keys at all: the catalog filters by recruitment model as well as by kind.
+**How `council:matching_operate` is granted.** #4222's only grant path for explicit-grant keys is `PUT /v1/council/eligibility-officers`, which grants the eligibility keys. It generalizes to one explicit-grant officer page with a separate assignment per key, so naming someone a match operator never also grants GPA access. The Council admin assigns it, and it's logged. The Greek life office's advisor holds it the way #4222 § 5.2 has office staff take part: as a member of the council.
+
+**What a `none` council's role editor shows:** no `council-recruitment` keys. The catalog filters by recruitment model as well as by kind.
 
 ## What each council's space shows
 
@@ -288,7 +319,7 @@ An NPHC or MGC council's role editor shows no `council-recruitment` keys at all:
 | **Web nav** | Home, Chat, Recruitment, Events, Chapters, Officers, Documents | The same; Recruitment adds Rounds, Counselors and Matching in season | Home, Chat, Events, Service, Chapters, Officers, Documents | Home, Chat, Events, Chapters, Officers, Documents | As MGC; Recruitment only if `open_bidding` |
 | **Mobile third tab** | Recruitment | Recruitment | Events | Events | Events, or Recruitment if `open_bidding` |
 | **Council home** | Season status, PNM counts, the next council date | The same, plus the current round and counselor groups | Upcoming council events, service totals, open votes | Upcoming events, open votes | Upcoming events |
-| **On campus home** | "Recruitment" card: dates and how to register | The same, with the formal-recruitment schedule | "Meet the Greeks" and council events; each chapter's page with how to contact it about membership | The same as NPHC | Events |
+| **On campus home** | "Recruitment" card: dates and how to register | The same, with the formal-recruitment schedule | "Meet the Greeks" and council events; each chapter listed with the officer contact it chooses to show | The same as NPHC | Events |
 | **What a student can't do from campus home** | — | — | Register interest with the council or a chapter | Register interest with the council | — |
 
 **ADR-27 and the UI design need one change here:** the council tab set comes from the council's recruitment model, not from `kind` alone ([§ Changes](#changes-the-sibling-designs-need)).
@@ -297,46 +328,52 @@ An NPHC or MGC council's role editor shows no `council-recruitment` keys at all:
 
 | Phase | What | Why here |
 | --- | --- | --- |
-| **IFC MVP** (#4192 phases 1–3) | Everything #4218 lists, **plus** the council profile mechanism with only the IFC profile active, the recruitment model column with `open_bidding` and `none`, and the `none` check on every council-recruitment route | Building the model check into the MVP costs one column and one guard; adding it after IFC routes ship means auditing every one |
-| **Small councils** (new, can follow the MVP closely) | NPHC, MGC and `other` profiles with model `none`; their role packs; the NPHC rules for `nphc`-archetype chapters (forms off by default, no aspirant state); the council home and tab set by model; service-total push-up | It's tenant features that already exist. It lets a school onboard every council at once instead of only the IFC |
+| **IFC MVP** (#4192 phases 1–3) | Everything #4218 lists, **plus** the council profile mechanism with only the IFC profile active, the recruitment model column with `open_bidding` and `none`, the model and archetype checks on every council-recruitment route and push-up, and no interest forms for `nphc`-archetype chapters | Building the checks into the MVP costs one column and one guard; adding them after IFC routes ship means auditing every one. The `nphc` form rule has to ship with forms, or an NPHC chapter could publish one on day one |
+| **Small councils** (new, can follow the MVP closely) | NPHC, MGC and `other` profiles with model `none`; their role packs; polls opened to the council kind; the service-total push-up; the council home and tab set by model; the `nphc` vocabulary change ([decision 1](#decisions-for-paul)) | Mostly tenant features that already exist. It lets a school onboard every council at once instead of only the IFC |
 | **Panhellenic 4a** | The Panhellenic profile; counselors and disaffiliation; rounds, release figures, invitation lists, preferences, schedules; matching **by import**; quota and total; binding agreements; bid-day release; COB | #4218's Panhellenic section; this file details it |
 | **Panhellenic 4b** (only if Paul says so) | Frapp's own match engine | [§ Matching](#matching-import-first-build-later) |
-| **Later** | MGC information-night sign-up; board-composition caps; step-show scoring; a chapter → FSL-office intake packet (needs the school-office tenant) | Each waits for a council to ask |
+| **Later** | MGC information-night sign-up; a public chapter page; board-composition caps; step-show scoring; a chapter → FSL-office intake packet (needs the school-office tenant) | Each waits for a council to ask |
 
 **Not in any phase:** council-side NPHC intake data of any kind.
 
 ## Changes the sibling designs need
 
-Sent to Winston's hub for the owning workers. None is made by this PR.
+These are requests to the workers who own each design, sent through Winston's hub. This file doesn't make them.
 
 **Data model (#4222, `school-layer.md`):**
-1. **Recruitment model.** A council column (or council setting) `recruitment_model in ('open_bidding', 'formal', 'none')`, checked against `council_type`: `nphc` allows only `none`; `mgc` and `other` allow `none` and (for `other`) `open_bidding`; `panhellenic` allows `formal`, `open_bidding` and `none`; `ifc` allows `open_bidding` and `none`.
-2. **Push-up refusal.** No push-up event creates or links a `pnms` row for a council whose model is `none`, and every `council-recruitment` route checks the model beside `@TenantKinds`.
-3. **Role packs by type.** `COUNCIL_SEEDED_ROLES` and `COUNCIL_STARTING_ROLE_TIERS` keyed by `council_type`, per [§ Default role titles](#default-role-titles), with the Panhellenic Recruitment counselors tier.
-4. **New keys:** `council:counselors_manage`, `council:pnm_group_view`, and the explicit-grant `council:matching_operate`. The permission catalog filters by recruitment model as well as kind.
-5. **One council per type per school, except `other`.**
-6. **Link offers by explicit map** from council type to archetypes, not from `Archetype.council`.
-7. **Disaffiliation records** (`council_disaffiliations`: council, user, chapter, starts, ends, published by), read by the chapter's permission resolution while the link is accepted. Pending [decision 3](#decisions-for-paul).
-8. **Panhellenic tables, later** (placeholders): `recruitment_rounds`, `round_release_figures`, `round_invitation_lists`, `pnm_round_preferences`, `pnm_round_schedule`, `preference_bid_lists`, `match_imports` and `match_results`, `chapter_season_totals` (quota and total), `binding_agreements`. Rankings and preferences readable only through `council:matching_operate`.
+1. **Council profiles replace the single `council` archetype.** Each `council_type` has its own module map, role pack, allowed models and link-offer list ([§ Council profiles](#council-profiles-what-the-type-decides)).
+2. **Recruitment model.** A council column (or council setting) `recruitment_model in ('open_bidding', 'formal', 'none')`, checked against `council_type`: `ifc` allows `open_bidding` and `none`; `panhellenic` allows `formal` and `none`; `nphc` and `mgc` allow only `none`; `other` allows `none` and `open_bidding`. A switch to `none` is refused while a season is open ([§ Recruitment models](#recruitment-models)).
+3. **Push-up and form gates.** Every `council-recruitment` route checks the model beside `@TenantKinds`, except deletion, retention, season close and export, which keep serving a council's existing data. `record_pnm_interest` and every push-up refuse an `nphc`-archetype chapter whatever its council's model.
+4. **Role packs by type.** `COUNCIL_SEEDED_ROLES` and `COUNCIL_STARTING_ROLE_TIERS` keyed by `council_type` ([§ Default role titles](#default-role-titles)), with the Panhellenic Recruitment counselors tier, and no `council-recruitment` key on any tier of a `none` council.
+5. **New keys:** `council:counselors_manage`, `council:pnm_group_view`, and the explicit-grant `council:matching_operate`. The explicit-grant officer page is generalized beyond eligibility, one assignment per key. The permission catalog filters by recruitment model as well as kind.
+6. **One council per type per school, except `other`.**
+7. **Link offers by explicit map** ([§ Link offers](#link-offers)), not from `Archetype.council`.
+8. **Disaffiliation records** (`council_disaffiliations`: council, user, chapter, starts, ends, published by), limited to holders of counselor or Executive board roles. The chapter's permission check applies them **before** the wildcard, and chapter channels gain a "recruitment channel" flag whose see list excludes disaffiliated members. Pending ⚑ [decision 3](#decisions-for-paul).
+9. **Polls open to the council kind,** and a chapter → council **service-total** push-up event (a total per term, never member detail).
+10. **Panhellenic tables, later** (placeholders): `recruitment_rounds`, `round_release_figures`, `round_invitation_lists`, `pnm_round_preferences`, `pnm_round_schedule`, `preference_bid_lists`, `match_imports` and `match_results`, `chapter_season_totals` (quota and total, pushed down to each chapter), `binding_agreements`. Everything but the PNM's own schedule is readable only through `council:matching_operate`.
 
 **Recruitment (#4218, `ifc-recruitment.md`):**
 1. **§ Panhellenic differences** points here for the detail.
-2. **COB isn't just the IFC flow.** It also needs the total cap, the COB binding agreement, and the one-year rule in eligibility. #4218 currently says "the IFC flow covers it".
-3. **Interest forms by archetype.** `nphc`-archetype chapters have forms off by default, and their settings say why; a chapter whose councils are all model `none` gets forms that feed only the chapter. #4218 § Before the chapter's council link is accepted already has that behavior; it should name this case.
+2. **COB isn't just the IFC flow.** It's part of `formal`: the chapter-side total cap counting outstanding bids, the COB binding agreement, and the one-year rule in eligibility. #4218 currently says "the IFC flow covers it".
+3. **No interest forms for `nphc`-archetype chapters,** whatever the council's model, and the form builder says why. A form creates school-wide records and its consent text names the council, so it can't be made chapter-private ([§ What Frapp must not do](#what-frapp-must-not-do)).
 4. **"Matching or integrate with a provider"** becomes the import-first recommendation above.
 
 **URLs and UI (ADR-27, the UI design):**
-1. **The council tab set** reads the recruitment model, not only `kind` (ADR-27 § Mobile). An NPHC council's third tab is Events.
+1. **The council tab set** reads the recruitment model, not only `kind` (ADR-27's mobile rollout). An NPHC council's third tab is Events.
 2. **Council creation:** picking NPHC, MGC or Other skips every recruitment step and seeds that type's role pack. The Unverified badge and link flow are unchanged.
-3. **Campus home** draws each council's card by type ([§ What each council's space shows](#what-each-councils-space-shows)). An NPHC or MGC chapter's entry never has an "I'm interested" action.
+3. **Campus home** draws each council's card by type ([§ What each council's space shows](#what-each-councils-space-shows)). An NPHC or MGC chapter's entry has no "I'm interested" action, only the officer contact the chapter chooses to show.
 
 ## Decisions for Paul
 
 ⚑ marks an item on the [AGENTS.md raise-first list](../../AGENTS.md#adr-discipline).
 
-1. **⚑ NPHC intake: Frapp holds no intake data at the council, ever, and no aspirant state in a chapter** (recommended). The alternative is chapter-private intake tracking. Either way, a later chapter → FSL-office intake packet would hold grade consents, which is the same FERPA question as GPA storage (#4222 Q1).
+1. **⚑ NPHC intake.** Recommended:
+   - Frapp holds no intake data at the council, ever, and NPHC chapters get no public interest forms.
+   - The `nphc` archetype's word for the `NEW_MEMBER` stage changes from "Aspirant" to a word for a newly crossed member, and the invite flow says to invite people once they've crossed.
+   - A chapter may still turn on its private pipeline (members add names; nothing leaves the chapter). The alternative is to forbid even that for `nphc` chapters.
+   - A later chapter → FSL-office intake packet would hold grade consents, which is the same FERPA question as GPA storage (#4222 Q1).
 2. **Panhellenic matching: import first** (recommended), or build an engine in 4b. Building it is the riskiest piece in the whole school layer.
-3. **Disaffiliation reaching into a chapter.** A council-published record that removes a counselor's `rush:*` access in her own chapter. It reads nothing from the chapter, so it fits decision 11 as written, but it is a council affecting a chapter. Alternatives: the counselor's chapter applies it by hand, or Frapp only shows the record and enforces nothing.
+3. **⚑ Disaffiliation reaching into a chapter.** A council-published record that removes a counselor's recruitment access in her own chapter, even past her `*`. It reads nothing from the chapter, so it fits decision 11 as written, but a council writing a chapter member's access is a security call. The limits proposed: only counselor and Executive board role holders can be named, and the chapter can dispute to staff. Alternatives: the counselor's chapter applies it by hand, or Frapp only shows the record and enforces nothing.
 4. **⚑ The binding agreement (MRABA) signed in Frapp.** It's legal copy that isn't Frapp's, and an e-signature on a binding contract. Same lawyer questions as the FERPA release in #4218.
 5. **⚑ Panhellenic registration fees.** Common, per #4218's research. A billing decision, beside council billing (#4222 Q3).
 6. **Shipping the small councils right after the IFC MVP.** Cheap, and it lets a school's whole FSL community join together. It sits behind "baseline first" like the rest of #4192.
