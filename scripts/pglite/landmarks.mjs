@@ -75,17 +75,21 @@ export const LANDMARKS = [
     // runtime, in production. That is precisely the class of thing this gate
     // exists to pin, and it is why the pairing is asserted here rather than
     // recorded as a one-time manual observation in a migration header.
-    name: "chat_notification_preferences carries a plain UNIQUE ON CONFLICT target for BOTH the channel and kind arms",
+    name: "chat_notification_preferences carries a plain UNIQUE ON CONFLICT target for the channel, kind and chapter arms",
     sql: `select indexname, indexdef from pg_indexes
             where tablename = 'chat_notification_preferences'
               and indexname in ('idx_chat_notif_prefs_channel_unique',
-                                'idx_chat_notif_prefs_kind_unique')
+                                'idx_chat_notif_prefs_kind_unique',
+                                'idx_chat_notif_prefs_chapter_unique')
             order by indexname`,
     ok: (rows) => {
-      if (rows.length !== 2) return false;
+      if (rows.length !== 3) return false;
       const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
       const channel = byName.idx_chat_notif_prefs_channel_unique ?? "";
       const kind = byName.idx_chat_notif_prefs_kind_unique ?? "";
+      // The chapter arm (#3840) has both scope columns NULL, so its target
+      // covers both and must be NULLS NOT DISTINCT, or every write inserts.
+      const chapter = byName.idx_chat_notif_prefs_chapter_unique ?? "";
       const scoped = (def) =>
         // `CREATE UNIQUE INDEX`, not a bare /UNIQUE/ — both index NAMES end in
         // `_unique`, so matching the word anywhere in the definition passes a
@@ -105,7 +109,11 @@ export const LANDMARKS = [
         /scope_id/.test(channel) &&
         !/scope_kind/.test(channel) &&
         /scope_kind/.test(kind) &&
-        !/scope_id/.test(kind)
+        !/scope_id/.test(kind) &&
+        scoped(chapter) &&
+        /scope_id/.test(chapter) &&
+        /scope_kind/.test(chapter) &&
+        /NULLS NOT DISTINCT/i.test(chapter)
       );
     },
   },

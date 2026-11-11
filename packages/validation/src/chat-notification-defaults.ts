@@ -30,6 +30,30 @@ export type ChatNotificationLevel = (typeof CHAT_NOTIFICATION_LEVELS)[number];
 export const CHAT_CHAPTER_LEVELS = ["all", "mentions"] as const;
 export type ChatChapterLevel = (typeof CHAT_CHAPTER_LEVELS)[number];
 
+/** The words both settings screens draw for each {@link ChatChapterLevel}. */
+export const CHAT_CHAPTER_LEVEL_OPTIONS: readonly {
+  level: ChatChapterLevel;
+  label: string;
+  description: string;
+}[] = [
+  {
+    level: "all",
+    label: "All messages",
+    description: "Each channel notifies as it's set, #general for every message.",
+  },
+  {
+    level: "mentions",
+    label: "Mentions and DMs only",
+    description:
+      "Channels notify only when someone @mentions you or replies to you. DMs and announcements still notify.",
+  },
+];
+
+/** The short name for a level, as a settings row's value. */
+export function chatChapterLevelLabel(level: ChatChapterLevel): string {
+  return level === "mentions" ? "Mentions and DMs only" : "All messages";
+}
+
 /** The channel fields the default reads. Structural, so any channel row fits. */
 export interface NotificationDefaultChannel {
   name: string;

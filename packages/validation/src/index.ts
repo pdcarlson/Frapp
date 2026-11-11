@@ -934,8 +934,10 @@ export {
 
 export {
   CHAT_CHAPTER_LEVELS,
+  CHAT_CHAPTER_LEVEL_OPTIONS,
   CHAT_NOTIFICATION_LEVELS,
   builtInChannelDefault,
+  chatChapterLevelLabel,
   isAnnouncementChannel,
   isDirectChannel,
 } from "./chat-notification-defaults";
