@@ -59,6 +59,11 @@ export interface ChannelSummary {
   display_locked?: boolean;
   /** Who created the channel, who may set Always formal; absent when unrecorded. */
   created_by?: string;
+  /**
+   * The chapter's audit log (#3909), which takes no background (#4031).
+   * Present, and `true`, only when the row says exactly `true`.
+   */
+  is_audit_log?: boolean;
 }
 
 /**
@@ -106,6 +111,7 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         ...(typeof row.created_by === "string"
           ? { created_by: row.created_by }
           : {}),
+        ...(row.is_audit_log === true ? { is_audit_log: true } : {}),
       },
     ];
   });

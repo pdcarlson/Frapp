@@ -32,6 +32,7 @@ import {
   useChannels,
   useChapterScope,
   useSetChannelNotificationLevel,
+  canSetChannelBackground,
   useChatBackground,
   useChapterChatBackground,
   useSetChannelBackground,
@@ -2614,9 +2615,10 @@ export function ChatShell({
               }
               background={
                 activeChannel &&
-                canManageChannel &&
-                activeChannel.type !== "DM" &&
-                activeChannel.type !== "GROUP_DM"
+                canSetChannelBackground(
+                  activeChannel,
+                  permissionsPayload?.permissions,
+                )
                   ? {
                       value:
                         channelBackground.data?.source === "channel"
