@@ -137,6 +137,12 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
   useRealtimeTable: () => {},
 }));
 
+// The page's URL; no `?event=` unless a test sets one.
+const searchRef = vi.hoisted(() => ({ current: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchRef.current,
+}));
+
 import { EventsPage } from "./events-page";
 
 const row = (name: RegExp) => {
@@ -168,6 +174,30 @@ beforeEach(() => {
   viewerRef.current = { userId: "user-1", isLoading: false };
   eventsQuery.data = EVENTS;
   permissionsRef.current = ["events:create", "events:update", "members:view"];
+  searchRef.current = new URLSearchParams();
+});
+
+describe("EventsPage ?event=<id> (Activity's Open in Events, #3897)", () => {
+  it("opens that event's detail sheet", () => {
+    searchRef.current = new URLSearchParams({ event: "evt-2" });
+    render(<EventsPage />);
+
+    expect(detailSheetProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        open: true,
+        event: expect.objectContaining({ id: "evt-2" }),
+      }),
+    );
+  });
+
+  it("opens nothing for an id the list does not hold", () => {
+    searchRef.current = new URLSearchParams({ event: "gone" });
+    render(<EventsPage />);
+
+    expect(detailSheetProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ open: false }),
+    );
+  });
 });
 
 describe("EventsPage list", () => {

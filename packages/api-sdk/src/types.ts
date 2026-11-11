@@ -3180,7 +3180,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -4944,6 +4944,11 @@ export interface components {
             check_in_zone_name: string | null;
             /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
             check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -5777,6 +5782,8 @@ export interface components {
             tasks: components["schemas"]["ActivityTaskDto"][];
             /** @description Documents and backwork the caller uploaded, newest first. */
             files: components["schemas"]["ActivityFileDto"][];
+            /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
+            events: components["schemas"]["ActivityEventDto"][];
         };
         ActivityDto: {
             needs_you: components["schemas"]["ActivityNeedsYouDto"];
@@ -5786,7 +5793,7 @@ export interface components {
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events")[];
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */

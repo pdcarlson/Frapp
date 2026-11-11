@@ -56,7 +56,7 @@ const activity = (overrides: Partial<Record<string, unknown>> = {}) =>
       polls: [],
     },
     coming_up: [],
-    made_by_you: { polls: [], tasks: [], files: [] },
+    made_by_you: { polls: [], tasks: [], files: [], events: [] },
     needs_you_count: 0,
     unavailable: [],
     ...overrides,
@@ -168,6 +168,7 @@ describe("activityGroups", () => {
             }),
           ],
           files: [],
+          events: [],
         },
       }),
       "all",
@@ -194,7 +195,14 @@ describe("activityGroups", () => {
 
   it("keeps a failed section's notice under its own chip, and only there", () => {
     const data = activity({
-      unavailable: ["tasks", "hours_approvals", "polls", "coming_up", "files"],
+      unavailable: [
+        "tasks",
+        "hours_approvals",
+        "polls",
+        "coming_up",
+        "files",
+        "made_events",
+      ],
     });
     const under = (filter: Parameters<typeof activityGroups>[1]) =>
       activityGroups(data, filter).map((group) => group.unavailable);
@@ -202,8 +210,29 @@ describe("activityGroups", () => {
     expect(under("task")).toEqual([["tasks"], [], ["tasks"]]);
     expect(under("hours")).toEqual([["hours_approvals"], [], []]);
     expect(under("poll")).toEqual([["polls"], [], ["polls"]]);
-    expect(under("event")).toEqual([["coming_up"], ["coming_up"], []]);
+    expect(under("event")).toEqual([
+      ["coming_up"],
+      ["coming_up"],
+      ["made_events"],
+    ]);
     expect(under("file")).toEqual([[], [], ["files"]]);
+  });
+
+  it("lists an event the member made under Made by you, apart from the same event under Coming up", () => {
+    const mine = event({ id: "mine", name: "Formal" });
+    const data = activity({
+      coming_up: [mine],
+      made_by_you: { polls: [], tasks: [], files: [], events: [mine] },
+    });
+
+    expect(rowsOf(data)).toMatchObject({
+      "coming-up": ["event:Formal:Required"],
+      "made-by-you": ["event:Formal:Required"],
+    });
+    const keys = activityGroups(data, "all").flatMap((group) =>
+      group.rows.map((row) => row.key),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("labels a direct-message poll without its server-made channel name", () => {
@@ -242,7 +271,7 @@ describe("activityGroups", () => {
           hours_approvals: [],
           polls: [],
         },
-        made_by_you: { polls: [], tasks: [shared], files: [] },
+        made_by_you: { polls: [], tasks: [shared], files: [], events: [] },
       }),
       "all",
     );
@@ -274,6 +303,7 @@ describe("activityGroups", () => {
             created_at: "2026-11-01T00:00:00.000Z",
           },
         ],
+        events: [],
       },
     });
 

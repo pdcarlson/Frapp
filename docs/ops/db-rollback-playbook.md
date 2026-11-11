@@ -3383,3 +3383,20 @@ where capabilities && array[
   'rush:vote', 'rush:view_results', 'rush:bid'
 ];
 ```
+
+## Rollback Events record their maker (20261111020000)
+
+* **Migration**: `20261111020000_events_created_by.sql`
+
+One column on `events`, `created_by`, its `events_created_by_fk` foreign key, and the partial index `events_chapter_created_by_start_idx`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes the column and returns it as a plain field (`select('*')`) that clients ignore; Activity's "Made by you" loses its events with the code that reads them.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses who made each event since this shipped; nothing else depends on it:
+
+```sql
+drop index if exists public.events_chapter_created_by_start_idx;
+alter table public.events
+  drop constraint if exists events_created_by_fk,
+  drop column if exists created_by;
+```

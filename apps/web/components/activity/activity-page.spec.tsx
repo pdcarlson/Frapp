@@ -104,6 +104,7 @@ const data = (overrides: Record<string, unknown> = {}) => ({
         created_at: "2026-11-01T00:00:00.000Z",
       },
     ],
+    events: [],
   },
   needs_you_count: 2,
   unavailable: [],

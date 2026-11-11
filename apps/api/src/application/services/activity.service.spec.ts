@@ -70,6 +70,8 @@ const event = (overrides: Partial<Event>): Event =>
     excluded_role_ids: null,
     others_invited: null,
     check_in_opens_minutes: 10,
+    parent_event_id: null,
+    created_by: null,
     created_at: iso(-72 * HOUR),
     ...overrides,
   }) as Event;
@@ -79,7 +81,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const serviceEntryService = {
     findByChapterFiltered: jest.fn().mockResolvedValue([]),
   };
-  const eventService = { findByChapter: jest.fn().mockResolvedValue([]) };
+  const eventService = {
+    findByChapter: jest.fn().mockResolvedValue([]),
+    findCreatedBy: jest.fn().mockResolvedValue([]),
+  };
   const documentService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const backworkService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const chatService = {
@@ -788,6 +793,139 @@ describe('ActivityService', () => {
 
       expect(view.coming_up).toHaveLength(10);
       expect(view.coming_up[0].id).toBe('event-0');
+    });
+  });
+
+  describe('events made by you', () => {
+    it('reads the caller’s own events whose check-in has not closed, through the visibility-checked read', async () => {
+      const { service, eventService } = build();
+
+      await service.getActivity(CHAPTER, ME, null);
+
+      // The check-in grace behind now: an event that ended ten minutes ago
+      // is still in Coming up, so it stays here too.
+      expect(eventService.findCreatedBy).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        iso(-15 * 60 * 1000),
+        200,
+      );
+    });
+
+    it('keeps an event that has just ended while its check-in is still open', async () => {
+      const { service, eventService } = build();
+      eventService.findCreatedBy.mockResolvedValue([
+        event({
+          id: 'just-ended',
+          start_time: iso(-HOUR),
+          end_time: iso(-5 * 60 * 1000),
+          created_by: ME,
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events.map((row) => row.id)).toEqual([
+        'just-ended',
+      ]);
+    });
+
+    it('reads the caller’s member row and alumni status once for both event sections', async () => {
+      const { service, eventService, memberRepo, rbacService } = build();
+      const mine = event({ id: 'mine', created_by: ME });
+      eventService.findByChapter.mockResolvedValue([mine]);
+      eventService.findCreatedBy.mockResolvedValue([mine]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up).toHaveLength(1);
+      expect(view.made_by_you.events).toHaveLength(1);
+      expect(memberRepo.findByUserAndChapter).toHaveBeenCalledTimes(1);
+      expect(rbacService.isAlumni).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists them soonest first, one row per recurring series, and counts none of them as waiting', async () => {
+      const { service, eventService } = build();
+      eventService.findCreatedBy.mockResolvedValue([
+        event({
+          id: 'head',
+          start_time: iso(24 * HOUR),
+          end_time: iso(25 * HOUR),
+          created_by: ME,
+        }),
+        event({
+          id: 'one-off',
+          start_time: iso(30 * HOUR),
+          end_time: iso(31 * HOUR),
+          created_by: ME,
+        }),
+        event({
+          id: 'meeting-2',
+          parent_event_id: 'head',
+          start_time: iso(8 * 24 * HOUR),
+          end_time: iso(8 * 24 * HOUR + HOUR),
+          created_by: ME,
+        }),
+        // Further out than "coming up" looks, and still listed.
+        event({
+          id: 'next-month',
+          start_time: iso(30 * 24 * HOUR),
+          end_time: iso(30 * 24 * HOUR + HOUR),
+          created_by: ME,
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events.map((row) => row.id)).toEqual([
+        'head',
+        'one-off',
+        'next-month',
+      ]);
+      expect(view.needs_you_count).toBe(0);
+    });
+
+    it('leaves out the caller’s event when it does not invite them, since its card would offer a check-in the server refuses', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findCreatedBy.mockResolvedValue([
+        event({
+          id: 'not-for-me',
+          start_time: iso(-HOUR / 2),
+          end_time: iso(HOUR / 2),
+          required_role_ids: ['role-officers'],
+          others_invited: false,
+          created_by: ME,
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events).toEqual([]);
+      expect(attendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+      expect(view.needs_you_count).toBe(0);
+    });
+
+    it('reads none while the Events module is off', async () => {
+      const { service, eventService } = build();
+
+      const view = await service.getActivity(CHAPTER, ME, { events: false });
+
+      expect(eventService.findCreatedBy).not.toHaveBeenCalled();
+      expect(view.made_by_you.events).toEqual([]);
+    });
+
+    it('serves the rest of the page when the read fails, and names it', async () => {
+      const { service, eventService } = build();
+      eventService.findCreatedBy.mockRejectedValue(new Error('db down'));
+      const reported = jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unavailable).toEqual(['made_events']);
+      expect(view.made_by_you.events).toEqual([]);
+      reported.mockRestore();
     });
   });
 
