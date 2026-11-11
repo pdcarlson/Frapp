@@ -30,6 +30,7 @@ describe("SETTINGS_ENTRY_PERMISSIONS", () => {
   it("admits exactly the holders Settings has something for", () => {
     expect([...SETTINGS_ENTRY_PERMISSIONS].sort()).toEqual(
       [
+        "billing:view",
         "chapter-config:view",
         "channels:manage",
         "geofences:manage",
@@ -49,7 +50,7 @@ describe("SETTINGS_ENTRY_PERMISSIONS", () => {
 
 describe("isSettingsTabVisible", () => {
   it("shows every tab to the President's wildcard", () => {
-    for (const tab of ["org", "theme", "roles", "danger"]) {
+    for (const tab of ["org", "theme", "roles", "billing"]) {
       expect(isSettingsTabVisible(tab, ["*"])).toBe(true);
     }
   });
@@ -65,7 +66,7 @@ describe("isSettingsTabVisible", () => {
     expect(isSettingsTabVisible("classes", ["chapter-config:view"])).toBe(false);
   });
 
-  it("gives a treasurer no setup tabs, since each would fail to load", () => {
+  it("gives a treasurer no config tabs, since each would fail to load", () => {
     expect(isSettingsTabVisible("org", TREASURER)).toBe(false);
     expect(isSettingsTabVisible("roles", TREASURER)).toBe(false);
   });
@@ -73,7 +74,14 @@ describe("isSettingsTabVisible", () => {
   it("keeps every tab for a chapter-config:view holder, as before #2946", () => {
     expect(isSettingsTabVisible("modules", ["chapter-config:view"])).toBe(true);
     expect(isSettingsTabVisible("roles", ["chapter-config:view"])).toBe(true);
-    expect(isSettingsTabVisible("danger", ["chapter-config:view"])).toBe(true);
+  });
+
+  it("gives Plan and billing to billing:view holders, the sidebar row's gate (#3827)", () => {
+    expect(isSettingsTabVisible("billing", TREASURER)).toBe(true);
+    expect(isSettingsTabVisible("billing", ["billing:view"])).toBe(true);
+    // Chapter config is not a way in: the section reads billing, not config.
+    expect(isSettingsTabVisible("billing", ["chapter-config:view"])).toBe(false);
+    expect(isSettingsTabVisible("billing", MEMBER)).toBe(false);
   });
 
   it("gives chapter-config:manage alone nothing, since the config read needs view", () => {
@@ -134,9 +142,18 @@ describe("hasSettingsDestination", () => {
   });
 
   it("follows a tools-only viewer's tool modules", () => {
-    expect(hasSettingsDestination(TREASURER, () => true)).toBe(true);
-    // Reports off: the treasurer's Settings would open onto nothing.
-    expect(hasSettingsDestination(TREASURER, (key) => key !== "reports")).toBe(false);
+    const reportsOnly = ["members:view", "reports:export"];
+    expect(hasSettingsDestination(reportsOnly, () => true)).toBe(true);
+    // Reports off: this viewer's Settings would open onto nothing.
+    expect(
+      hasSettingsDestination(reportsOnly, (key) => key !== "reports"),
+    ).toBe(false);
+  });
+
+  it("keeps a treasurer's door while billing:view is Plan and billing (#3827)", () => {
+    expect(hasSettingsDestination(TREASURER, (key) => key !== "reports")).toBe(
+      true,
+    );
   });
 
   it("is false for an ordinary member", () => {

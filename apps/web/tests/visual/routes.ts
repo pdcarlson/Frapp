@@ -33,7 +33,6 @@ export const DASHBOARD_ROUTES = [
   "/study",
   "/chat",
   "/points",
-  "/billing",
   "/reports",
   "/profile",
   "/preferences",

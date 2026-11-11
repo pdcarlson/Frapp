@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
-import { useCurrentUser, useInvoices } from "@repo/hooks";
+import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { isBetaOffModule } from "@repo/validation";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
@@ -13,49 +13,38 @@ import { subscriptionStatusKind } from "@/components/billing/invoice-status";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
+import { ProfileSection } from "@/components/profile/profile-section";
+import { Skeleton } from "@/components/shared/async-states";
 
 const INVOICES_ANCHOR = "invoices";
 
 /**
- * Billing, flush on the greenfield shell.
+ * Plan and billing, a row of Chapter settings (#3827, decision 8 of #4068).
  *
- * **What was deleted.** The route rendered five `<Card>`s: a subscription
- * checkout card, a "Subscription Status" card wrapping three bordered boxes, a
- * preview-data warning card, a "Member Invoices" card holding a table, and
- * `InvoiceAdminCard` holding a second list of the same invoices. `1f` pin 2
- * gives a route's body one toolbar row with "no wrapper card, no description
- * paragraph", and `1t` names the Events "header card, description, filter card,
- * table card, card title, checkbox column" as gone one route over. So the cards
- * and their four narration paragraphs go, and what they wrapped survives on the
- * page surface:
+ * It was the `/billing` route behind the sidebar's Billing row. The row is
+ * gone and `/billing` redirects here for `billing:view` holders; a member's
+ * own invoices are My invoices in personal Settings. The body is the one the
+ * route had (#2146's `4d`), in the order a president reads it once a
+ * semester: is the chapter in good standing, what does the plan include, who
+ * owes dues (while dues is on), and how to cancel or close.
  *
- * | Was | Is |
- * | --- | -- |
- * | `SubscriptionCheckoutCard` + the "Subscription Status" card | one `PlanPanel` (`4d`) |
- * | "Monitor chapter billing health and member invoice progress." | deleted |
- * | "Track dues collection and overdue balances." | deleted |
- * | "Track chapter dues across every member. Stripe webhooks move invoices to PAID automatically." | deleted |
- * | "Stripe webhooks handle automatic PAID transitions. Manual Paid / Void buttons exist for corrections and cash-paid dues." | deleted |
- * | the page's invoice table + `InvoiceAdminCard`'s list | one `InvoiceList` |
+ * **What was deleted, and stays deleted.** The route once rendered five
+ * `<Card>`s: a checkout card, a "Subscription Status" card wrapping three
+ * bordered boxes, a preview-data warning card, a "Member Invoices" card and
+ * `InvoiceAdminCard` holding a second list of the same invoices. They became
+ * one `PlanPanel`, the matrix and one `InvoiceList`, with none of their
+ * narration paragraphs.
  *
- * **The plan matrix is new, and it is the board's** (`4d`). The page had no
- * answer at all to "what does the subscription buy", which is the question a
- * president opens this screen with.
+ * **Danger zone folded in.** It held a second Stripe portal button and the
+ * deactivation note. The portal is the plan panel's own "Manage in Stripe";
+ * the note is the last section here, written for whichever kind of plan the
+ * chapter is on (a chapter Frapp switched on by hand has no Stripe customer,
+ * so "contact support from the billing portal" was advice it could not take).
  *
- * **`4d` is a Chapter settings tab, and this is a route.** The board puts
- * Subscription behind a 200px settings rail alongside Accent, Modules, Roles
- * and a Danger zone. Building that rail is Admin, the third of
- * [#2146](https://github.com/pdcarlson/Frapp/issues/2146) and not this PR — so
- * what is taken here is `4d`'s **page body**, on the route the product already
- * has, with the top bar supplying the title the board's rail would have. The
- * sub-nav, and whether `/billing` eventually redirects into it, belong to the
- * Admin lane. `4d`'s sub-line, "Billed to the chapter card. Members never see
- * this page", is therefore **not** taken either: it is narration, and it is
- * false here — `/billing` is gated on `billing:view` and a member reaches it to
- * pay their own invoice, which is why `4b`'s "Ask an officer" has a job to do
- * on this screen at all.
+ * The section sits inside the settings tab panel, which supplies the page's
+ * `<h1>` through the top bar; every block here is an `<h2>` section.
  */
-export function BillingPage() {
+export function PlanAndBilling() {
   const { isOffline } = useNetwork();
   /*
    * The invoice list leaves only while dues is beta-off. A chapter's own dues
@@ -119,35 +108,123 @@ export function BillingPage() {
     );
   }
 
+  const onPaidPlan = status === "active" || status === "past_due";
+
   return (
-    // A container (#4033): beside chat (#3779) the page is narrow while the
-    // window is wide, so the plan panel and invoice rows count its own width.
-    <div className="@container space-y-6">
+    // A container (#4033): the plan panel and invoice rows count the panel's
+    // own width, which the settings rail shares.
+    <div className="@container space-y-10">
       {/*
-        No `PageActions` row: `1f` pin 2 puts a route's primary action there, and
-        this route's is Create invoice — which is gated on both
+        No `PageActions` row: Create invoice is gated on both
         `billing:manage` and the subscription, and lives in the invoice list's
-        own toolbar beside the filter it shares state with. Hoisting it here
-        would put a subscription-gated control above the notice that explains
-        why it is disabled.
+        own toolbar beside the filter it shares state with.
       */}
+      <div className="space-y-4">
+        <PastDueBanner status={status} />
 
-      <PastDueBanner status={status} />
+        {/*
+          `PlanPanel` reads `?checkout=` via `useSearchParams`, which Next
+          requires under a Suspense boundary. The fallback is the panel's own
+          skeleton, so reading the param does not swap a placeholder for the
+          panel.
+        */}
+        <Suspense fallback={<PlanPanelSkeleton />}>
+          <PlanPanel
+            invoicesHref={duesOn ? `#${INVOICES_ANCHOR}` : undefined}
+          />
+        </Suspense>
+      </div>
 
-      {/*
-        `PlanPanel` reads `?checkout=` via `useSearchParams`, which Next
-        requires under a Suspense boundary. The fallback is the panel's own
-        skeleton, in the panel's own `--surface-1` frame, so reading the param
-        does not swap a placeholder for the panel.
-      */}
-      <Suspense fallback={<PlanPanelSkeleton />}>
-        <PlanPanel invoicesHref={duesOn ? `#${INVOICES_ANCHOR}` : undefined} />
-      </Suspense>
-
-      <PlanMatrix />
+      <PlanMatrix onPaidPlan={onPaidPlan} />
 
       {duesOn ? <InvoiceList id={INVOICES_ANCHOR} /> : null}
+
+      <CancelOrClose status={status} />
     </div>
+  );
+}
+
+/** Where a chapter writes to change a plan Frapp set, or to close for good. */
+const FRAPP_TEAM_EMAIL = "team@frapp.live";
+
+/**
+ * The last section, and what Danger zone used to hold: how to stop paying,
+ * and how to close the chapter. It is prose with one link, not a red row of
+ * buttons, because neither is a button in this product: cancelling happens in
+ * Stripe's portal (the plan panel's "Manage in Stripe"), and closing a
+ * chapter is done by Frapp on request.
+ *
+ * The first sentence depends on the plan, read from the billing record:
+ *
+ * - **A Stripe customer**: cancel from Manage in Stripe above.
+ * - **No customer on an active chapter** (Frapp switched it on by hand): there
+ *   is nothing in Stripe to cancel, so changes come to us.
+ * - **No subscription** (`incomplete`, `canceled`): nothing to cancel.
+ *
+ * Until the billing read answers, the line waits on a one-line skeleton
+ * rather than guessing; a viewer the read refuses (it is `billing:view`, the
+ * same as this row) never gets here.
+ */
+function CancelOrClose({ status }: { status: string | null }) {
+  const statusQuery = useBillingStatus();
+  const customerId = (
+    statusQuery.data as { stripe_customer_id?: string | null } | undefined
+  )?.stripe_customer_id;
+
+  const email = (
+    <a
+      href={`mailto:${FRAPP_TEAM_EMAIL}`}
+      className="font-semibold text-foreground underline underline-offset-4"
+    >
+      {FRAPP_TEAM_EMAIL}
+    </a>
+  );
+
+  let cancelLine: React.ReactNode = null;
+  const cancelLoading =
+    status !== "incomplete" &&
+    status !== "canceled" &&
+    statusQuery.isPending &&
+    statusQuery.fetchStatus !== "paused";
+  if (status === "incomplete" || status === "canceled") {
+    cancelLine = "There is no subscription to cancel.";
+  } else if (cancelLoading) {
+    cancelLine = null;
+  } else if (customerId) {
+    cancelLine = (
+      <>
+        To cancel, open{" "}
+        <span className="text-foreground">
+          {/* The plan panel's button for this status: past due offers the
+              Portal as Update payment method, where Stripe also cancels. */}
+          {status === "past_due" ? "Update payment method" : "Manage in Stripe"}
+        </span>{" "}
+        above. Stripe asks you to confirm before anything changes.
+      </>
+    );
+  } else if (statusQuery.isSuccess) {
+    cancelLine = (
+      <>
+        Frapp turned this plan on, so there is nothing to cancel in Stripe. To
+        change it, write to {email}.
+      </>
+    );
+  }
+
+  return (
+    <ProfileSection id="plan-cancel-or-close" title="Cancel or close">
+      <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
+        {cancelLoading ? (
+          <Skeleton className="h-4 w-72 max-w-full" />
+        ) : cancelLine ? (
+          <p>{cancelLine}</p>
+        ) : null}
+        <p>
+          To close the chapter for good, write to {email}. Its history is kept,
+          locked for editing.
+        </p>
+      </div>
+    </ProfileSection>
   );
 }
 

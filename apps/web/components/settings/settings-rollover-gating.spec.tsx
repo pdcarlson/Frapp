@@ -38,7 +38,6 @@ vi.mock("@repo/hooks", () => ({
     mutateAsync: mockUpdateChapter,
     isPending: false,
   }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useOrgConfig: () => ({
     data: { org_archetype: "ifc" },
     isPending: false,
@@ -69,6 +68,12 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
+// Plan and billing has its own specs (`plan-panel.spec.tsx` pins that its
+// Stripe actions stay live on a lapsed chapter); here it only has to mount.
+vi.mock("@/components/billing/plan-and-billing", () => ({
+  PlanAndBilling: () => <p>Plan and billing section</p>,
+}));
+
 const { SettingsPage } = await import("./settings-page");
 
 const chapter = chapterSubscription(mockCurrentChapter);
@@ -77,8 +82,6 @@ const rolloverButton = () =>
   screen.getByRole("button", { name: /archive current semester/i });
 const saveProfileButton = () =>
   screen.getByRole("button", { name: /save profile/i });
-const portalButton = () =>
-  screen.getByRole("button", { name: /open stripe billing portal/i });
 
 describe("settings semester rollover subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -99,7 +102,7 @@ describe("settings semester rollover subscription gating", () => {
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("ties the disabled rollover to the one explanation", () => {
@@ -121,7 +124,7 @@ describe("settings semester rollover subscription gating", () => {
     // is still entitled to change.
     //
     // The two live on different rail entries since board `4d` split them —
-    // profile on Chapter, the Stripe portal on Danger zone — and Radix unmounts
+    // profile on Chapter, billing on Plan and billing — and Radix unmounts
     // an inactive tab, so each is asserted on its own tab rather than both on
     // whichever one happens to be open.
     const user = userEvent.setup();
@@ -131,8 +134,8 @@ describe("settings semester rollover subscription gating", () => {
     await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     expect(saveProfileButton()).toBeEnabled();
 
-    await user.click(screen.getByRole("tab", { name: /danger zone/i }));
-    expect(portalButton()).toBeEnabled();
+    await user.click(screen.getByRole("tab", { name: /plan and billing/i }));
+    expect(screen.getByText("Plan and billing section")).toBeInTheDocument();
   });
 
   it("leaves the accent-color write alone too", async () => {

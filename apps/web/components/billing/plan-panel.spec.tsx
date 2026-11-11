@@ -378,8 +378,8 @@ describe("recovery splits by status (#929)", () => {
     await waitFor(() => expect(mockCheckoutMutate).toHaveBeenCalledTimes(1));
     expect(mockCheckoutMutate).toHaveBeenCalledWith({
       customer_email: "treasurer@example.edu",
-      success_url: "https://app.frapp.test/billing?checkout=success",
-      cancel_url: "https://app.frapp.test/billing?checkout=cancelled",
+      success_url: "https://app.frapp.test/settings?tab=billing&checkout=success",
+      cancel_url: "https://app.frapp.test/settings?tab=billing&checkout=cancelled",
     });
     // Blocking, and the hand-off is the whole of it: the panel never flips its
     // own chip to Active on the way out.
@@ -661,7 +661,7 @@ describe("a failed billing:view read is not the same as a 403", () => {
 describe("the Portal button on an active chapter cannot fake a payment", () => {
   it("says nothing when a healthy chapter just visited the Portal and came back", () => {
     // This lane added the Portal button to the `active` branch, and its
-    // return_url is /billing?checkout=returned. A treasurer who opens the
+    // return_url is /settings?tab=billing&checkout=returned. A treasurer who opens the
     // Portal to download a receipt or change the billing address lands here
     // with nothing paid; a green "Payment cleared" would be inventing one.
     setChapter("active");
@@ -777,5 +777,36 @@ describe("cancelling in the Portal is a completed outcome, not a pending one", (
     renderPanel();
 
     expect(screen.getByText(/checking stripe/i)).toBeInTheDocument();
+  });
+});
+
+describe("a chapter Frapp turned on by hand (no Stripe customer, #3827)", () => {
+  it("drops Manage in Stripe, which the Portal would refuse, and says why", () => {
+    setChapter("active");
+    mockBillingStatus.mockReturnValue({
+      data: { subscription_status: "active", stripe_customer_id: null },
+      isSuccess: true,
+      isError: false,
+    });
+    renderPanel();
+
+    expect(screen.getByRole("heading", { name: "Pro" })).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(
+      screen.getByText(/turned on by frapp\. no card on file/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /manage in stripe/i }),
+    ).toBeNull();
+  });
+
+  it("keeps Manage in Stripe while the billing read has not answered", () => {
+    setChapter("active");
+    renderPanel();
+
+    expect(
+      screen.getByRole("button", { name: /manage in stripe/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/turned on by frapp/i)).toBeNull();
   });
 });

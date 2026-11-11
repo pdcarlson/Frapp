@@ -54,6 +54,18 @@ const currentUserQuery: {
   refetch: vi.fn(),
 };
 
+const billingStatusQuery: {
+  isPending: boolean;
+  isSuccess: boolean;
+  fetchStatus: "fetching" | "paused" | "idle";
+  data: unknown;
+} = {
+  isPending: false,
+  isSuccess: true,
+  fetchStatus: "idle",
+  data: { stripe_customer_id: "cus_1" },
+};
+
 const { mockCurrentChapter, networkState, invoiceReadOptions } = vi.hoisted(
   () => ({
     invoiceReadOptions: [] as ({ enabled?: boolean } | undefined)[],
@@ -69,6 +81,7 @@ vi.mock("@repo/hooks", () => ({
     return invoicesQuery;
   },
   useCurrentUser: () => currentUserQuery,
+  useBillingStatus: () => billingStatusQuery,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -95,7 +108,7 @@ vi.mock("@/components/billing/invoice-list", () => ({
   ),
 }));
 
-const { BillingPage } = await import("./billing-page");
+const { PlanAndBilling: BillingPage } = await import("./plan-and-billing");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -108,6 +121,10 @@ beforeEach(() => {
   invoicesQuery.data = [];
   currentUserQuery.fetchStatus = "idle";
   currentUserQuery.data = { id: "u-1" };
+  billingStatusQuery.isPending = false;
+  billingStatusQuery.isSuccess = true;
+  billingStatusQuery.fetchStatus = "idle";
+  billingStatusQuery.data = { stripe_customer_id: "cus_1" };
   chapter.active();
 });
 
@@ -282,5 +299,40 @@ describe("the offline path (#1621)", () => {
     render(<BillingPage />);
 
     expect(screen.getByTestId("invoice-list")).toBeInTheDocument();
+  });
+});
+
+describe("Cancel or close, which replaced Danger zone (#3827)", () => {
+  it("points a Stripe customer at Manage in Stripe", () => {
+    render(<BillingPage />);
+    expect(screen.getByText(/to cancel, open/i)).toBeInTheDocument();
+    expect(screen.getByText(/to close the chapter for good/i)).toBeInTheDocument();
+  });
+
+  it("tells a chapter Frapp turned on that there is nothing in Stripe", () => {
+    billingStatusQuery.data = { stripe_customer_id: null };
+    render(<BillingPage />);
+    expect(
+      screen.getByText(/nothing to cancel in stripe/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/to cancel, open/i)).toBeNull();
+  });
+
+  it("guesses neither while the billing read is in flight", () => {
+    billingStatusQuery.isPending = true;
+    billingStatusQuery.isSuccess = false;
+    billingStatusQuery.fetchStatus = "fetching";
+    billingStatusQuery.data = undefined;
+    render(<BillingPage />);
+    expect(screen.queryByText(/to cancel, open/i)).toBeNull();
+    expect(screen.queryByText(/nothing to cancel in stripe/i)).toBeNull();
+  });
+
+  it("has nothing to cancel without a subscription", () => {
+    chapter.canceled();
+    render(<BillingPage />);
+    expect(
+      screen.getByText(/there is no subscription to cancel/i),
+    ).toBeInTheDocument();
   });
 });
