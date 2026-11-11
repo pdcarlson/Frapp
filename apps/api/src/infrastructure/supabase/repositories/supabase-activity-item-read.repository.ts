@@ -10,9 +10,19 @@ import { SupabaseQueryError } from '../supabase-query-error';
 import { chunkIds } from '#domain/utils/chunk-ids';
 
 /**
- * `activity_item_reads` (#4173). RLS on and no policies: the API's service
- * role is the only reader, and every query here filters on `chapter_id` and
- * `user_id` because nothing else would.
+ * The upsert targets, each the primary key of its table in
+ * `20261111200000_activity_item_reads.sql`. A target that names no unique
+ * constraint fails every write with 42P10, which no mocked client notices,
+ * so `supabase-activity-item-read.repository.spec.ts` checks these against
+ * the migration.
+ */
+export const ACTIVITY_ITEM_READS_CONFLICT = 'user_id,chapter_id,kind,item_id';
+export const ACTIVITY_UNREAD_STARTS_CONFLICT = 'user_id,chapter_id';
+
+/**
+ * `activity_item_reads` and `activity_unread_starts` (#4173). RLS on and no
+ * policies: the API's service role is the only reader, and every query here
+ * filters on `chapter_id` and `user_id` because nothing else would.
  */
 @Injectable()
 export class SupabaseActivityItemReadRepository implements IActivityItemReadRepository {
@@ -20,6 +30,41 @@ export class SupabaseActivityItemReadRepository implements IActivityItemReadRepo
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
   ) {}
+
+  async findUnreadStart(
+    chapterId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('activity_unread_starts')
+      .select('started_at')
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data?.started_at ?? null;
+  }
+
+  async startUnread(
+    chapterId: string,
+    userId: string,
+    startedAt: string,
+  ): Promise<void> {
+    const row: TablesInsert<'activity_unread_starts'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      started_at: startedAt,
+    };
+    // Set once: a later load must not move it, or a row the member never
+    // opened would stop being unread.
+    const { error } = await this.supabase
+      .from('activity_unread_starts')
+      .upsert(row, {
+        onConflict: ACTIVITY_UNREAD_STARTS_CONFLICT,
+        ignoreDuplicates: true,
+      });
+    if (error) throw new SupabaseQueryError(error);
+  }
 
   /**
    * The ids go out in `chunkIds` batches: Activity serves up to 135 rows, and
@@ -61,7 +106,7 @@ export class SupabaseActivityItemReadRepository implements IActivityItemReadRepo
     }));
     const { error } = await this.supabase
       .from('activity_item_reads')
-      .upsert(rows, { onConflict: 'user_id,chapter_id,kind,item_id' });
+      .upsert(rows, { onConflict: ACTIVITY_ITEM_READS_CONFLICT });
     if (error) throw new SupabaseQueryError(error);
   }
 }

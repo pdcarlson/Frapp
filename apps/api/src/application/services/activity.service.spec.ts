@@ -1,5 +1,5 @@
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
-import { ACTIVITY_UNREAD_SINCE, ActivityService } from './activity.service';
+import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
@@ -33,6 +33,7 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   points_awarded: false,
   completed_at: null,
   confirmed_at: null,
+  sent_back_at: null,
   created_at: iso(-48 * HOUR),
   ...overrides,
 });
@@ -118,6 +119,9 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findByEventAndUser: jest.fn().mockResolvedValue(null),
   };
   const readRepo = {
+    // No client has begun this member's dots: every row is read.
+    findUnreadStart: jest.fn().mockResolvedValue(null),
+    startUnread: jest.fn().mockResolvedValue(undefined),
     findReads: jest.fn().mockResolvedValue([]),
     markRead: jest.fn().mockResolvedValue(undefined),
   };
@@ -1175,13 +1179,23 @@ describe('ActivityService', () => {
         ...overrides,
       });
 
+    // When a dot-drawing client first opened Activity for the caller.
+    const STARTED = at(-48 * HOUR);
+
     beforeEach(() => {
       jest.setSystemTime(LATER);
     });
 
+    /** `build`, with the caller's dots begun at `STARTED`. */
+    function buildStarted(permissions?: string[]) {
+      const built = build(permissions);
+      built.readRepo.findUnreadStart.mockResolvedValue(STARTED);
+      return built;
+    }
+
     /** Every section with one row that appeared an hour ago. */
     function buildEverySection() {
-      const built = build(MANAGER);
+      const built = buildStarted(MANAGER);
       serveTasks(
         built.taskService,
         [task({ id: 'mine', created_at: at(-HOUR) })],
@@ -1235,6 +1249,7 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
+      expect(view.unread_since).toBe(STARTED);
       expect(view.needs_you.tasks.map((row) => row.unread)).toEqual([true]);
       expect(
         view.needs_you.task_confirmations.map((row) => row.unread),
@@ -1294,11 +1309,23 @@ describe('ActivityService', () => {
       expect(view.needs_you.task_confirmations[0].unread).toBe(true);
     });
 
-    it('never dots what appeared before dots shipped, and does not read for it', async () => {
+    it('dots nothing, and reads no opens, before a client begins the caller’s dots', async () => {
       const { service, readRepo, taskService, linkService } = build();
-      const before = new Date(
-        new Date(ACTIVITY_UNREAD_SINCE).getTime() - 1,
-      ).toISOString();
+      serveTasks(taskService, [task({ id: 'mine', created_at: at(-HOUR) })]);
+      linkService.listFor.mockResolvedValue([link({})]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unread_since).toBeNull();
+      expect(view.needs_you.tasks[0].unread).toBe(false);
+      expect(view.links[0].unread).toBe(false);
+      expect(readRepo.findUnreadStart).toHaveBeenCalledWith(CHAPTER, ME);
+      expect(readRepo.findReads).not.toHaveBeenCalled();
+    });
+
+    it('never dots what appeared before the caller’s dots began, and does not read for it', async () => {
+      const { service, readRepo, taskService, linkService } = buildStarted();
+      const before = new Date(new Date(STARTED).getTime() - 1).toISOString();
       serveTasks(taskService, [task({ id: 'old', created_at: before })]);
       linkService.listFor.mockResolvedValue([link({ posted_at: before })]);
 
@@ -1309,8 +1336,46 @@ describe('ActivityService', () => {
       expect(readRepo.findReads).not.toHaveBeenCalled();
     });
 
+    it('dots a task again when an officer sent it back after the caller last opened it', async () => {
+      const { service, readRepo, taskService } = buildStarted();
+      serveTasks(taskService, [
+        task({
+          id: 'sent-back',
+          created_at: at(-24 * HOUR),
+          sent_back_at: at(-HOUR),
+        }),
+        // Assigned to themselves, then completed and sent back by an officer:
+        // the send-back is someone else's, so it waits on them.
+        task({
+          id: 'own-sent-back',
+          created_by: ME,
+          created_at: at(-24 * HOUR),
+          sent_back_at: at(-HOUR),
+        }),
+      ]);
+      // Both opened the day they were made, before they were sent back.
+      readRepo.findReads.mockResolvedValue([
+        { kind: 'task', item_id: 'sent-back', read_at: at(-20 * HOUR) },
+        { kind: 'task', item_id: 'own-sent-back', read_at: at(-20 * HOUR) },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.needs_you.tasks.map((row) => [
+          row.id,
+          row.unread,
+          row.sent_back_at,
+        ]),
+      ).toEqual([
+        ['sent-back', true, at(-HOUR)],
+        ['own-sent-back', true, at(-HOUR)],
+      ]);
+    });
+
     it('never dots what the caller made: a task for themselves, their own event, anything in Made by you', async () => {
-      const { service, readRepo, taskService, eventService } = build(MANAGER);
+      const { service, readRepo, taskService, eventService } =
+        buildStarted(MANAGER);
       const selfAssigned = task({
         id: 'self',
         created_by: ME,
@@ -1338,7 +1403,7 @@ describe('ActivityService', () => {
     });
 
     it('keeps Made by you undotted when the same task is unread in Needs you', async () => {
-      const { service, taskService } = build(MANAGER);
+      const { service, taskService } = buildStarted(MANAGER);
       // A completion waiting on the caller's confirm, for a task they
       // assigned: one task, in Needs you and in Made by you.
       const completed = task({
@@ -1368,6 +1433,9 @@ describe('ActivityService', () => {
       const view = await service.getActivity(CHAPTER, ME, null);
 
       expect(view.unavailable).toEqual([]);
+      // Served as if the dots hadn't begun, so a client doesn't take the
+      // missing marks for a member who has seen everything.
+      expect(view.unread_since).toBeNull();
       expect(view.needs_you.tasks[0].unread).toBe(false);
       expect(view.links[0].unread).toBe(false);
       expect(report).toHaveBeenCalledWith(
@@ -1378,6 +1446,37 @@ describe('ActivityService', () => {
         }),
       );
       report.mockRestore();
+    });
+
+    it('serves every row as read when the caller’s start cannot be loaded', async () => {
+      const report = jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+      const { service, readRepo } = buildEverySection();
+      readRepo.findUnreadStart.mockRejectedValue(new Error('db down'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unread_since).toBeNull();
+      expect(view.needs_you.polls[0].unread).toBe(false);
+      expect(readRepo.findReads).not.toHaveBeenCalled();
+      expect(report).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'activity-unread' }),
+      );
+      report.mockRestore();
+    });
+
+    it('begins the caller’s dots now', async () => {
+      const { service, readRepo } = build();
+
+      await service.startUnread(CHAPTER, ME);
+
+      expect(readRepo.startUnread).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        LATER.toISOString(),
+      );
     });
 
     it('records the caller’s opens now, sending a repeated item once', async () => {

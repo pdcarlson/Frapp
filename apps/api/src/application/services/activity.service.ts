@@ -90,6 +90,8 @@ export interface ActivityTask {
   completed_at: string | null;
   /** When an officer confirmed the completion; `null` until then. */
   confirmed_at: string | null;
+  /** When an officer last sent the completion back; `null` if never. */
+  sent_back_at: string | null;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
@@ -235,14 +237,13 @@ export interface ActivityView {
   needs_you_count: number;
   /** Sections that could not be read this time and are served empty. */
   unavailable: ActivitySection[];
+  /**
+   * When the caller's unread dots began in this chapter; `null` until a
+   * client that draws them calls {@link ActivityService.startUnread}, and
+   * every row is read until then.
+   */
+  unread_since: string | null;
 }
-
-/**
- * Rows that appeared before this are never unread: the day unread dots
- * shipped (#4173), so a member's first visit after it isn't a page of dots
- * for things they had already seen there.
- */
-export const ACTIVITY_UNREAD_SINCE = '2026-11-11T00:00:00.000Z';
 
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
 const LIST_LIMIT = 25;
@@ -311,6 +312,12 @@ function readPollCard(message: ChatMessage): PollCardFields | null {
  */
 function pollCardClosed(card: PollCardFields, now: Date): boolean {
   return card.closed_at !== null || isPollClosed(card.closes_at, now);
+}
+
+/** The later of two timestamps; one that is null or doesn't parse loses. */
+function latest(a: string, b: string | null): string {
+  if (b === null || Number.isNaN(new Date(b).getTime())) return a;
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
 
 function byAscending<T>(keyOf: (row: T) => string): (a: T, b: T) => number {
@@ -504,7 +511,23 @@ export class ActivityService {
       },
       needs_you_count: needsYouCount,
       unavailable,
+      unread_since: null,
     });
+  }
+
+  /**
+   * Begins the caller's unread dots now, unless they already began. A client
+   * that draws dots calls it when `unread_since` is null. Until then nothing
+   * could have recorded the caller's opens, so every row they had already
+   * seen would otherwise come back as unread (`spec/behavior/activity.md` §
+   * Unread).
+   */
+  async startUnread(chapterId: string, userId: string): Promise<void> {
+    await this.readRepo.startUnread(
+      chapterId,
+      userId,
+      new Date().toISOString(),
+    );
   }
 
   /**
@@ -532,25 +555,37 @@ export class ActivityService {
 
   /**
    * Sets `unread` on the rows that wait on the caller: everything in
-   * `needs_you`, Coming up and Links. A row is unread when it appeared on or
-   * after {@link ACTIVITY_UNREAD_SINCE} and the caller hasn't opened it from
-   * Activity since. When it appeared is the moment it started waiting on
-   * them: a task confirmation from its completion, everything else from when
-   * its record was made. So a task the caller opened before it was
-   * completed is unread again in their confirmations. A row the caller made
-   * themselves (a task assigned to themselves, an event they made) is never
-   * unread, and nothing in `made_by_you` is.
+   * `needs_you`, Coming up and Links, and `unread_since`. A row is unread
+   * when it appeared at or after the caller's dots began and they haven't
+   * opened it from Activity since. When it appeared is the moment it started
+   * waiting on them: a task confirmation from its completion, the caller's
+   * own task from when it was assigned or an officer last sent it back,
+   * everything else from when its record was made. So a task an officer
+   * opened before it was completed is unread again in their confirmations. A
+   * row the caller made themselves (a task assigned to themselves, an event
+   * they made) is never unread, and nothing in `made_by_you` is. Before the
+   * caller's dots begin every row is read.
    *
-   * The dots are a hint, not a list: when the reads can't be loaded every row
-   * is served as read, and the failure is reported, rather than failing the
-   * page or dotting everything.
+   * The dots are a hint, not a list: when the caller's opens can't be read
+   * every row is served as read, and the failure is reported, rather than
+   * failing the page or dotting everything.
    */
   private async withUnread(
     chapterId: string,
     userId: string,
     view: ActivityView,
   ): Promise<ActivityView> {
-    const since = new Date(ACTIVITY_UNREAD_SINCE).getTime();
+    let unreadSince: string | null;
+    try {
+      unreadSince = await this.readRepo.findUnreadStart(chapterId, userId);
+    } catch (error) {
+      this.reportUnreadFailure(chapterId, error);
+      return view;
+    }
+    if (unreadSince === null) return view;
+    const since = new Date(unreadSince).getTime();
+    const started: ActivityView = { ...view, unread_since: unreadSince };
+
     const candidates: {
       kind: ActivityItemKind;
       id: string;
@@ -568,7 +603,13 @@ export class ActivityService {
     };
     const { needs_you } = view;
     for (const task of needs_you.tasks) {
-      consider('task', task.id, task.created_at, task.created_by === userId);
+      consider(
+        'task',
+        task.id,
+        latest(task.created_at, task.sent_back_at),
+        // A task for themselves is theirs, until an officer sends it back.
+        task.created_by === userId && task.sent_back_at === null,
+      );
     }
     for (const task of needs_you.task_confirmations) {
       consider('task', task.id, task.completed_at ?? task.created_at);
@@ -590,7 +631,7 @@ export class ActivityService {
     for (const link of view.links) {
       consider('link', link.id, link.posted_at);
     }
-    if (candidates.length === 0) return view;
+    if (candidates.length === 0) return started;
 
     let readAt: Map<string, number>;
     try {
@@ -604,12 +645,7 @@ export class ActivityService {
         ]),
       );
     } catch (error) {
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'activity-unread',
-        message: `Activity reads failed for chapter ${chapterId}; serving every row as read`,
-        error,
-      });
+      this.reportUnreadFailure(chapterId, error);
       return view;
     }
 
@@ -621,7 +657,7 @@ export class ActivityService {
         })
         .map(({ kind, id }) => `${kind}:${id}`),
     );
-    if (unread.size === 0) return view;
+    if (unread.size === 0) return started;
     // New row objects, so a row shared with `made_by_you` (one task in two
     // lists) is never dotted there.
     const mark = <T extends { unread: boolean }>(
@@ -633,7 +669,7 @@ export class ActivityService {
         unread.has(`${kind}:${idOf(row)}`) ? { ...row, unread: true } : row,
       );
     return {
-      ...view,
+      ...started,
       needs_you: {
         tasks: mark('task', needs_you.tasks, (row) => row.id),
         task_confirmations: mark(
@@ -651,6 +687,15 @@ export class ActivityService {
       coming_up: mark('event', view.coming_up, (row) => row.id),
       links: mark('link', view.links, (row) => row.id),
     };
+  }
+
+  private reportUnreadFailure(chapterId: string, error: unknown): void {
+    reportCaughtFailure(this.logger, {
+      level: 'warning',
+      site: 'activity-unread',
+      message: `Activity unread state failed for chapter ${chapterId}; serving every row as read`,
+      error,
+    });
   }
 
   /**
@@ -741,6 +786,7 @@ export class ActivityService {
       point_reward: task.point_reward,
       completed_at: task.completed_at,
       confirmed_at: task.confirmed_at,
+      sent_back_at: task.sent_back_at ?? null,
       created_at: task.created_at,
       unread: false,
     });

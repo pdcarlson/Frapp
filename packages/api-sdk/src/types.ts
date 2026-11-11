@@ -3374,6 +3374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/unread-since": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Begin the caller’s unread dots on Activity, if they haven’t begun
+         * @description A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.
+         */
+        put: operations["ActivityController_startUnread_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/reads": {
         parameters: {
             query?: never;
@@ -5647,6 +5667,11 @@ export interface components {
             completed_at: string | null;
             /** Format: date-time */
             confirmed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
+             */
+            sent_back_at: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -6042,9 +6067,14 @@ export interface components {
              * @description When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one.
              */
             confirmed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer last sent the completion back to the assignee; null if never.
+             */
+            sent_back_at: string | null;
             /** Format: date-time */
             created_at: string;
-            /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was made, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false in `made_by_you`, and for a task the caller assigned to themselves. */
+            /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
         };
         ActivityHoursEntryDto: {
@@ -6063,7 +6093,7 @@ export interface components {
             description: string;
             /** Format: date-time */
             created_at: string;
-            /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). */
+            /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
         };
         ActivityPollDto: {
@@ -6096,7 +6126,7 @@ export interface components {
             has_voted: boolean;
             /** Format: date-time */
             created_at: string;
-            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false in `made_by_you`. */
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
@@ -6138,7 +6168,7 @@ export interface components {
             created_by: string | null;
             /** Format: date-time */
             created_at: string;
-            /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false in `made_by_you`, and for an event the caller made. */
+            /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
         };
         ActivityLinkDto: {
@@ -6176,7 +6206,7 @@ export interface components {
             posted_by_name: string;
             /** Format: date-time */
             posted_at: string;
-            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). */
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
         };
         ActivityFileDto: {
@@ -6213,6 +6243,11 @@ export interface components {
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+            /**
+             * Format: date-time
+             * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
+             */
+            unread_since: string | null;
         };
         ActivityItemRefDto: {
             /**
@@ -14343,6 +14378,32 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_startUnread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

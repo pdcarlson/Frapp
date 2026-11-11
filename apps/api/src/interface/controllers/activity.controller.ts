@@ -66,6 +66,22 @@ export class ActivityController {
     return this.activityService.getActivity(chapterId, userId, enabledModules);
   }
 
+  @Put('unread-since')
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Begin the caller’s unread dots on Activity, if they haven’t begun',
+    description:
+      'A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.',
+  })
+  @ApiNoContentResponse()
+  async startUnread(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<void> {
+    await this.activityService.startUnread(chapterId, userId);
+  }
+
   @Post('reads')
   @HttpCode(204)
   @ApiOperation({

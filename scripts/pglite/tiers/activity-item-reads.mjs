@@ -2,7 +2,8 @@ import { db, miss } from "../harness.mjs";
 
 // ─── Unread dots on Activity (#4173) ─────────────────────────────────────────
 //
-// `activity_item_reads` and the `anonymize_user` purge are reached from the
+// `activity_item_reads`, `activity_unread_starts`, `tasks.sent_back_at` and
+// the `anonymize_user` purge are reached from the
 // API only through mocked repositories, so this is the one place their SQL
 // runs. What each check pins, and the edit it catches:
 // - only the five kinds the API sends are accepted;
@@ -11,7 +12,10 @@ import { db, miss } from "../harness.mjs";
 //   `read_at` rather than failing with 42P10 (no matching constraint);
 // - the same id under two kinds is two reads (a poll's message id is never a
 //   task's id, but nothing relies on that);
-// - account deletion deletes the member's reads and nobody else's.
+// - a member's dots begin once: the API's insert, `on conflict (user_id,
+//   chapter_id) do nothing`, names the primary key and never moves a start;
+// - a task records when it was sent back;
+// - account deletion deletes the member's reads and start, and nobody else's.
 try {
   const CH = "b1b1b1b1-0000-4000-8000-000000004173";
   const U = {
@@ -78,11 +82,49 @@ try {
     "the same id under two kinds is two reads",
   ]);
 
+  // What `SupabaseActivityItemReadRepository.startUnread` sends.
+  const start = (user, at) =>
+    db.exec(
+      `insert into activity_unread_starts (user_id, chapter_id, started_at)
+       values ('${user}', '${CH}', '${at}')
+       on conflict (user_id, chapter_id) do nothing;`,
+    );
+  await start(U.a, "2026-11-12T08:00:00Z");
+  await start(U.a, "2026-11-13T08:00:00Z");
+  await start(U.b, "2026-11-12T08:00:00Z");
+  const startedAt = (
+    await db.query(
+      `select started_at from activity_unread_starts where user_id = $1`,
+      [U.a],
+    )
+  ).rows.map((row) => new Date(row.started_at).toISOString());
+  checks.push([
+    startedAt.length === 1 && startedAt[0] === "2026-11-12T08:00:00.000Z",
+    "a member's dots begin once, through the API's insert, and never move",
+  ]);
+
+  const sentBack = (
+    await db.query(
+      `select count(*)::int as n from information_schema.columns
+        where table_name = 'tasks' and column_name = 'sent_back_at'`,
+    )
+  ).rows[0].n;
+  checks.push([sentBack === 1, "a task records when it was sent back"]);
+
   await db.query(`select public.anonymize_user($1)`, [U.a]);
+  const starts = async (user) =>
+    (
+      await db.query(
+        `select count(*)::int as n from activity_unread_starts where user_id = $1`,
+        [user],
+      )
+    ).rows[0].n;
   checks.push([
     (await count(`user_id = '${U.a}'`)) === 0 &&
-      (await count(`user_id = '${U.b}'`)) === 1,
-    "account deletion deletes the member's reads and nobody else's",
+      (await count(`user_id = '${U.b}'`)) === 1 &&
+      (await starts(U.a)) === 0 &&
+      (await starts(U.b)) === 1,
+    "account deletion deletes the member's reads and start, and nobody else's",
   ]);
 
   console.log("\n=== Unread dots on Activity (#4173) ===");

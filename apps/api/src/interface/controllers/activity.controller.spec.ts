@@ -15,7 +15,11 @@ import { MarkActivityReadDto } from '../dtos/activity.dto';
 
 describe('ActivityController', () => {
   let controller: ActivityController;
-  const activityService = { getActivity: jest.fn(), markRead: jest.fn() };
+  const activityService = {
+    getActivity: jest.fn(),
+    markRead: jest.fn(),
+    startUnread: jest.fn(),
+  };
   const linkService = {
     setState: jest.fn(),
     clearState: jest.fn(),
@@ -146,6 +150,19 @@ describe('ActivityController', () => {
         'chapter-1',
         'user-1',
         [{ kind: 'poll', item_id: ITEM }],
+      );
+    });
+
+    it('begins the caller’s own dots, open to any member', async () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.startUnread),
+      ).toBeUndefined();
+
+      await controller.startUnread('chapter-1', 'user-1');
+
+      expect(activityService.startUnread).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
       );
     });
 

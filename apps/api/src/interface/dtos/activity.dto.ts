@@ -103,12 +103,21 @@ export class ActivityTaskDto implements ActivityTask {
   })
   confirmed_at: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When an officer last sent the completion back to the assignee; null if never.',
+  })
+  sent_back_at: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
   @ApiProperty({
     description:
-      'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was made, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false in `made_by_you`, and for a task the caller assigned to themselves.',
+      'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back.',
   })
   unread: boolean;
 }
@@ -139,7 +148,7 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
 
   @ApiProperty({
     description:
-      'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`).',
+      'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
 }
@@ -201,7 +210,7 @@ export class ActivityPollDto implements ActivityPoll {
 
   @ApiProperty({
     description:
-      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false in `made_by_you`.',
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`.',
   })
   unread: boolean;
 
@@ -270,7 +279,7 @@ export class ActivityEventDto implements ActivityEvent {
 
   @ApiProperty({
     description:
-      'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false in `made_by_you`, and for an event the caller made.',
+      'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made.',
   })
   unread: boolean;
 }
@@ -356,7 +365,7 @@ export class ActivityLinkDto implements ActivityLink {
 
   @ApiProperty({
     description:
-      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`).',
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
 }
@@ -494,4 +503,13 @@ export class ActivityDto implements ActivityView {
       'Sections that could not be read this time. Each is served empty; the others are unaffected.',
   })
   unavailable: ActivitySection[];
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.',
+  })
+  unread_since: string | null;
 }

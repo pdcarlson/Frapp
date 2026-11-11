@@ -12,11 +12,20 @@ export interface ActivityItemRef {
 }
 
 /**
- * Which Activity items each member opened, and when (#4173,
- * `spec/behavior/activity.md` § Unread). Every method is scoped by chapter
- * and member: a read is the member's own and nobody else ever reads it.
+ * Which Activity items each member opened, and when, and when their unread
+ * dots began (#4173, `spec/behavior/activity.md` § Unread). Every method is
+ * scoped by chapter and member: this state is the member's own and nobody
+ * else ever reads it.
  */
 export interface IActivityItemReadRepository {
+  /** When the member's dots began in the chapter; null when they haven't. */
+  findUnreadStart(chapterId: string, userId: string): Promise<string | null>;
+  /** Begins the member's dots at `startedAt`, unless they already began. */
+  startUnread(
+    chapterId: string,
+    userId: string,
+    startedAt: string,
+  ): Promise<void>;
   /**
    * The member's reads in the chapter of any item whose id is in `itemIds`,
    * whatever its kind. An empty `itemIds` reads nothing.

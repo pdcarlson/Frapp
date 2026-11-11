@@ -19,6 +19,16 @@ export const ACTIVITY_ITEM_KINDS = [
 ] as const;
 export type ActivityItemKind = (typeof ACTIVITY_ITEM_KINDS)[number];
 
+/**
+ * When one member's unread dots began in one chapter: the first time a client
+ * that draws them opened Activity. Nothing that appeared before it is unread.
+ */
+export interface ActivityUnreadStart {
+  user_id: string;
+  chapter_id: string;
+  started_at: string;
+}
+
 /** One member's last open of one Activity item. */
 export interface ActivityItemRead {
   user_id: string;

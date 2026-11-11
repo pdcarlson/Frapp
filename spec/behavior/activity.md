@@ -106,16 +106,21 @@ dots are follow-up steps of #4173.**
   clear it, and neither does opening the same item elsewhere in Frapp (voting on the poll in its
   channel); acting on an item usually takes it off the list anyway.
 - **Since it appeared.** A row is unread when it appeared after the member last opened it. It
-  appears when it starts waiting on them: a task confirmation when the task was completed,
-  anything else when its record was made (a task assigned, an entry submitted, a poll or link
-  posted, an event made). So a task an officer opened before its assignee finished it is unread
-  again in their confirmations.
-- **Nothing older than the feature.** A row that appeared before 2026-11-11 is never unread
-  (`ACTIVITY_UNREAD_SINCE`), so the first visit after dots shipped is not a page of them.
-- **Per member, never shared.** A member's opens live in `activity_item_reads`, which only the API
-  reads, filtered on the member. The route checks no access: a read names an item for its member
+  appears when it starts waiting on them: a task confirmation when the task was completed, the
+  member's own task when it was assigned or an officer last sent it back (`sent_back_at`,
+  [`tasks.md`](tasks.md)), anything else when its record was made (an entry submitted, a poll or
+  link posted, an event made). So a task an officer opened before its assignee finished it is
+  unread again in their confirmations, and a task its assignee opened is unread again when an
+  officer sends it back. Taking back one's own completion is not a send-back.
+- **Nothing older than the member's dots.** Until a client that draws dots opens Activity for
+  them, no open of theirs could be recorded, so every row is read and `unread_since` is null. That
+  client then calls `PUT /v1/activity/unread-since`, which records the moment once per member per
+  chapter; a row that appeared before it is never unread. So a member's first visit with dots is
+  not a page of them for things they had already seen, whenever their client gained dots.
+- **Per member, never shared.** A member's opens live in `activity_item_reads` and their start in
+  `activity_unread_starts`, which only the API reads, filtered on the member. The route checks no access: a read names an item for its member
   alone, and an item they can't see is never served to them, so recording one reveals and changes
-  nothing. Deleting an account deletes the member's opens ([`data-retention.md`](data-retention.md)).
+  nothing. Deleting an account deletes both ([`data-retention.md`](data-retention.md)).
 - **A hint, not a section.** When the opens can't be read, every row is served as read and the
   failure is reported; the page doesn't fail and nothing lands in `unavailable`.
 

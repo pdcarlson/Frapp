@@ -11,9 +11,17 @@
 --    shows unread again in an officer's confirmations. The items come from
 --    several modules (tasks, service entries, poll messages, events, links),
 --    so `item_id` has no foreign key; a row whose item is gone is inert.
--- 2. `anonymize_user` also deletes the member's reads.
+-- 2. `activity_unread_starts`: when each member's unread dots began, set
+--    the first time a client that draws dots opens Activity. Nothing that
+--    appeared before it is unread, so the first visit isn't a page of dots
+--    for things the member already saw before any client could record an
+--    open. No row means no dots yet.
+-- 3. `tasks.sent_back_at`: when an officer last sent a completed task back to
+--    its assignee. It waits on them again from then, so it is unread again.
+--    The assignee taking back their own completion doesn't set it.
+-- 4. `anonymize_user` also deletes the member's reads and start.
 --
--- RLS on and no policies: API only (service role), like
+-- RLS on and no policies on both new tables: API only (service role), like
 -- `chat_link_member_states`, the other per-member Activity state.
 
 -- 1. ------------------------------------------------------------------------
@@ -37,11 +45,28 @@ create table if not exists public.activity_item_reads (
 
 alter table public.activity_item_reads enable row level security;
 
--- 2. Account deletion purges reads -------------------------------------------
+-- 2. ------------------------------------------------------------------------
+
+create table if not exists public.activity_unread_starts (
+  user_id uuid not null references public.users (id) on delete cascade,
+  chapter_id uuid not null references public.chapters (id) on delete cascade,
+  -- Set once; a later client load leaves it alone.
+  started_at timestamptz not null default now(),
+  primary key (user_id, chapter_id)
+);
+
+alter table public.activity_unread_starts enable row level security;
+
+-- 3. ------------------------------------------------------------------------
+
+alter table public.tasks
+  add column if not exists sent_back_at timestamptz;
+
+-- 4. Account deletion purges reads and the start -----------------------------
 
 -- `anonymize_user` is redefined in full from
--- `20261111180000_document_pins_and_stars.sql`; the one change is the
--- `activity_item_reads` delete. Same signature, so its grants are kept.
+-- `20261111180000_document_pins_and_stars.sql`; the only changes are the
+-- `activity_item_reads` and `activity_unread_starts` deletes. Same signature, so its grants are kept.
 -- Those rows' `user_id` cascade never fires, because the `users` row is
 -- tombstoned in place, not deleted.
 create or replace function anonymize_user(
@@ -123,6 +148,7 @@ begin
   delete from chapter_document_stars where user_id = p_user_id;
   -- Activity unread dots (#4173): which Activity items the member opened.
   delete from activity_item_reads where user_id = p_user_id;
+  delete from activity_unread_starts where user_id = p_user_id;
   delete from rush_candidate_votes where voter_id = p_user_id;
   delete from study_sessions where user_id = p_user_id;
 
