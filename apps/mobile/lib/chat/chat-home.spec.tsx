@@ -81,7 +81,13 @@ const {
       mention_count: number;
     }[],
   },
-  levelsData: { value: [] as { channel_id: string; level: string }[] },
+  levelsData: {
+    value: [] as {
+      channel_id: string;
+      level: string;
+      from_chapter_level?: boolean;
+    }[],
+  },
   // `GET /v1/channels/latest` (2026-11-06): each channel's latest message.
   latestData: {
     answered: true,
@@ -843,9 +849,8 @@ describe("Chat home sidebar arrangement (#2877)", () => {
   });
 
   it("gives an officer Always formal in Display, and locks a formal channel's choices (#3787)", async () => {
-    const { resetLockedChannelsForTests } = await import(
-      "@repo/chat-core/density"
-    );
+    const { resetLockedChannelsForTests } =
+      await import("@repo/chat-core/density");
     permissionList.value = ["channels:manage"];
     setDisplayLock.mockResolvedValue(undefined);
     channelsData.value = [general];
@@ -954,6 +959,20 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       channelId: general.id,
       level: "off",
     });
+  });
+
+  it('marks a level from Settings → Chat messages "(your default)" (#3840)', () => {
+    channelsData.value = [general];
+    levelsData.value = [
+      { channel_id: general.id, level: "mentions", from_chapter_level: true },
+    ];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Notifications, Mentions");
+    expect(menuLabels(tree)).toContain(
+      "Only @mentions (your default). Notify me when someone addresses me.",
+    );
   });
 
   it("locks Notifications while the level is unknown, and while offline", () => {

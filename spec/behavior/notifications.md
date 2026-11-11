@@ -255,7 +255,7 @@ shell, so an unscoped error asserts a failure on channels the member never touch
 
 ## Chat notification preferences
 
-Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
+Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and three scope arms: per-channel, per-kind, and the member's chapter-wide chat level (`scope='chapter'`, both keys null, § Chapter-wide chat level below). The channel and kind arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
 
 That key is an **expression** index, which matters to anyone adding a write path: `ON CONFLICT (a, b, c)` only matches an index defined on those exact columns or expressions, and PostgREST's `on_conflict` parameter takes column names and cannot express `coalesce(...)`. So each arm's upsert targets its own plain unique index:
 
@@ -263,10 +263,11 @@ That key is an **expression** index, which matters to anyone adding a write path
 | --- | --- | --- |
 | `channel` | `(user_id, chapter_id, scope, scope_id)` | `20260829011200_chat_notif_prefs_channel_upsert_target.sql` |
 | `kind` | `(user_id, chapter_id, scope, scope_kind)` | `20260902170000_chat_notif_prefs_kind_upsert_target.sql` |
+| `chapter` | `(user_id, chapter_id, scope, scope_id, scope_kind) NULLS NOT DISTINCT` | `20261111120000_chat_notif_prefs_chapter_scope.sql` |
 
-None of the three disagree, because each plain index constrains exactly one arm and is inert on the other. For `scope='channel'` rows the expression reduces to `scope_id::text`, which the table's CHECK already guarantees is non-null on that arm, and `scope_kind` is NULL so the kind index does not apply; for `scope='kind'` rows the mirror holds. Unique indexes treat NULLs as distinct, which is what makes each one inert outside its arm. The expression index still enforces the real invariant across both.
+The channel and kind indexes never disagree with the expression index, because each constrains exactly one arm and is inert on the other. For `scope='channel'` rows the expression reduces to `scope_id::text`, which the table's CHECK already guarantees is non-null on that arm, and `scope_kind` is NULL so the kind index does not apply; for `scope='kind'` rows the mirror holds. Those two treat NULLs as distinct, which is what makes each inert outside its arm, and the expression index enforces the invariant across both. It enforces nothing on the chapter arm, where the expression is NULL: there the chapter index alone keeps one row per member and chapter.
 
-**A new arm needs its own plain index.** The channel index cannot serve the kind arm — its `scope_id` is NULL on every kind row, so `ON CONFLICT` matches nothing and each write would INSERT a duplicate rather than update. Dropping either index does not fail a build or a test; it makes that arm's endpoint raise `42P10 there is no unique or exclusion constraint matching the ON CONFLICT specification` at runtime, on every call. The pairing is therefore asserted by `check:pglite-migrations`, which pins that both exist, are `CREATE UNIQUE INDEX`, are neither partial nor expression-based, and cover the arm each is named for.
+**A new arm needs its own plain index.** The channel index cannot serve the kind arm — its `scope_id` is NULL on every kind row, so `ON CONFLICT` matches nothing and each write would INSERT a duplicate rather than update. Dropping either index does not fail a build or a test; it makes that arm's endpoint raise `42P10 there is no unique or exclusion constraint matching the ON CONFLICT specification` at runtime, on every call. The chapter arm has both keys NULL, so its index covers both and is `NULLS NOT DISTINCT`, which is the only way two writes collide there; channel rows still differ by `scope_id` and kind rows by `scope_kind`, so it adds no collision to either. The pairing is therefore asserted by `check:pglite-migrations`, which pins that all three exist, are `CREATE UNIQUE INDEX`, are neither partial nor expression-based, and cover the arm each is named for.
 
 ### Write paths
 
@@ -277,6 +278,8 @@ None of the three disagree, because each plain index constrains exactly one arm 
 | `GET /v1/channels/notification-preferences/kinds` | the caller's per-kind **overrides** |
 | `PUT /v1/channels/notification-preferences/kinds/{kind}` | set one kind's override |
 | `DELETE /v1/channels/notification-preferences/kinds/{kind}` | clear one kind's override |
+| `GET /v1/channels/notification-preferences/chapter` | the caller's chapter-wide chat level, `all` or `mentions` |
+| `PUT /v1/channels/notification-preferences/chapter` | set it; `all` deletes the row |
 
 Every write keys the row on the authenticated user, never on a body or path value — a mute is per-user, and accepting a caller-supplied user id would let any member silence another member's notifications.
 
@@ -317,7 +320,7 @@ officer has set its default. The API refuses a default on a DM or group DM, whic
 officer and always defaults to `all`, like any messenger's DMs. A kind default outranks an
 officer's: `#chapter-audit` set to `all` still pages nobody with audit rows.
 
-Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**, so an officer's
+Precedence in the push worker is **channel-pref ▶ kind-pref ▶ chapter-wide level ▶ default**, so an officer's
 default never overrides a level a member stored. **In a DM or group DM a kind row can make it
 louder, never quieter.** A kind override is a chapter-wide way to tune channel traffic, and DMs
 were pushed by a separate path that never read it until #2771, so letting a `text` row of
@@ -325,6 +328,21 @@ were pushed by a separate path that never read it until #2771, so letting a `tex
 row quieter than the DM's default is therefore ignored there, and a DM is muted from the DM
 itself. One louder than it still counts, so the `system_audit` opt-in below keeps reaching
 system messages posted into DMs (the invite-accept notice, a DM poll's expiry). A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to `system_audit` pushes; otherwise those messages never page anyone. The opt-in reaches the server's own notices only, never an audit-bridge mirror: `decidePush` refuses a mirror row (`isAuditMirrorRow`, `client_message_id = 'audit:<id>'`) ahead of every preference, the member's channel-scope `all` on `#chapter-audit` included (owner decision, 2026-11-06: audit entries arrive silently). That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
+
+### Chapter-wide chat level
+
+**Settings → Notifications → Chat messages** (#3840, asked by Shawn, 2026-11-09) is one choice for the whole chapter, the way Slack's "Mentions & DMs only" and Discord's server-wide "Only @mentions" work:
+
+- **All messages**: each channel at its own default (the table above). This is the absence of a row; choosing it deletes one.
+- **Mentions and DMs only**: every ordinary channel acts as `mentions`, so it notifies only for an @mention of you, and a reply to your message counts as one (#3844, § Per-Channel Mute). DMs, group DMs and the announcements channel (URGENT) still notify every message.
+
+It is stored as a `scope='chapter'` row with `level='mentions'`, and `resolveLevel` reads it after the channel and kind rows, so **a level the member set on one channel, or on a message kind, still wins**: that is how a member keeps one busy channel loud. It only ever **lowers** a channel's default: it never reaches a DM, a group DM or the announcements channel, and a channel whose default is already quieter (`#chapter-audit`, an officer's `off`, the `system_audit` kind) stays as it is.
+
+The per-channel read reports the result, with `from_chapter_level: true` on a channel the chapter-wide level decided, and the phone's channel menu labels that option "Only @mentions (your default)".
+
+**There is no "Off".** The issue asked for one, standing for the Chat switch, but that switch was dropped on 2026-11-06 (owner: "Do we really want users to be able to turn off chat?"; Delivery Flow step 2), and quiet hours are how a member goes silent. The CHECK allows `off` on this arm, so adding it later needs no migration.
+
+Phone first, since push is phone-only. Web's settings follow once the personal Settings page (#4106) lands.
 
 **The push worker is the only chat push path** (#2771). `ChatService` used to push DMs and announcements itself as well, so an announcement reached an away member twice, a DM that mentioned its recipient did the same, and a DM the member had muted pushed anyway, since that path never read `chat_notification_preferences`. Every chat push now goes through the rule chain above, once per recipient.
 
