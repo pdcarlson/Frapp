@@ -23,6 +23,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollClosedEarly,
+  cardVoteSelection,
   isPollClosed,
 } from '#domain/utils/poll-vote-rules';
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
@@ -557,12 +558,18 @@ export class ActivityService {
     });
     const mine = own.filter(readable);
 
+    // A vote row with no picks is a cleared vote, not a vote: a member who
+    // clears every pick on a multi-choice card keeps the row with an empty
+    // list (#3793), and the poll goes back to needing them.
+    const voteRows = await this.actionRepo.findActionsOnMessages(
+      [...openOthers, ...mine].map((message) => message.id),
+      userId,
+      CARD_VOTE_ACTION_TYPE,
+    );
     const votedIds = new Set(
-      await this.actionRepo.findActedMessageIds(
-        [...openOthers, ...mine].map((message) => message.id),
-        userId,
-        CARD_VOTE_ACTION_TYPE,
-      ),
+      voteRows
+        .filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0)
+        .map((row) => row.message_id),
     );
 
     const toRow = (message: ChatMessage): ActivityPoll | null => {

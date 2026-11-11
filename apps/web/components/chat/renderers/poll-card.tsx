@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useId, useMemo, useRef } from "react";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -15,12 +15,17 @@ import {
   CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
+  castPollVote,
   isPollCardClosed,
   pollCardEyebrow,
+  pollCardFooter,
+  pollChoiceHint,
+  pollOptionPercent,
   pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
+  type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
 import { useMyPermissions, useNow } from "@repo/hooks";
@@ -48,7 +53,9 @@ interface PollCardProps {
  * Poll card: question + options. Pre-vote shows option buttons; post-vote
  * shows bar tallies with the viewer's choice highlighted. Vote-change is
  * supported via ADR-07's UPSERT semantics — the user can tap a different
- * option and the prior vote is replaced.
+ * option and the prior vote is replaced. On a multi-choice card (#3793) a tap
+ * adds or clears that option instead, and the same one row carries the list
+ * (`pollVotePayload`).
  */
 export function PollCard({
   message,
@@ -57,7 +64,7 @@ export function PollCard({
   onVote,
   onClosePoll,
 }: PollCardProps) {
-  const payload = readPollPayload(message);
+  const payload = useMemo(() => readPollPayload(message), [message]);
   const now = useNow();
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
@@ -81,14 +88,11 @@ export function PollCard({
     useMyPermissions().data?.permissions,
   );
 
-  const {
-    byOption,
-    total,
-    myVote: viewerVote,
-  } = useMemo(() => {
-    if (!payload) return { byOption: {}, total: 0, myVote: null };
-    return tallyPollVotes(message, payload.options, viewerId);
-  }, [message, payload, viewerId]);
+  const tally = useMemo(
+    () => tallyPollVotes(message, payload?.options ?? [], viewerId),
+    [message, payload, viewerId],
+  );
+  const pendingPicks = useRef<PendingPollPicks | null>(null);
 
   if (!payload) {
     return (
@@ -117,10 +121,17 @@ export function PollCard({
   */
   const canVote = isConfirmed && !isClosed && !!viewerId && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
+  const choiceHint = pollChoiceHint(payload, isClosed);
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
-    onVote(message.id, POLL_VOTE_ACTION_TYPE, { option_id: option.id });
+    // Built on the member's last tap while its answer is still on the way
+    // (`castPollVote`), so two quick taps on a multi-choice card keep both.
+    onVote(
+      message.id,
+      POLL_VOTE_ACTION_TYPE,
+      castPollVote(payload, tally.myVotes, pendingPicks, option.id),
+    );
   };
 
   // `bg-card` on a `bg-card` pane was invisible; the thread is `--background`
@@ -131,12 +142,14 @@ export function PollCard({
         {pollCardEyebrow(payload, now)}
       </p>
       <div className="mt-2 text-base font-bold">{payload.question}</div>
+      {choiceHint ? (
+        <p className="mt-1 text-caption text-muted-foreground">{choiceHint}</p>
+      ) : null}
       <ul className="mt-3 space-y-2">
         {payload.options.map((option) => {
-          const count = byOption[option.id] ?? 0;
-          const denom = total > 0 ? total : 1;
-          const pct = total > 0 ? Math.round((count / denom) * 100) : 0;
-          const isMyVote = viewerVote === option.id;
+          const count = tally.byOption[option.id] ?? 0;
+          const pct = pollOptionPercent(payload, tally, option.id);
+          const isMyVote = tally.myVotes.includes(option.id);
           return (
             <li key={option.id}>
               <Button
@@ -175,17 +188,9 @@ export function PollCard({
         })}
       </ul>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        {total === 0 ? (
-          <p className="text-caption text-muted-foreground">
-            No votes yet
-            {canVote ? " · be the first to vote" : ""}.
-          </p>
-        ) : (
-          <p className="text-caption text-muted-foreground">
-            {total} vote{total === 1 ? "" : "s"}
-            {viewerVote ? " · your vote is highlighted" : ""}
-          </p>
-        )}
+        <p className="text-caption text-muted-foreground">
+          {pollCardFooter(payload, tally, canVote)}
+        </p>
         {showClose ? (
           <Button
             type="button"

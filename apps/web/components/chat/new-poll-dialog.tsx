@@ -11,6 +11,7 @@ import {
   closesAtFor,
   movePollOption,
   pollCloseChoicesFor,
+  POLL_MULTIPLE_LABEL,
   removePollOption,
   setPollOption,
   type PollCloseChoice,
@@ -30,6 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 
@@ -44,7 +47,8 @@ import { dashboardFormSelectClassName } from "@/components/shared/table-controls
  *
  * A question, two to ten options (add, remove, move up or down), and when
  * voting closes, a day by default as `/poll` does, or **Doesn't close**
- * (#3896) for a poll its creator ends from the card. Posting goes through the
+ * (#3896) for a poll its creator ends from the card, and whether a member
+ * may pick more than one option (#3793). Posting goes through the
  * outbox like a message, so it works offline and a server refusal lands on
  * the card's own failed row with Retry and Discard. What this dialog reports
  * itself is only an outbox that refused the row, when the draft is all the
@@ -105,6 +109,7 @@ export function NewPollDialog({
       question: check.question,
       options: check.options,
       closesAt: closesAtFor(draft.closes, now ? now() : new Date()),
+      multiple: draft.multiple,
     });
     void onPost(poll)
       .catch(
@@ -122,7 +127,7 @@ export function NewPollDialog({
         }
         setFailure(result.error);
       });
-  }, [check, draft.closes, now, onPost, onOpenChange]);
+  }, [check, draft.closes, draft.multiple, now, onPost, onOpenChange]);
 
   return (
     <Dialog
@@ -260,6 +265,18 @@ export function NewPollDialog({
               ))}
             </select>
           </label>
+
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="new-poll-multiple">{POLL_MULTIPLE_LABEL}</Label>
+            <Switch
+              id="new-poll-multiple"
+              checked={draft.multiple}
+              disabled={posting}
+              onCheckedChange={(multiple) =>
+                edit((current) => ({ ...current, multiple }))
+              }
+            />
+          </div>
 
           {problem ? (
             <p role="alert" className="text-sm text-destructive">
