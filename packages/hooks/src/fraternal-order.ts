@@ -7,15 +7,20 @@
  * that class. Members with no class come after every class, ordered by their
  * number, and members with neither come last, by name.
  *
- * One definition, so every surface that sorts this way agrees. Its first
- * caller is the Settings class editor, which lists a class's members in it.
+ * One definition, so every surface that sorts this way agrees: the web
+ * Directory's sort, and the Settings class editor, which lists a class's
+ * members in it.
  */
+
+import { memberLabel } from "./display-names";
 
 /** The fields of a member the sort reads. */
 export type FraternalOrderMember = {
   pledge_class_id?: string | null;
   order_number?: number | null;
   display_name?: string | null;
+  /** For the name a nameless member's row shows (`memberLabel`). */
+  user_id?: string | null;
 };
 
 /** A pledge class as the sort reads it: the list's order is the chapter's. */
@@ -55,8 +60,30 @@ export function fraternalOrderComparator(
       return numberA - numberB;
     }
 
-    return (a.display_name ?? "").localeCompare(b.display_name ?? "", undefined, {
-      sensitivity: "base",
-    });
+    // The name the row shows, not the raw column: `display_name` is
+    // `NOT NULL DEFAULT ''`, so a member who never set one would otherwise
+    // sort as "" and lead their group above "Aaron".
+    return memberLabel(a.display_name, a.user_id).localeCompare(
+      memberLabel(b.display_name, b.user_id),
+      undefined,
+      { sensitivity: "base" },
+    );
   };
+}
+
+/**
+ * Whether the chapter uses pledge classes or order numbers at all. A chapter
+ * with no classes and no numbers sees no pledge class or order controls
+ * outside the places an officer sets them up, so the Directory asks this
+ * before it offers the sort.
+ */
+export function usesFraternalOrder(
+  classes: readonly OrderedClass[] | null | undefined,
+  members: readonly FraternalOrderMember[] | null | undefined,
+): boolean {
+  if ((classes?.length ?? 0) > 0) return true;
+  return (members ?? []).some(
+    (member) =>
+      numberOrNull(member.order_number) !== null || !!member.pledge_class_id,
+  );
 }

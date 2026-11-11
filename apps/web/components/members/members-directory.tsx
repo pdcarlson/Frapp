@@ -11,12 +11,17 @@ import {
   useMemberDisplayNames,
   useMemberSearch,
   useMembers,
+  usePledgeClasses,
+  fraternalOrderComparator,
+  usesFraternalOrder,
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { parseInstant } from "@repo/formatting";
+import { vocab } from "@repo/org-archetypes";
+import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -82,7 +87,7 @@ type RoleOption = {
   isAlumni: boolean;
 };
 
-type SortKey = "name" | "role" | "points" | "joined";
+type SortKey = "name" | "role" | "points" | "order";
 type SortDir = "asc" | "desc";
 
 /**
@@ -92,13 +97,21 @@ type SortDir = "asc" | "desc";
  * `<th>`s, which is the densest place to put sorting *in a table* and has no
  * home at all in a flat list — the board's list rows (`4a`) have no header row
  * to hang one on, and `1f` pin 2 gives a route one toolbar row holding "filter
- * menu, view toggle, primary action". So the eight reachable (key, direction)
- * pairs become eight options on one sort chip that sits with the filters, and no
+ * menu, view toggle, primary action". So every reachable (key, direction)
+ * pair becomes an option on one sort chip that sits with the filters, and no
  * direction state has to be inferred from a second click on the same header.
  *
- * All eight pairs are listed rather than the four keys plus a direction toggle:
- * the toggle would be a ninth control in the row, and "Role Z to A" is cheaper
+ * Each pair is listed rather than the keys plus a direction toggle: the
+ * toggle would be one more control in the row, and "Role Z to A" is cheaper
  * to read than an arrow glyph whose meaning depends on which column is active.
+ * The fraternal-order sort is the exception, with one direction on purpose
+ * (`ORDER_SORT`).
+ *
+ * "Newest first" and "Oldest first" are gone (#3939). They sorted on when a
+ * membership row was created, which is when someone joined the chapter in
+ * Frapp and not when they joined the chapter. The fraternal-order sort takes
+ * their place for a chapter that keeps pledge classes or order numbers; it is
+ * added in the component, because its label is the chapter's own word.
  */
 const SORT_OPTIONS = [
   { value: "name:asc", label: "Name A to Z" },
@@ -107,11 +120,16 @@ const SORT_OPTIONS = [
   { value: "role:desc", label: "Role Z to A" },
   { value: "points:desc", label: "Most points" },
   { value: "points:asc", label: "Fewest points" },
-  { value: "joined:desc", label: "Newest first" },
-  { value: "joined:asc", label: "Oldest first" },
 ] as const;
 
-type SortValue = (typeof SORT_OPTIONS)[number]["value"];
+/**
+ * The fraternal-order sort: oldest class first, then order number, then name
+ * (`spec/behavior/members.md` § Pledge class and order number). One direction
+ * only, because the order is a ranking the chapter keeps, not a column.
+ */
+const ORDER_SORT = "order:asc";
+
+type SortValue = (typeof SORT_OPTIONS)[number]["value"] | typeof ORDER_SORT;
 
 const DEFAULT_SORT: SortValue = "name:asc";
 
@@ -184,6 +202,7 @@ export function MembersDirectory() {
   // `null` is "any", the shape `FilterChip` speaks.
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [cohortFilter, setCohortFilter] = useState<string | null>(null);
+  const [classFilter, setClassFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<
     "active" | "pending" | null
   >(null);
@@ -197,13 +216,14 @@ export function MembersDirectory() {
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
 
-  const { key: sortKey, dir: sortDir } = parseSort(sort);
+  const chapterWords = useChapterVocabulary();
   const trimmedQuery = query.trim();
   // Keeps typing responsive without a debounce timer of our own: the query only
   // re-runs once React has caught up with the keystrokes. Matches the mobile
   // directory screen's guard against firing a request per keystroke.
   const deferredQuery = useDeferredValue(trimmedQuery);
   const membersQuery = useMembers();
+  const classesQuery = usePledgeClasses();
   const searchQuery = useMemberSearch(deferredQuery);
   const rolesQuery = useRoles();
   const leaderboardQuery = useLeaderboard();
@@ -342,6 +362,47 @@ export function MembersDirectory() {
       ? cohortFilter
       : null;
 
+  // Pledge class and order number (#3939). A chapter with no classes and no
+  // numbers gets neither the sort nor the filter nor a class on its rows, so
+  // nothing here assumes how a chapter runs.
+  const pledgeClasses = useMemo(
+    () => classesQuery.data ?? [],
+    [classesQuery.data],
+  );
+  const classNameById = useMemo(
+    () => new Map(pledgeClasses.map((entry) => [entry.id, entry.name])),
+    [pledgeClasses],
+  );
+  const classChipOptions = useMemo(
+    () => pledgeClasses.map((entry) => ({ value: entry.id, label: entry.name })),
+    [pledgeClasses],
+  );
+  const effectiveClassFilter =
+    classFilter !== null && classNameById.has(classFilter) ? classFilter : null;
+  // Only once the class list has loaded. The sort ranks by the chapter's class
+  // order, so without the list it would rank every member as having no class
+  // and look right while being wrong. A failed or offline class read therefore
+  // costs the sort, the filter and the class on rows, and nothing else.
+  const offersOrderSort =
+    classesQuery.data !== undefined &&
+    usesFraternalOrder(pledgeClasses, membersQuery.data);
+  const sortOptions = useMemo(
+    () =>
+      offersOrderSort
+        ? [
+            ...SORT_OPTIONS,
+            // The chapter's own word, as typed: "Fraternal order", "Roll number".
+            { value: ORDER_SORT, label: vocab("order", chapterWords) } as const,
+          ]
+        : SORT_OPTIONS,
+    [offersOrderSort, chapterWords],
+  );
+  // A sort the chapter no longer offers (its last class was deleted while the
+  // page was open) falls back to the default rather than ordering by nothing.
+  const effectiveSort: SortValue =
+    sort === ORDER_SORT && !offersOrderSort ? DEFAULT_SORT : sort;
+  const { key: sortKey, dir: sortDir } = parseSort(effectiveSort);
+
   const pointsOf = (member: MemberProfile) =>
     pointsByUserId.get(member.user_id) ?? 0;
   // `null` until presence has resolved for this chapter — the dot renders
@@ -376,38 +437,35 @@ export function MembersDirectory() {
       ) {
         return false;
       }
+      if (
+        effectiveClassFilter !== null &&
+        member.pledge_class_id !== effectiveClassFilter
+      ) {
+        return false;
+      }
       if (statusFilter === "active" && !member.has_completed_onboarding)
         return false;
       if (statusFilter === "pending" && member.has_completed_onboarding)
         return false;
       return true;
     });
-  }, [members, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
+  }, [
+    members,
+    effectiveRoleFilter,
+    effectiveCohortFilter,
+    effectiveClassFilter,
+    statusFilter,
+  ]);
 
   const sortedMembers = useMemo(() => {
     const factor = sortDir === "asc" ? 1 : -1;
+    const byFraternalOrder = fraternalOrderComparator(pledgeClasses);
     return [...filteredMembers].sort((a, b) => {
       switch (sortKey) {
         case "points":
           return (pointsOf(a) - pointsOf(b)) * factor;
-        case "joined": {
-          /*
-            A date that will not parse sorts last in both directions, for the
-            same reason the role branch below partitions: `NaN - t` is `NaN`,
-            and a comparator that returns `NaN` is read as 0 — "equal to
-            everything" — which is not a valid ordering. One bad row survives
-            V8's TimSort by luck; two or more scramble the good rows around
-            them, so "Newest first" can put the oldest member at the top.
-            `formatJoined` already treats an unparseable date as absent; this
-            is the same fact reaching the sort.
-          */
-          const joinedA = parseInstant(a.created_at);
-          const joinedB = parseInstant(b.created_at);
-          if (!joinedA && !joinedB) return 0;
-          if (!joinedA) return 1;
-          if (!joinedB) return -1;
-          return (joinedA.getTime() - joinedB.getTime()) * factor;
-        }
+        case "order":
+          return byFraternalOrder(a, b);
         case "role": {
           /*
             Members with no role sort last in BOTH directions, which takes a
@@ -432,7 +490,14 @@ export function MembersDirectory() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredMembers, sortKey, sortDir, pointsByUserId, roleNameById]);
+  }, [
+    filteredMembers,
+    sortKey,
+    sortDir,
+    pointsByUserId,
+    roleNameById,
+    pledgeClasses,
+  ]);
 
   const pageCount = Math.max(1, Math.ceil(sortedMembers.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -453,14 +518,20 @@ export function MembersDirectory() {
     setPage(1);
     setSelectedMemberIds([]);
     setBulkRoleId(null);
-  }, [trimmedQuery, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
+  }, [
+    trimmedQuery,
+    effectiveRoleFilter,
+    effectiveCohortFilter,
+    effectiveClassFilter,
+    statusFilter,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Re-sorting keeps the same population; just return to the first page.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- return to page 1 when sort identity changes
     setPage(1);
-  }, [sort]);
+  }, [effectiveSort]);
 
   const pageMemberIds = pageMembers.map(memberId);
   const allPageSelected =
@@ -497,6 +568,7 @@ export function MembersDirectory() {
     usingSearch ||
     effectiveRoleFilter !== null ||
     effectiveCohortFilter !== null ||
+    effectiveClassFilter !== null ||
     statusFilter !== null;
 
   function toggleMember(id: string, isSelected: boolean) {
@@ -717,6 +789,21 @@ export function MembersDirectory() {
             value={effectiveCohortFilter}
             onChange={setCohortFilter}
           />
+          {/*
+            Beside graduation year, and separate from it: one pledge class can
+            span several graduation years (#3939, #3941). Labelled with the
+            chapter's own word, in the chapter's own order, and absent for a
+            chapter that keeps no classes.
+          */}
+          {classChipOptions.length > 0 ? (
+            <FilterChip
+              label={vocab("class", chapterWords)}
+              anyLabel="Any"
+              options={classChipOptions}
+              value={effectiveClassFilter}
+              onChange={setClassFilter}
+            />
+          ) : null}
           <FilterChip
             label="Status"
             anyLabel="Any status"
@@ -726,7 +813,7 @@ export function MembersDirectory() {
               setStatusFilter(value as "active" | "pending" | null)
             }
           />
-          <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
+          <SortChip options={sortOptions} value={effectiveSort} onChange={setSort} />
           {/*
           The route's primary action, at the trailing edge of the one toolbar
           row `1f` pin 2 describes. It renders above the empty state as well
@@ -822,6 +909,7 @@ export function MembersDirectory() {
               onClick={() => {
                 setRoleFilter(null);
                 setCohortFilter(null);
+                setClassFilter(null);
                 setStatusFilter(null);
               }}
             >
@@ -882,6 +970,9 @@ export function MembersDirectory() {
               const name = displayNameOf(member);
               const roleName = primaryRoleName(member);
               const joined = formatJoined(member.created_at);
+              const className = member.pledge_class_id
+                ? (classNameById.get(member.pledge_class_id) ?? null)
+                : null;
               const points = pointsOf(member);
               const status = presenceStatusOf(member);
               const customLine = customLineOf(member);
@@ -941,6 +1032,7 @@ export function MembersDirectory() {
                     aria-label={[
                       name,
                       roleName,
+                      className,
                       `${points} points`,
                       joined ? `joined ${joined}` : null,
                       member.email || null,
@@ -1010,7 +1102,7 @@ export function MembersDirectory() {
                         that can run long.
                       */}
                       <span className="min-w-0 truncate text-caption text-muted sm:flex-1">
-                        {[roleName, joined, member.email]
+                        {[roleName, className, joined, member.email]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
