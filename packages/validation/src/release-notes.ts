@@ -80,6 +80,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Mark a sent message Important, Funny, Hype and more, and a channel now shows a strip at the top until you've seen each Important message in it.",
       "Sign-up links in Activity now show the form's, sheet's, or booking page's own name, with what kind of link it is underneath, so they no longer all look alike.",
       "Officers can now only change roles ranked below their own and only hand out permissions they hold themselves, so nobody can promote themselves.",
+      "Chat now says who is typing, clears it as soon as their message arrives, and no longer nudges the conversation up and down while people type.",
     ],
   },
   {
