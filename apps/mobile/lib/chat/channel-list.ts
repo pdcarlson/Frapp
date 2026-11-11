@@ -66,6 +66,11 @@ export interface ChannelSummary {
    * (`compareChannelOrder` in `@repo/hooks`).
    */
   display_order?: number;
+  /**
+   * The chapter's audit log (#3909), which takes no background (#4031).
+   * Present, and `true`, only when the row says exactly `true`.
+   */
+  is_audit_log?: boolean;
 }
 
 /**
@@ -117,6 +122,7 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         Number.isFinite(row.display_order)
           ? { display_order: row.display_order }
           : {}),
+        ...(row.is_audit_log === true ? { is_audit_log: true } : {}),
       },
     ];
   });

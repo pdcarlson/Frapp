@@ -79,7 +79,9 @@ All API errors share one body, specified in [`architecture/README.md` § Error r
 - All API endpoints require authentication, except the health routes (`/health` and `/health/ready`), webhooks, the Discord
   OAuth callback (`GET /v1/discord/connect/callback`), whose capability is its single-use `state`, and the mobile
   minimum-version check (`GET /v1/client-policy`), which the app asks before anyone signs in and which returns only a store
-  link and whether the caller's own build is still served ([`../ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version).
+  link and whether the caller's own build is still served ([`../ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version),
+  and the team's Dev log route (`POST /v1/integrations/dev-log`), whose caller is a workflow holding a token that can post
+  into one configured channel and nothing else ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)).
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
 - File uploads are checked for allowed MIME types and extensions via `@repo/validation` before a signed URL is issued; storage buckets enforce the same MIME list and a size cap on the upload itself. Kinds: [`content-validation.md` § 1](../../docs/security/content-validation.md#1-allowed-content-types); the member-upload cap: [§ 3](../../docs/security/content-validation.md#3-size); per-bucket limits: [`spec/architecture/README.md` § 7](../architecture/README.md#7-storage-supabase-storage).
@@ -96,6 +98,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. |
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
+| `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)). |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
 | The signed-upload-URL routes — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism rather than per-module, but it is a convention applied by hand at each handler — nothing inherits it, and `POST /v1/discord-imports/:id/upload-urls` currently mints signed URLs on the default ([#1709](https://github.com/pdcarlson/Frapp/issues/1709)). |
 | `GET /v1/search` | 20/min | One full-text scan per search source, per call, and the message source runs one per 100 channels the caller can read ([`search.md`](search.md#global-search)). A message filter with no text is a wider read than that ([`search.md`](search.md#message-filters)). |

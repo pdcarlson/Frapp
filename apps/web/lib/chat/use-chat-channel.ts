@@ -131,17 +131,34 @@ export interface UseChatChannelResult {
     content: string,
     opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
   ) => Promise<void>;
-  react: (messageId: string, emoji: string) => Promise<void>;
-  unreact: (messageId: string, emoji: string) => Promise<void>;
+  /*
+    Every row write below takes an optional `threadRootId`: set, the message
+    is a reply in that thread, and the write patches the thread's own cache
+    (`messageCacheKey`) rather than the timeline's (#4034).
+  */
+  react: (
+    messageId: string,
+    emoji: string,
+    threadRootId?: string | null,
+  ) => Promise<void>;
+  unreact: (
+    messageId: string,
+    emoji: string,
+    threadRootId?: string | null,
+  ) => Promise<void>;
   /** Own message only — enforced server-side. Rejects on failure; callers keep editing on error. */
-  edit: (messageId: string, content: string) => Promise<void>;
+  edit: (
+    messageId: string,
+    content: string,
+    threadRootId?: string | null,
+  ) => Promise<void>;
   /** Own message, or any message with `channels:manage` (server-enforced). */
-  delete: (messageId: string) => Promise<void>;
+  delete: (messageId: string, threadRootId?: string | null) => Promise<void>;
   /**
    * Closes the viewer's own poll card early (#3794); creator-only on the
    * server. Toasts and rejects on failure.
    */
-  closePoll: (messageId: string) => Promise<void>;
+  closePoll: (messageId: string, threadRootId?: string | null) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   /** The manager's list: the same array until someone starts or stops typing. */
@@ -203,6 +220,7 @@ export interface UseChatChannelResult {
     messageId: string,
     actionType: string,
     payload: Record<string, unknown>,
+    threadRootId?: string | null,
   ) => Promise<void>;
 }
 
@@ -531,33 +549,42 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const reactCb = useCallback(
-    async (messageId: string, emoji: string) => {
+    async (messageId: string, emoji: string, threadRootId?: string | null) => {
       if (!channelId) return;
-      await reactAction(ctx, { channelId, messageId, emoji });
+      await reactAction(ctx, { channelId, messageId, emoji, threadRootId });
     },
     [channelId, ctx],
   );
 
   const unreactCb = useCallback(
-    async (messageId: string, emoji: string) => {
+    async (messageId: string, emoji: string, threadRootId?: string | null) => {
       if (!channelId) return;
-      await unreactAction(ctx, { channelId, messageId, emoji });
+      await unreactAction(ctx, { channelId, messageId, emoji, threadRootId });
     },
     [channelId, ctx],
   );
 
   const editCb = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      threadRootId?: string | null,
+    ) => {
       if (!channelId) return;
-      await editMessageAction(ctx, { channelId, messageId, content });
+      await editMessageAction(ctx, {
+        channelId,
+        messageId,
+        content,
+        threadRootId,
+      });
     },
     [channelId, ctx],
   );
 
   const deleteCb = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, threadRootId?: string | null) => {
       if (!channelId) return;
-      await deleteMessageAction(ctx, { channelId, messageId });
+      await deleteMessageAction(ctx, { channelId, messageId, threadRootId });
     },
     [channelId, ctx],
   );
@@ -565,9 +592,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   // A poll card's Close poll (#3794). Pessimistic like delete; the action
   // toasts a refusal and rethrows.
   const closePollCb = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, threadRootId?: string | null) => {
       if (!channelId) return;
-      await closePollAction(ctx, { channelId, messageId });
+      await closePollAction(ctx, { channelId, messageId, threadRootId });
     },
     [channelId, ctx],
   );
@@ -610,9 +637,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       messageId: string,
       actionType: string,
       payload: Record<string, unknown>,
+      threadRootId?: string | null,
     ) => {
       if (!channelId) return;
-      await actOnCard(ctx, { channelId, messageId, actionType, payload });
+      await actOnCard(ctx, {
+        channelId,
+        messageId,
+        actionType,
+        payload,
+        threadRootId,
+      });
     },
     [channelId, ctx],
   );

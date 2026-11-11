@@ -7,13 +7,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import type { ChapterCustomRole } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -122,7 +116,7 @@ export function SettingsRolesTab({
   isSavingConfig,
 }: Props) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/*
         No `canManage` here. That prop is `chapter-config:manage`, which is what
         the config PATCH behind the default-invite-role control needs; the
@@ -353,15 +347,12 @@ function DefaultInviteRoleCard({
       : "Pick a role";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Default invite role</CardTitle>
-        <CardDescription>
-          Used when an invite doesn&apos;t pick a role. Changes are written to
-          the chapter audit log.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <ProfileSection
+      id="settings-default-invite-role"
+      title="Default invite role"
+      hint="Used when an invite doesn't pick a role. Changes are written to the chapter audit log."
+    >
+      <div className="space-y-2">
         <Label htmlFor="default-invite-role">Role</Label>
         <Select
           value={pickerValue}
@@ -397,8 +388,8 @@ function DefaultInviteRoleCard({
             Roles could not load, so the default cannot be changed right now.
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }
 
@@ -557,11 +548,8 @@ function CustomView({
   } else {
     body = (
       <>
-        <Card>
-          <CardHeader>
-            <CardTitle>Custom roles</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <ProfileSection id="settings-custom-roles" title="Custom roles">
+          <div>
             {roles.length === 0 ? (
               <InlineNote>No custom roles yet.</InlineNote>
             ) : (
@@ -624,15 +612,15 @@ function CustomView({
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </ProfileSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Create a custom role</CardTitle>
-          </CardHeader>
+        <ProfileSection
+          id="settings-create-a-custom-role"
+          title="Create a custom role"
+        >
           <form onSubmit={handleCreate}>
-            <CardContent className="space-y-4">
+            <div className="space-y-4">
               <div className="grid gap-1.5 sm:max-w-sm">
                 <Label htmlFor="custom-role-label">Name</Label>
                 <Input
@@ -675,8 +663,8 @@ function CustomView({
                   ))}
                 </div>
               </div>
-            </CardContent>
-            <CardContent className="flex justify-end pt-0">
+            </div>
+            <div className="mt-4 flex justify-end">
               <Button
                 type="submit"
                 disabled={
@@ -692,15 +680,15 @@ function CustomView({
                 ) : null}
                 Create role
               </Button>
-            </CardContent>
+            </div>
           </form>
-        </Card>
+        </ProfileSection>
       </>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* Above the branch, so no state change unmounts an open confirmation. */}
       {confirmDialog}
       {body}

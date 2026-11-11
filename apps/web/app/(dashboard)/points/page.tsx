@@ -15,6 +15,13 @@ import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
@@ -27,7 +34,7 @@ import {
 } from "@/components/points/point-category";
 import {
   dashboardCheckboxHitAreaClassName,
-  dashboardFilterSelectClassName,
+  dashboardToolbarHeightClassName,
   dashboardTableCheckboxClassName,
   dashboardToolbarSearchClassName,
   dashboardToolbarSearchGlyphClassName,
@@ -45,6 +52,9 @@ import {
 } from "@/components/shared/subscription-gate";
 import { PointsAuditCard } from "@/components/points/points-audit-card";
 import { PointsPageSkeleton } from "@/components/points/points-skeleton";
+
+/** A toolbar filter: the app's Select at the toolbar row's height. */
+const FILTER_SELECT = `${dashboardToolbarHeightClassName} w-auto min-w-40 text-sm`;
 
 const windows = [
   { label: "All time", value: "all" as const },
@@ -404,19 +414,24 @@ export default function PointsPage() {
           })}
         </div>
         {archives.length > 0 ? (
-          <select
-            aria-label="View an archived semester"
+          <Select
             value={semesterArchiveId}
-            onChange={(event) => setSemesterArchiveId(event.target.value)}
-            className={dashboardFilterSelectClassName}
+            onValueChange={setSemesterArchiveId}
           >
-            <option value="">Archived period…</option>
-            {archives.map((archive) => (
-              <option key={archive.id} value={archive.id}>
-                {archive.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="View an archived semester"
+              className={FILTER_SELECT}
+            >
+              <SelectValue placeholder="Archived period" />
+            </SelectTrigger>
+            <SelectContent>
+              {archives.map((archive) => (
+                <SelectItem key={archive.id} value={archive.id}>
+                  {archive.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : null}
         {/*
             The window buttons beside this trigger are reads and stay live
@@ -568,33 +583,40 @@ export default function PointsPage() {
                   className={dashboardToolbarSearchClassName}
                 />
               </div>
-              <select
-                aria-label="Filter transactions by amount"
+              <Select
                 value={amountFilter}
-                onChange={(event) =>
-                  setAmountFilter(
-                    event.target.value as "all" | "positive" | "negative",
-                  )
+                onValueChange={(value) =>
+                  setAmountFilter(value as "all" | "positive" | "negative")
                 }
-                className={dashboardFilterSelectClassName}
               >
-                <option value="all">Amount: All</option>
-                <option value="positive">Amount: Positive</option>
-                <option value="negative">Amount: Negative</option>
-              </select>
-              <select
-                aria-label="Filter transactions by category"
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-                className={dashboardFilterSelectClassName}
-              >
-                <option value="all">Category: All</option>
-                {POINT_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {`Category: ${pointCategoryLabel(category)}`}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  aria-label="Filter transactions by amount"
+                  className={FILTER_SELECT}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Amount: All</SelectItem>
+                  <SelectItem value="positive">Amount: Positive</SelectItem>
+                  <SelectItem value="negative">Amount: Negative</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger
+                  aria-label="Filter transactions by category"
+                  className={FILTER_SELECT}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Category: All</SelectItem>
+                  {POINT_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {`Category: ${pointCategoryLabel(category)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           {/*

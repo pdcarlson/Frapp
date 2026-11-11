@@ -15,7 +15,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -257,26 +264,34 @@ export function PointsAdjustmentDialog({
         <SubscriptionNotice gate={gate} feature="adjusting points" />
 
         <div className="grid gap-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Member</span>
+          <div className="space-y-1 text-sm">
+            <Label
+              htmlFor="points-adjust-member"
+              className="font-normal text-muted-foreground"
+            >
+              Member
+            </Label>
             {/*
               The fields are gated alongside the submit, not just next to it:
               this dialog can be opened while blocked, and an editable form
               behind a dead Submit is the exact wasted-effort failure §5 names.
             */}
-            <select
-              value={targetUserId}
-              onChange={(event) => setTargetUserId(event.target.value)}
-              className={`${dashboardFormSelectClassName} w-full`}
-              {...gate.controlProps()}
-            >
-              {memberOptions.map((option) => (
-                <option key={option.userId} value={option.userId}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Select value={targetUserId} onValueChange={setTargetUserId}>
+              <SelectTrigger
+                id="points-adjust-member"
+                {...gate.controlProps()}
+              >
+                <SelectValue placeholder="Pick a member" />
+              </SelectTrigger>
+              <SelectContent>
+                {memberOptions.map((option) => (
+                  <SelectItem key={option.userId} value={option.userId}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm">
@@ -290,18 +305,29 @@ export function PointsAdjustmentDialog({
                 {...gate.controlProps()}
               />
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Category</span>
-              <select
-                value={category}
-                onChange={(event) => setCategory(event.target.value as "MANUAL" | "FINE")}
-                className={`${dashboardFormSelectClassName} w-full`}
-                {...gate.controlProps()}
+            <div className="space-y-1 text-sm">
+              <Label
+                htmlFor="points-adjust-category"
+                className="font-normal text-muted-foreground"
               >
-                <option value="MANUAL">Manual adjustment</option>
-                <option value="FINE">Fine</option>
-              </select>
-            </label>
+                Category
+              </Label>
+              <Select
+                value={category}
+                onValueChange={(value) => setCategory(value as "MANUAL" | "FINE")}
+              >
+                <SelectTrigger
+                  id="points-adjust-category"
+                  {...gate.controlProps()}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MANUAL">Manual adjustment</SelectItem>
+                  <SelectItem value="FINE">Fine</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <label className="space-y-1 text-sm">

@@ -19,6 +19,7 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import { WebhookController } from '../controllers/webhook.controller';
 import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
+import { DevLogController } from '../controllers/dev-log.controller';
 import { InviteController } from '../controllers/invite.controller';
 import { EventController } from '../controllers/event.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
@@ -700,6 +701,12 @@ describe('CustomThrottlerGuard', () => {
         10,
       ),
       route('GET /search', SearchController, SR.search, 20),
+      route(
+        'POST /integrations/dev-log',
+        DevLogController,
+        DevLogController.prototype.post,
+        10,
+      ),
     ];
 
     let overrideGuard: TestableGuard;

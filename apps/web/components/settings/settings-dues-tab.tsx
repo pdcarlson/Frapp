@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -218,17 +211,15 @@ export function SettingsDuesTab({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Dues</CardTitle>
-        <CardDescription>
-          Saving writes an entry to the chapter audit log.
-        </CardDescription>
-      </CardHeader>
+    <ProfileSection
+      id="settings-dues"
+      title="Dues"
+      hint="Saving writes an entry to the chapter audit log."
+    >
       {/* noValidate: the browser's own `min` bubble would stop the submit
           before the save check below names the field, as the other tabs do. */}
       <form onSubmit={handleSubmit} noValidate>
-        <CardContent className="space-y-4">
+        <div className="space-y-4">
           <div className="grid gap-1.5">
             <Label htmlFor="dues-cadence">Cadence</Label>
             <Select
@@ -333,14 +324,14 @@ export function SettingsDuesTab({
               />
             </div>
           ) : null}
-        </CardContent>
-        <CardFooter className="flex justify-end">
+        </div>
+        <div className="mt-4 flex justify-end">
           <Button type="submit" disabled={disabled}>
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save dues
           </Button>
-        </CardFooter>
+        </div>
       </form>
-    </Card>
+    </ProfileSection>
   );
 }
