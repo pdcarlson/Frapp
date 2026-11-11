@@ -24,7 +24,7 @@ import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-prov
 import {
   presenceLabel,
   type PresenceStatus,
-} from "@/lib/realtime/presence-status";
+} from "@repo/hooks/presence-status";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
 

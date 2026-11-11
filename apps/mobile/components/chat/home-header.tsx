@@ -14,7 +14,7 @@ import { useNotifications, type MemberAvatarTint } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
 import { StatusDot } from "@/components/account/status-dot";
-import { useOwnStatus, useOwnStatusSync } from "@/lib/account/own-status";
+import { useOwnStatus } from "@/lib/account/own-status";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -154,7 +154,6 @@ export function AccountButton({
   const styles = createStyles(tokens);
   const ref = useRef<View>(null);
   const inboxUnread = selectUnreadNonChatCount(useNotifications().data);
-  useOwnStatusSync();
   const own = useOwnStatus();
   const shownStatus = own && own.status !== "online" ? own.status : null;
   // A photo that fails to load falls back to initials, retried on a refetch

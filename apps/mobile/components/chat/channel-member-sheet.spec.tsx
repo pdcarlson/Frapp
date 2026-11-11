@@ -7,6 +7,11 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { ChannelMemberSheet, MemberRows } from "./channel-member-sheet";
 import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
+import {
+  PRESENCE_NOT_READY,
+  setChapterPresence,
+} from "@/lib/presence/presence-store";
+import type { PresenceStatus } from "@repo/hooks/presence-status";
 
 /**
  * The mobile member sheet (#3536): who can read the channel, officers first,
@@ -123,6 +128,7 @@ beforeEach(() => {
   };
   state.roster = {};
   state.channelIds = [];
+  setChapterPresence(PRESENCE_NOT_READY);
 });
 
 describe("MemberRows", () => {
@@ -230,6 +236,61 @@ describe("MemberRows", () => {
     );
     expect(membersRefetch).toHaveBeenCalledTimes(1);
     expect(rosterRefetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MemberRows, presence (#3917)", () => {
+  const STATUS: Record<string, PresenceStatus> = {
+    "u-pres": "online",
+    "u-officer": "dnd",
+    "u-member": "idle",
+  };
+  const ready = () =>
+    setChapterPresence({
+      statusOf: (id) => STATUS[id] ?? "offline",
+      lineOf: (id) => (id === "u-officer" ? "Counting dues" : null),
+      isReady: true,
+    });
+  const dots = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.testID === "string" &&
+          node.props.testID.startsWith("member-presence-") &&
+          node.type === ("View" as never),
+      )
+      .map((node) => node.props.testID as string);
+
+  it("draws no dot, and claims no Offline, before presence has synced", () => {
+    const tree = render(<MemberRows channelId="chan-1" />);
+    expect(dots(tree)).toEqual([]);
+    expect(rowNames(tree)[0]).toBe("Zed President");
+  });
+
+  it("draws each member's dot and names it, with the custom line under the name", () => {
+    ready();
+    const tree = render(<MemberRows channelId="chan-1" />);
+    expect(dots(tree)).toEqual([
+      "member-presence-online",
+      "member-presence-dnd",
+      "member-presence-idle",
+      "member-presence-offline",
+    ]);
+    expect(rowNames(tree)).toEqual([
+      "Zed President, Online",
+      "Amy Officer, Do Not Disturb",
+      "Bob Member, Idle",
+      expect.stringMatching(/^Member u-bla.*, Offline$/),
+    ]);
+    expect(text(tree)).toContain("Counting dues");
+  });
+
+  it("follows presence as it changes, without reordering the rows", () => {
+    const tree = render(<MemberRows channelId="chan-1" />);
+    act(() => ready());
+    expect(rowNames(tree)[0]).toBe("Zed President, Online");
+    act(() => setChapterPresence(PRESENCE_NOT_READY));
+    expect(dots(tree)).toEqual([]);
   });
 });
 
