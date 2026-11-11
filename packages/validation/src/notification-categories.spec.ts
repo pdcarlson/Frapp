@@ -4,6 +4,7 @@ import {
   isNotificationCategoryKey,
   NOTIFICATION_CATEGORIES,
   rowsToNotificationCategoryState,
+  shownNotificationCategories,
 } from "./notification-categories";
 
 describe("NOTIFICATION_CATEGORIES", () => {
@@ -13,20 +14,22 @@ describe("NOTIFICATION_CATEGORIES", () => {
   // category added to the API without a row here would otherwise be
   // unswitchable in silence, and one renamed here would start writing rows the
   // server never reads.
-  it("exposes exactly the five member-facing categories", () => {
+  it("exposes exactly the six member-facing categories", () => {
     expect(NOTIFICATION_CATEGORIES.map((category) => category.key)).toEqual([
       "events",
       "points",
       "billing",
       "tasks",
       "service",
+      "members",
     ]);
   });
 
   // See the module docblock: `announcements` carries only URGENT traffic, and
   // URGENT bypasses the preference gate since #1041, so a switch would suppress
   // nothing until routine announcements are separated from emergencies
-  // (#1323); `admin` is chapter operations delivered chapter-wide; `default` is
+  // (#1323); `admin` is chat reports and the Discord import notice, which no
+  // switch may silence; `default` is
   // the service's fallback for a payload that omits a category. None is a
   // member preference.
   it("omits the categories that are not a member's to switch", () => {
@@ -96,6 +99,7 @@ describe("defaultNotificationCategoryState", () => {
       billing: true,
       tasks: true,
       service: true,
+      members: true,
     });
   });
 
@@ -116,13 +120,16 @@ describe("rowsToNotificationCategoryState", () => {
   // category.
   it("returns every catalog key, defaulting the ones with no row", () => {
     expect(
-      rowsToNotificationCategoryState([{ category: "points", is_enabled: false }]),
+      rowsToNotificationCategoryState([
+        { category: "points", is_enabled: false },
+      ]),
     ).toEqual({
       events: true,
       points: false,
       billing: true,
       tasks: true,
       service: true,
+      members: true,
     });
   });
 
@@ -182,5 +189,32 @@ describe("rowsToNotificationCategoryState", () => {
     const first = rowsToNotificationCategoryState([]);
     first.points = false;
     expect(rowsToNotificationCategoryState([]).points).toBe(true);
+  });
+});
+
+describe("shownNotificationCategories", () => {
+  const shownKeys = (permissions?: readonly string[] | null) =>
+    shownNotificationCategories(permissions).map((category) => category.key);
+
+  // #4008: the switch follows the push. A member outside the join audience is
+  // never sent "<Name> joined", so a switch for it would govern nothing.
+  it("draws the join switch only for the join notification's audience", () => {
+    expect(shownKeys(["members:view", "members:invite"])).toContain("members");
+    expect(shownKeys(["members:view", "roles:manage"])).toContain("members");
+    expect(shownKeys(["*"])).toContain("members");
+    expect(shownKeys(["members:view"])).not.toContain("members");
+    expect(shownKeys(["members:invite", "roles:manage"])).not.toContain(
+      "members",
+    );
+    expect(shownKeys([])).not.toContain("members");
+    expect(shownKeys()).not.toContain("members");
+  });
+
+  it("draws every unrestricted category whatever the permissions", () => {
+    for (const permissions of [undefined, [], ["members:view"]]) {
+      expect(shownKeys(permissions)).toEqual(
+        expect.arrayContaining(["events", "points", "tasks", "service"]),
+      );
+    }
   });
 });
