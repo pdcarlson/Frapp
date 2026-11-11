@@ -3464,9 +3464,9 @@ alter table public.chat_notification_preferences
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
 
-## Rollback Pinned and starred documents (20261111150000)
+## Rollback Pinned and starred documents (20261111180000)
 
-* **Migration**: `20261111150000_document_pins_and_stars.sql`
+* **Migration**: `20261111180000_document_pins_and_stars.sql`
 
 `pinned_at` on `chapter_document_folders` and `chapter_documents`, the table `chapter_document_stars`, and `anonymize_user` redefined to also delete `chapter_document_stars`. No existing row changed.
 
