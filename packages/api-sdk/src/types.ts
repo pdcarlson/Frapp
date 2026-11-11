@@ -6264,11 +6264,25 @@ export interface components {
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
         };
+        ActivityFileDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            source: "document" | "backwork";
+            title: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, open or closed, newest first. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
             /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
+            /**
+             * @deprecated
+             * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.
+             */
+            files: components["schemas"]["ActivityFileDto"][];
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
         };

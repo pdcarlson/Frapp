@@ -221,7 +221,7 @@ export interface ActivityView {
      * client built before that, an open web tab or a phone's over-the-air
      * bundle, does not fail on its absence. Removal is tracked separately.
      */
-    files: never[];
+    files: unknown[];
     /**
      * Events the caller made that have not ended, soonest first. A recurring
      * series is one row, its next meeting. Events made before creators were
