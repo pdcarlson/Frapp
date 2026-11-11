@@ -30,18 +30,17 @@ the spec as the pattern.
 
 ## AI
 
-Frapp's AI surface (Q&A, summarization, drafting) is built on **authoritative sources only**, and
-that is the product decision rather than an implementation detail — a smaller AI that is reliably
-right instead of a bigger one that is frequently embarrassing.
+Frapp's AI surface (Q&A, summarization, drafting, suggestions) answers from the chapter's **own
+sources and cites every answer**. Official sources rank first, and that is the product decision
+rather than an implementation detail — an AI that is reliably right instead of one that is
+frequently embarrassing.
 
-Stable prose is indexed and retrieved: meeting minutes and transcripts, uploaded chapter documents,
-and formal announcements. Live structured data — officer roster, events, dues amounts, points
-balances, attendance — is **never embedded**; the model reads it at answer time through the same
-permission-guarded API endpoints the rest of the product uses, so structured answers are correct
-when given and inherit the caller's permissions. In v1 the chapter chat sits deliberately outside
-the corpus — casual channels are not indexed, and DMs never are regardless of channel settings —
-with a v2+ revisit explicitly reserved. Vault documents are excluded by default, and every answer
-must cite its source inline.
+Prose is indexed and retrieved: meeting minutes and transcripts, uploaded chapter documents, formal
+announcements, and chapter-channel chat from members who agreed to it. Live structured data —
+officer roster, events, dues amounts, points balances, attendance — is **never embedded**; the model
+reads it at answer time through the same permission-guarded API endpoints the rest of the product
+uses, so structured answers are correct when given and inherit the caller's permissions. DMs are
+never read, vault documents are excluded, and every answer must cite its source inline.
 
 **It is specified, not shipped.** There is no `ai` module in `apps/api`. On web the ✦ Ask entry is
 a shell with no engine behind it. On mobile Ask exists only when a build flag is set, and then it is
