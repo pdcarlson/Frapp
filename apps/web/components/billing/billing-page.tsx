@@ -85,7 +85,7 @@ export function BillingPage() {
     : anyReadUncached(currentUserQuery);
   if (isOffline && offlineUncached) {
     return (
-      <div className="space-y-6">
+      <div className="@container space-y-6">
         {/*
           The **nested** offline state, not the whole-screen one, and on a page
           with no cards left that is the point rather than a technicality.
@@ -120,7 +120,9 @@ export function BillingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so the plan panel and invoice rows count its own width.
+    <div className="@container space-y-6">
       {/*
         No `PageActions` row: `1f` pin 2 puts a route's primary action there, and
         this route's is Create invoice — which is gated on both

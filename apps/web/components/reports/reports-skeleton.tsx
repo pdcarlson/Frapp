@@ -12,14 +12,14 @@ import {
 export function ReportsFormSkeleton() {
   return (
     <SectionSkeleton label="Checking your chapter permissions">
-      <div aria-hidden="true" className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
+      <div aria-hidden="true" className="@container space-y-4">
+        <div className="grid gap-3 @2xl:grid-cols-2">
           <div className="space-y-2">
             <SkeletonField />
             <Skeleton className="h-[11px] w-[70%]" />
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 @2xl:grid-cols-3">
           <SkeletonField />
           <SkeletonField />
           <SkeletonField />

@@ -15,12 +15,12 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
  */
 function RosterBody() {
   return (
-    <div className="space-y-3">
+    <div className="@container space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="mr-auto">
           <SkeletonSectionLabel width="w-16" count />
         </div>
-        <SkeletonControl className="w-full sm:w-56" />
+        <SkeletonControl className="w-full @md:w-56" />
         <SkeletonControl className="w-[112px]" />
         <SkeletonControl className="w-[132px]" />
         <SkeletonControl className="w-[112px]" />
@@ -42,7 +42,7 @@ function MemberRows() {
       rows={10}
       lines={1}
       lead={["checkbox", "avatar"]}
-      trailing={["hidden w-56 md:block", "w-10"]}
+      trailing={["hidden w-56 @2xl:block", "w-10"]}
       trailingHeight="h-[11px]"
       rowClassName="min-h-9 py-1.5 pointer-coarse:min-h-11"
     />

@@ -144,7 +144,7 @@ function Cell({ included, column }: { included: boolean; column: string }) {
 }
 
 const ROW_CLASS =
-  "grid min-h-10 grid-cols-[1fr_72px_72px] items-center gap-2 border-t border-border px-4 py-1.5 sm:grid-cols-[1fr_120px_120px]";
+  "grid min-h-10 grid-cols-[1fr_72px_72px] items-center gap-2 border-t border-border px-4 py-1.5 @md:grid-cols-[1fr_120px_120px]";
 
 export function PlanMatrix() {
   return (
@@ -173,7 +173,7 @@ export function PlanMatrix() {
           to remember. The visible header row stays a visual label.
         */}
         <div
-          className={`grid min-h-9 grid-cols-[1fr_72px_72px] items-center gap-2 bg-surface-1 px-4 text-caption font-semibold text-muted-foreground sm:grid-cols-[1fr_120px_120px]`}
+          className={`grid min-h-9 grid-cols-[1fr_72px_72px] items-center gap-2 bg-surface-1 px-4 text-caption font-semibold text-muted-foreground @md:grid-cols-[1fr_120px_120px]`}
         >
           <span>Module</span>
           <span className="text-center">Free</span>

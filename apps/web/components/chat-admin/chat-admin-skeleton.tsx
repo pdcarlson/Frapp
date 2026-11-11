@@ -44,7 +44,7 @@ export function ReportRowsSkeleton() {
  */
 function ChannelsBody() {
   return (
-    <div aria-hidden="true" className="space-y-8">
+    <div aria-hidden="true" className="@container space-y-8">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <div className="mr-auto">
@@ -52,7 +52,7 @@ function ChannelsBody() {
           </div>
           <SkeletonControl className="w-[128px]" />
         </div>
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
           <SkeletonRows
             rows={5}
             lines={1}
@@ -60,7 +60,7 @@ function ChannelsBody() {
             trailingHeight="h-5"
             rowClassName="min-h-9 pointer-coarse:min-h-11"
           />
-          <div className="space-y-3 lg:border-l lg:border-border lg:pl-6">
+          <div className="space-y-3 @3xl:border-l @3xl:border-border @3xl:pl-6">
             <Skeleton className="h-4 w-36" />
             <Skeleton className="h-[11px] w-[55%]" />
           </div>

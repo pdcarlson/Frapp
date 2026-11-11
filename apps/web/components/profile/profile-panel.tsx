@@ -204,19 +204,19 @@ export function ProfilePanel() {
               <AvatarImage src={profile.avatar_url} alt="" />
             ) : null}
             {/*
-              Sized off the 84px circle rather than off foundations §7's ladder,
-              for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
-              mark, not a run of text. s15 draws them at 28 in an 84px circle.
+              The headline role (foundations §7), as mobile's profile photo
+              draws the same 84px circle's initials (`profile-photo.tsx`), so
+              both apps size them alike (#3830).
             */}
             <AvatarFallback
               tint={ownId ? avatarTintFor(ownId) : null}
-              className="bg-popover text-[26px] font-bold text-muted-foreground"
+              className="bg-popover text-headline font-bold text-muted-foreground"
             >
               {initials(storedName || profile.email || "")}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-semibold tracking-tight">
+            <h2 className="truncate text-headline font-bold tracking-tight">
               {displayName}
             </h2>
             {/* An absent email is absent, not a sentence standing in for it. */}

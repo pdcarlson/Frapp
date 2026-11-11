@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { asRoute } from "@/lib/href";
 import {
   webAppHost,
@@ -179,12 +180,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
+    // Web's checklist title: the shared eyebrow in the primary tone.
     eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
+      ...eyebrowStyle(tokens),
       flex: 1,
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
+      color: tokens.color.text.foreground,
     },
     count: {
       ...typeRole(tokens.typography.role.caption),

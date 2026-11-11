@@ -492,12 +492,14 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs + 1,
     },
     // One geometry recipe; only fill and text colour differ between the two
-    // states (foundations.md:68).
+    // states (foundations.md §5).
+    // The Chip step (components.md §5): 24 tall, padding-x 8, 12.5 / 600,
+    // the same badge web's channel list draws.
     badge: {
-      minWidth: 20,
-      height: 20,
+      minWidth: 24,
+      height: 24,
       borderRadius: tokens.radius.chip,
-      paddingHorizontal: tokens.spacing.sm - 2,
+      paddingHorizontal: tokens.spacing.sm,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -505,7 +507,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.semantic.mention,
     },
     badgeText: {
-      ...typeRole(tokens.typography.role.caption),
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
     },
     badgeTextMention: {
       color: tokens.color.semantic.mentionForeground,

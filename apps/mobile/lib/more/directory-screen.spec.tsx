@@ -88,6 +88,9 @@ const state = vi.hoisted(() => ({
   classesFailed: null as null | "never" | "refetch",
   classesPending: false,
   vocabulary: undefined as Record<string, string> | undefined,
+  // `GET /v1/roles`, for the Actives filters (#3971).
+  roles: [] as unknown[],
+  rolesError: false,
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -96,6 +99,7 @@ const refetches = vi.hoisted(() => ({
   alumni: vi.fn(),
   search: vi.fn(),
   classes: vi.fn(),
+  roles: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -103,6 +107,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useActiveChapterId: () => "c-1",
   usePermissionList: () => state.permissions,
+  useRoles: () =>
+    state.rolesError
+      ? {
+          data: undefined,
+          isPending: false,
+          isError: true,
+          isSuccess: false,
+          isFetching: false,
+          refetch: refetches.roles,
+        }
+      : read(state.roles, refetches.roles),
   useMembers: () => read(state.members ?? MEMBERS, refetches.members),
   usePledgeClasses: () =>
     state.classesPending
@@ -153,12 +168,19 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
+// A props-only stand-in: the spec drives the filter it hands the screen.
+vi.mock("@/components/directory/actives-filter-sheet", () => ({
+  ActivesFilterSheet: () => null,
+}));
+
 import DirectoryScreen, {
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
+import { ActivesFilterSheet as ActivesFilterSheetStandIn } from "@/components/directory/actives-filter-sheet";
+import type { ActivesFilter } from "@/lib/directory/actives-filter";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -230,6 +252,38 @@ function chips(tree: ReactTestRenderer) {
   };
 }
 
+type TrailingChip = React.ReactElement<{
+  label: string;
+  on: boolean;
+  accessibilityLabel?: string;
+  accessibilityState: Record<string, boolean>;
+  onPress: () => void;
+}>;
+
+/**
+ * The chips after the tabs: the Alumni tab's one Filters chip, or the Actives
+ * tab's Filters chip and, when offered, its sort (a fragment of both).
+ */
+function trailingChips(tree: ReactTestRenderer): TrailingChip[] {
+  const trailing = chips(tree).trailing as React.ReactElement<{
+    children?: React.ReactNode;
+  }> | null;
+  if (!trailing) return [];
+  if (trailing.type !== React.Fragment) return [trailing as TrailingChip];
+  return React.Children.toArray(trailing.props.children).filter(
+    React.isValidElement,
+  ) as TrailingChip[];
+}
+
+/** The Actives tab's Filters chip (#3971). */
+function activesFiltersChip(tree: ReactTestRenderer): TrailingChip {
+  const chip = trailingChips(tree).find((c) =>
+    c.props.label.startsWith("Filters"),
+  );
+  if (!chip) throw new Error("no Filters chip");
+  return chip;
+}
+
 /** The alumni filter field with this label, or `null` while they're folded. */
 function alumniField(tree: ReactTestRenderer, label: string) {
   try {
@@ -257,6 +311,8 @@ beforeEach(() => {
   state.classesFailed = null;
   state.classesPending = false;
   state.vocabulary = undefined;
+  state.roles = [];
+  state.rolesError = false;
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -309,7 +365,8 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
   // under the tabs whenever the Alumni tab was up, pushing the list down.
   it("keeps the alumni fields behind a Filters chip that counts what is set", () => {
     const tree = render();
-    expect(chips(tree).trailing).toBeNull();
+    // The Actives tab's own Filters chip (#3971), not the alumni one.
+    expect(trailingChips(tree).map((c) => c.props.label)).toEqual(["Filters"]);
 
     act(() => chips(tree).onSelect("alumni"));
     const filters = () => chips(tree).trailing!.props;
@@ -409,6 +466,174 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
 });
 
 /**
+ * #3971: the Actives tab narrowed by role, graduation year, pledge class and
+ * status, by web's rules, from a sheet behind its Filters chip.
+ */
+describe("s13's Actives filters (#3971)", () => {
+  const ROLES = [
+    { id: "r-member", name: "Member", color: null },
+    { id: "r-rush", name: "Rush Chair", color: "#ff0000" },
+    { id: "r-alumni", name: "Alumni", color: null, system_key: "ALUMNI" },
+  ];
+  const ACTIVES = [
+    {
+      ...MARCUS,
+      role_ids: ["r-member", "r-rush"],
+      graduation_year: 2027,
+      has_completed_onboarding: true,
+    },
+    {
+      ...ANDRE,
+      role_ids: ["r-member"],
+      graduation_year: 2028,
+      has_completed_onboarding: false,
+    },
+    CHARLES,
+    DANIEL,
+  ];
+
+  function sheet(tree: ReactTestRenderer) {
+    return tree.root.findByType(
+      ActivesFilterSheetStandIn as unknown as React.ElementType,
+    ).props as {
+      filter: ActivesFilter;
+      onChange: (next: ActivesFilter) => void;
+      roles: { id: string; name: string }[];
+      years: number[];
+      classes: { id: string; name: string }[];
+      classWord: string;
+      rolesStatus: string;
+    };
+  }
+
+  function pick(tree: ReactTestRenderer, patch: Partial<ActivesFilter>) {
+    act(() => sheet(tree).onChange({ ...sheet(tree).filter, ...patch }));
+  }
+
+  beforeEach(() => {
+    state.roles = ROLES;
+    state.members = ACTIVES;
+  });
+
+  it("hands the sheet the actives' roles (not Alumni) and years, newest first", () => {
+    const tree = render();
+
+    expect(sheet(tree).roles.map((r) => r.name)).toEqual([
+      "Member",
+      "Rush Chair",
+    ]);
+    expect(sheet(tree).years).toEqual([2028, 2027]);
+  });
+
+  it("narrows by role, year and status, and the chip counts what is set", () => {
+    const tree = render();
+    expect(activesFiltersChip(tree).props.label).toBe("Filters");
+
+    pick(tree, { roleId: "r-rush" });
+    expect(listed(tree)).toEqual(["Marcus Reid"]);
+    expect(activesFiltersChip(tree).props.label).toBe("Filters · 1");
+    expect(activesFiltersChip(tree).props.on).toBe(true);
+
+    pick(tree, { roleId: null, graduationYear: 2028 });
+    expect(listed(tree)).toEqual(["Andre Silva"]);
+
+    pick(tree, { graduationYear: null, status: "pending" });
+    expect(listed(tree)).toEqual(["Andre Silva"]);
+    pick(tree, { status: "active", roleId: "r-member" });
+    expect(listed(tree)).toEqual(["Marcus Reid"]);
+    expect(activesFiltersChip(tree).props.label).toBe("Filters · 2");
+    // The tab's count stays the chapter's actives.
+    expect(countOf(tree, "actives")).toBe(2);
+  });
+
+  it("says a filter miss in one line, with Clear filters", () => {
+    const tree = render();
+    pick(tree, { roleId: "r-rush", status: "pending" });
+
+    const body = () =>
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        children: React.ReactElement<{
+          children: React.ReactNode;
+          action?: { label: string; onPress: () => void };
+        }>;
+      }>;
+    expect(body().props.children.props.children).toBe(
+      "No actives match these filters.",
+    );
+    act(() => body().props.children.props.action!.onPress());
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+    expect(activesFiltersChip(tree).props.label).toBe("Filters");
+  });
+
+  it("drops a pick whose role no longer exists rather than empty the list", () => {
+    const tree = render();
+    pick(tree, { roleId: "r-deleted" });
+
+    expect(sheet(tree).filter.roleId).toBeNull();
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+  });
+
+  it("leaves a search and the Alumni tab unfiltered", () => {
+    state.search = [CHARLES, MARCUS, ANDRE];
+    const tree = render();
+    pick(tree, { roleId: "r-rush" });
+
+    act(() => chips(tree).onSelect("alumni"));
+    expect(listed(tree)).toEqual([
+      "Charles Whitmore III",
+      "Daniel Kirkpatrick",
+    ]);
+
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("a"));
+    expect(listed(tree)).toHaveLength(3);
+  });
+
+  it("offers the chapter's classes under its own word, and narrows by one", () => {
+    state.classes = [
+      { id: "pc-alpha", name: "Alpha" },
+      { id: "pc-beta", name: "Beta" },
+    ];
+    state.vocabulary = { class: "Line" };
+    state.members = [
+      { ...ACTIVES[0]!, pledge_class_id: "pc-alpha" },
+      { ...ACTIVES[1]!, pledge_class_id: "pc-beta" },
+      CHARLES,
+      DANIEL,
+    ];
+    const tree = render();
+
+    expect(sheet(tree).classes.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
+    expect(sheet(tree).classWord).toBe("Line");
+    pick(tree, { pledgeClassId: "pc-beta" });
+    expect(listed(tree)).toEqual(["Andre Silva"]);
+  });
+
+  it("tells the sheet whether the role list has answered", () => {
+    expect(sheet(render()).rolesStatus).toBe("ready");
+
+    state.rolesError = true;
+    expect(sheet(render()).rolesStatus).toBe("error");
+  });
+
+  it("refreshes the role list on a pull", async () => {
+    const tree = render();
+    const control = list(tree).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+    await act(async () => {
+      await control.props.refresh();
+    });
+    expect(refetches.roles).toHaveBeenCalledWith({ cancelRefetch: true });
+  });
+});
+
+/**
  * #3939, mobile: `spec/behavior/members.md` § Pledge class and order number.
  * Read-only here. The chip is the Actives tab's trailing chip, where the
  * Alumni tab carries Filters.
@@ -427,13 +652,9 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
   ];
 
   function orderChip(tree: ReactTestRenderer) {
-    return chips(tree).trailing as React.ReactElement<{
-      label: string;
-      on: boolean;
-      accessibilityLabel: string;
-      accessibilityState: { selected: boolean };
-      onPress: () => void;
-    }> | null;
+    return (
+      trailingChips(tree).find((c) => c.props.label.startsWith("Sort:")) ?? null
+    );
   }
 
   function metaOf(tree: ReactTestRenderer, name: string) {
@@ -505,7 +726,10 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
     act(() => chips(tree).onSelect("alumni"));
 
     expect(chips(tree).trailing!.props.label).toBe("Filters");
-    expect(listed(tree)).toEqual(["Charles Whitmore III", "Daniel Kirkpatrick"]);
+    expect(listed(tree)).toEqual([
+      "Charles Whitmore III",
+      "Daniel Kirkpatrick",
+    ]);
   });
 
   function rerender(tree: ReactTestRenderer) {

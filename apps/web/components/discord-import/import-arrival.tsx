@@ -215,7 +215,7 @@ export function ArrivalCategories({
       >
         By Discord category
       </h3>
-      <ul className="grid gap-1.5 sm:grid-cols-2">
+      <ul className="grid gap-1.5 @xl:grid-cols-2">
         {tiles.map((tile, index) => (
           <li
             key={tile.key}

@@ -490,7 +490,7 @@ export function ChannelList({
             */}
               {channel.muted ? (
                 <>
-                  <MuteGlyph className="h-4 w-4 text-muted-foreground" active />
+                  <MuteGlyph className="h-4 w-4 text-muted" active />
                   <span className="sr-only">Muted</span>
                 </>
               ) : null}
@@ -525,14 +525,6 @@ export function ChannelList({
       </ChannelRowMenu>
     );
   };
-
-  if (channels.length === 0) {
-    return (
-      <p className="rounded-lg border border-border px-3 py-4 text-center text-caption text-muted-foreground">
-        All caught up. Start a channel to begin chatting.
-      </p>
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -569,10 +561,11 @@ export function ChannelList({
                   "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
                   EYEBROW,
                   // Folded with something unread inside, it reads as an
-                  // unread row does, since only a mention carries a number.
+                  // unread row does, since only a mention carries a number:
+                  // `--foreground` bold (foundations.md §5), as mobile draws it.
                   section.collapsed &&
                     section.unreadCount > 0 &&
-                    "text-foreground",
+                    "font-bold text-foreground",
                 )}
               >
                 {section.collapsed ? (
@@ -590,7 +583,7 @@ export function ChannelList({
                 {section.collapsed && section.addressed ? (
                   <Badge
                     variant="mention"
-                    className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
+                    className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
                     aria-label={foldedSectionAnnouncement(section)}
                   >
                     {badgeLabel(section.addressedCount, section.mentionCount)}

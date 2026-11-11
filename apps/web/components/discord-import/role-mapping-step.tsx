@@ -529,7 +529,7 @@ function RoleRow({
             aria-label={`${role.roleName} becomes`}
             className={cn(
               dashboardToolbarHeightClassName,
-              "w-40 shrink-0 text-sm sm:w-48",
+              "w-40 shrink-0 text-sm @xl:w-48",
               value === IGNORE && "text-muted-foreground",
             )}
           >
@@ -591,7 +591,7 @@ function ReadsMeter({ reads, max }: { reads: number; max: number }) {
       : "Could read no private channel";
   return (
     <span
-      className="hidden shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground sm:flex"
+      className="hidden shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground @xl:flex"
       title={label}
     >
       <span className="sr-only">{label}</span>

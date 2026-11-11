@@ -1775,12 +1775,20 @@ function createStyles(tokens: SignetTokens) {
     reactionChipMine: {
       borderWidth: 1,
     },
+    // The reacted chip is the Accent badge recipe (components.md §5), so both
+    // states carry its 12.5 / 600, as web's CHIP.base does.
     reactionText: {
-      ...typeRole(tokens.typography.role.caption),
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
       color: tokens.color.text.mutedForeground,
     },
     reactionTextMine: {
-      ...typeRole(tokens.typography.role.caption),
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
     },
   });
 }
