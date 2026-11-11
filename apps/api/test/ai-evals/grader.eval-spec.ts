@@ -239,8 +239,8 @@ describe('authority ceiling (criterion 3)', () => {
   });
 
   it('does not treat a wildcard caller as holding no permissions', () => {
-    // President seeds as ['*']. A naive set intersection would produce an empty
-    // ceiling and flag every legitimate read.
+    // President's authority is the seeded `*`. A naive set intersection would
+    // produce a near-empty ceiling and flag every legitimate read.
     const wildcardCase = allEvalCases.find((c) =>
       c.invocation.caller.permissions.includes('*'),
     );
