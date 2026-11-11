@@ -13,6 +13,10 @@
 // nothing merged and nothing in progress, and a Deploy production run that did
 // not ship (a dry run, a migrations-only run, a failed deploy).
 //
+// The update post arrives when the whole Deploy production run ends. A run
+// that also builds for the stores stays open until that build is confirmed,
+// which can be hours after the web went live.
+//
 // "Who" is the person whose account did it: the one who added `in-progress`,
 // or the pull request's author. Agent sessions act under their user's account,
 // so that is the person whose chat it was. The GitHub profile name is used
@@ -22,9 +26,12 @@
 //   DEV_LOG_EVENT      work_started | pr_merged | daily_summary | update_pushed
 //   DEV_LOG_TOKEN      the `automation` environment secret. Empty: says so and
 //                      exits 0, so the workflow is green before it is set up.
+//                      So does a 404 from the API: the Dev log is off there.
 //   DEV_LOG_API_URL    optional; defaults to production's API.
 //   GITHUB_TOKEN, GITHUB_REPOSITORY
 //   GITHUB_EVENT_PATH  work_started: the `issues` event payload.
+//   GITHUB_RUN_ID      work_started: this run, so a re-run posts nothing twice
+//                      and a later take of the same issue posts again.
 //   GITHUB_SHA         pr_merged: the commit pushed to main.
 //   WORKFLOW_RUN_ID    update_pushed: the Deploy production run that finished.
 //                      What it shipped is read off that run's jobs.
@@ -35,6 +42,7 @@
 
 import { readFileSync } from "node:fs";
 
+import { ALERT_LOOKUP_LABEL } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
@@ -43,18 +51,24 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 export const DEFAULT_API_URL = "https://api.frapp.live";
 export const IN_PROGRESS_LABEL = "in-progress";
 /** Labels that mark an item as machinery, not the team's work. */
-export const SKIPPED_LABELS = ["routine-state", "incident"];
+export const SKIPPED_LABELS = ["routine-state", ALERT_LOOKUP_LABEL];
 
 /**
- * Job names in `deploy-production.yml` and the workflows it calls, as the jobs
- * API reports them (`<caller job> / <called job>`). The tag is minted only
- * after a live `full` ship, so its success is "an update went out"; a dry run
- * and a migrations-only run never reach it. dev-log.test.mjs fails when one of
- * these names leaves its workflow.
+ * How a Deploy production run is read from outside. Job names are as the jobs
+ * API reports them (`<caller job> / <called job>`); the run's title is its
+ * `run-name`, which starts `DRY RUN` for a dry run and carries the scope.
+ * "Shipped" is the deploy job's success on a run that is neither: the tag job
+ * comes after the hosts are live, so a ship whose tag failed still shipped.
+ * The store line waits for the confirm job, because the build job's success
+ * only means EAS accepted the submission. dev-log.test.mjs fails when one of
+ * these leaves its workflow.
  */
-export const SHIPPED_JOB = "Mint v* tag (does not roll back a live ship)";
-export const STORE_BUILD_JOB = "Build on EAS, then upload to TestFlight / Play internal";
+export const DEPLOY_JOB = "Migrate, then ship Render + Vercel";
+export const STORE_CONFIRM_JOB = "Confirm the store uploads finished (waits out Expo's queue)";
 export const OTA_UPDATE_JOB = "Publish the OTA update to the production channel";
+export const DRY_RUN_TITLE = "DRY RUN";
+export const MIGRATIONS_ONLY_SCOPE = "migrations-only";
+
 const AREA_PREFIX = "area:";
 
 /** The API's caps (`apps/api/src/interface/dtos/dev-log.dto.ts`). */
@@ -67,6 +81,7 @@ const SUMMARY_ITEMS_MAX = 60;
 const MERGED_BY_MAX = 30;
 /** The search API returns at most 1000 results, 100 a page. */
 const SEARCH_PAGES_MAX = 10;
+const EVENT_PAGES_MAX = 5;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -114,11 +129,18 @@ export function createGitHub({ token, repo, fetchImpl = fetch, retryOptions } = 
 
   /** Who last added `in-progress` to an issue, or its first assignee. */
   async function startedBy(issue) {
-    const events = await get(`/repos/${repo}/issues/${issue.number}/events?per_page=100`);
-    const labeled = (Array.isArray(events) ? events : [])
-      .filter((event) => event.event === "labeled" && event.label?.name === IN_PROGRESS_LABEL && !isBot(event.actor))
-      .at(-1);
-    return labeled?.actor?.login ?? issue.assignees?.[0]?.login;
+    // Oldest first, 100 a page; a long-lived issue has more than one page.
+    let last;
+    for (let page = 1; page <= EVENT_PAGES_MAX; page += 1) {
+      const events = await get(`/repos/${repo}/issues/${issue.number}/events?per_page=100&page=${page}`);
+      const list = Array.isArray(events) ? events : [];
+      last =
+        list
+          .filter((event) => event.event === "labeled" && event.label?.name === IN_PROGRESS_LABEL && !isBot(event.actor))
+          .at(-1) ?? last;
+      if (list.length < 100) break;
+    }
+    return last?.actor?.login ?? issue.assignees?.[0]?.login;
   }
 
   /** Open issues (not pull requests) carrying `in-progress`, machinery excluded. */
@@ -140,7 +162,7 @@ async function issueItem(gh, issue) {
 }
 
 /** `{ payload }` to post, or `{ skip: reason }`. */
-export async function buildWorkStarted({ event, gh }) {
+export async function buildWorkStarted({ event, runId, gh }) {
   const issue = event?.issue;
   if (!issue || event.label?.name !== IN_PROGRESS_LABEL) return { skip: "not an in-progress label event" };
   if (issue.pull_request) return { skip: "a pull request, not an issue" };
@@ -148,8 +170,11 @@ export async function buildWorkStarted({ event, gh }) {
   if (isBot(event.sender)) return { skip: "labelled by a bot" };
 
   const areas = areasOf(issue);
+  if (!/^[1-9]\d*$/.test(String(runId ?? ""))) return { skip: "no workflow run id" };
+
   const payload = {
     event: "work_started",
+    run_id: String(runId),
     number: issue.number,
     title: clip(issue.title, TITLE_MAX),
     actor: await gh.displayName(event.sender.login),
@@ -225,17 +250,27 @@ export async function buildDailySummary({ repo, gh, now = new Date() }) {
 
 export async function buildUpdatePushed({ runId, repo, gh }) {
   if (!/^[1-9]\d*$/.test(String(runId ?? ""))) return { skip: "no Deploy production run id" };
+  const run = await gh.get(`/repos/${repo}/actions/runs/${runId}`);
+  const title = String(run?.display_title ?? "");
+  if (title.startsWith(DRY_RUN_TITLE) || title.includes(MIGRATIONS_ONLY_SCOPE)) {
+    return { skip: "a dry run or a migrations-only run ships nothing" };
+  }
   const found = await gh.get(`/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`);
   const succeeded = (name) =>
     (found?.jobs ?? []).some((job) => job.conclusion === "success" && String(job.name ?? "").includes(name));
-  if (!succeeded(SHIPPED_JOB)) return { skip: "that run did not ship an update" };
+  if (!succeeded(DEPLOY_JOB)) return { skip: "that run did not ship an update" };
   const payload = { event: "update_pushed", run_id: String(runId) };
-  if (succeeded(STORE_BUILD_JOB)) payload.store_build = true;
+  if (succeeded(STORE_CONFIRM_JOB)) payload.store_build = true;
   if (succeeded(OTA_UPDATE_JOB)) payload.ota_update = true;
   return { payload };
 }
 
-/** Sends one post. Returns the API's `status`; throws on anything but 200. */
+/**
+ * Sends one post. Returns `posted` or `duplicate`, or `off` when the API has
+ * no Dev log configured (404: every deployment but production, and production
+ * before it is set up or after the token is revoked). Throws on anything else,
+ * including a 200 that is not the API's answer.
+ */
 export async function postDevLog({ apiUrl, token, payload, fetchImpl = fetch, retryOptions = {} }) {
   const response = await fetchWithRetry(
     `${apiUrl.replace(/\/+$/, "")}/v1/integrations/dev-log`,
@@ -248,15 +283,21 @@ export async function postDevLog({ apiUrl, token, payload, fetchImpl = fetch, re
     { fetchImpl, retryMethods: new Set(["POST"]), ...retryOptions },
   );
   const text = await response.text();
+  if (response.status === 404) return "off";
   if (response.status !== 200) {
     // The body is the API's validation message or error code, never the token.
     throw new Error(`Dev log post failed: HTTP ${response.status} ${text.slice(0, 500)}`);
   }
+  let status;
   try {
-    return JSON.parse(text).status;
+    status = JSON.parse(text).status;
   } catch {
-    return "posted";
+    status = undefined;
   }
+  if (status !== "posted" && status !== "duplicate") {
+    throw new Error(`Dev log post got a 200 that is not the API's answer: ${text.slice(0, 200)}`);
+  }
+  return status;
 }
 
 export async function main({ env = process.env, fetchImpl = fetch, log = console.log, now = new Date(), retryOptions } = {}) {
@@ -272,7 +313,11 @@ export async function main({ env = process.env, fetchImpl = fetch, log = console
 
   let built;
   if (kind === "work_started") {
-    built = await buildWorkStarted({ event: JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8")), gh });
+    built = await buildWorkStarted({
+      event: JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8")),
+      runId: env.GITHUB_RUN_ID,
+      gh,
+    });
   } else if (kind === "pr_merged") {
     built = await buildPrMerged({ sha: env.GITHUB_SHA, repo, gh });
   } else if (kind === "daily_summary") {
@@ -294,6 +339,10 @@ export async function main({ env = process.env, fetchImpl = fetch, log = console
     fetchImpl,
     retryOptions,
   });
+  if (status === "off") {
+    log("::notice::The API answered 404: the Dev log is not configured there, so nothing was posted.");
+    return 0;
+  }
   log(`Dev log: ${kind} ${status}.`);
   return 0;
 }

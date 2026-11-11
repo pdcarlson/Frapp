@@ -11,8 +11,10 @@ name: Dev log
 #
 #   - a Deploy production run finishes        → "Update pushed: please
 #     update", with the What's new entry the API now serves, so the channel and
-#     the app say the same thing. Only a run that shipped posts (its tag job
-#     succeeded): never a dry run, a migrations-only run, or a failed deploy.
+#     the app say the same thing. Only a run that shipped posts: never a dry
+#     run, a migrations-only run, or a failed deploy. It posts when the whole
+#     run ends, which is hours after the web went live when the run also
+#     builds for the stores.
 #     Read from outside that workflow on purpose: nothing here can fail, slow
 #     or gate the only path to production.
 #
@@ -20,8 +22,9 @@ name: Dev log
 # the exit codes: scripts/ci/dev-log.mjs. The API side, and why the token can
 # reach one channel only: apps/api/src/application/services/dev-log.service.ts.
 #
-# Until `DEV_LOG_TOKEN` exists in the `automation` environment the script says
-# so and exits 0, so this is green before it is set up
+# Until `DEV_LOG_TOKEN` exists in the `automation` environment, and while the
+# API answers 404 (the Dev log is off there), the script says so and exits 0,
+# so this is green before it is set up and after the token is revoked
 # (docs/internal/environment/ENV_REFERENCE.md § Dev log channel).
 #
 # A merge is read off the `push` to `main`, not `pull_request: closed`: a

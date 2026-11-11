@@ -6316,7 +6316,7 @@ export interface components {
             merged_by?: components["schemas"]["DevLogMergeCountDto"][];
             /** @description daily_summary: issues in progress now. */
             in_progress?: components["schemas"]["DevLogItemDto"][];
-            /** @description update_pushed: the id of the Deploy production run that shipped. One post per run. */
+            /** @description work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped. */
             run_id?: string;
             /** @description update_pushed: that run also uploaded a store build for testers. */
             store_build?: boolean;
@@ -6325,7 +6325,7 @@ export interface components {
         };
         DevLogPostResultDto: {
             /**
-             * @description duplicate: this event was already posted (the same issue, pull request, day or commit), so nothing was written.
+             * @description duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written.
              * @enum {string}
              */
             status: "posted" | "duplicate";
@@ -14662,8 +14662,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The Dev log is not configured on this deployment, or its channel is gone. */
+            /** @description The Dev log is not configured on this deployment. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The configured channel is gone or archived. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

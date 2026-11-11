@@ -12279,7 +12279,10 @@
             "description": "Missing or wrong token."
           },
           "404": {
-            "description": "The Dev log is not configured on this deployment, or its channel is gone."
+            "description": "The Dev log is not configured on this deployment."
+          },
+          "409": {
+            "description": "The configured channel is gone or archived."
           },
           "default": {
             "description": "Error",
@@ -19540,7 +19543,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "update_pushed: the id of the Deploy production run that shipped. One post per run."
+            "description": "work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped."
           },
           "store_build": {
             "type": "boolean",
@@ -19564,7 +19567,7 @@
               "posted",
               "duplicate"
             ],
-            "description": "duplicate: this event was already posted (the same issue, pull request, day or commit), so nothing was written."
+            "description": "duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written."
           }
         },
         "required": [

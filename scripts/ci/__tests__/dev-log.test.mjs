@@ -13,9 +13,11 @@ import {
   createGitHub,
   isBot,
   main,
+  DEPLOY_JOB,
+  DRY_RUN_TITLE,
+  MIGRATIONS_ONLY_SCOPE,
   OTA_UPDATE_JOB,
-  SHIPPED_JOB,
-  STORE_BUILD_JOB,
+  STORE_CONFIRM_JOB,
   postDevLog,
 } from "../dev-log.mjs";
 import { WORKFLOW_DIR, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
@@ -94,9 +96,10 @@ describe("dev-log: work started", () => {
         { event: "labeled", label: { name: "in-progress" }, actor: human("winston") },
       ],
     });
-    const { payload } = await buildWorkStarted({ event: event(), gh });
+    const { payload } = await buildWorkStarted({ event: event(), runId: "77", gh });
     assert.deepEqual(payload, {
       event: "work_started",
+      run_id: "77",
       number: 12,
       title: "Activity page",
       actor: "Shawn Klein",
@@ -110,9 +113,10 @@ describe("dev-log: work started", () => {
     const { gh, calls } = github({ "/users/shawn": { name: "Shawn" } });
     const { payload } = await buildWorkStarted({
       event: event({ issue: issue(12, "Activity page", ["in-progress"]) }),
+      runId: "77",
       gh,
     });
-    assert.deepEqual(payload, { event: "work_started", number: 12, title: "Activity page", actor: "Shawn" });
+    assert.deepEqual(payload, { event: "work_started", run_id: "77", number: 12, title: "Activity page", actor: "Shawn" });
     assert.equal(calls.length, 1);
   });
 
@@ -125,11 +129,23 @@ describe("dev-log: work started", () => {
   ]) {
     it(`skips ${why}`, async () => {
       const { gh, calls } = github({});
-      const built = await buildWorkStarted({ event: event(over), gh });
+      const built = await buildWorkStarted({ event: event(over), runId: "77", gh });
       assert.ok(built.skip);
       assert.equal(calls.length, 0);
     });
   }
+});
+
+describe("dev-log: who started an issue", () => {
+  it("reads past the first page of a long-lived issue's events", async () => {
+    const labeled = (login) => ({ event: "labeled", label: { name: "in-progress" }, actor: human(login) });
+    const filler = Array.from({ length: 99 }, () => ({ event: "commented" }));
+    const { gh } = github({
+      "/issues/9/events?per_page=100&page=1": [labeled("paul"), ...filler],
+      "/issues/9/events?per_page=100&page=2": [labeled("winston")],
+    });
+    assert.equal(await gh.startedBy({ number: 9 }), "winston");
+  });
 });
 
 describe("dev-log: pull request merged", () => {
@@ -213,47 +229,54 @@ describe("dev-log: daily summary", () => {
 
 describe("dev-log: update pushed", () => {
   const job = (name, conclusion = "success") => ({ name, conclusion });
-  const SHIP = job(`${SHIPPED_JOB} / release`);
-  const build = async (jobs, runId = "35722904165") => {
-    const { gh } = github({ "/actions/runs/35722904165/jobs": { jobs } });
+  const SHIP = job(`${DEPLOY_JOB} / deploy`);
+  const TAG_FAILED = job("Mint v* tag (does not roll back a live ship) / release", "failure");
+  const STORE = (conclusion) => job(`Build the live SHA for the stores (does not roll back a live ship) / ${STORE_CONFIRM_JOB}`, conclusion);
+  const OTA = (conclusion) => job(`Publish the live SHA as an OTA update (does not roll back a live ship) / ${OTA_UPDATE_JOB}`, conclusion);
+  const build = async (jobs, { title = `full ${SHA}`, runId = "35722904165" } = {}) => {
+    const { gh } = github({ "/actions/runs/35722904165/jobs": { jobs }, "/actions/runs/35722904165": { display_title: title } });
     return buildUpdatePushed({ runId, repo: REPO, gh });
   };
 
   it("posts for a run that shipped, naming what else it shipped", async () => {
     assert.deepEqual((await build([SHIP])).payload, { event: "update_pushed", run_id: "35722904165" });
-    assert.deepEqual(
-      (
-        await build([
-          SHIP,
-          job(`Build the live SHA for the stores (does not roll back a live ship) / ${STORE_BUILD_JOB}`),
-          job(`Publish the live SHA as an OTA update (does not roll back a live ship) / ${OTA_UPDATE_JOB}`),
-        ])
-      ).payload,
-      { event: "update_pushed", run_id: "35722904165", store_build: true, ota_update: true },
-    );
+    assert.deepEqual((await build([SHIP, STORE(), OTA()])).payload, {
+      event: "update_pushed",
+      run_id: "35722904165",
+      store_build: true,
+      ota_update: true,
+    });
   });
 
-  it("leaves out an app job that failed or was skipped", async () => {
-    const { payload } = await build([SHIP, job(`x / ${STORE_BUILD_JOB}`, "failure"), job(`x / ${OTA_UPDATE_JOB}`, "skipped")]);
+  it("still posts when the tag failed after the hosts went live", async () => {
+    assert.deepEqual((await build([SHIP, TAG_FAILED])).payload, { event: "update_pushed", run_id: "35722904165" });
+  });
+
+  it("leaves out an app job that failed or was skipped, and a build nobody confirmed", async () => {
+    const built = job("x / Build on EAS, then upload to TestFlight / Play internal");
+    const { payload } = await build([SHIP, built, STORE("failure"), OTA("skipped")]);
     assert.deepEqual(payload, { event: "update_pushed", run_id: "35722904165" });
   });
 
   it("skips a run that did not ship: a dry run, migrations only, a failed deploy", async () => {
-    // None of them mints the tag, whatever else succeeded.
-    assert.ok((await build([job("Migrate, then ship Render + Vercel / deploy")])).skip);
-    assert.ok((await build([job(`${SHIPPED_JOB} / release`, "skipped")])).skip);
-    assert.ok((await build([job(`${SHIPPED_JOB} / release`, "failure")])).skip);
+    // The deploy job succeeds on a dry run and a migrations-only run too; the run's title tells them apart.
+    assert.ok((await build([SHIP], { title: `DRY RUN · full ${SHA}` })).skip);
+    assert.ok((await build([SHIP], { title: `migrations-only ${SHA}` })).skip);
+    assert.ok((await build([job(`${DEPLOY_JOB} / deploy`, "failure")])).skip);
     assert.ok((await build([])).skip);
   });
 
   it("skips without a run id", async () => {
-    assert.ok((await build([SHIP], "")).skip);
+    assert.ok((await build([SHIP], { runId: "" })).skip);
   });
 
-  it("matches job names the workflows still have", () => {
+  it("matches the names and run title the workflows still have", () => {
     const text = (file) => readFileSync(join(WORKFLOW_DIR, file), "utf8");
-    assert.ok(text("deploy-production.yml").includes(`name: ${SHIPPED_JOB}`));
-    assert.ok(text("_mobile-build.yml").includes(`name: ${STORE_BUILD_JOB}`));
+    const deploy = text("deploy-production.yml");
+    assert.ok(deploy.includes(`name: ${DEPLOY_JOB}`));
+    assert.ok(deploy.includes(`run-name: "\${{ inputs.dry_run_only == true && '${DRY_RUN_TITLE} · ' || '' }}\${{ inputs.scope }} `));
+    assert.ok(deploy.includes(`options: [full, ${MIGRATIONS_ONLY_SCOPE}]`));
+    assert.ok(text("_mobile-build.yml").includes(`name: ${STORE_CONFIRM_JOB}`));
     assert.ok(text("_mobile-update.yml").includes(`name: ${OTA_UPDATE_JOB}`));
   });
 });
@@ -292,6 +315,21 @@ describe("dev-log: the post", () => {
     assert.equal(attempts, 2);
   });
 
+  it("reports off, not a failure, when the API has no Dev log configured", async () => {
+    const { fetchImpl } = fakeFetch({ "/v1/integrations/dev-log": new Response('{"statusCode":404}', { status: 404 }) });
+    assert.equal(await postDevLog({ apiUrl: "https://api.example.test", token: "t", payload: {}, fetchImpl, retryOptions: NO_WAIT }), "off");
+  });
+
+  it("fails on a 200 that is not the API's answer", async () => {
+    for (const body of ["<html>proxy</html>", "{}", '{"status":"ok"}']) {
+      const { fetchImpl } = fakeFetch({ "/v1/integrations/dev-log": new Response(body, { status: 200 }) });
+      await assert.rejects(
+        postDevLog({ apiUrl: "https://api.example.test", token: "t", payload: {}, fetchImpl, retryOptions: NO_WAIT }),
+        /not the API's answer/,
+      );
+    }
+  });
+
   it("fails on a refusal, without echoing the token", async () => {
     const { fetchImpl } = fakeFetch({ "/v1/integrations/dev-log": new Response('{"message":"dev_log.token.invalid"}', { status: 401 }) });
     await assert.rejects(
@@ -321,7 +359,14 @@ describe("dev-log: main", () => {
       );
       const { fetchImpl, calls } = fakeFetch({ "/users/paul": { name: "Paul" }, "/v1/integrations/dev-log": { status: "posted" } });
       const code = await main({
-        env: { DEV_LOG_EVENT: "work_started", DEV_LOG_TOKEN: "t", GITHUB_TOKEN: "gh", GITHUB_REPOSITORY: REPO, GITHUB_EVENT_PATH: eventPath },
+        env: {
+          DEV_LOG_EVENT: "work_started",
+          DEV_LOG_TOKEN: "t",
+          GITHUB_TOKEN: "gh",
+          GITHUB_REPOSITORY: REPO,
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_RUN_ID: "77",
+        },
         fetchImpl,
         log: () => {},
         retryOptions: NO_WAIT,
@@ -329,10 +374,62 @@ describe("dev-log: main", () => {
       assert.equal(code, 0);
       const post = calls.at(-1);
       assert.equal(post.url, "https://api.frapp.live/v1/integrations/dev-log");
-      assert.deepEqual(JSON.parse(post.init.body), { event: "work_started", number: 3, title: "T", actor: "Paul" });
+      assert.deepEqual(JSON.parse(post.init.body), { event: "work_started", run_id: "77", number: 3, title: "T", actor: "Paul" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // The names the workflow sets are the names main() reads: a mismatch skips every post, green.
+  const run = async (env, routes) => {
+    const { fetchImpl, calls } = fakeFetch({ ...routes, "/v1/integrations/dev-log": { status: "posted" } });
+    const code = await main({
+      env: { DEV_LOG_TOKEN: "t", GITHUB_TOKEN: "gh", GITHUB_REPOSITORY: REPO, DEV_LOG_API_URL: "https://api.example.test", ...env },
+      fetchImpl,
+      log: () => {},
+      retryOptions: NO_WAIT,
+    });
+    const post = calls.find((c) => c.url.endsWith("/v1/integrations/dev-log"));
+    return { code, body: post ? JSON.parse(post.init.body) : null };
+  };
+
+  it("posts a merge from GITHUB_SHA", async () => {
+    const { body } = await run(
+      { DEV_LOG_EVENT: "pr_merged", GITHUB_SHA: SHA },
+      {
+        [`/commits/${SHA}/pulls`]: [{ number: 40, title: "T", user: human("evan"), merged_at: "x", merge_commit_sha: SHA, labels: [] }],
+        "/users/evan": { name: "Evan" },
+      },
+    );
+    assert.deepEqual(body, { event: "pr_merged", number: 40, title: "T", actor: "Evan" });
+  });
+
+  it("posts an update from WORKFLOW_RUN_ID", async () => {
+    const { body } = await run(
+      { DEV_LOG_EVENT: "update_pushed", WORKFLOW_RUN_ID: "35722904165" },
+      {
+        "/actions/runs/35722904165/jobs": { jobs: [{ name: `${DEPLOY_JOB} / deploy`, conclusion: "success" }] },
+        "/actions/runs/35722904165": { display_title: `full ${SHA}` },
+      },
+    );
+    assert.deepEqual(body, { event: "update_pushed", run_id: "35722904165" });
+  });
+
+  it("exits 0 when the API says the Dev log is off", async () => {
+    const { fetchImpl } = fakeFetch({
+      "/actions/runs/1/jobs": { jobs: [{ name: `${DEPLOY_JOB} / deploy`, conclusion: "success" }] },
+      "/actions/runs/1": { display_title: `full ${SHA}` },
+      "/v1/integrations/dev-log": new Response("{}", { status: 404 }),
+    });
+    const lines = [];
+    const code = await main({
+      env: { DEV_LOG_EVENT: "update_pushed", DEV_LOG_TOKEN: "t", GITHUB_TOKEN: "gh", GITHUB_REPOSITORY: REPO, WORKFLOW_RUN_ID: "1" },
+      fetchImpl,
+      log: (line) => lines.push(line),
+      retryOptions: NO_WAIT,
+    });
+    assert.equal(code, 0);
+    assert.match(lines[0], /not configured there/);
   });
 
   it("rejects an event it does not know", async () => {
@@ -363,5 +460,31 @@ describe("dev-log: the workflows", () => {
     assert.doesNotMatch(readFileSync(DEPLOY, "utf8"), /dev-log/);
     const post = workflowSteps(WORKFLOW).find((step) => step.name === "Post");
     assert.equal(post.env.get("WORKFLOW_RUN_ID"), "${{ github.event.workflow_run.id }}");
+  });
+
+  it("maps each trigger to its event, and only the in-progress label starts a job", () => {
+    const text = readFileSync(WORKFLOW, "utf8");
+    const [job] = workflowJobs(WORKFLOW);
+    assert.equal(job.if, "github.event_name != 'issues' || github.event.label.name == 'in-progress'");
+    assert.match(text, /\n  issues:\n    types: \[labeled\]\n/);
+    assert.match(text, /\n  push:\n    branches: \[main\]\n/);
+    assert.match(text, /\n  schedule:\n/);
+    const post = workflowSteps(WORKFLOW).find((step) => step.name === "Post");
+    assert.equal(
+      post.env.get("DEV_LOG_EVENT"),
+      "${{ github.event_name == 'issues' && 'work_started' || github.event_name == 'push' && 'pr_merged' || github.event_name == 'workflow_run' && 'update_pushed' || 'daily_summary' }}",
+    );
+    assert.equal(post.env.get("GITHUB_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
+  });
+
+  it("sends nothing past the caps the API validates", () => {
+    // The script clips to these so a long title is cut, not refused with a 400.
+    const dto = readFileSync(join(WORKFLOW_DIR, "..", "..", "apps", "api", "src", "interface", "dtos", "dev-log.dto.ts"), "utf8");
+    const script = readFileSync(join(WORKFLOW_DIR, "..", "..", "scripts", "ci", "dev-log.mjs"), "utf8");
+    for (const name of ["TITLE_MAX", "ACTOR_MAX", "AREA_MAX", "AREAS_MAX", "ALSO_IN_AREA_MAX", "SUMMARY_ITEMS_MAX", "MERGED_BY_MAX"]) {
+      const read = (source) => source.match(new RegExp(`const ${name} = (\\d+);`))?.[1];
+      assert.ok(read(dto), `${name} is not in the DTO`);
+      assert.equal(read(script), read(dto), name);
+    }
   });
 });

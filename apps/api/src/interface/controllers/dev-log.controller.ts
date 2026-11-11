@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -42,8 +43,10 @@ export class DevLogController {
   @ApiOkResponse({ type: DevLogPostResultDto })
   @ApiUnauthorizedResponse({ description: 'Missing or wrong token.' })
   @ApiNotFoundResponse({
-    description:
-      'The Dev log is not configured on this deployment, or its channel is gone.',
+    description: 'The Dev log is not configured on this deployment.',
+  })
+  @ApiConflictResponse({
+    description: 'The configured channel is gone or archived.',
   })
   async post(@Body() body: DevLogPostDto): Promise<DevLogPostResultDto> {
     // The DTO's per-event `ValidateIf` rules guarantee each event's own

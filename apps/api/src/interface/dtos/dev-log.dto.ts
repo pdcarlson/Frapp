@@ -81,8 +81,9 @@ export class DevLogMergeCountDto {
 
 /**
  * One Dev log post (#4145). The caller sends facts, never the words or a link:
- * the API writes the sentence and builds every link from the number, so the
- * token cannot be used to post arbitrary text or a link to anywhere else.
+ * the API writes the sentence, builds every link from the number, and strips
+ * what could become a link from the titles and names it is given
+ * (`plainText`), so the token cannot post a link to anywhere else.
  * Which fields an event reads is in each description; the rest are ignored.
  */
 export class DevLogPostDto {
@@ -190,9 +191,9 @@ export class DevLogPostDto {
 
   @ApiPropertyOptional({
     description:
-      'update_pushed: the id of the Deploy production run that shipped. One post per run.',
+      'work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped.',
   })
-  @ValidateIf(isOneOf('update_pushed'))
+  @ValidateIf(isOneOf('work_started', 'update_pushed'))
   // Digits as a string: run ids are already past what an int4 holds, and
   // this one is only ever part of the post's dedupe key.
   @IsString()
@@ -220,7 +221,7 @@ export class DevLogPostResultDto {
   @ApiProperty({
     enum: ['posted', 'duplicate'],
     description:
-      'duplicate: this event was already posted (the same issue, pull request, day or commit), so nothing was written.',
+      'duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written.',
   })
   status: 'posted' | 'duplicate';
 }

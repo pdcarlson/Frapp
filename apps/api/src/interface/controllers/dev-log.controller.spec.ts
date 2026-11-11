@@ -113,7 +113,7 @@ describe('POST /v1/integrations/dev-log', () => {
       .expect(401);
   });
 
-  it('is absent (404) on a deployment with no Dev log configured', async () => {
+  it('is absent (404) once the hash is deleted: the revoke', async () => {
     delete process.env[DEV_LOG_ENV.tokenHash];
     await send(MERGED).expect(404);
     expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
@@ -163,6 +163,61 @@ describe('POST /v1/integrations/dev-log', () => {
       'an update with a run id of zero',
       { event: 'update_pushed', run_id: '0' },
     ],
+    [
+      'a started post with no run id',
+      { event: 'work_started', number: 1, title: 't', actor: 'a' },
+    ],
+    ['a merged post with a long actor', { ...MERGED, actor: 'x'.repeat(81) }],
+    ['a merged post with an empty actor', { ...MERGED, actor: '' }],
+    [
+      'a summary whose date is not a date',
+      { event: 'daily_summary', date: '2026-11-11 and more' },
+    ],
+    [
+      'too many also-in-area items',
+      {
+        event: 'work_started',
+        run_id: '1',
+        number: 1,
+        title: 't',
+        actor: 'a',
+        also_in_area: Array.from({ length: 6 }, (_, i) => ({
+          number: i + 1,
+          title: 't',
+        })),
+      },
+    ],
+    [
+      'an also-in-area item with an empty title',
+      {
+        event: 'work_started',
+        run_id: '1',
+        number: 1,
+        title: 't',
+        actor: 'a',
+        also_in_area: [{ number: 2, title: '' }],
+      },
+    ],
+    [
+      'a per-person count with no count',
+      {
+        event: 'daily_summary',
+        date: '2026-11-11',
+        merged_by: [{ actor: 'Evan' }],
+      },
+    ],
+    [
+      'too many per-person counts',
+      {
+        event: 'daily_summary',
+        date: '2026-11-11',
+        merged_by: Array.from({ length: 31 }, () => ({ actor: 'a', count: 1 })),
+      },
+    ],
+    [
+      'an update whose flag is a string',
+      { event: 'update_pushed', run_id: '1', store_build: 'false' },
+    ],
   ])('refuses %s with 400', async (_name, body) => {
     await send(body).expect(400);
     expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
@@ -171,6 +226,7 @@ describe('POST /v1/integrations/dev-log', () => {
   it('accepts each event with its own fields', async () => {
     await send({
       event: 'work_started',
+      run_id: '77',
       number: 12,
       title: 'Activity page',
       actor: 'Shawn',

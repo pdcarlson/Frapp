@@ -107,7 +107,8 @@ test("every script that raises an alert is covered here", () => {
   // escape the agreement checks below.
   const raisers = readdirSync(SCRIPTS_DIR)
     .filter((file) => file.endsWith(".mjs"))
-    .filter((file) => readFileSync(join(SCRIPTS_DIR, file), "utf8").includes("lib/alert-issue.mjs"))
+    // dev-log.mjs imports only the label, to skip alert issues; it raises none.
+    .filter((file) => file !== "dev-log.mjs" && readFileSync(join(SCRIPTS_DIR, file), "utf8").includes("lib/alert-issue.mjs"))
     .map((file) => file.replace(/\.mjs$/, ""))
     .sort();
   assert.deepEqual(raisers, [...new Set(ALERTS.map((alert) => alert.script))].sort());
@@ -147,12 +148,12 @@ test("no script outside the lib names an alert label itself", () => {
   // The old label as a literal is how a watchdog gets left behind. The ledger
   // and state issues that still carry `routine-state` are written by the
   // routines through the MCP, never by these scripts. `dev-log.mjs` only reads
-  // both labels, to leave those issues out of the team's Dev log; it files none.
+  // `routine-state`, to leave those issues out of the team's Dev log; it files none.
   const offenders = [];
   for (const dir of [SCRIPTS_DIR, join(SCRIPTS_DIR, "lib")]) {
-    for (const file of readdirSync(dir).filter((name) => name.endsWith(".mjs") && name !== "dev-log.mjs")) {
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(".mjs"))) {
       const code = codeLines(readFileSync(join(dir, file), "utf8"));
-      if (/["'`]routine-state["'`]/.test(code)) offenders.push(`${file}: routine-state`);
+      if (file !== "dev-log.mjs" && /["'`]routine-state["'`]/.test(code)) offenders.push(`${file}: routine-state`);
       if (file !== "alert-issue.mjs" && /["'`]incident["'`]/.test(code)) offenders.push(`${file}: incident`);
     }
   }

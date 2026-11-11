@@ -1,4 +1,8 @@
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import type {
   IChatChannelRepository,
@@ -10,6 +14,7 @@ import {
   devLogClientMessageId,
   formatDevLogPost,
   hashDevLogToken,
+  plainText,
   resolveDevLogConfig,
   validateDevLogEnv,
 } from './dev-log.service';
@@ -43,18 +48,28 @@ describe('validateDevLogEnv', () => {
     });
   });
 
-  it('refuses a half-set trio rather than reading it as off', () => {
+  it('refuses a hash with no channel to post into', () => {
     const problems = validateDevLogEnv({
       [DEV_LOG_ENV.tokenHash]: hashDevLogToken(TOKEN),
     });
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('must be set together');
+    expect(problems[0]).toContain('set with it');
+  });
+
+  it('reads the ids without a hash as off, so deleting the hash revokes', () => {
+    const revoked = {
+      [DEV_LOG_ENV.chapterId]: CHAPTER_ID,
+      [DEV_LOG_ENV.channelId]: CHANNEL_ID,
+    };
+    expect(validateDevLogEnv(revoked)).toEqual([]);
+    expect(resolveDevLogConfig(revoked)).toBeNull();
   });
 
   it('refuses the token itself where its hash belongs', () => {
     const problems = validateDevLogEnv({
       ...ENV,
-      [DEV_LOG_ENV.tokenHash]: 'not-a-digest',
+      // The documented token shape: a prefix keeps it from passing as a hash.
+      [DEV_LOG_ENV.tokenHash]: `devlog_${'a'.repeat(64)}`,
     });
     expect(problems.join(' ')).toContain('never the token itself');
   });
@@ -73,6 +88,7 @@ describe('formatDevLogPost', () => {
     expect(
       formatDevLogPost({
         event: 'work_started',
+        run_id: '77',
         number: 12,
         title: 'Activity page:\n sign-up links',
         actor: 'Shawn',
@@ -90,11 +106,11 @@ describe('formatDevLogPost', () => {
       [
         'Shawn started: Activity page: sign-up links (#12)',
         'Area: chat, web',
-        'https://github.com/pdcarlson/Frapp/issues/12',
+        '<https://github.com/pdcarlson/Frapp/issues/12>',
         '',
         'Also in progress in that area:',
         '• Chat threads (#9) · Winston · chat',
-        '  https://github.com/pdcarlson/Frapp/issues/9',
+        '  <https://github.com/pdcarlson/Frapp/issues/9>',
       ].join('\n'),
     );
   });
@@ -103,12 +119,13 @@ describe('formatDevLogPost', () => {
     expect(
       formatDevLogPost({
         event: 'work_started',
+        run_id: '77',
         number: 12,
         title: 'T',
         actor: 'Paul',
       }),
     ).toBe(
-      'Paul started: T (#12)\nhttps://github.com/pdcarlson/Frapp/issues/12',
+      'Paul started: T (#12)\n<https://github.com/pdcarlson/Frapp/issues/12>',
     );
   });
 
@@ -121,7 +138,7 @@ describe('formatDevLogPost', () => {
         actor: 'Evan',
       }),
     ).toBe(
-      'Merged: Fix the badge (#40) by Evan\nhttps://github.com/pdcarlson/Frapp/pull/40',
+      'Merged: Fix the badge (#40) by Evan\n<https://github.com/pdcarlson/Frapp/pull/40>',
     );
   });
 
@@ -154,7 +171,7 @@ describe('formatDevLogPost', () => {
         '',
         'In progress now (1):',
         '• Chat threads (#9) · Winston · chat',
-        '  https://github.com/pdcarlson/Frapp/issues/9',
+        '  <https://github.com/pdcarlson/Frapp/issues/9>',
       ].join('\n'),
     );
   });
@@ -178,6 +195,7 @@ describe('formatDevLogPost', () => {
           ota_update: true,
         },
         NOTE,
+        new Date('2026-11-11T15:00:00Z'),
       ),
     ).toBe(
       [
@@ -217,22 +235,89 @@ describe('formatDevLogPost', () => {
   });
 });
 
+describe('plainText', () => {
+  it('leaves an ordinary title as it is, on one line', () => {
+    expect(plainText('Web:  two doors.\nChapter settings (#4033)')).toBe(
+      'Web: two doors. Chapter settings (#4033)',
+    );
+  });
+
+  it('removes everything a link, image or autolink is built from', () => {
+    expect(
+      plainText('Session expired. [Sign in again](https://evil.example/login)'),
+    ).toBe('Session expired. (Sign in again)(evil.example/login)');
+    expect(plainText('see <https://evil.example> or HTTP://evil.example')).toBe(
+      'see ‹evil.example› or evil.example',
+    );
+    expect(plainText('![x](http://evil.example/p.png) [a][b]')).toBe(
+      '!(x)(evil.example/p.png) (a)(b)',
+    );
+  });
+
+  it('is applied to every field the caller sends', () => {
+    const evil = '[x](https://evil.example)';
+    const texts = [
+      formatDevLogPost({
+        event: 'work_started',
+        run_id: '1',
+        number: 1,
+        title: evil,
+        actor: evil,
+        areas: [evil],
+        also_in_area: [{ number: 2, title: evil, actor: evil, areas: [evil] }],
+      }),
+      formatDevLogPost({
+        event: 'pr_merged',
+        number: 1,
+        title: evil,
+        actor: evil,
+      }),
+      formatDevLogPost({
+        event: 'daily_summary',
+        date: evil,
+        merged_total: 1,
+        merged_by: [{ actor: evil, count: 1 }],
+        in_progress: [{ number: 2, title: evil, actor: evil, areas: [evil] }],
+      }),
+    ];
+    for (const text of texts) {
+      expect(text).not.toMatch(/\[|\]/);
+      // The only links are the ones the API built, to this repository.
+      for (const [, url] of text.matchAll(/(https?:\/\/[^\s>]+)/g)) {
+        expect(url.startsWith('https://github.com/pdcarlson/Frapp/')).toBe(
+          true,
+        );
+      }
+    }
+  });
+});
+
 describe('devLogClientMessageId', () => {
   it('keys each event on what makes it the same event', () => {
     expect(
       devLogClientMessageId({
         event: 'work_started',
+        run_id: '77',
         number: 7,
         title: 'T',
         actor: 'A',
       }),
-    ).toBe('devlog:work_started:7');
+    ).toBe('devlog:work_started:7:77');
     expect(
       devLogClientMessageId({ event: 'daily_summary', date: '2026-11-11' }),
     ).toBe('devlog:daily_summary:2026-11-11');
     expect(
       devLogClientMessageId({ event: 'update_pushed', run_id: '35722904165' }),
-    ).toBe('devlog:update_pushed:35722904165');
+    ).toBe('devlog:update_pushed:35722904165:web');
+    // Re-running the run's failed app jobs is news the first post didn't have.
+    expect(
+      devLogClientMessageId({
+        event: 'update_pushed',
+        run_id: '35722904165',
+        store_build: true,
+        ota_update: true,
+      }),
+    ).toBe('devlog:update_pushed:35722904165:web+build+ota');
   });
 });
 
@@ -304,7 +389,7 @@ describe('DevLogService', () => {
         channel_id: CHANNEL_ID,
         sender_id: SYSTEM_SENDER_ID,
         content:
-          'Merged: Fix the badge (#40) by Evan\nhttps://github.com/pdcarlson/Frapp/pull/40',
+          'Merged: Fix the badge (#40) by Evan\n<https://github.com/pdcarlson/Frapp/pull/40>',
         kind: 'text',
         client_message_id: 'devlog:pr_merged:40',
       });
@@ -317,12 +402,12 @@ describe('DevLogService', () => {
 
     it('refuses to post when the channel is gone or archived', async () => {
       channelRepo.findById.mockResolvedValue(null);
-      await expect(service.post(post)).rejects.toThrow(NotFoundException);
+      await expect(service.post(post)).rejects.toThrow(ConflictException);
       channelRepo.findById.mockResolvedValue({
         id: CHANNEL_ID,
         archived_at: '2026-11-11T00:00:00Z',
       });
-      await expect(service.post(post)).rejects.toThrow(NotFoundException);
+      await expect(service.post(post)).rejects.toThrow(ConflictException);
       expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
     });
 

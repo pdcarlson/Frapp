@@ -159,6 +159,8 @@ All live in `interface/decorators/`.
 - `/health` has no guards. `HealthController` injects `SUPABASE_CLIENT` itself.
 - `GET /v1/client-policy` has no guards: the mobile app asks it before sign-in whether its build is still
   served (#2526). It reads `X-Client-Version` and returns no chapter or user data.
+- `POST /v1/integrations/dev-log` has `DevLogTokenGuard` only: its caller is a GitHub Actions workflow, not a
+  member (#4145). The chapter and channel come from the deployment's configuration, never the request.
 - `POST /v1/chapters/onboard` and the other pre-chapter routes use `SupabaseAuthGuard` +
   `AuthSyncInterceptor` only, because no chapter exists yet.
 - `POST /v1/webhooks/stripe` has no guard. `WebhookController.handleStripeWebhook` verifies the

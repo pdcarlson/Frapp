@@ -79,7 +79,9 @@ All API errors share one body, specified in [`architecture/README.md` § Error r
 - All API endpoints require authentication, except the health routes (`/health` and `/health/ready`), webhooks, the Discord
   OAuth callback (`GET /v1/discord/connect/callback`), whose capability is its single-use `state`, and the mobile
   minimum-version check (`GET /v1/client-policy`), which the app asks before anyone signs in and which returns only a store
-  link and whether the caller's own build is still served ([`../ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version).
+  link and whether the caller's own build is still served ([`../ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version),
+  and the team's Dev log route (`POST /v1/integrations/dev-log`), whose caller is a workflow holding a token that can post
+  into one configured channel and nothing else ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)).
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
 - File uploads are checked for allowed MIME types and extensions via `@repo/validation` before a signed URL is issued; storage buckets enforce the same MIME list and a size cap on the upload itself. Kinds: [`content-validation.md` § 1](../../docs/security/content-validation.md#1-allowed-content-types); the member-upload cap: [§ 3](../../docs/security/content-validation.md#3-size); per-bucket limits: [`spec/architecture/README.md` § 7](../architecture/README.md#7-storage-supabase-storage).

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import {
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -20,13 +22,14 @@ import type {
   IChatMessageRepository,
 } from '#domain/repositories/chat.repository.interface';
 import { constantTimeEquals } from '#domain/utils/constant-time';
+import { type Env, envValue } from '#domain/utils/env-value';
 
 /**
  * The team's Dev log channel (#4145): GitHub Actions posts into one channel of
  * one chapter when work starts, a PR merges, once a day, and when an update
  * ships.
  *
- * Three variables switch it on, all or none. Unset, the route answers 404 and
+ * Three variables switch it on. Without the hash the route answers 404, so
  * local dev, tests, CI and staging need nothing.
  *
  * - `DEV_LOG_TOKEN_SHA256`: the SHA-256 (64 hex characters) of the bearer
@@ -36,8 +39,8 @@ import { constantTimeEquals } from '#domain/utils/constant-time';
  *   names neither, so the token can reach nothing else.
  *
  * Revoking is deleting `DEV_LOG_TOKEN_SHA256` (or replacing it with a new
- * token's hash) and redeploying. How to issue one:
- * `docs/internal/environment/ENV_REFERENCE.md` § Dev log channel.
+ * token's hash) and redeploying: the two ids without a hash read as off. How
+ * to issue one: `docs/internal/environment/ENV_REFERENCE.md` § Dev log channel.
  */
 export const DEV_LOG_ENV = {
   tokenHash: 'DEV_LOG_TOKEN_SHA256',
@@ -71,6 +74,8 @@ export interface DevLogMergeCount {
 export type DevLogPost =
   | {
       event: 'work_started';
+      /** The workflow run that saw the label. One post per run. */
+      run_id: string;
       number: number;
       title: string;
       actor: string;
@@ -105,48 +110,38 @@ export interface DevLogConfig {
   channelId: string;
 }
 
-type Env = Record<string, unknown>;
-
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function envValue(env: Env, name: string): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
 
 /**
- * Boot-time check, called from `validateEnv`. A half-set or malformed trio
- * refuses to boot: read as "off" it would hide a typo, and a channel id that
- * is not a uuid would only fail at the first post.
+ * Boot-time check, called from `validateEnv`. A hash with no channel, or a
+ * malformed value, refuses to boot: read as "off" it would hide a typo, and a
+ * channel id that is not a uuid would only fail at the first post. The two
+ * ids with no hash are allowed and mean off, so deleting the hash alone
+ * revokes the token.
  */
 export function validateDevLogEnv(env: Env): string[] {
   const tokenHash = envValue(env, DEV_LOG_ENV.tokenHash);
   const chapterId = envValue(env, DEV_LOG_ENV.chapterId);
   const channelId = envValue(env, DEV_LOG_ENV.channelId);
-  const set = [tokenHash, chapterId, channelId].filter(
-    (value) => value !== undefined,
-  ).length;
-  if (set === 0) return [];
 
   const problems: string[] = [];
-  if (set < 3) {
-    problems.push(
-      `${DEV_LOG_ENV.tokenHash}, ${DEV_LOG_ENV.chapterId} and ${DEV_LOG_ENV.channelId} must be set together, or all left unset to turn the Dev log off.`,
-    );
-  }
-  if (tokenHash !== undefined && !SHA256_HEX.test(tokenHash.toLowerCase())) {
-    problems.push(
-      `${DEV_LOG_ENV.tokenHash} must be the SHA-256 of the token as 64 hex characters, never the token itself.`,
-    );
+  if (tokenHash !== undefined) {
+    if (!SHA256_HEX.test(tokenHash.toLowerCase())) {
+      problems.push(
+        `${DEV_LOG_ENV.tokenHash} must be the SHA-256 of the token as 64 hex characters, never the token itself.`,
+      );
+    }
+    if (chapterId === undefined || channelId === undefined) {
+      problems.push(
+        `${DEV_LOG_ENV.tokenHash} needs ${DEV_LOG_ENV.chapterId} and ${DEV_LOG_ENV.channelId} set with it.`,
+      );
+    }
   }
   for (const [name, value] of [
     [DEV_LOG_ENV.chapterId, chapterId],
     [DEV_LOG_ENV.channelId, channelId],
   ] as const) {
-    if (value !== undefined && !UUID.test(value)) {
+    if (value !== undefined && !isUUID(value)) {
       problems.push(`${name} must be a uuid.`);
     }
   }
@@ -167,33 +162,66 @@ export function hashDevLogToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function issueUrl(number: number): string {
-  return `${DEV_LOG_REPO_URL}/issues/${number}`;
+/** `<url>` is the one bare-link form both clients' markdown turns into a link. */
+function issueLink(number: number): string {
+  return `<${DEV_LOG_REPO_URL}/issues/${number}>`;
 }
 
-function pullUrl(number: number): string {
-  return `${DEV_LOG_REPO_URL}/pull/${number}`;
+function pullLink(number: number): string {
+  return `<${DEV_LOG_REPO_URL}/pull/${number}>`;
 }
 
-/** One line of text: titles and names arrive from GitHub and may hold breaks. */
-function oneLine(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
+/**
+ * A title, name or label from the caller, made safe to sit in a message both
+ * clients parse as markdown: one line, with nothing that can become a link.
+ * Brackets and angle brackets are what a markdown link, image or autolink is
+ * built from, and mobile also links a bare `http(s)://`, so those are
+ * replaced rather than escaped (an escape would show as a backslash wherever
+ * the message is read as plain text). Emphasis marks are left: a title in
+ * bold is harmless. Without this the token, or anyone who can title an issue
+ * in this public repository, could post a disguised link under Frapp's name.
+ */
+export function plainText(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/https?:\/\//gi, '')
+    .replace(/\[/g, '(')
+    .replace(/\]/g, ')')
+    .replace(/</g, '‹')
+    .replace(/>/g, '›')
+    .trim();
 }
 
 function areaList(areas: readonly string[] | undefined): string {
-  return (areas ?? []).map(oneLine).filter(Boolean).join(', ');
+  return (areas ?? []).map(plainText).filter(Boolean).join(', ');
 }
 
-function itemLine(item: DevLogItem, url: string): string {
-  const parts = [`${oneLine(item.title)} (#${item.number})`];
-  if (item.actor) parts.push(oneLine(item.actor));
+function itemLine(item: DevLogItem, link: string): string {
+  const parts = [`${plainText(item.title)} (#${item.number})`];
+  if (item.actor) parts.push(plainText(item.actor));
   const areas = areaList(item.areas);
   if (areas) parts.push(areas);
-  return `• ${parts.join(' · ')}\n  ${url}`;
+  return `• ${parts.join(' · ')}\n  ${link}`;
 }
 
-function whatsNewBlock(note: ReleaseNote | undefined): string[] {
+/** An entry this many days old or less is this update's news. */
+const WHATS_NEW_FRESH_DAYS = 3;
+
+/**
+ * The newest What's new entry, in full when it is recent. An update that
+ * shipped with no new entry (Deploy production only warns) gets one line
+ * naming the last one, not that entry's whole text again as if it were news.
+ */
+function whatsNewBlock(note: ReleaseNote | undefined, now: Date): string[] {
   if (!note) return [];
+  const age =
+    (now.getTime() - Date.parse(`${note.date}T00:00:00Z`)) / 86_400_000;
+  if (!(age <= WHATS_NEW_FRESH_DAYS + 1)) {
+    return [
+      '',
+      `No new What's new entry. The latest is ${note.date}: ${note.title}`,
+    ];
+  }
   return [
     '',
     `What's new (${note.date}): ${note.title}`,
@@ -208,27 +236,29 @@ function truncate(content: string): string {
 }
 
 /**
- * The post's words. Plain text with bare links: the row is a `text` message
- * from the system sender, so both clients draw it as Frapp's and make the
- * links tappable. `note` is the newest What's new entry of this deployment.
+ * The post's words. The row is a `text` message from the system sender, so
+ * both clients draw it as Frapp's and parse it as markdown: every link is
+ * built here, as `<url>`, and everything the caller sent goes through
+ * {@link plainText}. `note` is the newest What's new entry of this deployment.
  */
 export function formatDevLogPost(
   post: DevLogPost,
   note: ReleaseNote | undefined = RELEASE_NOTES[0],
+  now: Date = new Date(),
 ): string {
   switch (post.event) {
     case 'work_started': {
       const lines = [
-        `${oneLine(post.actor)} started: ${oneLine(post.title)} (#${post.number})`,
+        `${plainText(post.actor)} started: ${plainText(post.title)} (#${post.number})`,
       ];
       const areas = areaList(post.areas);
       if (areas) lines.push(`Area: ${areas}`);
-      lines.push(issueUrl(post.number));
+      lines.push(issueLink(post.number));
       const others = post.also_in_area ?? [];
       if (others.length > 0) {
         lines.push('', 'Also in progress in that area:');
         for (const item of others) {
-          lines.push(itemLine(item, issueUrl(item.number)));
+          lines.push(itemLine(item, issueLink(item.number)));
         }
       }
       return truncate(lines.join('\n'));
@@ -236,23 +266,23 @@ export function formatDevLogPost(
     case 'pr_merged':
       return truncate(
         [
-          `Merged: ${oneLine(post.title)} (#${post.number}) by ${oneLine(post.actor)}`,
-          pullUrl(post.number),
+          `Merged: ${plainText(post.title)} (#${post.number}) by ${plainText(post.actor)}`,
+          pullLink(post.number),
         ].join('\n'),
       );
     case 'daily_summary': {
       const inProgress = post.in_progress ?? [];
-      const lines = [`Dev log summary for ${post.date}`];
+      const lines = [`Dev log summary for ${plainText(post.date)}`];
       // Counts, not titles: each merge already has its own post, and a busy
       // day is dozens of them.
       lines.push('', `Merged in the last day: ${post.merged_total ?? 0}`);
       for (const { actor, count } of post.merged_by ?? []) {
-        lines.push(`• ${oneLine(actor)}: ${count}`);
+        lines.push(`• ${plainText(actor)}: ${count}`);
       }
       lines.push('', `In progress now (${inProgress.length}):`);
       if (inProgress.length === 0) lines.push('• Nothing in progress.');
       for (const item of inProgress) {
-        lines.push(itemLine(item, issueUrl(item.number)));
+        lines.push(itemLine(item, issueLink(item.number)));
       }
       return truncate(lines.join('\n'));
     }
@@ -271,27 +301,33 @@ export function formatDevLogPost(
           '• Phone app: an update is out. Close the app fully and open it again to get it.',
         );
       }
-      lines.push(...whatsNewBlock(note));
+      lines.push(...whatsNewBlock(note, now));
       return truncate(lines.join('\n'));
     }
   }
 }
 
 /**
- * The dedupe key (`idx_chat_messages_dedupe`), so a re-run workflow or a
- * retried request posts nothing twice: one "started" per issue, one "merged"
- * per PR, one summary per day, one update post per deploy run.
+ * The dedupe key (`idx_chat_messages_dedupe`), so a re-run job or a retried
+ * request posts nothing twice. A "started" is keyed on the workflow run that
+ * saw the label, not on the issue alone: an issue released and taken again,
+ * by anyone, is a new start. An update is keyed on the deploy run and on what
+ * it shipped, so re-running its failed app jobs posts the build once it is up.
  */
 export function devLogClientMessageId(post: DevLogPost): string {
   switch (post.event) {
     case 'work_started':
-      return `devlog:work_started:${post.number}`;
+      return `devlog:work_started:${post.number}:${post.run_id}`;
     case 'pr_merged':
       return `devlog:pr_merged:${post.number}`;
     case 'daily_summary':
       return `devlog:daily_summary:${post.date}`;
     case 'update_pushed':
-      return `devlog:update_pushed:${post.run_id}`;
+      return `devlog:update_pushed:${post.run_id}:${[
+        'web',
+        ...(post.store_build ? ['build'] : []),
+        ...(post.ota_update ? ['ota'] : []),
+      ].join('+')}`;
   }
 }
 
@@ -337,9 +373,9 @@ export class DevLogService {
       config.chapterId,
     );
     // A deleted or archived channel is a setup problem the workflow run
-    // should show, not a post to drop quietly.
+    // should show, not a post to drop quietly, and not the 404 that means off.
     if (!channel || channel.archived_at) {
-      throw new NotFoundException('dev_log.channel.missing');
+      throw new ConflictException('dev_log.channel.missing');
     }
 
     const result = await this.messageRepo.insertIdempotent({
