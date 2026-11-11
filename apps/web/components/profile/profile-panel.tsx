@@ -204,9 +204,9 @@ export function ProfilePanel() {
               <AvatarImage src={profile.avatar_url} alt="" />
             ) : null}
             {/*
-              Sized off the 84px circle rather than off foundations §7's ladder,
-              for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
-              mark, not a run of text. s15 draws them at 28 in an 84px circle.
+              The headline role (foundations §7), as mobile's profile photo
+              draws the same 84px circle's initials (`profile-photo.tsx`), so
+              both apps size them alike (#3830).
             */}
             <AvatarFallback
               tint={ownId ? avatarTintFor(ownId) : null}

@@ -492,7 +492,7 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs + 1,
     },
     // One geometry recipe; only fill and text colour differ between the two
-    // states (foundations.md:68).
+    // states (foundations.md §5).
     // The Chip step (components.md §5): 24 tall, padding-x 8, 12.5 / 600,
     // the same badge web's channel list draws.
     badge: {

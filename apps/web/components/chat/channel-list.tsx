@@ -526,14 +526,6 @@ export function ChannelList({
     );
   };
 
-  if (channels.length === 0) {
-    return (
-      <p className="rounded-lg border border-border px-3 py-4 text-center text-caption text-muted-foreground">
-        No channels yet. Ask an admin to add one.
-      </p>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {arranged.sections.map((section) => {
@@ -570,7 +562,7 @@ export function ChannelList({
                   EYEBROW,
                   // Folded with something unread inside, it reads as an
                   // unread row does, since only a mention carries a number:
-                  // `--foreground` bold (foundations.md §6), as mobile draws it.
+                  // `--foreground` bold (foundations.md §5), as mobile draws it.
                   section.collapsed &&
                     section.unreadCount > 0 &&
                     "font-bold text-foreground",
@@ -591,7 +583,7 @@ export function ChannelList({
                 {section.collapsed && section.addressed ? (
                   <Badge
                     variant="mention"
-                    className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
+                    className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
                     aria-label={foldedSectionAnnouncement(section)}
                   >
                     {badgeLabel(section.addressedCount, section.mentionCount)}

@@ -8,6 +8,7 @@ import {
   type DeliveryChrome,
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import type { TabGlyphProps } from "@/components/tab-glyphs";
 import {
   groupReactions,
@@ -477,16 +478,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.xs + 2,
       flexShrink: 1,
     },
-    // The eyebrow recipe web's EYEBROW draws: caption at 600, uppercase,
-    // 0.12em tracking (1.5 at 12.5).
+    // The eyebrow recipe web's EYEBROW draws.
     eyebrow: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.semibold,
-      }),
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 1.5,
     },
     title: {
       ...typeRole({

@@ -15,6 +15,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 
 /**
  * The grouped-list chrome the reference draws on s09, s12, s14, s15 and s16: an
@@ -495,16 +496,10 @@ function createStyles(tokens: SignetTokens) {
   // Shared so the caption's placeholder can't drift from the caption.
   const sectionHeaderMarginTop = tokens.spacing.sm;
   return StyleSheet.create({
-    // The eyebrow web's section labels draw (`EYEBROW`): caption at 600,
-    // uppercase, 0.12em tracking (1.5 at 12.5), in the secondary tone.
+    // The eyebrow web's section labels draw (`EYEBROW`), in the secondary tone.
     sectionHeader: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.semibold,
-      }),
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 1.5,
       marginTop: sectionHeaderMarginTop,
     },
     // The caption's line box with its top margin; the uppercase tracking
