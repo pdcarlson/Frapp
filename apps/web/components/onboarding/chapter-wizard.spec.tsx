@@ -107,6 +107,8 @@ import {
   normalizeAccentInput,
 } from "@repo/hooks/chapter-identity";
 import { ChapterWizard } from "./chapter-wizard";
+import { DISPLAY_STEP_TITLE } from "./display-step";
+import { setChatDensity } from "@/lib/chat/chat-density";
 
 /** Drive the wizard from the find step to the identity step via manual entry. */
 function gotoIdentityStep() {
@@ -125,9 +127,14 @@ async function gotoInviteStep() {
   gotoIdentityStep();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
-  await waitFor(() =>
-    expect(screen.getByText("Invite members")).toBeInTheDocument(),
-  );
+  await passDisplayStep();
+  expect(screen.getByText("Invite members")).toBeInTheDocument();
+}
+
+/** Moves on from the founder's display step (#4056), keeping what's checked. */
+async function passDisplayStep() {
+  await screen.findByRole("heading", { name: DISPLAY_STEP_TITLE });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 }
 
 describe("ChapterWizard legal acceptance gate", () => {
@@ -166,9 +173,8 @@ describe("ChapterWizard legal acceptance gate", () => {
     });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
-    await waitFor(() =>
-      expect(screen.getByText("Invite members")).toBeInTheDocument(),
-    );
+    await passDisplayStep();
+    expect(screen.getByText("Invite members")).toBeInTheDocument();
     assertAccount(); // invite
   });
 
@@ -360,9 +366,8 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     });
     create();
 
-    await waitFor(() =>
-      expect(screen.getByText("Invite members")).toBeInTheDocument(),
-    );
+    await passDisplayStep();
+    expect(screen.getByText("Invite members")).toBeInTheDocument();
   });
 
   it("starts a FIJI directory match on its short name and color, letters hidden", async () => {
@@ -681,9 +686,8 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     create();
 
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(screen.getByText("Invite members")).toBeInTheDocument(),
-    );
+    await passDisplayStep();
+    expect(screen.getByText("Invite members")).toBeInTheDocument();
     expect(uploadLogoMutate).not.toHaveBeenCalled();
   });
 });
@@ -753,6 +757,57 @@ describe("the archetype card, at the call site", () => {
     }
     expect(caps.some((cap) => /\btext-caption\b/.test(cap.className))).toBe(
       true,
+    );
+  });
+});
+
+describe("the founder's display step (#4056)", () => {
+  beforeEach(() => {
+    onboardMutate.mockReset();
+    onboardMutate.mockResolvedValue({ id: "ch-1" });
+    routerReplace.mockReset();
+  });
+
+  afterEach(() => {
+    setChatDensity("cozy");
+  });
+
+  it("asks for the display after create, with this browser's display preselected, and no way back", async () => {
+    // A browser that already picked Compact keeps it preselected.
+    setChatDensity("compact");
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+
+    expect(
+      await screen.findByRole("heading", { name: DISPLAY_STEP_TITLE }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Compact/ })).toBeChecked();
+    // The chapter exists now: no going back to before it was made.
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+
+    // Continue keeps the preselected display and moves on to the invite.
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Invite members")).toBeInTheDocument();
+    expect(window.localStorage.getItem("frapp.chat-density.v1")).toBe(
+      "compact",
+    );
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("saves a picked display on this browser", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await screen.findByRole("heading", { name: DISPLAY_STEP_TITLE });
+
+    expect(screen.getByRole("radio", { name: /Cozy/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /Bubbles/ }));
+    expect(screen.getByRole("radio", { name: /Bubbles/ })).toBeChecked();
+    expect(window.localStorage.getItem("frapp.chat-density.v1")).toBe(
+      "bubbles",
     );
   });
 });
@@ -838,9 +893,9 @@ describe("the wizard header", () => {
     // `meter.ts`'s rule, applied: the bar carries emphasis, the text carries
     // the information.
     render(<ChapterWizard onComplete={() => {}} />);
-    expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 5")).toBeInTheDocument();
     expect(
-      screen.getByRole("group", { name: "Step 1 of 4" }),
+      screen.getByRole("group", { name: "Step 1 of 5" }),
     ).toBeInTheDocument();
   });
 });
@@ -869,6 +924,7 @@ describe("where the wizard leaves a brand-new founder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
 
+    await passDisplayStep();
     fireEvent.click(
       await screen.findByRole("button", { name: /Skip for now|Finish/ }),
     );
@@ -887,6 +943,7 @@ describe("where the wizard leaves a brand-new founder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
 
+    await passDisplayStep();
     fireEvent.click(
       await screen.findByRole("button", { name: /Skip for now|Finish/ }),
     );
