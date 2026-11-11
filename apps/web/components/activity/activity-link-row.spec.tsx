@@ -50,6 +50,8 @@ const row = (overrides: Record<string, unknown> = {}) =>
     title: "Google Form",
     detail: "Olive · #rush · Tue 3:00 PM",
     badge: null,
+    glyph: "link",
+    dateBlock: null,
     link: {
       id: "l1",
       url: "https://forms.gle/abc",

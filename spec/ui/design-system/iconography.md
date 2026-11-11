@@ -32,7 +32,8 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile) draw one shared
+glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
+`link` and `confirm`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -594,6 +595,26 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
   and is deliberately **not** this family's to move: §6.2.3 already records
   that the state family's glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
+
+### 6.2.5a Activity rows (Signet duotone)
+
+Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
+holding its kind's glyph at 20px in `--muted-foreground`
+([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
+or, for an event, its month and day in place of a glyph. The glyphs are
+the nav set's (§1.1), so a row draws the shape of the place its record lives;
+`link` and `confirm` were added for the two kinds that have no place of their own.
+They stay neutral: the page's colour is for asks and status.
+
+| Row kind | Shape (nav set key, Phosphor name) |
+|---|---|
+| Your task, a task you assigned | `tasks`, `seal-check` |
+| A task waiting on your confirm | `confirm`, `check-circle` (added for it) |
+| Hours to approve | `service`, `hand-heart` |
+| Poll | `polls`, `chart-bar` |
+| Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
+| Document, backwork | `documents`, `file-text`; `backwork`, `books` |
+| Sign-up link | `link`, `link` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 

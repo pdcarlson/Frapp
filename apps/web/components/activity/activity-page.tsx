@@ -21,22 +21,28 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
 import { can } from "@repo/validation";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import {
   ActivityLinkRow,
   useActivityLinkActions,
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
+import { ActivityAsk, ActivityRowLead } from "./activity-row-lead";
+import { ActivitySummary } from "./activity-summary";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
+  activityBadgeIsAsk,
   activityGroups,
   activityKeys,
+  activitySummary,
   useActiveChapterId,
   useActivity,
   useMyPermissions,
   type ActivityFilter,
   type ActivityGroup,
+  type ActivityPart,
   type ActivityRow,
 } from "@repo/hooks";
 import { ActivityPageSkeleton } from "./activity-skeleton";
@@ -46,10 +52,15 @@ function fileHref(row: Extract<ActivityRow, { kind: "file" }>): string {
   return row.file.source === "document" ? "/documents" : "/backwork";
 }
 
-/** The row's two lines and its badge, shared by the button and the link form. */
+/**
+ * The row's lead (its kind's glyph, or an event's date), its two lines, and
+ * its badge, shared by the button and the link form. A badge that asks the
+ * member to act draws as the action (`ActivityAsk`); any other is a status.
+ */
 function RowContent({ row }: { row: ActivityRow }) {
   return (
     <>
+      <ActivityRowLead row={row} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-foreground">
           {row.title}
@@ -61,9 +72,13 @@ function RowContent({ row }: { row: ActivityRow }) {
         ) : null}
       </span>
       {row.badge ? (
-        <Badge variant={row.badge.variant} className="shrink-0">
-          {row.badge.label}
-        </Badge>
+        activityBadgeIsAsk(row) ? (
+          <ActivityAsk label={row.badge.label} />
+        ) : (
+          <Badge variant={row.badge.variant} className="shrink-0">
+            {row.badge.label}
+          </Badge>
+        )
       ) : null}
       <ChevronRight
         className="h-4 w-4 shrink-0 text-muted-foreground"
@@ -117,37 +132,103 @@ function GroupSection({
           </InlineNote>
         ) : null
       ) : (
-        <ul className={denseListClassName}>
-          {group.rows.map((row) =>
-            row.kind === "link" ? (
-              <ActivityLinkRow
-                key={row.key}
-                row={row}
-                rowClassName={ROW_CLASS}
-                canRemove={canRemoveLinks}
-                actions={linkActions}
-              />
-            ) : (
-              <li key={row.key}>
-                {row.kind === "file" ? (
-                  <Link href={fileHref(row)} className={ROW_CLASS}>
-                    <RowContent row={row} />
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    className={ROW_CLASS}
-                    onClick={() => onOpen(row)}
-                  >
-                    <RowContent row={row} />
-                  </button>
-                )}
-              </li>
-            ),
-          )}
-        </ul>
+        group.parts.map((part) => (
+          <GroupPart
+            key={part.id}
+            groupId={group.id}
+            part={part}
+            canRemoveLinks={canRemoveLinks}
+            linkActions={linkActions}
+            onOpen={onOpen}
+          />
+        ))
       )}
     </section>
+  );
+}
+
+/**
+ * One run of a group's rows (#4173): "Now" or "Later" under Needs you, one
+ * kind under Made by you, or the whole group. A long part draws its first few
+ * rows and a "Show all" for the rest, so one busy kind doesn't bury the page.
+ */
+function GroupPart({
+  groupId,
+  part,
+  canRemoveLinks,
+  linkActions,
+  onOpen,
+}: {
+  groupId: ActivityGroup["id"];
+  part: ActivityPart;
+  canRemoveLinks: boolean;
+  linkActions: ActivityLinkActions;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const capped =
+    !expanded && part.limit !== null && part.rows.length > part.limit;
+  const rows = capped ? part.rows.slice(0, part.limit ?? undefined) : part.rows;
+  const labelId = `activity-${groupId}-${part.id}`;
+  return (
+    <div
+      className="space-y-1"
+      role={part.label ? "group" : undefined}
+      aria-labelledby={part.label ? labelId : undefined}
+    >
+      {part.label ? (
+        <h3
+          id={labelId}
+          className="px-2 text-caption font-semibold text-muted-foreground"
+        >
+          {part.label}
+          <span className="ml-2 font-normal text-muted tabular-nums">
+            {part.rows.length}
+          </span>
+        </h3>
+      ) : null}
+      <ul className={denseListClassName}>
+        {rows.map((row) =>
+          row.kind === "link" ? (
+            <ActivityLinkRow
+              key={row.key}
+              row={row}
+              rowClassName={ROW_CLASS}
+              canRemove={canRemoveLinks}
+              actions={linkActions}
+            />
+          ) : (
+            <li key={row.key}>
+              {row.kind === "file" ? (
+                <Link href={fileHref(row)} className={ROW_CLASS}>
+                  <RowContent row={row} />
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className={ROW_CLASS}
+                  onClick={() => onOpen(row)}
+                >
+                  <RowContent row={row} />
+                </button>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+      {part.limit !== null && part.rows.length > part.limit ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="px-2"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded ? "Show fewer" : `Show all ${part.rows.length}`}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -175,10 +256,25 @@ export function ActivityPage() {
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
+  const isModuleEnabled = useChapterModuleGate();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter) : []),
     [activity.data, filter],
+  );
+  const summary = useMemo(
+    () =>
+      activity.data
+        ? activitySummary(activity.data, {
+            canConfirmTasks: can("tasks:manage", permissions.data?.permissions),
+            canApproveHours: can(
+              "service:approve",
+              permissions.data?.permissions,
+            ),
+            isModuleEnabled,
+          })
+        : null,
+    [activity.data, permissions.data?.permissions, isModuleEnabled],
   );
   const openRow = useMemo(
     () =>
@@ -223,24 +319,38 @@ export function ActivityPage() {
 
   return (
     <div className="space-y-8">
+      {summary ? (
+        <ActivitySummary
+          summary={summary}
+          filter={filter}
+          onFilter={setFilter}
+        />
+      ) : null}
       <div
         role="group"
         aria-label="Show"
         className="flex flex-wrap items-center gap-2"
       >
-        {ACTIVITY_FILTERS.map((option) => (
-          <Button
-            key={option.value}
-            type="button"
-            size="toolbar"
-            variant={filter === option.value ? "tinted" : "secondary"}
-            className={FILTER_CHIP_CLASS}
-            aria-pressed={filter === option.value}
-            onClick={() => setFilter(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
+        {ACTIVITY_FILTERS.map((option) => {
+          // The To confirm tile narrows within Tasks, so the Tasks chip
+          // stays lit under it.
+          const on =
+            filter === option.value ||
+            (filter === "confirm" && option.value === "task");
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              size="toolbar"
+              variant={on ? "tinted" : "secondary"}
+              className={FILTER_CHIP_CLASS}
+              aria-pressed={on}
+              onClick={() => setFilter(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
       </div>
 
       {groups.map((group) =>
