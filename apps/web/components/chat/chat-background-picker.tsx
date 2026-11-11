@@ -6,7 +6,9 @@ import {
   CHAT_BACKGROUND_LABELS,
   CHAT_BACKGROUND_PHOTO_NOTE,
   chatBackgroundDefaultLabel,
+  fileExtension,
   inspectUploadFile,
+  isAllowedUploadMime,
   acceptAttribute,
   MAX_UPLOAD_LABEL,
   type ChatBackgroundKey,
@@ -145,7 +147,17 @@ export function ChatBackgroundPicker({
           // checks as well as the type, and the size the bucket enforces, so
           // a `.jfif` or a 30 MB photo is refused here, by name, instead of
           // by a server step (#4262).
-          const inspected = inspectUploadFile("image", file);
+          // A file saved with no extension is judged by its type, as the
+          // API judges it (it names such an upload `.jpg`).
+          const named =
+            fileExtension(file.name) || !isAllowedUploadMime("image", file.type)
+              ? file
+              : {
+                  name: `${file.name}.${file.type.slice("image/".length)}`,
+                  type: file.type,
+                  size: file.size,
+                };
+          const inspected = inspectUploadFile("image", named);
           if (!inspected.ok) {
             setTypeError(
               inspected.reason === "size"

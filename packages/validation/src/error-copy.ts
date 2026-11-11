@@ -111,6 +111,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "The photo didn't finish uploading. Pick it again.",
   "The chapter needs a default or #general channel to announce a photo background in":
     "A photo background is announced in #general, and this chapter has no #general or default channel. Make one channel the default, then try again.",
+  "You cannot post in the channel a chapter photo background is announced in":
+    "A photo background is announced in the default channel (or #general), and your role can't post there. Ask an officer who can.",
   "This channel can't have a background":
     "This channel can't have a background.",
   "A DM or group DM has no background": "DMs can't have a background.",

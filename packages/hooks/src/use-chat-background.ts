@@ -2,11 +2,12 @@ import { throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
   channelTakesBackground,
+  MAX_UPLOAD_LABEL,
   type ChatBackgroundKey,
 } from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
-import { errorCopy, MemberFacingError } from "./error-copy";
+import { errorCopy } from "./error-copy";
 import { putSignedUpload } from "./put-signed-upload";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -99,8 +100,7 @@ export const CHAT_BACKGROUND_FAILURE_COPY = {
   /** Minting the signed upload URL. */
   prepare: "Couldn't start the photo upload. Try again, or pick another photo.",
   /** Storage refused the PUT (any status but 413, which says "too large"). */
-  upload:
-    "The photo didn't upload. Pick a JPEG, PNG, GIF or WebP up to 25 MB and try again.",
+  upload: `The photo didn't upload. Pick a JPEG, PNG, GIF or WebP up to ${MAX_UPLOAD_LABEL} and try again.`,
   /** The photo is up; saving it as the background failed. */
   savePhoto:
     "The photo uploaded, but it couldn't be saved as the background. Try again.",
@@ -108,21 +108,55 @@ export const CHAT_BACKGROUND_FAILURE_COPY = {
   save: "Couldn't save the background. Try again.",
 } as const;
 
+export type ChatBackgroundStep = Exclude<
+  keyof typeof CHAT_BACKGROUND_FAILURE_COPY,
+  "upload"
+>;
+
+const STEP = Symbol.for("frapp.chatBackgroundStep");
+
 /**
- * Runs one step; a failure with nothing specific to say is rethrown as the
- * step's own sentence, keeping the original as its `cause`. A failure that
- * does say something (no connection, signed out, a known refusal, a refused
- * upload) passes through for `errorCopy` to show.
+ * Runs one step, marking a failure with the step it came from. The error
+ * itself is rethrown untouched, so its status, code and request id still
+ * reach the Sentry reporter and every caller's own `errorCopy` fallback
+ * (mobile's included) still applies; web reads the mark through
+ * {@link chatBackgroundErrorCopy}.
  */
-async function step<T>(run: () => Promise<T>, failure: string): Promise<T> {
+async function step<T>(
+  run: () => Promise<T>,
+  name: ChatBackgroundStep,
+): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    if (errorCopy(error, "") !== "") throw error;
-    const wrapped = new MemberFacingError(failure);
-    (wrapped as Error & { cause?: unknown }).cause = error;
-    throw wrapped;
+    if (error !== null && typeof error === "object" && !(STEP in error)) {
+      try {
+        Object.defineProperty(error, STEP, { value: name });
+      } catch {
+        // A frozen error keeps no mark; it reads with the plain fallback.
+      }
+    }
+    throw error;
   }
+}
+
+/**
+ * What a member reads for a failed background set: the failure's own reason
+ * when it has one (no connection, a known refusal, a refused upload),
+ * otherwise the sentence for the step that failed, never a bare "Try again
+ * in a moment" (#4262).
+ */
+export function chatBackgroundErrorCopy(error: unknown): string {
+  const marked =
+    error !== null && typeof error === "object"
+      ? (error as { [STEP]?: ChatBackgroundStep })[STEP]
+      : undefined;
+  return errorCopy(
+    error,
+    marked
+      ? CHAT_BACKGROUND_FAILURE_COPY[marked]
+      : CHAT_BACKGROUND_FAILURE_COPY.save,
+  );
 }
 
 /** Upload `source.photo` when given; otherwise the caller's own path. */
@@ -140,7 +174,7 @@ async function resolvePhotoPath(
     });
     throwUnlessOk(ticket);
     return ticket.data!;
-  }, CHAT_BACKGROUND_FAILURE_COPY.prepare);
+  }, "prepare");
   await putSignedUpload({
     signedUrl: upload_url,
     body: photo.body,
@@ -216,9 +250,7 @@ export function useSetChannelBackground() {
           throwUnlessOk(result);
           return result.data!;
         },
-        background === "photo"
-          ? CHAT_BACKGROUND_FAILURE_COPY.savePhoto
-          : CHAT_BACKGROUND_FAILURE_COPY.save,
+        background === "photo" ? "savePhoto" : "save",
       );
     },
     onSuccess: () => {
@@ -256,9 +288,7 @@ export function useSetChapterChatBackground() {
           throwUnlessOk(result);
           return result.data!;
         },
-        background === "photo"
-          ? CHAT_BACKGROUND_FAILURE_COPY.savePhoto
-          : CHAT_BACKGROUND_FAILURE_COPY.save,
+        background === "photo" ? "savePhoto" : "save",
       );
     },
     onSuccess: () => {

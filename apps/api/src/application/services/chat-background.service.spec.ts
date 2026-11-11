@@ -1,5 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
-import { ChatBackgroundService } from './chat-background.service';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  ANNOUNCE_CHANNEL_FORBIDDEN,
+  ChatBackgroundService,
+} from './chat-background.service';
 import type { ChatChannel } from '#domain/entities/chat.entity';
 
 const CHAPTER = 'chapter-1';
@@ -360,6 +363,17 @@ describe('ChatBackgroundService (#3973)', () => {
         chat_background_photo_path: PHOTO,
         chat_background_message_id: 'msg-new',
       });
+    });
+
+    it('names the announcement channel when the setter cannot post there (#4262)', async () => {
+      const { service, access, messageRepo } = setup();
+      access.assertChannelAccess.mockRejectedValueOnce(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+      await expect(
+        service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
+      ).rejects.toThrow(ANNOUNCE_CHANNEL_FORBIDDEN);
+      expect(messageRepo.create).not.toHaveBeenCalled();
     });
 
     it('sets a built-in default without a line', async () => {

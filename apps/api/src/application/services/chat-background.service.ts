@@ -1,6 +1,7 @@
 import * as path from 'path';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -36,6 +37,9 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { ChannelAccessService } from './channel-access.service';
 
 const BRANDING_BUCKET = 'branding';
+/** Mirrored, as member copy, in `SERVER_MESSAGE_COPY` (`@repo/validation`). */
+export const ANNOUNCE_CHANNEL_FORBIDDEN =
+  'You cannot post in the channel a chapter photo background is announced in';
 /**
  * A signed photo URL outlives the clients' 5-minute cache comfortably, and is
  * short enough that a withdrawn photo stops loading within the hour.
@@ -215,12 +219,16 @@ export class ChatBackgroundService {
           'The chapter needs a default or #general channel to announce a photo background in',
         );
       }
-      await this.channelAccess.assertChannelAccess(
-        channel.id,
-        chapterId,
-        actorUserId,
-        'post',
-      );
+      // The officer is on Chat settings, not in this channel, so "no access
+      // to this channel" would name nothing they can see (#4262).
+      await this.channelAccess
+        .assertChannelAccess(channel.id, chapterId, actorUserId, 'post')
+        .catch((error: unknown) => {
+          if (error instanceof ForbiddenException) {
+            throw new ForbiddenException(ANNOUNCE_CHANNEL_FORBIDDEN);
+          }
+          throw error;
+        });
       const line = await this.announce(
         channel.id,
         actorUserId,

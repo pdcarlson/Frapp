@@ -9,11 +9,11 @@ vi.mock("./put-signed-upload", async (importActual) => ({
   putSignedUpload,
 }));
 
-import { errorCopy } from "./error-copy";
 import { SignedUploadError } from "./put-signed-upload";
 import {
   CHAT_BACKGROUND_FAILURE_COPY,
   canSetChannelBackground,
+  chatBackgroundErrorCopy,
   useRequestChatBackgroundPhotoUrl,
   useSetChannelBackground,
   useSetChapterChatBackground,
@@ -178,8 +178,24 @@ describe("chat background hooks", () => {
             caught = error;
           });
       });
-      return errorCopy(caught);
+      return chatBackgroundErrorCopy(caught);
     }
+
+    it("rethrows the API's own error, so its status still reaches Sentry", async () => {
+      const client = { PUT: vi.fn().mockResolvedValue(failed(500, "boom")) };
+      const { result } = renderHook(() => useSetChapterChatBackground(), {
+        wrapper: wrapper(client),
+      });
+      let caught: unknown;
+      await act(async () => {
+        await result.current
+          .mutateAsync({ background: "letters" })
+          .catch((error: unknown) => {
+            caught = error;
+          });
+      });
+      expect(caught).toMatchObject({ statusCode: 500, message: "boom" });
+    });
 
     it("names minting the upload when that 5xxs", async () => {
       const client = {
@@ -200,6 +216,33 @@ describe("chat background hooks", () => {
         PUT: vi.fn().mockResolvedValue(failed(500)),
       };
       expect(await failureOf(client, { background: "photo", photo })).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.savePhoto,
+      );
+    });
+
+    it("names saving a channel's photo when that 5xxs (the channel menu)", async () => {
+      const client = {
+        POST: vi
+          .fn()
+          .mockResolvedValue(ok({ upload_url: "u", storage_path: "p" })),
+        PUT: vi.fn().mockResolvedValue(failed(500)),
+      };
+      const { result } = renderHook(() => useSetChannelBackground(), {
+        wrapper: wrapper(client),
+      });
+      let caught: unknown;
+      await act(async () => {
+        await result.current
+          .mutateAsync({ channelId: "ch-1", background: "photo", photo })
+          .catch((error: unknown) => {
+            caught = error;
+          });
+      });
+      expect(client.POST).toHaveBeenCalledWith(
+        "/v1/chat-backgrounds/channels/photo-url",
+        expect.anything(),
+      );
+      expect(chatBackgroundErrorCopy(caught)).toBe(
         CHAT_BACKGROUND_FAILURE_COPY.savePhoto,
       );
     });

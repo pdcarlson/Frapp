@@ -96,6 +96,32 @@ describe("ChatBackgroundPicker (#3973)", () => {
     );
   });
 
+  it("takes an image saved with no extension by its type, as the API does", () => {
+    const onPick = renderPicker();
+    const file = new File(["x"], "background", { type: "image/png" });
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    expect(onPick).toHaveBeenCalledWith({
+      background: "photo",
+      photo: file,
+      contentType: "image/png",
+    });
+  });
+
+  it("hands back the type its extension resolves to when the browser gives none", () => {
+    const onPick = renderPicker();
+    const file = new File(["x"], "a.webp", { type: "" });
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    expect(onPick).toHaveBeenCalledWith({
+      background: "photo",
+      photo: file,
+      contentType: "image/webp",
+    });
+  });
+
   it("clears a refused file's error when a built-in is picked", () => {
     renderPicker();
     fireEvent.change(document.querySelector('input[type="file"]')!, {
