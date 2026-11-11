@@ -190,7 +190,8 @@ Per-route decisions that still bind. Each is either the product declining to be 
 
 - **Each page keeps its own search field.** Both search the library they already loaded, typos forgiven, with filter chips beside the field (Documents since #3852, [`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search)) ([`backwork.md` § Browsing and Search](../../behavior/backwork.md#browsing-and-search)). The find bar navigates rather than narrowing a route, so deleting either would move a capability.
 - Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
-- **Folder management is a mode.** The rail is navigation; an officer's Edit reveals each folder's move, rename and delete controls and Done puts them away (2026-11-05). Edit is not a write and is not gated; the controls it reveals are.
+- **Folder management is a mode.** The rail is navigation; an officer's Edit reveals each folder's move, rename and delete controls and Done puts them away (2026-11-05). Pin joined them in #3934 (2026-11-11). Edit is not a write and is not gated; the controls it reveals are.
+- **Pinned and starred lead Documents** (#3934, Shawn's idea): cards for what's pinned and starred above the unfiltered All files, Pinned, Starred and Other folders groups in the rail, and a Star and (for `chapter_docs:manage`) a Pin on each row. The rules are in [`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred).
 
 ### Directory
 

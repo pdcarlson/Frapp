@@ -204,6 +204,13 @@ const railRowActions = vi.hoisted(() => ({
   value: undefined as
     import("./channel-row-menu").ChannelRowActions | undefined,
 }));
+// The rail's drag-to-reorder controls (#4178), captured like the row actions.
+const railReorder = vi.hoisted(() => ({
+  value: undefined as
+    import("./channel-list").ChannelReorderControls | undefined,
+  channels: vi.fn(),
+  categories: vi.fn(),
+}));
 const mockSetChannelPinned = vi.fn();
 const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
@@ -599,6 +606,8 @@ vi.mock("@repo/hooks", async () => ({
     isPending: false,
     mutate: displayLockState.mutate,
   }),
+  useReorderChannels: () => ({ mutateAsync: railReorder.channels }),
+  useReorderCategories: () => ({ mutateAsync: railReorder.categories }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
     viewerId: string | null,
@@ -680,6 +689,9 @@ vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
 }));
 vi.mock("./channel-list", () => ({
+  REORDER_SAVE_FAILED_TITLE: "Couldn't save the channel order",
+  REORDER_SAVE_FAILED_BODY:
+    "Nothing changed. Check your connection and try again.",
   ChannelFilters: ({
     onChange,
   }: {
@@ -699,8 +711,10 @@ vi.mock("./channel-list", () => ({
     sidebar,
     unreadByChannelId,
     rowActions,
+    reorder,
   }: {
     rowActions?: import("./channel-row-menu").ChannelRowActions;
+    reorder?: import("./channel-list").ChannelReorderControls;
     unreadByChannelId?: Map<string, unknown>;
     sidebar?: {
       mutedChannelIds: ReadonlySet<string> | undefined;
@@ -718,7 +732,10 @@ vi.mock("./channel-list", () => ({
   }) => (
     <div
       data-testid="channel-list"
-      ref={() => void (railRowActions.value = rowActions)}
+      ref={() => {
+        railRowActions.value = rowActions;
+        railReorder.value = reorder;
+      }}
     >
       {/* The rail's pin control and the muted set it filters with (#2877). */}
       <button
@@ -4629,6 +4646,48 @@ describe("ChatShell member list", () => {
     stubWide(false);
     rerender(<ChatShell />);
     expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  });
+});
+
+describe("ChatShell rail reorder (#4178)", () => {
+  beforeEach(() => {
+    railReorder.value = undefined;
+    railReorder.channels.mockReset();
+    railReorder.categories.mockReset();
+    mockToast.mockClear();
+  });
+
+  it("offers no drag to a member without channels:manage", () => {
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("channel-list")).toBeTruthy();
+    expect(railReorder.value).toBeUndefined();
+  });
+
+  it("saves an officer's drop and says so when the save fails", async () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    railReorder.channels.mockRejectedValue(new Error("nope"));
+    railReorder.categories.mockResolvedValue({ success: true });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    act(() => railReorder.value!.onReorderChannels("cat-1", ["a", "b"]));
+    expect(railReorder.channels).toHaveBeenCalledWith({
+      category_id: "cat-1",
+      channel_ids: ["a", "b"],
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: "destructive",
+          title: "Couldn't save the channel order",
+        }),
+      ),
+    );
+
+    act(() => railReorder.value!.onReorderCategories(["c2", "c1"]));
+    expect(railReorder.categories).toHaveBeenCalledWith(["c2", "c1"]);
   });
 });
 

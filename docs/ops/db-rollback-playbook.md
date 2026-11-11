@@ -3552,6 +3552,22 @@ alter table public.chapter_documents drop column if exists pinned_at;
 alter table public.chapter_document_folders drop column if exists pinned_at;
 ```
 
+## Rollback Chapter channel order (20261111190000)
+
+* **Migration**: `20261111190000_chat_channels_display_order.sql`
+
+One nullable column on `chat_channels`, `display_order`, and the functions `reorder_chat_channels` and `reorder_chat_categories`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never calls the functions and returns the column as a plain field (`select('*')`); the reverted clients sort every section A to Z again and ignore it.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses every chapter's channel order; category order stays in `chat_channel_categories.display_order`, which predates this:
+
+```sql
+drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
+drop function if exists public.reorder_chat_categories(uuid, uuid[]);
+alter table public.chat_channels drop column if exists display_order;
+```
+
 ## Rollback custom roles fold (20261111200000)
 
 * **Migration**: `20261111200000_fold_custom_roles.sql`
@@ -3563,4 +3579,3 @@ A new column, `chapter_custom_roles.folded_role_id`; a `roles` row for each cust
 **Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did, and nothing tells a reused role (one that existed before the fold) from a created one except `folded_role_id` and the roles' history. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
-

@@ -37,7 +37,16 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - **Who sees a pinned folder.** Every member can open every folder today. Restricted folders ([#3642](https://github.com/pdcarlson/Frapp/issues/3642)) are parked; when they land, a pinned or starred folder a member cannot open is not shown to that member.
 - **Routes.** `GET /v1/documents/stars` returns the caller's own `{ folder_ids, document_ids }`. `PUT` stars and `DELETE` unstars `/v1/documents/folders/{id}/star` and `/v1/documents/{id}/star`, each idempotent and answering 204. `PUT` pins and `DELETE` unpins `/v1/documents/folders/{id}/pin` and `/v1/documents/{id}/pin`, behind `chapter_docs:manage`, each idempotent and answering the updated row. Starring something outside the caller's chapter is a 404.
 
-How web and mobile draw the tiers is added with each client's change (#3934).
+**Web `/documents`** *(2026-11-11, #3934)*:
+
+- **Cards on top of All files.** On All files with no search or filter, a **Pinned** group of cards, then a **Starred** group, sits above the list, folders and files together (as Google Drive's top row and mobile s12's PINNED draw them). A folder card names how many files it holds and opens the folder; a file card opens the viewer. Pinned cards take the chapter accent on their glyph, starred ones the neutral glyph. The list below keeps its own order, each row's Star and Pin lit where they apply. Inside a folder, or with a search or filter, there are no cards: pinned files, then starred files, lead the list instead, each tier in the chosen sort.
+- **The folder rail is grouped** under **Pinned**, **Starred** and **Other folders**, below All files and No folder; with nothing pinned or starred it is one plain list, as before. A star sits beside each folder, drawn on hover or focus (always under a finger) and kept drawn while starred.
+- **Each file row** carries a Star for everyone and, for `chapter_docs:manage`, a Pin, both lit while on. A member who can't pin sees a pinned file's pin as a mark only.
+- **Pinning a folder is an Edit control.** Edit adds Pin to each folder's move, rename and delete controls, and shows the chapter's arrangement, pinned then the rest, without the officer's own stars. Move up and Move down move a folder within its tier and save the arrangement pinned-first, so the stored order and what everyone sees agree.
+- A star failing, or a pin, says so in a toast; a star moves on the tap and settles on what the server holds.
+- The cards, their file counts and the tiers come from the library the page has loaded, so they share § Search's cap: past 1,000 documents, a pinned or starred file older than the newest 1,000 is missing from them, and a folder card counts only the files loaded.
+
+Mobile follows in its own change (#3934).
 
 ## Search
 

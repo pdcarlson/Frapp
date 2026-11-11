@@ -156,6 +156,7 @@ describe('Chat hot path (e2e)', () => {
     removePrivateChannelMember: jest.fn(),
     removeUserFromPrivateChannels: jest.fn(),
     setDefault: jest.fn(),
+    reorder: jest.fn(),
   };
   const categoryRepoMock: jest.Mocked<IChatCategoryRepository> = {
     findByChapter: jest.fn(),
@@ -163,6 +164,7 @@ describe('Chat hot path (e2e)', () => {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    reorder: jest.fn(),
   };
   const messageRepoMock: jest.Mocked<IChatMessageRepository> = {
     findById: jest.fn(),
