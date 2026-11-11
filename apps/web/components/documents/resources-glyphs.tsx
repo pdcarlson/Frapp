@@ -36,8 +36,16 @@
  */
 
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { Svg, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
+
+/**
+ * A pin, for a folder or file an officer pinned for the whole chapter
+ * (#3934). The chat family's glyph, re-exported: pinning a message, a channel
+ * and a document is one idea, so it is one shape.
+ */
+export { PinGlyph } from "@/components/chat/chat-glyphs";
 
 export {
   DocumentsGlyph,
@@ -63,4 +71,23 @@ export type ResourcesGlyphProps = DuotoneGlyphProps;
  */
 export function FolderGlyph(props: ResourcesGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.folder} {...props} />;
+}
+
+/**
+ * A star, for a folder or file a member starred for themselves (#3934),
+ * filled while starred, as `PinGlyph` fills while pinned. A star rather than a
+ * second pin for the reason chat's `BookmarkGlyph` gives: the two sit side by
+ * side, one is chapter-wide and one is private, and two similar shapes would
+ * invite pinning for everyone while meaning to mark it for yourself.
+ */
+export function StarGlyph({ className, active }: ResourcesGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M12 3.6l2.55 5.2 5.7.83-4.13 4.02.98 5.68L12 16.65l-5.1 2.68.98-5.68-4.13-4.02 5.7-.83z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+    </Svg>
+  );
 }

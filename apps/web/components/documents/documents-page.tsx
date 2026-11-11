@@ -24,6 +24,7 @@ import {
   DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
   deleteDocumentTitle,
+  tierByMarks,
   type DocumentFilters,
   type DocumentSort,
 } from "@repo/hooks/document-library";
@@ -38,6 +39,11 @@ import {
   useFolderManagement,
 } from "@/components/documents/folder-management";
 import { FolderRail } from "@/components/documents/folder-rail";
+import {
+  MarkedStrip,
+  type MarkedItem,
+} from "@/components/documents/marked-strip";
+import { useDocumentMarks } from "@/components/documents/use-document-marks";
 import {
   DocumentsPageDropTarget,
   UploadDocumentPanel,
@@ -176,7 +182,57 @@ function ChapterDocumentsPage() {
     semesters: useSemesters().data,
     paused: openId !== null,
   });
-  const visibleDocs = useMemo(() => visible.map((row) => row.doc), [visible]);
+  /*
+    Pinned and starred (#3934, `chapter-docs.md` § Pinned and starred). On
+    the unfiltered All files view the two tiers are cards above the list
+    (`MarkedStrip`), and the list keeps its plain order; anywhere else (a
+    folder, a search, a filter) they lead the list itself. Either way they
+    come first, and nothing is drawn twice on one screen.
+  */
+  const marks = useDocumentMarks();
+  const { isStarred } = marks;
+  const showStrip =
+    activeFolder === null && !filtering && deferredSearch === "";
+  const tieredVisible = useMemo(() => {
+    if (showStrip) return visible;
+    const tiers = tierByMarks(
+      visible,
+      (row) => !!row.doc.pinned_at,
+      (row) => isStarred({ kind: "document", id: row.doc.id }),
+    );
+    return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
+  }, [visible, showStrip, isStarred]);
+  const strip = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const doc of documents) {
+      if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
+    }
+    const folderItems: MarkedItem[] = folders.map((folder) => ({
+      kind: "folder",
+      folder,
+      count: counts.get(folder.name) ?? 0,
+    }));
+    const docItems: MarkedItem[] = visible.map(({ doc }) => ({
+      kind: "document",
+      doc,
+    }));
+    const isPinned = (item: MarkedItem) =>
+      item.kind === "folder" ? !!item.folder.pinned_at : !!item.doc.pinned_at;
+    const isItemStarred = (item: MarkedItem) =>
+      item.kind === "folder"
+        ? isStarred({ kind: "folder", id: item.folder.id })
+        : isStarred({ kind: "document", id: item.doc.id });
+    const { pinned, starred } = tierByMarks(
+      [...folderItems, ...docItems],
+      isPinned,
+      isItemStarred,
+    );
+    return { pinned, starred };
+  }, [documents, folders, visible, isStarred]);
+  const visibleDocs = useMemo(
+    () => tieredVisible.map((row) => row.doc),
+    [tieredVisible],
+  );
 
   /*
     The upload panel's type chips: the common types plus every type this
@@ -371,40 +427,54 @@ function ChapterDocumentsPage() {
           setActiveFolder={setActiveFolder}
           gate={gate}
           management={folderManagement}
+          marks={marks}
           loadFailed={foldersQuery.isError}
           onRetryLoad={() => void foldersQuery.refetch()}
         />
 
-        <DocumentList
-          listState={listState}
-          loadError={documentsQuery.error}
-          visible={visible}
-          activeFolder={activeFolder}
-          total={folderTotal}
-          truncated={truncated}
-          filtering={filtering}
-          search={search}
-          setSearch={setSearch}
-          deferredSearch={deferredSearch}
-          filters={effectiveFilters}
-          semesterKnown={semesterKnown}
-          setFilters={setFilters}
-          uploaders={uploaders}
-          kinds={kinds}
-          sort={sort}
-          setSort={setSort}
-          onClearFilters={() => {
-            setSearch("");
-            setFilters(NO_DOCUMENT_FILTERS);
-          }}
-          onRetry={() => void documentsQuery.refetch()}
-          gate={gate}
-          deletingIds={deletingIds}
-          onOpen={(doc) => setOpenId(doc.id)}
-          onDelete={(doc) => void handleDelete(doc)}
-          onShowAllFiles={() => setActiveFolder(null)}
-          onUpload={canUpload ? () => upload.openPanel() : undefined}
-        />
+        <div className="min-w-0 space-y-6">
+          {showStrip && listState === "ready" ? (
+            <MarkedStrip
+              pinned={strip.pinned}
+              starred={strip.starred}
+              marks={marks}
+              gate={gate}
+              onOpenFolder={setActiveFolder}
+              onOpenDocument={(doc) => setOpenId(doc.id)}
+            />
+          ) : null}
+          <DocumentList
+            listState={listState}
+            loadError={documentsQuery.error}
+            visible={tieredVisible}
+            activeFolder={activeFolder}
+            total={folderTotal}
+            truncated={truncated}
+            filtering={filtering}
+            search={search}
+            setSearch={setSearch}
+            deferredSearch={deferredSearch}
+            filters={effectiveFilters}
+            semesterKnown={semesterKnown}
+            setFilters={setFilters}
+            uploaders={uploaders}
+            kinds={kinds}
+            sort={sort}
+            setSort={setSort}
+            onClearFilters={() => {
+              setSearch("");
+              setFilters(NO_DOCUMENT_FILTERS);
+            }}
+            onRetry={() => void documentsQuery.refetch()}
+            gate={gate}
+            deletingIds={deletingIds}
+            onOpen={(doc) => setOpenId(doc.id)}
+            onDelete={(doc) => void handleDelete(doc)}
+            onShowAllFiles={() => setActiveFolder(null)}
+            onUpload={canUpload ? () => upload.openPanel() : undefined}
+            marks={marks}
+          />
+        </div>
       </div>
       {/*
         Rendered last and unconditionally, for the reason `DocumentList`'s states

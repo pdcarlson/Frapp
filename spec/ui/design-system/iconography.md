@@ -547,6 +547,8 @@ button, and the PDF a report exports to.
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
+| A folder or file pinned for the whole chapter, and the Pin control (#3934), filled while pinned | `PinGlyph` (re-exported from the chat family, §6.2.2) |
+| A folder or file the member starred for themselves, and the Star control (#3934), filled while starred | `StarGlyph` |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
@@ -556,6 +558,9 @@ which is §1 rule 1's rule and the two preceding families' practice. Only
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
+`PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
+message, a channel and a document is one idea. `StarGlyph` is drawn here on
+the §1 recipe, because no set entry covers a personal star (#3934).
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)

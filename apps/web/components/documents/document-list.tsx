@@ -29,6 +29,7 @@ import {
   denseListClassName,
 } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
+import type { DocumentMarks } from "@/components/documents/use-document-marks";
 import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton";
 
 export type DocumentListState =
@@ -60,6 +61,7 @@ export function DocumentList({
   onDelete,
   onShowAllFiles,
   onUpload,
+  marks,
 }: {
   listState: DocumentListState;
   /** The failed read behind `listState === "error"`, for its wording. */
@@ -97,6 +99,8 @@ export function DocumentList({
   onShowAllFiles: () => void;
   /** Opens the upload panel; absent for a viewer who can't upload. */
   onUpload?: () => void;
+  /** Pins and the member's own stars (#3934). */
+  marks: DocumentMarks;
 }) {
   return (
     // Its own container (#4022): the rows break on the list's width, which
@@ -297,8 +301,20 @@ export function DocumentList({
                 uploader={uploader}
                 gate={gate}
                 deleting={deletingIds.has(doc.id)}
+                starred={marks.isStarred({ kind: "document", id: doc.id })}
+                pinBusy={marks.pinBusy}
                 onOpen={onOpen}
                 onDelete={onDelete}
+                onToggleStar={(row) =>
+                  marks.toggleStar({ kind: "document", id: row.id }, row.title)
+                }
+                onTogglePin={(row) =>
+                  void marks.setPinned(
+                    { kind: "document", id: row.id },
+                    row.title,
+                    !row.pinned_at,
+                  )
+                }
               />
             ))}
           </ul>

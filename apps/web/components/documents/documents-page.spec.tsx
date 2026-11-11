@@ -30,7 +30,15 @@ const {
   mockOffline,
   canGate,
   roster,
+  stars,
+  mockSetStar,
+  mockSetPin,
 } = vi.hoisted(() => ({
+  stars: {
+    value: { folder_ids: [] as string[], document_ids: [] as string[] },
+  },
+  mockSetStar: vi.fn(),
+  mockSetPin: vi.fn().mockResolvedValue(undefined),
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
@@ -112,6 +120,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateDocumentFolder: () => ({ mutateAsync: mockCreateFolder }),
   useUpdateDocumentFolder: () => ({ mutateAsync: mockUpdateFolder }),
   useDeleteDocumentFolder: () => ({ mutateAsync: mockDeleteFolder }),
+  useDocumentStars: () => ({ data: stars.value }),
+  useSetDocumentStar: () => ({ mutate: mockSetStar }),
+  useSetDocumentPin: () => ({ mutateAsync: mockSetPin, isPending: false }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -148,6 +159,7 @@ function resolvedDocumentsQuery() {
   ];
   foldersQuery.isError = false;
   foldersQuery.refetch = mockFolderRefetch;
+  stars.value = { folder_ids: [], document_ids: [] };
 }
 
 const uploadTrigger = () =>
@@ -1692,5 +1704,226 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Couldn't reorder folders" }),
     );
+  });
+});
+
+describe("DocumentsPage pins and stars (#3934)", () => {
+  const MINUTES = {
+    ...BYLAWS,
+    id: "doc-2",
+    title: "Meeting minutes",
+    folder: "Rush",
+    storage_path: "chap-1/minutes.pdf",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    canGate.granted = true;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  afterEach(() => {
+    canGate.granted = true;
+  });
+
+  const rail = () => screen.getByRole("navigation");
+
+  it("groups the rail: pinned for the chapter, then the member's stars, then the rest", () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+      {
+        id: "f-2",
+        name: "Rush",
+        sort_order: 1,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+      { id: "f-3", name: "Finance", sort_order: 2, pinned_at: null },
+    ];
+    stars.value = { folder_ids: ["f-3"], document_ids: [] };
+    render(<DocumentsPage />);
+
+    const pinned = within(rail()).getByRole("group", { name: "Pinned" });
+    const starred = within(rail()).getByRole("group", { name: "Starred" });
+    const other = within(rail()).getByRole("group", { name: "Other folders" });
+    expect(
+      within(pinned).getByRole("button", { name: "Rush" }),
+    ).toBeInTheDocument();
+    expect(
+      within(starred).getByRole("button", { name: "Finance" }),
+    ).toBeInTheDocument();
+    expect(
+      within(other).getByRole("button", { name: "Governance" }),
+    ).toBeInTheDocument();
+    expect(
+      within(starred).getByRole("button", { name: "Unstar Finance" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("leaves the rail ungrouped when nothing is pinned or starred", () => {
+    render(<DocumentsPage />);
+    expect(within(rail()).queryByRole("group")).not.toBeInTheDocument();
+  });
+
+  it("stars a folder and a file for the member alone", async () => {
+    render(<DocumentsPage />);
+
+    await userEvent.click(
+      within(rail()).getByRole("button", { name: "Star Governance" }),
+    );
+    expect(mockSetStar).toHaveBeenCalledWith(
+      { target: { kind: "folder", id: "f-1" }, starred: true },
+      expect.anything(),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Star Chapter bylaws" }),
+    );
+    expect(mockSetStar).toHaveBeenCalledWith(
+      { target: { kind: "document", id: "doc-1" }, starred: true },
+      expect.anything(),
+    );
+  });
+
+  it("draws pinned and starred cards above All files, and a folder card opens the folder", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      { ...MINUTES, pinned_at: "2026-11-11T00:00:00Z" },
+    ];
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+      {
+        id: "f-2",
+        name: "Rush",
+        sort_order: 1,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+    ];
+    stars.value = { folder_ids: [], document_ids: ["doc-1"] };
+    render(<DocumentsPage />);
+
+    const pinned = screen.getByRole("region", { name: "Pinned" });
+    expect(within(pinned).getByText("Rush")).toBeInTheDocument();
+    expect(within(pinned).getByText("Folder · 1 file")).toBeInTheDocument();
+    expect(within(pinned).getByText("Meeting minutes")).toBeInTheDocument();
+    const starred = screen.getByRole("region", { name: "Starred" });
+    expect(within(starred).getByText("Chapter bylaws")).toBeInTheDocument();
+
+    await userEvent.click(within(pinned).getByText("Rush"));
+    expect(screen.getByRole("heading", { name: "Rush" })).toBeInTheDocument();
+    // Inside a folder the cards give way to the list, so nothing shows twice.
+    expect(
+      screen.queryByRole("region", { name: "Pinned" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leads a searched list with pinned, then starred files, instead of cards", async () => {
+    const AGENDA = {
+      ...BYLAWS,
+      id: "doc-3",
+      title: "Chapter agenda",
+      storage_path: "chap-1/agenda.pdf",
+    };
+    documentsQuery.data = [
+      AGENDA,
+      BYLAWS,
+      {
+        ...MINUTES,
+        title: "Chapter minutes",
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+    ];
+    stars.value = { folder_ids: [], document_ids: ["doc-1"] };
+    render(<DocumentsPage />);
+
+    await userEvent.type(screen.getByLabelText(/search documents/i), "chapter");
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Pinned" }),
+      ).not.toBeInTheDocument(),
+    );
+    const list = screen.getByRole("region", { name: /documents/i });
+    const titles = within(list)
+      .getAllByRole("listitem")
+      .map((row) => row.textContent ?? "");
+    expect(titles[0]).toContain("Chapter minutes");
+    expect(titles[1]).toContain("Chapter bylaws");
+    expect(titles[2]).toContain("Chapter agenda");
+  });
+
+  it("pins a file and a folder for the chapter, for whoever manages documents", async () => {
+    render(<DocumentsPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Pin Chapter bylaws for the chapter",
+      }),
+    );
+    expect(mockSetPin).toHaveBeenCalledWith({
+      target: { kind: "document", id: "doc-1" },
+      pinned: true,
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pin Rush for the chapter" }),
+    );
+    expect(mockSetPin).toHaveBeenCalledWith({
+      target: { kind: "folder", id: "f-2" },
+      pinned: true,
+    });
+  });
+
+  it("offers no pin to a member who can't manage documents", () => {
+    canGate.granted = false;
+    render(<DocumentsPage />);
+    expect(
+      screen.queryByRole("button", { name: /^pin /i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Star Chapter bylaws" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves a folder within its tier and writes the pinned ones first", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+      { id: "f-2", name: "Rush", sort_order: 1, pinned_at: null },
+      {
+        id: "f-3",
+        name: "Finance",
+        sort_order: 2,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+    ];
+    render(<DocumentsPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
+    // Finance is the only pinned folder, so it can't move within its tier.
+    expect(
+      screen.getByRole("button", { name: "Move Finance up" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Move Finance down" }),
+    ).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move Governance down" }),
+    );
+    await waitFor(() =>
+      expect(mockUpdateFolder).toHaveBeenCalledWith({
+        id: "f-1",
+        sort_order: 2,
+      }),
+    );
+    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "f-3", sort_order: 0 });
+    // Rush already sits at 1 in the new order, so it is not rewritten.
+    expect(mockUpdateFolder).toHaveBeenCalledTimes(2);
   });
 });
