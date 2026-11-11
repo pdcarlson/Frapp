@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { activityKeys, useActiveChapterId, useActivity } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,12 +23,15 @@ import { cn } from "@/lib/utils";
 import { ActivityPanel } from "./activity-panel";
 import {
   ACTIVITY_FILTERS,
-  SECTION_NAMES,
+  ACTIVITY_SECTION_NAMES,
   activityGroups,
+  activityKeys,
+  useActiveChapterId,
+  useActivity,
   type ActivityFilter,
   type ActivityGroup,
   type ActivityRow,
-} from "./activity-rows";
+} from "@repo/hooks";
 import { ActivityPageSkeleton } from "./activity-skeleton";
 
 /** Where a file row goes: the page the file lives on. */
@@ -92,7 +94,7 @@ function GroupSection({
         <InlineNote className="text-warning">
           Couldn&apos;t load{" "}
           {group.unavailable
-            .map((section) => SECTION_NAMES[section])
+            .map((section) => ACTIVITY_SECTION_NAMES[section])
             .join(", ")}
           . Try again in a moment.
         </InlineNote>
