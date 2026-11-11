@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActivityRow } from "./activity-rows";
+import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();

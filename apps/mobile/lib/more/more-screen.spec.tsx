@@ -32,6 +32,8 @@ let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
+/** `GET /v1/activity`: `undefined` is "not answered yet". */
+let activity: { needs_you_count: number } | undefined;
 /** True while `/v1/users/me/permissions` hasn't answered. */
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
@@ -65,6 +67,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     hiddenFeatureCalls.push(args);
     return hiddenFeatures;
   },
+  useActivity: () => ({ data: activity }),
   useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
@@ -312,7 +315,14 @@ describe("More hub anatomy (#1048)", () => {
         section.findAllByType(ListRow).map((row) => row.props.label),
       );
     expect(sections).toEqual([
-      ["Study hours", "Service hours", "Dues", "Documents", "Directory"],
+      [
+        "Activity",
+        "Study hours",
+        "Service hours",
+        "Dues",
+        "Documents",
+        "Directory",
+      ],
       ["Settings", "Switch chapter"],
       ["Host check-in"],
     ]);
@@ -453,6 +463,7 @@ describe("More hub anatomy (#1048)", () => {
     const labels = buttons.map((node) => node.props.accessibilityLabel);
     expect(labels).toEqual([
       "Paul Carlson",
+      "Activity",
       "Study hours",
       "Service hours",
       "Dues",
@@ -538,6 +549,43 @@ describe("More hub anatomy (#1048)", () => {
   it("draws no Invite members row for a role that can't invite", () => {
     permissions = ["members:view", "events:update"];
     expect(screenText(render())).not.toContain("Invite members");
+  });
+
+  describe("the Activity row (#3897)", () => {
+    afterEach(() => {
+      activity = undefined;
+    });
+
+    const activityRow = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Activity")!;
+
+    it("opens the Activity screen", () => {
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => {
+        activityRow(tree).props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith("/activity");
+    });
+
+    it("carries the count of what is waiting on the member", () => {
+      activity = { needs_you_count: 3 };
+      const row = activityRow(render());
+      expect(row.props.accessibilityValue).toBe("3 waiting on you");
+      expect(screenText(render())).toMatch(/(^|\n)3(\n|$)/);
+    });
+
+    it("draws no count while nothing waits, or before the read answers", () => {
+      for (const value of [undefined, { needs_you_count: 0 }]) {
+        activity = value;
+        const row = activityRow(render());
+        expect(row.props.trailing).toBeUndefined();
+        expect(row.props.accessibilityValue).toBeUndefined();
+      }
+    });
   });
 
   it("tells the chapter picker that More opened it, so it draws ‹ More", () => {

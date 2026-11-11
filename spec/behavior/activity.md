@@ -6,8 +6,9 @@ chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../pro
 
 This file owns the read behind the page, `GET /v1/activity`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
-[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web; the
-phone's screen is added with it.
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
+the phone's screen, reached from the More hub, is in
+[`../ui/mobile/screens.md`](../ui/mobile/screens.md) (supporting routes).
 
 Not to be confused with two other things that use the word:
 

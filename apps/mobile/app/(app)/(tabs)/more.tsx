@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
+  useActivity,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
@@ -21,6 +22,7 @@ import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
+  ActivityGlyph,
   ChapterGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
@@ -90,6 +92,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * role string is readable on mobile (`/v1/users/me/permissions` returns
  * permissions only), so it reads "Admin", and the profile card shows no role
  * chip for the same reason.
+ *
+ * ## Activity
+ *
+ * **Activity** leads the chapter tools, as it leads web's Chapter group
+ * (#3897). Its chip is the count of things waiting on the member
+ * (`needs_you_count`), drawn only when there is one.
  *
  * ## Rows nobody has set up
  *
@@ -203,6 +211,12 @@ export default function MoreScreen() {
     return formatHoursLabel(minutes);
   }, [sessionsQuery.data, weekStart]);
 
+  // The Activity row's count: what is waiting on the member right now
+  // (`needs_you_count`, counted server-side before the list cap). Nothing is
+  // drawn until the read answers or while nothing waits: a "0" chip would
+  // be noise, and a stale one a false alarm.
+  const needsYouCount = useActivity().data?.needs_you_count ?? 0;
+
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
     const next = selectNextDueInvoice(
@@ -223,6 +237,25 @@ export default function MoreScreen() {
       />
 
       <ListSection>
+        <ListRow
+          label="Activity"
+          leading={<ActivityGlyph color={glyphColor} />}
+          accessibilityHint="Opens what is waiting on you and what you made."
+          accessibilityValue={
+            needsYouCount > 0 ? `${needsYouCount} waiting on you` : undefined
+          }
+          trailing={
+            needsYouCount > 0 ? (
+              <StatusChip
+                label={String(needsYouCount)}
+                // Something to do, not yet settled: the warning role, as the
+                // rows it counts wear on the screen itself.
+                hue={tokens.color.semantic.warning}
+              />
+            ) : undefined
+          }
+          onPress={() => router.push("/activity")}
+        />
         {hiddenFeatures.has("study") ? null : (
           <ListRow
             label="Study hours"
