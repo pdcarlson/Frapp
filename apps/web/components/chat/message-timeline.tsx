@@ -879,15 +879,40 @@ export const MessageTimeline = forwardRef<
   // Virtuoso reports a range in its own index space, which `firstItemIndex`
   // offsets; `decorated` is indexed from 0.
   const visibleRange = useRef<ListRange | null>(null);
+  const scroller = useRef<HTMLElement | null>(null);
+  // `useStickToBottom`'s callback is stable, and must stay so: Virtuoso calls
+  // a new `scrollerRef` again, which would re-pin the list to its bottom.
+  const stickScrollerRef = stickToBottom.scrollerRef;
+  const scrollerRef = useCallback(
+    (element: HTMLElement | Window | null) => {
+      scroller.current = element instanceof HTMLElement ? element : null;
+      stickScrollerRef(element);
+    },
+    [stickScrollerRef],
+  );
   const reportVisible = useCallback(() => {
     const range = visibleRange.current;
     if (!onVisibleMessagesChange || !range) return;
+    const view = scroller.current?.getBoundingClientRect();
     const ids: string[] = [];
     for (let i = range.startIndex; i <= range.endIndex; i++) {
       const entry = decorated[i - firstItemIndex];
-      if (entry && entry.visibility !== "tombstone") {
-        ids.push(entry.message.id);
+      if (!entry || entry.visibility === "tombstone") continue;
+      // Virtuoso's range includes a row with one pixel showing. A row
+      // counts once half of it is on screen (or it fills half the screen),
+      // as mobile's viewability threshold does.
+      const row = view
+        ? scroller.current?.querySelector<HTMLElement>(`[data-index="${i}"]`)
+        : null;
+      if (view && row) {
+        const box = row.getBoundingClientRect();
+        const shown =
+          Math.min(box.bottom, view.bottom) - Math.max(box.top, view.top);
+        if (box.height > 0 && shown < Math.min(box.height, view.height) / 2) {
+          continue;
+        }
       }
+      ids.push(entry.message.id);
     }
     onVisibleMessagesChange(ids);
   }, [decorated, firstItemIndex, onVisibleMessagesChange]);
@@ -898,11 +923,19 @@ export const MessageTimeline = forwardRef<
     },
     [reportVisible],
   );
+  // A channel switch keeps this component and its index space, so the last
+  // channel's range would map onto the new channel's rows: forget it until
+  // Virtuoso reports the new one.
+  const rangeChannel = useRef(channelId);
   // The rows under an unchanged range can change too: a page landing, or a
   // row leaving the hold.
   useEffect(() => {
+    if (rangeChannel.current !== channelId) {
+      rangeChannel.current = channelId;
+      visibleRange.current = null;
+    }
     reportVisible();
-  }, [reportVisible]);
+  }, [reportVisible, channelId]);
 
   useImperativeHandle(
     ref,
@@ -1074,7 +1107,7 @@ export const MessageTimeline = forwardRef<
           rangeChanged={handleRangeChanged}
           // Holds the open on its newest row while rows above it grow: a photo
           // loading after the list settled (#3863).
-          scrollerRef={stickToBottom.scrollerRef}
+          scrollerRef={scrollerRef}
           atBottomThreshold={STICK_TO_BOTTOM_SLACK_PX}
           totalListHeightChanged={stickToBottom.totalListHeightChanged}
           context={headerContext}

@@ -1837,7 +1837,15 @@ export function ChatShell({
 
   // The "1 important message" strip (#4186). The server decides what counts
   // and what was seen; the timeline reports what scrolled onto the screen.
-  const important = useImportantMessages(activeChannelId, channel.messages);
+  // Below `lg` the channel list can cover the timeline; rows behind it are on
+  // no one's screen.
+  const threadOnScreenRef = useRef(threadOnScreen);
+  useEffect(() => {
+    threadOnScreenRef.current = threadOnScreen;
+  }, [threadOnScreen]);
+  const important = useImportantMessages(activeChannelId, channel.messages, {
+    isOnScreen: () => threadOnScreenRef.current,
+  });
   const { next: nextImportant, markSeen: markImportantSeen } = important;
   const jumpToImportant = useCallback(() => {
     if (!nextImportant || !activeChannelId) return;

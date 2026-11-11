@@ -2489,6 +2489,7 @@ describe("chat thread Important strip (#4186)", () => {
     importantState.next = null;
     importantState.markSeen.mockClear();
     importantState.dismiss.mockClear();
+    importantState.reportVisible.mockClear();
   });
 
   it("draws no strip while nothing is unseen", () => {
@@ -2496,6 +2497,31 @@ describe("chat thread Important strip (#4186)", () => {
     expect(
       tree.root.findAll((node) => node.props.testID === "important-strip"),
     ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("reports the rows on screen, never a tombstone, through one callback", () => {
+    const tree = render();
+    const [list] = lists(tree);
+    const report = list!.props.onViewableItemsChanged;
+    expect(list!.props.viewabilityConfig).toEqual({
+      itemVisiblePercentThreshold: 50,
+    });
+
+    act(() =>
+      report({
+        viewableItems: [
+          { item: { message: { id: "m1" }, visibility: "visible" } },
+          { item: { message: { id: "m2" }, visibility: "tombstone" } },
+          { item: null },
+        ],
+      }),
+    );
+    expect(importantState.reportVisible).toHaveBeenLastCalledWith(["m1"]);
+
+    // FlatList throws when this changes after mount.
+    rerender(tree);
+    expect(lists(tree)[0]!.props.onViewableItemsChanged).toBe(report);
     act(() => tree.unmount());
   });
 

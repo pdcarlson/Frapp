@@ -10,6 +10,7 @@ import { useScreenBelow } from "@/lib/back-target";
 import { goBackTo } from "@/lib/href";
 import {
   Alert,
+  AppState,
   FlatList,
   Keyboard,
   Pressable,
@@ -618,7 +619,18 @@ function ChannelThreadScreen() {
   // and what was seen. Show jumps to the oldest unseen one, paging older
   // history for it when it isn't loaded; rows scrolled onto the screen count
   // as seen.
-  const important = useImportantMessages(channelId, messages);
+  // Rows count only while this screen is in front: not under a pushed thread
+  // or another screen, and not with the app in the background, where
+  // Realtime can still deliver a flag.
+  const importantFocused = useIsFocused();
+  const importantFocusedRef = useRef(importantFocused);
+  useEffect(() => {
+    importantFocusedRef.current = importantFocused;
+  }, [importantFocused]);
+  const important = useImportantMessages(channelId, messages, {
+    isOnScreen: () =>
+      importantFocusedRef.current && AppState.currentState === "active",
+  });
   const { next: nextImportant, markSeen: markImportantSeen } = important;
   const { jumpToImportant } = useJumpToImportant({
     rows: inverted,
@@ -1276,7 +1288,7 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
-          {channelId && important.total > 0 ? (
+          {channelId && important.total > 0 && nextImportant ? (
             <ImportantStrip
               total={important.total}
               onShow={showImportant}

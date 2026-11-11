@@ -5,6 +5,7 @@ import React from "react";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   IMPORTANT_SEEN_BATCH_MS,
+  IMPORTANT_SEEN_RETRY_PAUSE_MS,
   importantMessageKeys,
   importantSignature,
   importantStripLabel,
@@ -230,6 +231,159 @@ describe("useImportantMessages", () => {
 
     rerender({ loaded: [{ id: "a", flag: "important", flagged_at: "t" }] });
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps a later write's message off the strip when an earlier answer lands last", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b", "c"]));
+    const answers: Array<(value: unknown) => void> = [];
+    POST.mockImplementation(
+      () => new Promise((resolve) => answers.push(resolve)) as never,
+    );
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(3));
+
+    act(() => result.current.markSeen(["a"]));
+    act(() => result.current.markSeen(["b"]));
+    await waitFor(() => expect(result.current.next?.id).toBe("c"));
+
+    // b's answer first, then a's, which the server computed before b landed.
+    await act(async () => answers[1]!({ data: answer(["c"]) }));
+    await act(async () => answers[0]!({ data: answer(["b", "c"]) }));
+
+    expect(result.current.total).toBe(1);
+    expect(result.current.next?.id).toBe("c");
+  });
+
+  it("stays dismissed when an earlier seen answer lands after ×", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b"]));
+    let seenAnswer!: (value: unknown) => void;
+    POST.mockImplementationOnce(
+      () => new Promise((resolve) => (seenAnswer = resolve)) as never,
+    );
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(2));
+
+    act(() => result.current.markSeen(["a"]));
+    act(() => result.current.dismiss());
+    await act(async () => seenAnswer({ data: answer(["b"]) }));
+
+    expect(result.current.total).toBe(0);
+  });
+
+  it("reports nothing from a browser tab in the background, then counts it on return", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+    visibility.mockRestore();
+  });
+
+  it("reports nothing while the timeline isn't in front of the member", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const { result } = renderHook(
+      () => useImportantMessages("chan-1", [], { isOnScreen: () => false }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+
+    expect(POST).not.toHaveBeenCalled();
+    expect(result.current.total).toBe(1);
+  });
+
+  it("counts a message flagged while it is on screen", async () => {
+    const { GET, POST, wrapper } = setup(answer([]));
+    const { result, rerender } = renderHook(
+      ({ loaded }: { loaded: Flagged[] }) =>
+        useImportantMessages("chan-1", loaded),
+      { wrapper, initialProps: { loaded: [{ id: "a" }] as Flagged[] } },
+    );
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+    act(() => result.current.reportVisible(["a"]));
+
+    GET.mockResolvedValue({ data: answer(["a"]) });
+    rerender({ loaded: [{ id: "a", flag: "important", flagged_at: "t" }] });
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/seen", {
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a"] },
+    });
+  });
+
+  it("stops reporting rows on screen for a while after a write fails", async () => {
+    const { POST, GET, wrapper } = setup(answer(["a"]));
+    POST.mockResolvedValue({ error: { statusCode: 429 } } as never);
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS * 3);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_RETRY_PAUSE_MS);
+    });
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends what it gathered for a channel when the member leaves it", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const { result, rerender } = renderHook(
+      ({ channel }: { channel: string }) => useImportantMessages(channel, []),
+      { wrapper, initialProps: { channel: "chan-1" } },
+    );
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    rerender({ channel: "chan-2" });
+
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/seen", {
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a"] },
+    });
   });
 
   it("reads nothing without a channel", () => {
