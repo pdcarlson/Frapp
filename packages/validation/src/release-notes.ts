@@ -41,6 +41,23 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-11",
+    title:
+      "Activity, polls with more than one choice, and a Settings page of your own",
+    changes: [
+      "A new Activity page, on the web and on your phone, gathers what's waiting on you in one place: polls to vote on, tasks to finish or confirm, hours to approve, and events you can check in to, with your next two weeks of events and what you made below.",
+      "Sign-up forms, sheets, and booking links posted in chat show up in Activity too, where you can mark one done or hide it, and officers can leave a channel out of Activity.",
+      "A poll can now allow more than one choice.",
+      "On the web, your own settings, like quiet hours, notifications, and how chat looks, have their own Settings page on your account menu, and the chapter's settings are now called Chapter settings.",
+      "The Directory sorts by order number and filters by pledge class, on the web and on your phone, where profiles now show a member's class and you can also filter by role, graduation year, and status.",
+      "You're now notified when someone replies to one of your messages, and you can set chat to Mentions and DMs only for the whole chapter at once in your notification settings.",
+      "On your phone, you can see who's online and their status in a channel's member list and on profiles, and a notification for a thread reply opens that thread.",
+      "Officers who are told when someone joins the chapter can now turn that notification off.",
+      "On the web you can paste an image straight into a message, and on Android the message box now sits right on top of the keyboard.",
+      "On your phone, Events shows a repeating event as one row, lists the next two weeks by day, and remembers whether you last used the list or the calendar.",
+    ],
+  },
+  {
     date: "2026-11-10",
     title: "Chat beside your tools, threads, and status on your phone",
     changes: [
