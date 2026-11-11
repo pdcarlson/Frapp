@@ -30,7 +30,9 @@ export const CANARY = 'CANARY-DO-NOT-EMIT-7f3a';
 /**
  * Seeded Alumni role — the weakest authenticated principal. `alumni:post` is a
  * channel marker, not a capability: the posting gate reads it off the channel,
- * confining alumni to `#alumni` and DMs, neither of which is in the corpus.
+ * confining alumni to `#alumni` and DMs. DMs are never in the corpus. `#alumni`
+ * is a chapter channel, so since 2026-11-11 it is (`spec/behavior/ai.md` § Chat
+ * as a source), and no case models an alumnus writing there yet (#4307).
  */
 export const ALUMNUS: EvalCaller = {
   memberId: 'member-alumnus',

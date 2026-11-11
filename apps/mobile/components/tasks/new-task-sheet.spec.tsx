@@ -75,6 +75,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "user-1",
   useChapterRoster: () => ({ data: [] }),
   useCreateTask: () => ({ mutate, isPending: createPending }),
+  useUpdateTask: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -122,7 +123,6 @@ beforeEach(() => {
 });
 
 describe("New task on a subscription refusal (#2297)", () => {
-
   it("explains the refusal and withdraws Create", () => {
     failure = REFUSED;
     const tree = render();
@@ -660,8 +660,8 @@ describe("New task from a chat's + (#3865)", () => {
         {
           createNodeMock: (element) =>
             (element.type as unknown) === "BottomSheetModal"
-              ? typeof (element.props as { onDismiss?: unknown })
-                  .onDismiss === "function"
+              ? typeof (element.props as { onDismiss?: unknown }).onDismiss ===
+                "function"
                 ? { dismiss, present: vi.fn() }
                 : { dismiss: vi.fn(), present: vi.fn() }
               : null,
@@ -704,7 +704,10 @@ describe("New task from a chat's + (#3865)", () => {
     // Neither route dedupes: keeping the draft would be one tap from a second task.
     const lost = { ok: true, unconfirmed: true, warning: "Couldn't confirm." };
     const onPosted = vi.fn();
-    const tree = renderFromChat(vi.fn(async () => lost), onPosted);
+    const tree = renderFromChat(
+      vi.fn(async () => lost),
+      onPosted,
+    );
     submitTask(tree);
     await act(async () => {});
     expect(dismiss).toHaveBeenCalledTimes(1);

@@ -1909,6 +1909,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/important": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unseen Important messages in a channel, for the "1 important message" strip */
+        get: operations["ChatImportantController_listUnseen_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Important messages seen (jumped to or scrolled past) */
+        post: operations["ChatImportantController_markSeen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a channel's Important strip: mark every one seen */
+        post: operations["ChatImportantController_dismissAll_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -2722,7 +2773,8 @@ export interface paths {
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed. */
+        patch: operations["TaskController_update_v1"];
         trace?: never;
     };
     "/v1/tasks/{id}/status": {
@@ -3509,7 +3561,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -5474,6 +5526,33 @@ export interface components {
             /** @description The chapter’s categories, top to bottom. A category not listed keeps its relative order after them. */
             category_ids: string[];
         };
+        ImportantMessageRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            flagged_at: string;
+            /**
+             * Format: uuid
+             * @description The sender, or null for an imported Discord row.
+             */
+            sender_id: string | null;
+            /** @description An imported row's Discord name; null for a member's message. */
+            author_name: string | null;
+            /** @description The message's first words on one line, at most 140 characters, for the strip's preview. */
+            excerpt: string;
+        };
+        ImportantMessagesDto: {
+            /** @description Unseen Important messages flagged in the last 14 days, oldest first, at most 50. */
+            messages: components["schemas"]["ImportantMessageRefDto"][];
+            /** @description How many unseen Important messages there are, among at most 1000 flagged in the window. */
+            total: number;
+        };
+        MarkImportantSeenDto: {
+            /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
+            message_ids: string[];
+        };
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
@@ -5971,6 +6050,20 @@ export interface components {
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
+        };
+        UpdateTaskDto: {
+            title?: string;
+            description?: string | null;
+            /** @description User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified. */
+            assignee_id?: string;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date?: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create.
+             */
+            due_at?: string | null;
+            point_reward?: number | null;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
@@ -6537,22 +6630,21 @@ export interface components {
         ActivityFileDto: {
             /** Format: uuid */
             id: string;
-            /**
-             * @description Which module holds it: a chapter document or a backwork resource.
-             * @enum {string}
-             */
+            /** @enum {string} */
             source: "document" | "backwork";
-            /** @description Empty for a backwork resource with no title. */
             title: string;
             /** Format: date-time */
             created_at: string;
         };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, newest first. */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
             /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
-            /** @description Documents and backwork the caller uploaded, newest first. */
+            /**
+             * @deprecated
+             * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.
+             */
             files: components["schemas"]["ActivityFileDto"][];
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
@@ -6567,7 +6659,7 @@ export interface components {
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "made_events" | "links")[];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
@@ -11330,6 +11422,100 @@ export interface operations {
             };
         };
     };
+    ChatImportantController_listUnseen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_markSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkImportantSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_dismissAll_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -13171,6 +13357,38 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {

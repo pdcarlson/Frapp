@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: The Important strip (#4186)
+
+### 20261111235900_chat_important_seen.sql
+
+- **Purpose**: Adds the partial index `idx_chat_messages_channel_important` on `chat_messages (channel_id, flagged_at) where flag = 'important' and not is_deleted and thread_root_id is null`, for `GET /v1/channels/{id}/important`. Adds `chat_message_important_seen`: one row per member per Important message they have seen (`user_id`, `message_id`, `chapter_id`, `seen_at`; primary key `(user_id, message_id)`; cascading with the user, the message and the chapter). RLS on, no policies (API only, service role). Redefines `anonymize_user` in full from `20261111220000_activity_item_reads.sql` with one added line deleting the member's `chat_message_important_seen` rows. No existing row changes. The rule is [`spec/behavior/chat/README.md` § Message flags](../../../spec/behavior/chat/README.md#message-flags).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'chat_message_important_seen';` returns `true`, `select count(*) from pg_policies where tablename = 'chat_message_important_seen';` returns `0`, `select count(*) from pg_indexes where indexname = 'idx_chat_messages_channel_important';` returns `1`, and `select prosrc like '%chat_message_important_seen%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table or uses the index. The newer API against an unmigrated database fails the three `/important` routes (500), so the strip doesn't draw; the timeline and flags are unaffected. The file runs in one transaction, so every lock holds until commit. The index comes first and is built without `CONCURRENTLY` (not possible inside one), so its `SHARE` lock on `chat_messages` blocks every send, edit, delete and flag (reads go on) for one scan of `chat_messages` plus a sort of its few Important rows, and then for the rest of the file. The table's three foreign keys then take `SHARE ROW EXCLUSIVE` on `users`, `chat_messages` and `chapters`, so writes to `users` and `chapters` also wait, but only for the table and function statements, which touch no rows. Promote it outside the chapters' busy evening hours. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-important-strip-20261111235900) § Rollback the Important strip.
+
 ## 2026-11-11: Rank rules for role tiers (#4071, part 2)
 
 ### 20261111234500_reorder_role_tiers.sql

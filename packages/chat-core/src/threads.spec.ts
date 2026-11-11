@@ -5,6 +5,7 @@ import {
   backfillThreadReplies,
   chatThreadRepliesKey,
   fetchThread,
+  fetchThreadUnread,
   loadThreadReplies,
   sendThreadReply,
   threadChipLabel,
@@ -36,6 +37,34 @@ function reply(
 function cacheOf(queryClient: QueryClient): ChannelCache | undefined {
   return queryClient.getQueryData<ChannelCache>(chatThreadRepliesKey(CH, ROOT));
 }
+
+describe("fetchThreadUnread (#4297)", () => {
+  test("keys what's new by root, leaving out muted and caught-up threads", async () => {
+    const GET = vi.fn(async () => ({
+      data: [
+        { thread_root_id: "a", state: "following", last_read_at: null, unread_count: 2 },
+        { thread_root_id: "b", state: "following", last_read_at: "x", unread_count: 0 },
+        { thread_root_id: "c", state: "muted", last_read_at: null, unread_count: 0 },
+      ],
+      error: undefined,
+    }));
+    const unread = await fetchThreadUnread(
+      { GET } as unknown as FrappApiClient,
+      "chan-1",
+    );
+    expect(unread).toEqual({ a: 2 });
+    expect(GET).toHaveBeenCalledWith("/v1/channels/{id}/threads/followed", {
+      params: { path: { id: "chan-1" } },
+    });
+  });
+
+  test("throws when the read fails, so the query keeps its last answer", async () => {
+    const GET = vi.fn(async () => ({ data: undefined, error: { message: "no" } }));
+    await expect(
+      fetchThreadUnread({ GET } as unknown as FrappApiClient, "chan-1"),
+    ).rejects.toThrow();
+  });
+});
 
 describe("threadChipLabel (#3785)", () => {
   const now = Date.parse("2026-11-10T12:00:00.000Z");

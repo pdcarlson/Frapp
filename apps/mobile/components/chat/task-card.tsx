@@ -13,6 +13,7 @@ import {
   useRejectTask,
   useTask,
   useUpdateTaskStatus,
+  viewerIsCardAssignee,
   type LiveTask,
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
@@ -88,7 +89,16 @@ export function TaskCard({
     !isModuleEnabled(chapterQuery.data?.enabled_modules, "tasks");
   const controls = tasksOff
     ? []
-    : taskCardControls({ live, isAssignee, canManage });
+    : taskCardControls({
+        live,
+        // Whom it is assigned to now: an edit may have handed it on (#4296).
+        isAssignee: viewerIsCardAssignee(
+          frame.viewerId,
+          payload.assignee_user_id,
+          live,
+        ),
+        canManage,
+      });
 
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();

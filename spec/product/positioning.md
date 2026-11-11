@@ -4,7 +4,9 @@ The chat-first product (see [`spec/README.md`](../README.md#active-work)) invert
 
 The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports) and the AI features (meeting transcription/summary, Q&A over chapter content). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. Delivery sequencing lives in **GitHub Issues**, not a chunk roadmap; [`spec/README.md`](../README.md#active-work) is the index. This spec captures positioning, not ship state.
 
-**AI features are anchored on authoritative content, not casual chat.** The AI corpus is meeting minutes, uploaded documents, structured chapter data, and announcements — not the general channels. This is an intentional product call: smaller AI that's reliably right, instead of bigger AI that's frequently embarrassing. See [`spec/behavior/ai.md`](../behavior/ai.md) for scope and non-goals.
+**AI features are anchored on authoritative content first.** Meeting minutes, uploaded documents, structured chapter data and announcements are the official sources, and they outrank everything else. Chat in chapter channels is also read, for members who agreed to it, ranked below the official sources and always cited as chat. Direct messages never are. See [`spec/behavior/ai.md`](../behavior/ai.md) for scope and non-goals.
+
+> **Changed 2026-11-11 (Paul, [ADR-28](../architecture/adr/adr-28.md) decision 5).** This paragraph used to say the corpus was "not the general channels", as "an intentional product call: smaller AI that's reliably right, instead of bigger AI that's frequently embarrassing". Paul reversed it because chat carries much of a chapter's context. Product, landing and store copy must no longer promise that channel messages are never read by AI.
 
 ## Audience
 

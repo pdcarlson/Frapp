@@ -498,6 +498,8 @@ vi.mock("@repo/hooks", async () => ({
         canSetChannelBackground,
         claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
+        IMPORTANT_STRIP_DISMISS_LABEL,
+        importantStripLabel,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
@@ -515,6 +517,8 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
         HIDE_SETUP_CHECKLIST_LABEL,
+        IMPORTANT_STRIP_DISMISS_LABEL,
+        importantStripLabel,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
@@ -658,6 +662,7 @@ vi.mock("@repo/hooks", async () => ({
     mutate: displayLockState.mutate,
   }),
   useReorderChannels: () => ({ mutateAsync: railReorder.channels }),
+  useImportantMessages: () => importantState,
   useReorderCategories: () => ({ mutateAsync: railReorder.categories }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
@@ -727,6 +732,11 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
     userId: liveViewerState.userId,
     isLoading: liveViewerState.userId === null,
   }),
+}));
+
+// The thread cards' unread counts have their own spec (use-thread-unread).
+vi.mock("@/lib/chat/use-thread-unread", () => ({
+  useThreadUnread: () => ({}),
 }));
 
 vi.mock("@/lib/chat/use-chat-channel", () => ({
@@ -884,6 +894,22 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+// The Important strip (#4186): the hook is the server's answer, so the shell
+// test drives it directly.
+const importantState = vi.hoisted(() => ({
+  total: 0,
+  next: null as null | {
+    id: string;
+    created_at: string;
+    flagged_at: string;
+    sender_id: string | null;
+    author_name: string | null;
+    excerpt: string;
+  },
+  markSeen: vi.fn(),
+  reportVisible: vi.fn(),
+  dismiss: vi.fn(),
+}));
 const displayLockState = vi.hoisted(() => ({
   canSet: false,
   mutate: vi.fn(),
@@ -1716,6 +1742,36 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+
+  it("jumps to the oldest unseen Important message from the strip, and marks it seen (#4186)", () => {
+    importantState.total = 2;
+    importantState.next = {
+      id: "msg-1",
+      created_at: "2026-01-01T00:00:00Z",
+      flagged_at: "2026-01-01T00:00:00Z",
+      sender_id: null,
+      author_name: "Sam",
+      excerpt: "hello",
+    };
+    try {
+      render(<ChatShell initialChannelId="chan-general" />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /2 important messages/ }),
+      );
+
+      expect(importantState.markSeen).toHaveBeenCalledWith(["msg-1"]);
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss important messages" }),
+      );
+      expect(importantState.dismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      importantState.total = 0;
+      importantState.next = null;
+    }
   });
 
   it("consumes a search hit in another channel even when the URL named a different one", async () => {

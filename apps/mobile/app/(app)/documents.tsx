@@ -14,6 +14,7 @@ import {
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocumentLibrary,
+  useMarkFilterHold,
   useDocuments,
   useDocumentStars,
   useMemberDisplayNames,
@@ -30,8 +31,10 @@ import {
   deleteDocumentTitle,
   isActiveDateFilter,
   markedItems,
+  NO_MARK_FILTER,
   tierByMarks,
   tierRows,
+  type DocumentMarkFilter,
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
@@ -122,7 +125,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * uploader, folder and type, the Uploaded by and Date added filters, and the
  * order, Name A–Z by default as on web. A File type filter (PDF, Word,
  * Slides, Spreadsheet, Image, Other) reads each file's declared type or its
- * stored extension, and search finds those words too. All of it is local, so a keystroke or
+ * stored extension, and search finds those words too. Pinned and Starred
+ * toggles (#4290) keep marked files, either when both are on. All of it is local, so a keystroke or
  * a chip re-ranks what is in hand, offline too. The filters and the order sit
  * behind one "Sort & filter" chip that opens a panel of chip rows under it,
  * as Directory's alumni Filters do. Web's custom date range is not offered: a
@@ -197,6 +201,12 @@ export default function DocumentsScreen() {
   const [pickedUploader, setPickedUploader] = useState<string | null>(null);
   const [datePreset, setDatePreset] = useState<"semester" | "30d" | null>(null);
   const [kind, setKind] = useState<FileKind | null>(null);
+  // Pinned and Starred (#4290), each on or off; both on shows either.
+  const [markFilter, setMarkFilter] =
+    useState<DocumentMarkFilter>(NO_MARK_FILTER);
+  // A file starred or pinned from the sheet while one of them is on stays in
+  // the list until the filter changes, rather than vanishing (#4290).
+  const { held, hold } = useMarkFilterHold(markFilter);
   const [panelOpen, setPanelOpen] = useState(false);
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -259,8 +269,9 @@ export default function DocumentsScreen() {
       uploader: pickedUploader,
       date: datePreset === null ? null : { preset: datePreset },
       kind,
+      marks: markFilter,
     }),
-    [pickedUploader, datePreset, kind],
+    [pickedUploader, datePreset, kind, markFilter],
   );
   // Web's own hook (#3938): uploader names and the kept-pick rule, the
   // semester window, the ticking clock, the folder, then search, filters and
@@ -281,6 +292,8 @@ export default function DocumentsScreen() {
     sort,
     namesById: useMemberDisplayNames().byId,
     semesters: useSemesters().data,
+    starred: starredDocuments,
+    keep: held,
   });
   // On All with no search or filter the tiers are cards above the list, and
   // the list keeps its order; anywhere else they lead the list (#3934).
@@ -362,6 +375,7 @@ export default function DocumentsScreen() {
   async function toggleStar(target: DocumentActionsTarget) {
     setMarkFailure(null);
     const next = !target.starred;
+    if (target.kind === "document") hold(target.id);
     try {
       await setStar.mutateAsync({
         target: { kind: target.kind, id: target.id },
@@ -384,6 +398,7 @@ export default function DocumentsScreen() {
   async function togglePin(target: DocumentActionsTarget) {
     setMarkFailure(null);
     const next = !target.pinned;
+    if (target.kind === "document") hold(target.id);
     try {
       await setPin.mutateAsync({
         target: { kind: target.kind, id: target.id },
@@ -411,6 +426,8 @@ export default function DocumentsScreen() {
     (uploader !== null ? 1 : 0) +
     (dateActive ? 1 : 0) +
     (kind !== null ? 1 : 0) +
+    (markFilter.pinned ? 1 : 0) +
+    (markFilter.starred ? 1 : 0) +
     (sort !== "name" ? 1 : 0);
   const deleteFailed =
     deleteFailure && deleteFailure.chapterId === (chapterId ?? null)
@@ -422,6 +439,7 @@ export default function DocumentsScreen() {
     setPickedUploader(null);
     setDatePreset(null);
     setKind(null);
+    setMarkFilter(NO_MARK_FILTER);
   }
 
   // The latest tap's number, and whether a browser is already on its way up.
@@ -583,7 +601,9 @@ export default function DocumentsScreen() {
                 deferredSearch &&
                 uploader === null &&
                 !dateActive &&
-                kind === null
+                kind === null &&
+                !markFilter.pinned &&
+                !markFilter.starred
                   ? "Clear search"
                   : "Clear filters",
               onPress: clearFilters,
@@ -772,6 +792,40 @@ export default function DocumentsScreen() {
               { value: "30d", label: "Last 30 days" },
             ]}
           />
+          {/*
+            Two toggles, not a pick-one row (#4290): Pinned, Starred, or both
+            for either, as web's toolbar has them.
+          */}
+          <Text style={styles.panelLabel}>Pinned and starred</Text>
+          <View style={styles.markToggles}>
+            {(
+              [
+                ["pinned", "Pinned", PinGlyph],
+                ["starred", "Starred", StarGlyph],
+              ] as const
+            ).map(([key, label, Glyph]) => {
+              const on = markFilter[key];
+              return (
+                <Chip
+                  key={key}
+                  accessibilityRole="togglebutton"
+                  accessibilityState={{ checked: on }}
+                  label={label}
+                  on={on}
+                  onPress={() =>
+                    setMarkFilter((prev) => ({ ...prev, [key]: !prev[key] }))
+                  }
+                  mark={
+                    <Glyph
+                      color={on ? accentOnPrimary : tokens.color.text.muted}
+                      on={on}
+                      size={14}
+                    />
+                  }
+                />
+              );
+            })}
+          </View>
           {kinds.length > 0 ? (
             <>
               <Text style={styles.panelLabel}>File type</Text>
@@ -879,6 +933,10 @@ function createStyles(tokens: SignetTokens) {
     },
     panel: {
       gap: tokens.spacing.xs,
+    },
+    markToggles: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
     },
     panelLabel: {
       ...typeRole(tokens.typography.role.caption),

@@ -10,6 +10,7 @@ import { useScreenBelow } from "@/lib/back-target";
 import { goBackTo } from "@/lib/href";
 import {
   Alert,
+  AppState,
   FlatList,
   Keyboard,
   Pressable,
@@ -57,11 +58,13 @@ import {
   usePermissionList,
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
+  useImportantMessages,
 } from "@repo/hooks";
 import { can, draftWithMention, type ChatMessageFlag } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
+import { ImportantStrip } from "@/components/chat/important-strip";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
 import {
@@ -138,6 +141,7 @@ import {
   type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
+import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -610,6 +614,58 @@ function ChannelThreadScreen() {
     jumpToMessage,
     onScrollToIndexFailed: handleScrollToIndexFailed,
   } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The "1 important message" strip (#4186): the server decides what counts
+  // and what was seen. Show jumps to the oldest unseen one, paging older
+  // history for it when it isn't loaded; rows scrolled onto the screen count
+  // as seen.
+  // Rows count only while this screen is in front: not under a pushed thread
+  // or another screen, and not with the app in the background, where
+  // Realtime can still deliver a flag.
+  const importantFocused = useIsFocused();
+  const importantFocusedRef = useRef(importantFocused);
+  useEffect(() => {
+    importantFocusedRef.current = importantFocused;
+  }, [importantFocused]);
+  const important = useImportantMessages(channelId, messages, {
+    isOnScreen: () =>
+      importantFocusedRef.current && AppState.currentState === "active",
+  });
+  const { next: nextImportant, markSeen: markImportantSeen } = important;
+  const { jumpToImportant } = useJumpToImportant({
+    rows: inverted,
+    resetKey: channelId,
+    hasOlder,
+    isLoadingOlder,
+    olderError,
+    loadOlder,
+    jumpToMessage,
+  });
+  const showImportant = useCallback(() => {
+    if (!nextImportant) return;
+    markImportantSeen([nextImportant.id]);
+    jumpToImportant(nextImportant.id);
+  }, [nextImportant, markImportantSeen, jumpToImportant]);
+  // FlatList refuses a new `onViewableItemsChanged` after mount, so the pair
+  // is made once and reads the latest report through a ref when it fires.
+  const reportVisibleRef = useRef(important.reportVisible);
+  useEffect(() => {
+    reportVisibleRef.current = important.reportVisible;
+  }, [important.reportVisible]);
+  const [viewability] = useState(() => ({
+    viewabilityConfig: { itemVisiblePercentThreshold: 50 },
+    onViewableItemsChanged: ({
+      viewableItems,
+    }: {
+      viewableItems: { item?: ThreadRow | null }[];
+    }) => {
+      reportVisibleRef.current(
+        viewableItems.flatMap(({ item }) =>
+          item && item.visibility !== "tombstone" ? [item.message.id] : [],
+        ),
+      );
+    },
+  }));
+
   // The way back to the newest message after reading back through history,
   // and the notice that something new landed there, judged on the rows in
   // the order the list draws them.
@@ -1231,6 +1287,14 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
+          {channelId && important.total > 0 && nextImportant ? (
+            <ImportantStrip
+              total={important.total}
+              onShow={showImportant}
+              onDismiss={important.dismiss}
+            />
+          ) : null}
+
           {!channelId ? (
             <View style={styles.stateBlock}>
               <Text style={styles.stateTitle}>No channel selected</Text>
@@ -1314,6 +1378,8 @@ function ChannelThreadScreen() {
                     key={channelId ?? undefined}
                     ref={listRef}
                     onScrollToIndexFailed={handleScrollToIndexFailed}
+                    viewabilityConfig={viewability.viewabilityConfig}
+                    onViewableItemsChanged={viewability.onViewableItemsChanged}
                     data={inverted}
                     renderItem={renderItem}
                     // `client_message_id` is always present and is stable across

@@ -6383,6 +6383,154 @@
         ]
       }
     },
+    "/v1/channels/{id}/important": {
+      "get": {
+        "operationId": "ChatImportantController_listUnseen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unseen Important messages in a channel, for the \"1 important message\" strip",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/important/seen": {
+      "post": {
+        "operationId": "ChatImportantController_markSeen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkImportantSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark Important messages seen (jumped to or scrolled past)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/important/dismiss": {
+      "post": {
+        "operationId": "ChatImportantController_dismissAll_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss a channel's Important strip: mark every one seen",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -9133,6 +9281,53 @@
           }
         ],
         "summary": "Get task by id",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "patch": {
+        "operationId": "TaskController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed.",
         "tags": [
           "Tasks"
         ]
@@ -11895,7 +12090,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -17382,6 +17577,84 @@
           "category_ids"
         ]
       },
+      "ImportantMessageRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "flagged_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The sender, or null for an imported Discord row."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "An imported row's Discord name; null for a member's message."
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "The message's first words on one line, at most 140 characters, for the strip's preview."
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "flagged_at",
+          "sender_id",
+          "author_name",
+          "excerpt"
+        ]
+      },
+      "ImportantMessagesDto": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "description": "Unseen Important messages flagged in the last 14 days, oldest first, at most 50.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportantMessageRefDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "How many unseen Important messages there are, among at most 1000 flagged in the window."
+          }
+        },
+        "required": [
+          "messages",
+          "total"
+        ]
+      },
+      "MarkImportantSeenDto": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "message_ids"
+        ]
+      },
       "GeofenceCoordinateDto": {
         "type": "object",
         "properties": {
@@ -18774,6 +19047,37 @@
           "sent_back_at",
           "created_at"
         ]
+      },
+      "UpdateTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          }
+        }
       },
       "UpdateTaskStatusDto": {
         "type": "object",
@@ -20230,12 +20534,10 @@
             "enum": [
               "document",
               "backwork"
-            ],
-            "description": "Which module holds it: a chapter document or a backwork resource."
+            ]
           },
           "title": {
-            "type": "string",
-            "description": "Empty for a backwork resource with no title."
+            "type": "string"
           },
           "created_at": {
             "type": "string",
@@ -20253,7 +20555,7 @@
         "type": "object",
         "properties": {
           "polls": {
-            "description": "Poll cards the caller posted, newest first.",
+            "description": "Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
@@ -20267,7 +20569,8 @@
             }
           },
           "files": {
-            "description": "Documents and backwork the caller uploaded, newest first.",
+            "deprecated": true,
+            "description": "Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
@@ -20325,7 +20628,6 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files",
                 "made_events",
                 "links"
               ]

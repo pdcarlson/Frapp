@@ -47,6 +47,35 @@ const SEARCH_ROW =
 const ANY = "\u0000any";
 
 /**
+ * A toolbar chip that is on or off rather than a menu: the filter chip's
+ * shape, secondary at rest and tinted while on, with `aria-pressed` carrying
+ * the state. Documents' Pinned and Starred (#4290) draw it; Activity's Show
+ * chips inline the same recipe until #4299.
+ */
+export function ToggleChip({
+  on,
+  onToggle,
+  children,
+}: {
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={on ? "tinted" : "secondary"}
+      size="toolbar"
+      className={CHIP}
+      aria-pressed={on}
+      onClick={() => onToggle(!on)}
+    >
+      {children}
+    </Button>
+  );
+}
+
+/**
  * A toolbar filter: a round chip that opens a menu of the values some row
  * actually has, applied the moment one is picked. Secondary at rest, tinted
  * while a value is set, and the chip then names the value. First drawn for
