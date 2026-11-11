@@ -56,6 +56,7 @@ import type {
   PollVote,
   PushToken,
   Role,
+  RoleTier,
   ScheduledNotificationDispatch,
   SemesterArchive,
   ServiceEntry,
@@ -116,6 +117,7 @@ export interface Database {
       chapters: TableDefinition<Chapter>;
       members: TableDefinition<Member>;
       roles: TableDefinition<Role>;
+      role_tiers: TableDefinition<RoleTier>;
       invites: TableDefinition<Invite>;
       backwork_departments: TableDefinition<BackworkDepartment>;
       backwork_courses: TableDefinition<BackworkCourse>;
