@@ -15,6 +15,17 @@ export interface IEventRepository {
     window?: { endsAfter: string; startsBefore: string },
   ): Promise<Event[]>;
   /**
+   * Events one member made that have not ended by `endsAfter`
+   * (`end_time >= endsAfter`), earliest start first, at most `limit` rows.
+   * An event with no recorded creator is never returned.
+   */
+  findCreatedBy(
+    chapterId: string,
+    createdBy: string,
+    endsAfter: string,
+    limit: number,
+  ): Promise<Event[]>;
+  /**
    * The generated instances of a recurring event, oldest first.
    *
    * Series operations must resolve children through this **before** deleting a

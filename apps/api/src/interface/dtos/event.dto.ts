@@ -268,6 +268,15 @@ export class CreateEventResponseDto implements Event {
   })
   check_in_opens_minutes: number;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Who made the event. Null for events made before it was recorded.',
+  })
+  created_by: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 

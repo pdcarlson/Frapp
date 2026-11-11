@@ -15,6 +15,11 @@ import {
 
 const EVENT_A = '0a000000-0000-4000-8000-000000000070';
 const EVENT_B = '0b000000-0000-4000-8000-000000000070';
+const OTHERS_A = '0a000000-0000-4000-8000-000000000071';
+const OTHERS_B = '0b000000-0000-4000-8000-000000000071';
+// A member of both chapters, who made one event in each.
+const MAKER = '0c000000-0000-4000-8000-000000000070';
+const SOMEONE_ELSE = '0c000000-0000-4000-8000-000000000071';
 
 const seed = () => ({
   events: [
@@ -28,6 +33,7 @@ const seed = () => ({
       point_value: 10,
       is_mandatory: true,
       required_role_ids: [],
+      created_by: MAKER,
       created_at: '2026-01-01T00:00:00.000Z',
     }),
     inB({
@@ -40,6 +46,7 @@ const seed = () => ({
       point_value: 10,
       is_mandatory: true,
       required_role_ids: [],
+      created_by: MAKER,
       created_at: '2026-01-01T00:00:00.000Z',
     }),
   ],
@@ -83,6 +90,59 @@ describe('SupabaseEventRepository — tenant scope', () => {
     expect(inside.map((e) => e.id)).toEqual([EVENT_B]);
     expect(after).toEqual([]);
     expect(before).toEqual([]);
+  });
+
+  it('findCreatedBy returns only the maker’s events in the caller chapter, not ended by the cutoff', async () => {
+    // The maker has an event in each chapter; only the chapter separates them,
+    // and only the maker separates theirs from someone else's in chapter B.
+    const base = seed();
+    harness = createTenantHarness({
+      tables: {
+        events: [
+          ...base.events,
+          inB({
+            id: OTHERS_B,
+            name: 'Formal',
+            description: null,
+            location: 'Hotel',
+            start_time: '2026-09-02T18:00:00.000Z',
+            end_time: '2026-09-02T22:00:00.000Z',
+            point_value: 10,
+            is_mandatory: false,
+            required_role_ids: [],
+            created_by: SOMEONE_ELSE,
+            created_at: '2026-01-01T00:00:00.000Z',
+          }),
+          inA({
+            id: OTHERS_A,
+            name: 'Formal',
+            description: null,
+            location: 'Hotel',
+            start_time: '2026-09-02T18:00:00.000Z',
+            end_time: '2026-09-02T22:00:00.000Z',
+            point_value: 10,
+            is_mandatory: false,
+            required_role_ids: [],
+            created_by: SOMEONE_ELSE,
+            created_at: '2026-01-01T00:00:00.000Z',
+          }),
+        ],
+      },
+    });
+    repo = new SupabaseEventRepository(harness.client);
+    const mine = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findCreatedBy(CHAPTER_B, MAKER, '2026-09-01T00:00:00.000Z', 200),
+    );
+    // Ended before the cutoff: left out.
+    const later = await repo.findCreatedBy(
+      CHAPTER_B,
+      MAKER,
+      '2026-09-01T20:00:00.000Z',
+      200,
+    );
+
+    expect(mine.map((e) => e.id)).toEqual([EVENT_B]);
+    expect(later).toEqual([]);
   });
 
   it('findById refuses an id belonging to another chapter', async () => {

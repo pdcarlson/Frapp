@@ -54,6 +54,7 @@ describe('AttendanceService', () => {
     check_in_zone: null,
     check_in_zone_name: null,
     check_in_opens_minutes: 10,
+    created_by: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -80,6 +81,7 @@ describe('AttendanceService', () => {
     mockEventRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findCreatedBy: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
