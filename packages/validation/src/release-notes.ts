@@ -145,6 +145,51 @@ export function isNewerReleaseNoteVersion(
   );
 }
 
+/**
+ * The shape of a stored {@link releaseNoteVersion}, for the API to refuse
+ * anything else before it lands on the account.
+ */
+export const RELEASE_NOTE_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}#\d{1,4}$/;
+
+/**
+ * Whether another of the member's devices has already shown the newest entry
+ * (#4043): `accountSeen` is the version the account records, or `null` when
+ * none does yet, or `undefined` when it couldn't be read (offline). Only a
+ * known version at or past the newest entry counts; anything else leaves the
+ * device to its own marker, which is how it worked before.
+ *
+ * A device whose own {@link decideWhatsNew} would open the notes checks this
+ * first: when it holds, the notes stay closed and the device's What's new
+ * entry carries a mark until it is opened there.
+ */
+export function accountHasSeenNewest(
+  notes: readonly ReleaseNote[],
+  accountSeen: string | null | undefined,
+): boolean {
+  const newest = notes[0];
+  if (!newest || typeof accountSeen !== "string") return false;
+  return !isLaterReleaseNoteVersion(releaseNoteVersion(newest), accountSeen);
+}
+
+/**
+ * Whether the stored version `candidate` is news to someone who has seen
+ * `seen` (`null`: nothing yet), by {@link isNewerReleaseNoteVersion}. The one
+ * forward-only test behind the account's version (the API), the web's marker,
+ * and {@link accountHasSeenNewest}.
+ */
+export function isLaterReleaseNoteVersion(
+  candidate: string,
+  seen: string | null,
+): boolean {
+  return (
+    seen === null ||
+    isNewerReleaseNoteVersion(
+      parseReleaseNoteVersion(candidate),
+      parseReleaseNoteVersion(seen),
+    )
+  );
+}
+
 export interface WhatsNewDecision {
   /** The entries to show, newest first; empty shows nothing. */
   readonly show: readonly ReleaseNote[];

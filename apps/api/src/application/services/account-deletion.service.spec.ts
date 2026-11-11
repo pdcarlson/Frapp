@@ -79,6 +79,7 @@ describe('AccountDeletionService', () => {
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
       anonymize: jest.fn(async (_id: string, _rescanCards?: boolean) => {
         callOrder.push('anonymize');
         return tombstone;
