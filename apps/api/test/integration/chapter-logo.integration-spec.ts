@@ -89,6 +89,7 @@ describeIntegration('Chapter logo replacement against live storage', () => {
       chapterRepo,
       unused,
       unused,
+      unused,
       storage,
       unused,
       unused,
