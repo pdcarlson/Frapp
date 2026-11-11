@@ -61,6 +61,8 @@ On mobile's task board only the row's checkbox changes a task; a tap elsewhere o
 - The admin can reject the completion (revert to IN_PROGRESS) with an optional comment, through the same compare-and-set as the assignee's take-back, so a reject racing a confirm can't leave a paid task in progress. Rejection
   is deliberately **not** subject to the rule above: it withholds points rather than awarding
   them, so there is no self-benefit to prevent.
+  A rejection stamps `sent_back_at`, so Activity shows the task to its assignee as unread again
+  ([`activity.md` § Unread](activity.md#unread)); the assignee's own take-back doesn't.
 
 ## Notifications
 

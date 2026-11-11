@@ -10,6 +10,7 @@ import {
   useState,
   type ChangeEvent,
   type MutableRefObject,
+  type ReactNode,
 } from "react";
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -68,10 +69,9 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import { ComposerPlusCard } from "./composer-plus-card";
 import {
-  ComposerPlusMenu,
-} from "./composer-plus-menu";
-import {
+  PLUS_MENU_COMMANDS,
   plusMenuModel,
   type PlusMenuCommand,
   type PlusMenuForm,
@@ -498,6 +498,18 @@ interface ComposerBaseProps {
    * menu holds Attach a file alone.
    */
   commandForms?: readonly PlusMenuForm[];
+  /**
+   * The form a command opens inside the **+** card (#3983), drawn by the
+   * host, which owns its draft and its write. `close` closes the card (after
+   * a post) and `back` returns it to the menu (after a discard). Omitted, a
+   * row only asks `onOpenCommandForm` and the card closes.
+   */
+  renderPlusForm?: (
+    command: PlusMenuCommand,
+    card: { close: () => void; back: () => void },
+  ) => ReactNode;
+  /** The + card's rows whose form holds a draft in this channel. */
+  plusDrafts?: ReadonlySet<PlusMenuCommand>;
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -742,12 +754,17 @@ export type CommandFormOutcome = "opened" | "refused" | null;
  */
 export function notifyDispatchOutcome(
   toast: ReturnType<typeof useToast>["toast"],
-  commandName: string,
+  /**
+   * What the notice is about: the typed command (`/task`), or the form's
+   * thing (`Task`) for a write from the + card, which typed no command
+   * (#3913).
+   */
+  subject: string,
   result: DispatchResult,
 ): void {
   if (!result.ok) {
     toast({
-      title: `/${commandName} failed`,
+      title: `${subject} failed`,
       description: result.error ?? "Couldn't run that command.",
       variant: "destructive",
     });
@@ -755,7 +772,7 @@ export function notifyDispatchOutcome(
   }
   if (result.resolved) {
     toast({
-      title: `/${commandName} recorded`,
+      title: `${subject} recorded`,
       description: result.resolved,
       // Sticky for the same reason as the branches below: the retry removed the
       // placeholder, and the outage that lost the original response is likely to
@@ -773,7 +790,7 @@ export function notifyDispatchOutcome(
   // fine landed" and silently loses it.
   if (result.unconfirmed) {
     toast({
-      title: `/${commandName} not confirmed`,
+      title: `${subject} not confirmed`,
       description: result.warning ?? "Couldn't confirm that command.",
       // Sticky, like the committed-write warning below and for the same reason:
       // an outcome nobody can reconstruct must not disappear on a 5s timer.
@@ -791,7 +808,7 @@ export function notifyDispatchOutcome(
   }
   if (result.warning) {
     toast({
-      title: `/${commandName} partly succeeded`,
+      title: `${subject} partly succeeded`,
       description: result.warning,
       // Sticky (Radix skips the close timer on `Infinity`) because the
       // committed write's durable trace is the timeline `recorded` row
@@ -996,6 +1013,8 @@ export function Composer({
   onSlashDispatch,
   onOpenCommandForm,
   commandForms,
+  renderPlusForm,
+  plusDrafts,
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
@@ -1357,6 +1376,26 @@ export function Composer({
     [isOffline, pending.length, replyTo, slashCommandsStatus, isModuleEnabled],
   );
 
+  // The + card (#3983): open or closed, and the form it shows (`null` is
+  // the menu). Reset by the composer's per-channel key, so a channel switch
+  // closes it; the drafts it shows live with the host, per channel.
+  const [plusCard, setPlusCard] = useState<{
+    open: boolean;
+    view: PlusMenuCommand | null;
+  }>({ open: false, view: null });
+  // A form the host opened (a row, or a typed command it couldn't read)
+  // shows in the card when the host draws one.
+  const showPlusForm = useCallback(
+    (name: string) => {
+      const view = PLUS_MENU_COMMANDS.find((command) => command === name);
+      if (!view || !renderPlusForm) {
+        setPlusCard({ open: false, view: null });
+        return;
+      }
+      setPlusCard({ open: true, view });
+    },
+    [renderPlusForm],
+  );
   const submit = useCallback(() => {
     if (!editor) return;
     const text = editor.getText().trim();
@@ -1383,11 +1422,14 @@ export function Composer({
         const form = onOpenCommandForm?.(command, parsed.args) ?? null;
         if (form === "refused") return;
         editor.commands.clearContent(true);
-        if (form === "opened") return;
+        if (form === "opened") {
+          showPlusForm(command.name);
+          return;
+        }
         void (async () => {
           notifyDispatchOutcome(
             toast,
-            slashToken(command),
+            `/${slashToken(command)}`,
             await runDispatch(onSlashDispatch, command, parsed.args),
           );
         })();
@@ -1476,6 +1518,7 @@ export function Composer({
     pending,
     recruitmentVocab,
     replyTo,
+    showPlusForm,
     slashRefusal,
     toast,
     uploading.length,
@@ -1614,9 +1657,17 @@ export function Composer({
   const openPlusMenuForm = useCallback(
     (name: PlusMenuCommand) => {
       const command = getSlashCommand(name);
-      if (command) onOpenCommandForm?.(command, "");
+      if (!command) return;
+      if (onOpenCommandForm?.(command, "") === "opened") showPlusForm(name);
     },
-    [onOpenCommandForm],
+    [onOpenCommandForm, showPlusForm],
+  );
+  const plusCardControls = useMemo(
+    () => ({
+      close: () => setPlusCard({ open: false, view: null }),
+      back: () => setPlusCard({ open: true, view: null }),
+    }),
+    [],
   );
   // One path for a picked, pasted (#2246) or dropped (#4143) file: the same
   // type and size checks, the same per-message limit, the same toasts.
@@ -1808,10 +1859,13 @@ export function Composer({
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
-      if (form === "opened") return;
+      if (form === "opened") {
+        showPlusForm(command.name);
+        return;
+      }
       notifyDispatchOutcome(
         toast,
-        slashToken(command),
+        `/${slashToken(command)}`,
         await runDispatch(onSlashDispatch, command, args),
       );
     },
@@ -1821,6 +1875,7 @@ export function Composer({
       onOpenCommandForm,
       palette.query,
       recruitmentVocab,
+      showPlusForm,
       slashRefusal,
       toast,
     ],
@@ -1976,11 +2031,25 @@ export function Composer({
               `/` in the message box still opens the palette, and each row
               shows its shortcut so the menu teaches it.
             */}
-            <ComposerPlusMenu
+            <ComposerPlusCard
               model={plusMenu}
               triggerClassName={compactControlClassName}
+              open={plusCard.open}
+              onOpenChange={(open) =>
+                // Opened from the +, the card starts on the menu, where a
+                // row with a kept draft says so.
+                setPlusCard({ open, view: null })
+              }
+              view={plusCard.view}
               onAttach={() => fileInput.current?.click()}
-              onOpenForm={openPlusMenuForm}
+              onPick={openPlusMenuForm}
+              onBack={plusCardControls.back}
+              form={
+                plusCard.view && renderPlusForm
+                  ? renderPlusForm(plusCard.view, plusCardControls)
+                  : null
+              }
+              drafts={plusDrafts}
             />
             <input
               ref={fileInput}
