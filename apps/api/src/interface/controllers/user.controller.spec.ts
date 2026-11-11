@@ -14,6 +14,8 @@ describe('UserController', () => {
     findProfile: jest.fn(),
     update: jest.fn(),
     withSignedPhoto: jest.fn(),
+    whatsNewSeen: jest.fn(),
+    recordWhatsNewSeen: jest.fn(),
   };
 
   beforeEach(() => {
@@ -102,5 +104,24 @@ describe('UserController', () => {
       id: 'user-1',
       avatar_url: 'p',
     });
+  });
+
+  it("reads and records the caller's What's new version (#4043)", async () => {
+    userService.whatsNewSeen.mockResolvedValue(null);
+    await expect(controller.getMyWhatsNewSeen('user-1')).resolves.toEqual({
+      seen_version: null,
+    });
+    expect(userService.whatsNewSeen).toHaveBeenCalledWith('user-1');
+
+    userService.recordWhatsNewSeen.mockResolvedValue('2026-11-10#6');
+    await expect(
+      controller.recordMyWhatsNewSeen('user-1', {
+        seen_version: '2026-11-10#4',
+      }),
+    ).resolves.toEqual({ seen_version: '2026-11-10#6' });
+    expect(userService.recordWhatsNewSeen).toHaveBeenCalledWith(
+      'user-1',
+      '2026-11-10#4',
+    );
   });
 });

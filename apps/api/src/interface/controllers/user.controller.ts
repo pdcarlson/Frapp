@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
   Patch,
   Post,
+  Put,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -40,6 +41,8 @@ import {
   MyPermissionsDto,
   LegalAcceptanceDto,
   AcceptLegalTermsDto,
+  WhatsNewSeenDto,
+  RecordWhatsNewSeenDto,
 } from '../dtos/user.dto';
 
 @ApiTags('Users')
@@ -114,6 +117,38 @@ export class UserController {
       userId,
       dto.accept_terms_privacy,
     );
+  }
+
+  @Get('me/whats-new')
+  @ApiOperation({
+    summary: "The newest What's new entry the caller has seen on any device",
+    description:
+      "So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.",
+  })
+  @ApiOkResponse({ type: WhatsNewSeenDto })
+  async getMyWhatsNewSeen(
+    @CurrentUser('id') userId: string,
+  ): Promise<WhatsNewSeenDto> {
+    return { seen_version: await this.userService.whatsNewSeen(userId) };
+  }
+
+  @Put('me/whats-new')
+  @ApiOperation({
+    summary: "Record that a device showed the caller What's new",
+    description:
+      "Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.",
+  })
+  @ApiOkResponse({ type: WhatsNewSeenDto })
+  async recordMyWhatsNewSeen(
+    @CurrentUser('id') userId: string,
+    @Body() dto: RecordWhatsNewSeenDto,
+  ): Promise<WhatsNewSeenDto> {
+    return {
+      seen_version: await this.userService.recordWhatsNewSeen(
+        userId,
+        dto.seen_version,
+      ),
+    };
   }
 
   @Patch('me')

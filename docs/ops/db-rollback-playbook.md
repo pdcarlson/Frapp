@@ -3384,6 +3384,20 @@ where capabilities && array[
 ];
 ```
 
+## Rollback What's new seen on the account (20261111130000)
+
+* **Migration**: `20261111130000_user_whats_new_seen.sql`
+
+One nullable column on `users`, `whats_new_seen_version` (#4043). Nothing existing changed, and code without #4043 neither reads nor writes it, so it is harmless left in place.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A phone build with #4043 against the reverted API gets a 404 on `GET /v1/users/me/whats-new`, treats it as "the account doesn't know", and falls back to its own marker: What's new opens once per device again, as before #4043. A Settings mark already set on a phone stays until What's new is opened there.
+
+**To remove the column**, in a later forward migration after the code revert has shipped. It holds only which release notes a member has seen:
+
+```sql
+alter table public.users drop column if exists whats_new_seen_version;
+```
+
 ## Rollback Events record their maker (20261111020000)
 
 * **Migration**: `20261111020000_events_created_by.sql`
