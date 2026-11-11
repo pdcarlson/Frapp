@@ -3617,9 +3617,9 @@ Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `r
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
 
-## Rollback Link titles on Activity (20261111230000)
+## Rollback Link titles on Activity (20261112000000)
 
-* **Migration**: `20261111230000_activity_link_titles.sql`
+* **Migration**: `20261112000000_activity_link_titles.sql`
 
 Three columns on `chat_message_links`, `title`, `title_attempts` and `title_checked_at`, and the partial index `idx_chat_message_links_title_pending`. No existing row changed.
 
