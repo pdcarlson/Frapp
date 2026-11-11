@@ -3,7 +3,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -17,6 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { INT4_MAX } from '#domain/constants/field-limits';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import {
   DEV_LOG_EVENTS,
   type DevLogEvent,
@@ -204,7 +204,7 @@ export class DevLogPostDto {
       'update_pushed: that run also uploaded a store build for testers.',
   })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   store_build?: boolean;
 
   @ApiPropertyOptional({
@@ -212,7 +212,7 @@ export class DevLogPostDto {
       'update_pushed: that run also published an over-the-air update.',
   })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   ota_update?: boolean;
 }
 
