@@ -70,6 +70,7 @@ const read = (overrides: Record<string, unknown> = {}) => ({
       file("document", "doc-1", "Bylaws"),
       file("backwork", "bw-1", "CS 101 midterm"),
     ],
+    events: [],
   },
   needs_you_count: 2,
   unavailable: [] as string[],

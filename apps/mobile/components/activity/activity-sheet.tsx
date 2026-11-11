@@ -185,7 +185,9 @@ function SheetCard({
     case "task":
       return <TaskSheet row={row} viewerId={viewerId} />;
     case "event":
-      return <EventSheet row={row} viewerId={viewerId} />;
+      return (
+        <EventSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
+      );
     case "poll":
       return (
         <PollSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
@@ -212,15 +214,36 @@ function TaskSheet({
 function EventSheet({
   row,
   viewerId,
+  onNavigate,
 }: {
   row: RowOf<"event">;
   viewerId: string;
+  onNavigate: () => void;
 }) {
+  const router = useRouter();
   const message = useMemo(() => activityEventMessage(row.event), [row.event]);
   const payload = readEventPayload(message);
-  return payload ? (
-    <EventCard {...frameFor(message, viewerId)} payload={payload} />
-  ) : null;
+  if (!payload) return null;
+  return (
+    <>
+      <EventCard {...frameFor(message, viewerId)} payload={payload} />
+      <CardActions>
+        <CardButton
+          label="Open event"
+          accessibilityHint="Opens the event's page, where officers can edit it."
+          onPress={() => {
+            onNavigate();
+            // Object form: the shape `lib/routes.spec.ts` matches when a
+            // param is involved.
+            router.push({
+              pathname: "/event-details",
+              params: { id: row.event.id },
+            });
+          }}
+        />
+      </CardActions>
+    </>
+  );
 }
 
 function PollSheet({

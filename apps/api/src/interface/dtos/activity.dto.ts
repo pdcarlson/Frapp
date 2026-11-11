@@ -288,6 +288,13 @@ export class ActivityMadeByYouDto {
     description: 'Documents and backwork the caller uploaded, newest first.',
   })
   files: ActivityFileDto[];
+
+  @ApiProperty({
+    type: [ActivityEventDto],
+    description:
+      'Events the caller made that have not ended, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.',
+  })
+  events: ActivityEventDto[];
 }
 
 export class ActivityDto implements ActivityView {

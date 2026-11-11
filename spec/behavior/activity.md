@@ -61,9 +61,13 @@ member's own answer, not the event's default:
   that opens to a refusal is worse than no row.
 - **Files:** chapter documents and backwork the caller uploaded, newest first. Backwork only
   while the caller can still open Backwork (`backwork:upload` or `backwork:admin`).
-
-Events are not under "Made by you": an event does not record who created it (#3897 tracks adding
-that).
+- **Events:** events the caller made that have not ended, soonest first, whatever their date. A
+  recurring series is one row, its next meeting. An event lists for its maker even when it does
+  not invite them, since this is how they find it again to edit it; such a row offers no check-in.
+  It is read through the events list's own visibility rule, so a maker who has since lost a role
+  the event targets, and holds no `events:update`, does not get it back here. Events record their
+  maker only since 2026-11-11 (`events.created_by`, [`events.md` § Event
+  Creation](events.md#event-creation)); older events have none and are never listed here.
 
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.

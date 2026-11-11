@@ -146,7 +146,7 @@ const READ = {
       checked_in: false,
     },
   ],
-  made_by_you: { polls: [], tasks: [], files: [] },
+  made_by_you: { polls: [], tasks: [], files: [], events: [] },
   needs_you_count: 3,
   unavailable: [],
 } as unknown as Activity;
@@ -289,6 +289,19 @@ describe("Activity sheet (#3897)", () => {
       is_mandatory: true,
       check_in_opens_minutes: 15,
     });
+  });
+
+  it("opens the event's details screen from Open event, closing the sheet first", () => {
+    const tree = render(rowOf("event"));
+    const push = vi.mocked(useRouter().push);
+    act(() => {
+      button(tree, "Open event").props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "event-1" },
+    });
+    expect(dismiss).toHaveBeenCalledTimes(1);
   });
 
   it("waits for the viewer's id before drawing a card", () => {

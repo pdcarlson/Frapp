@@ -15696,6 +15696,12 @@
             "maximum": 120,
             "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
           },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -15725,6 +15731,7 @@
           "check_in_zone",
           "check_in_zone_name",
           "check_in_opens_minutes",
+          "created_by",
           "created_at"
         ]
       },
@@ -17933,12 +17940,20 @@
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
             }
+          },
+          "events": {
+            "description": "Events the caller made that have not ended, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
           }
         },
         "required": [
           "polls",
           "tasks",
-          "files"
+          "files",
+          "events"
         ]
       },
       "ActivityDto": {
@@ -17971,7 +17986,8 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files"
+                "files",
+                "made_events"
               ]
             }
           }
