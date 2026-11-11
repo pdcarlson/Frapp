@@ -45,8 +45,9 @@ import {
 } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Sheet } from "@/components/ui/sheet";
+import { pointsLabel } from "@/components/events/event-labels";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
@@ -232,6 +233,13 @@ type EventEditorDialogProps = {
   usingPreviewData: boolean;
   onSaved: () => Promise<void> | void;
   /**
+   * Open inside the Events page instead of over the app (`shared/panel.tsx`
+   * § Docked). `/event` in chat has no page to open in and keeps the sheet.
+   */
+  docked?: boolean;
+  /** The docked back arrow's name: where it returns to. */
+  backLabel?: string;
+  /**
    * Prefill for a fresh create — e.g. the calendar view's click-to-create.
    * `datetime-local` value strings, matching `isoToLocalInput`'s output.
    * Ignored in edit mode, where `event`'s own schedule always wins.
@@ -270,6 +278,8 @@ export function EventEditorDialog({
   event,
   usingPreviewData,
   onSaved,
+  docked = false,
+  backLabel = "Back to events",
   initialStartAt,
   initialEndAt,
   initialName,
@@ -678,7 +688,8 @@ export function EventEditorDialog({
       ? describeSeriesLength(repeatStart, recurrenceRule)
       : null;
   const moreSummary = [
-    `${pointValue.trim() === "" ? 0 : pointValue} pts`,
+    pointsLabel(Number(pointValue.trim() === "" ? 0 : pointValue)) ??
+      "No points",
     describeAttendance(attendance, roleName),
     isRecurrenceRule(recurrenceRule)
       ? RECURRENCE_REPEAT_LABELS[recurrenceRule]
@@ -686,7 +697,12 @@ export function EventEditorDialog({
   ].join(" · ");
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Panel
+      open={open}
+      onOpenChange={onOpenChange}
+      docked={docked}
+      backLabel={backLabel}
+    >
       {/*
         A panel, not a dialog (`components.md` § Surface size): this form runs
         to a role list and a polygon of any length, so it scrolled inside a
@@ -741,7 +757,9 @@ export function EventEditorDialog({
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Wraps by the panel's own width, not the window's: docked beside chat
+                the panel can be 375px wide on a wide screen. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
               <div className="grid gap-1">
                 <Label htmlFor="event-start">Start</Label>
                 <Input
@@ -808,7 +826,9 @@ export function EventEditorDialog({
                   />
                 </section>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                {/* Wraps by the panel's own width, not the window's: docked beside chat
+                the panel can be 375px wide on a wide screen. */}
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
                   <div className="grid gap-1">
                     <Label htmlFor="event-recurrence">Repeat</Label>
                     {/*
@@ -1053,6 +1073,6 @@ export function EventEditorDialog({
           </Button>
         </PanelFooter>
       </PanelContent>
-    </Sheet>
+    </Panel>
   );
 }
