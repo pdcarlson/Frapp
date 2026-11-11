@@ -8,10 +8,13 @@
  */
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import {
+  REMOVE_CONFIRM_BODY,
+  REMOVE_FROM_CHAPTER_LABEL,
+  removeConfirmTitle,
+} from "@repo/hooks/member-removal-copy";
 
 export type MemberMenuAction = "block" | "unblock" | "remove";
-
-export const REMOVE_ACTION_LABEL = "Remove from chapter";
 
 /** The menu's rows, in order, or none when the `⋯` has nothing to hold. */
 export function memberMenuActions({
@@ -42,7 +45,7 @@ export function memberMenuLabel(
     case "unblock":
       return `Unblock ${name}`;
     case "remove":
-      return REMOVE_ACTION_LABEL;
+      return REMOVE_FROM_CHAPTER_LABEL;
   }
 }
 
@@ -91,17 +94,6 @@ export function showMemberMenu(
   );
 }
 
-export function removeConfirmTitle(name: string): string {
-  return `Remove ${name} from the chapter?`;
-}
-
-export const REMOVE_CONFIRM_BODY =
-  "They lose chat, events and the member list right away, and can come back only with a new invite.";
-
-export function removeFailedTitle(name: string): string {
-  return `Couldn't remove ${name}`;
-}
-
 /**
  * Asks before removing, as web's confirm dialog does: Cancel, then the
  * destructive verb naming its object.
@@ -115,6 +107,6 @@ export function confirmRemoveMember({
 }): void {
   Alert.alert(removeConfirmTitle(name), REMOVE_CONFIRM_BODY, [
     { text: "Cancel", style: "cancel" },
-    { text: REMOVE_ACTION_LABEL, style: "destructive", onPress: run },
+    { text: REMOVE_FROM_CHAPTER_LABEL, style: "destructive", onPress: run },
   ]);
 }

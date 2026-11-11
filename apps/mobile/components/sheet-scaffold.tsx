@@ -22,7 +22,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose } from "@/lib/overlay";
 import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
 
 /**
  * The chrome every Signet bottom sheet draws: the grabber, the title row (with
@@ -532,6 +532,10 @@ function createStyles(tokens: SignetTokens) {
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
+      // Each icon button's slop reaches 12pt past its box; this keeps an
+      // action's slop clear of the close's, so a tap on the ⋯ never lands on
+      // the X (`icon-button.tsx`).
+      gap: ICON_BUTTON_HIT_SLOP * 2,
     },
     title: {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.

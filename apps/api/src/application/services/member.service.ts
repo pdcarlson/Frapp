@@ -620,7 +620,6 @@ export class MemberService {
     if (reach.memberId === member.id) {
       return "You can't remove yourself from the chapter.";
     }
-    if (reach.wildcard) return null;
     const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
     const held = member.role_ids
       .map((id) => byId.get(id.toLowerCase()))
@@ -652,6 +651,36 @@ export class MemberService {
     return this.buildProfile(member, chapterId, viewerUserId);
   }
 
+  /**
+   * `viewer_can_remove` for a profile read: {@link removalRefusal}'s answer,
+   * without its reads where the permissions already settle it. A viewer
+   * without `members:remove` or `*` gets `false` with no rank read, a `*`
+   * holder reaches everyone but themselves, and only an officer holding
+   * `members:remove` alone pays for the rank context. A failed rank read
+   * answers `false` rather than failing the whole profile: the removal
+   * re-checks it anyway.
+   */
+  private async viewerCanRemove(
+    member: Member,
+    viewerUserId: string,
+    permissions: readonly string[],
+  ): Promise<boolean> {
+    if (member.user_id === viewerUserId) return false;
+    if (permissions.includes(SystemPermissions.WILDCARD)) return true;
+    if (!permissions.includes(SystemPermissions.MEMBERS_REMOVE)) return false;
+    try {
+      return (await this.removalRefusal(member, viewerUserId)) === null;
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Rank read for viewer_can_remove failed (chapter ${member.chapter_id}, member ${member.id})`,
+        error,
+      );
+      return false;
+    }
+  }
+
   /** The profile of a membership row already known to be in `chapterId`. */
   private async buildProfile(
     member: Member,
@@ -675,20 +704,13 @@ export class MemberService {
       permissions,
       member.user_id === viewerUserId,
     );
-    // The rank read runs only for a viewer the route would admit at all, so
-    // an ordinary member's profile read costs nothing extra.
-    const mayRemoveAny =
-      permissions.includes(SystemPermissions.WILDCARD) ||
-      permissions.includes(SystemPermissions.MEMBERS_REMOVE);
     const [customFields, viewerCanRemove] = await Promise.all([
       this.customFieldService.findVisibleValuesForMember(
         chapterId,
         member.id,
         allowed,
       ),
-      mayRemoveAny
-        ? this.removalRefusal(member, viewerUserId).then((r) => r === null)
-        : Promise.resolve(false),
+      this.viewerCanRemove(member, viewerUserId, permissions),
     ]);
 
     return this.photoUrls.signRow(

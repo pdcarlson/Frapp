@@ -55,11 +55,14 @@ import {
 import {
   confirmRemoveMember,
   memberMenuActions,
-  removeFailedTitle,
   showMemberMenu,
 } from "@/lib/directory/member-menu";
 import { errorCopy } from "@repo/hooks/error-copy";
-import { IconButton } from "@/components/icon-button";
+import {
+  memberMenuButtonLabel,
+  removeFailedTitle,
+} from "@repo/hooks/member-removal-copy";
+import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
 import {
   dmChannelIdOf,
@@ -247,7 +250,11 @@ export const MemberDetailSheet = forwardRef<
               onError: (error) =>
                 Alert.alert(
                   removeFailedTitle(target.displayName),
-                  errorCopy(error, "Try again in a moment."),
+                  errorCopy(error, "Try again in a moment.", {
+                    // The route's refusals are sentences for members ("You
+                    // can only remove members ranked below you.").
+                    serverWritesForMembers: true,
+                  }),
                 ),
             });
           },
@@ -329,7 +336,7 @@ export const MemberDetailSheet = forwardRef<
               actions={
                 detail && menuActions.length > 0 ? (
                   <IconButton
-                    label={`More for ${detail.displayName}`}
+                    label={memberMenuButtonLabel(detail.displayName)}
                     onPress={openMenu}
                     // Held while a block or a removal is out, rather than
                     // dropping a row from the menu, so the ⋯ never jumps.
@@ -337,7 +344,10 @@ export const MemberDetailSheet = forwardRef<
                       blockActions.isPending || removeMutation.isPending
                     }
                   >
-                    <OverflowGlyph color={tokens.color.text.mutedForeground} />
+                    <OverflowGlyph
+                      color={tokens.color.text.mutedForeground}
+                      size={ICON_BUTTON_SIZE}
+                    />
                   </IconButton>
                 ) : null
               }

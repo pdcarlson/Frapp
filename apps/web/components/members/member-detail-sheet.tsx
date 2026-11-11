@@ -51,6 +51,12 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
+import {
+  memberMenuButtonLabel,
+  REMOVE_CONFIRM_BODY,
+  REMOVE_FROM_CHAPTER_LABEL,
+  removeConfirmTitle,
+} from "@repo/hooks/member-removal-copy";
 import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
 import {
   DETAIL_LIST,
@@ -437,10 +443,9 @@ export function MemberDetailSheet({
     // "Confirm" (`writing.md` §2). Browser-chrome dialogs are banned on every
     // surface (`design-system/README.md` §2).
     const confirmed = await confirm({
-      title: `Remove ${displayName} from the chapter?`,
-      description:
-        "They lose chat, events and the member list right away, and can come back only with a new invite.",
-      confirmLabel: "Remove from chapter",
+      title: removeConfirmTitle(displayName),
+      description: REMOVE_CONFIRM_BODY,
+      confirmLabel: REMOVE_FROM_CHAPTER_LABEL,
       tone: "destructive",
     });
     if (!confirmed) return;
@@ -518,7 +523,7 @@ export function MemberDetailSheet({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <IconButton
-                    label={`More for ${displayName}`}
+                    label={memberMenuButtonLabel(displayName)}
                     className="text-muted-foreground"
                     disabled={removeMemberMutation.isPending}
                   >
@@ -535,7 +540,7 @@ export function MemberDetailSheet({
                     className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
                   >
                     <UserMinus aria-hidden="true" />
-                    Remove from chapter
+                    {REMOVE_FROM_CHAPTER_LABEL}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

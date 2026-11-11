@@ -1248,6 +1248,30 @@ describe('MemberService', () => {
       expect(profile.viewer_can_remove).toBe(true);
     });
 
+    it('is true for a wildcard holder viewing someone else, without a rank read', async () => {
+      const profile = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(profile.viewer_can_remove).toBe(true);
+      expect(mockRbacService.getRankContext).not.toHaveBeenCalled();
+    });
+
+    it('answers false, and still serves the profile, when the rank read fails', async () => {
+      mockRepo.findById.mockResolvedValue(memberRow(TIERED_MEMBER.brother));
+      mockUserRepo.findById.mockResolvedValue(userFixture());
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+        'members:remove',
+      ]);
+      mockRbacService.getRankContext.mockRejectedValue(new Error('tiers down'));
+      const profile = await service.findProfileById(
+        TIERED_MEMBER.brother,
+        CHAPTER_ID,
+        USER.vicePresident,
+      );
+      expect(profile.viewer_can_remove).toBe(false);
+    });
+
     it('is false for an officer viewing the President', async () => {
       const profile = await profileAs(
         TIERED_MEMBER.president,
