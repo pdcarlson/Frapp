@@ -3908,6 +3908,26 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     // for when chat is alone again.
     expect(document.cookie).not.toContain("frapp_chat_members_hidden=1");
   });
+
+  it("draws a Close chat X at the end of the channel header only when handed a close (#4223)", () => {
+    stubWidth(1440);
+    const onClose = vi.fn();
+    const { rerender } = render(<ChatShell toolBeside onClose={onClose} />);
+    const header = screen.getByRole("button", { name: "Show members" })
+      .closest("header") as HTMLElement;
+    const close = within(header).getByRole("button", { name: "Close chat" });
+    // The tool page header's X, the same 36px control in the same place.
+    expect(close).toHaveClass("h-9", "w-9", "-mr-2");
+    expect(header.lastElementChild?.lastElementChild).toBe(close);
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Alone (no close from the shell), there is nothing to close chat into.
+    rerender(<ChatShell />);
+    expect(
+      screen.queryByRole("button", { name: "Close chat" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**

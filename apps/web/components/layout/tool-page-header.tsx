@@ -47,13 +47,34 @@ export function ToolPageHeader({
           <PageTitleText pageTitle={pageTitle} asHeading={titleIsHeading} />
         ) : null}
       </div>
-      <IconButton
+      <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}
         onClick={onClose}
-        className="-mr-2 shrink-0 text-muted-foreground"
-      >
-        <X className="h-[18px] w-[18px]" aria-hidden="true" />
-      </IconButton>
+      />
     </div>
+  );
+}
+
+/**
+ * The X at the right end of a side-by-side panel's 48px header: the tool
+ * page's (above) and chat's channel header (#4223), so the two panels close
+ * the same way, the way Slack's channel and its right-hand panel each carry
+ * one. The `-mr-2` pulls the 36px square's glyph onto the header's gutter.
+ */
+export function PanelCloseButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <IconButton
+      label={label}
+      onClick={onClick}
+      className="-mr-2 shrink-0 text-muted-foreground"
+    >
+      <X className="h-[18px] w-[18px]" aria-hidden="true" />
+    </IconButton>
   );
 }
