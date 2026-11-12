@@ -20,7 +20,10 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { filterSlashCommands, type SlashCommand } from "@repo/chat-core/integrations";
+import {
+  filterSlashCommands,
+  type SlashCommand,
+} from "@repo/chat-core/integrations";
 import type { ChapterModuleGateStatus } from "@/lib/hooks/use-chapter-module-gate";
 
 export interface SlashPaletteProps {
@@ -35,6 +38,8 @@ export interface SlashPaletteProps {
    * canonical `rush`.
    */
   recruitmentVocab?: string;
+  /** `false` leaves `/announce` out (`filterSlashCommands`, #3414). */
+  canAnnounce?: boolean;
   /**
    * Reflects the state of the read behind the module gate, the member view
    * (`useChapterModuleGateState`), so the palette can fail closed while
@@ -72,6 +77,7 @@ export function SlashPalette({
   onQueryChange,
   isModuleEnabled,
   recruitmentVocab,
+  canAnnounce,
   status = "ready",
   onRetry,
   onSelect,
@@ -84,9 +90,10 @@ export function SlashPalette({
       status === "ready"
         ? filterSlashCommands(query, isModuleEnabled, {
             recruitment: recruitmentVocab,
+            canAnnounce,
           })
         : [],
-    [query, isModuleEnabled, status, recruitmentVocab],
+    [query, isModuleEnabled, status, recruitmentVocab, canAnnounce],
   );
 
   return (
@@ -135,7 +142,9 @@ export function SlashPalette({
                     <span className="font-mono text-caption text-muted-foreground">
                       /{command.displayName ?? command.name}
                     </span>
-                    <span className="ml-2 text-base">{command.description}</span>
+                    <span className="ml-2 text-base">
+                      {command.description}
+                    </span>
                     {command.usage ? (
                       <span className="ml-auto text-caption text-muted-foreground">
                         {command.usage}
