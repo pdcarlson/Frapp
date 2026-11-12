@@ -1,8 +1,10 @@
 import type { components } from "@repo/api-sdk";
 import {
-  GRADUATION_YEAR_MAX,
-  GRADUATION_YEAR_MIN,
+  GRADUATION_YEAR_MESSAGE,
+  isPhoneNumber,
   MAJOR_MAX_LENGTH,
+  parseGraduationYear,
+  PHONE_INVALID_MESSAGE,
 } from "@repo/validation";
 import type { ViewerProfile } from "@/lib/more/profile";
 
@@ -16,6 +18,7 @@ import type { ViewerProfile } from "@/lib/more/profile";
  */
 export type ProfileDraft = {
   displayName: string;
+  phone: string;
   major: string;
   graduationYear: string;
   bio: string;
@@ -36,13 +39,15 @@ export type ProfilePatchResult =
   | { ok: false; field: ProfileDraftField; message: string };
 
 export const NAME_REQUIRED_MESSAGE = "Your name can't be empty.";
-export const GRADUATION_YEAR_MESSAGE = `Use a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+// The year refusal is `@repo/validation`'s, shared with an officer's correction.
+export { GRADUATION_YEAR_MESSAGE };
 export const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} characters.`;
 
 /** What the sheet opens on: the profile as it stands, blanks for unset. */
 export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
   return {
     displayName: profile?.displayName ?? "",
+    phone: profile?.phone ?? "",
     major: profile?.major ?? "",
     bio: profile?.bio ?? "",
     graduationYear:
@@ -68,6 +73,8 @@ export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
  * - A blank graduation year clears it (`null`); anything else must be a whole
  *   year the API will take, so the refusal comes before a round trip that
  *   would only end in a 400.
+ * - The phone (#3711) may be cleared (`null`); anything else must read as a
+ *   phone number (`isPhoneNumber`), the rule the API applies.
  * - Major, bio, city and company may be cleared; an empty string reads back as "Not
  *   set" (`lib/more/narrow.ts` `str`).
  */
@@ -83,25 +90,24 @@ export function profilePatch(
   }
   if (name !== original.displayName.trim()) patch.display_name = name;
 
-  const year = draft.graduationYear.trim();
-  if (year !== original.graduationYear.trim()) {
-    if (year.length === 0) {
-      patch.graduation_year = null;
-    } else {
-      const parsed = /^\d{4}$/.test(year) ? Number(year) : NaN;
-      if (
-        !Number.isInteger(parsed) ||
-        parsed < GRADUATION_YEAR_MIN ||
-        parsed > GRADUATION_YEAR_MAX
-      ) {
-        return {
-          ok: false,
-          field: "graduationYear",
-          message: GRADUATION_YEAR_MESSAGE,
-        };
-      }
-      patch.graduation_year = parsed;
+  const phone = draft.phone.trim();
+  if (phone !== original.phone.trim()) {
+    if (phone.length > 0 && !isPhoneNumber(phone)) {
+      return { ok: false, field: "phone", message: PHONE_INVALID_MESSAGE };
     }
+    patch.phone = phone.length > 0 ? phone : null;
+  }
+
+  if (draft.graduationYear.trim() !== original.graduationYear.trim()) {
+    const year = parseGraduationYear(draft.graduationYear);
+    if (year === undefined) {
+      return {
+        ok: false,
+        field: "graduationYear",
+        message: GRADUATION_YEAR_MESSAGE,
+      };
+    }
+    patch.graduation_year = year;
   }
 
   const major = draft.major.trim();

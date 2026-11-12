@@ -4,6 +4,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useChapterRoster,
+  useCorrectMemberProfile,
   useMemberDisplayNames,
   useMembers,
   useMemberSearch,
@@ -154,9 +155,7 @@ describe("useMemberSearch", () => {
 
   it("returns members matching the query when the API request succeeds", async () => {
     const query = "test";
-    const members = [
-      { id: "member-1", name: "Test User 1" },
-    ];
+    const members = [{ id: "member-1", name: "Test User 1" }];
     const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
 
     mockUseFrappClient.mockReturnValue({
@@ -444,6 +443,29 @@ describe("membership writes refetch the alumni list", () => {
         ]),
       ),
     );
+  });
+
+  it("useCorrectMemberProfile refetches every read showing the name, not the viewer's own", async () => {
+    const queryClient = new QueryClient();
+    const keys = invalidatedKeys(queryClient);
+    const PATCH = vi.fn().mockResolvedValue({ data: {}, error: null });
+    mockUseFrappClient.mockReturnValue({
+      PATCH,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useCorrectMemberProfile(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await result.current.mutateAsync({ id: "member-1", display_name: "Ada" });
+
+    expect(PATCH).toHaveBeenCalledWith("/v1/members/{id}/profile", {
+      params: { path: { id: "member-1" } },
+      body: { display_name: "Ada" },
+    });
+    expect(keys()).toEqual(
+      expect.arrayContaining([["members"], ["alumni"], ["activity-feed"]]),
+    );
+    expect(keys()).not.toContainEqual(["user", "me"]);
   });
 
   it("useRemoveMember invalidates members and alumni", async () => {

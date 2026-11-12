@@ -101,6 +101,22 @@ export const GRADUATION_YEAR_MAX = 2100;
 export const MAJOR_MAX_LENGTH = 100;
 
 /**
+ * A member's phone number (`users.phone`, #3711), as they typed it, trimmed.
+ * Room for an international number with its spaces and an extension; the
+ * column's check stops anything longer. {@link isPhoneNumber} is what the API
+ * and both forms accept.
+ */
+export const PHONE_MAX_LENGTH = 32;
+
+/**
+ * A member's name as an officer corrects it (`PATCH /v1/members/{id}/profile`,
+ * #4367): the API's cap and both correction forms' `maxLength`. The member's
+ * own `PATCH /v1/users/me` has no cap yet, so an officer fixing a longer name
+ * must shorten it.
+ */
+export const DISPLAY_NAME_MAX_LENGTH = 100;
+
+/**
  * A chapter document's title (`chapter_documents.title`), set by whoever
  * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
  * the phone's field stops at it.

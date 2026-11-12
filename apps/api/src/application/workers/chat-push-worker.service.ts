@@ -31,11 +31,11 @@ import {
 } from '#domain/repositories/chat-thread.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { decidePush } from '../services/push-rules';
+import { chatPushPreview } from '../services/chat-push-preview';
 import {
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
-  withoutObjectReplacement,
 } from '@repo/validation';
 import {
   canAccessChannel,
@@ -85,26 +85,6 @@ interface ChatMessageRow {
   /** The parent when this row is a thread reply (#3785); pushes only its followers. */
   thread_root_id?: string | null;
   created_at: string;
-}
-
-/**
- * The body of a single chat push: the first 200 characters of the message, or,
- * for a message with no text (a photo or file sent on its own), what was sent.
- * Those used to push an empty body under the sender's name (#3846). The cut is
- * by code point, so it never splits an emoji into a broken character.
- */
-export function chatPushPreview(
-  row: Pick<ChatMessageRow, 'content' | 'metadata'>,
-): string {
-  // U+FFFC drawn as an "OBJ" box on the lock screen and in the list (#4346).
-  // `ChatService` cleans what it saves; this covers a row written any other way.
-  const text = withoutObjectReplacement(row.content ?? '').trim();
-  if (text) return Array.from(text).slice(0, 200).join('');
-  const raw = Number(row.metadata?.attachment_count);
-  const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
-  if (count === 1) return 'Sent an attachment';
-  if (count > 1) return `Sent ${count} attachments`;
-  return 'Sent a message';
 }
 
 /** Alias kept local so the rest of this file reads in its own domain terms. */
@@ -629,6 +609,7 @@ export class ChatPushWorkerService
         await senderName,
         threadRootId,
         mentioned,
+        row.id,
       );
       try {
         await this.notificationService.notifyUser(
@@ -991,6 +972,7 @@ export class ChatPushWorkerService
     senderName: string | null,
     threadRootId: string | null = null,
     mentioned = false,
+    messageId: string | null = null,
   ) {
     // One predicate for the title, the priority and the category, bundled or
     // not. A burst of announcements is still announcements: it used to go out
@@ -1042,10 +1024,14 @@ export class ChatPushWorkerService
         },
       };
     }
+    // A single push quotes this one message, so its row is tied to it: a
+    // delete of the message deletes the row and an edit rewrites its body
+    // (#4418). A bundle quotes nothing and is not tied to any one message.
     return {
       ...shared,
       body: preview,
       data: { target, ...sender, ...shape },
+      ...(messageId ? { chatMessageId: messageId } : {}),
     };
   }
 

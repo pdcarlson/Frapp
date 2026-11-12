@@ -9,7 +9,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-type Row = { permission: string; label: string; description: string | null };
+export type PermissionRow = {
+  permission: string;
+  label: string;
+  description: string | null;
+};
+type Row = PermissionRow;
 
 const DESCRIPTIONS = new Map(
   PERMISSION_REGISTRY.map((entry) => [entry.permission, entry.description]),
@@ -21,7 +26,7 @@ const DESCRIPTIONS = new Map(
  * something a role actually holds. The wildcard is never a row: nobody
  * switches it, it moves only through Transfer presidency.
  */
-function rowsFor(extra: readonly string[]): Row[] {
+export function permissionRows(extra: readonly string[]): Row[] {
   const known = new Set(PERMISSION_REGISTRY.map((entry) => entry.permission));
   const rows: Row[] = PERMISSION_REGISTRY.filter(
     (entry) => entry.permission !== "*",
@@ -81,7 +86,7 @@ export function PermissionSwitchList({
   pendingPermission?: string | null;
 }) {
   const groups = useMemo(
-    () => groupPermissionsByModule(rowsFor(extraPermissions)),
+    () => groupPermissionsByModule(permissionRows(extraPermissions)),
     [extraPermissions],
   );
 

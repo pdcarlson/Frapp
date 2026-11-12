@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   createTier: vi.fn(),
   deleteTier: vi.fn(),
   reorderTiers: vi.fn(),
+  push: vi.fn(),
 }));
 
 const ok = (data: unknown) => ({
@@ -44,6 +45,11 @@ const mutation = (fn: ReturnType<typeof vi.fn>) => ({
 });
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(h.offline));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: h.push }),
+  usePathname: () => "/settings",
+  useSearchParams: () => new URLSearchParams("tab=roles&role=brother"),
+}));
 vi.mock("@repo/hooks", () => ({
   useRoles: () => ok(h.roles),
   useRoleTiers: () => ok(h.tiers),
@@ -68,6 +74,8 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 import { RolesOverview } from "@/components/roles/roles-overview";
 import { TierPermissionsPage } from "@/components/roles/tier-permissions-page";
 import { RolePage } from "@/components/roles/role-page";
+import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useRolePreviewStore } from "@/lib/stores/role-preview-store";
 
 const EXEC = {
   id: "t1",
@@ -122,6 +130,11 @@ function chapter() {
     ),
     role("brother", "Brothers", "t3", MEMBERS.permissions),
     role("alum", "Alumni", null, []),
+    role("member", "Member", "t3", ["members:view", "chat:send"], {
+      is_system: true,
+      system_key: "MEMBER",
+    }),
+    role("cabinet", "Cabinet", null, ["channels:read:cabinet"]),
   ];
   h.members = [
     { user_id: "me", role_ids: ["pres"] },
@@ -147,6 +160,8 @@ beforeEach(() => {
     fn.mockResolvedValue({});
   }
   chapter();
+  useChapterStore.setState({ activeChapterId: "c1" });
+  useRolePreviewStore.setState({ preview: null });
 });
 
 /** Make the caller the Vice President: Exec board, not the President. */
@@ -179,7 +194,7 @@ describe("the tier list", () => {
   it("uses the chapter's own word for a tier", () => {
     h.vocabulary = { vocabulary: { tier: "Level" } };
     render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
-    expect(screen.getByText("5 roles in 3 levels")).toBeInTheDocument();
+    expect(screen.getByText("7 roles in 3 levels")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Outside the levels" }),
     ).toBeInTheDocument();
@@ -403,18 +418,112 @@ describe("a role's page", () => {
     ).toBeInTheDocument();
   });
 
-  it("saves a flip as the role's list, which the database records as an override", async () => {
+  it("shows the tier's answer beside the role's own, Same as tier where it has none", () => {
+    render(<RolePage roleId="treas" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    const service = screen.getByRole("radiogroup", {
+      name: /approve service hours for treasurer/i,
+    });
+    expect(
+      within(service).getByRole("radio", { name: "Same as tier" }),
+    ).toHaveAttribute("aria-checked", "true");
+    const events = screen.getByRole("radiogroup", {
+      name: /create events for treasurer/i,
+    });
+    expect(within(events).getByRole("radio", { name: "On" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("saves a pick as one override key, and Same as tier clears it", async () => {
     const user = userEvent.setup();
     render(<RolePage roleId="treas" onBack={vi.fn()} onOpenTier={vi.fn()} />);
     await user.click(
-      screen.getByRole("switch", {
-        name: /approve service hours for treasurer/i,
-      }),
+      within(
+        screen.getByRole("radiogroup", {
+          name: /approve service hours for treasurer/i,
+        }),
+      ).getByRole("radio", { name: "Off" }),
     );
     expect(h.updateRole).toHaveBeenCalledWith({
       id: "treas",
-      body: { permissions: ["members:view", "events:create"] },
+      body: { permission_overrides: { "service:approve": false } },
     });
+    await user.click(
+      within(
+        screen.getByRole("radiogroup", {
+          name: /create events for treasurer/i,
+        }),
+      ).getByRole("radio", { name: "Same as tier" }),
+    );
+    expect(h.updateRole).toHaveBeenLastCalledWith({
+      id: "treas",
+      body: { permission_overrides: { "events:create": null } },
+    });
+  });
+
+  it("puts the chapter's word for a tier on the Same as answer", () => {
+    h.vocabulary = { vocabulary: { tier: "Level" } };
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.getAllByRole("radio", { name: "Same as level" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("won't switch on what the caller doesn't hold, and says so on the row", () => {
+    asVicePresident();
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    const events = screen.getByRole("radiogroup", {
+      name: /create events for brothers/i,
+    });
+    expect(within(events).getByRole("radio", { name: "On" })).toBeDisabled();
+    expect(within(events).getByRole("radio", { name: "Off" })).toBeEnabled();
+    expect(
+      screen.getAllByText(/your role doesn't have it/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("gives a role outside the tiers one column of live switches", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="alum" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    await user.click(
+      screen.getByRole("switch", { name: /create events for alumni/i }),
+    );
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "alum",
+      body: { permissions: ["events:create"] },
+    });
+  });
+
+  it("views the app as the role, then comes back to its page", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "View as Brothers" }));
+    expect(useRolePreviewStore.getState().preview).toEqual({
+      chapterId: "c1",
+      roleId: "brother",
+      roleName: "Brothers",
+      permissions: ["members:view"],
+      returnTo: "/settings?tab=roles&role=brother",
+    });
+    expect(h.push).toHaveBeenCalledWith("/chat");
+  });
+
+  it("previews a role that opens nothing on its own with Member beside it, as a join would", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="cabinet" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "View as Cabinet" }));
+    expect(useRolePreviewStore.getState().preview?.permissions).toEqual([
+      "channels:read:cabinet",
+      "members:view",
+      "chat:send",
+    ]);
+  });
+
+  it("offers no View as on the President's role, or to someone who can't edit roles", () => {
+    render(<RolePage roleId="pres" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /^view as/i })).toBeNull();
   });
 
   it("locks every switch on the President's role", () => {

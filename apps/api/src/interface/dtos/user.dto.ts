@@ -6,18 +6,47 @@ import {
   Min,
   Max,
   MaxLength,
+  Validate,
   ValidateIf,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
+  isPhoneNumber,
   LEGAL_ACCEPTANCE_LABEL,
   MAJOR_MAX_LENGTH,
+  PHONE_INVALID_MESSAGE,
+  PHONE_MAX_LENGTH,
   RELEASE_NOTE_VERSION_PATTERN,
 } from '@repo/validation';
+
+/**
+ * A phone number as `isPhoneNumber` (`@repo/validation`) reads one: the same
+ * rule both profile forms apply before sending (#3711).
+ */
+@ValidatorConstraint({ name: 'phoneNumber', async: false })
+export class PhoneNumberConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' && isPhoneNumber(value);
+  }
+
+  defaultMessage(): string {
+    return PHONE_INVALID_MESSAGE;
+  }
+}
+
+/** Trims a string, and turns a blank one into null (cleared). */
+function blankToNull(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
 
 export class MyPermissionsDto {
   @ApiProperty({
@@ -195,4 +224,19 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   current_company?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: PHONE_MAX_LENGTH,
+    description:
+      "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
+    example: '(518) 555-0142',
+  })
+  @IsOptional()
+  @Transform(({ value }) => blankToNull(value))
+  @ValidateIf((_obj, value) => value !== null)
+  @IsString()
+  @Validate(PhoneNumberConstraint)
+  phone?: string | null;
 }

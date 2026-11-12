@@ -89,6 +89,15 @@ export type SignetTokens = {
        */
       mentionChip: string;
       mentionChipText: string;
+      /**
+       * Ink drawn ON a solid semantic fill (`success`, `warning`,
+       * `destructive`): a label, a count or a glyph. Near-black, because white
+       * on the lifted hues is under 3:1 (white on `success` is 2.28:1) while
+       * this clears 6.89:1 or more on each (foundations.md §5). Emitted to CSS
+       * as the three `--*-foreground` pairs; in `signetDarkTokens` since
+       * 2026-11-12 (#4393), when mobile's Quick Actions add badge adopted it.
+       */
+      onSemantic: string;
     };
     /**
      * Signet's own gold. Fixed for every chapter — the Ask/AI surface speaks in
@@ -190,6 +199,7 @@ const SIGNET_DARK: SignetTokens = {
       mentionForeground: "#FFFFFF",
       mentionChip: "#2D2617",
       mentionChipText: "#EED7A8",
+      onSemantic: "#0A0A0A",
     },
     gold: {
       house: "#EFB63B",
@@ -284,8 +294,11 @@ export function getSignetCssVars(
     "--disabled": t.color.text.disabled,
 
     "--success": t.color.semantic.success,
+    "--success-foreground": t.color.semantic.onSemantic,
     "--warning": t.color.semantic.warning,
+    "--warning-foreground": t.color.semantic.onSemantic,
     "--destructive": t.color.semantic.destructive,
+    "--destructive-foreground": t.color.semantic.onSemantic,
     "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
     "--info-text": t.color.semantic.infoText,

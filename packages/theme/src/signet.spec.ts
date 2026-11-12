@@ -270,6 +270,14 @@ describe("Signet colors match foundations.md", () => {
       "--destructive",
     );
     expectColor(color.semantic.info, pin(t, "--info", "Semantic Colors"), "--info");
+    // One ink for all three solid fills (#4393): each row pins it.
+    for (const token of [
+      "--success-foreground",
+      "--warning-foreground",
+      "--destructive-foreground",
+    ]) {
+      expectColor(color.semantic.onSemantic, pin(t, token, "Semantic Colors"), token);
+    }
 
     // Locked by the Canvas header rather than panel 4h, and load-bearing: it
     // states "you were addressed" identically in every chapter, so it must not

@@ -295,6 +295,34 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     });
   });
 
+  // #3711: the member's own phone, checked on Save, not per keystroke.
+  it("sends the phone the member typed", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Phone"), "(518) 555-0142");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
+      phone: "(518) 555-0142",
+    });
+  });
+
+  it("refuses something that isn't a phone number, and says so", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Phone"), "call me");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a phone number",
+    );
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
   // Paul, 2026-11-06: an undergrad has no after-graduation city or company.
   it("hides City and Company until the graduation year arrives", async () => {
     mocks.userQuery.data = { ...mocks.userQuery.data, graduation_year: 2099 };
