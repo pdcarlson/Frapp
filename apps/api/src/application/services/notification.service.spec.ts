@@ -1575,13 +1575,24 @@ describe('NotificationService', () => {
     it("rewrites the rows that quote the message, in the message's chapter", async () => {
       mockNotificationRepo.rewriteChatMessageBody.mockResolvedValue(undefined);
 
-      await service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed');
+      await service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', [
+        'u-1',
+      ]);
 
       expect(mockNotificationRepo.rewriteChatMessageBody).toHaveBeenCalledWith(
         'chapter-1',
         'm-1',
         'fixed',
+        ['u-1'],
       );
+    });
+
+    it('writes nothing when nobody can read the channel', async () => {
+      await service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', []);
+
+      expect(
+        mockNotificationRepo.rewriteChatMessageBody,
+      ).not.toHaveBeenCalled();
     });
 
     it('reports a failed rewrite instead of failing the edit', async () => {
@@ -1590,7 +1601,7 @@ describe('NotificationService', () => {
       );
 
       await expect(
-        service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed'),
+        service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', ['u-1']),
       ).resolves.toBeUndefined();
       expect(captureException).toHaveBeenCalled();
     });

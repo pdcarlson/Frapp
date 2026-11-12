@@ -22,8 +22,10 @@
 --
 -- 3. A trigger on `notifications` drops the insert of a row about a message
 --    already deleted (or gone), which closes the race where the push worker
---    is still fanning out a message its sender deletes a moment later. The
---    push itself may still go out; that is the only window left.
+--    is still fanning out a message its sender deletes a moment later; the API
+--    then sends that recipient no push either. A row inserted after an edit
+--    takes the edited text, since an edit's rewrite (the API's
+--    `rewriteChatMessagePreview`) only reaches rows that already exist.
 --
 -- WHAT THIS DELETES, going forward and not now: `notifications` rows whose
 -- `chat_message_id` names a message as it is deleted. Nothing is deleted when
@@ -65,13 +67,29 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  msg record;
 begin
-  if not exists (
-    select 1 from chat_messages
-     where id = new.chat_message_id
-       and not is_deleted
-  ) then
+  -- `for share` waits out a soft delete (or an edit) still in flight on the
+  -- message: a plain read would see the last committed row, let the insert
+  -- through, and the delete trigger, which cannot see this uncommitted row,
+  -- would leave it behind.
+  select content, is_deleted, edited_at into msg
+    from chat_messages
+   where id = new.chat_message_id
+     for share;
+  if not found or msg.is_deleted then
     return null;
+  end if;
+  -- The push worker writes every row from the message as it was sent. One
+  -- that lands after an edit takes the edited text instead, the same preview
+  -- `chatPushPreview` cuts (U+FFFC to a space, trimmed, 200 characters; an
+  -- edit always has text, so its attachment fallback never applies here).
+  if msg.edited_at is not null then
+    new.body := left(
+      regexp_replace(replace(msg.content, U&'\FFFC', ' '), '^\s+|\s+$', '', 'g'),
+      200
+    );
   end if;
   return new;
 end

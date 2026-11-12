@@ -1416,13 +1416,46 @@ export class ChatService {
       mentions,
       edited_at: new Date().toISOString(),
     });
-    // The in-app rows this message produced quote its old text (#4418).
+    await this.rewriteNotificationsForEdit(edited, chapterId, senderId);
+    return edited;
+  }
+
+  /**
+   * The in-app rows this message produced quote its old text (#4418). Only
+   * members who can still read the channel get the new text: a row its owner
+   * kept after losing access holds only what they were sent while they had
+   * it, and an edit must not hand them more. Best-effort, like the rewrite
+   * itself: the edit has landed, so a failed reader lookup is reported and
+   * leaves the old text.
+   */
+  private async rewriteNotificationsForEdit(
+    edited: ChatMessage,
+    chapterId: string,
+    editorId: string,
+  ): Promise<void> {
+    let readerIds: string[];
+    try {
+      const readers = await this.channelAccess.listChannelMembers(
+        edited.channel_id,
+        chapterId,
+        editorId,
+      );
+      readerIds = readers.map((r) => r.user_id);
+    } catch (err) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-edit-notification-readers',
+        message: `Could not resolve the readers of channel ${edited.channel_id} to rewrite the notifications for edited message ${edited.id}`,
+        error: err,
+      });
+      return;
+    }
     await this.notifications.rewriteChatMessagePreview(
       chapterId,
-      messageId,
+      edited.id,
       chatPushPreview(edited),
+      readerIds,
     );
-    return edited;
   }
 
   async deleteMessage(

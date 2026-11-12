@@ -2,6 +2,7 @@ import { SupabaseNotificationRepository } from './supabase-notification.reposito
 import {
   CHAPTER_A,
   CHAPTER_B,
+  USER_A,
   USER_SHARED,
   createTenantHarness,
   inA,
@@ -288,9 +289,13 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
 
   describe('rewriteChatMessageBody (#4418)', () => {
     beforeEach(() => {
-      const chatRow = (id: string, chatMessageId: string | null) => ({
+      const chatRow = (
+        id: string,
+        chatMessageId: string | null,
+        userId = USER_SHARED,
+      ) => ({
         id,
-        user_id: USER_SHARED,
+        user_id: userId,
         title: 'Alex in #general',
         body: 'old words',
         data: { target: { screen: 'chat', channelId: 'c-1' } },
@@ -304,18 +309,23 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
             inA(chatRow('a-m1', 'm-1')),
             inA(chatRow('a-m2', 'm-2')),
             inA(chatRow('a-bundle', null)),
+            inA(chatRow('a-gone', 'm-1', USER_A)),
             inB(chatRow('b-m1', 'm-1')),
             inB(chatRow('b-m2', 'm-2')),
             inB(chatRow('b-bundle', null)),
+            // Lost access to the channel since: an edit must not reach them.
+            inB(chatRow('b-gone', 'm-1', USER_A)),
           ],
         },
       });
       repo = new SupabaseNotificationRepository(harness.client);
     });
 
-    it("rewrites only the caller chapter's rows that quote the message", async () => {
+    it("rewrites only the caller chapter's rows that quote the message, for the readers named", async () => {
       await harness.expectTenantScoped(CHAPTER_B, () =>
-        repo.rewriteChatMessageBody(CHAPTER_B, 'm-1', 'new words'),
+        repo.rewriteChatMessageBody(CHAPTER_B, 'm-1', 'new words', [
+          USER_SHARED,
+        ]),
       );
 
       expect(
@@ -326,11 +336,28 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
         'a-m1': 'old words',
         'a-m2': 'old words',
         'a-bundle': 'old words',
+        'a-gone': 'old words',
         'b-m1': 'new words',
         'b-m2': 'old words',
         'b-bundle': 'old words',
+        'b-gone': 'old words',
       });
     });
+  });
+
+  it('create stores the chat message a row quotes (#4418)', async () => {
+    const created = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.create({
+        chapter_id: CHAPTER_B,
+        user_id: USER_SHARED,
+        title: 'Alex in #general',
+        body: 'Hello',
+        data: {},
+        chat_message_id: 'm-1',
+      }),
+    );
+
+    expect(created?.chat_message_id).toBe('m-1');
   });
 
   it('create issues the row under the caller chapter', async () => {

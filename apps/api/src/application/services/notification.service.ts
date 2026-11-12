@@ -380,8 +380,10 @@ export class NotificationService {
   }
 
   /**
-   * After an edit, give every in-app row that quotes the message its new text
-   * (#4418), so the list never shows words the sender has since changed.
+   * After an edit, give the in-app rows that quote the message its new text
+   * (#4418), for the members in `readerIds` (who can read the channel now).
+   * A row the push worker writes after this takes the edited text from the
+   * database (`notifications_skip_deleted_message`).
    * Best-effort: the edit is the source of truth and has already landed, so a
    * failure here is reported, never thrown. A delete needs no call: a trigger
    * removes the rows with the message.
@@ -390,12 +392,15 @@ export class NotificationService {
     chapterId: string,
     messageId: string,
     preview: string,
+    readerIds: readonly string[],
   ): Promise<void> {
+    if (readerIds.length === 0) return;
     try {
       await this.notificationRepo.rewriteChatMessageBody(
         chapterId,
         messageId,
         preview,
+        readerIds,
       );
     } catch (err) {
       reportCaughtFailure(this.logger, {

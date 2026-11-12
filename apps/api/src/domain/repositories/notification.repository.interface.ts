@@ -69,14 +69,15 @@ export interface INotificationRepository {
     screens?: readonly string[],
   ): Promise<number>;
   /**
-   * Replace the body of every row in the chapter that quotes chat message
-   * `messageId` (an edit, #4418), whoever it was sent to. Deletes need no call: a trigger on
+   * Replace the body of the rows in the chapter that quote chat message
+   * `messageId` (an edit, #4418), for the members in `userIds` only. Deletes need no call: a trigger on
    * `chat_messages` removes those rows with the message.
    */
   rewriteChatMessageBody(
     chapterId: string,
     messageId: string,
     body: string,
+    userIds: readonly string[],
   ): Promise<void>;
 }
 

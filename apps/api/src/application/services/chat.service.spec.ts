@@ -3231,8 +3231,16 @@ describe('ChatService', () => {
       expect(result.edited_at).toBeTruthy();
     });
 
-    it('rewrites the in-app notifications that quote the edited message (#4418)', async () => {
+    it('rewrites the in-app notifications that quote the edited message, for current readers only (#4418)', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        {
+          user_id: 'user-2',
+          channel_access: EMPTY_ACCESS_HOLDER,
+          top_role_order: 0,
+          top_role: null,
+        },
+      ]);
       mockMessageRepo.update.mockResolvedValue({
         ...baseMessage,
         content: '  Updated  ',
@@ -3243,7 +3251,28 @@ describe('ChatService', () => {
 
       expect(
         mockNotificationService.rewriteChatMessagePreview,
-      ).toHaveBeenCalledWith('ch-1', 'msg-1', 'Updated');
+      ).toHaveBeenCalledWith('ch-1', 'msg-1', 'Updated', ['user-2']);
+    });
+
+    it('leaves the notifications when the readers cannot be resolved', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        content: 'Updated',
+      });
+      mockRbac.getChapterMemberAccess.mockRejectedValue(new Error('db down'));
+
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
+
+      expect(result.content).toBe('Updated');
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).not.toHaveBeenCalled();
     });
 
     it('rewrites no notification when the edit is refused', async () => {

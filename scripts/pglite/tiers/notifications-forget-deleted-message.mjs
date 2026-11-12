@@ -11,7 +11,8 @@ import { db, miss } from "../harness.mjs";
 //   - an update that is not the delete (an edit, a pin) deletes nothing;
 //   - a row inserted for a message that is already deleted is dropped, and the
 //     insert does not fail;
-//   - a row inserted for a live message lands;
+//   - a row inserted for a live message lands, and one inserted after an edit
+//     carries the edited text;
 //   - a hard delete of the message cascades to its rows.
 //
 // Everything runs inside one transaction and is rolled back.
@@ -97,6 +98,20 @@ console.log(
       [CH, U2, M2],
     );
     check("a row for a live message lands", live.rows.length === 1, live.rows);
+
+    await db.exec(
+      `update chat_messages set content = E'  meet at 8 \\uFFFC ok\\n', edited_at = now() where id = '${M2}';`,
+    );
+    const edited = await db.query(
+      `insert into notifications (chapter_id, user_id, title, body, data, chat_message_id)
+       values ($1, $2, 'A', 'meet at 7', '{}', $3) returning body`,
+      [CH, U1, M2],
+    );
+    check(
+      "a row written after an edit takes the edited text, cut as the push preview is",
+      edited.rows[0]?.body === "meet at 8   ok",
+      edited.rows,
+    );
 
     await db.exec(`delete from chat_messages where id = '${M3}';`);
     const afterHard = await bodies();

@@ -272,6 +272,9 @@ export async function createChatServiceFixture() {
     // channel-access.service.spec.ts.
     hasAlumniRole: jest.fn().mockResolvedValue(false),
     isAlumni: jest.fn().mockResolvedValue(false),
+    // Every chapter member's access, for a channel's readers (an edit's
+    // notification rewrite, #4418). Nobody by default.
+    getChapterMemberAccess: jest.fn().mockResolvedValue([]),
   };
 
   // The chapter's roles and tiers, which a who-can-see or who-can-post list

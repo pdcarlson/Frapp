@@ -9,7 +9,7 @@ import type { INotificationRepository } from '#domain/repositories/notification.
 import type { Notification } from '#domain/entities/notification.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeFilterValue } from '../supabase.utils';
-import { IN_FILTER_CHAR_BUDGET } from '#domain/utils/chunk-ids';
+import { IN_FILTER_CHAR_BUDGET, chunkIds } from '#domain/utils/chunk-ids';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -190,16 +190,22 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     chapterId: string,
     messageId: string,
     body: string,
+    userIds: readonly string[],
   ): Promise<void> {
     const patch: TablesUpdate<'notifications'> = { body };
-    const { error } = await this.supabase
-      .from('notifications')
-      .update(patch)
-      .eq('chapter_id', chapterId)
-      .eq('chat_message_id', messageId)
-      .neq('body', body);
+    // A channel's readers can be a whole chapter, so the list is chunked to
+    // keep each request's URL inside the `in (...)` budget.
+    for (const chunk of chunkIds([...userIds])) {
+      const { error } = await this.supabase
+        .from('notifications')
+        .update(patch)
+        .eq('chapter_id', chapterId)
+        .eq('chat_message_id', messageId)
+        .in('user_id', chunk)
+        .neq('body', body);
 
-    if (error) throw new SupabaseQueryError(error);
+      if (error) throw new SupabaseQueryError(error);
+    }
   }
 }
 
