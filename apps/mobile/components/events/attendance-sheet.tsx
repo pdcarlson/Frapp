@@ -35,10 +35,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { Segmented } from "@/components/segmented";
-import {
-  roleOptionsFrom,
-  type RoleOption,
-} from "@/lib/events/attendance-roles";
+import { roleOptionsFrom } from "@/lib/events/attendance-roles";
 
 /**
  * "Who's coming": an event's attendance by role (`spec/behavior/events.md`
@@ -105,6 +102,9 @@ export const AttendanceSheet = forwardRef<
     </BottomSheetModal>
   );
 });
+
+/** One row of the list, as `attendanceRows` draws it. */
+type AttendanceRow = { id: string; name: string };
 
 interface AttendanceBodyProps {
   value: EventAttendanceDraft;
@@ -204,7 +204,7 @@ function AttendanceBody({
     <BottomSheetFlatList
       onAccessibilityEscape={onDone}
       data={rows}
-      keyExtractor={(role: RoleOption) => role.id}
+      keyExtractor={(role: AttendanceRow) => role.id}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
@@ -221,7 +221,7 @@ function AttendanceBody({
                 : "No roles match that search."}
         </Text>
       }
-      renderItem={({ item }: { item: RoleOption }) => {
+      renderItem={({ item }: { item: AttendanceRow }) => {
         const setApart = item.id in value.roles;
         const current = attendanceOfRole(value, item.id);
         const note =

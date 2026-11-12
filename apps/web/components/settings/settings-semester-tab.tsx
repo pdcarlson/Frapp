@@ -99,7 +99,7 @@ export function SettingsSemesterTab({
   // override with no plural-form guarantee (see settings-org-tab.tsx's
   // vocab editor) — naively appending "s" breaks for a term already plural
   // or ending in s/x/z/ch/sh.
-  const promoteToggleLabel = `Also promote every ${pledgeTerm} to Member`;
+  const promoteToggleLabel = `Also make every ${pledgeTerm} a full member`;
 
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,7 +117,7 @@ export function SettingsSemesterTab({
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
       description: promoteNewMembers
-        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step.`
+        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} also becomes a full member; they keep any other roles they hold, and this cannot be undone in one step.`
         : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
       confirmLabel: "Start new semester",
       // Not destructive: a rollover archives rather than deletes, and
@@ -138,7 +138,7 @@ export function SettingsSemesterTab({
       toast({
         title: "Semester archived",
         description: promoteNewMembers
-          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} was promoted to Member.`
+          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} is now a full member.`
           : `${semesterLabel} is now the active period.`,
       });
       form.reset();

@@ -168,7 +168,7 @@
 
 - Admins archive the current leaderboard period with a label (e.g. "Fall 2025") and start a new one.
 - Points continue to accumulate (no data deleted). Leaderboard defaults to the new period; historical periods remain selectable.
-- Optional bulk role promotion (e.g. "New Member" → "Member").
+- Optional bulk role promotion (e.g. "New Member" → Everyone, the role once called Member).
 - Study session configs carry forward.
 
 ## Reports & Export

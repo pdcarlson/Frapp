@@ -30,5 +30,5 @@ export function isRoleRefusal(error: unknown): boolean {
 export const CHANNELS_ROLE_REFUSAL_TITLE = "Chat isn't open to you yet";
 
 export function channelsRoleRefusalBody(chapterName: string | null): string {
-  return `Your role in ${chapterName || "this chapter"} doesn't include chat. Ask an officer to give you the Member role.`;
+  return `Your role in ${chapterName || "this chapter"} doesn't include chat. Ask an officer to check your roles.`;
 }

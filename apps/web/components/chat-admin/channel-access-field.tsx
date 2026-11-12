@@ -33,6 +33,8 @@ export type ChannelAccessOption = {
   color: string | null;
   tier_id: string | null;
   user_ids: readonly string[];
+  /** The Everyone role (#4191): shown where a list names it, never offered. */
+  hidden?: boolean;
 };
 
 /** The two questions a channel answers. */
@@ -153,7 +155,9 @@ export function ChannelAccessField({
   );
   const chosen = value ?? [];
   const chosenSet = new Set(chosen);
-  const remaining = options.filter((option) => !chosenSet.has(option.entry));
+  const remaining = options.filter(
+    (option) => !chosenSet.has(option.entry) && !option.hidden,
+  );
   const label = QUESTION_LABEL[question];
 
   function remove(entry: string) {

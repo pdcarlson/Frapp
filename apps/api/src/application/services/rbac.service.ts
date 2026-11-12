@@ -16,7 +16,12 @@ import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
 import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
-import { permissionDefinition, permissionModuleLabel } from '@repo/validation';
+import {
+  EVERYONE_ROLE_NAME,
+  isEveryoneRoleName,
+  permissionDefinition,
+  permissionModuleLabel,
+} from '@repo/validation';
 import {
   AI_PERMISSIONS,
   SystemPermissions,
@@ -415,6 +420,7 @@ export class RbacService {
       );
     }
 
+    assertNotEveryoneName(data.name);
     const existing = await this.roleRepo.findByChapterAndName(
       chapterId,
       data.name!,
@@ -502,6 +508,38 @@ export class RbacService {
       throw new BadRequestException(
         'The wildcard (*) permission cannot be set or cleared as an override; use the presidency-transfer flow instead',
       );
+    }
+
+    // The Everyone role (#4191) is the base under every tier: it keeps its
+    // name, which `@everyone` reads, and its tier, which is where plain
+    // members rank and where presidency's claim walk stops. Its permissions
+    // and its `@everyone` switch stay editable. Two moves stay open because
+    // they only bring it to where it belongs: renaming it Everyone (a row
+    // the previous API seeded as Member after the migration ran), and
+    // putting it in a tier when it sits outside them.
+    if (role.system_key === SystemRoleKeys.MEMBER) {
+      if (
+        data.name !== undefined &&
+        data.name !== role.name &&
+        data.name !== EVERYONE_ROLE_NAME
+      ) {
+        throw new BadRequestException({
+          code: 'role.everyone_fixed',
+          message: 'The Everyone role keeps its name.',
+        });
+      }
+      if (
+        data.tier_id !== undefined &&
+        data.tier_id !== role.tier_id &&
+        !(role.tier_id === null && data.tier_id !== null)
+      ) {
+        throw new BadRequestException({
+          code: 'role.everyone_fixed',
+          message: 'The Everyone role stays in its tier.',
+        });
+      }
+    } else if (data.name && data.name !== role.name) {
+      assertNotEveryoneName(data.name);
     }
 
     if (data.name && data.name !== role.name) {
@@ -675,9 +713,11 @@ export class RbacService {
     // Ranked by tier, not by `display_order`, which a `roles:manage` holder
     // can set on a role below them (#4071): an empty role outside the tiers
     // at display_order 0 would otherwise make its holder the only claimant.
-    // Only roles in a tier ranked above the Member role's are candidates (any
-    // tier, once Member sits outside them, #4191); display_order breaks ties
-    // within a tier.
+    // Only roles in a tier ranked above the Everyone role's (the seeded
+    // Member role, #4191) are candidates; display_order breaks ties within a
+    // tier. Everyone can't leave its tier (`update`), so the floor stays:
+    // outside the tiers it would rank below every tier and open the claim to
+    // the Members and New members tiers.
     const positions = tierPositions(
       await this.tierRepo.findByChapter(chapterId),
     );
@@ -1191,4 +1231,17 @@ function withoutUndefined<T extends object>(changes: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(changes).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
+}
+
+/**
+ * Refuses a role name that reads as `@everyone` (#4191): a second role folding
+ * to it would make every `@everyone` ambiguous, which reaches nobody.
+ */
+function assertNotEveryoneName(name: string | undefined): void {
+  if (name !== undefined && isEveryoneRoleName(name)) {
+    throw new ConflictException({
+      code: 'role.everyone_name',
+      message: `"${name.trim()}" is what @everyone reads as. Pick another name.`,
+    });
+  }
 }

@@ -18,6 +18,23 @@ describe("normalizeRoleOptions", () => {
     ]);
   });
 
+  it("drops, keeps or hides the Everyone role as the caller asks (#4191)", () => {
+    const rows = [
+      { id: "r1", name: "Exec" },
+      { id: "r2", name: "Everyone", system_key: "MEMBER" },
+    ];
+    expect(normalizeRoleOptions(rows).map((r) => r.id)).toEqual(["r1"]);
+    expect(normalizeRoleOptions(rows, "keep")).toEqual([
+      { id: "r1", name: "Exec" },
+      { id: "r2", name: "Everyone" },
+    ]);
+    expect(normalizeRoleOptions(rows, "hide")[1]).toEqual({
+      id: "r2",
+      name: "Everyone",
+      hidden: true,
+    });
+  });
+
   it("returns an empty array for non-array input", () => {
     expect(normalizeRoleOptions(undefined)).toEqual([]);
     expect(normalizeRoleOptions(null)).toEqual([]);
@@ -36,8 +53,8 @@ describe("roleAccessRows", () => {
         null,
       ]),
     ).toEqual([
-      { id: "r1", permissions: ["members:view"] },
-      { id: "r2", permissions: [] },
+      { id: "r1", permissions: ["members:view"], system_key: null },
+      { id: "r2", permissions: [], system_key: null },
     ]);
     expect(roleAccessRows(undefined)).toEqual([]);
   });
