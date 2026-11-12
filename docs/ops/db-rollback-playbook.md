@@ -3747,3 +3747,11 @@ The new index is harmless to keep, and nothing needs the dropped one back. To re
 drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
+
+## Rollback clear deleted chat card payloads (20261112060000)
+
+* **Migration**: `20261112060000_clear_deleted_message_payloads.sql`
+
+One `update` that sets `payload` to null on deleted `chat_messages` rows. **It cannot be reverted by a migration**: the cleared values are gone from the database. Nothing needs them back, since no read serves a deleted message's payload and there is no undelete.
+
+If one must be recovered (a legal hold, for instance), restore it from a point-in-time backup taken before the push into a scratch project and copy the `payload` of the rows needed, by `id`, never by re-running a delete-time snapshot. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).

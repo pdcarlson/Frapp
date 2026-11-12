@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Clear deleted chat cards' payloads (#1575)
+
+### 20261112060000_clear_deleted_message_payloads.sql
+
+- **Purpose**: **Deletes data.** Sets `payload` to null on every `chat_messages` row with `is_deleted = true` and a non-null payload: the card data (an event's name, times and place; a poll's question and options; a task's fields) that deletes before #1575 left behind. Changes nothing else: no row is removed, and `content`, `metadata`, reactions, card responses and report snapshots stay. The API has stopped serving these payloads since #1575's API change, whichever ships first.
+- **Checks**: Before `db push`, count what it will clear, by kind: `select kind, count(*) from public.chat_messages where is_deleted and payload is not null group by kind order by 2 desc;`. After, the same query returns no rows, and `select count(*) from public.chat_messages where not is_deleted and payload is not null;` returns the same number as before (live cards untouched).
+- **Promoter notes**: Owner approval required before it reaches production: the cleared payloads cannot be restored except from a backup (§ rollback). One `update` touching only deleted rows with a payload; no trigger fires on `payload`, and Realtime sends each subscribed member an UPDATE for a row they already draw as a tombstone. Idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-clear-deleted-chat-card-payloads-20261112060000) § Rollback clear deleted chat card payloads.
+
 ## 2026-11-12: Unread badges count per channel (#3728)
 
 ### 20261112010000_chat_unread_counts_per_channel.sql
