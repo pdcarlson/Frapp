@@ -21,8 +21,9 @@ import { omitColumns } from '../supabase.utils';
  * #1575, **not** `payload`, so a bookmarked poll or event card that had since
  * been deleted shipped its full payload jsonb on an endpoint whose declared
  * type says the message reads `[message deleted]`. A delete clears `payload`
- * now, but rows deleted before that still hold it until the cleanup migration
- * runs, and the projection should not depend on the write anyway.
+ * now, but rows deleted before that still hold it until
+ * `20261112060000_clear_deleted_message_payloads.sql` runs, and the
+ * projection should not depend on the write anyway.
  *
  * So the projection is the DTO's field list, spelled here, and the two must
  * stay in step. It is a genuinely different list from the sibling's — the

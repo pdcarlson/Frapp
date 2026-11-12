@@ -222,8 +222,10 @@ export function tombstoneMetadata(
  * write did not: everything deleted before the delete cleared `payload` still
  * holds a card's data in it (an event's name and place, a poll's question and
  * options). Every read that serves message rows to a member goes through
- * {@link maskBlockedMessages}, which applies this, and the raw answers to pin,
- * unpin and delete apply it themselves.
+ * {@link maskBlockedMessages}, which applies this, and the raw answers to
+ * unpin, delete and a send's retry apply it themselves (pin refuses a deleted
+ * message). It covers the API only: until the cleanup migration runs, those
+ * rows are still readable under `chat_messages`' own read policy.
  *
  * Structure stays: ids, kind, timing, pins, thread counts and `is_deleted`,
  * which the client needs to draw the tombstone in place.

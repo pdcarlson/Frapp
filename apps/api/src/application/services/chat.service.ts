@@ -1049,7 +1049,7 @@ export class ChatService {
           )
         : null;
       if (existing && existing.kind === kind) {
-        return { message: existing, deduplicated: true };
+        return { message: redactDeletedMessage(existing), deduplicated: true };
       }
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
@@ -1130,6 +1130,15 @@ export class ChatService {
         );
         if (!existing) {
           throw error;
+        }
+        // Deleted since it committed: answer the tombstone, and repair nothing.
+        // Its attachments were purged with it, and re-writing their rows or
+        // count would draw dead files on a message that is gone.
+        if (existing.is_deleted) {
+          return {
+            message: redactDeletedMessage(existing),
+            deduplicated: true,
+          };
         }
         // A retry reaches here when the FIRST attempt committed the message and
         // then failed — which is exactly the case where the attachments were
@@ -1698,6 +1707,12 @@ export class ChatService {
       userId,
     );
 
+    // Nothing to elevate, and pinning a tombstone would make it the
+    // channel's durable, prominent row (#1575).
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot pin a deleted message');
+    }
+
     if (message.is_pinned) {
       throw new BadRequestException('Message is already pinned');
     }
@@ -1711,12 +1726,10 @@ export class ChatService {
       );
     }
 
-    return redactDeletedMessage(
-      await this.messageRepo.update(messageId, {
-        is_pinned: true,
-        pinned_at: new Date().toISOString(),
-      }),
-    );
+    return this.messageRepo.update(messageId, {
+      is_pinned: true,
+      pinned_at: new Date().toISOString(),
+    });
   }
 
   async unpinMessage(

@@ -2930,6 +2930,35 @@ describe('ChatService', () => {
       );
     });
 
+    it('answers a retry of a since-deleted card with its tombstone, repairing nothing (#1575)', async () => {
+      const clientId = '44444444-4444-4444-4444-444444444444';
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError('ch-chan-1', 'user-1', clientId),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue({
+        ...baseMessage,
+        kind: 'event',
+        content: '[message deleted]',
+        is_deleted: true,
+        // What a delete before #1575 left in the row.
+        payload: { name: 'Standards Board — Doe hearing' },
+      });
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+        client_message_id: clientId,
+      });
+
+      expect(result.deduplicated).toBe(true);
+      expect(result.message.payload).toBeNull();
+      expect(result.message.is_deleted).toBe(true);
+      expect(mockAttachmentRepo.createMany).not.toHaveBeenCalled();
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
     it('rethrows when the duplicate-error path cannot re-select an existing row', async () => {
       const clientId = '33333333-3333-3333-3333-333333333333';
       mockMessageRepo.create.mockRejectedValue(
@@ -3889,6 +3918,19 @@ describe('ChatService', () => {
       await expect(
         service.pinMessage('msg-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses to pin a deleted message (#1575)', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+        payload: { name: 'Standards Board — Doe hearing' },
+      });
+
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Cannot pin a deleted message');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
     it('should reject pinning when at 50 limit', async () => {
