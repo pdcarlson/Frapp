@@ -188,10 +188,13 @@ on:
         # `auto` lets `mobile-plan` choose per platform: an OTA update when
         # the shipped commit's native inputs match that platform's recorded
         # store build of the same `expo.version`, a store build otherwise
-        # (`scripts/ci/plan-mobile-release.mjs`).
+        # (`scripts/ci/plan-mobile-release.mjs`). `auto` is the default since
+        # 2026-11-12: every ship since 2026-11-10 picked it by hand, and a
+        # web or API fix that also touches the app should reach phones without
+        # anyone remembering to ask. Pick `none` to ship only web and API.
         description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app."
         required: false
-        default: none
+        default: auto
         type: choice
         options: [none, ios, android, all, auto]
 

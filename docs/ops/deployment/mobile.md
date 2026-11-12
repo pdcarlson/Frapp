@@ -306,9 +306,10 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
-`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
-the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+Dispatch **Deploy production** as usual. **`mobile_build`** defaults to `auto` (since
+2026-11-12; it was `none`, and every ship since 2026-11-10 picked `auto` by hand). Set
+`ios`, `android` or `all` to force a store build, or `none` to ship only web and the API, which
+leaves the app exactly as it was. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
 the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
 the input says.
 
@@ -588,9 +589,14 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 ### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-Deploy production publishes one when asked (below), and a person can still publish from a laptop.
-Both go through the same guard. #2511 still owns a staging app variant, promotion and staged
-rollout.
+Deploy production publishes one by default (`mobile_build: auto`, below), and a person can still
+publish from a laptop. Both go through the same guard. #2511 still owns a staging app variant,
+promotion and staged rollout.
+
+An update only reaches phones whose store build has the same `expo.version` (the `appVersion`
+runtime policy). Once a PR changes native code and bumps that version on `main`, nothing more
+can reach the older builds until the new version's store builds ship (§ 6.6): as of 2026-11-12,
+`main` is at 0.12.0 and every installed build is 0.11.0 or older.
 
 #### Published by Deploy production
 
@@ -634,6 +640,8 @@ git switch main   # afterwards
 Before publishing, `git show <tag>:scripts/eas-update.mjs` must succeed. From `main`, the guard
 refuses outright while the latest release predates it.
 
+*Superseded 2026-11-12: Deploy production has published updates since 2026-11-10; the
+paragraph below is the history of how the first one became possible.*
 **Nothing can take an update yet.** As of 2026-11-05, the only store build is Android 0.9.0
 build 2 (from `v0.8.1`), and `main` is at 0.9.1, because native code changed after that build
 (#3472). The first update becomes possible once Deploy production ships a release that carries
@@ -683,13 +691,58 @@ variable of that name is Secret and never reaches a local run. Without it, the u
 live and its errors still reach Sentry, but with minified stack traces, and the guard prints the
 command to run later. Never pass the token as a command-line argument (the note at the top of § 6).
 
-**Check it landed.** `npm run eas -- update:list --branch production` shows the new group. Open
-the app twice: the first launch downloads the update, the second runs it. Sentry events from the
-update carry the commit as the `git_sha` tag, and the `production` environment.
+#### On the phone
 
-**Rolling back.** `npm run eas -- update:roll-back-to-embedded --channel production` (or
-`update:republish` of an earlier group) passes through without the guard, because it publishes
-no new bundle. Read its `--help` first; eas-cli's rollback flags change between versions.
+`app.json` has expo-updates check at every cold launch (`checkAutomatically: ON_LOAD`) without
+waiting for the download (`fallbackToCacheTimeout: 0`), so on its own an update downloads on one
+cold launch and runs on the next. iOS keeps an app suspended for days, so the app adds two rules
+of its own ([`lib/updates/resume-updates.ts`](../../../apps/mobile/lib/updates/resume-updates.ts),
+mounted in `AppRuntime`):
+
+- **Coming back to the app checks again**, at most every 15 minutes, and downloads what it finds,
+  a rollback included.
+- **A downloaded update runs when the member comes back after 10 minutes or more away.** The app
+  reloads into it straight away, behind the splash screen's near-black with no spinner, before
+  they have started doing anything. A shorter trip out never reloads. Drafts and the outbox are
+  already on disk, so nothing typed is lost. It never reloads while a meeting recording is
+  starting, running, saving or uploading, and does nothing in development, Expo Go or an
+  emergency launch (an update that failed to start, so expo-updates fell back to the store build).
+
+So a fix reaches most members within a day: the first return after the publish downloads it, the
+next return after ten minutes away runs it.
+
+#### Watching an update spread
+
+- **Sentry** tags every mobile event with `expo.updates.update_id`, `expo.updates.channel` and
+  `expo.updates.runtime_version`, through `@sentry/react-native`'s built-in Expo context, and
+  reports an emergency launch as a warning tagged `expo.updates.emergency_launch`. Events from an
+  update also carry its commit as the `git_sha` tag.
+- **PostHog** events carry `app_launch` (`store_build`, `update`, `emergency` or `development`),
+  `app_update_id`, `app_update_published_at`, `app_update_channel` and `app_runtime_version`
+  ([`lib/updates/running-update.ts`](../../../apps/mobile/lib/updates/running-update.ts)).
+  Break any insight down by `app_update_id` to see how far an update has reached.
+- **EAS**: `npm run eas -- update:list --branch production` lists the groups; the Expo dashboard
+  shows each group's launches and crashes.
+
+#### Rolling back
+
+Run **Roll back the app update** in GitHub Actions
+([`mobile-rollback.yml`](../../../.github/workflows/mobile-rollback.yml)) from `main`, with:
+
+- **`runtime_version`**: the `expo.version` the bad update went to (`0.12.0`, say). Only phones on
+  that version are affected.
+- **`to`**: `store_build` sends those phones back to the JavaScript inside their store build.
+  `update_group` republishes an earlier update group instead; copy its ID from the Expo dashboard
+  (Updates, the `production` branch) into **`group`**.
+- **`platform`**: `all`, `ios` or `android`.
+
+It publishes no new bundle, so it skips the guard, and it needs no laptop. Phones pick it up the
+way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
+before shipping again, or ship with `mobile_build: none`.
+
+From a laptop, the same two commands are `npm run eas -- update:roll-back-to-embedded --channel
+production --runtime-version <version>` and `npm run eas -- update:republish --group <id>` (eas-cli
+24.8.0's flags, read from `--help` on 2026-11-12).
 
 The `preview` and `development` channels go through the same argument and env handling. There
 are no store-build records for those channels, so the native check is skipped there.

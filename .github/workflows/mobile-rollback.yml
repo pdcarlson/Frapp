@@ -1,0 +1,218 @@
+name: Roll back the app update
+
+# Take a bad over-the-air update off members' phones without a laptop
+# (docs/ops/deployment/mobile.md § 6.7, "Rolling back"). Dispatched by hand
+# from `main`; nothing calls it.
+#
+# ── What it publishes ──────────────────────────────────────────────────────
+# No new bundle. Either:
+#   * `store_build`: a roll-back-to-embedded directive on the `production`
+#     channel for one runtime (`expo.version`), so phones on that version go
+#     back to the JavaScript inside their store build; or
+#   * `update_group`: a republish of an earlier update group, copied from the
+#     Expo dashboard (Updates, the `production` branch), so phones go back to
+#     that update.
+# Phones pick either up like an update: on the next launch, or on the next
+# return to the app after ten minutes away (`apps/mobile/lib/updates`). The
+# next Deploy production publish replaces the rollback, so fix forward before
+# shipping again, or ship with `mobile_build: none`.
+#
+# ── Why it skips the publish guard ─────────────────────────────────────────
+# `scripts/eas-update.mjs` guards `eas update`, which bundles JavaScript.
+# These two commands bundle nothing (a directive, or a copy of a group EAS
+# already holds), so `scripts/eas.mjs` passes them straight to the pinned
+# eas-cli. eas-cli still evaluates `app.config.js`, with its config plugins,
+# through the installed `expo`, so the job installs the release it reads.
+#
+# ── Trust ──────────────────────────────────────────────────────────────────
+# Dispatched from `main` only, in the `automation` environment (no reviewers,
+# holds `EXPO_TOKEN`). Dispatching is the decision. The workspace is the
+# release production serves (the newest `v*` tag), an ancestor of `main` with
+# green CI, installed with no install scripts before any step names the
+# token, as `_mobile-update.yml` does; only the rollback step holds it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_version:
+        description: "The store version the bad update went to, for example 0.12.0 (apps/mobile/app.json expo.version at that release). Only phones on this version are affected."
+        required: true
+        type: string
+      to:
+        description: "'store_build' puts phones back on their store build's own JavaScript. 'update_group' republishes the earlier update named below."
+        required: true
+        default: store_build
+        type: choice
+        options: [store_build, update_group]
+      group:
+        description: "For 'update_group' only: the update group ID to go back to, from the Expo dashboard (Updates, production branch)."
+        required: false
+        default: ""
+        type: string
+      platform:
+        description: "Which phones"
+        required: true
+        default: all
+        type: choice
+        options: [all, ios, android]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-rollback
+  cancel-in-progress: false
+
+jobs:
+  roll-back:
+    name: Roll back the production app update
+    runs-on: ubuntu-latest
+    environment:
+      name: automation
+      deployment: false
+    timeout-minutes: 20
+    steps:
+      # Before any checkout. Names only for the token: the check is `!= ''`.
+      - name: Check the inputs, and that EXPO_TOKEN reached this job
+        env:
+          REF: ${{ github.ref }}
+          RUNTIME: ${{ inputs.runtime_version }}
+          TO: ${{ inputs.to }}
+          GROUP: ${{ inputs.group }}
+          PLATFORM: ${{ inputs.platform }}
+          HAS_EXPO_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Dispatch this from main; got $REF."
+            exit 1
+          fi
+          if ! [[ "$RUNTIME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::runtime_version must look like 0.12.0 (the app version members have installed); got '$RUNTIME'."
+            exit 1
+          fi
+          case "$PLATFORM" in
+            ios|android|all) ;;
+            *) echo "::error::platform must be ios, android or all; got '$PLATFORM'."; exit 1 ;;
+          esac
+          case "$TO" in
+            store_build)
+              if [ -n "$GROUP" ]; then
+                echo "::error::'group' is only for to: update_group. Clear it, or pick update_group."
+                exit 1
+              fi
+              ;;
+            update_group)
+              if ! [[ "$GROUP" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+                echo "::error::to: update_group needs the group's ID (a UUID from the Expo dashboard); got '$GROUP'."
+                exit 1
+              fi
+              ;;
+            *) echo "::error::to must be store_build or update_group; got '$TO'."; exit 1 ;;
+          esac
+          if [ "$HAS_EXPO_TOKEN" != "true" ]; then
+            echo "::error::EXPO_TOKEN did not reach this job. It is a secret of the automation environment."
+            exit 1
+          fi
+
+      # The commit production serves: the newest `vX.Y.Z` tag, read from the
+      # public repository with no credentials. eas-cli evaluates
+      # `app.config.js` there, as the publish that put the bad update out did.
+      - name: Find the release production serves
+        id: release
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          TAG="$(git ls-remote --tags --refs "$REPO_URL" 'v*' \
+            | sed -E 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1)"
+          if [ -z "$TAG" ]; then
+            echo "::error::No vX.Y.Z release tag found."
+            exit 1
+          fi
+          echo "Production serves $TAG."
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out that release
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: the workspace is the
+      # release, not this workflow's commit, so a local action would load from
+      # it. Matches node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # eas-cli evaluates the app config through the installed `expo` (its
+      # plugins included), so it needs the tree installed. No install script
+      # runs, and nothing here holds a secret yet.
+      - name: Install dependencies (no install scripts)
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Installs `_mobile-build.yml`'s eas-cli pin into `.cache/eas-cli/`,
+      # before EXPO_TOKEN is in any step's environment.
+      - name: Install the pinned EAS CLI
+        run: node scripts/eas.mjs --version
+
+      - name: Roll back
+        id: roll-back
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          RUNTIME: ${{ inputs.runtime_version }}
+          TO: ${{ inputs.to }}
+          GROUP: ${{ inputs.group }}
+          PLATFORM: ${{ inputs.platform }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: |
+          set -euo pipefail
+          MESSAGE="Rolled back by $ACTOR $RUN_URL"
+          if [ "$TO" = "store_build" ]; then
+            npm run eas -- update:roll-back-to-embedded --channel production \
+              --runtime-version "$RUNTIME" --platform "$PLATFORM" \
+              --message "$MESSAGE" --non-interactive
+          else
+            npm run eas -- update:republish --group "$GROUP" \
+              --platform "$PLATFORM" --message "$MESSAGE" --non-interactive
+          fi
+
+      - name: Summarise the rollback
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.roll-back.outcome }}
+          RUNTIME: ${{ inputs.runtime_version }}
+          TO: ${{ inputs.to }}
+          GROUP: ${{ inputs.group }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          {
+            echo "### App update rollback, version \`$RUNTIME\`, \`$PLATFORM\`"
+            echo ""
+            case "$OUTCOME" in
+              success)
+                if [ "$TO" = "store_build" ]; then
+                  echo "Phones on $RUNTIME go back to their store build's own JavaScript."
+                else
+                  echo "Update group \`$GROUP\` republished to production."
+                fi
+                echo "They pick it up on their next launch, or on their next return to the app after ten minutes away."
+                echo ""
+                echo "The next Deploy production publish replaces this rollback: fix forward first, or ship with \`mobile_build: none\`. Sentry's \`expo.updates.update_id\` tag and PostHog's \`app_update_id\` property show phones moving off the bad update."
+                ;;
+              skipped)
+                echo "Not rolled back: a step before it failed (the log says which). No phone was affected."
+                ;;
+              *)
+                echo "Not rolled back (\`$OUTCOME\`): eas-cli refused, and the log above says why. No phone was affected."
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
