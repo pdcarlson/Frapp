@@ -3,9 +3,9 @@ import { join } from "node:path";
 
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: members create events by default (20261112150000) ─────────
+// ─── Functional: members create events by default (20261112152000) ─────────
 //
-// 20261112150000 gives existing chapters `events:create` and `backwork:upload`
+// 20261112152000 gives existing chapters `events:create` and `backwork:upload`
 // on the Member role's tier and every tier above it (#3709). Replay runs it
 // against an empty table, so replay alone proves nothing. This tier re-runs it
 // against seeded chapters and checks:
@@ -24,7 +24,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back.
 console.log(
-  "\n=== Functional: members create events by default (20261112150000) ===",
+  "\n=== Functional: members create events by default (20261112152000) ===",
 );
 {
   const A = "a3709000-0000-4000-8000-00000000000a";
@@ -44,7 +44,7 @@ console.log(
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261112150000_member_social_trust_defaults.sql",
+      "supabase/migrations/20261112152000_member_social_trust_defaults.sql",
     ),
     "utf8",
   );
