@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { HeaderButton } from "@/components/header-button";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { formatEventClock } from "@/lib/events/format";
@@ -568,6 +569,16 @@ describe("Event details editing", () => {
     event = { ...EVENT, created_by: "someone-else" };
     permissions = ["members:view", "events:update"];
     expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+
+  // #4610 step 3: a bare glyph beside the title was what "buttons are
+  // unclear" meant. Every header action sits in the round Chat home drew.
+  it("draws the pencil in a round header button", () => {
+    permissions = ["members:view", "events:update"];
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toEqual(["Edit event"]);
   });
 
   it("gives an owner's wildcard the pencil too", () => {

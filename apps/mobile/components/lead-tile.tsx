@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { tint, useFrappTheme } from "@/lib/theme";
+import { memberAvatarTint } from "@repo/hooks";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * The tile a row's leading glyph sits in (`spec/ui/mobile/patterns.md`
@@ -32,9 +33,11 @@ export function LeadTile({
   /** What the row sits on, so the tile is one step above it. */
   on?: "background" | "card";
   /**
-   * A fixed hue for a row that is a place (`lib/you/destination-hue.ts`):
-   * the fill takes it at 16%, as iconography.md §1's emphasis fill does.
-   * Without one the tile is neutral.
+   * A fixed hue for a row that is a place (`lib/more/destination-hue.ts`):
+   * the fill is the tint an initials avatar and a Notifications tile take
+   * (`memberAvatarTint`), so every hued tile sits at one strength, and the
+   * caller draws the glyph in the hue itself. Without one the tile is
+   * neutral.
    */
   hue?: string;
   testID?: string;
@@ -43,15 +46,15 @@ export function LeadTile({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const fill = hue ? memberAvatarTint(hue).fill : null;
   return (
     <View
       style={[
         styles.tile,
         size === "lead" ? styles.lead : styles.row,
         on === "card" ? styles.onCard : null,
-        hue
-          ? { backgroundColor: tint(hue, 0.16), borderColor: tint(hue, 0.22) }
-          : null,
+        // No edge of its own: the fill is the whole mark, as on an avatar.
+        fill ? { backgroundColor: fill, borderColor: fill } : null,
       ]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"

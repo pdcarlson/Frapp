@@ -37,6 +37,7 @@ import {
   opensMessages,
 } from "@/lib/chat/messages-swipe";
 import { isTourDue } from "@/lib/onboarding/tour";
+import { useOverlayOpen } from "@/lib/overlay-presence";
 import { createSwipeClaim, SwipeClaimProvider } from "@/lib/swipe-claim";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -66,6 +67,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * sign of what is over there, not the screen itself. Only a transform moves,
  * so nothing in the layout shifts, and the floating tab bar stays where it is.
  *
+ * The travel is counted from where the pan took over, read off the pan's own
+ * start event: gesture-handler zeroes the translation at that moment on iOS
+ * and Android and not on web, so a fixed "minus the activation distance"
+ * would leave the screen still for the first 24pt on a phone. The pan sits on
+ * the area, not on the screen that moves, so a slide that starts on the
+ * uncovered strip counts too.
+ *
  * ## The hint
  *
  * `hint` teaches the swipe (`lib/chat/messages-hint.ts` has when): once Chat
@@ -75,6 +83,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Any touch ends it at once. It is skipped while a screen reader is on (the
  * door is the labelled way in, and a label that comes and goes is noise
  * there) and while the first-run tour is still due.
+ *
+ * "At rest" means nobody is using the screen and nothing covers it: no finger
+ * down for {@link HINT_REST_MS}, no menu of Chat home's open (`enabled`), and
+ * no sheet or + panel over it (`useOverlayOpen`; a sheet leaves the screen
+ * focused, and What's new opens on the very launch the hint first could).
+ * The showing is recorded before it plays, and only a recorded one plays. One
+ * that is covered or left before it could be read
+ * ({@link HINT_SEEN_MS} after the slide) is given back, so the member's one
+ * showing isn't spent where they couldn't see it.
  */
 export function MessagesSwipeArea({
   enabled,
@@ -95,7 +112,8 @@ export function MessagesSwipeArea({
   const duration = tokens.motion.duration;
 
   const viewerId = hint?.viewerId ?? null;
-  const atRest = !!hint?.ready && enabled && !!viewerId;
+  const overlayOpen = useOverlayOpen();
+  const atRest = !!hint?.ready && enabled && !!viewerId && !overlayOpen;
   const unread = hint?.unreadConversations ?? 0;
   // Read at play time, not a dependency: a message arriving while the screen
   // rests must not restart the wait.
@@ -104,35 +122,50 @@ export function MessagesSwipeArea({
     unreadRef.current = unread;
   }, [unread]);
 
-  const [playback] = useState(createHintPlayback);
+  const [session] = useState(createHintSession);
 
-  /** Back to rest: the screen home, the label gone. */
+  /**
+   * Back to rest: the screen home, the label gone. `covered` is an end nobody
+   * chose (a sheet opened, the screen was left), which gives back a showing
+   * too short to have been read.
+   */
   const settle = useCallback(
-    (ms: number) => {
-      playback.stop();
+    (ms: number, covered = false) => {
+      session.stop(covered ? duration.context + HINT_SEEN_MS : null);
       offset.set(withTiming(0, { duration: ms }));
       label.set(withTiming(0, { duration: Math.min(ms, duration.standard) }));
     },
-    [playback, offset, label, duration.standard],
+    [session, offset, label, duration],
   );
 
-  const play = useCallback(() => {
-    label.set(withTiming(1, { duration: duration.standard }));
-    if (!reduceMotion) {
-      offset.set(withTiming(-MESSAGES_PEEK, { duration: duration.context }));
-    }
-    playback.start(
-      setTimeout(
-        () => settle(duration.context),
-        duration.context + HINT_HOLD_MS,
-      ),
-    );
-  }, [playback, offset, label, reduceMotion, settle, duration]);
+  const play = useCallback(
+    (giveBack: () => void) => {
+      label.set(withTiming(1, { duration: duration.standard }));
+      if (!reduceMotion) {
+        offset.set(withTiming(-MESSAGES_PEEK, { duration: duration.context }));
+      }
+      session.start(
+        setTimeout(
+          () => settle(duration.context),
+          duration.context + HINT_HOLD_MS,
+        ),
+        giveBack,
+      );
+    },
+    [session, offset, label, reduceMotion, settle, duration],
+  );
 
   useEffect(() => {
     if (!atRest || !viewerId) return undefined;
     let cancelled = false;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const attempt = () => {
+      // A finger on the screen, or one just lifted, is not rest: wait it out.
+      const wait = session.restLeft(HINT_REST_MS);
+      if (wait > 0) {
+        timer = setTimeout(attempt, wait);
+        return;
+      }
       void (async () => {
         const [screenReader, tourDue, record] = await Promise.all([
           screenReaderOn(),
@@ -140,19 +173,30 @@ export function MessagesSwipeArea({
           readMessagesHint(viewerId),
         ]);
         if (cancelled || screenReader || tourDue || !record) return;
+        if (session.restLeft(HINT_REST_MS) > 0) {
+          attempt();
+          return;
+        }
         const now = Date.now();
         if (!shouldShowMessagesHint(record, now, unreadRef.current)) return;
-        await writeMessagesHint(viewerId, messagesHintShown(record, now));
-        if (!cancelled) play();
+        const kept = await writeMessagesHint(
+          viewerId,
+          messagesHintShown(record, now),
+        );
+        if (!kept) return;
+        const giveBack = () => void writeMessagesHint(viewerId, record);
+        if (cancelled) giveBack();
+        else play(giveBack);
       })();
-    }, HINT_REST_MS);
+    };
+    timer = setTimeout(attempt, HINT_REST_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      // Leaving the screen, or a menu opening over it, ends a hint mid-play.
-      if (playback.isPlaying()) settle(0);
+      // Leaving the screen, or anything opening over it, ends a hint mid-play.
+      if (session.isPlaying()) settle(0, true);
     };
-  }, [atRest, viewerId, play, settle, playback]);
+  }, [atRest, viewerId, play, settle, session]);
 
   const swipe = useMemo(
     () =>
@@ -163,16 +207,18 @@ export function MessagesSwipeArea({
         .failOffsetY([-MESSAGES_SWIPE_FAIL_Y, MESSAGES_SWIPE_FAIL_Y])
         .onBegin(() => {
           claim.begin();
+          session.panDown();
           // Any touch ends the hint: the screen is the member's again.
-          if (playback.isPlaying()) settle(duration.micro);
+          if (session.isPlaying()) settle(duration.micro);
         })
-        .onStart(() => {
+        .onStart((event) => {
           claim.claim();
           cancelAnimation(offset);
+          session.panTookOver(event.translationX);
         })
         .onUpdate((event) => {
           offset.set(
-            messagesFollowOffset(event.translationX, MESSAGES_SWIPE_ACTIVATE_X),
+            messagesFollowOffset(session.travel(event.translationX)),
           );
         })
         .onEnd((event, success) => {
@@ -189,11 +235,26 @@ export function MessagesSwipeArea({
         })
         .onFinalize(() => {
           claim.release();
-          if (!playback.isPlaying()) {
+          session.panUp();
+          if (!session.isPlaying()) {
             offset.set(withTiming(0, { duration: duration.standard }));
           }
         }),
-    [router, enabled, claim, offset, settle, viewerId, duration, playback],
+    [router, enabled, claim, offset, settle, viewerId, duration, session],
+  );
+
+  // The area's own touch events, which reach it whatever the pan decides and
+  // wherever the finger lands, the uncovered strip included.
+  const touch = useMemo(
+    () => ({
+      onTouchStart: () => {
+        session.touchDown();
+        if (session.isPlaying()) settle(duration.micro);
+      },
+      onTouchEnd: () => session.touchUp(),
+      onTouchCancel: () => session.touchUp(),
+    }),
+    [session, settle, duration.micro],
   );
 
   const slide = useAnimatedStyle(() => ({
@@ -203,40 +264,43 @@ export function MessagesSwipeArea({
 
   return (
     <SwipeClaimProvider value={claim}>
-      <View style={styles.area}>
-        {/* The edge of Messages, behind the screen: seen only while the
-            screen is moved aside. Decoration; the door is the control. */}
-        <View
-          style={styles.edge}
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          testID="messages-edge"
-        >
-          <NavGlyph
-            paths={NAV_GLYPHS.direct}
-            color={tokens.color.text.mutedForeground}
-            size={EDGE_GLYPH}
-          />
-        </View>
-        <GestureDetector gesture={swipe}>
-          <Animated.View style={[styles.screen, slide]}>
-            {children}
-          </Animated.View>
-        </GestureDetector>
-        {hint ? (
-          <Animated.View
-            style={[styles.label, fade]}
+      <GestureDetector gesture={swipe}>
+        <View style={styles.area} testID="messages-swipe-area" {...touch}>
+          {/* The edge of Messages, behind the screen: seen only while the
+              screen is moved aside. Decoration; the door is the control. */}
+          <View
+            style={styles.edge}
             pointerEvents="none"
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            testID="messages-hint"
+            testID="messages-edge"
           >
-            <BackGlyph color={tokens.color.text.mutedForeground} size={16} />
-            <Text style={styles.labelText}>{MESSAGES_HINT_TEXT}</Text>
+            <NavGlyph
+              paths={NAV_GLYPHS.direct}
+              color={tokens.color.text.mutedForeground}
+              size={EDGE_GLYPH}
+            />
+          </View>
+          <Animated.View
+            style={[styles.screen, slide]}
+            testID="messages-swipe-screen"
+          >
+            {children}
           </Animated.View>
-        ) : null}
-      </View>
+          {hint ? (
+            <Animated.View
+              style={[styles.label, fade]}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              testID="messages-hint"
+            >
+              <BackGlyph color={tokens.color.text.mutedForeground} size={16} />
+              <Text style={styles.labelText}>{MESSAGES_HINT_TEXT}</Text>
+            </Animated.View>
+          ) : null}
+        </View>
+      </GestureDetector>
     </SwipeClaimProvider>
   );
 }
@@ -254,21 +318,73 @@ export type MessagesSwipeHint = {
 };
 
 /**
- * Whether the hint is on screen, and the timer that ends it. A plain object
- * held in state, as the swipe's claim is, because the pan's callbacks read it
- * and they are built during render.
+ * What the area knows between renders: whether the hint is on screen (and
+ * the timer that ends it), whether a finger is down, and where the pan's
+ * travel is counted from. A plain object held in state, as the swipe's claim
+ * is, because the pan's callbacks read it and they are built during render.
  */
-function createHintPlayback() {
+function createHintSession(now: () => number = () => Date.now()) {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let startedAt = 0;
+  let giveBack: (() => void) | null = null;
+  let touchIsDown = false;
+  let panIsDown = false;
+  let liftedAt = Number.NEGATIVE_INFINITY;
+  let origin = 0;
+  const lifted = () => {
+    if (!touchIsDown && !panIsDown) liftedAt = now();
+  };
   return {
     isPlaying: () => timer !== null,
-    start(next: ReturnType<typeof setTimeout>) {
+    /** The hint is on screen; `undo` gives its showing back. */
+    start(next: ReturnType<typeof setTimeout>, undo: () => void) {
       if (timer) clearTimeout(timer);
       timer = next;
+      startedAt = now();
+      giveBack = undo;
     },
-    stop() {
+    /**
+     * The hint is over. `readableAfter` is passed for an end nobody chose:
+     * one that came sooner than that many ms into the play gives the showing
+     * back.
+     */
+    stop(readableAfter: number | null = null) {
       if (timer) clearTimeout(timer);
+      const undo = giveBack;
+      const unread =
+        timer !== null &&
+        readableAfter !== null &&
+        now() - startedAt < readableAfter;
       timer = null;
+      giveBack = null;
+      if (unread) undo?.();
+    },
+    touchDown() {
+      touchIsDown = true;
+    },
+    touchUp() {
+      touchIsDown = false;
+      lifted();
+    },
+    panDown() {
+      panIsDown = true;
+    },
+    panUp() {
+      panIsDown = false;
+      lifted();
+    },
+    /** How long until the screen has gone `rest` ms with no finger on it. */
+    restLeft(rest: number): number {
+      if (touchIsDown || panIsDown) return rest;
+      return Math.max(0, rest - (now() - liftedAt));
+    },
+    /** The pan took the touch over at this translation. */
+    panTookOver(translationX: number | undefined) {
+      origin = translationX ?? 0;
+    },
+    /** How far the finger has gone since then. */
+    travel(translationX: number): number {
+      return translationX - origin;
     },
   };
 }
@@ -298,6 +414,12 @@ const HINT_REST_MS = 1200;
 
 /** How long the screen stays aside, once it has slid there. */
 const HINT_HOLD_MS = 1400;
+
+/**
+ * How long the screen has to have been aside for the label to count as read.
+ * A hint covered or left sooner than this is given back.
+ */
+const HINT_SEEN_MS = 600;
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

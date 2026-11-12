@@ -37,6 +37,7 @@ import {
   floatingTabBarTop,
 } from "@/lib/floating-chrome";
 import { selectionHaptic } from "@/lib/haptics";
+import { useOverlayPresence } from "@/lib/overlay-presence";
 import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -102,6 +103,8 @@ export function GlassTabBar({
   const [openOn, setOpenOn] = useState<string | null>(null);
   if (openOn !== null && openOn !== focusedRoute.key) setOpenOn(null);
   const open = openOn === focusedRoute.key;
+  // The panel covers the screen without unfocusing it, as a sheet does.
+  useOverlayPresence(open);
   const [editing, setEditing] = useState(false);
 
   // The + turns into an X as the panel opens.

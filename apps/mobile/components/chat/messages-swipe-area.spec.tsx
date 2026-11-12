@@ -7,7 +7,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccessibilityInfo, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MESSAGES_PEEK } from "@/lib/chat/messages-hint";
+import {
+  MESSAGES_HINT_REPEAT_MS,
+  MESSAGES_PEEK,
+} from "@/lib/chat/messages-hint";
+import { holdOverlay } from "@/lib/overlay-presence";
 import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
@@ -30,28 +34,32 @@ type Pan = {
 const stored = new Map<string, string>();
 const mounted: ReactTestRenderer[] = [];
 
+function element(hint: Partial<MessagesSwipeHint> | null, enabled: boolean) {
+  return (
+    <FrappThemeProvider>
+      <MessagesSwipeArea
+        enabled={enabled}
+        hint={
+          hint
+            ? {
+                viewerId: "u-1",
+                ready: true,
+                unreadConversations: 0,
+                ...hint,
+              }
+            : undefined
+        }
+      >
+        <View testID="chat-home" />
+      </MessagesSwipeArea>
+    </FrappThemeProvider>
+  );
+}
+
 function render(hint: Partial<MessagesSwipeHint> | null = {}, enabled = true) {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <MessagesSwipeArea
-          enabled={enabled}
-          hint={
-            hint
-              ? {
-                  viewerId: "u-1",
-                  ready: true,
-                  unreadConversations: 0,
-                  ...hint,
-                }
-              : undefined
-          }
-        >
-          <View testID="chat-home" />
-        </MessagesSwipeArea>
-      </FrappThemeProvider>,
-    );
+    tree = create(element(hint, enabled));
   });
   mounted.push(tree);
   return tree;
@@ -61,17 +69,37 @@ const pan = (tree: ReactTestRenderer) =>
   tree.root.findByType("GestureDetector" as unknown as React.ElementType).props
     .gesture as Pan;
 
+const byTestId = (tree: ReactTestRenderer, id: string, type: string) =>
+  tree.root.findAll(
+    (node) => node.props.testID === id && (node.type as unknown) === type,
+  )[0]!;
+
 /** How far the screen is moved aside, read as the UI thread would. */
 const offset = (tree: ReactTestRenderer) => {
-  const screen = tree.root.findByType(
-    "GestureDetector" as unknown as React.ElementType,
-  ).children[0] as ReactTestRenderer["root"];
+  const screen = byTestId(tree, "messages-swipe-screen", "Animated.View");
   const [, slide] = screen.props.style as [
     unknown,
     { transform: { translateX: number }[] },
   ];
   return slide.transform[0]!.translateX;
 };
+
+/** The area's own touch events: a finger down anywhere on it, and up. */
+const area = (tree: ReactTestRenderer) =>
+  byTestId(tree, "messages-swipe-area", "View").props as {
+    onTouchStart: () => void;
+    onTouchEnd: () => void;
+    onTouchCancel: () => void;
+  };
+
+const record = () =>
+  stored.has(HINT_KEY)
+    ? (JSON.parse(stored.get(HINT_KEY)!) as {
+        swiped: boolean;
+        shown: number;
+        lastShownAt: number | null;
+      })
+    : null;
 
 const labelOpacity = (tree: ReactTestRenderer) => {
   const label = tree.root.findAll(
@@ -116,11 +144,32 @@ describe("the screen gives under a slide toward Messages", () => {
     const tree = render(null);
     expect(offset(tree)).toBe(0);
     act(() => pan(tree).handlers.onBegin!({}));
-    act(() => pan(tree).handlers.onStart!({}));
-    act(() => pan(tree).handlers.onUpdate!({ translationX: -74 }));
+    // On a phone gesture-handler zeroes the translation as the pan takes over.
+    act(() => pan(tree).handlers.onStart!({ translationX: 0 }));
+    act(() => pan(tree).handlers.onUpdate!({ translationX: -50 }));
     expect(offset(tree)).toBe(-30);
     act(() => pan(tree).handlers.onFinalize!({}, true));
     expect(offset(tree)).toBe(0);
+  });
+
+  it("counts the travel from where the pan took over, where the translation isn't zeroed", () => {
+    const tree = render(null);
+    act(() => pan(tree).handlers.onBegin!({}));
+    act(() => pan(tree).handlers.onStart!({ translationX: -24 }));
+    act(() => pan(tree).handlers.onUpdate!({ translationX: -24 }));
+    expect(offset(tree)).toBe(0);
+    act(() => pan(tree).handlers.onUpdate!({ translationX: -74 }));
+    expect(offset(tree)).toBe(-30);
+  });
+
+  it("takes the pan on the whole area, so a slide from the uncovered strip counts", () => {
+    const tree = render(null);
+    const detector = tree.root.findByType(
+      "GestureDetector" as unknown as React.ElementType,
+    );
+    expect(
+      (detector.children[0] as ReactTestRenderer["root"]).props.testID,
+    ).toBe("messages-swipe-area");
   });
 
   it("draws the edge of Messages behind the screen, hidden from screen readers", () => {
@@ -145,10 +194,7 @@ describe("the hint that teaches the swipe", () => {
     expect(offset(tree)).toBe(-MESSAGES_PEEK);
     expect(labelOpacity(tree)).toBe(1);
     // Remembered before it plays, so it can't play twice.
-    expect(JSON.parse(stored.get(HINT_KEY)!)).toMatchObject({
-      swiped: false,
-      shown: 1,
-    });
+    expect(record()).toMatchObject({ swiped: false, shown: 1 });
     await rest(2000);
     expect(offset(tree)).toBe(0);
     expect(labelOpacity(tree)).toBe(0);
@@ -220,13 +266,98 @@ describe("the hint that teaches the swipe", () => {
     expect(stored.has(HINT_KEY)).toBe(false);
   });
 
-  it("ends at once on any touch", async () => {
+  it("ends at once on any touch, anywhere on the area, and stays spent", async () => {
     const tree = render();
     await rest(1300);
     expect(offset(tree)).toBe(-MESSAGES_PEEK);
-    act(() => pan(tree).handlers.onBegin!({}));
+    act(() => area(tree).onTouchStart());
     expect(offset(tree)).toBe(0);
     expect(labelOpacity(tree)).toBe(0);
+    expect(record()).toMatchObject({ shown: 1 });
+  });
+
+  it("plays its one reminder three days on, only while a direct message is unread", async () => {
+    const seen = {
+      swiped: false,
+      shown: 1,
+      lastShownAt: Date.now() - MESSAGES_HINT_REPEAT_MS,
+    };
+    stored.set(HINT_KEY, JSON.stringify(seen));
+    const quiet = render({ unreadConversations: 0 });
+    await rest(1300);
+    expect(labelOpacity(quiet)).toBe(0);
+    const tree = render({ unreadConversations: 2 });
+    await rest(1300);
+    expect(labelOpacity(tree)).toBe(1);
+    expect(record()).toMatchObject({ shown: 2 });
+  });
+
+  it("waits while a sheet is open over Chat home, and plays once it closes", async () => {
+    // What's new opens on the launch the hint first could: a sheet leaves
+    // the screen under it focused.
+    let close!: () => void;
+    act(() => {
+      close = holdOverlay();
+    });
+    const tree = render();
+    await rest(3000);
+    expect(labelOpacity(tree)).toBe(0);
+    expect(record()).toBeNull();
+    act(() => close());
+    await rest(1300);
+    expect(labelOpacity(tree)).toBe(1);
+    expect(record()).toMatchObject({ shown: 1 });
+  });
+
+  it("gives the showing back when a sheet covers it before it could be read", async () => {
+    const tree = render();
+    await rest(1300);
+    expect(record()).toMatchObject({ shown: 1 });
+    let close!: () => void;
+    await act(async () => {
+      close = holdOverlay();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(offset(tree)).toBe(0);
+    expect(labelOpacity(tree)).toBe(0);
+    expect(record()).toMatchObject({ shown: 0 });
+    act(() => close());
+    await rest(1300);
+    expect(labelOpacity(tree)).toBe(1);
+    expect(record()).toMatchObject({ shown: 1 });
+  });
+
+  it("keeps the showing spent when Chat home is left after it has been up long enough to read", async () => {
+    const tree = render();
+    await rest(1200 + 1000);
+    expect(labelOpacity(tree)).toBe(1);
+    await act(async () => {
+      tree.update(element({ ready: false }, true));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(labelOpacity(tree)).toBe(0);
+    expect(record()).toMatchObject({ shown: 1 });
+  });
+
+  it("does not play over a finger that is on the screen, and waits for it to rest", async () => {
+    const tree = render();
+    act(() => area(tree).onTouchStart());
+    await rest(3000);
+    expect(labelOpacity(tree)).toBe(0);
+    expect(record()).toBeNull();
+    act(() => area(tree).onTouchEnd());
+    await rest(1100);
+    expect(labelOpacity(tree)).toBe(0);
+    await rest(200);
+    expect(labelOpacity(tree)).toBe(1);
+  });
+
+  it("does not play a showing it could not record", async () => {
+    vi.mocked(AsyncStorage.setItem).mockRejectedValue(new Error("disk full"));
+    const tree = render();
+    await rest(3000);
+    expect(labelOpacity(tree)).toBe(0);
+    expect(offset(tree)).toBe(0);
   });
 
   it("records the swipe when it opens Messages, so the hint is over for good", async () => {

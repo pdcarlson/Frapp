@@ -11,7 +11,6 @@ import {
   shouldShowMessagesHint,
   writeMessagesHint,
 } from "./messages-hint";
-import { MESSAGES_SWIPE_ACTIVATE_X } from "./messages-swipe";
 
 /**
  * The hint that teaches the swipe to Messages (#3774, #4610 step 3). The
@@ -73,30 +72,18 @@ describe("when the Messages swipe hint plays", () => {
 });
 
 describe("how far Chat home moves under a slide", () => {
-  it("stays put until the pan takes the touch over, and for any slide right", () => {
-    expect(messagesFollowOffset(0, MESSAGES_SWIPE_ACTIVATE_X)).toBe(0);
-    expect(
-      messagesFollowOffset(
-        MESSAGES_SWIPE_ACTIVATE_X,
-        MESSAGES_SWIPE_ACTIVATE_X,
-      ),
-    ).toBe(0);
-    expect(messagesFollowOffset(60, MESSAGES_SWIPE_ACTIVATE_X)).toBe(0);
+  it("stays put with no travel, and for any slide right", () => {
+    expect(messagesFollowOffset(0)).toBe(0);
+    expect(Object.is(messagesFollowOffset(-0), 0)).toBe(true);
+    expect(messagesFollowOffset(60)).toBe(0);
   });
 
-  it("gives 60% of the travel past that point, leftward", () => {
-    expect(
-      messagesFollowOffset(
-        MESSAGES_SWIPE_ACTIVATE_X - 50,
-        MESSAGES_SWIPE_ACTIVATE_X,
-      ),
-    ).toBe(-30);
+  it("gives 60% of the travel since the pan took over, leftward", () => {
+    expect(messagesFollowOffset(-50)).toBe(-30);
   });
 
   it("stops at the edge strip's width however far the finger goes", () => {
-    expect(messagesFollowOffset(-900, MESSAGES_SWIPE_ACTIVATE_X)).toBe(
-      -MESSAGES_FOLLOW_MAX,
-    );
+    expect(messagesFollowOffset(-900)).toBe(-MESSAGES_FOLLOW_MAX);
     // The hint's own slide shows less than a full pull does.
     expect(MESSAGES_PEEK).toBeLessThan(MESSAGES_FOLLOW_MAX);
   });
@@ -146,8 +133,12 @@ describe("the hint's record", () => {
         throw new Error("disk");
       },
     };
+    // It says so, and the caller doesn't play a hint it couldn't record.
     await expect(
       writeMessagesHint("u-1", MESSAGES_HINT_FRESH, broken),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
+    await expect(
+      writeMessagesHint("u-1", MESSAGES_HINT_FRESH, memoryStorage()),
+    ).resolves.toBe(true);
   });
 });

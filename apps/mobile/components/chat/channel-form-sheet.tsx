@@ -33,7 +33,7 @@ import {
   useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
-import { DisclosureGlyph } from "@/components/control-glyphs";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import {
   CHANNEL_ACCESS_TITLE,
   ChannelAccessSheet,
@@ -468,11 +468,7 @@ export const ChannelFormSheet = forwardRef<
                         <Text style={styles.optionValue} numberOfLines={1}>
                           {valueText}
                         </Text>
-                        <DisclosureGlyph
-                          color={tokens.color.text.muted}
-                          size={16}
-                          direction="right"
-                        />
+                        <ForwardGlyph color={tokens.color.text.muted} />
                       </Pressable>
                     </View>
                   );

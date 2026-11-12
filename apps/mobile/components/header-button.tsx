@@ -38,7 +38,12 @@ export function HeaderButton({
   disabled?: boolean;
   /** A count on the round's corner; nothing is drawn at zero. */
   badge?: HeaderBadge;
-  /** The glyph, in `text.foreground` at 20pt. */
+  /**
+   * The glyph, at 20pt. `text.foreground` for an action that goes somewhere
+   * (Messages, the bell, New message, Subscribe); the chapter accent for one
+   * that acts on this screen (Edit, Mark all read), as iconography.md §6.1.5
+   * gives a back-row slot.
+   */
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();

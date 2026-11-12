@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { HeaderButton } from "@/components/header-button";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -442,6 +443,15 @@ describe("Messages hide conversation (#2303)", () => {
 });
 
 describe("Messages header, empty and error states", () => {
+  // #4610 step 3: a bare glyph beside the title was what "buttons are
+  // unclear" meant. Every header action sits in the round Chat home drew.
+  it("draws New message as a round header button", () => {
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toEqual(["New message"]);
+  });
+
   it("offers New message, which opens the Directory", () => {
     const tree = render();
     const button = tree.root.find(

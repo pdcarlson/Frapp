@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { View } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { flatStyle } from "@/test/flat-style";
-import { FrappThemeProvider, tint } from "@/lib/theme";
+import { memberAvatarTint } from "@repo/hooks";
+import { FrappThemeProvider } from "@/lib/theme";
 import { LEAD_TILE_SIZE, LeadTile } from "./lead-tile";
 
 /**
@@ -71,11 +72,11 @@ describe("LeadTile", () => {
     expect(tileStyle({ size: "lead" }).style.marginVertical).toBeUndefined();
   });
 
-  it("takes a place's hue at 16%, and is neutral without one", () => {
+  it("takes a place's hue as the tint an avatar takes, and is neutral without one", () => {
     const hue = "#8FA8FF";
     const tinted = tileStyle({ on: "card", hue }).style;
-    expect(tinted.backgroundColor).toBe(tint(hue, 0.16));
-    expect(tinted.borderColor).toBe(tint(hue, 0.22));
+    expect(tinted.backgroundColor).toBe(memberAvatarTint(hue).fill);
+    expect(tinted.borderColor).toBe(memberAvatarTint(hue).fill);
     expect(tileStyle({ on: "card" }).style.borderColor).toBe(
       signetDarkTokens.color.border.hairline,
     );

@@ -44,7 +44,7 @@ export const MESSAGES_HINT_FRESH: MessagesHintRecord = {
 };
 
 /** The first show, and one reminder. */
-export const MESSAGES_HINT_MAX_SHOWS = 2;
+const MESSAGES_HINT_MAX_SHOWS = 2;
 
 /** Three days before the reminder, as the push reminder waits. */
 export const MESSAGES_HINT_REPEAT_MS = 3 * 24 * 60 * 60 * 1000;
@@ -92,21 +92,21 @@ export const MESSAGES_PEEK = 56;
 export const MESSAGES_FOLLOW_MAX = 72;
 
 /**
- * How far Chat home has moved under a slide: nothing until the pan takes
- * over (`activateX`, a negative number), then 60% of the finger's travel
- * past that point, stopping at {@link MESSAGES_FOLLOW_MAX}. It gives a
+ * How far Chat home has moved under a slide. `travel` is how far the finger
+ * has gone since the pan took the touch over, negative to the left: the
+ * screen moves 60% of it, stopping at {@link MESSAGES_FOLLOW_MAX}. It gives a
  * little and resists, so the screen says "something is over there" without
  * pretending Messages is being dragged in: Messages still opens on release.
  * Always zero or negative.
+ *
+ * The caller measures `travel` from the pan's first update, not from
+ * touch-down: gesture-handler zeroes a pan's translation when it activates on
+ * iOS and Android, and doesn't everywhere else.
  */
-export function messagesFollowOffset(
-  translationX: number,
-  activateX: number,
-): number {
-  const past = translationX - activateX;
-  if (past >= 0) return 0;
+export function messagesFollowOffset(travel: number): number {
+  if (travel >= 0) return 0;
   // `|| 0`: a multiply by a negative zero must not leave a `-0` in a style.
-  return Math.max(past * 0.6, -MESSAGES_FOLLOW_MAX) || 0;
+  return Math.max(travel * 0.6, -MESSAGES_FOLLOW_MAX) || 0;
 }
 
 // ── Storage ─────────────────────────────────────────────────────────────────
@@ -150,14 +150,20 @@ export async function readMessagesHint(
   }
 }
 
+/**
+ * Keeps the record. Answers whether it was kept, because the hint must not
+ * play on a write that failed: a phone that reads but can't write would then
+ * play it on every visit.
+ */
 export async function writeMessagesHint(
   userId: string,
   record: MessagesHintRecord,
   storage: Storage = AsyncStorage,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await storage.setItem(STORAGE_KEY_PREFIX + userId, JSON.stringify(record));
+    return true;
   } catch {
-    // It plays once more at worst.
+    return false;
   }
 }
