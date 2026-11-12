@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: What a deleted account takes with it, two AI gaps (#4504)
+
+### 20261112260000_ai_deleted_account_gaps.sql
+
+- **Purpose**: Replaces two function bodies; no table changes and nothing is written on apply. `meeting_recordings_drop_for_deleted_user` now also deletes the `meeting_drafts` row of every meeting whose recording the deleted account uploaded, so a transcript does not stay behind as another officer's draft notes. `ai_reports_refuse_deleted_users` now locks the reporter and quoted `users` rows `for share` before it checks `deleted_at`, so a report and an account deletion made at the same instant cannot each miss the other.
+- **Checks**: After `db push`, `select prosrc like '%meeting_drafts%' from pg_proc where proname = 'meeting_recordings_drop_for_deleted_user';` returns `true`, and `select prosrc like '%for share%' from pg_proc where proname = 'ai_reports_refuse_deleted_users';` returns `true`. Proven in the PGlite gate's `ai-reports` and `meeting-recordings` tiers; the lock itself cannot be exercised there (one connection).
+- **Promoter notes**: No API change depends on it and it can ship before or after the API from the same PR. Both tables are empty until AI is on for a chapter. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-deleted-account-gaps-20261112260000) § Rollback AI deleted-account gaps.
+
 ## 2026-11-12: Sign-up sheet cards in chat (#3926)
 
 ### 20261112250000_signup_card_claims.sql

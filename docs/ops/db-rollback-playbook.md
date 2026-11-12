@@ -4165,6 +4165,16 @@ To remove the function, do it in a later forward migration:
 drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
 ```
 
+## Rollback AI deleted-account gaps (20261112260000)
+
+* **Migration**: `20261112260000_ai_deleted_account_gaps.sql`
+
+Two function bodies replaced, no table change (#4504). `meeting_recordings_drop_for_deleted_user` also deletes the drafts of meetings whose recording the deleted account uploaded; `ai_reports_refuse_deleted_users` locks the users it reads `for share`.
+
+**There is rarely a reason to revert it, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). No API code depends on either body. Reverting reopens both gaps: a transcript can stay in another officer's draft after its uploader deletes their account, and a report can outlive a quoted member who deletes theirs in the same instant.
+
+If the `for share` lock is ever the cause of a stuck account deletion (it should not be: a report insert holds it for milliseconds), restore the earlier bodies in a later forward migration by copying them from `20261112210000_meeting_recordings.sql` and `20261112220000_ai_reports.sql`.
+
 ## Rollback merge Backwork department case variants (20261112154000)
 
 * **Migration**: `20261112154000_merge_backwork_department_case_variants.sql`

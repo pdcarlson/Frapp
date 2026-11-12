@@ -66,6 +66,7 @@ function harness(transcriber: Partial<ITranscriber> | null = {}) {
       'meetings.transcribe',
       {
         audio: audio(),
+        maxSeconds: 7200,
         vocabulary: ['Priya Natarajan'],
         promptVersion: 'meetings.transcribe@v1',
         resumeJobId: null,
@@ -186,11 +187,11 @@ describe('AiTranscriptionService', () => {
       promptVersion: 'meetings.transcribe@v1',
     };
     expect(h.consent.check).toHaveBeenCalledWith(call);
-    // One hour at $0.23.
+    // The feature's two-hour limit at $0.23 an hour, not the stated hour.
     expect(h.spend.reserve).toHaveBeenCalledWith(call, {
       inputTokens: 0,
       maxOutputTokens: 0,
-      maxCostMicroUsd: 230_000,
+      maxCostMicroUsd: 460_000,
     });
     expect(h.adapter!.transcribe).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -198,6 +199,7 @@ describe('AiTranscriptionService', () => {
         model: 'universal-3-5-pro',
         vocabulary: ['Priya Natarajan'],
         resumeJobId: null,
+        maxSeconds: 7200,
       }),
     );
     // 3,542 seconds, rounded up, at $0.23 an hour.
@@ -219,11 +221,22 @@ describe('AiTranscriptionService', () => {
     );
   });
 
-  it('never holds for less than a minute, whatever length the uploader stated', async () => {
+  it('holds for the longest recording it takes, whatever length and size the uploader stated', async () => {
     const h = harness();
-    await h.transcribe({ audio: audio({ durationSeconds: 1 }) });
-    expect(h.spend.reserve.mock.calls[0][1].maxCostMicroUsd).toBe(
-      Math.ceil((60 * 230_000) / 3600),
+    await h.transcribe({
+      audio: audio({ durationSeconds: 10, sizeBytes: 1 }),
+    });
+    expect(h.spend.reserve.mock.calls[0][1].maxCostMicroUsd).toBe(460_000);
+  });
+
+  it('never asks the vendor for more than the vendor takes', async () => {
+    const h = harness({
+      limits: { maxDurationSeconds: 1800, maxBytes: 5 * 1024 ** 3 },
+    });
+    await h.transcribe({ audio: audio({ durationSeconds: 600 }) });
+    expect(h.spend.reserve.mock.calls[0][1].maxCostMicroUsd).toBe(115_000);
+    expect(h.adapter!.transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({ maxSeconds: 1800 }),
     );
   });
 

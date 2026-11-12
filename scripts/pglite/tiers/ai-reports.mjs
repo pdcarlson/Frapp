@@ -8,6 +8,8 @@ import { db, miss } from "../harness.mjs";
 //   - one report per member per thing;
 //   - deleting an account (`anonymize_user`) deletes the reports that member
 //     made, and every report quoting them, and no other;
+//   - deleting an account also deletes another officer's draft of a recording
+//     it uploaded (20261112260000, #4504);
 //   - RLS is on with no policies, so no client role reads the table;
 //   - the AI tables' text columns are the ones the spec allows. A new text
 //     or JSON column on an AI table fails here until it is added to the list
@@ -162,12 +164,54 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
       JSON.stringify(lateQuoting) === JSON.stringify([U1, U3]),
       { lateQuoting },
     );
+    // U1 uploaded a recording for one meeting and U3 drafted from it; U3
+    // also has a draft on a meeting U1 never touched (#4504 item 2).
+    const M1 = "b4315000-0000-4000-8000-0000000000b1";
+    const M2 = "b4315000-0000-4000-8000-0000000000b2";
+    await db.query(
+      `insert into meetings (id, chapter_id, event_name, event_start_time, meeting_type)
+       values ($1, $3, 'Chapter meeting', now(), 'chapter'),
+              ($2, $3, 'Exec meeting', now(), 'chapter')`,
+      [M1, M2, CH],
+    );
+    await db.query(
+      `insert into meeting_recordings
+         (meeting_id, chapter_id, upload_id, uploaded_by, file_name, mime_type,
+          size_bytes, duration_seconds, notice_confirmed_at, status, transcript)
+       values ($1, $2, gen_random_uuid(), $3, 'a.m4a', 'audio/mp4', 1000, 60,
+               now(), 'ready', 'Speaker A: hello')`,
+      [M1, CH, U1],
+    );
+    await db.query(
+      `insert into meeting_drafts
+         (meeting_id, chapter_id, request_id, requested_by, notes, meeting_date, base_updated_at)
+       values ($1, $3, gen_random_uuid(), $4, 'Speaker A: hello', current_date, now()),
+              ($2, $3, gen_random_uuid(), $4, 'typed by hand', current_date, now())`,
+      [M1, M2, CH, U3],
+    );
     await db.query(`select anonymize_user($1)`, [U1]);
     const afterReporter = await reporters();
     check(
       "deleting an account deletes the reports it made, and no other",
       JSON.stringify(afterReporter) === JSON.stringify([U3]),
       { afterReporter },
+    );
+    const draftsLeft = (
+      await rows(`select meeting_id from meeting_drafts order by meeting_id`)
+    ).map((r) => r.meeting_id);
+    check(
+      "deleting an account deletes another officer's draft of its recording, and no other draft",
+      JSON.stringify(draftsLeft) === JSON.stringify([M2]) &&
+        (await rows(`select 1 from meeting_recordings`)).length === 0,
+      { draftsLeft },
+    );
+    const locks = await rows(
+      `select prosrc like '%for share%' as ok from pg_proc where proname = 'ai_reports_refuse_deleted_users'`,
+    );
+    check(
+      "the report check locks the users it reads",
+      locks.length === 1 && locks[0].ok === true,
+      { locks },
     );
 
     const security = await rows(
