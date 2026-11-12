@@ -78,6 +78,9 @@ export const AI_SETTINGS_COPY = {
   turnedOff: (label: string) => `${label} turned off`,
   saveFailed: "Couldn't change the AI setting",
   loadFailed: "Couldn't load the chapter's AI settings",
+  offlineTitle: "AI settings unavailable offline",
+  offlineDescription: "Reconnect to see which AI features are on.",
+  retryLater: "Retry in a moment.",
 } as const;
 
 export const AI_CONSENT_COPY = {
@@ -100,6 +103,9 @@ export const AI_CONSENT_COPY = {
   yes: "Yes, use AI",
   no: "No",
   saveFailed: "Couldn't save your answer",
+  loadFailed: "Couldn't load your AI settings",
+  offlineTitle: "AI settings unavailable offline",
+  offlineDescription: "Reconnect to see your answer.",
   /** The personal Settings section. */
   settingsTitle: "AI",
   settingsSwitch: "Use AI features",

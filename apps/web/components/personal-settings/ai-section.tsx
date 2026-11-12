@@ -2,7 +2,11 @@
 
 import { useId } from "react";
 import { errorCopy, useAiConsent, useAnswerAiConsent } from "@repo/hooks";
-import { AI_CONSENT_COPY, formatAiAnswerDate } from "@repo/validation";
+import {
+  AI_CONSENT_COPY,
+  AI_SETTINGS_COPY,
+  formatAiAnswerDate,
+} from "@repo/validation";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { AiConsentDetails } from "@/components/ai/ai-consent-sheet";
 import { anyReadUncached } from "@/components/shared/async-states";
@@ -38,8 +42,8 @@ export function AiSection() {
     return (
       <NestedOffline
         sole
-        title="AI settings unavailable offline"
-        description="Reconnect to see your answer."
+        title={AI_CONSENT_COPY.offlineTitle}
+        description={AI_CONSENT_COPY.offlineDescription}
         onRetry={() => void consentQuery.refetch()}
       />
     );
@@ -48,8 +52,8 @@ export function AiSection() {
     return (
       <NestedError
         sole
-        title="Couldn't load your AI settings"
-        description="Retry in a moment."
+        title={AI_CONSENT_COPY.loadFailed}
+        description={AI_SETTINGS_COPY.retryLater}
         onRetry={() => void consentQuery.refetch()}
       />
     );

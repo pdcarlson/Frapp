@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   update: vi.fn(),
   toast: vi.fn(),
   offline: false,
+  saving: false,
 }));
 
 const SHEET = {
@@ -32,7 +33,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useUpdateAiChapterSettings: () => ({
     mutateAsync: state.update,
-    isPending: false,
+    isPending: state.saving,
     variables: undefined,
   }),
 }));
@@ -66,6 +67,7 @@ describe("the chapter's AI switches", () => {
     state.update.mockReset().mockResolvedValue(settings());
     state.toast.mockReset();
     state.offline = false;
+    state.saving = false;
   });
 
   it("names who the chapter's information goes to", () => {
@@ -143,5 +145,28 @@ describe("the chapter's AI switches", () => {
     expect(
       screen.getByRole("switch", { name: /minutes from notes/i }),
     ).toBeDisabled();
+  });
+
+  it("still lets the president turn channel messages off after Ask went off", async () => {
+    const user = userEvent.setup();
+    state.settings = settings({ ask: false, chat_source: true });
+    render(<SettingsAiTab />);
+    const nested = screen.getByRole("switch", {
+      name: /include channel messages/i,
+    });
+    expect(nested).toBeChecked();
+    expect(nested).toBeEnabled();
+    expect(screen.queryByText(/turn on ask frapp first/i)).toBeNull();
+    await user.click(nested);
+    expect(state.update).toHaveBeenCalledWith({ chat_source: false });
+  });
+
+  it("holds every switch while one saves", () => {
+    state.settings = settings();
+    state.saving = true;
+    render(<SettingsAiTab />);
+    for (const control of screen.getAllByRole("switch")) {
+      expect(control).toBeDisabled();
+    }
   });
 });

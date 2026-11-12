@@ -1,7 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
-import { AiConsentController } from '../src/interface/controllers/ai-consent.controller';
+import {
+  AiChapterSettingsController,
+  AiConsentController,
+} from '../src/interface/controllers/ai-consent.controller';
 import { AiConsentService } from '../src/application/services/ai/ai-consent.service';
 import { AuthService } from '../src/application/services/auth.service';
 import { TimeZoneSyncService } from '../src/application/services/time-zone-sync.service';
@@ -27,14 +30,18 @@ const V1 = '/v1';
  * Supabase JWT check is stubbed, and the stub writes `supabaseUser` alone, as
  * the real guard does: the Frapp user id has to come from the interceptor,
  * through the mocked `AuthService`, the way it does in production.
- * `ChapterGuard` and `PermissionsGuard` guard the settings routes on this
- * controller, and Nest builds them anyway.
+ *
+ * The chapter's switches (`GET /v1/ai/settings`) sit on their own controller
+ * behind `ChapterGuard`, mounted here too: whether the president's switches
+ * can be changed at all rests on the caller's roles reaching the service, so
+ * that is asserted as well.
  */
 describe('/v1/ai/consent resolves the caller without a chapter (#4308)', () => {
   let app: INestApplication;
   const consent = {
     getConsentState: jest.fn(),
     answer: jest.fn(),
+    getChapterSettings: jest.fn(),
   };
   const state = {
     sheet: { version: 1, providers: [], data: [] },
@@ -43,11 +50,13 @@ describe('/v1/ai/consent resolves the caller without a chapter (#4308)', () => {
     sheet_changed: false,
   };
 
-  const { AuthGuardStub } = createGuardStubs({
+  const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
     authUserId: 'auth-1',
     email: 'member@example.com',
-    appUserId: 'not-used-on-these-routes',
-    roleIds: [],
+    // Only `ChapterGuard` writes this, so the consent routes, which have none,
+    // must get `user-1` from the interceptor instead.
+    appUserId: 'set-only-by-chapter-guard',
+    roleIds: ['role-president'],
     chapterId: 'chapter-1',
   });
 
@@ -55,7 +64,7 @@ describe('/v1/ai/consent resolves the caller without a chapter (#4308)', () => {
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [AiConsentController],
+      controllers: [AiConsentController, AiChapterSettingsController],
       providers: [
         { provide: AiConsentService, useValue: consent },
         {
@@ -68,7 +77,7 @@ describe('/v1/ai/consent resolves the caller without a chapter (#4308)', () => {
       .overrideGuard(SupabaseAuthGuard)
       .useClass(AuthGuardStub)
       .overrideGuard(ChapterGuard)
-      .useClass(AllowAllGuard)
+      .useClass(ChapterGuardStub)
       .overrideGuard(PermissionsGuard)
       .useClass(AllowAllGuard)
       .compile();
@@ -120,5 +129,25 @@ describe('/v1/ai/consent resolves the caller without a chapter (#4308)', () => {
 
     expect(res.body).toMatchObject({ code: 'ai.not_available' });
     expect(consent.getConsentState).not.toHaveBeenCalled();
+  });
+
+  it("passes the caller's roles to the chapter switches, which decide can_change", async () => {
+    consent.getChapterSettings.mockResolvedValue({
+      ask: false,
+      meeting_notes: false,
+      chat_source: false,
+      updated_at: null,
+      can_change: true,
+    });
+    const res = await request(app.getHttpServer())
+      .get(`${V1}/ai/settings`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', 'chapter-1')
+      .expect(200);
+
+    expect(consent.getChapterSettings).toHaveBeenCalledWith('chapter-1', [
+      'role-president',
+    ]);
+    expect(res.body).toMatchObject({ can_change: true });
   });
 });

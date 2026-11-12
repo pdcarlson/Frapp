@@ -200,8 +200,9 @@ export function AiConsentDialog({ open, consent, onAnswered, onDismiss }: Props)
  * ensureConsent()` before the first call. It resolves `true` at once for a
  * member who said yes on the current sheet, opens the sheet for anyone else
  * and resolves with their answer (`false` for No or for closing it), and
- * resolves `false` when the server has no AI. Render `consentDialog` once,
- * anywhere in the screen.
+ * resolves `false` when the server has no AI. It rejects when the answer
+ * can't be read (offline, a failed request), so the entry point can say so
+ * through `errorCopy`. Render `consentDialog` once, anywhere in the screen.
  *
  * The server checks again on every call (`ai.consent.required`), so a screen
  * that skips this still cannot send anything; it only gets the refusal.
@@ -221,10 +222,14 @@ export function useAiConsentGate(): {
   }, []);
 
   const ensureConsent = useCallback(async (): Promise<boolean> => {
-    const state =
-      consentQuery.data === undefined
-        ? (await consentQuery.refetch()).data
-        : consentQuery.data;
+    let state = consentQuery.data;
+    if (state === undefined) {
+      const read = await consentQuery.refetch();
+      // A failed read is not a No: throw, so the entry point can say it
+      // couldn't check rather than silently doing nothing.
+      if (read.error) throw read.error;
+      state = read.data;
+    }
     if (!state) return false;
     if (state.answer === "yes") return true;
     // A second press while the sheet is up answers the first one's question.

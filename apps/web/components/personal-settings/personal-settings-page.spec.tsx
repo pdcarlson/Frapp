@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   chapter: undefined as { name?: string } | undefined,
   // `null` is a server with AI off (`useAiConsent`), the default.
   aiConsent: null as Record<string, unknown> | null | undefined,
+  aiFetching: false,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -15,7 +16,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({ data: mocks.chapter }),
-  useAiConsent: () => ({ data: mocks.aiConsent }),
+  useAiConsent: () => ({
+    data: mocks.aiConsent,
+    isPending: mocks.aiConsent === undefined,
+    fetchStatus: mocks.aiFetching ? "fetching" : "idle",
+  }),
   aiAvailableFrom: (query: { data: unknown }) =>
     query.data === undefined ? undefined : query.data !== null,
 }));
@@ -54,6 +59,16 @@ describe("PersonalSettingsPage (#3856)", () => {
     mocks.section = null;
     mocks.chapter = { name: "Beta Theta Omega" };
     mocks.aiConsent = null;
+    mocks.aiFetching = false;
+  });
+
+  it("holds the rail until the AI read answers, so no row is inserted after it draws", () => {
+    mocks.aiConsent = undefined;
+    mocks.aiFetching = true;
+    render(<PersonalSettingsPage />);
+    expect(
+      screen.queryByRole("navigation", { name: "Settings" }),
+    ).toBeNull();
   });
 
   it("groups the rail by what a setting belongs to, the chapter group by name", () => {

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   consent: undefined as Record<string, unknown> | null | undefined,
   answer: vi.fn(),
+  readError: null as unknown,
 }));
 
 const SHEET = {
@@ -26,7 +27,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useAiConsent: () => ({
     data: state.consent,
-    refetch: () => Promise.resolve({ data: state.consent }),
+    refetch: () =>
+      Promise.resolve(
+        state.readError
+          ? { data: undefined, error: state.readError }
+          : { data: state.consent, error: null },
+      ),
   }),
   useAnswerAiConsent: () => ({ mutateAsync: state.answer, isPending: false }),
 }));
@@ -64,6 +70,7 @@ function Entry({ onResult }: { onResult: (ok: boolean) => void }) {
 describe("the AI sheet", () => {
   beforeEach(() => {
     state.answer.mockReset();
+    state.readError = null;
   });
 
   it("goes straight through for a member who said yes", async () => {
@@ -166,5 +173,34 @@ describe("the AI sheet", () => {
     });
     await waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("rejects, rather than reading as a No, when the answer can't be read", async () => {
+    state.consent = undefined;
+    state.readError = { statusCode: 503 };
+    const onResult = vi.fn();
+    const onFailure = vi.fn();
+    function FailingEntry() {
+      const { ensureConsent, consentDialog } = useAiConsentGate();
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => void ensureConsent().then(onResult, onFailure)}
+          >
+            Draft minutes
+          </button>
+          {consentDialog}
+        </>
+      );
+    }
+    render(<FailingEntry />);
+    await act(async () => {
+      screen.getByRole("button", { name: "Draft minutes" }).click();
+    });
+    await waitFor(() =>
+      expect(onFailure).toHaveBeenCalledWith({ statusCode: 503 }),
+    );
+    expect(onResult).not.toHaveBeenCalled();
   });
 });

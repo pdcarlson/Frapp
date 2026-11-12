@@ -39,7 +39,8 @@ import {
  */
 function PersonalSettingsContent() {
   // Whether the server has AI: the AI section shows only on `true` (#4308).
-  const aiAvailable = aiAvailableFrom(useAiConsent());
+  const aiConsent = useAiConsent();
+  const aiAvailable = aiAvailableFrom(aiConsent);
   const section = resolvePersonalSettingsSection(
     useSearchParams().get("section"),
     aiAvailable,
@@ -70,6 +71,16 @@ function PersonalSettingsContent() {
       }),
     ),
   }));
+
+  /*
+    The rail waits for the first AI read rather than drawing without the AI
+    row and inserting it a moment later, which pushed every row below it
+    down (and sent `?section=ai` to Notifications first). A failed or
+    paused read stops waiting: the row stays out, as with AI off.
+  */
+  if (aiConsent.isPending && aiConsent.fetchStatus === "fetching") {
+    return <PersonalSettingsBodySkeleton />;
+  }
 
   return (
     // `@container`: the rail and the row direction follow this pane's width,

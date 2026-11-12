@@ -1,6 +1,5 @@
 "use client";
 
-import { useId } from "react";
 import {
   type AiChapterSettings,
   errorCopy,
@@ -13,16 +12,13 @@ import {
   AI_SWITCHES,
   formatAiAnswerDate,
   joinNames,
-  type AiChapterSwitchKey,
   type AiSwitchCopy,
 } from "@repo/validation";
-import { Switch } from "@/components/ui/switch";
-import { RulesList } from "@/components/settings/module-rules";
+import { RulesList, SwitchRule } from "@/components/settings/module-rules";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
-import { cn } from "@/lib/utils";
 
 /**
  * Chapter settings → AI (#4308, `spec/behavior/ai.md` § Consent, gate 1):
@@ -43,7 +39,7 @@ import { cn } from "@/lib/utils";
  * "Include channel messages" only changes what Ask reads, so it sits nested
  * under Ask Frapp and waits for it, the way iOS draws a dependent switch.
  * The server stores it either way; the page just won't let a president turn
- * on something that does nothing yet.
+ * on something that does nothing yet, and still lets them turn it off.
  */
 export function SettingsAiTab() {
   const { isOffline } = useNetwork();
@@ -78,8 +74,8 @@ export function SettingsAiTab() {
   if (isOffline && anyReadUncached(settingsQuery)) {
     body = (
       <NestedOffline
-        title="AI settings unavailable offline"
-        description="Reconnect to see which AI features are on."
+        title={AI_SETTINGS_COPY.offlineTitle}
+        description={AI_SETTINGS_COPY.offlineDescription}
         onRetry={() => void settingsQuery.refetch()}
       />
     );
@@ -87,7 +83,7 @@ export function SettingsAiTab() {
     body = (
       <NestedError
         title={AI_SETTINGS_COPY.loadFailed}
-        description="Retry in a moment."
+        description={AI_SETTINGS_COPY.retryLater}
         onRetry={() => void settingsQuery.refetch()}
       />
     );
@@ -95,14 +91,9 @@ export function SettingsAiTab() {
     body = (
       <AiSwitchList
         settings={settings ?? null}
-        pendingKey={
-          update.isPending
-            ? (Object.keys(update.variables ?? {})[0] as
-                | AiChapterSwitchKey
-                | undefined)
-            : undefined
-        }
-        disabled={isOffline}
+        // Every switch waits while one saves: each answer replaces the whole
+        // cached row, so two saves in flight could leave one drawn wrong.
+        disabled={isOffline || update.isPending}
         onToggle={(entry, next) => void toggle(entry, next)}
       />
     );
@@ -144,12 +135,10 @@ export function SettingsAiTab() {
  */
 export function AiSwitchList({
   settings,
-  pendingKey,
   disabled,
   onToggle,
 }: {
   settings: AiChapterSettings | null;
-  pendingKey?: AiChapterSwitchKey;
   disabled?: boolean;
   onToggle: (entry: AiSwitchCopy, next: boolean) => void;
 }) {
@@ -159,75 +148,34 @@ export function AiSwitchList({
       {AI_SWITCHES.map((entry) => {
         const parentOff =
           entry.dependsOn !== undefined && settings?.[entry.dependsOn] !== true;
+        const checked = settings?.[entry.key] === true;
         return (
-          <AiSwitchRow
+          <SwitchRule
             key={entry.key}
-            entry={entry}
-            checked={settings?.[entry.key] === true}
+            label={entry.label}
+            hint={
+              <div className="space-y-1">
+                <p>{entry.description}</p>
+                {entry.notYetInApp ? <p>{entry.notYetInApp}</p> : null}
+                {parentOff && !checked ? (
+                  <p>{AI_SETTINGS_COPY.dependsOnAsk}</p>
+                ) : null}
+              </div>
+            }
+            checked={checked}
             nested={entry.dependsOn !== undefined}
-            parentOff={parentOff}
+            muted={parentOff}
             disabled={
               !canChange ||
               disabled === true ||
-              parentOff ||
-              pendingKey === entry.key
+              // Waiting on its parent blocks turning it on, never off: a
+              // president who turned Ask off can still clear what it reads.
+              (parentOff && !checked)
             }
             onChange={(next) => onToggle(entry, next)}
           />
         );
       })}
     </RulesList>
-  );
-}
-
-function AiSwitchRow({
-  entry,
-  checked,
-  nested,
-  parentOff,
-  disabled,
-  onChange,
-}: {
-  entry: AiSwitchCopy;
-  checked: boolean;
-  nested: boolean;
-  parentOff: boolean;
-  disabled: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const id = useId();
-  const hintId = `${id}-hint`;
-  return (
-    <div
-      className={cn(
-        "flex items-start justify-between gap-8 px-4 py-4",
-        // Indented under the switch it belongs to.
-        nested && "pl-10",
-      )}
-    >
-      <div className="min-w-0 space-y-0.5">
-        <label
-          htmlFor={id}
-          className={cn(
-            "text-sm font-medium",
-            parentOff ? "text-muted-foreground" : "text-foreground",
-          )}
-        >
-          {entry.label}
-        </label>
-        <div id={hintId} className="space-y-1 text-caption text-muted-foreground">
-          <p>{entry.description}</p>
-          {entry.notYetInApp ? <p>{entry.notYetInApp}</p> : null}
-          {parentOff ? <p>{AI_SETTINGS_COPY.dependsOnAsk}</p> : null}
-        </div>
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onChange}
-        aria-describedby={hintId}
-      />
-    </div>
   );
 }
