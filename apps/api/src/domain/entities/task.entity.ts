@@ -29,6 +29,17 @@ export interface Task {
    * if never. The assignee taking back their own completion doesn't set it.
    */
   sent_back_at: string | null;
+  /**
+   * Task photos (#4565), storage keys in the private `tasks` bucket under
+   * `chapters/{chapter_id}/tasks/`. The reference photo is the officer's (what
+   * the job looks like); the proof photo is the assignee's, sent with Mark
+   * done and cleared when the completion is taken back, sent back, or the task
+   * is handed to someone else. Read through `GET /v1/tasks/:id/photo-url`.
+   */
+  reference_photo_path: string | null;
+  proof_photo_path: string | null;
+  /** When on, Mark done is refused without a proof photo. */
+  photo_required: boolean;
   created_at: string;
 }
 

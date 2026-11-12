@@ -36,7 +36,7 @@ const CHOOSE_PHOTO = "Choose photo";
 const REMOVE_PHOTO = "Remove photo";
 const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
 const NO_CHAPTER_PHOTO_NOTE =
-  "Choose a chapter from More → Switch chapter to add a photo.";
+  "Choose a chapter from You → Switch chapter to add a photo.";
 
 /**
  * s15's identity avatar, with the photo in it, and the control that changes

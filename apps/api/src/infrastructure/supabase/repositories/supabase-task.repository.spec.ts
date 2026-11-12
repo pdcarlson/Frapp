@@ -341,6 +341,67 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     );
   });
 
+  it('reopenCompletion clears the completion’s proof photo, and only the proof it was given (#4565)', async () => {
+    const PROOF = 'chapters/b/tasks/p1/done.jpg';
+    harness = createTenantHarness({
+      tables: {
+        tasks: seed().tasks.map((row) => ({
+          ...row,
+          status: 'COMPLETED',
+          completed_at: '2026-08-30T00:00:00Z',
+          points_awarded: false,
+          proof_photo_path: PROOF,
+        })),
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+
+    // A newer completion holds another proof: the reopen matches nothing.
+    await expect(
+      repo.reopenCompletion(
+        TASK_B,
+        CHAPTER_B,
+        undefined,
+        'chapters/b/tasks/p0/old.jpg',
+      ),
+    ).resolves.toBeNull();
+    expect(
+      harness.rows('tasks').find((r) => r.id === TASK_B)?.proof_photo_path,
+    ).toBe(PROOF);
+
+    const reopened = await repo.reopenCompletion(
+      TASK_B,
+      CHAPTER_B,
+      undefined,
+      PROOF,
+    );
+    expect(reopened).toMatchObject({
+      status: 'IN_PROGRESS',
+      proof_photo_path: null,
+    });
+  });
+
+  it('isPhotoPathInUse finds a stored photo path, quoted safely, in the chapter only (#4565)', async () => {
+    const PATH = 'chapters/a/tasks/p1/mess.jpg';
+    harness = createTenantHarness({
+      tables: {
+        // Both twins hold it: the harness proves the read stays in its
+        // chapter (`expectTenantScoped`), not a differing value.
+        tasks: seed().tasks.map((row) => ({ ...row, proof_photo_path: PATH })),
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.isPhotoPathInUse(CHAPTER_A, PATH),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      repo.isPhotoPathInUse(CHAPTER_A, 'chapters/a/tasks/p2/other.jpg'),
+    ).resolves.toBe(false);
+  });
+
   it('reopenCompletion stamps an officer’s send-back', async () => {
     harness = createTenantHarness({
       tables: {

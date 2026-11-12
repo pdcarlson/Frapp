@@ -8,10 +8,6 @@ import {
 } from '@nestjs/common';
 import { formatMinutesExact } from '@repo/formatting';
 import {
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
   SERVICE_RECEIPT_REQUIRED_CODE,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
   servicePointsForDuration,
@@ -32,8 +28,11 @@ import {
   ChapterWorkflowsService,
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
-import { isUnsafeStoragePath } from '#domain/utils/storage-path';
-import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  assertUploadedPathUnder,
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
 import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
@@ -113,87 +112,43 @@ export class ServiceEntryService {
     storagePath: string;
     proofId: string;
   }> {
-    const ext = input.filename.includes('.')
-      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
     // Proof is images + PDF per spec/behavior/service-hours.md — kind "proof"
     // in @repo/validation; no office docs.
-    if (!isAllowedUploadExtension('proof', ext)) {
-      throw new BadRequestException('File extension is not allowed');
-    }
-
-    if (!isAllowedUploadMime('proof', input.contentType)) {
-      throw new BadRequestException(
-        `Content type "${input.contentType}" is not allowed`,
-      );
-    }
-
-    if (
-      input.sizeBytes !== undefined &&
-      !isWithinUploadSizeLimit(input.sizeBytes)
-    ) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
-      );
-    }
-
-    const proofId = crypto.randomUUID();
-    const storagePath = `${serviceProofPrefix(input.chapterId)}${proofId}/${safeObjectFilename(input.filename)}`;
-
-    const signedUrl = await this.storageProvider.getSignedUploadUrl(
+    assertUploadRequestAllowed('proof', input);
+    const ticket = await mintChapterUpload(
+      this.storageProvider,
       SERVICE_BUCKET,
-      storagePath,
-      input.contentType,
+      serviceProofPrefix(input.chapterId),
+      input,
     );
-
-    return { signedUrl, storagePath, proofId };
+    return {
+      signedUrl: ticket.signedUrl,
+      storagePath: ticket.storagePath,
+      proofId: ticket.uploadId,
+    };
   }
 
   /**
    * Proof paths are client-echoed from the upload-url flow, so re-validate
-   * server-side before persisting: the path must sit under the active
-   * chapter's service-proof prefix (no `.`/`..`/empty segments, which would
-   * let a prefix-passing string escape the folder) and must reference an
-   * object that actually exists in storage — a fabricated key would otherwise
-   * hand reviewers a proof link that can never resolve.
+   * server-side before persisting (`assertUploadedPathUnder`): inside the
+   * active chapter's service-proof prefix, and naming an uploaded object.
    */
   private async assertValidProofPath(
     chapterId: string,
     proofPath: string,
   ): Promise<void> {
-    const prefix = serviceProofPrefix(chapterId);
-    const segments = proofPath.split('/');
-    if (
-      !proofPath.startsWith(prefix) ||
-      segments.some(
-        (segment) => segment === '' || segment === '.' || segment === '..',
-      )
-    ) {
-      throw new BadRequestException(
-        'proof_path must be a storage path within the chapter service-proof folder',
-      );
-    }
-    // The literal-segment check above misses the percent-encoded and
-    // control-character spellings, so run the shared helper too — this path is
-    // then validated identically to the other confirm-upload flows. It runs
-    // second so a plainly wrong path keeps its more helpful message.
-    if (isUnsafeStoragePath(proofPath)) {
-      throw new BadRequestException(
-        'proof_path must not contain relative path segments',
-      );
-    }
-
-    const folder = proofPath.slice(0, proofPath.lastIndexOf('/'));
-    const uploaded = await this.storageProvider.listFiles(
+    await assertUploadedPathUnder(
+      this.storageProvider,
       SERVICE_BUCKET,
-      folder,
+      serviceProofPrefix(chapterId),
+      proofPath,
+      {
+        field: 'proof_path',
+        outsidePrefix:
+          'proof_path must be a storage path within the chapter service-proof folder',
+        missing: 'proof_path does not reference an uploaded proof file',
+      },
     );
-    if (!uploaded.includes(proofPath)) {
-      throw new BadRequestException(
-        'proof_path does not reference an uploaded proof file',
-      );
-    }
   }
 
   async getProofDownloadUrl(

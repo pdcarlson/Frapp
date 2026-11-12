@@ -3,9 +3,10 @@ import { formatDateEntry } from "@repo/formatting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockToast } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockToast, photo } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockToast: vi.fn(),
+  photo: { requestUrl: vi.fn(), put: vi.fn() },
 }));
 
 const MEMBERS_QUERY = {
@@ -16,6 +17,10 @@ const MEMBERS_QUERY = {
 };
 
 vi.mock("@repo/hooks", () => ({
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: photo.requestUrl }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
+  putSignedUpload: photo.put,
   useCurrentChapter: () => mockCurrentChapter(),
   useMembers: () => MEMBERS_QUERY,
 }));
@@ -74,7 +79,11 @@ describe("TaskForm (#3865, #3983)", () => {
 
   it("opens filled in with what the typed /task named", () => {
     renderDialog({
-      prefill: { title: "Sweep the porch", dueDate: "2026-11-12", pointReward: 5 },
+      prefill: {
+        title: "Sweep the porch",
+        dueDate: "2026-11-12",
+        pointReward: 5,
+      },
       initialAssigneeId: "u-2",
     });
     expect(screen.getByLabelText("Title")).toHaveValue("Sweep the porch");
@@ -117,7 +126,57 @@ describe("TaskForm (#3865, #3983)", () => {
       assignee_id: "u-1",
       due_date: "2026-11-12",
       point_reward: undefined,
+      photo_required: false,
     });
+  });
+
+  it("uploads the photo first and posts its path with Photo required (#4565)", async () => {
+    photo.requestUrl.mockResolvedValue({
+      upload_url: "https://upload",
+      storage_path: "chapters/c/tasks/p/mess.jpg",
+    });
+    photo.put.mockResolvedValue(undefined);
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    fireEvent.change(screen.getByTestId("task-photo-input"), {
+      target: { files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })] },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Photo required" }));
+    fireEvent.click(create());
+    await waitFor(() => expect(onPost).toHaveBeenCalled());
+    expect(photo.requestUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: "mess.jpg",
+        content_type: "image/jpeg",
+      }),
+    );
+    expect(onPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reference_photo_path: "chapters/c/tasks/p/mess.jpg",
+        photo_required: true,
+      }),
+    );
+  });
+
+  it("shows the API's reason when the upload is refused, and posts nothing (#4565)", async () => {
+    photo.requestUrl.mockRejectedValue({
+      statusCode: 400,
+      message: "File exceeds the 25 MB upload limit",
+    });
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    fireEvent.change(screen.getByTestId("task-photo-input"), {
+      target: { files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })] },
+    });
+    fireEvent.click(create());
+    expect(await screen.findByText(/over the 25 MB limit/)).toBeInTheDocument();
+    expect(onPost).not.toHaveBeenCalled();
   });
 
   it("keeps the draft and says why when the write is refused", async () => {

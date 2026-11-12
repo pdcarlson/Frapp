@@ -74,7 +74,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Which beat comes first waits on the profile and push reads; nothing is drawn
  * until they're back, and a slow read is given up on after
- * {@link DECIDE_TIMEOUT_MS} (the profile beat is then skipped; Profile in More
+ * {@link DECIDE_TIMEOUT_MS} (the profile beat is then skipped; the You tab
  * still has both).
  *
  * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the

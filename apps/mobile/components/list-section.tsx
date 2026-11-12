@@ -361,7 +361,7 @@ function splitRowStyle(style: StyleProp<ViewStyle>): {
 export type ListRowProps = {
   label: string;
   /**
-   * A leading glyph, drawn before the label. The More hub's rows carry one
+   * A leading glyph, drawn before the label. The You tab's rows carry one
    * (s09); the other grouped lists draw none.
    */
   leading?: ReactNode;

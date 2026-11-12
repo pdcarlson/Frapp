@@ -18,7 +18,7 @@ import { can, isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
@@ -1199,7 +1199,7 @@ export default function StudyScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Study hours" refresh={refresh}>
+    <ScreenShell back={BACK_TO_YOU} title="Study hours" refresh={refresh}>
       {renderBody()}
 
       <ZonePickerSheet

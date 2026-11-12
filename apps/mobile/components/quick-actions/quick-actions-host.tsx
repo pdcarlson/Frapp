@@ -200,7 +200,7 @@ export function useQuickActionsHost({
         }
         case "hostCheckIn": {
           // The event an officer would host: the soonest still checkable-in,
-          // as More's Host check-in row picks it.
+          // as You's Host check-in row picks it.
           const next = selectEventRows(eventsQuery.data, new Date())[0];
           if (next) {
             router.push({

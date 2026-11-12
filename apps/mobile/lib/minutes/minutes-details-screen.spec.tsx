@@ -413,7 +413,7 @@ describe("Minutes on the phone", () => {
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "Redirect")[0]
         .props.href,
-    ).toBe("/more");
+    ).toBe("/you");
   });
 
   it("never asks for suggestions on a draft", () => {

@@ -31,7 +31,7 @@ type Node = ReactTestRenderer["root"];
 const RECTS: Record<string, [number, number, number, number]> = {
   "anchor-channels": [0, 220, 390, 600],
   "anchor-quickActions": [314, 748, 62, 62],
-  "anchor-more": [230, 754, 70, 50],
+  "anchor-you": [230, 754, 70, 50],
 };
 
 function Anchor({ stop }: { stop: TourStopKey }) {
@@ -52,7 +52,7 @@ function ChatHome({ withChannels }: { withChannels: boolean }) {
     <>
       {withChannels ? <Anchor stop="channels" /> : null}
       <Anchor stop="quickActions" />
-      <Anchor stop="more" />
+      <Anchor stop="you" />
     </>
   );
 }

@@ -32,6 +32,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The shared card rules (`taskCardControls`, `readLiveTask`, the labels) stay
   // real, so these cases test the rules the mobile card applies too.
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
   // The real hook is disabled on an empty id, so an empty id reads nothing and
   // never reaches `mockUseTask`: a case can assert the card didn't ask.
   useTask: (id: string) => (id ? mockUseTask(id) : { data: undefined }),

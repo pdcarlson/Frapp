@@ -71,6 +71,9 @@ function task(overrides: Partial<TaskView> = {}): TaskView {
     completed_at: null,
     confirmed_at: null,
     sent_back_at: null,
+    reference_photo_path: null,
+    proof_photo_path: null,
+    photo_required: false,
     created_at: '2026-11-01T00:00:00.000Z',
     ...overrides,
   };

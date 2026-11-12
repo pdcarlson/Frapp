@@ -43,7 +43,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
@@ -576,7 +576,7 @@ export default function DocumentsScreen() {
       return (
         <ErrorState
           title="Couldn't load documents"
-          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
+          body="If you belong to more than one chapter, pick one from You → Switch chapter first."
           onRetry={() => void documentsQuery.refetch()}
           isRetrying={documentsQuery.isFetching}
         />
@@ -715,7 +715,7 @@ export default function DocumentsScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_MORE}
+      back={BACK_TO_YOU}
       refresh={refresh}
       createAction={
         canUpload

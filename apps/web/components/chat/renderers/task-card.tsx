@@ -41,6 +41,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { OWNS_ESCAPE } from "@/components/shared/panel";
 import { TaskEditForm } from "@/components/tasks/task-edit-form";
+import { MarkDoneControl, TaskPhotos } from "@/components/tasks/task-photo";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -291,6 +292,17 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           </Badge>
         ) : null}
       </div>
+      {live ? (
+        <TaskPhotos
+          task={{
+            id: live.id,
+            reference_photo_path: live.reference_photo_path,
+            proof_photo_path: live.proof_photo_path,
+          }}
+          // Whoever reads the live task is its assignee or an officer.
+          showProof
+        />
+      ) : null}
       {memberControls.length > 0 || managerControls.length > 0 ? (
         // `empty:hidden`: a denied `<Can>` leaves the row with nothing in it,
         // and an empty row would still add its margin to the card.
@@ -314,19 +326,31 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             </Button>
           ) : null}
           {controls.includes("complete") ? (
-            <Button
+            <MarkDoneControl
               size="sm"
-              variant="secondary"
-              {...gate.controlProps(actionsDisabled)}
-              onClick={() =>
+              title={payload.title}
+              label={TASK_ACTION_LABELS.complete}
+              photoRequired={!!live?.photo_required}
+              controlProps={gate.controlProps(actionsDisabled)}
+              onComplete={(proof) =>
                 updateStatus.mutate(
-                  { id: payload.task_id, body: { status: "COMPLETED" } },
+                  {
+                    id: payload.task_id,
+                    body: proof
+                      ? { status: "COMPLETED", proof_photo_path: proof }
+                      : { status: "COMPLETED" },
+                  },
                   onFailure("Couldn't complete task", "Try again in a moment."),
                 )
               }
-            >
-              {TASK_ACTION_LABELS.complete}
-            </Button>
+              onUploadError={(message) =>
+                toast({
+                  title: "Couldn't add the photo",
+                  description: message,
+                  variant: "destructive",
+                })
+              }
+            />
           ) : null}
           {managerControls.length > 0 ? (
             <Can permission="tasks:manage">

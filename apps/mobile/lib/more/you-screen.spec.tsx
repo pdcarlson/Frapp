@@ -5,7 +5,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -19,7 +18,10 @@ import { screenText } from "@/test/screen-text";
  *
  * This pins that all three move on the shared ticking clock.
  *
- * It renders `app/(app)/(tabs)/more.tsx` but lives here: a spec under `app/` ships
+ * The profile's head and details are stubbed here: `you-profile.spec.tsx`
+ * owns them. This file is the hub's rows and the Status row.
+ *
+ * It renders `app/(app)/(tabs)/you.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -31,6 +33,13 @@ let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
+const LOADED_USER = {
+  isPending: false,
+  isError: false,
+  data: { display_name: "Paul Carlson" },
+  refetch: () => undefined,
+};
+let currentUser: Record<string, unknown> = LOADED_USER;
 let hiddenFeatures = new Set<string>();
 /** The member's weekly study goal in minutes (#1062), from `useMyGoals`. */
 let studyGoal: number | null = null;
@@ -41,7 +50,7 @@ const hiddenFeatureCalls: unknown[][] = [];
 let chapterModules: Record<string, boolean> = {};
 const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 
-// `@repo/validation`'s beta list, emptied so these specs draw More as a
+// `@repo/validation`'s beta list, emptied so these specs draw You as a
 // chapter with dues on sees it. The beta's own case, dues off, sets
 // `betaOff.keys`.
 const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
@@ -53,6 +62,36 @@ vi.mock("@repo/validation/beta-off-modules", () => ({
 }));
 afterEach(() => {
   betaOff.keys = [];
+});
+
+let ownStatus: Record<string, unknown> | null = { status: "online" };
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => ownStatus,
+}));
+
+vi.mock("@/components/you/profile-sections", () => ({
+  ProfileHead: "ProfileHead",
+  ProfileDetails: "ProfileDetails",
+  ProfileSkeleton: "ProfileSkeleton",
+}));
+
+// A host node the ref lands on, so `createNodeMock` can stand in for the sheet.
+vi.mock("@/components/account/status-sheet", async () => {
+  const { createElement, forwardRef } = await import("react");
+  return {
+    StatusSheet: forwardRef(function StatusSheet(_props, ref) {
+      return createElement("StatusSheet", { ref });
+    }),
+  };
+});
+
+vi.mock("@/components/profile/edit-profile-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    EditProfileSheet: forwardRef(function EditProfileSheet() {
+      return null;
+    }),
+  };
 });
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -80,8 +119,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     invoiceReadOptions.push(options);
     return { data: invoices };
   },
-  useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
-  useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
+  useCurrentUser: () => currentUser,
   useCurrentChapter: () => ({
     data: {
       name: "FIJI Tau Nu",
@@ -95,7 +133,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-import MoreScreen from "@/app/(app)/(tabs)/more";
+import YouScreen from "@/app/(app)/(tabs)/you";
 import { ListRow, ListSection } from "@/components/list-section";
 import { signetDarkTokens } from "@repo/theme/signet";
 
@@ -111,7 +149,7 @@ function render(): ReactTestRenderer {
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <MoreScreen />
+        <YouScreen />
       </FrappThemeProvider>,
     );
   });
@@ -129,7 +167,7 @@ function tick() {
 const minutes = (at: Date, delta: number) =>
   new Date(at.getTime() + delta * 60_000).toISOString();
 
-describe("More hub clock (#2101)", () => {
+describe("You tab clock (#2101)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     permissions = [];
@@ -256,10 +294,12 @@ describe("More hub clock (#2101)", () => {
   });
 });
 
-describe("More hub anatomy (#1048)", () => {
+describe("You tab anatomy (#1048, #3839)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 4, 12, 0, 0));
+    currentUser = LOADED_USER;
+    ownStatus = { status: "online" };
     permissions = [];
     events = [];
     sessions = undefined;
@@ -274,50 +314,77 @@ describe("More hub anatomy (#1048)", () => {
     vi.useRealTimers();
   });
 
-  it("opens on the profile card, with the name and the points balance", () => {
-    const text = screenText(render());
-    expect(text).toContain("Paul Carlson");
-    expect(text).toContain("1,240 pts");
-    expect(text.indexOf("Paul Carlson")).toBeLessThan(
-      text.indexOf("Study hours"),
-    );
+  it("opens on the profile's head, then Status, then the rows, and closes on Details (#3839)", () => {
+    const tree = render();
+    const order = tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "ProfileHead" ||
+          (node.type as unknown) === "ProfileDetails" ||
+          node.type === ListRow,
+      )
+      .map((node) =>
+        node.type === ListRow ? node.props.label : String(node.type),
+      );
+    expect(order[0]).toBe("ProfileHead");
+    expect(order[1]).toBe("Status");
+    expect(order[2]).toBe("Study hours");
+    expect(order.at(-1)).toBe("ProfileDetails");
+    expect(screenText(tree)).toMatch(/^You/);
   });
 
-  // The profile card answers a press as a list row does (`usePressFeedback`,
-  // through `PressableRow`). It sits on `surface1`, the tone of the rows
-  // under it, so its iOS lift is the rows' own one step, to `card`.
-  it("draws the profile card in the rows' tone, ripples it on Android and lifts it a step on iOS", () => {
-    const card = render().root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityHint === "Opens your profile.",
-    );
-    const held = Object.assign(
-      {},
-      ...[card.props.style({ pressed: true })].flat(Infinity),
-    ) as Record<string, unknown>;
+  it("draws the skeleton head and no Details while the profile loads, and keeps every row", () => {
+    currentUser = { isPending: true, isError: false, data: undefined };
+    const tree = render();
+    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileSkeleton")).toHaveLength(1);
+    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails")).toHaveLength(0);
+    expect(screenText(tree)).toContain("Switch chapter");
+  });
 
-    const resting = Object.assign(
-      {},
-      ...[card.props.style({ pressed: false })].flat(Infinity),
-    ) as Record<string, unknown>;
+  it("says the profile failed in place of the head, and keeps every row", () => {
+    currentUser = {
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      data: undefined,
+      refetch: vi.fn(),
+    };
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Couldn't load your profile");
+    expect(text).toContain("Switch chapter");
+    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileHead")).toHaveLength(0);
+    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails")).toHaveLength(0);
+  });
 
-    expect(resting.backgroundColor).toBe(signetDarkTokens.color.surface.card);
-    expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
-    // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
-    expect(held).not.toHaveProperty("opacity");
-    // The ripple is rounded by a parent clip with the card's radius
-    // (`PressableRow`); the card's own `overflow` would leave it square.
-    expectRoundedRipple(card, signetDarkTokens.radius.card);
-    // The chevron is `ListRow`'s, at the label role's size.
-    const chevron = card.find(
-      (node) =>
-        (node.type as unknown) === "Text" && node.props.children === "›",
-    );
-    expect(Object.assign({}, chevron.props.style).fontSize).toBe(
-      signetDarkTokens.typography.role.label.size,
-    );
+  it("names the picked status and its end on the Status row, and opens the sheet from it (#3845)", () => {
+    ownStatus = {
+      status: "dnd",
+      statusEndsAt: new Date(2026, 10, 4, 15, 0, 0).toISOString(),
+    };
+    const present = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <YouScreen />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "StatusSheet"
+              ? { present, dismiss: vi.fn() }
+              : null,
+        },
+      );
+    });
+    mounted.push(tree);
+    const row = tree.root.findAllByType(ListRow)[0]!;
+    // Read out as "Status, Do Not Disturb": the row names what it sets.
+    expect(row.props.label).toBe("Status");
+    expect(row.props.value).toBe("Do Not Disturb");
+    expect(row.props.description).toMatch(/3:00/);
+    act(() => row.props.onPress());
+    expect(present).toHaveBeenCalledTimes(1);
   });
 
   it("draws labels without a description line, and names the current chapter", () => {
@@ -350,6 +417,7 @@ describe("More hub anatomy (#1048)", () => {
         section.findAllByType(ListRow).map((row) => row.props.label),
       );
     expect(sections).toEqual([
+      ["Status"],
       [
         "Study hours",
         "Service hours",
@@ -448,9 +516,10 @@ describe("More hub anatomy (#1048)", () => {
 
   // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
   // labels a row is neutral, so member and Admin rows draw the same muted hue.
-  it("draws a neutral leading glyph on every row, never the chapter accent", () => {
+  // The Status row's leading mark is the status dot, whose hue is the status.
+  it("draws a neutral leading glyph on every hub row, never the chapter accent", () => {
     permissions = ["events:update"];
-    const rows = render().root.findAllByType(ListRow);
+    const rows = render().root.findAllByType(ListRow).slice(1);
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const glyph = row.props.leading as React.ReactElement<{
@@ -461,35 +530,6 @@ describe("More hub anatomy (#1048)", () => {
         signetDarkTokens.color.text.muted,
       );
     }
-  });
-
-  // The same rule for people: the viewer's initials avatar is a raised
-  // neutral fill with foreground initials, never an accent tint.
-  it("draws the profile card's initials avatar neutral, never the chapter accent", () => {
-    const card = render().root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityHint === "Opens your profile.",
-    );
-    const initials = card.find(
-      (node) =>
-        (node.type as unknown) === "Text" && node.props.children === "PC",
-    );
-    const flatten = (style: unknown) =>
-      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
-    expect(flatten(initials.props.style).color).toBe(
-      signetDarkTokens.color.text.foreground,
-    );
-    const avatar = flatten(initials.parent!.props.style);
-    expect(avatar.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
-    expect(avatar.borderColor).toBe(signetDarkTokens.color.border.hairline);
-    const styles = JSON.stringify(
-      card
-        .findAll((node) => typeof node.type === "string")
-        .map((node) => node.props.style ?? null),
-    );
-    expect(styles).not.toContain("#7FB2FF");
-    expect(styles).not.toContain("#2D7BFF");
   });
 
   it("has no Notifications row: the inbox is the bell on Chat home (#3362)", () => {
@@ -509,7 +549,7 @@ describe("More hub anatomy (#1048)", () => {
     );
     const labels = buttons.map((node) => node.props.accessibilityLabel);
     expect(labels).toEqual([
-      "Paul Carlson",
+      "Status",
       "Study hours",
       "Service hours",
       "Dues",
@@ -630,7 +670,7 @@ describe("More hub anatomy (#1048)", () => {
     expect(screenText(render())).not.toContain("Invite members");
   });
 
-  it("tells the chapter picker that More opened it, so it draws ‹ More", () => {
+  it("tells the chapter picker that You opened it, so it draws ‹ You", () => {
     const row = render().root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -643,7 +683,7 @@ describe("More hub anatomy (#1048)", () => {
     });
     expect(push).toHaveBeenCalledWith({
       pathname: "/(auth)/chapter-picker",
-      params: { from: "more" },
+      params: { from: "you" },
     });
   });
 });

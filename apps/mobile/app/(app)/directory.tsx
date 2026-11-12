@@ -32,7 +32,7 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import {
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   PinnedBackRow,
   pinnedBackClearance,
 } from "@/components/back-row";
@@ -517,7 +517,7 @@ export default function DirectoryScreen() {
         {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
           unpadded View so it sits where the content starts. */}
         <View style={styles.listFrame}>
-          <PinnedBackRow back={BACK_TO_MORE} />
+          <PinnedBackRow back={BACK_TO_YOU} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
           <FlatList<DirectoryRow | GridLine>
             // Grid hands the list lines of tiles rather than setting

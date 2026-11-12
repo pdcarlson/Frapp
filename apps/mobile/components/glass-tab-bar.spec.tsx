@@ -34,6 +34,13 @@ vi.mock("@repo/hooks", () => ({
   useActivity: () => ({ data: activity.data }),
 }));
 
+// The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
+// only reads the picked status to name it.
+const ownStatus = vi.hoisted(() => ({ value: { status: "online" } as { status: string } | null }));
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => ownStatus.value,
+}));
+
 const quick = vi.hoisted(() => ({
   ask: vi.fn(),
   hasAsk: false,
@@ -82,13 +89,13 @@ const ROUTES: Route[] = [
   { key: "index-1", name: "index" },
   { key: "activity-1", name: "activity" },
   { key: "events-1", name: "events" },
-  { key: "more-1", name: "more" },
+  { key: "you-1", name: "you" },
 ];
 const TITLES: Record<string, string> = {
   index: "Chat",
   activity: "Activity",
   events: "Calendar",
-  more: "More",
+  you: "You",
 };
 
 const navigation = {
@@ -197,6 +204,22 @@ describe("the bar (#3344)", () => {
     expect(flat(pill(render().root).props.style).bottom).toBe(12);
   });
 
+  it("names a picked status on the You tab, and says nothing of Online (#3839)", () => {
+    const youLabel = () =>
+      pressables(render("events").root).find(
+        (node) =>
+          node.props.accessibilityRole === "tab" &&
+          node.props.testID === "tab-you",
+      )!.props.accessibilityLabel;
+    expect(youLabel()).toBe("You");
+    ownStatus.value = { status: "dnd" };
+    try {
+      expect(youLabel()).toBe("You, Do Not Disturb");
+    } finally {
+      ownStatus.value = { status: "online" };
+    }
+  });
+
   it("draws the four tabs in order, the focused one selected", () => {
     const tabs = pressables(render("events").root).filter(
       (node) => node.props.accessibilityRole === "tab",
@@ -205,7 +228,7 @@ describe("the bar (#3344)", () => {
       "Chat",
       "Activity",
       "Calendar",
-      "More",
+      "You",
     ]);
     expect(tabs.map((tab) => tab.props.accessibilityState.selected)).toEqual([
       false,

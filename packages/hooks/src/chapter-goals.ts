@@ -38,7 +38,7 @@ export const myGoalKeys = createChapterQueryKeys("my-goals");
 
 /**
  * The caller's own goal on each measure (`GET /v1/goals/mine`), for a screen
- * that draws only the goal, such as the phone's Study screen and More row,
+ * that draws only the goal, such as the phone's Study screen and You row,
  * without reading the whole standing. Goals change rarely, so it stays fresh
  * for five minutes; saving goals reads it again.
  */

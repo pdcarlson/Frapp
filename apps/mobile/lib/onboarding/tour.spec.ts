@@ -30,7 +30,7 @@ describe("first-run tour stops", () => {
     expect(TOUR_STOPS.map((stop) => stop.key)).toEqual([
       "channels",
       "quickActions",
-      "more",
+      "you",
     ]);
     for (const stop of TOUR_STOPS) {
       expect(stop.text).not.toMatch(/\n/);
