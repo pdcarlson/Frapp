@@ -212,29 +212,28 @@ export function pollCardEyebrow(payload: PollPayload, now: number): string {
 }
 
 /**
- * Whether the viewer is offered Close poll on this card (#3794): it is their
- * own poll (`isOwnMessage`), the server has it and it isn't deleted
- * (`canActOnMessage`), it is still open, and the close route would take it.
- * That route (`POST /v1/polls/{messageId}/close`) also requires `polls:create`
- * and the Polls module, which posting a card does not (#3007), so a creator
- * without the permission, or any creator while Polls is off or not yet
- * known to be on, isn't offered a control the API would refuse every time.
- * The API enforces all of it (`PollService.close`); this only keeps the card
- * honest.
+ * Whether the viewer is offered Close poll on this card (#3794): the server
+ * has it and it isn't deleted (`canActOnMessage`), it is still open, the
+ * Polls module is known to be on (the close route requires it), and the
+ * viewer may close it. Its creator may (`isOwnMessage`), whatever their
+ * permissions now, and so may a member who holds `channels:manage`, so a poll
+ * with no deadline whose creator lost `polls:create` or left can still end
+ * with its tally kept (#4046). The API enforces all of it
+ * (`PollService.close`); this only keeps the card honest.
  */
 export function canClosePoll(
   message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
   payload: PollPayload,
   viewerId: string | null,
   now: number,
-  gates: { pollsGate: PollsGate; canCreatePolls: boolean },
+  gates: { pollsGate: PollsGate; canManageChannels: boolean },
 ): boolean {
   return (
-    isOwnMessage(message, viewerId) &&
+    (isOwnMessage(message, viewerId) ||
+      (gates.canManageChannels && !!viewerId)) &&
     canActOnMessage(message) &&
     !isPollCardClosed(payload, now) &&
-    gates.pollsGate === "on" &&
-    gates.canCreatePolls
+    gates.pollsGate === "on"
   );
 }
 

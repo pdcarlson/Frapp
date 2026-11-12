@@ -373,10 +373,61 @@ describe("thread fields (#3785)", () => {
       reply_count: 3,
       last_reply_at: "2026-11-10T12:05:00.000Z",
       recent_sender_ids: ["u2", "u3", "u4"],
+      last_reply: null,
     });
     expect(normalizeRow(toRawRow(normalized)).thread).toEqual(
       normalized.thread,
     );
+  });
+
+  test("the latest reply's preview survives both ways, read defensively (#4297)", () => {
+    const withReply = normalizeRow({
+      ...parent,
+      thread_last_reply: {
+        id: "r9",
+        sender_id: "u2",
+        content: "grill is in my garage",
+        kind: "text",
+        attachment_count: 1,
+        created_at: "2026-11-10T12:05:00.000Z",
+      },
+    });
+    expect(withReply.thread?.last_reply).toEqual({
+      id: "r9",
+      sender_id: "u2",
+      content: "grill is in my garage",
+      kind: "text",
+      attachment_count: 1,
+      created_at: "2026-11-10T12:05:00.000Z",
+      sender_blocked: false,
+    });
+    expect(normalizeRow(toRawRow(withReply)).thread).toEqual(withReply.thread);
+
+    // Malformed fields fall back; no id means no reply to show.
+    expect(
+      normalizeRow({
+        ...parent,
+        thread_last_reply: {
+          id: "r9",
+          sender_id: 7,
+          content: null,
+          kind: "nonsense",
+          attachment_count: "2",
+        },
+      }).thread?.last_reply,
+    ).toEqual({
+      id: "r9",
+      sender_id: null,
+      content: "",
+      kind: "text",
+      attachment_count: 0,
+      created_at: "",
+      sender_blocked: false,
+    });
+    expect(
+      normalizeRow({ ...parent, thread_last_reply: { content: "hi" } }).thread
+        ?.last_reply,
+    ).toBeNull();
   });
 
   test("a message with no replies, or a malformed count, has no summary", () => {

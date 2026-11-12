@@ -365,6 +365,45 @@ describe("bounds", () => {
     }
   });
 
+  it("pins the DM the Direct messages list lands on, beside Chat's landing (#3774)", async () => {
+    // Each list lands on its own: Chat on `#general` here, Direct messages
+    // on the DM the member had open. A cold load can open either.
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.user-alice.chapter-1.direct",
+      "dm-1",
+    );
+    try {
+      await writeChannelList(
+        ALICE,
+        [
+          ...RAIL,
+          {
+            id: "dm-1",
+            name: "dm-user-alice-user-bob",
+            type: "DM",
+            member_ids: ["user-alice", "user-bob"],
+          },
+        ],
+        AT,
+      );
+      await writeViewerId(ALICE, "user-alice", AT);
+      await writeChannelTail(ALICE, "dm-1", [confirmed("1")], AT);
+      await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT + 1);
+      for (const [index, id] of ["chan-2", "chan-3", "chan-4"].entries()) {
+        await writeChannelTail(ALICE, id, [confirmed("2")], AT + 100 + index);
+      }
+
+      const ids = (await readFirstChunk(ALICE)).tails.map(
+        (row) => row.channelId,
+      );
+      expect(ids).toContain("dm-1");
+      expect(ids).toContain("chan-1");
+      expect(ids).toHaveLength(FIRST_CHUNK_CHANNEL_LIMIT);
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
   it("ignores rows past the maximum age instead of painting them", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-01T00:00:00.000Z"));

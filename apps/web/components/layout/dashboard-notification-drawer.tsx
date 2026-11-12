@@ -38,6 +38,7 @@ import {
 } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
+import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Sheet,
@@ -394,14 +395,7 @@ function NotificationRow({
         "focus-visible:ring-inset",
       )}
     >
-      <span
-        aria-hidden="true"
-        data-unread-dot={isRead ? undefined : ""}
-        className={cn(
-          "mt-[14px] size-2 rounded-full",
-          isRead ? "bg-transparent" : "bg-foreground",
-        )}
-      />
+      <UnreadDot unread={!isRead} className="mt-[14px]" />
       <NotificationPicture
         kind={look.kind}
         personId={look.personId}
@@ -488,7 +482,7 @@ function NotificationPicture({
   names: MemberNames;
 }) {
   if (isTileKind(kind)) {
-    // The initials avatar's paint (the hue at 18% over `--popover`), so a
+    // The initials avatar's paint (the hue at 14% over `--card`), so a
     // tile and a person's picture sit at one strength.
     const paint = memberAvatarTint(NOTIFICATION_TILE_HUE[kind]);
     return (

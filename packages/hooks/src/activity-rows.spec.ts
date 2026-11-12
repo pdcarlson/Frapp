@@ -8,6 +8,9 @@ import {
   activityNeedsYouHeadline,
   activityNextUpLine,
   activityPollIsOpen,
+  activityRowAction,
+  parseActivityFilter,
+  activityFilterAvailable,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -987,5 +990,125 @@ describe("activityNextUpLine", () => {
 
   it("is nothing when no event is ahead", () => {
     expect(activityNextUpLine({ nextEvent: null })).toBeNull();
+  });
+});
+
+describe("activityRowAction (#4402)", () => {
+  it("puts the one-press asks on the row, and never Vote or a status", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ id: "mine", title: "Mine" })],
+        task_confirmations: [
+          task({ id: "done", title: "Done", status: "COMPLETED" }),
+        ],
+        hours_approvals: [
+          {
+            id: "h1",
+            user_id: "u2",
+            member_name: "Sam",
+            date: "2026-11-10",
+            duration_minutes: 60,
+            description: "Food bank",
+            created_at: "2026-11-10T00:00:00.000Z",
+          },
+        ],
+        polls: [poll()],
+      },
+      coming_up: [
+        event({
+          id: "open",
+          name: "Open",
+          check_in_open: true,
+          checked_in: false,
+        }),
+        event({ id: "later", name: "Later" }),
+      ],
+    });
+    const actions = Object.fromEntries(
+      activityGroups(data, "all", new Date("2026-11-12T00:00:00.000Z"))
+        .flatMap((group) => group.rows)
+        .map((row) => [row.title, activityRowAction(row)]),
+    );
+    expect(actions).toEqual({
+      // Not yet: an event may need a location the web can't give (#4427).
+      Open: null,
+      Mine: null,
+      Done: "confirm",
+      "Food bank": "approve",
+      "Formal venue?": null,
+      Later: null,
+    });
+  });
+});
+
+describe("the Needs you filter (#4402)", () => {
+  it("keeps every kind waiting on the member and empties the other groups", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ id: "mine", title: "Mine" })],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll()],
+      },
+      coming_up: [event({ id: "later", name: "Later" })],
+      links: [link()],
+      made_by_you: {
+        polls: [poll({ message_id: "p9", question: "Mine?" })],
+        tasks: [],
+        events: [],
+      },
+      unavailable: ["links"],
+    });
+    const groups = activityGroups(
+      data,
+      "waiting",
+      new Date("2026-11-12T00:00:00.000Z"),
+    );
+    const byId = Object.fromEntries(groups.map((group) => [group.id, group]));
+    expect(byId["needs-you"]!.rows.map((row) => row.title).sort()).toEqual([
+      "Formal venue?",
+      "Mine",
+    ]);
+    for (const id of ["coming-up", "links", "made-by-you"] as const) {
+      expect(byId[id]!.rows).toEqual([]);
+      expect(byId[id]!.unavailable).toEqual([]);
+      expect(byId[id]!.archive).toBeNull();
+    }
+    // Nothing held back under a chip.
+    expect(byId["needs-you"]!.parts.every((part) => part.limit === null)).toBe(
+      true,
+    );
+  });
+
+  it("says a Needs you section that couldn't load, whatever its kind", () => {
+    const groups = activityGroups(
+      activity({ unavailable: ["polls", "hours_approvals"] }),
+      "waiting",
+    );
+    expect(
+      groups.find((group) => group.id === "needs-you")!.unavailable,
+    ).toEqual(["hours_approvals", "polls"]);
+  });
+});
+
+describe("parseActivityFilter", () => {
+  it("reads back a chip and nothing else", () => {
+    expect(parseActivityFilter("waiting")).toBe("waiting");
+    expect(parseActivityFilter("link")).toBe("link");
+    expect(parseActivityFilter("confirm")).toBeNull();
+    expect(parseActivityFilter("bogus")).toBeNull();
+    expect(parseActivityFilter(null)).toBeNull();
+  });
+});
+
+describe("activityFilterAvailable", () => {
+  it("drops a kind whose module the chapter has off, and nothing else", () => {
+    const off = (module: string) => module !== "hours" && module !== "polls";
+    expect(activityFilterAvailable("hours", off)).toBe(false);
+    expect(activityFilterAvailable("poll", off)).toBe(false);
+    expect(activityFilterAvailable("task", off)).toBe(true);
+    expect(activityFilterAvailable("link", off)).toBe(true);
+    expect(activityFilterAvailable("waiting", off)).toBe(true);
+    expect(activityFilterAvailable("hours")).toBe(true);
   });
 });

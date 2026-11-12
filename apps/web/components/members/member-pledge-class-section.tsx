@@ -5,6 +5,10 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useAssignPledgeClasses, usePledgeClasses } from "@repo/hooks";
 import { vocab } from "@repo/org-archetypes";
+import {
+  ORDER_NUMBER_INVALID_MESSAGE,
+  parseOrderNumber,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
@@ -23,7 +27,6 @@ import {
 } from "@/components/members/member-detail-rows";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { useToast } from "@/lib/hooks/use-toast";
-import { parseOrderNumber } from "@/lib/pledge-classes";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /** The select's value for "no class": Radix refuses an empty-string item. */
@@ -204,7 +207,7 @@ export function MemberPledgeClassSection({
             />
             {parsedNumber === undefined ? (
               <p role="alert" className="text-caption text-destructive-text">
-                A whole number from 1 up, or blank for none.
+                {ORDER_NUMBER_INVALID_MESSAGE}
               </p>
             ) : null}
           </div>

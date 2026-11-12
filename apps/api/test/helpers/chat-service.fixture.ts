@@ -142,6 +142,7 @@ export async function createChatServiceFixture() {
     create: jest.fn(),
     insertIdempotent: jest.fn(),
     compareAndSetFlag: jest.fn(),
+    updateIfLive: jest.fn(),
     update: jest.fn(),
   };
 

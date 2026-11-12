@@ -197,6 +197,7 @@ await import("./tiers/unread-counts-skip-audit-mirror.mjs");
 await import("./tiers/unread-counts-filters.mjs");
 await import("./tiers/channel-latest-messages.mjs");
 await import("./tiers/message-threads.mjs");
+await import("./tiers/thread-last-reply.mjs");
 await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");
@@ -219,6 +220,7 @@ await import("./tiers/event-types.mjs");
 await import("./tiers/activity-item-reads.mjs");
 await import("./tiers/chat-channel-access-lists.mjs");
 await import("./tiers/role-tier-reorder.mjs");
+await import("./tiers/clear-deleted-message-payloads.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

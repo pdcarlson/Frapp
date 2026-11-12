@@ -9174,8 +9174,44 @@
     },
     "/v1/tasks": {
       "get": {
+        "description": "Newest first, by `created_at` then `id`. Send `limit` (and, for the next page, `before` and `before_id` from the last task received) to page; a page shorter than `limit` is the last. With neither, every task is returned, as before paging existed.",
         "operationId": "TaskController_list_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Cursor: the `created_at` of the last task of the previous page, fed back exactly as received. Tasks come newest first, by `created_at` then `id`. Requires `before_id`.",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999999+00:00",
+              "type": "string"
+            }
+          },
+          {
+            "name": "before_id",
+            "required": false,
+            "in": "query",
+            "description": "Cursor: the `id` of the last task of the previous page. Requires `before`.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -11473,7 +11509,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
+        "summary": "Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]
@@ -16360,6 +16396,45 @@
           }
         }
       },
+      "ChatThreadLastReplyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sender_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "The reply’s text, cut to 500 characters."
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "attachment_count": {
+            "type": "number",
+            "description": "The reply’s `metadata.attachment_count`, or 0 when it has none."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list."
+          }
+        },
+        "required": [
+          "id",
+          "sender_id",
+          "content",
+          "kind",
+          "attachment_count",
+          "created_at"
+        ]
+      },
       "ChatMessageDto": {
         "type": "object",
         "properties": {
@@ -16422,7 +16497,7 @@
           "payload": {
             "type": "object",
             "nullable": true,
-            "description": "Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text."
+            "description": "Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575)."
           },
           "client_message_id": {
             "type": "string",
@@ -16502,6 +16577,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "thread_last_reply": {
+            "nullable": true,
+            "description": "On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatThreadLastReplyDto"
+              }
+            ]
           },
           "created_at": {
             "type": "string"
@@ -20290,7 +20375,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Set when its creator closed it early."
+            "description": "Set when it was closed early, by its creator or a channels:manage holder."
           },
           "is_closed": {
             "type": "boolean"

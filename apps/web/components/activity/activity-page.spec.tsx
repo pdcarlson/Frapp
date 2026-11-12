@@ -4,6 +4,7 @@ import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
+const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
 const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
   () => undefined,
@@ -19,7 +20,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     ACTIVITY_FILTERS: actual.ACTIVITY_FILTERS,
     ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
+    activityFilterAvailable: actual.activityFilterAvailable,
     activityGroups: actual.activityGroups,
+    activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
@@ -27,6 +30,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
   };
 });
@@ -37,8 +41,12 @@ vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
 }));
+const mockUser = vi.fn(() => ({
+  userId: "me" as string | null,
+  isLoading: false,
+}));
 vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: "me", isLoading: false }),
+  useFrappUser: () => mockUser(),
 }));
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => mockNetwork(),
@@ -71,6 +79,38 @@ vi.mock("./activity-panel", () => ({
 
 // The link row's actions are its own spec's (`activity-link-row.spec.tsx`);
 // this page owes drawing one per link, with Remove only for an officer.
+/** The chapter's plan: `state.allowed` false refuses the row actions. */
+const mockGate = vi.fn(() => ({
+  allowed: true,
+  isOffline: false,
+  isPending: false,
+  state: { allowed: true },
+}));
+vi.mock("@/components/shared/subscription-gate", () => ({
+  useSubscriptionGate: () => mockGate(),
+}));
+const mockActed = vi.fn();
+// The button itself is tested in `activity-row-action.spec.tsx`; the gate
+// rule (`activity-row-action-gate.ts`) is the real one.
+vi.mock("./activity-row-action", () => ({
+  ActivityRowActionButton: ({
+    row,
+    action,
+    onActed,
+  }: {
+    row: ActivityRow;
+    action: string;
+    onActed: (row: ActivityRow) => Promise<unknown>;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        mockActed(action, row.key);
+        void onActed(row);
+      }}
+    >{`act:${action}:${row.title}`}</button>
+  ),
+}));
 vi.mock("./activity-link-row", () => ({
   useActivityLinkActions: () => ({}),
   ActivityLinkRow: ({
@@ -142,8 +182,17 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The remembered chip (#4402) must not carry from one test to the next.
+  window.localStorage.clear();
+  mockUser.mockReturnValue({ userId: "me", isLoading: false });
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockGate.mockReturnValue({
+    allowed: true,
+    isOffline: false,
+    isPending: false,
+    state: { allowed: true },
+  });
 });
 
 describe("ActivityPage", () => {
@@ -181,6 +230,139 @@ describe("ActivityPage", () => {
     expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Coming up" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Made by you" })).toBeNull();
+  });
+
+  describe("the Needs you chip and the remembered chip (#4402)", () => {
+    const chipGroup = () => screen.getByRole("group", { name: "Show" });
+
+    it("narrows to what is waiting on the member, every kind of it, and leaves the other groups out", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          made_by_you: {
+            polls: [{ ...poll, message_id: "p9" }],
+            tasks: [],
+            events: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      fireEvent.click(
+        within(chipGroup()).getByRole("button", { name: "Needs you" }),
+      );
+
+      expect(screen.getByText("Book the venue")).toBeInTheDocument();
+      expect(screen.getByText("Formal venue?")).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Made by you" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Coming up" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
+    });
+
+    it("says nothing is waiting, in Needs you's own words, under its chip", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      fireEvent.click(
+        within(chipGroup()).getByRole("button", { name: "Needs you" }),
+      );
+      expect(
+        screen.getByText("Nothing is waiting on you."),
+      ).toBeInTheDocument();
+    });
+
+    it("opens on the chip this person last left it on, and remembers a new pick", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "poll");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "Polls" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
+
+      fireEvent.click(within(chipGroup()).getByRole("button", { name: "All" }));
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "all",
+      );
+    });
+
+    it("doesn't remember the To confirm tile's narrowing, only chips", () => {
+      mockPermissions.mockReturnValue({
+        data: { permissions: ["tasks:manage"] },
+      });
+      window.localStorage.setItem("frapp.activity.filter.me", "event");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "event",
+      );
+    });
+
+    it("waits for the viewer before drawing, so it opens on their chip rather than jumping to it", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "poll");
+      mockActivity.mockReturnValue(loaded());
+      mockUser.mockReturnValue({ userId: null, isLoading: true });
+      const { rerender } = render(<ActivityPage />);
+      expect(screen.queryByRole("group", { name: "Show" })).toBeNull();
+
+      mockUser.mockReturnValue({ userId: "me", isLoading: false });
+      rerender(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "Polls" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("leaves out a chip whose module is off, and a stored chip for it opens on All", () => {
+      mockModuleGate.mockReturnValue((module: string) => module !== "hours");
+      window.localStorage.setItem("frapp.activity.filter.me", "hours");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).queryByRole("button", { name: "Hours" }),
+      ).toBeNull();
+      expect(
+        within(chipGroup()).getByRole("button", { name: "All" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      mockModuleGate.mockReturnValue(undefined);
+    });
+
+    it("keeps the stored chip when the To confirm tile is cleared", () => {
+      mockPermissions.mockReturnValue({
+        data: { permissions: ["tasks:manage"] },
+      });
+      window.localStorage.setItem("frapp.activity.filter.me", "event");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "event",
+      );
+    });
+
+    it("ignores a stored value that isn't a chip", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "confirm");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "All" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
   });
 
   it("lists open polls only, and keeps closed ones behind Archived polls (#4258)", () => {
@@ -329,6 +511,33 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
+  it("dots an unread row and records the open when it is opened (#4405)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [{ ...task, unread: false }],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [{ ...poll, unread: true }],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+
+    const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
+    const taskRow = screen.getByRole("button", { name: /Book the venue/ });
+    expect(pollRow).toHaveAccessibleName(/^Unread:\s?Formal venue\?/);
+    expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
+    expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
+
+    fireEvent.click(taskRow);
+    expect(mockMarkRead).not.toHaveBeenCalled();
+    fireEvent.click(pollRow);
+    expect(mockMarkRead).toHaveBeenCalledWith([
+      { kind: "poll", item_id: "p1" },
+    ]);
+  });
+
   it("keeps the panel open when the row has left the list after an action", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
@@ -475,6 +684,122 @@ describe("ActivityPage", () => {
     );
   });
 
+  describe("asks on the row (#4402)", () => {
+    const officerRead = () =>
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [
+            {
+              ...task,
+              id: "t2",
+              title: "Sweep the porch",
+              status: "COMPLETED",
+            },
+          ],
+          hours_approvals: [
+            {
+              id: "h1",
+              user_id: "u2",
+              member_name: "Sam",
+              date: "2026-11-10",
+              duration_minutes: 90,
+              description: "Food bank",
+              created_at: "2026-11-10T00:00:00.000Z",
+            },
+          ],
+          polls: [poll],
+        },
+        coming_up: [
+          {
+            id: "e1",
+            name: "Chapter meeting",
+            location: null,
+            start_time: "2026-11-12T19:00:00.000Z",
+            end_time: "2099-01-01T20:00:00.000Z",
+            attendance: "required",
+            point_value: 10,
+            check_in_opens_minutes: 10,
+            check_in_open: true,
+            checked_in: false,
+            created_by: "officer",
+            created_at: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+      });
+
+    it("puts Confirm and Approve on the row, and keeps Vote and Check in opening the panel", () => {
+      mockActivity.mockReturnValue(officerRead());
+      render(<ActivityPage />);
+
+      for (const name of [
+        "act:confirm:Sweep the porch",
+        "act:approve:Food bank",
+      ]) {
+        expect(screen.getByRole("button", { name })).toBeInTheDocument();
+      }
+      // An event may need the member's location, which the web can't give
+      // (#4427): Check in stays the row's ask and opens the panel.
+      expect(
+        screen.queryByRole("button", { name: /^act:check-in/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Chapter meeting/ }),
+      ).toHaveAccessibleName(/Check in/);
+      // The ask moved out of the row: the row itself no longer names it,
+      // and only holds its place for the button laid over it.
+      const row = screen.getByRole("button", { name: /^Sweep the porch/ });
+      expect(row).not.toHaveAccessibleName(/Confirm/);
+      expect(
+        row.querySelector('[aria-hidden="true"].invisible'),
+      ).toHaveTextContent("Confirm");
+      // A vote asks which option, so it stays the row's ask and opens the panel.
+      expect(
+        screen.queryByRole("button", { name: /^act:.*Formal/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Formal venue\?/ }),
+      ).toHaveTextContent("Vote");
+
+      // The row beside the button still opens the panel.
+      fireEvent.click(screen.getByRole("button", { name: /^Sweep the porch/ }));
+      expect(screen.getByText("panel:Sweep the porch")).toBeInTheDocument();
+    });
+
+    it("reads the item and re-reads the page after acting on the row", () => {
+      const read = officerRead();
+      const hours = read.data.needs_you.hours_approvals as Array<
+        Record<string, unknown>
+      >;
+      hours[0] = { ...hours[0], unread: true };
+      mockActivity.mockReturnValue(read);
+      render(<ActivityPage />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "act:approve:Food bank" }),
+      );
+      expect(mockActed).toHaveBeenCalledWith("approve", "needs:hours:h1");
+      expect(mockMarkRead).toHaveBeenCalledWith([
+        { kind: "hours_entry", item_id: "h1" },
+      ]);
+      expect(mockInvalidate).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps every ask in its row, opening the panel, when the chapter's plan refuses the writes", () => {
+      mockGate.mockReturnValue({
+        allowed: false,
+        isOffline: false,
+        isPending: false,
+        state: { allowed: false },
+      });
+      mockActivity.mockReturnValue(officerRead());
+      render(<ActivityPage />);
+      expect(screen.queryByRole("button", { name: /^act:/ })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /^Sweep the porch/ }),
+      ).toHaveAccessibleName(/Confirm/);
+    });
+  });
+
   it("gives an officer the confirm and approve tiles", () => {
     mockPermissions.mockReturnValue({
       data: { permissions: ["tasks:manage", "service:approve"] },
@@ -596,9 +921,10 @@ describe("ActivityPage", () => {
     render(<ActivityPage />);
     const tiles = screen.getByRole("group", { name: "Needs you by kind" });
     expect(within(tiles).getAllByRole("button")).toHaveLength(1);
-    expect(
-      within(tiles).getByRole("button", { name: /Your tasks/ }).className,
-    ).toContain("opacity-60");
+    const zeroTile = within(tiles).getByRole("button", { name: /Your tasks/ });
+    // Quiet by its count's tone on the text ladder, not by fading the button.
+    expect(zeroTile.className).not.toContain("opacity-");
+    expect(within(zeroTile).getByText("0").className).toContain("text-muted");
     mockModuleGate.mockReturnValue(undefined);
   });
 

@@ -19,7 +19,6 @@ jest.mock('@repo/org-archetypes', () => ({
       { key: 'wf_task_confirm', label: 'Task confirm', enabled: true },
       { key: 'wf_advisor_digest', label: 'Advisor digest', enabled: false },
     ],
-    dues: {},
   })),
   getArchetype: jest.fn((key: string) => ({ key })),
   // Enough of the real catalog to exercise the activation funnel's paid-module

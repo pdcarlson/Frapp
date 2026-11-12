@@ -136,6 +136,7 @@ describe('ChannelAccessService', () => {
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
       compareAndSetFlag: jest.fn(),
+      updateIfLive: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

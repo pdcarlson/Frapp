@@ -4,6 +4,7 @@ import Link from "next/link";
 import { can, canAny } from "@repo/validation";
 import type { UnsetFeatureKey } from "@repo/hooks";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import type { NavItem } from "@/components/layout/nav-config";
 
 type Props = {
@@ -50,6 +51,13 @@ type Props = {
    * the dot sits on the glyph.
    */
   highlight?: string;
+  /**
+   * A number to show in mention red (#3774): the Direct messages row's count
+   * of conversations with anything unread, as the phone's Messages door shows
+   * it. A direct message addresses the member, so it takes the fixed mention
+   * red and never the chapter accent (foundations.md §5).
+   */
+  count?: { value: number; label: string };
 };
 
 function isGranted(
@@ -156,6 +164,7 @@ export function ProtectedNavItem({
   pressed,
   selectLabel,
   highlight,
+  count,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
     return null;
@@ -197,7 +206,8 @@ export function ProtectedNavItem({
   );
   // The rail's `aria-label` replaces the row's content, the sr-only words
   // included, so it carries them itself.
-  const railLabel = highlight ? `${item.label}, ${highlight}` : item.label;
+  const spoken = count ? count.label : highlight;
+  const railLabel = spoken ? `${item.label}, ${spoken}` : item.label;
   const dot = highlight ? (
     <span
       aria-hidden="true"
@@ -209,18 +219,36 @@ export function ProtectedNavItem({
       )}
     />
   ) : null;
+  // The count's badge: the rail row's 18px pill on the glyph's corner, the
+  // channel list's 24px one at the end of a full row.
+  const badge = count ? (
+    <Badge
+      variant="mention"
+      aria-hidden="true"
+      data-nav-count=""
+      className={cn(
+        "justify-center tabular-nums",
+        collapsed
+          ? "absolute -right-1 -top-1 h-[18px] min-w-[18px] px-1"
+          : "h-6 min-w-6 px-2",
+      )}
+    >
+      {count.value > 99 ? "99+" : count.value}
+    </Badge>
+  ) : null;
+  const trailing = badge ?? dot;
   const content = (
     <>
       <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
-      {collapsed ? dot : null}
-      {collapsed || !dot ? null : (
+      {collapsed ? trailing : null}
+      {collapsed || !trailing ? null : (
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {dot}
+          {trailing}
         </span>
       )}
-      {highlight && !collapsed ? (
-        <span className="sr-only">, {highlight}</span>
+      {spoken && !collapsed ? (
+        <span className="sr-only">, {spoken}</span>
       ) : null}
     </>
   );

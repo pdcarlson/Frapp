@@ -73,18 +73,6 @@ export interface WorkflowEntry {
   readonly units?: string;
 }
 
-export interface DuesConfigSeed {
-  readonly cadence: "monthly" | "per_semester" | "per_quarter";
-  /** All monetary amounts are in cents to match the DB schema. */
-  readonly active_amount_cents: number;
-  readonly new_member_amount_cents: number;
-  readonly alumni_amount_cents: number;
-  readonly installments_allowed: boolean;
-  readonly late_fee_cents: number;
-  readonly grace_days: number;
-  readonly scholarship_pool_cents: number;
-}
-
 export interface Archetype {
   readonly key: ArchetypeKey;
   readonly label: string;
@@ -100,7 +88,6 @@ export interface Archetype {
    * #3939): their place within their class, or chapter-wide.
    */
   readonly orderLanguage: string;
-  readonly duesCadence: "monthly" | "per_semester" | "per_quarter";
   readonly requirePresidentApprovalOnBudgetOver: number;
 }
 
@@ -146,7 +133,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "New member",
     classLanguage: "Pledge class",
     orderLanguage: "Fraternal order",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 500,
   }),
 
@@ -170,7 +156,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "New member",
     classLanguage: "New member class",
     orderLanguage: "Bond number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
 
@@ -194,7 +179,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "Aspirant",
     classLanguage: "Line",
     orderLanguage: "Line number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
 
@@ -218,7 +202,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "New member",
     classLanguage: "Line",
     orderLanguage: "Roll number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 300,
   }),
 
@@ -242,7 +225,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "Candidate",
     classLanguage: "Cohort",
     orderLanguage: "Roll number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
 
@@ -266,7 +248,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "Pledge",
     classLanguage: "Pledge class",
     orderLanguage: "Roll number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 150,
   }),
 
@@ -290,7 +271,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "Inductee",
     classLanguage: "Class",
     orderLanguage: "Roll number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
 
@@ -314,7 +294,6 @@ export const ARCHETYPES = Object.freeze({
     pledgeLanguage: "Founding member",
     classLanguage: "Founding class",
     orderLanguage: "Roll number",
-    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 0,
   }),
 } satisfies Record<ArchetypeKey, Archetype>);
@@ -671,22 +650,6 @@ export function titleCase(term: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DUES_CONFIG_SEED
-// Default dues configuration in cents (matches chapter_dues_config schema).
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const DUES_CONFIG_SEED: Readonly<DuesConfigSeed> = Object.freeze({
-  cadence:                  "per_semester",
-  active_amount_cents:      85000,  // $850
-  new_member_amount_cents:  42500,  // $425
-  alumni_amount_cents:      0,
-  installments_allowed:     true,
-  late_fee_cents:           2500,   // $25
-  grace_days:               7,
-  scholarship_pool_cents:   120000, // $1 200
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Guard helpers — always use these instead of bare subscripts
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -695,7 +658,11 @@ export const DUES_CONFIG_SEED: Readonly<DuesConfigSeed> = Object.freeze({
  * Never returns undefined.
  */
 export function getArchetype(key: string): Archetype {
-  return (ARCHETYPES as Record<string, Archetype>)[key] ?? ARCHETYPES.ifc;
+  // Own keys only: a bare subscript resolves `toString` and friends off
+  // Object.prototype and hands back a function.
+  return Object.hasOwn(ARCHETYPES, key)
+    ? (ARCHETYPES as Record<string, Archetype>)[key]!
+    : ARCHETYPES.ifc;
 }
 
 /**
@@ -720,7 +687,6 @@ export interface ChapterConfigSeed {
   vocabulary: VocabularyDefaults;
   customFields: CustomFieldEntry[];
   workflows: WorkflowEntry[];
-  dues: DuesConfigSeed;
 }
 
 /**
@@ -742,10 +708,6 @@ export function buildChapterConfigFromArchetype(archetypeKey: string): ChapterCo
         ? archetype.requirePresidentApprovalOnBudgetOver
         : w.threshold,
     })),
-    dues: structuredClone({
-      ...DUES_CONFIG_SEED,
-      cadence: archetype.duesCadence,
-    }),
   };
 }
 export * from "./org-profiles";

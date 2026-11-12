@@ -115,6 +115,7 @@ const links = vi.hoisted(() => ({
   clear: vi.fn(),
   remove: vi.fn(),
   restore: vi.fn(),
+  markRead: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -122,6 +123,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActivity: () => activity.value,
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
+  useActivityUnread: () => ({ markRead: links.markRead }),
   // Read by the back row and the chips for the chapter's accent.
   useCurrentChapter: () => ({ data: chapter.data }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
@@ -153,7 +155,9 @@ vi.mock("@/components/activity/activity-sheet", () => ({
   },
 }));
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ActivityScreen from "@/app/(app)/activity";
+import { resetActivityFilterForTests } from "@/lib/activity/activity-filter";
 import {
   ActivityAsk,
   ActivityListRow,
@@ -235,6 +239,8 @@ const litChip = (tree: ReactTestRenderer) =>
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
+    // The remembered chip (#4402) must not carry from one test to the next.
+    resetActivityFilterForTests();
     queryClient = new QueryClient();
     sheet.props = null;
     // Reset here, not at a test's end: a failing test must not leave the
@@ -561,6 +567,39 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.viewerId).toBe("me");
   });
 
+  it("dots an unread row, says so, and records the open (#4405)", () => {
+    const data = read();
+    activity.value = {
+      ...activity.value,
+      data: {
+        ...data,
+        needs_you: {
+          ...data.needs_you,
+          tasks: data.needs_you.tasks.map((task, index) => ({
+            ...task,
+            unread: index === 0,
+          })),
+        },
+      },
+    };
+    links.markRead.mockClear();
+    const tree = render();
+    const unread = row(tree, "Book the venue");
+    expect(
+      unread.findAllByProps({ testID: "activity-unread-dot" }),
+    ).toHaveLength(1);
+    const pressable = unread.find(
+      (node) => typeof node.props.accessibilityLabel === "string",
+    );
+    expect(pressable.props.accessibilityLabel).toBe("Unread: Book the venue");
+    act(() => {
+      unread.props.onPress();
+    });
+    expect(links.markRead).toHaveBeenCalledWith([
+      { kind: "task", item_id: "task-1" },
+    ]);
+  });
+
   it("keeps the sheet on the row it opened after that row leaves the list", () => {
     const tree = render();
     act(() => {
@@ -663,6 +702,111 @@ describe("Activity screen (#3897)", () => {
       row(tree, "Old vote").props.onPress();
     });
     expect(sheet.props?.row?.key).toBe("made:poll:p-closed");
+  });
+
+  describe("the Needs you chip and the remembered chip (#4402)", () => {
+    it("narrows to what is waiting on the member and leaves the other groups out", () => {
+      const tree = render();
+      const before = rowLabels(tree);
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("waiting");
+      });
+      expect(litChip(tree)).toBe("waiting");
+      const after = rowLabels(tree);
+      // Every kind under Needs you stays; nothing from another group does.
+      expect(after).toContain("Book the venue");
+      expect(after.length).toBeLessThan(before.length);
+      const text = screenText(tree);
+      expect(text).not.toContain("Coming up");
+      expect(text).not.toContain("Made by you");
+      expect(text).not.toContain("Nothing of this kind here.");
+    });
+
+    it("remembers a chip on the phone, and opens on it next time", () => {
+      const first = render();
+      act(() => {
+        first.root.findByType(FilterChips).props.onSelect("poll");
+      });
+      expect(vi.mocked(AsyncStorage.setItem)).toHaveBeenCalledWith(
+        "frapp.activity.filter",
+        "poll",
+      );
+      act(() => first.unmount());
+      mounted.splice(mounted.indexOf(first), 1);
+      const second = render();
+      expect(litChip(second)).toBe("poll");
+    });
+
+    it("opens on a chip stored by an earlier launch, read from the phone's storage", async () => {
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("poll");
+      const tree = render();
+      await act(async () => {});
+      expect(litChip(tree)).toBe("poll");
+    });
+
+    it("opens on All for a stored value that isn't a chip", async () => {
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("confirm");
+      const tree = render();
+      await act(async () => {});
+      expect(litChip(tree)).toBeNull();
+    });
+
+    it("says nothing is waiting, in Needs you's own words, under its chip", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            tasks: [],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [],
+          },
+        }),
+      };
+      const tree = render();
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("waiting");
+      });
+      const text = screenText(tree);
+      expect(text).toContain("Nothing is waiting on you.");
+      expect(text).not.toContain("Nothing of this kind here.");
+    });
+
+    it("leaves out the chip of a module the chapter has off, and a stored chip for it opens on All", async () => {
+      chapter.data = { enabled_modules: { hours: false } };
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("hours");
+      const tree = render();
+      await act(async () => {});
+      const chips = tree.root.findByType(FilterChips).props.chips as {
+        value: string | null;
+      }[];
+      expect(chips.map((chip) => chip.value)).not.toContain("hours");
+      expect(litChip(tree)).toBeNull();
+    });
+
+    it("keeps the stored chip when the To confirm tile is cleared", () => {
+      links.permissions = ["tasks:manage"];
+      const tree = render();
+      vi.mocked(AsyncStorage.setItem).mockClear();
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      expect(litChip(tree)).toBeNull();
+      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalled();
+    });
+
+    it("doesn't remember the To confirm tile's narrowing", () => {
+      links.permissions = ["tasks:manage"];
+      vi.mocked(AsyncStorage.setItem).mockClear();
+      const tree = render();
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalled();
+    });
   });
 
   it("narrows every group to one kind under a chip, keeping Needs you", () => {

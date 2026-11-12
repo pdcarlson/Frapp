@@ -336,6 +336,8 @@ function invalidateTask(
  * else, which is strictly worse than no parameter: two callers asking for
  * different assignees got two entries holding identical data.
  *
+ * The list is read in pages ({@link readAllTaskPages}) but cached whole.
+ *
  * Assignee scoping is the server's, and no client argument can reproduce or
  * override it: `TaskService.list` returns the chapter's whole task set to a
  * `tasks:manage` holder and only the caller's own rows to everyone else. A
@@ -348,14 +350,64 @@ export function useTasks() {
   const scope = useChapterScope();
   return useQuery({
     queryKey: taskKeys.lists(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/tasks");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: ({ signal }) => readAllTaskPages(client, signal),
     staleTime: 30_000,
     enabled: scope === "chapter",
   });
+}
+
+/** Rows per `GET /v1/tasks` page: the route's largest `limit` (#4037). */
+export const TASK_PAGE_SIZE = 200;
+
+type TaskPageRow = { id: string; created_at: string };
+
+/**
+ * Pages read before the list is taken to be runaway (100,000 rows): far past
+ * any chapter, so reaching it means the server is not honouring the cursor.
+ */
+const TASK_PAGE_CEILING = 500;
+
+/**
+ * Every task the server scopes to the caller, read a page at a time
+ * (#4037). Each request is bounded, and the cursor is the last row's
+ * `created_at` and `id` passed back exactly as received: the server orders
+ * by both, so no row repeats or drops at a page edge. A page shorter than
+ * the limit is the last; the server fills every page it can, even under a
+ * row cap below the limit (`SupabaseTaskRepository.findByChapter`). The
+ * result is one array, the shape the board and every optimistic write on
+ * this cache expect.
+ *
+ * An API from before paging ignores the parameters and answers the whole
+ * list every time (a rollback with a newer client live). That answer is
+ * taken as the list rather than looped on: a page longer than the limit, or
+ * one ending on the row the cursor already named, ends the read.
+ */
+export async function readAllTaskPages(
+  client: ReturnType<typeof useFrappClient>,
+  signal?: AbortSignal,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let cursor: { before: string; before_id: string } | undefined;
+  for (let pages = 0; ; pages += 1) {
+    if (pages === TASK_PAGE_CEILING) {
+      throw new Error("The task list did not end; stopped paging.");
+    }
+    const { data, error } = await client.GET("/v1/tasks", {
+      params: { query: { limit: TASK_PAGE_SIZE, ...cursor } },
+      signal,
+    });
+    if (error) throw error;
+    const page = (Array.isArray(data) ? data : []) as TaskPageRow[];
+    // The server ignored `limit`: this is already the whole list.
+    if (page.length > TASK_PAGE_SIZE) return page;
+    const last = page[TASK_PAGE_SIZE - 1];
+    // The server ignored the cursor and sent the first page again.
+    if (cursor && last?.id === cursor.before_id) break;
+    rows.push(...page);
+    if (!last) break;
+    cursor = { before: last.created_at, before_id: last.id };
+  }
+  return rows;
 }
 
 export function useTask(id: string) {

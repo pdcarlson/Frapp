@@ -12,6 +12,7 @@ import {
 } from "@repo/chat-core/cards";
 import {
   hiddenQuoteText,
+  threadPreviewVisible,
   tombstoneCanUnblock,
   visibleReactions,
   type BlockState,
@@ -22,6 +23,7 @@ import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@repo/chat-core/message-actions";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { AnnouncementCard } from "./announcement-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
@@ -108,6 +110,10 @@ export interface ThreadMessageRowProps {
    * Absent where the channel offers no threads (a 1:1 DM).
    */
   onOpenThread?: (message: ChatMessage) => void;
+  /** Replies new to the viewer in this row's thread, if it has one (#4297). */
+  threadUnread?: number;
+  /** A member's photo by id, for the thread card's faces (#4297). */
+  memberAvatarFor?: (userId: string) => string | null;
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
@@ -151,8 +157,12 @@ function ThreadMessageRowBody({
   maskedRefresh,
   onReload,
   onOpenThread,
+  threadUnread = 0,
+  memberAvatarFor,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
+  // Before any early return: a hook (the card row's Bubbles side, below).
+  const density = useChatDensity(cached.channel_id);
 
   if (visibility === "tombstone") {
     const senderId = cached.sender_id;
@@ -177,6 +187,13 @@ function ThreadMessageRowBody({
   // The flag (#3921), with the flagger's name dropped when the viewer blocked
   // them: a Realtime echo carries `flagged_by` raw.
   const flag = messageFlagView(cached, viewerId, blockState, nameFor);
+  // The thread card's latest-reply preview (#4297), only where the viewer's
+  // block list clears its replier: the parent's echo carries it raw.
+  const lastReply = cached.thread?.last_reply ?? null;
+  const threadPreview =
+    lastReply && threadPreviewVisible(lastReply, cached, blockState, viewerId)
+      ? lastReply
+      : null;
   const message: ChatMessage =
     reactions === cached.reactions ? cached : { ...cached, reactions };
 
@@ -261,6 +278,7 @@ function ThreadMessageRowBody({
         startsRun={startsRun}
         quote={quote}
         flag={flag}
+        threadSpine={message.thread ? { hasPreview: !!threadPreview } : null}
         onOpenActions={openActions}
         onOpenProfile={onOpenProfile}
       >
@@ -272,6 +290,17 @@ function ThreadMessageRowBody({
             summary={message.thread}
             nameFor={nameFor}
             roleColorFor={roleColorFor}
+            avatarFor={memberAvatarFor}
+            // Under the viewer's own card on the right in Bubbles, as under
+            // their own text (`MessageItem`).
+            align={
+              density === "bubbles" && message.sender_id === viewerId
+                ? "end"
+                : "start"
+            }
+            unread={threadUnread}
+            preview={threadPreview}
+            viewerId={viewerId}
             onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
             onImportantRow={flag?.important === true}
           />
@@ -299,6 +328,9 @@ function ThreadMessageRowBody({
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
       onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
+      threadUnread={threadUnread}
+      threadPreview={threadPreview}
+      memberAvatarFor={memberAvatarFor}
       flag={flag}
     />
   );

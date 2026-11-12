@@ -17,10 +17,16 @@ export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivitySection = Activity["unavailable"][number];
+/** What `POST /v1/activity/reads` names: an item's kind and id. */
+export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
 
-/** The filter chips: everything, or one kind of thing. */
+/**
+ * The filter chips: everything, only what is waiting on the member (the
+ * Needs you group, #4402), or one kind of thing.
+ */
 export const ACTIVITY_FILTERS = [
   { value: "all", label: "All" },
+  { value: "waiting", label: "Needs you" },
   { value: "task", label: "Tasks" },
   { value: "poll", label: "Polls" },
   { value: "event", label: "Events" },
@@ -29,14 +35,48 @@ export const ACTIVITY_FILTERS = [
 ] as const;
 export type ActivityKind = Exclude<
   (typeof ACTIVITY_FILTERS)[number]["value"],
-  "all"
+  "all" | "waiting"
 >;
 /**
  * A chip's value, or `confirm`: what the To confirm tile narrows to (the
  * tasks waiting on the member's confirm), which has no chip of its own
  * since the Tasks chip already covers it (#4173).
  */
-export type ActivityFilter = "all" | ActivityKind | "confirm";
+export type ActivityFilter = "all" | "waiting" | ActivityKind | "confirm";
+
+/** The chapter module each kind belongs to; Links and Needs you belong to none. */
+const FILTER_MODULE: Partial<Record<ActivityFilter, string>> = {
+  task: "tasks",
+  confirm: "tasks",
+  poll: "polls",
+  event: "events",
+  hours: "hours",
+};
+
+/**
+ * Whether a filter can show anything in this chapter: not a kind whose
+ * module the chapter has off (#4402). A client leaves that chip out, as the
+ * summary leaves out its tile, and opens on All rather than on a stored
+ * chip for it. With the module switch unknown, everything is available.
+ */
+export function activityFilterAvailable(
+  filter: ActivityFilter,
+  isModuleEnabled?: (module: string) => boolean,
+): boolean {
+  const module = FILTER_MODULE[filter];
+  return !module || (isModuleEnabled?.(module) ?? true);
+}
+
+/**
+ * The chip a member last picked, as stored on their device (#4402), or
+ * `null` for anything that isn't one. The To confirm tile's narrowing is a
+ * moment's shortcut and isn't remembered.
+ */
+export function parseActivityFilter(raw: unknown): ActivityFilter | null {
+  return ACTIVITY_FILTERS.some((option) => option.value === raw)
+    ? (raw as ActivityFilter)
+    : null;
+}
 
 /** How many rows each list of the read carries at most (`activity.md`). */
 export const ACTIVITY_LIST_LIMIT = 25;
@@ -106,11 +146,37 @@ interface RowBase {
   glyph: ActivityGlyph;
   /** Set on an event row only. */
   dateBlock: ActivityDateBlock | null;
+  /**
+   * Whether the member hasn't opened it from Activity since it started
+   * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
+   * dot. Never on a Made by you row.
+   */
+  unread: boolean;
+  /** The item `POST /v1/activity/reads` records when the row is opened. */
+  readRef: ActivityItemRef;
 }
 
 /** Whether a row's badge asks the member to act, rather than naming a state. */
 export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
   return row.badge?.variant === "warning";
+}
+
+/**
+ * What a row's ask does on the row itself (#4402): the asks that are one
+ * press with nothing to choose. `Vote` is not one, since a poll asks which
+ * option, so it opens the record as before. Neither is `Check in` yet: an
+ * event can require the member's location (`check_in_zone`), which the read
+ * doesn't say and the web can't supply, so a one-press check-in would fail
+ * there (#4427). The client acts through the same route and hook its panel
+ * uses.
+ */
+export type ActivityRowAction = "confirm" | "approve";
+
+export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
+  if (!activityBadgeIsAsk(row)) return null;
+  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  if (row.kind === "hours") return "approve";
+  return null;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -269,6 +335,8 @@ function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
         : { label: "Vote", variant: "warning" },
     glyph: "poll",
     dateBlock: null,
+    unread: group !== "made" && poll.unread,
+    readRef: { kind: "poll", item_id: poll.message_id },
   };
 }
 
@@ -315,6 +383,8 @@ function taskRow(
     badge,
     glyph: role === "confirm" ? "confirm" : "task",
     dateBlock: null,
+    unread: role !== "assigned" && task.unread,
+    readRef: { kind: "task", item_id: task.id },
   };
 }
 
@@ -333,6 +403,8 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     badge: { label: "Approve", variant: "warning" },
     glyph: "hours",
     dateBlock: null,
+    unread: entry.unread,
+    readRef: { kind: "hours_entry", item_id: entry.id },
   };
 }
 
@@ -364,6 +436,8 @@ function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
           : null,
     glyph: "event",
     dateBlock: dateBlock(event),
+    unread: group !== "made" && event.unread,
+    readRef: { kind: "event", item_id: event.id },
   };
 }
 
@@ -391,6 +465,8 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     badge: null,
     glyph: "link",
     dateBlock: null,
+    unread: link.unread,
+    readRef: { kind: "link", item_id: link.id },
   };
 }
 
@@ -460,8 +536,11 @@ export function activityGroups(
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
   const filtered = filter !== "all";
+  // Needs you narrows by group, not kind: its rows are all kept, and every
+  // other group is emptied below.
+  const waiting = filter === "waiting";
   const keep = (rows: ActivityRow[]) =>
-    !filtered
+    !filtered || waiting
       ? rows
       : filter === "confirm"
         ? rows.filter((row) => row.glyph === "confirm")
@@ -471,7 +550,8 @@ export function activityGroups(
   const downFor = (sections: ActivitySection[], kinds: ActivityKind[]) =>
     sections.filter(
       (section, index) =>
-        down.has(section) && (!filtered || kindFilter === kinds[index]),
+        down.has(section) &&
+        (!filtered || waiting || kindFilter === kinds[index]),
     );
   // Under a chip the member asked for that kind, so nothing is held back.
   const cap = (limit: number) => (filtered ? null : limit);
@@ -526,7 +606,7 @@ export function activityGroups(
     ),
   );
 
-  return [
+  const groups: ActivityGroup[] = [
     {
       id: "needs-you",
       label: "Needs you",
@@ -625,6 +705,14 @@ export function activityGroups(
             },
     },
   ];
+  // Under Needs you only that group stays; the page leaves out the rest.
+  return waiting
+    ? groups.map((group) =>
+        group.id === "needs-you"
+          ? group
+          : { ...group, rows: [], parts: [], unavailable: [], archive: null },
+      )
+    : groups;
 }
 
 /** One count tile at the top of the page (#4173). */

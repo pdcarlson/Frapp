@@ -95,8 +95,9 @@ theme package **do** differ, is in [`../tokens.md`](../tokens.md) § L-01.
 Two things the board does **not** settle, recorded so a later change does not over-read it:
 
 - **L-06.** The board states `--card: #211E1A`, the shipped value. It does not adopt the `#232019`
-  alternative L-06 floats, and it does not discuss adjacent-step pitch at all. L-06 stays open; the
-  board is evidence for the current value, not against the concern.
+  alternative L-06 floats, and it does not discuss adjacent-step pitch at all. L-06 stayed open; the
+  board was evidence for the value it drew, not against the concern. (L-06 closed 2026-11-12 when
+  the owner spread the neutral ladder's steps apart, [#3826](https://github.com/pdcarlson/Frapp/issues/3826).)
 - **L-08.** The board writes the mark as "`#DDB844` on `#1A1A1A`, raster only" — the spec'd pair,
   which the committed raster contradicted at the time. The board was drawn from the same spec, so
   this is the spec restated, **not** independent evidence about the raster, and it moved

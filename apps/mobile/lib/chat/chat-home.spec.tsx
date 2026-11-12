@@ -2102,3 +2102,61 @@ describe("Chat home pinned section headings (owner 2026-11-07)", () => {
     expect(pinned.every((type) => type === StickyHeader)).toBe(true);
   });
 });
+
+/**
+ * The swipe to Messages (#3774): a slide right to left on Chat home opens
+ * it, beside the top-right door; only leftward starts it, and a vertical
+ * move hands over to the list's scroll.
+ */
+describe("Chat home: the swipe to Messages", () => {
+  type Pan = {
+    kind: string;
+    handlers: Record<string, (event: unknown, success?: boolean) => void>;
+    config?: Record<string, unknown>;
+  };
+  const pan = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType("GestureDetector" as unknown as React.ElementType)
+      .map((node) => node.props.gesture as Pan)
+      .find((gesture) => gesture.kind === "pan")!;
+
+  it("wraps Chat home, starts only leftward, and yields to a vertical move", () => {
+    const gesture = pan(render());
+    expect(gesture).toBeDefined();
+    const [left, right] = gesture.config?.activeOffsetX as [number, number];
+    expect(left).toBeLessThan(0);
+    expect(right).toBe(Number.MAX_SAFE_INTEGER);
+    expect(gesture.config?.failOffsetY).toEqual([-14, 14]);
+  });
+
+  it("opens Messages on a slide left, and nothing on a slide right", () => {
+    const push = vi.mocked(useRouter)().push;
+    vi.mocked(push).mockClear();
+    const gesture = pan(render());
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: 120, velocityX: 900 }, true),
+    );
+    expect(push).not.toHaveBeenCalled();
+    // A pan the system cancelled opens nothing, however far it went.
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, false),
+    );
+    expect(push).not.toHaveBeenCalled();
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
+    );
+    expect(push).toHaveBeenCalledWith("/messages");
+  });
+
+  it("holds while a menu is open over Chat home", () => {
+    const tree = render();
+    expect(pan(tree).config?.enabled).toBe(true);
+    const account = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Your account" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => account.props.onPress());
+    expect(pan(tree).config?.enabled).toBe(false);
+  });
+});

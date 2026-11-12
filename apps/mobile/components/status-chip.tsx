@@ -29,13 +29,16 @@ export function StatusChip({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  // §5: only danger needs its text lifted for AA on its own tint (3.82:1 to
-  // 4.85:1 solid, 5.07:1 up lifted), the same tone web's danger Badge draws.
-  // The tint keeps the solid hue.
+  // §5: danger and info need their text lifted for AA on their own tint, the
+  // same tones web's Badge draws (info since the 2026-11-12 surface ladder,
+  // #3826, put solid info at 3.46:1 on its tint over a card). The tint keeps
+  // the solid hue.
   const text =
     hue === tokens.color.semantic.destructive
       ? tokens.color.semantic.destructiveText
-      : hue;
+      : hue === tokens.color.semantic.info
+        ? tokens.color.semantic.infoText
+        : hue;
 
   return (
     <View style={[styles.chip, { backgroundColor: tint(hue) }]}>

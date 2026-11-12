@@ -11,11 +11,19 @@ import {
 } from "@/components/shared/async-states";
 import { FILTER_CHIP_CLASS } from "@/components/shared/filter-chip";
 import { InlineNote } from "@/components/shared/inline-note";
+import {
+  useSubscriptionGate,
+  type SubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  readActivityFilter,
+  writeActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
@@ -27,17 +35,26 @@ import {
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
-import { ActivityAsk, ActivityRowLead } from "./activity-row-lead";
+import { ActivityRowActionButton } from "./activity-row-action";
+import { activityRowActionGate } from "./activity-row-action-gate";
+import {
+  ActivityAsk,
+  ActivityRowLead,
+  ActivityUnreadDot,
+} from "./activity-row-lead";
 import { ActivitySummary } from "./activity-summary";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityBadgeIsAsk,
+  activityFilterAvailable,
   activityGroups,
+  activityRowAction,
   activityKeys,
   activitySummary,
   useActiveChapterId,
   useActivity,
+  useActivityUnread,
   useNowDate,
   useMyPermissions,
   type ActivityFilter,
@@ -52,9 +69,17 @@ import { ActivityPageSkeleton } from "./activity-skeleton";
  * its badge, shared by the button and the link form. A badge that asks the
  * member to act draws as the action (`ActivityAsk`); any other is a status.
  */
-function RowContent({ row }: { row: ActivityRow }) {
+function RowContent({
+  row,
+  askOnRow = false,
+}: {
+  row: ActivityRow;
+  /** The ask is a button beside the row (`ActivityRowActionButton`). */
+  askOnRow?: boolean;
+}) {
   return (
     <>
+      <ActivityUnreadDot unread={row.unread} />
       <ActivityRowLead row={row} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-foreground">
@@ -67,7 +92,13 @@ function RowContent({ row }: { row: ActivityRow }) {
         ) : null}
       </span>
       {row.badge ? (
-        activityBadgeIsAsk(row) ? (
+        askOnRow ? (
+          // Holds the ask's place, so the button laid over it lines up with
+          // every other row's badge and the chevron stays in its column.
+          <span aria-hidden="true" className="invisible">
+            <ActivityAsk label={row.badge.label} />
+          </span>
+        ) : activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} />
         ) : (
           <Badge variant={row.badge.variant} className="shrink-0">
@@ -90,17 +121,68 @@ const ROW_CLASS = cn(
   FOCUS_RING,
 );
 
+/** What a row needs to act on its ask in place (#4402). */
+interface RowActions {
+  /** `null` when the chapter's plan refuses the writes: rows open their panel. */
+  gate: SubscriptionGate | null;
+  /** Records the read and re-reads; resolves when the read settles. */
+  onActed: (row: ActivityRow) => Promise<unknown>;
+}
+
+/**
+ * A row that opens its record in the panel. One whose ask is a single press
+ * (Confirm, Approve, Check in; `activityRowAction`) carries it as a button
+ * where the ask was drawn, so the common case takes one click and the rest
+ * of the row still opens the panel, as GitHub's notification rows carry
+ * their quick actions.
+ */
+function PanelRow({
+  row,
+  rowActions,
+  onOpen,
+}: {
+  row: ActivityRow;
+  rowActions: RowActions;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const action = rowActions.gate ? activityRowAction(row) : null;
+  return (
+    <li className={action ? "relative" : undefined}>
+      <button type="button" className={ROW_CLASS} onClick={() => onOpen(row)}>
+        <RowContent row={row} askOnRow={action !== null} />
+      </button>
+      {action && rowActions.gate ? (
+        // Laid over the place the row keeps for its ask (a sibling, not
+        // nested: a button can't hold a button), right of it only the
+        // row's chevron: its 8px padding, 12px gap and 16px glyph.
+        // The wrapper lets a click through, so a disabled button (offline)
+        // leaves the row under it opening the panel, as the ask did.
+        <span className="pointer-events-none absolute right-9 top-1/2 z-10 -translate-y-1/2">
+          <ActivityRowActionButton
+            row={row}
+            action={action}
+            gate={rowActions.gate}
+            onActed={rowActions.onActed}
+          />
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
 function GroupSection({
   group,
   filtered,
   canRemoveLinks,
   linkActions,
+  rowActions,
   onOpen,
 }: {
   group: ActivityGroup;
   filtered: boolean;
   canRemoveLinks: boolean;
   linkActions: ActivityLinkActions;
+  rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }) {
   const labelId = `activity-${group.id}`;
@@ -134,6 +216,7 @@ function GroupSection({
             part={part}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
+            rowActions={rowActions}
             onOpen={onOpen}
           />
         ))
@@ -211,12 +294,14 @@ function GroupPart({
   part,
   canRemoveLinks,
   linkActions,
+  rowActions,
   onOpen,
 }: {
   groupId: ActivityGroup["id"];
   part: ActivityPart;
   canRemoveLinks: boolean;
   linkActions: ActivityLinkActions;
+  rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -250,17 +335,15 @@ function GroupPart({
               rowClassName={ROW_CLASS}
               canRemove={canRemoveLinks}
               actions={linkActions}
+              onOpen={onOpen}
             />
           ) : (
-            <li key={row.key}>
-              <button
-                type="button"
-                className={ROW_CLASS}
-                onClick={() => onOpen(row)}
-              >
-                <RowContent row={row} />
-              </button>
-            </li>
+            <PanelRow
+              key={row.key}
+              row={row}
+              rowActions={rowActions}
+              onOpen={onOpen}
+            />
           ),
         )}
       </ul>
@@ -300,16 +383,41 @@ export function ActivityPage() {
   // Later and Next up stay current while the page is open.
   const now = useNowDate();
   const { isOffline } = useNetwork();
-  const { userId } = useFrappUser();
+  const { userId, isLoading: userLoading } = useFrappUser();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one this person
+  // last left the page on in this browser (#4402), else All.
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const stored = useMemo(() => readActivityFilter(userId), [userId]);
+  const isModuleEnabled = useChapterModuleGate();
+  // A stored chip whose module the chapter has since turned off opens on All.
+  const filter: ActivityFilter =
+    picked ??
+    (stored && activityFilterAvailable(stored, isModuleEnabled)
+      ? stored
+      : "all");
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    // Clearing the To confirm tile isn't a pick: the stored chip stays.
+    if (!(filter === "confirm" && next === "all")) {
+      writeActivityFilter(userId, next);
+    }
+  };
   const [opened, setOpened] = useState<ActivityRow | null>(null);
+  // Dots (#4405): opening a row from here is what reads it; scrolling past
+  // doesn't, and neither does acting on the item elsewhere in Frapp.
+  const { markRead } = useActivityUnread(activity.data);
+  const openFromList = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
+    // A link opens in a new tab and has no panel.
+    if (row.kind !== "link") setOpened(row);
+  };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
-  const isModuleEnabled = useChapterModuleGate();
+  const actionGate = activityRowActionGate(useSubscriptionGate());
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),
@@ -355,7 +463,12 @@ export function ActivityPage() {
       />
     );
   }
-  if (activity.isPending) return <ActivityPageSkeleton />;
+  // Held until the viewer is known (as the Events page holds its view), so
+  // the page opens on the member's stored chip rather than jumping to it,
+  // and a chip picked straight away is stored under them.
+  if (activity.isPending || (userLoading && !isOffline)) {
+    return <ActivityPageSkeleton />;
+  }
   // Only with nothing to show: a refetch that fails (this page refetches after
   // every action) keeps the list it already has rather than replacing it, and
   // the open panel with it, by an error page. The same guard as the task board.
@@ -369,12 +482,18 @@ export function ActivityPage() {
     );
   }
 
-  const refresh = () => {
-    if (!chapterId) return;
-    void queryClient.invalidateQueries({
-      queryKey: activityKeys.chapter(chapterId),
-      exact: true,
-    });
+  const reread = (): Promise<unknown> =>
+    chapterId
+      ? queryClient.invalidateQueries({
+          queryKey: activityKeys.chapter(chapterId),
+          exact: true,
+        })
+      : Promise.resolve();
+  const refresh = () => void reread();
+  // Acting on an item from Activity reads it, as opening it does (#4402).
+  const actedOnRow = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
+    return reread();
   };
 
   return (
@@ -391,7 +510,9 @@ export function ActivityPage() {
         aria-label="Show"
         className="flex flex-wrap items-center gap-2"
       >
-        {ACTIVITY_FILTERS.map((option) => {
+        {ACTIVITY_FILTERS.filter((option) =>
+          activityFilterAvailable(option.value, isModuleEnabled),
+        ).map((option) => {
           // The To confirm tile narrows within Tasks, so the Tasks chip
           // stays lit under it.
           const on =
@@ -424,10 +545,11 @@ export function ActivityPage() {
           <GroupSection
             key={group.id}
             group={group}
-            filtered={filter !== "all"}
+            filtered={filter !== "all" && filter !== "waiting"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
-            onOpen={setOpened}
+            rowActions={{ gate: actionGate, onActed: actedOnRow }}
+            onOpen={openFromList}
           />
         ),
       )}

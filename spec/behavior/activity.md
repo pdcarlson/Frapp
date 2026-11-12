@@ -104,8 +104,11 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 Each row that waits on the member carries `unread`, so a client can mark what is new with a dot,
 the way Slack and Linear mark their inboxes (#4173; Shawn picked "unread until opened" over "new
-since your last visit", 2026-11-11). **Status 2026-11-11: the API serves it; the web and phone
-dots are follow-up steps of #4173.**
+since your last visit", 2026-11-11). Web and the phone draw the dots (#4405, 2026-11-12; how each
+draws one is [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)
+and [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). Opening a row from Activity (its panel
+or sheet, or on web the link itself) records the open, and the dot clears at once. A client that
+gets `unread_since: null` begins the member's dots (below).
 
 - **Which rows.** Everything in Needs you, Coming up and Links. Nothing in Made by you: the member
   made it, so it never waited on them. For the same reason a task they assigned to themselves and
@@ -153,7 +156,7 @@ the same rule search and the poll list follow
   access rule and the same live updates apply, and the card counts the votes.
 - A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
   a question and two options with an id and a label (a card without them draws as "Malformed
-  poll" and is not listed), and it is open until its creator closes it or its closing time
+  poll" and is not listed), and it is open until it is closed early (by its creator or a `channels:manage` holder) or its closing time
   passes. A card with no closing time, or one that doesn't parse, stays open, since a vote on it
   is still accepted; it sorts last.
 - "Hasn't voted" is checked over the chapter's 100 newest poll cards. An open poll older than
