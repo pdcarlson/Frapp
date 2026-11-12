@@ -41,8 +41,31 @@ function canonicalChapterId(
 function withApp(
   properties: AnalyticsProperties | undefined,
   app: AnalyticsApp | undefined,
+  appVersion?: AnalyticsAppVersion,
 ): AnalyticsProperties | undefined {
-  return app ? { ...properties, app } : properties;
+  if (!app && !appVersion) return properties;
+  return {
+    ...properties,
+    ...(app ? { app } : {}),
+    ...(appVersion
+      ? {
+          $app_version: appVersion.version,
+          ...(appVersion.build === null
+            ? {}
+            : { $app_build: appVersion.build }),
+        }
+      : {}),
+  };
+}
+
+/**
+ * A mobile build as PostHog's mobile SDK names it: `version` is the store
+ * version (`0.11.0`), `build` the native build number as a string (`19`), or
+ * null when the client reported none.
+ */
+export interface AnalyticsAppVersion {
+  version: string;
+  build: string | null;
 }
 
 export interface TrackOptions {
@@ -59,6 +82,13 @@ export interface TrackOptions {
    * client that names no app carries none.
    */
   app?: AnalyticsApp;
+  /**
+   * The mobile build that sent the request, stamped as PostHog's
+   * `$app_version` and `$app_build` after the properties are checked (they may
+   * not set `$`-prefixed keys themselves). Read from `X-Client-Version` by
+   * `requestAppVersion`; absent for web and for anything that can't be placed.
+   */
+  appVersion?: AnalyticsAppVersion;
 }
 
 /**
@@ -154,7 +184,7 @@ export class AnalyticsService {
     const event: AnalyticsEvent = {
       name: eventName,
       distinctId,
-      properties: withApp(options.properties, options.app),
+      properties: withApp(options.properties, options.app, options.appVersion),
       ...(chapterGroup ? { groups: { chapter: chapterGroup } } : {}),
     };
 

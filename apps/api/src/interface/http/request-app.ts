@@ -8,6 +8,7 @@ import {
 } from '#domain/constants/client-version';
 import { getHeaderValue } from '../types/request-context.types';
 import type { RequestContext } from '../types/request-context.types';
+import type { AnalyticsAppVersion } from '../../application/services/analytics.service';
 import { DASHBOARD_DEV_ORIGIN, STAGING_APP_ORIGIN } from './cors.options';
 
 /**
@@ -44,4 +45,28 @@ export function requestApp(
   const origin = getHeaderValue(request.headers, 'origin');
   if (origin && DASHBOARD_ORIGINS.has(origin)) return 'web';
   return undefined;
+}
+
+/**
+ * The mobile build that sent this request, for stamping a server-side
+ * analytics event with PostHog's own `$app_version` / `$app_build`: the same
+ * keys `posthog-react-native` puts on the events it sends itself, so one
+ * breakdown splits screens and server events alike by build. Read from
+ * `X-Client-Version` (`ios/0.11.0+19` gives `0.11.0` and `19`); `undefined`
+ * when the header is absent or doesn't parse, which is the web dashboard,
+ * Expo Go and anything older than #2526.
+ *
+ * Like `requestApp`, a label, not an authority.
+ */
+export function requestAppVersion(
+  request: Pick<RequestContext, 'headers'>,
+): AnalyticsAppVersion | undefined {
+  const parsed = parseClientVersionHeader(
+    request.headers[CLIENT_VERSION_HEADER],
+  );
+  if (!parsed) return undefined;
+  return {
+    version: parsed.version.join('.'),
+    build: parsed.build === null ? null : String(parsed.build),
+  };
 }
