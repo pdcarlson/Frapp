@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Merge Backwork department case variants (#3918)
+
+### 20261112150500_merge_backwork_department_case_variants.sql
+
+- **Purpose**: **Changes and deletes data.** In each chapter, folds the Backwork departments whose codes are equal once trimmed and upper-cased ("MATH", "math", " Math ") into one, as an officer's "Merge {CODE} into…" does. The department kept is the one already stored as the key spelling, then one with a full name, then the oldest; it keeps its code as stored. Each other one's course entries fold into the kept one's through `backwork_course_write` (fill-only, clamped), its files' `department_id` moves over, its full name fills an empty one, and the department row is deleted. No file is deleted, and a department with no variant is not touched. The rule it applies since #4485 is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md) § Auto-Vivification. `scripts/pglite/tiers/merge-backwork-department-case-variants.mjs` runs it against seeded rows.
+- **Checks**: Before `db push`, list the groups it merges: `select chapter_id, upper(btrim(code, E' \t\n\r\f\x0B')) as key, array_agg(code order by created_at) as codes, count(*) from public.backwork_departments group by 1, 2 having count(*) > 1 order by 1, 2;` and note `select count(*), count(department_id) from public.backwork_resources;`. After, the first query returns no rows, and the second returns the same two numbers (no file lost, none left without a department), barring uploads in between.
+- **Promoter notes**: **Merging this PR is the owner's approval.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate. **Merge with or after #4485** (the matching fix): merged first, an upload before #4485 deploys can create a new variant that stays. Before the production push, take and record your own backup per [`promotion.md`](promotion.md), and keep the group listing above: it is the record of which department each file was under. One `do` block; no trigger fires on the Backwork tables. Idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-merge-backwork-department-case-variants-20261112150500) § Rollback merge Backwork department case variants.
+
 ## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
 
 ### 20261112131300_chat_search_filter_only.sql
