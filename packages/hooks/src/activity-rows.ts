@@ -17,6 +17,8 @@ export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivitySection = Activity["unavailable"][number];
+/** What `POST /v1/activity/reads` names: an item's kind and id. */
+export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
 
 /** The filter chips: everything, or one kind of thing. */
 export const ACTIVITY_FILTERS = [
@@ -106,6 +108,14 @@ interface RowBase {
   glyph: ActivityGlyph;
   /** Set on an event row only. */
   dateBlock: ActivityDateBlock | null;
+  /**
+   * Whether the member hasn't opened it from Activity since it started
+   * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
+   * dot. Never on a Made by you row.
+   */
+  unread: boolean;
+  /** The item `POST /v1/activity/reads` records when the row is opened. */
+  readRef: ActivityItemRef;
 }
 
 /** Whether a row's badge asks the member to act, rather than naming a state. */
@@ -269,6 +279,8 @@ function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
         : { label: "Vote", variant: "warning" },
     glyph: "poll",
     dateBlock: null,
+    unread: group !== "made" && poll.unread,
+    readRef: { kind: "poll", item_id: poll.message_id },
   };
 }
 
@@ -315,6 +327,8 @@ function taskRow(
     badge,
     glyph: role === "confirm" ? "confirm" : "task",
     dateBlock: null,
+    unread: role !== "assigned" && task.unread,
+    readRef: { kind: "task", item_id: task.id },
   };
 }
 
@@ -333,6 +347,8 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     badge: { label: "Approve", variant: "warning" },
     glyph: "hours",
     dateBlock: null,
+    unread: entry.unread,
+    readRef: { kind: "hours_entry", item_id: entry.id },
   };
 }
 
@@ -364,6 +380,8 @@ function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
           : null,
     glyph: "event",
     dateBlock: dateBlock(event),
+    unread: group !== "made" && event.unread,
+    readRef: { kind: "event", item_id: event.id },
   };
 }
 
@@ -391,6 +409,8 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     badge: null,
     glyph: "link",
     dateBlock: null,
+    unread: link.unread,
+    readRef: { kind: "link", item_id: link.id },
   };
 }
 
