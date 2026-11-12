@@ -4,6 +4,7 @@ import { ReportedCron } from './reported-cron.decorator';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { AttendanceService } from '../services/attendance.service';
+import { EventExcuseService } from '../services/event-excuse.service';
 import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
 import { PollService } from '../services/poll.service';
@@ -179,6 +180,7 @@ export class ScheduledJobsService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly chatReports: ChatReportService,
+    private readonly eventExcuses: EventExcuseService,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_HOUR)
@@ -461,6 +463,10 @@ export class ScheduledJobsService {
             event.chapter_id,
           );
           processed += 1;
+          // Once per event, under the same claim: excuses still pending at
+          // the close of check-in get one reminder to their receiver (#3735).
+          // Best-effort inside, so it never releases the claim.
+          await this.eventExcuses.remindPending(event.id, event.chapter_id);
         } catch (error) {
           reportCaughtFailure(this.logger, {
             level: 'warning',

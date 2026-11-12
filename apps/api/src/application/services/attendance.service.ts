@@ -13,6 +13,8 @@ import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interfac
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
+import type { IEventExcuseRepository } from '#domain/repositories/event-excuse.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
 import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
@@ -55,6 +57,8 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    @Inject(EVENT_EXCUSE_REPOSITORY)
+    private readonly excuseRepo: IEventExcuseRepository,
     private readonly rbac: RbacService,
   ) {}
 
@@ -388,6 +392,24 @@ export class AttendanceService {
       .map(({ m }) => m);
   }
 
+  /**
+   * Whether `event` requires the member holding `roleIds`: the single-member
+   * form of {@link resolveRequiredMembers}, and the same rule, so the member
+   * who may send an excuse (#3735) is exactly one the sweep would mark absent.
+   */
+  async requiresMember(
+    chapterId: string,
+    event: EventAttendanceFields,
+    roleIds: string[],
+  ): Promise<boolean> {
+    if (!eventRequiresAnyone(event)) return false;
+    const attendance = attendanceFor(event, roleIds);
+    if (attendance.status !== 'required') return false;
+    if (attendance.byRole) return true;
+    const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+    return !alumniRoleId || !roleIds.includes(alumniRoleId);
+  }
+
   async markAutoAbsent(
     eventId: string,
     chapterId: string,
@@ -428,11 +450,27 @@ export class AttendanceService {
     const usersWithAttendanceRecords = new Set(
       existingRecords.map((r) => r.user_id),
     );
+    // A member whose excuse is waiting on the receiver, or was approved, is
+    // not marked (#3735). Pending stays pending past the grace period: the
+    // receiver decides, and a decline then marks them absent itself
+    // (`decide_event_excuse`), since this sweep runs once per event. An
+    // approved excuse already wrote EXCUSED, so it is skipped above as well;
+    // reading it here too keeps the rule from depending on that write.
+    const excused = new Set(
+      await this.excuseRepo.findUserIdsByEventAndStatus(chapterId, eventId, [
+        'PENDING',
+        'APPROVED',
+      ]),
+    );
 
     const membersToMark = requiredMembers.filter((member) => {
       const isCheckedInOrExcused = checkedInOrExcused.has(member.user_id);
       const hasExistingRecord = usersWithAttendanceRecords.has(member.user_id);
-      return !isCheckedInOrExcused && !hasExistingRecord;
+      return (
+        !isCheckedInOrExcused &&
+        !hasExistingRecord &&
+        !excused.has(member.user_id)
+      );
     });
 
     if (membersToMark.length === 0) {

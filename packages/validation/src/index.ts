@@ -1110,6 +1110,13 @@ export {
 } from "./check-in-window";
 export type { CheckInWindowBounds } from "./check-in-window";
 export {
+  EVENT_EXCUSE_LATE_HOURS,
+  EVENT_EXCUSE_REASON_MAX,
+  EVENT_EXCUSE_STATUSES,
+  eventExcuseClosesAt,
+} from "./event-excuse";
+export type { EventExcuseStatus } from "./event-excuse";
+export {
   OFFLINE_COPY,
   SERVER_MESSAGE_COPY,
   STATUS_ERROR_COPY,
