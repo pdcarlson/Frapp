@@ -32,7 +32,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { ListRow, ListSection } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
@@ -56,6 +56,11 @@ import {
   MemberClassSheet,
   type MemberClassSession,
 } from "@/components/directory/member-class-sheet";
+import {
+  MemberCorrectionSheet,
+  type MemberCorrectionSession,
+} from "@/components/directory/member-correction-sheet";
+import { showPhoneActions } from "@/lib/directory/phone-actions";
 import {
   confirmRemoveMember,
   memberMenuActions,
@@ -94,8 +99,17 @@ import {
  * chat, and an `@mention` all open this same sheet, keyed by `users.id` (the
  * id chat carries), so a member sees the same card wherever they tap a name.
  * It leads with what an everyday member opens a profile for: who this is
- * (photo, name, grad year), a way to reach them (Message, email), and their
- * roles; officer controls ride the same rows rather than a separate screen.
+ * (photo, name, grad year), a way to reach them (Message, then phone and
+ * email), and their roles; officer controls ride the same rows rather than a
+ * separate screen.
+ *
+ * **A contact card first** (#3711). Phone, email and member since sit right
+ * under Message, before roles (Evan, 2026-11-10: "Contact info in the
+ * profile"). The phone is the member's own (s15's Edit sheet); a tap offers
+ * Call or Text, as a number in Contacts does. The chapter's custom fields
+ * (T-shirt size, dietary, emergency contact) are logistics, not why a profile
+ * is opened, so they sit behind a More details row, folded on every member
+ * (Shawn, 2026-11-09).
  *
  * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
  * have. It is the sheet's one accent button, under the name, because starting
@@ -117,6 +131,8 @@ import {
  *
  * **The `⋯` menu** beside the header's X holds what a viewer reaches for only
  * now and then (Paul, 2026-11-11: nobody opens a profile to remove someone).
+ * Edit name and graduation year (#4367) opens {@link MemberCorrectionSheet}
+ * for an officer the API says may fix them (`viewer_can_edit_profile`).
  * Block / Unblock (#2257) for another member, and Remove from chapter where
  * the API says this viewer may (`viewer_can_remove`: `members:remove`, not
  * their own profile, and the member ranks below them). Neither is offered on
@@ -211,6 +227,16 @@ export const MemberDetailSheet = forwardRef<
   const [rolesSession, setRolesSession] = useState<MemberRolesSession | null>(
     null,
   );
+  const correctionSheetRef = useRef<BottomSheetModal>(null);
+  const [correctionSession, setCorrectionSession] =
+    useState<MemberCorrectionSession | null>(null);
+  // Whose More details are open. Keyed by member, as the sheet swaps members
+  // in place, so the custom fields start folded on every one.
+  const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
+  const detailsOpen = userId !== null && detailsUserId === userId;
+  // Closing the sheet clears its member; fold the details then, so reopening
+  // the same member starts folded too.
+  if (userId === null && detailsUserId !== null) setDetailsUserId(null);
   // Distinct from "no role" (`[]` once the read has settled): while it is
   // still in flight, an empty list would otherwise flash a wrong "—" that
   // then flips to the real value a moment later.
@@ -231,6 +257,9 @@ export const MemberDetailSheet = forwardRef<
 
   const removeMutation = useRemoveMember();
   const menuActions = memberMenuActions({
+    // The server's answer, as for removal below.
+    canEdit:
+      !!detail?.canEditProfile && !!detail.memberId && otherMemberId !== null,
     canBlock: blockTarget !== null,
     isBlocked,
     // The server's answer already excludes the viewer's own profile; the
@@ -243,7 +272,15 @@ export const MemberDetailSheet = forwardRef<
     if (!detail) return;
     const target = detail;
     showMemberMenu(target.displayName, menuActions, (action) => {
-      if (action === "block") {
+      if (action === "edit" && target.memberId) {
+        setCorrectionSession({
+          memberId: target.memberId,
+          label: target.displayName,
+          name: target.storedName,
+          graduationYear: target.graduationYear,
+        });
+        correctionSheetRef.current?.present();
+      } else if (action === "block") {
         confirmBlockMember({
           name: target.displayName,
           // Listed in the directory: that is where this is.
@@ -471,6 +508,38 @@ export const MemberDetailSheet = forwardRef<
                 </View>
               ) : null}
 
+              <ListSection>
+                {detail.phone ? (
+                  <ListRow
+                    variant="detail"
+                    label="Phone"
+                    value={detail.phone}
+                    accessibilityHint="Offers to call or text them"
+                    onPress={() =>
+                      showPhoneActions(detail.displayName, detail.phone ?? "")
+                    }
+                  />
+                ) : null}
+                {detail.email ? (
+                  <ListRow
+                    variant="detail"
+                    label="Email"
+                    value={detail.email}
+                    accessibilityHint="Opens a new email to them"
+                    onPress={() =>
+                      void Linking.openURL(`mailto:${detail.email}`).catch(
+                        () => undefined,
+                      )
+                    }
+                  />
+                ) : null}
+                <ListRow
+                  variant="detail"
+                  label="Member since"
+                  value={detail.joinedLabel ?? "—"}
+                />
+              </ListSection>
+
               <View style={styles.rolesBlock}>
                 <View style={styles.rolesHeader}>
                   <Text style={styles.sectionLabel} accessibilityRole="header">
@@ -538,67 +607,65 @@ export const MemberDetailSheet = forwardRef<
                 )}
               </View>
 
-              <ListSection>
-                {detail.email ? (
-                  <ListRow
-                    variant="detail"
-                    label="Email"
-                    value={detail.email}
-                    accessibilityHint="Opens a new email to them"
-                    onPress={() =>
-                      void Linking.openURL(`mailto:${detail.email}`).catch(
-                        () => undefined,
-                      )
-                    }
-                  />
-                ) : null}
-                {classRows.map((row) => (
-                  <ListRow
-                    key={row.key}
-                    variant="detail"
-                    label={row.label}
-                    value={row.value}
-                    accessibilityHint={
-                      canEditClass ? `Edits ${detail.displayName}'s ${row.label}` : undefined
-                    }
-                    // Held while a DM opens, as the roles Edit is (#3790).
-                    disabled={canEditClass && dmPending.has(detail.userId)}
-                    onPress={
-                      canEditClass
-                        ? () => {
-                            setClassSession({
-                              memberId: detail.memberId ?? "",
-                              name: detail.displayName,
-                              pledgeClassId: detail.pledgeClassId,
-                              orderNumber: detail.orderNumber,
-                            });
-                            classSheetRef.current?.present();
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
-                <ListRow
-                  variant="detail"
-                  label="Member since"
-                  value={detail.joinedLabel ?? "—"}
-                />
-              </ListSection>
+              {classRows.length > 0 ? (
+                <ListSection>
+                  {classRows.map((row) => (
+                    <ListRow
+                      key={row.key}
+                      variant="detail"
+                      label={row.label}
+                      value={row.value}
+                      accessibilityHint={
+                        canEditClass
+                          ? `Edits ${detail.displayName}'s ${row.label}`
+                          : undefined
+                      }
+                      // Held while a DM opens, as the roles Edit is (#3790).
+                      disabled={canEditClass && dmPending.has(detail.userId)}
+                      onPress={
+                        canEditClass
+                          ? () => {
+                              setClassSession({
+                                memberId: detail.memberId ?? "",
+                                name: detail.displayName,
+                                pledgeClassId: detail.pledgeClassId,
+                                orderNumber: detail.orderNumber,
+                              });
+                              classSheetRef.current?.present();
+                            }
+                          : undefined
+                      }
+                    />
+                  ))}
+                </ListSection>
+              ) : null}
 
               {detail.customFields.length > 0 ? (
-                <>
-                  <SectionHeader>Custom fields</SectionHeader>
-                  <ListSection>
-                    {detail.customFields.map((field) => (
-                      <ListRow
-                        key={field.fieldId}
-                        variant="detail"
-                        label={field.label}
-                        value={field.value}
-                      />
-                    ))}
-                  </ListSection>
-                </>
+                <ListSection>
+                  <ListRow
+                    label="More details"
+                    value={detailsOpen ? "Hide" : "Show"}
+                    action
+                    accessibilityHint={
+                      detailsOpen
+                        ? "Hides the chapter's other fields"
+                        : "Shows the chapter's other fields"
+                    }
+                    onPress={() =>
+                      setDetailsUserId(detailsOpen ? null : detail.userId)
+                    }
+                  />
+                  {detailsOpen
+                    ? detail.customFields.map((field) => (
+                        <ListRow
+                          key={field.fieldId}
+                          variant="detail"
+                          label={field.label}
+                          value={field.value}
+                        />
+                      ))
+                    : null}
+                </ListSection>
               ) : null}
 
               {detail.bio ? (
@@ -618,6 +685,10 @@ export const MemberDetailSheet = forwardRef<
         options={roleOptions}
       />
       <MemberClassSheet ref={classSheetRef} session={classSession} />
+      <MemberCorrectionSheet
+        ref={correctionSheetRef}
+        session={correctionSession}
+      />
     </>
   );
 });
