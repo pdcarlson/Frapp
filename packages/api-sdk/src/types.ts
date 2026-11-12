@@ -1084,7 +1084,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        /** The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each */
         get: operations["ChatController_getMentionRoles_v1"];
         put?: never;
         post?: never;
@@ -3320,6 +3320,59 @@ export interface paths {
         patch: operations["PledgeClassController_rename_v1"];
         trace?: never;
     };
+    "/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        get: operations["ChapterGroupController_list_v1"];
+        put?: never;
+        /** Make a group and, optionally, pick its members */
+        post: operations["ChapterGroupController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a manual group; channel lists that named it lose the entry */
+        delete: operations["ChapterGroupController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a group, recolor it, or switch whether anyone can ping it. An automatic group's name can't change. */
+        patch: operations["ChapterGroupController_update_v1"];
+        trace?: never;
+    };
+    "/v1/groups/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a manual group's whole member list */
+        put: operations["ChapterGroupController_setMembers_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/rush/candidates": {
         parameters: {
             query?: never;
@@ -5346,6 +5399,8 @@ export interface components {
             name: string;
             /** @description What every role in the tier gets before its own overrides. */
             permissions: string[];
+            /** @description Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
             created_at: string;
             updated_at: string;
         };
@@ -5360,6 +5415,8 @@ export interface components {
         };
         UpdateRoleTierDto: {
             name?: string;
+            /** @description Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
             /** @description The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`. */
             permissions?: string[];
         };
@@ -5658,13 +5715,13 @@ export interface components {
             created_at: string;
         };
         ChannelAccessOptionDto: {
-            /** @description The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`. */
+            /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
             entry: string;
             /**
-             * @description What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.
+             * @description What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading.
              * @enum {string}
              */
-            kind: "tier" | "role";
+            kind: "tier" | "role" | "group";
             /** Format: uuid */
             id: string;
             name: string;
@@ -5681,13 +5738,21 @@ export interface components {
             hidden: boolean;
         };
         MentionRoleDto: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The role's id, or the tier's or group's (`kind`).
+             */
             role_id: string;
-            /** @description The role name; the picker inserts it folded. */
+            /**
+             * @description What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them.
+             * @enum {string}
+             */
+            kind: "role" | "tier" | "group";
+            /** @description The name; the picker inserts it folded. */
             name: string;
             /** @description The role’s palette color, or null. */
             color: string | null;
-            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
+            /** @description Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody. */
             mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
@@ -5748,9 +5813,9 @@ export interface components {
              * @enum {string}
              */
             type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /**
              * @deprecated
@@ -5769,9 +5834,9 @@ export interface components {
         UpdateChannelDto: {
             name?: string;
             description?: string;
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /** @description Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category. */
             match_category_access?: boolean;
@@ -5833,17 +5898,17 @@ export interface components {
             name: string;
             /** @default 0 */
             display_order: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
         };
         UpdateCategoryDto: {
             name?: string;
             display_order?: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
         };
         ChatThreadLastReplyDto: {
@@ -7493,6 +7558,64 @@ export interface components {
             /** Format: uuid */
             pledge_class_id: string | null;
             order_number: number | null;
+        };
+        ChapterGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * @description `manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.
+             * @enum {string}
+             */
+            kind: "manual" | "pledge_class" | "class_year";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, or "Class of" and the year. */
+            name: string;
+            /** @description One of the role palette colors, or null. */
+            color: string | null;
+            /** @description Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
+            /**
+             * Format: uuid
+             * @description The pledge class a `pledge_class` group follows.
+             */
+            pledge_class_id: string | null;
+            /** @description The graduation year a `class_year` group follows. */
+            class_year: number | null;
+            /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
+            member_ids: string[];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateChapterGroupDto: {
+            /** @description The name, as the chapter writes it ("Third floor", "Live-ins"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here. */
+            name: string;
+            /**
+             * @description One of the role palette colors, in any letter case.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` it. Defaults to true. */
+            mentionable?: boolean;
+            /** @description Its first members, as `users.id`s of members of the chapter. Defaults to none. */
+            member_ids?: string[];
+        };
+        UpdateChapterGroupDto: {
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here. */
+            name?: string;
+            /**
+             * @description One of the role palette colors, in any letter case. Null clears it.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` it. */
+            mentionable?: boolean;
+        };
+        SetChapterGroupMembersDto: {
+            /** @description The group's whole member list, as `users.id`s of members of the chapter. Replaces the list, all or none. */
+            member_ids: string[];
         };
         RushCandidateViewDto: {
             /** Format: uuid */
@@ -16502,6 +16625,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PledgeClassDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterGroupDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChapterGroupDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_setMembers_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterGroupMembersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
                 };
             };
             /** @description Error */

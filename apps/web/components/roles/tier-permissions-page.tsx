@@ -2,7 +2,12 @@
 
 import { useMemo } from "react";
 import { ChevronLeft } from "lucide-react";
+import { useUpdateRoleTier } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/lib/hooks/use-toast";
+import { getErrorMessage } from "@/lib/utils";
 import { ErrorState } from "@/components/shared/async-states";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 import { PermissionSwitchList } from "@/components/roles/permission-switch-list";
@@ -32,6 +37,8 @@ export function TierPermissionsPage({
   const tier = tiers.find((candidate) => candidate.id === tierId) ?? null;
   const holders = useMemo(() => (tier ? [tier] : []), [tier]);
   const { permissionsOf, toggle, pending } = useTierPermissionToggle(holders);
+  const updateTier = useUpdateRoleTier();
+  const { toast } = useToast();
   const tierRoles = useMemo(
     () => roles.filter((role) => role.tier_id === tierId).sort(byDisplayOrder),
     [roles, tierId],
@@ -124,6 +131,43 @@ export function TierPermissionsPage({
         )}
       </header>
 
+      {/*
+        #4076 (Paul and Shawn, 2026-11-11): a tier's name is pingable, and
+        reaches everyone holding a role in it. On by default, like a role's;
+        saved on the flip, as the permission switches below are.
+      */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid gap-1">
+          <Label htmlFor={`tier-${tier.id}-mentionable`}>
+            Anyone can @mention this {words.singular}
+          </Label>
+          <p
+            id={`tier-${tier.id}-mentionable-description`}
+            className="text-sm text-muted-foreground"
+          >
+            @{tier.name} pings everyone holding a role in it. When off, only
+            officers who manage channels or roles can ping it.
+          </p>
+        </div>
+        <Switch
+          id={`tier-${tier.id}-mentionable`}
+          aria-describedby={`tier-${tier.id}-mentionable-description`}
+          checked={tier.mentionable}
+          disabled={!editable || updateTier.isPending}
+          onCheckedChange={(on) =>
+            void updateTier
+              .mutateAsync({ id: tier.id, body: { mentionable: on } })
+              .catch((error: unknown) =>
+                toast({
+                  title: "Couldn't change who can ping it",
+                  description: getErrorMessage(error, "Try again in a moment."),
+                  variant: "destructive",
+                }),
+              )
+          }
+        />
+      </div>
+
       <PermissionSwitchList
         idPrefix={`tier-${tier.id}`}
         holderName={tier.name}
@@ -132,9 +176,7 @@ export function TierPermissionsPage({
         extraPermissions={held}
         lockedReason={lockedReason}
         rowLockedReason={(permission, on) =>
-          !on && !mayGrant(reach, permission)
-            ? CANT_GIVE
-            : null
+          !on && !mayGrant(reach, permission) ? CANT_GIVE : null
         }
         pendingPermission={pending?.id === tier.id ? pending.permission : null}
       />

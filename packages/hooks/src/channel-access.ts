@@ -9,7 +9,7 @@ import { sameChannelAccessList } from "@repo/validation";
 /** One thing a list can name, as `GET /v1/channels/access-options` serves it. */
 export type ChannelAccessOption = {
   entry: string;
-  /** `tier` and `role` today; groups (#4076) add theirs. */
+  /** `tier`, `role` or `group` (#4076). */
   kind: string;
   id: string;
   name: string;
@@ -17,8 +17,9 @@ export type ChannelAccessOption = {
   tier_id: string | null;
   user_ids: readonly string[];
   /**
-   * A role the chapter never assigns by hand (Everyone, #4191): kept so a
-   * list that names it still reads, never offered to add.
+   * A role the chapter never assigns by hand (Everyone, #4191), or a pledge
+   * class or class year nobody is in yet (#4076): kept so a list that names
+   * it still reads, never offered to add.
    */
   hidden?: boolean;
 };
@@ -29,9 +30,10 @@ export type ChannelAccessQuestion = "see" | "post";
 const KIND_HEADINGS: Record<string, string> = {
   tier: "Tiers",
   role: "Roles",
+  group: "Groups",
 };
 
-const KIND_ORDER = ["tier", "role"];
+const KIND_ORDER = ["tier", "role", "group"];
 
 /**
  * A kind's heading in a picker. A kind this build doesn't know (a newer
@@ -41,7 +43,7 @@ export function channelAccessKindHeading(kind: string): string {
   return KIND_HEADINGS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
-/** Tiers first, then roles, then any kind a newer API adds. */
+/** Tiers first, then roles, then groups, then any kind a newer API adds. */
 export function compareChannelAccessKinds(a: string, b: string): number {
   const rank = (kind: string) =>
     KIND_ORDER.indexOf(kind) + 1 || KIND_ORDER.length + 1;

@@ -16,15 +16,32 @@ import {
 } from '#domain/repositories/member.repository.interface';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
-import type { Role } from '#domain/entities/role.entity';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
+import type {
+  ChapterGroup,
+  ChapterGroupMembership,
+} from '#domain/entities/chapter-group.entity';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
+import {
+  CHAPTER_GROUP_REPOSITORY,
+  type IChapterGroupRepository,
+} from '#domain/repositories/chapter-group.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import { RbacService } from './rbac.service';
 import { ChapterPresenceReader } from './chapter-presence-reader.service';
+import { withMembers } from './chapter-group.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
-/** A chapter role as the mention picker and the resolver see it. */
+/**
+ * A chapter role, tier or group as the mention picker and the resolver see
+ * it. `role_id` is the tier's or group's id for those (#4076).
+ */
 export interface MentionRoleView extends MentionRole {
+  kind: 'role' | 'tier' | 'group';
   color: string | null;
   /**
    * The role's own switch (`roles.mentionable`): whether any member may ping
@@ -57,7 +74,42 @@ export class ChatMentionService {
     private readonly memberRepo: IMemberRepository,
     private readonly rbac: RbacService,
     private readonly presence: ChapterPresenceReader,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly tierRepo: IRoleTierRepository,
+    @Inject(CHAPTER_GROUP_REPOSITORY)
+    private readonly groupRepo: IChapterGroupRepository,
   ) {}
+
+  /**
+   * The chapter's tiers and groups with who is in each (#4076), for the
+   * resolver and the picker. A failed read costs only those mentions, as a
+   * failed roles read costs only the role ones.
+   */
+  private async readSets(chapterId: string): Promise<MentionSets> {
+    const lost = (site: string, what: string) => (error: unknown) => {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site,
+        message: `Failed to read ${what} for mentions in chapter ${chapterId}; resolving without them`,
+        error,
+      });
+      return null;
+    };
+    const [tiers, groups] = await Promise.all([
+      this.tierRepo
+        .findByChapter(chapterId)
+        .catch(lost('chat-mention-tiers-read', 'tiers')),
+      Promise.all([
+        this.groupRepo.findByChapter(chapterId),
+        this.groupRepo.findMemberships(chapterId),
+      ]).catch(lost('chat-mention-groups-read', 'groups')),
+    ]);
+    return {
+      tiers: tiers ?? [],
+      groups: groups?.[0] ?? [],
+      memberships: groups?.[1] ?? [],
+    };
+  }
 
   /**
    * Every `users.id` that `content` mentions, resolved against the sender's
@@ -149,8 +201,9 @@ export class ChatMentionService {
       // `findChapterMemberIdentities`. Roles in parallel, since a token can
       // name either. A failed roles read costs only the role mentions: member
       // mentions resolved before roles existed, and still do without them.
-      const [candidates, roles] = await Promise.all([
+      const [candidates, sets, roles] = await Promise.all([
         this.memberRepo.findChapterMemberIdentities(chapterId),
+        this.readSets(chapterId),
         this.rbac.findByChapter(chapterId).catch((error: unknown) => {
           // Only the role mentions are lost, and the member ones still
           // land: `warning` (#4096).
@@ -165,7 +218,7 @@ export class ChatMentionService {
       ]);
       if (candidates.length === 0) return [];
 
-      const views = mentionRoleViews(roles, candidates);
+      const views = mentionRoleViews(roles, candidates, sets);
       // The sender's permissions cost two more reads, so they are fetched only
       // when a token names a role that is switched off, the one case they decide.
       // Re-read as the resolver will (`sendMentionReading`), now that the
@@ -220,23 +273,25 @@ export class ChatMentionService {
 
   /**
    * The chapter's roles as `userId`'s mention picker offers them, in the
-   * chapter's role order: each with whether this member may ping it. A role
-   * nobody holds is left out, since it would reach nobody.
+   * chapter's role order, then its tiers and groups (#4076): each with whether
+   * this member may ping it. One nobody holds is left out, since it would
+   * reach nobody.
    */
   async listMentionRoles(
     chapterId: string,
     userId: string,
   ): Promise<MentionRoleView[]> {
-    const [candidates, roles, permissions] = await Promise.all([
+    const [candidates, roles, permissions, sets] = await Promise.all([
       this.memberRepo.findChapterMemberIdentities(chapterId),
       this.rbac.findByChapter(chapterId),
       this.rbac.getEffectivePermissions(chapterId, userId),
+      this.readSets(chapterId),
     ]);
     const officer = canPingAnyRole(permissions);
     // `@here` holds nobody here, so it is left out with the empty roles: it
     // is no role, and the clients add its row after `@everyone`'s
     // (`withHereMention`), which is the switch it follows.
-    return mentionRoleViews(roles, candidates)
+    return mentionRoleViews(roles, candidates, sets)
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
@@ -339,6 +394,7 @@ export function canPingAnyRole(permissions: readonly string[]): boolean {
 export function mentionRoleViews(
   roles: readonly Role[],
   members: readonly ChapterMemberIdentity[],
+  sets: Partial<MentionSets> = {},
 ): MentionRoleView[] {
   const holders = new Map<string, string[]>();
   for (const member of members) {
@@ -366,6 +422,7 @@ export function mentionRoleViews(
         : (holders.get(role.id) ?? []);
       return {
         role_id: role.id,
+        kind: 'role' as const,
         name: everyone ? EVERYONE_MENTION_NAME : role.name,
         color: role.color,
         member_ids: memberIds,
@@ -374,10 +431,15 @@ export function mentionRoleViews(
         mentionable: false,
       };
     });
+  views.push(
+    ...mentionTierViews(sets.tiers ?? [], roles, holders),
+    ...mentionGroupViews(sets.groups ?? [], sets.memberships ?? []),
+  );
   if (roles.length === 0) return views;
   const everyone = roles.find(isEveryoneRole);
   views.push({
     role_id: everyone?.id ?? HERE_MENTION_NAME,
+    kind: 'role',
     name: HERE_MENTION_NAME,
     color: null,
     member_ids: [],
@@ -385,6 +447,86 @@ export function mentionRoleViews(
     mentionable: false,
   });
   return views;
+}
+
+/** The chapter's tiers and groups, with who is in each group (#4076). */
+export interface MentionSets {
+  tiers: readonly RoleTier[];
+  groups: readonly ChapterGroup[];
+  memberships: readonly ChapterGroupMembership[];
+}
+
+/** A tier or group whose name reads as `@everyone` or `@here` is no target. */
+function nameIsFree(name: string): boolean {
+  return reservedMentionName(name) === null;
+}
+
+/**
+ * Each tier as a mention (#4076, Paul 2026-11-11: "that tier name is
+ * pingable"): it reaches every member holding a role in it, the hidden
+ * Everyone role included (its holders are the tier's members as much as
+ * anyone's), so a member whose role leaves the tier stops getting it. In tier
+ * order, highest first, with the tier's own switch.
+ *
+ * A tier holding the Everyone role reaches nearly the whole chapter, so it is
+ * `@everyone` under another name: it also follows the Everyone role's switch
+ * (#4191, officers only by default), or `@Members` would let any member ping
+ * everyone past the rule `@everyone` keeps.
+ */
+function mentionTierViews(
+  tiers: readonly RoleTier[],
+  roles: readonly Role[],
+  holders: ReadonlyMap<string, readonly string[]>,
+): MentionRoleView[] {
+  return [...tiers]
+    .filter((tier) => nameIsFree(tier.name))
+    .sort((a, b) => a.position - b.position)
+    .map((tier) => {
+      const inTier = roles.filter((role) => role.tier_id === tier.id);
+      const everyone = inTier.find(isEveryoneRole);
+      return {
+        role_id: tier.id,
+        kind: 'tier' as const,
+        name: tier.name,
+        color: null,
+        member_ids: [
+          ...new Set(inTier.flatMap((role) => holders.get(role.id) ?? [])),
+        ],
+        open_to_all:
+          tier.mentionable !== false &&
+          (!everyone || everyone.mentionable !== false),
+        mentionable: false,
+      };
+    });
+}
+
+/**
+ * Each group as a mention (#4076): it reaches the group's members now, as
+ * `chapter_group_memberships` reads them, with the group's own switch.
+ * Manual groups first, then pledge classes and class years.
+ */
+function mentionGroupViews(
+  groups: readonly ChapterGroup[],
+  memberships: readonly ChapterGroupMembership[],
+): MentionRoleView[] {
+  return (
+    withMembers(
+      groups.filter((group) => nameIsFree(group.name)),
+      memberships,
+    )
+      // An automatic group nobody is in (a class not yet given members) is
+      // left out, as the Groups page leaves it out.
+      .filter((group) => group.kind === 'manual' || group.member_ids.length > 0)
+      .map((group) => ({
+        role_id: group.id,
+        kind: 'group' as const,
+        name: group.name,
+        color: group.color,
+        member_ids: group.member_ids,
+        open_to_all: group.mentionable !== false,
+        mentionable: false,
+      }))
+  );
 }
 
 function withMentionable(

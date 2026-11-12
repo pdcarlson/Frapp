@@ -98,7 +98,7 @@ interface AccessDraft {
 }
 
 const ACCESS_INCOMPLETE =
-  "Add a tier or role to each chosen list, or pick Everyone.";
+  "Add a tier, role or group to each chosen list, or pick Everyone.";
 
 /**
  * New channel and Edit channel, on the phone (#3838; Shawn, 2026-11-11: "I

@@ -30,6 +30,11 @@ export interface MentionSuggestionItem {
   label: string;
   displayName: string;
   avatarUrl: string | null;
+  /**
+   * What a role row names: `role`, `tier` or `group` (#4076), which its hint
+   * says, so a tier and a role sharing a name read apart.
+   */
+  roleKind?: string;
   /** A member row's initials paint (#3860); `null` on a role row. */
   avatarTint?: MemberAvatarTint | null;
 }
@@ -199,20 +204,17 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
                 {item.avatarUrl ? (
                   <AvatarImage src={item.avatarUrl} alt="" />
                 ) : null}
-                <AvatarFallback
-                  className="text-[10px]"
-                  tint={item.avatarTint}
-                >
+                <AvatarFallback className="text-[10px]" tint={item.avatarTint}>
                   {initials(item.displayName)}
                 </AvatarFallback>
               </Avatar>
             )}
             <span className="min-w-0 flex-1 truncate">{item.displayName}</span>
             {item.kind === "role" ? (
-              // "Role", or who `@everyone` and `@here` reach, as Slack's and
+              // "Role", "Tier" or "Group", or who `@everyone` and `@here` reach, as Slack's and
               // Discord's pickers say (`mentionRoleHint`, shared with mobile).
               <span className="shrink-0 text-muted-foreground">
-                {mentionRoleHint(item.displayName)}
+                {mentionRoleHint(item.displayName, item.roleKind)}
               </span>
             ) : null}
           </button>

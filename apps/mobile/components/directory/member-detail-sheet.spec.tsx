@@ -34,6 +34,8 @@ const state = vi.hoisted(() => ({
   dmOptions: [] as unknown[],
   permissions: [] as string[],
   roles: [] as unknown[],
+  // `GET /v1/groups` (#4076); `undefined` is a read not answered yet.
+  groups: undefined as unknown[] | undefined,
   // `GET /v1/pledge-classes` and the options the sheet reads it with (#3939).
   classes: [] as { id: string; name: string }[],
   vocabulary: undefined as Record<string, string> | undefined,
@@ -94,6 +96,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
+  useGroups: () => ({ data: state.groups }),
   usePermissionList: () => state.permissions,
   useCurrentChapter: () => ({
     data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
@@ -225,6 +228,41 @@ describe("MemberDetailSheet as a tall sheet", () => {
     );
     act(() => close.props.onPress());
     expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("MemberDetailSheet groups (#4076)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+  });
+
+  const texts = (tree: ReturnType<typeof render>) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+
+  it("lists the groups the member is in, and only those", () => {
+    state.groups = [
+      { id: "g1", name: "Third floor", color: null, member_ids: [ADA] },
+      { id: "g2", name: "Live-ins", color: null, member_ids: ["someone"] },
+    ];
+    const tree = render(ADA);
+    expect(texts(tree)).toContain("Groups");
+    expect(texts(tree)).toContain("Third floor");
+    expect(texts(tree)).not.toContain("Live-ins");
+    act(() => tree.unmount());
+  });
+
+  it("says No groups when they are in none, and nothing before the read answers", () => {
+    state.groups = [];
+    let tree = render(ADA);
+    expect(texts(tree)).toContain("No groups");
+    act(() => tree.unmount());
+    state.groups = undefined;
+    tree = render(ADA);
+    expect(texts(tree)).not.toContain("Groups");
     act(() => tree.unmount());
   });
 });

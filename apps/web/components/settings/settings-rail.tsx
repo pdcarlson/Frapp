@@ -40,9 +40,7 @@ const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10
 /** The rail's groups, in order. */
 export type SettingsTabGroup = "chapter" | "people" | "modules";
 
-const SETTINGS_TAB_GROUP_LABELS: Readonly<
-  Record<SettingsTabGroup, string>
-> = {
+const SETTINGS_TAB_GROUP_LABELS: Readonly<Record<SettingsTabGroup, string>> = {
   chapter: "Chapter",
   people: "People",
   modules: "Modules",
@@ -99,6 +97,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { value: "ai", label: "AI", group: "chapter" },
   { value: "billing", label: "Plan and billing", group: "chapter" },
   { value: "roles", label: "Roles", group: "people" },
+  { value: "groups", label: "Groups", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },
   ...MODULE_SETTINGS.map((module): SettingsTab => ({

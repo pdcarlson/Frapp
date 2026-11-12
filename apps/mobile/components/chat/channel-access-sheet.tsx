@@ -167,9 +167,9 @@ function ChannelAccessBody({
         <BottomSheetTextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Find a tier or role"
+          placeholder="Find a tier, role or group"
           placeholderTextColor={tokens.color.text.muted}
-          accessibilityLabel="Find a tier or role"
+          accessibilityLabel="Find a tier, role or group"
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.field}

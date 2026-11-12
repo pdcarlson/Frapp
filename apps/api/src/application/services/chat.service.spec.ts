@@ -537,7 +537,7 @@ describe('ChatService', () => {
 
         await expect(
           service.updateChannel('chan-1', 'ch-1', { who_can_see: [] }),
-        ).rejects.toThrow('Pick at least one tier or role');
+        ).rejects.toThrow('Pick at least one tier, role or group');
         expect(mockChannelRepo.update).not.toHaveBeenCalled();
         expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
       });

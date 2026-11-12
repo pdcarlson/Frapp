@@ -25,6 +25,7 @@ import type { ChatMessageReportView } from '#domain/entities/chat-moderation.ent
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
 } from '#domain/utils/channel-access';
 import type { ChannelOperation } from '#domain/utils/channel-access';
@@ -207,7 +208,11 @@ export class ChannelAccessService {
     const predicateChannel = toPredicateChannel(channel);
     const holder =
       isChapterMember && needsAccessHolder(predicateChannel, operation)
-        ? await this.rbac.getChannelAccessHolder(chapterId, member?.role_ids)
+        ? await this.rbac.getChannelAccessHolder(
+            chapterId,
+            member,
+            listsNameGroups(predicateChannel),
+          )
         : EMPTY_ACCESS_HOLDER;
 
     const allowed = canAccessChannel({
@@ -252,8 +257,11 @@ export class ChannelAccessService {
       userId,
       'read',
     );
-    const access = await this.rbac.getChapterMemberAccess(chapterId);
     const predicateChannel = toPredicateChannel(channel);
+    const access = await this.rbac.getChapterMemberAccess(
+      chapterId,
+      listsNameGroups(predicateChannel),
+    );
     return access
       .filter((member) =>
         canAccessChannel({
@@ -506,7 +514,13 @@ export class ChannelAccessService {
       needsAccessHolder(toPredicateChannel(channel), 'post'),
     );
     const holder = needsHolder
-      ? await this.holderFor(chapterId, userId)
+      ? await this.holderFor(
+          chapterId,
+          userId,
+          channels.some((channel) =>
+            listsNameGroups(toPredicateChannel(channel)),
+          ),
+        )
       : EMPTY_ACCESS_HOLDER;
 
     return channels.map((channel) => ({
@@ -536,7 +550,13 @@ export class ChannelAccessService {
       needsAccessHolder(toPredicateChannel(channel), 'read'),
     );
     const holder = needsHolder
-      ? await this.rbac.getChannelAccessHolder(chapterId, roleIds)
+      ? await this.rbac.getChannelAccessHolder(
+          chapterId,
+          { user_id: userId, role_ids: roleIds ?? [] },
+          candidates.some((channel) =>
+            listsNameGroups(toPredicateChannel(channel)),
+          ),
+        )
       : EMPTY_ACCESS_HOLDER;
 
     return candidates.filter((channel) =>
@@ -551,11 +571,15 @@ export class ChannelAccessService {
   }
 
   /** The caller's holder, from their membership row in `chapterId`. */
-  private async holderFor(chapterId: string, userId: string) {
+  private async holderFor(
+    chapterId: string,
+    userId: string,
+    withGroups: boolean,
+  ) {
     const member = await this.memberRepo.findByUserAndChapter(
       userId,
       chapterId,
     );
-    return this.rbac.getChannelAccessHolder(chapterId, member?.role_ids);
+    return this.rbac.getChannelAccessHolder(chapterId, member, withGroups);
   }
 }

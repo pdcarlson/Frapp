@@ -3308,7 +3308,7 @@
             "bearer": []
           }
         ],
-        "summary": "The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each",
+        "summary": "The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each",
         "tags": [
           "Chat"
         ]
@@ -11427,6 +11427,240 @@
         ]
       }
     },
+    "/v1/groups": {
+      "get": {
+        "operationId": "ChapterGroupController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterGroupDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",
+        "tags": [
+          "Groups"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterGroupController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChapterGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Make a group and, optionally, pick its members",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
+    "/v1/groups/{id}": {
+      "patch": {
+        "operationId": "ChapterGroupController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChapterGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a group, recolor it, or switch whether anyone can ping it. An automatic group's name can't change.",
+        "tags": [
+          "Groups"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterGroupController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a manual group; channel lists that named it lose the entry",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
+    "/v1/groups/{id}/members": {
+      "put": {
+        "operationId": "ChapterGroupController_setMembers_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterGroupMembersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set a manual group's whole member list",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
     "/v1/rush/candidates": {
       "get": {
         "operationId": "RushController_lookup_v1",
@@ -17688,6 +17922,10 @@
               "type": "string"
             }
           },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it."
+          },
           "created_at": {
             "type": "string"
           },
@@ -17701,6 +17939,7 @@
           "position",
           "name",
           "permissions",
+          "mentionable",
           "created_at",
           "updated_at"
         ]
@@ -17746,6 +17985,10 @@
           "name": {
             "type": "string",
             "maxLength": 80
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           },
           "permissions": {
             "description": "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
@@ -18551,15 +18794,16 @@
         "properties": {
           "entry": {
             "type": "string",
-            "description": "The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`."
+            "description": "The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`."
           },
           "kind": {
             "type": "string",
             "enum": [
               "tier",
-              "role"
+              "role",
+              "group"
             ],
-            "description": "What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading."
+            "description": "What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading."
           },
           "id": {
             "type": "string",
@@ -18607,11 +18851,21 @@
         "properties": {
           "role_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The role's id, or the tier's or group's (`kind`)."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "role",
+              "tier",
+              "group"
+            ],
+            "description": "What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them."
           },
           "name": {
             "type": "string",
-            "description": "The role name; the picker inserts it folded."
+            "description": "The name; the picker inserts it folded."
           },
           "color": {
             "type": "string",
@@ -18620,11 +18874,12 @@
           },
           "mentionable": {
             "type": "boolean",
-            "description": "Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody."
+            "description": "Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody."
           }
         },
         "required": [
           "role_id",
+          "kind",
           "name",
           "color",
           "mentionable"
@@ -18798,7 +19053,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
             "type": "array",
             "items": {
               "type": "string"
@@ -18807,7 +19062,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
             "type": "array",
             "items": {
               "type": "string"
@@ -18851,7 +19106,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
             "type": "array",
             "items": {
               "type": "string"
@@ -18860,7 +19115,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19007,7 +19262,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.",
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19016,7 +19271,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19040,7 +19295,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19049,7 +19304,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.",
             "type": "array",
             "items": {
               "type": "string"
@@ -23863,6 +24118,172 @@
           "member_id",
           "pledge_class_id",
           "order_number"
+        ]
+      },
+      "ChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "pledge_class",
+              "class_year"
+            ],
+            "description": "`manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change."
+          },
+          "name": {
+            "type": "string",
+            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, or \"Class of\" and the year."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "One of the role palette colors, or null."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it."
+          },
+          "pledge_class_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The pledge class a `pledge_class` group follows."
+          },
+          "class_year": {
+            "type": "number",
+            "nullable": true,
+            "description": "The graduation year a `class_year` group follows."
+          },
+          "member_ids": {
+            "description": "The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "kind",
+          "name",
+          "color",
+          "mentionable",
+          "pledge_class_id",
+          "class_year",
+          "member_ids",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The name, as the chapter writes it (\"Third floor\", \"Live-ins\"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors, in any letter case."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` it. Defaults to true."
+          },
+          "member_ids": {
+            "maxItems": 2000,
+            "description": "Its first members, as `users.id`s of members of the chapter. Defaults to none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors, in any letter case. Null clears it."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` it."
+          }
+        }
+      },
+      "SetChapterGroupMembersDto": {
+        "type": "object",
+        "properties": {
+          "member_ids": {
+            "maxItems": 2000,
+            "description": "The group's whole member list, as `users.id`s of members of the chapter. Replaces the list, all or none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "member_ids"
         ]
       },
       "RushCandidateViewDto": {

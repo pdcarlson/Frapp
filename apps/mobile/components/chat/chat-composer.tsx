@@ -173,6 +173,8 @@ export interface MentionRoleRow {
   role_id: string;
   name: string;
   mentionable: boolean;
+  /** `role`, `tier` or `group` (#4076); none from an older API, a role. */
+  kind?: string;
 }
 
 type PickerEntry = MentionPickerEntry<MentionCandidate, MentionRoleRow>;
@@ -693,7 +695,7 @@ function MentionPicker({
                 ? `Mention ${name}`
                 : reservedMentionName(name) !== null
                   ? `Mention @${name}. ${mentionRoleHint(name)}`
-                  : `Mention everyone in the ${name} role`
+                  : `Mention everyone in the ${name} ${mentionRoleHint(name, entry.role.kind).toLowerCase()}`
             }
             onPress={() => onPick(entry.label)}
             style={({ pressed }) => [
@@ -725,8 +727,11 @@ function MentionPicker({
               {name}
             </Text>
             {entry.kind === "role" ? (
-              // "Role", or who `@everyone` and `@here` reach (shared with web).
-              <Text style={styles.mentionKind}>{mentionRoleHint(name)}</Text>
+              // "Role", "Tier" or "Group", or who `@everyone` and `@here`
+              // reach (shared with web).
+              <Text style={styles.mentionKind}>
+                {mentionRoleHint(name, entry.role.kind)}
+              </Text>
             ) : null}
           </Pressable>
         );

@@ -75,6 +75,7 @@ export * from "./use-event-excuses";
 export * from "./use-event-types";
 export * from "./use-events";
 export * from "./use-frapp-client";
+export * from "./use-groups";
 export * from "./use-hidden-permissions";
 export * from "./use-important-messages";
 export * from "./use-invites";
