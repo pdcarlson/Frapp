@@ -1013,4 +1013,4 @@ export {
   isChatMessageFlag,
 } from "./chat-message-flags";
 export type { ChatMessageFlag } from "./chat-message-flags";
-export { stripObjectReplacement } from "./message-text";
+export { withoutObjectReplacement } from "./message-text";

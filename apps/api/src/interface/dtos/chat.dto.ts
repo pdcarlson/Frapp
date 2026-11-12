@@ -16,7 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHANNEL_ACCESS_ENTRY_PATTERN,
@@ -25,21 +25,10 @@ import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
-  stripObjectReplacement,
   type ChatChapterLevel,
   type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
-
-/**
- * A message's text without U+FFFC, the placeholder a phone keyboard leaves
- * where an object it couldn't insert would have gone. Every surface drew it as
- * a broken "OBJ" box, the notification list and the lock-screen push included
- * (#4346). Removed before validation, so text that was only the placeholder is
- * refused as empty like any other empty message.
- */
-const withoutObjectReplacement = ({ value }: { value: unknown }): unknown =>
-  typeof value === 'string' ? stripObjectReplacement(value) : value;
 import {
   CHAT_MESSAGE_KINDS,
   CHAT_THREAD_FOLLOW_STATES,
@@ -515,7 +504,6 @@ export class SendMessageDto {
    * `ChatService.sendMessage` enforces it.
    */
   @ApiProperty({ minLength: 0, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
-  @Transform(withoutObjectReplacement)
   @IsString()
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
@@ -611,7 +599,6 @@ export class EditMessageDto {
   // Same bound as SendMessageDto.content — without it an edit could grow a
   // message past the limit its original POST was held to.
   @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
-  @Transform(withoutObjectReplacement)
   @IsString()
   @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)

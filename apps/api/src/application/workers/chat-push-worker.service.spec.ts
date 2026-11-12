@@ -683,6 +683,18 @@ describe('ChatPushWorkerService', () => {
   });
 
   describe('chatPushPreview', () => {
+    it('drops U+FFFC, which every surface drew as an "OBJ" box (#4346)', () => {
+      expect(chatPushPreview({ content: 'take a look \uFFFC' })).toBe(
+        'take a look',
+      );
+      expect(
+        chatPushPreview({
+          content: '\uFFFC',
+          metadata: { attachment_count: 1 },
+        }),
+      ).toBe('Sent an attachment');
+    });
+
     it('is the first 200 characters of the text', () => {
       expect(chatPushPreview({ content: 'x'.repeat(250) })).toBe(
         'x'.repeat(200),
@@ -1543,6 +1555,26 @@ describe('ChatPushWorkerService', () => {
         expect(dataFor('alice')[0]).toMatchObject({
           chatKind: 'announcement',
           channelName: 'announcements',
+        });
+      });
+
+      it('carries the same fields on a bundled burst', async () => {
+        service.__setChannelForTest(DM);
+        setMembers(['sender', 'alice']);
+        // The third message in a burst is the one pushed as the bundle.
+        for (let i = 0; i < 3; i++) {
+          await send(DM.id, {
+            id: `m${i}`,
+            content: i === 2 ? 'hey @alice' : 'hi',
+            mentions: i === 2 ? ['alice'] : [],
+          });
+        }
+        const bundled = dataFor('alice').filter((d) => d.bundled === true);
+        expect(bundled).toHaveLength(1);
+        expect(bundled[0]).toMatchObject({
+          chatKind: 'dm',
+          senderId: 'sender',
+          mentioned: true,
         });
       });
 

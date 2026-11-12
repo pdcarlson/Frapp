@@ -169,6 +169,11 @@ describe("ChatComposer staged photos", () => {
     expect(byLabel(tree, "Send message").props.disabled).toBe(true);
   });
 
+  it("refuses a send of only the sticker placeholder U+FFFC (#4346)", () => {
+    const { tree } = renderComposer({ value: "\uFFFC ", photos: [] });
+    expect(byLabel(tree, "Send message").props.disabled).toBe(true);
+  });
+
   it("keeps send disabled while the runtime has no identity, photos or not", () => {
     const { tree } = renderComposer({
       value: "hello",

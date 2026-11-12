@@ -35,6 +35,7 @@ import {
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
+  withoutObjectReplacement,
 } from '@repo/validation';
 import {
   canAccessChannel,
@@ -95,7 +96,9 @@ interface ChatMessageRow {
 export function chatPushPreview(
   row: Pick<ChatMessageRow, 'content' | 'metadata'>,
 ): string {
-  const text = row.content?.trim() ?? '';
+  // U+FFFC drawn as an "OBJ" box on the lock screen and in the list (#4346).
+  // `ChatService` cleans what it saves; this covers a row written any other way.
+  const text = withoutObjectReplacement(row.content ?? '').trim();
   if (text) return Array.from(text).slice(0, 200).join('');
   const raw = Number(row.metadata?.attachment_count);
   const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
