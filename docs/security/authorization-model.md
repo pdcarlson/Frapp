@@ -252,26 +252,27 @@ does, so publishing these three would have opened them to direct browser reads a
 enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
 `realtime.messages` (§ "The policies that do exist").
 
-### The policies that do exist (12 statements)
+### The policies that do exist (11 statements)
 
-**Counting convention.** `12` counts individual policy *statements* — rows in `pg_policies` — not
+**Counting convention.** `11` counts individual policy *statements* — rows in `pg_policies` — not
 rows in the table below, several of which name two policies each. That ambiguity is what let the
 number drift unnoticed before, so it is now stated rather than derived.
 
 Reconciled against hosted `frapp-staging` on 2026-08-27
 (`select schemaname, count(*) from pg_policies group by schemaname`):
 **10 in `public` + 1 in `realtime` = 11** at that read. Migration `20260906203000` (#1552)
-adds a second `realtime` policy, so the expected hosted figure is **10 + 2 = 12** — the
-count the heading and the PGlite check now carry. The promotion log records that migration as
+adds a second `realtime` policy, so the expected hosted figure was **10 + 2 = 12**. Migration
+`20261112270000` (#724, #4513) drops `chat_message_actions_insert`, so it is now **9 + 2 = 11**, the
+count the heading and the PGlite check carry. The promotion log records that migration as
 applied; the hosted catalog has not been re-read since 2026-08-27 (unverified).
 
-The PGlite CI substrate sees **10**, every `public` one. The two absences are schema-gated rather
+The PGlite CI substrate sees **9**, every `public` one. The two absences are schema-gated rather
 than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
 `auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
 role before applying migrations (#1557). `scripts/pglite/tiers/policy-inventory.mjs` pins the `public`
-set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 10,
+set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 9,
 flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
 `to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
 that set still cannot see a policy *rewritten in place*, the check also rejects any permissive
@@ -559,7 +560,7 @@ would be the regression:
 
 | Table | Coverage |
 | --- | --- |
-| `chat_message_actions` | membership/tenancy matrix (read path) + the block clause: a blocker reads none of a blocked member's reactions in that chapter, and keeps their votes, their reactions in another chapter, and other members' reactions; the blocked member's reads are unchanged (#2494) |
+| `chat_message_actions` | membership/tenancy matrix (read path) + client writes (no insert, no update, only one's own reaction deleted; 20261112270000) + the block clause: a blocker reads none of a blocked member's reactions in that chapter, and keeps their votes, their reactions in another chapter, and other members' reactions; the blocked member's reads are unchanged (#2494) |
 | `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
 | `members` | default-deny: every probe identity reads 0 rows (#423) |
 | `financial_invoices` | default-deny: every probe identity reads 0 rows (#423) |
@@ -620,9 +621,11 @@ hosted-side confirmation. Until then this paragraph said the defaults were not r
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
 write path has its own tier in the same file ("client writes", since `20261112270000`): it grants
-the probe `INSERT`, `UPDATE` and `DELETE` and proves that a member can insert no action row, change
-no vote, delete no vote or sign-up claim and no one else's reaction, and can take back their own
-reaction.
+the probe `INSERT`, `UPDATE` and `DELETE` and tries each write a member could send through PostgREST on a message they can read: inserting a
+reaction, a vote or a sign-up claim, changing their vote, deleting their vote or sign-up claim or
+someone else's reaction (all refused), and deleting their own reaction (allowed). The inserts send
+no `RETURNING`, as PostgREST's `return=minimal` doesn't, so the SELECT policy can't refuse them in
+the policy's place. The rls-smoke tier pins the INSERT and UPDATE revokes.
 
 Each reader's **exact visible set** is asserted, not a row count — a total is satisfied by the right
 *number* of wrong rows, so a policy swapping one PRIVATE row for one cross-chapter row would keep a

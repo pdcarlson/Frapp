@@ -270,6 +270,17 @@ export const RLS_SMOKE = [
     ok: (rows) => rows.length === 1 && rows[0].n === 0,
   },
   {
+    name: "anon and authenticated hold no INSERT or UPDATE grant on chat_message_actions (#4513)",
+    // Belt and braces with the policy check above: even a policy added later
+    // can't open client writes while the table grant stays revoked.
+    sql: `select r.rolname,
+                 has_table_privilege(r.oid, 'public.chat_message_actions', 'insert') as can_insert,
+                 has_table_privilege(r.oid, 'public.chat_message_actions', 'update') as can_update
+            from pg_roles r
+           where r.rolname in ('anon', 'authenticated')`,
+    ok: (rows) => rows.length === 2 && rows.every((r) => !r.can_insert && !r.can_update),
+  },
+  {
     name: "chat_message_actions DELETE scoped to the caller's own reaction rows via chat_action_is_callers (#724)",
     // Not a `users` subselect: `users` is default-deny to clients, so such a
     // subselect inside a policy sees no rows and the policy never matches.

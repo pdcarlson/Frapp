@@ -298,20 +298,32 @@ if (readSeeded) {
     await db.exec("savepoint write_tier;");
     try {
       const W = {
+        pollMsg: "40000000-0000-0000-0000-000000000001",
         ownReaction: "40000001-0000-0000-0000-000000000001",
         ownVote: "40000002-0000-0000-0000-000000000001",
         ownSignup: "40000003-0000-0000-0000-000000000001",
         otherReaction: "40000004-0000-0000-0000-000000000001",
       };
+      // The vote and sign-up sit on their own readable message, so the
+      // refused inserts below on msgPublic can't be refused by the
+      // (message, user, type) unique index instead of by the policy, and the
+      // sign-up delete targets a row the caller can read.
       await db.exec(`
+        insert into chat_messages (id, channel_id, sender_id) values
+          ('${W.pollMsg}', '${F.chPublic}', '${F.userAId}');
         insert into chat_message_actions (id, message_id, user_id, action_type) values
           ('${W.ownReaction}',   '${F.msgPublic}', '${F.userCId}', 'reaction:👍'),
-          ('${W.ownVote}',       '${F.msgPublic}', '${F.userCId}', 'vote'),
-          ('${W.ownSignup}',     '${F.msgPrivate}', '${F.userCId}', 'signup'),
+          ('${W.ownVote}',       '${W.pollMsg}',   '${F.userCId}', 'vote'),
+          ('${W.ownSignup}',     '${W.pollMsg}',   '${F.userCId}', 'signup'),
           ('${W.otherReaction}', '${F.msgPublic}', '${F.userAId}', 'reaction:🎉');
         grant insert, update, delete on public.chat_message_actions to rls_probe;
       `);
       const asC = signedIn(F.userCAuth);
+      // Verdicts come from an owner read after each probe, not from RETURNING:
+      // RETURNING makes Postgres apply the SELECT policy too, which would
+      // refuse the DM and cross-chapter inserts in the write policy's place.
+      const ownerCount = async (where) =>
+        (await db.query(`select count(*)::int as n from public.chat_message_actions where ${where}`)).rows[0].n;
 
       const refusedInserts = [
         { name: "a member cannot insert their own reaction directly (the API writes it)", msg: F.msgPublic, type: "reaction:🔥" },
@@ -324,47 +336,62 @@ if (readSeeded) {
         const probe = await probeAs(
           asC,
           `insert into public.chat_message_actions (message_id, user_id, action_type)
-             values ('${s.msg}', '${F.userCId}', '${s.type}') returning id::text as id`,
+             values ('${s.msg}', '${F.userCId}', '${s.type}')`,
         );
-        if (probe.failure !== null || probe.rows.length === 0) {
+        const n = await ownerCount(
+          `message_id = '${s.msg}' and user_id = '${F.userCId}' and action_type = '${s.type}'`,
+        );
+        if (n === 0) {
           console.log(`OK    ${s.name}`);
         } else {
           miss();
-          console.log(`MISS  ${s.name}\n        ↳ the insert went through`);
+          console.log(`MISS  ${s.name}\n        ↳ the insert went through (${probe.failure ?? "no error"})`);
         }
       }
 
       const writes = [
         {
           name: "a member cannot change their own vote in place",
-          sql: `update public.chat_message_actions set payload = '{"option_ids":["x"]}'::jsonb
-                 where id = '${W.ownVote}' returning id::text as id`,
-          removed: [],
+          sql: `update public.chat_message_actions set payload = '{"option_ids":["x"]}'::jsonb where id = '${W.ownVote}'`,
+          check: `id = '${W.ownVote}' and payload is distinct from '{"option_ids":["x"]}'::jsonb`,
+          expect: 1,
         },
         {
           name: "a member cannot delete their own vote directly (a closed poll stays closed)",
-          sql: `delete from public.chat_message_actions where id = '${W.ownVote}' returning id::text as id`,
-          removed: [],
+          sql: `delete from public.chat_message_actions where id = '${W.ownVote}'`,
+          check: `id = '${W.ownVote}'`,
+          expect: 1,
         },
         {
           name: "a member cannot delete their own sign-up claim directly",
-          sql: `delete from public.chat_message_actions where id = '${W.ownSignup}' returning id::text as id`,
-          removed: [],
+          sql: `delete from public.chat_message_actions where id = '${W.ownSignup}'`,
+          check: `id = '${W.ownSignup}'`,
+          expect: 1,
         },
         {
           name: "a member cannot delete someone else's reaction",
-          sql: `delete from public.chat_message_actions where id = '${W.otherReaction}' returning id::text as id`,
-          removed: [],
+          sql: `delete from public.chat_message_actions where id = '${W.otherReaction}'`,
+          check: `id = '${W.otherReaction}'`,
+          expect: 1,
         },
         {
           name: "a member can take back their own reaction (ADR-05)",
-          sql: `delete from public.chat_message_actions where id = '${W.ownReaction}' returning id::text as id`,
-          removed: [W.ownReaction],
+          sql: `delete from public.chat_message_actions where id = '${W.ownReaction}'`,
+          check: `id = '${W.ownReaction}'`,
+          expect: 0,
         },
       ];
       for (const s of writes) {
         const probe = await probeAs(asC, s.sql);
-        expectSet(s.name, probe, s.removed, (id) => id);
+        const n = await ownerCount(s.check);
+        if (n === s.expect) {
+          console.log(`OK    ${s.name}`);
+        } else {
+          miss();
+          console.log(
+            `MISS  ${s.name}\n        ↳ expected ${s.expect} matching row(s), found ${n} (${probe.failure ?? "no error"})`,
+          );
+        }
       }
     } catch (e) {
       miss();

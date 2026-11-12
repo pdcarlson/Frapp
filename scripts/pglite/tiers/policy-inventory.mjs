@@ -19,7 +19,7 @@ import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
 // (`users.auth_admin_can_read_users` and `members.auth_admin_can_read_members`
 // were a third and fourth absence until #1557 created `supabase_auth_admin`,
 // whose `if exists` guard in 20260802120000_active_chapter_jwt_claim.sql:137
-// they sit behind.) So: 10 in `public` here; 12 hosted (10 in `public` + 2 in
+// they sit behind.) So: 9 in `public` here; 11 hosted (9 in `public` + 2 in
 // `realtime`). The printed hosted figure is derived from this list + those 2,
 // so it cannot silently contradict itself the way a second hardcoded literal
 // would.
@@ -71,11 +71,11 @@ import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
   const removed = EXPECTED_PUBLIC_POLICIES.filter((p) => !got.includes(p));
 
   // A name, cmd and roles set still cannot see a policy REWRITTEN in place, and
-  // two of these ten have no other coverage anywhere in the repo
+  // two of these nine have no other coverage anywhere in the repo
   // (`chat_notification_preferences_select_own`,
   // `member_custom_field_values_service_role`). Dropping and recreating one with
   // `using (true)` under the same name would keep the set identical and hand
-  // every row to any authenticated PostgREST client. None of the eight a client
+  // every row to any authenticated PostgREST client. None of the seven a client
   // role can reach is unconditional today, so assert that directly.
   //
   // Only a policy a client can reach counts, which is every policy except one
