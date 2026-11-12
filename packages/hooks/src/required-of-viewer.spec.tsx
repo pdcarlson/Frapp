@@ -9,8 +9,19 @@ import { describe, expect, it, vi } from "vitest";
  */
 
 let roleIds: string[] = [];
-vi.mock("@repo/hooks", () => ({
+vi.mock("./use-frapp-client", () => ({
   useActiveChapterId: () => "chapter-1",
+  useFrappClient: () => ({}),
+}));
+vi.mock("./use-roles", () => ({
+  useRoles: () => ({
+    data: [
+      { id: "alumni", system_key: "ALUMNI" },
+      { id: "officer", system_key: null },
+    ],
+  }),
+}));
+vi.mock("./use-chapters", () => ({
   useListChapters: () => ({
     data: [
       { chapter_id: "chapter-0", role_ids: ["officer"] },
@@ -19,7 +30,7 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
-import { useRequiredOfViewer } from "./viewer-roles";
+import { useRequiredOfViewer } from "./use-event-excuses";
 
 const requiredOf = (ids: string[]) => {
   roleIds = ids;
@@ -50,5 +61,14 @@ describe("useRequiredOfViewer", () => {
     };
     expect(requiredOf(["alumni"])(event)).toBe(false);
     expect(requiredOf(["member"])(event)).toBe(true);
+  });
+
+  it("holds an alumnus only to an event that names one of their roles", () => {
+    // The server's rule (`holdsTo`): the default alone never holds them.
+    const everyone = { is_mandatory: true, others_invited: true };
+    expect(requiredOf(["alumni"])(everyone)).toBe(false);
+    expect(
+      requiredOf(["alumni"])({ ...everyone, required_role_ids: ["alumni"] }),
+    ).toBe(true);
   });
 });

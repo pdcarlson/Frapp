@@ -4,7 +4,6 @@ import {
   seriesRuleOf,
   statusLabel,
 } from "@repo/validation";
-import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -16,7 +15,13 @@ import {
   useMyAttendance,
   useNowDate,
   usePermissionList,
+  useRequiredOfViewer,
+  useViewerUserId,
 } from "@repo/hooks";
+import {
+  ExcuseReviewSection,
+  MyExcuseCard,
+} from "@/components/events/event-excuses";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
@@ -83,6 +88,9 @@ import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
  * shape App Review Guideline 2.1 rejects (#2300), so it comes back only with
  * the endpoint (#1035). A line that used to stand in for it ("Check in at the
  * event to be counted.") is gone too: the check-in card above already says it.
+ * On an event that requires the viewer, "Can't make it" is an excuse, not an
+ * RSVP, and has a server (#3735): `MyExcuseCard` under the check-in card, and
+ * the receiver's `ExcuseReviewSection` below it.
  *
  * ## Editing
  *
@@ -107,6 +115,8 @@ export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const requiredOf = useRequiredOfViewer();
+  const viewerId = useViewerUserId();
+  const canDecideExcuses = can("events:update", usePermissionList());
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
 
@@ -235,6 +245,26 @@ export default function EventDetailsScreen() {
         ) : null}
 
         <CheckInCard event={event} window={window} now={now} />
+
+        <MyExcuseCard
+          eventId={event.id}
+          required={requiredOfViewer}
+          start={event.start_time}
+          end={event.end_time}
+          opensMinutes={event.check_in_opens_minutes}
+          now={now}
+        />
+
+        {/* The event's creator receives its excuses; an events:update
+            holder may decide them too (§ Excuses). */}
+        {canDecideExcuses ||
+        (viewerId !== null && event.created_by === viewerId) ? (
+          <ExcuseReviewSection
+            eventId={event.id}
+            viewerId={viewerId}
+            canUpdateEvents={canDecideExcuses}
+          />
+        ) : null}
 
         {event.description ? (
           <DetailSection

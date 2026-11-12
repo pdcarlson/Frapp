@@ -59,6 +59,19 @@ let myAttendancePending = false;
 let myAttendancePaused = false;
 // `GET /v1/events`, which the series section reads: none by default.
 let chapterEvents: unknown[] = [];
+// Excuses (#3735): whether the event requires the viewer, the viewer's own
+// excuse, and the receiver's list.
+// `null` reads the event as a viewer with no roles would.
+let requiredOfViewer: boolean | null = null;
+const viewerId: string | null = "user-me";
+let myExcuse: unknown = { excuse: null, receiver: null };
+let excuseList: unknown[] = [];
+const sendExcuse = vi.fn(async () => ({}));
+const decideExcuse = vi.fn(async () => ({}));
+
+const { eventAttendanceFor } = await vi.hoisted(
+  async () => await import("@repo/validation"),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -69,13 +82,28 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
-  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
+  useListChapters: () => ({
+    data: [{ chapter_id: "chapter-1", role_ids: [] }],
+  }),
   useMyAttendance: () => ({
     isPending: myAttendancePending,
     isPaused: myAttendancePaused,
     data: myAttendancePending ? undefined : myAttendance,
   }),
   useEvents: () => ({ data: chapterEvents }),
+  useRequiredOfViewer:
+    () => (fields: Parameters<typeof eventAttendanceFor>[0]) =>
+      requiredOfViewer ?? eventAttendanceFor(fields, []).status === "required",
+  useViewerUserId: () => viewerId,
+  useMyEventExcuse: () => ({
+    isPending: false,
+    isPaused: false,
+    data: myExcuse,
+  }),
+  useEventExcuses: () => ({ data: excuseList }),
+  useSendEventExcuse: () => ({ mutateAsync: sendExcuse, isPending: false }),
+  useWithdrawEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDecideEventExcuse: () => ({ mutateAsync: decideExcuse, isPending: false }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -434,8 +462,8 @@ describe("Event details layout", () => {
     const [host] = tree.root.findAll(
       (node) =>
         typeof node.props.onPress === "function" &&
-        node.findAll((text) => text.props.children === "Host check-in")
-          .length > 0,
+        node.findAll((text) => text.props.children === "Host check-in").length >
+          0,
     );
     act(() => host.props.onPress());
     expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
@@ -589,7 +617,9 @@ describe("Event details series (#3823)", () => {
     const dates = tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+        String(node.props.accessibilityLabel).startsWith(
+          "Open Chapter meeting, ",
+        ),
     );
     expect(dates).toHaveLength(3);
     vi.mocked(expoRouter.useRouter().push).mockClear();
@@ -641,7 +671,9 @@ describe("Event details series (#3823)", () => {
     const rows = tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+        String(node.props.accessibilityLabel).startsWith(
+          "Open Chapter meeting, ",
+        ),
     );
     // The two other dates carry the series' name, so neither says it.
     expect(rows).toHaveLength(2);
@@ -652,5 +684,148 @@ describe("Event details series (#3823)", () => {
     chapterEvents = [EVENT];
     const tree = render();
     expect(screenText(tree)).not.toMatch(/Every |Also in this series/);
+  });
+});
+
+describe("Event details excuses (#3735)", () => {
+  // The event is a day out: nothing about check-in is in play.
+  const TOMORROW = {
+    ...EVENT,
+    start_time: new Date(START.getTime() + 24 * 3_600_000).toISOString(),
+    end_time: new Date(START.getTime() + 25 * 3_600_000).toISOString(),
+    created_by: "user-jake",
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MOUNTED_AT);
+    event = TOMORROW;
+    requiredOfViewer = true;
+    permissions = ["members:view"];
+    myAttendance = { attendance: null };
+    myExcuse = { excuse: null, receiver: null };
+    excuseList = [];
+    sendExcuse.mockClear();
+    decideExcuse.mockClear();
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    requiredOfViewer = null;
+    permissions = ["members:view"];
+    event = EVENT;
+  });
+
+  const pressable = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node: ReactTestInstance) =>
+        (node.type as unknown) === "Pressable" && screenTextOf(node) === label,
+    );
+  const screenTextOf = (node: ReactTestInstance): string =>
+    node
+      .findAll((child) => (child.type as unknown) === "Text")
+      .map((child) => child.props.children)
+      .flat()
+      .join("");
+
+  const excuse = (status: string) => ({
+    id: "x-1",
+    chapter_id: "chapter-1",
+    event_id: "evt-1",
+    user_id: "user-me",
+    reason: "Exam review",
+    status,
+    decided_by: null,
+    decided_at: null,
+    created_at: "2026-09-24T12:00:00Z",
+    updated_at: "2026-09-24T12:00:00Z",
+  });
+
+  it("offers Can't make it to a member the event requires, and sends the line", async () => {
+    const tree = render();
+    act(() => pressable(tree, "Can't make it").props.onPress());
+    const input = tree.root.find(
+      (node) => (node.type as unknown) === "TextInput",
+    );
+    act(() => input.props.onChangeText("  Exam review "));
+    await act(async () => {
+      pressable(tree, "Send excuse").props.onPress();
+    });
+    expect(sendExcuse).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      reason: "Exam review",
+    });
+  });
+
+  it("offers nothing on an event that doesn't require the viewer", () => {
+    requiredOfViewer = false;
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("offers nothing to a member already marked excused", () => {
+    myAttendance = {
+      attendance: { status: "EXCUSED", check_in_time: null, marked_by: "u" },
+    };
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("names the receiver of a pending excuse, or the officers when there is none", () => {
+    myExcuse = {
+      excuse: excuse("PENDING"),
+      receiver: { user_id: "user-jake", display_name: "Jake" },
+    };
+    expect(screenText(render())).toContain("Excuse sent to Jake");
+    myExcuse = { excuse: excuse("PENDING"), receiver: null };
+    expect(screenText(render())).toContain("Excuse sent to the officers");
+  });
+
+  it("shows the creator their Excuses list, and approves from it", async () => {
+    requiredOfViewer = false;
+    event = { ...TOMORROW, created_by: "user-me" };
+    excuseList = [
+      { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("1 to decide");
+    await act(async () => {
+      pressable(tree, "Approve").props.onPress();
+    });
+    expect(decideExcuse).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      userId: "user-sam",
+      decision: "APPROVED",
+    });
+  });
+
+  it("shows an officer who didn't make the event the Excuses list", () => {
+    requiredOfViewer = false;
+    permissions = ["members:view", "events:update"];
+    excuseList = [
+      { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("1 to decide");
+    expect(pressable(tree, "Approve")).toBeTruthy();
+  });
+
+  it("shows the creator their own excuse without Approve or Decline", () => {
+    event = { ...TOMORROW, created_by: "user-me" };
+    excuseList = [{ ...excuse("PENDING"), display_name: "Me" }];
+    const tree = render();
+    expect(screenText(tree)).toContain("Pending");
+    expect(screenText(tree)).not.toContain("to decide");
+    expect(screenText(tree)).not.toContain("Approve");
+  });
+
+  it("keeps the Excuses list from a member who didn't make the event", () => {
+    excuseList = [
+      { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
+    ];
+    expect(screenText(render())).not.toContain("to decide");
   });
 });

@@ -71,6 +71,7 @@ export * from "./use-discord-connection";
 export * from "./use-discord-import";
 export * from "./use-document-library";
 export * from "./use-documents";
+export * from "./use-event-excuses";
 export * from "./use-event-types";
 export * from "./use-events";
 export * from "./use-frapp-client";
