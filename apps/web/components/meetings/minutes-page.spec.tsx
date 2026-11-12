@@ -267,7 +267,7 @@ describe("MinutesPage", () => {
     });
   });
 
-  it("asks for a name for an Other meeting before saving", async () => {
+  it("saves an Other meeting without a name, since the name is optional", async () => {
     const draft = minutes({
       status: "draft",
       posted_at: null,
@@ -275,10 +275,75 @@ describe("MinutesPage", () => {
       content: EMPTY,
     });
     loaded(draft);
+    mocks.update.mockResolvedValue({ ...draft, meeting_type: "other" });
     render(<MinutesPage id="m-1" />);
     fireEvent.click(screen.getByRole("radio", { name: "Other" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Name this meeting.")).toBeTruthy();
-    expect(mocks.update).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled());
+    expect(mocks.update.mock.calls[0]![0].body).toMatchObject({
+      meeting_type: "other",
+      other_label: null,
+    });
+  });
+
+  it("loads their version, then saves against it rather than the version it first opened", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    const theirs = {
+      ...draft,
+      updated_at: "2026-11-10T03:00:00.000Z",
+      content: { ...EMPTY, summary: "Theirs." },
+    };
+    loaded(draft);
+    mocks.update
+      .mockRejectedValueOnce({ statusCode: 409, code: "meeting.stale" })
+      .mockResolvedValueOnce({
+        ...theirs,
+        updated_at: "2026-11-10T04:00:00.000Z",
+        content: { ...EMPTY, summary: "Theirs, and mine." },
+      });
+    mocks.refetch.mockResolvedValue({ data: theirs });
+    render(<MinutesPage id="m-1" />);
+    const summary = () =>
+      screen.getByRole("textbox", { name: "Summary" }) as HTMLTextAreaElement;
+    fireEvent.change(summary(), { target: { value: "Mine." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load their version" }),
+    );
+    await waitFor(() => expect(summary().value).toBe("Theirs."));
+    expect(screen.queryByText(/Someone else saved these minutes/)).toBeNull();
+    fireEvent.change(summary(), { target: { value: "Theirs, and mine." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2));
+    expect(mocks.update.mock.calls[1]![0].body).toMatchObject({
+      expected_updated_at: "2026-11-10T03:00:00.000Z",
+      content: { summary: "Theirs, and mine." },
+    });
+  });
+
+  it("shows a newer version that arrives while nothing is typed", () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    const view = render(<MinutesPage id="m-1" />);
+    loaded({
+      ...draft,
+      updated_at: "2026-11-10T03:00:00.000Z",
+      content: { ...EMPTY, summary: "Newer." },
+    });
+    view.rerender(<MinutesPage id="m-1" />);
+    expect(
+      (screen.getByRole("textbox", { name: "Summary" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("Newer.");
   });
 });

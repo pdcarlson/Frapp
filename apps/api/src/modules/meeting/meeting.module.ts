@@ -22,5 +22,8 @@ import { NotificationModule } from '../notification/notification.module';
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
+  // `canRead` is the one read rule for minutes; suggestions and the AI index
+  // that point at minutes ask it rather than restating it.
+  exports: [MeetingService],
 })
 export class MeetingModule {}

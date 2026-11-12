@@ -71,8 +71,8 @@ A meeting's **audience** is the members its event invites, by the event's own ru
 - Minutes and a transcript are readable by the audience, in the app and through AI alike. There is no second, wider rule for AI.
 - An Exec meeting is an event that invites the exec roles. Its minutes are then exec-only without any setting on the minutes themselves.
 - Changing who the event invites changes who can read the minutes, from that moment.
-- **A draft is its author's.** Until minutes are posted, only the officer who started them and holders of `meetings:edit` can read them. Posting is what shows them to the audience.
-- **Minutes outlive their event.** Deleting an event keeps its minutes, which then have no audience: only holders of `meetings:edit` can read them, and they still say the event's name and date. Only `meetings:delete` removes minutes.
+- **A draft is its author's.** Until minutes are posted, only the officer who started them and holders of `meetings:edit` can read them. Posting is what shows them to the audience. The author is held to the event's audience like anyone else: an author the event no longer shows itself to can't read, change, post or delete the minutes until it does.
+- **Minutes outlive their event.** Deleting an event keeps its minutes, which then have no audience: only holders of `meetings:edit` can read them, and they still say the event's name and date. Removing them takes `meetings:delete`.
 
 ### Where minutes live
 
@@ -87,7 +87,7 @@ The Notes way in, without the AI draft: an officer writes the minutes themselves
 - **Writing.** The minutes page is the document and its editor, as a shared doc is: the author's draft opens ready to type, and posted minutes open to read with Edit for whoever may change them. Attendees come from the event's check-ins (present, late, excused) and aren't typed. A decision may carry a vote count (for, against, abstaining), only when the meeting took one. An action item names someone only when the meeting did, and takes a due date. Empty decision and action rows are dropped on save.
 - **Two people editing.** A save carries the version it was made on. If someone saved since, the save is refused, the officer's typing stays on screen, and the page offers to load the other version. Nothing is overwritten silently.
 - **Posting** asks first, then shows the minutes to the audience and tells each member of it once, except the officer who posted: "Minutes posted", "The minutes from {event} are up." in the `events` notification category. Posting again tells nobody, and edits after posting tell nobody.
-- **Who changes them.** The author edits their own minutes, draft or posted; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
+- **Who changes them.** The author edits their own minutes, draft or posted, while the event still shows itself to them; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
 - **Off by default during the beta.** The `meetings` module is in `BETA_OFF_MODULES`, so no chapter sees Meetings in the nav or its settings page, and every write is refused, until it is taken out of that list.
 
 ## Suggested tasks

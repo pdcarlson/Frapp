@@ -38,7 +38,6 @@ import {
 import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { FieldError } from "@/components/shared/short-form";
 import {
   InlineNote,
   inlineNoteActionClassName,
@@ -139,7 +138,7 @@ export function MinutesPage({ id }: { id: string }) {
     <Minutes
       key={query.data.id}
       meeting={query.data}
-      onReload={() => query.refetch()}
+      onReload={async () => (await query.refetch()).data}
     />
   );
 }
@@ -149,7 +148,7 @@ function Minutes({
   onReload,
 }: {
   meeting: MeetingMinutes;
-  onReload: () => Promise<unknown>;
+  onReload: () => Promise<MeetingMinutes | undefined>;
 }) {
   const ids = useId();
   const router = useRouter();
@@ -164,10 +163,30 @@ function Minutes({
   const [editing, setEditing] = useState(meeting.can_edit && isDraft);
   const [base, setBase] = useState(() => draftOf(meeting));
   const [draft, setDraft] = useState(base);
+  // The version `base` was read from. Every save and post names it, so a save
+  // made on an older version is refused rather than overwriting a newer one.
+  const [loadedAt, setLoadedAt] = useState(meeting.updated_at);
   const [stale, setStale] = useState(false);
-  const [problems, setProblems] = useState<Record<string, string>>({});
   const dirty = !sameDraft(draft, base);
   const busy = update.isPending || post.isPending;
+
+  function adopt(next: MeetingMinutes) {
+    const fresh = draftOf(next);
+    setBase(fresh);
+    setDraft(fresh);
+    setLoadedAt(next.updated_at);
+  }
+
+  // A newer version arrived (a refetch on focus, someone else's save). With
+  // nothing typed, show it; with typing on screen, keep the typing and let
+  // the next save be refused as stale, so nothing is lost either way.
+  if (
+    Date.parse(meeting.updated_at) > Date.parse(loadedAt) &&
+    !dirty &&
+    !busy
+  ) {
+    adopt(meeting);
+  }
 
   // Leaving with unsaved words asks first, as Google Docs does offline.
   useEffect(() => {
@@ -198,34 +217,22 @@ function Minutes({
     }));
   }
 
-  function validate(): Record<string, string> {
-    const next: Record<string, string> = {};
-    if (draft.meeting_type === "other" && !draft.other_label.trim()) {
-      next.otherLabel = "Name this meeting.";
-    }
-    return next;
-  }
-
   /** Save, and answer the stored minutes, or null when the save didn't land. */
   async function save(): Promise<MeetingMinutes | null> {
-    const found = validate();
-    setProblems(found);
-    if (Object.keys(found).length > 0) return null;
     const content = cleanContent(draft.content);
+    const otherLabel = draft.other_label.trim();
     try {
       const saved = await update.mutateAsync({
         id: meeting.id,
         body: {
-          expected_updated_at: meeting.updated_at,
+          expected_updated_at: loadedAt,
           meeting_type: draft.meeting_type,
           other_label:
-            draft.meeting_type === "other" ? draft.other_label.trim() : null,
+            draft.meeting_type === "other" && otherLabel ? otherLabel : null,
           content,
         },
       });
-      const next = draftOf(saved);
-      setBase(next);
-      setDraft(next);
+      adopt(saved);
       return saved;
     } catch (error) {
       if (codeOf(error) === "meeting.stale") {
@@ -255,13 +262,10 @@ function Minutes({
       confirmLabel: "Post minutes",
     });
     if (!answer) return;
-    const saved = dirty ? await save() : meeting;
-    if (!saved) return;
+    const expectedUpdatedAt = dirty ? (await save())?.updated_at : loadedAt;
+    if (!expectedUpdatedAt) return;
     try {
-      await post.mutateAsync({
-        id: meeting.id,
-        expectedUpdatedAt: saved.updated_at,
-      });
+      await post.mutateAsync({ id: meeting.id, expectedUpdatedAt });
       setEditing(false);
       toast({ title: "Minutes posted" });
     } catch (error) {
@@ -301,7 +305,16 @@ function Minutes({
   }
 
   async function loadTheirs() {
-    await onReload();
+    const fresh = await onReload();
+    if (!fresh) {
+      toast({
+        title: "Couldn't load their version",
+        description: "Check your connection and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    adopt(fresh);
     setStale(false);
   }
 
@@ -331,7 +344,6 @@ function Minutes({
                 disabled={busy}
                 onClick={() => {
                   setDraft(base);
-                  setProblems({});
                   setEditing(false);
                 }}
               >
@@ -429,12 +441,13 @@ function Minutes({
           />
           {draft.meeting_type === "other" ? (
             <div className="grid max-w-sm gap-1">
-              <Label htmlFor={`${ids}-other`}>What kind of meeting</Label>
+              <Label htmlFor={`${ids}-other`}>
+                What kind of meeting (optional)
+              </Label>
               <Input
                 id={`${ids}-other`}
                 value={draft.other_label}
                 maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
-                aria-invalid={problems.otherLabel ? true : undefined}
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -442,9 +455,6 @@ function Minutes({
                   }))
                 }
               />
-              {problems.otherLabel ? (
-                <FieldError>{problems.otherLabel}</FieldError>
-              ) : null}
             </div>
           ) : null}
           <p className="text-caption text-muted-foreground">

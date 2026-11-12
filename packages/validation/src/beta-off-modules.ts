@@ -15,9 +15,10 @@
  */
 export const BETA_OFF_MODULES: readonly string[] = Object.freeze([
   "dues",
-  // Meeting minutes (#4312) are built on the AI integration branch and stay
-  // off until that work ships as a whole (ADR-28; the AI build-out's
-  // checklist for Paul says when to remove this key).
+  // Meeting minutes (#4312) are built on the `ai-integration` branch and stay
+  // off until that work ships as a whole (ADR-28). The "For Paul's checklist"
+  // section of the AI build-out's pull request into `main` says when to
+  // remove this key.
   "meetings",
 ]);
 

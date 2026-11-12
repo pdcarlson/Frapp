@@ -46,7 +46,6 @@ import {
 const RECENT_DAYS = 30;
 /** And forward: minutes started at the top of a meeting that hasn't begun. */
 const AHEAD_HOURS = 24;
-const RECENT_LIMIT = 12;
 /** Past this many roles the audience list gets a filter (a chapter can hold 100). */
 const ROLE_FILTER_AT = 8;
 
@@ -108,8 +107,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         const at = Date.parse(event?.start_time ?? "");
         return !!event?.id && at >= from && at <= to;
       })
-      .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time))
-      .slice(0, RECENT_LIMIT);
+      .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
   }, [eventsQuery.data, now]);
   /** Events whose minutes the viewer can already open. */
   const started = useMemo(() => {
@@ -158,9 +156,6 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (!source) next.source = "Pick the meeting these minutes are for.";
-    if (type === "other" && !otherLabel.trim()) {
-      next.otherLabel = "Name this meeting.";
-    }
     if (source?.kind === "new") {
       if (!name.trim()) next.name = "Name the meeting.";
       const from = localIso(date, startTime);
@@ -184,7 +179,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     try {
       const meeting = await start.mutateAsync({
         meeting_type: type,
-        other_label: type === "other" ? otherLabel.trim() : null,
+        other_label:
+          type === "other" && otherLabel.trim() ? otherLabel.trim() : null,
         ...(source.kind === "event"
           ? { event_id: source.id }
           : {
@@ -433,18 +429,16 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
             />
             {type === "other" ? (
               <div className="grid gap-1">
-                <Label htmlFor={`${ids}-other`}>What kind of meeting</Label>
+                <Label htmlFor={`${ids}-other`}>
+                  What kind of meeting (optional)
+                </Label>
                 <Input
                   id={`${ids}-other`}
                   value={otherLabel}
                   maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
                   placeholder="Alumni board"
-                  aria-invalid={problems.otherLabel ? true : undefined}
                   onChange={(event) => setOtherLabel(event.target.value)}
                 />
-                {problems.otherLabel ? (
-                  <FieldError>{problems.otherLabel}</FieldError>
-                ) : null}
               </div>
             ) : null}
             <p className="text-caption text-muted-foreground">

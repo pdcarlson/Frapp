@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   moduleOn: { current: true },
-  meetings: { current: { isPending: false, data: [] as unknown[] } },
+  meetings: {
+    current: { isPending: false, isError: false, data: [] as unknown[] },
+  },
   permissions: { current: [] as string[] },
   start: vi.fn(),
   push: vi.fn(),
@@ -38,7 +40,7 @@ const { EventMinutes } = await import("./event-minutes");
 
 beforeEach(() => {
   mocks.moduleOn.current = true;
-  mocks.meetings.current = { isPending: false, data: [] };
+  mocks.meetings.current = { isPending: false, isError: false, data: [] };
   mocks.permissions.current = [];
   mocks.start.mockReset();
   mocks.push.mockReset();
@@ -65,12 +67,30 @@ describe("EventMinutes", () => {
   it("links to minutes the viewer can read", () => {
     mocks.meetings.current = {
       isPending: false,
+      isError: false,
       data: [{ id: "m-1", status: "posted", event_id: "e-1" }],
     };
     render(<EventMinutes eventId="e-1" eventName="Chapter" />);
     expect(
       screen.getByRole("link", { name: "Open minutes" }).getAttribute("href"),
     ).toBe("/meetings/m-1");
+  });
+
+  it("offers no Write minutes when the read failed", () => {
+    mocks.permissions.current = ["meetings:record"];
+    mocks.meetings.current = { isPending: false, isError: true, data: [] };
+    const { container } = render(
+      <EventMinutes eventId="e-1" eventName="Chapter" />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("holds the row's place for someone who records minutes while the read answers", () => {
+    mocks.permissions.current = ["meetings:record"];
+    mocks.meetings.current = { isPending: true, isError: false, data: [] };
+    render(<EventMinutes eventId="e-1" eventName="Chapter" />);
+    expect(screen.getByText("Checking")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Write minutes" })).toBeNull();
   });
 
   it("starts minutes in one tap, typed from the event's name, and opens them", async () => {

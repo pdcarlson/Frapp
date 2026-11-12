@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
@@ -42,9 +43,17 @@ export function EventMinutes({
   const permissions = useMyPermissions().data?.permissions ?? [];
   const start = useStartMeeting();
 
-  if (!on || !eventId || meetingsQuery.isPending) return null;
-  const minutes = meetingsQuery.data?.[0];
   const canRecord = can("meetings:record", permissions);
+  if (!on || !eventId) return null;
+  if (meetingsQuery.isPending) {
+    // Someone who records minutes always gets the row, so it holds its place
+    // while the read answers instead of pushing the notes down when it lands.
+    return canRecord ? <MinutesRowFrame status={null} /> : null;
+  }
+  // Unknown is not "nobody wrote them": offering Write minutes on a failed
+  // read would only meet a 409.
+  if (meetingsQuery.isError) return null;
+  const minutes = meetingsQuery.data?.[0];
   if (!minutes && !canRecord) return null;
 
   async function write() {
@@ -73,17 +82,15 @@ export function EventMinutes({
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-caption text-muted-foreground">Minutes</p>
-        <p className="text-sm">
-          {minutes
-            ? minutes.status === "draft"
-              ? "A draft, not posted yet"
-              : "Posted"
-            : "Nobody has written them yet"}
-        </p>
-      </div>
+    <MinutesRowFrame
+      status={
+        minutes
+          ? minutes.status === "draft"
+            ? "A draft, not posted yet"
+            : "Posted"
+          : "Nobody has written them yet"
+      }
+    >
       {minutes ? (
         <Link
           href={meetingHref(minutes.id)}
@@ -101,6 +108,30 @@ export function EventMinutes({
           Write minutes
         </Button>
       )}
+    </MinutesRowFrame>
+  );
+}
+
+/** The row's frame; `status` null is the quiet placeholder of the same size. */
+function MinutesRowFrame({
+  status,
+  children,
+}: {
+  status: string | null;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className="flex min-h-16 items-center gap-3 rounded-lg border border-border p-3"
+      aria-busy={status === null ? true : undefined}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-caption text-muted-foreground">Minutes</p>
+        <p className="text-sm">
+          {status ?? <span className="text-muted-foreground">Checking</span>}
+        </p>
+      </div>
+      {children}
     </div>
   );
 }

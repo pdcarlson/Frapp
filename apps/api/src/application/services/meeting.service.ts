@@ -104,8 +104,8 @@ interface ViewerAccess {
  *   rule (`EventService.findById` with a viewer), so an Exec meeting's minutes
  *   are exec-only without a setting of their own. Minutes whose event was
  *   deleted have no audience and are read only by `meetings:edit` holders.
- * - a draft: its author and `meetings:edit` holders. Nobody else knows it
- *   exists.
+ * - a draft: its author and `meetings:edit` holders. Another officer who
+ *   tries to start minutes for the same event learns only that some exist.
  *
  * Who writes (§ Permissions): `meetings:record` starts minutes; the author
  * and `meetings:edit` holders edit and post them; `meetings:delete` deletes,
@@ -137,16 +137,21 @@ export class MeetingService {
       : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
     if (rows.length === 0) return [];
     const access = await this.access(chapterId, viewerId);
-    const needsEvents = rows.some(
-      (row) => row.status === 'posted' && row.event_id,
+    // Only the events these rows point at, never the whole calendar: a
+    // `meetings:edit` holder reads every row anyway.
+    const pointedAt = access.canEditAny
+      ? []
+      : rows.flatMap((row) =>
+          row.event_id &&
+          (row.status === 'posted' || row.created_by === viewerId)
+            ? [row.event_id]
+            : [],
+        );
+    const visibleEventIds = new Set(
+      (await this.events.findVisibleByIds(pointedAt, chapterId, viewerId)).map(
+        (event) => event.id,
+      ),
     );
-    const visibleEventIds = needsEvents
-      ? new Set(
-          (await this.events.findByChapter(chapterId, viewerId)).map(
-            (event) => event.id,
-          ),
-        )
-      : new Set<string>();
     return rows.filter((row) =>
       this.readable(row, viewerId, access, (id) => visibleEventIds.has(id)),
     );
@@ -164,7 +169,10 @@ export class MeetingService {
   ): Promise<boolean> {
     const meeting = await this.meetingRepo.findById(chapterId, meetingId);
     if (!meeting) return false;
-    return (await this.readableEvent(chapterId, meeting, userId)) !== false;
+    const access = await this.access(chapterId, userId);
+    return (
+      (await this.readableEvent(chapterId, meeting, userId, access)) !== false
+    );
   }
 
   async get(
@@ -174,11 +182,17 @@ export class MeetingService {
   ): Promise<MeetingView> {
     const meeting = await this.meetingRepo.findById(chapterId, id);
     if (!meeting) throw new NotFoundException('Minutes not found');
-    const event = await this.readableEvent(chapterId, meeting, viewerId);
+    const access = await this.access(chapterId, viewerId);
+    const event = await this.readableEvent(
+      chapterId,
+      meeting,
+      viewerId,
+      access,
+    );
     // The same 404 as a missing id, so a reader the event leaves out can't
     // learn that an Exec meeting has minutes.
     if (event === false) throw new NotFoundException('Minutes not found');
-    return this.view(chapterId, meeting, event, viewerId);
+    return this.view(chapterId, meeting, event, viewerId, access);
   }
 
   async start(
@@ -200,7 +214,7 @@ export class MeetingService {
       // they can't see.
       event = await this.events.findById(input.event_id, chapterId, userId);
       const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
-      if (existing) throw this.alreadyStarted(existing);
+      if (existing) throw this.alreadyStarted();
     } else {
       event = await this.createEventFor(chapterId, userId, input.new_event!);
     }
@@ -227,10 +241,16 @@ export class MeetingService {
     if (!created) {
       // Another officer started the same meeting's minutes a moment ago.
       const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
-      if (existing) throw this.alreadyStarted(existing);
+      if (existing) throw this.alreadyStarted();
       throw new ConflictException('These minutes changed. Reload them.');
     }
-    return this.view(chapterId, created, event, userId);
+    return this.view(
+      chapterId,
+      created,
+      event,
+      userId,
+      await this.access(chapterId, userId),
+    );
   }
 
   async update(
@@ -239,7 +259,7 @@ export class MeetingService {
     userId: string,
     input: UpdateMeetingInput,
   ): Promise<MeetingView> {
-    const meeting = await this.editable(chapterId, id, userId);
+    const { meeting, access } = await this.editable(chapterId, id, userId);
     const write: MeetingWrite = { updated_by: userId };
     if (input.meeting_type !== undefined) {
       write.meeting_type = this.meetingTypeOf(input.meeting_type);
@@ -272,7 +292,7 @@ export class MeetingService {
       write,
     );
     if (!saved) throw this.stale();
-    return this.view(chapterId, saved, event, userId);
+    return this.view(chapterId, saved, event, userId, access);
   }
 
   /**
@@ -286,10 +306,10 @@ export class MeetingService {
     userId: string,
     expectedUpdatedAt: string,
   ): Promise<MeetingView> {
-    const meeting = await this.editable(chapterId, id, userId);
+    const { meeting, access } = await this.editable(chapterId, id, userId);
     const event = await this.liveEvent(chapterId, meeting);
     if (meeting.status === 'posted') {
-      return this.view(chapterId, meeting, event, userId);
+      return this.view(chapterId, meeting, event, userId, access);
     }
     const saved = await this.meetingRepo.update(
       chapterId,
@@ -307,20 +327,26 @@ export class MeetingService {
     );
     if (!saved) throw this.stale();
     if (event) await this.notifyAudience(chapterId, saved, event, userId);
-    return this.view(chapterId, saved, event, userId);
+    return this.view(chapterId, saved, event, userId, access);
   }
 
   async delete(chapterId: string, id: string, userId: string): Promise<void> {
     const meeting = await this.meetingRepo.findById(chapterId, id);
     if (!meeting) return;
     const access = await this.access(chapterId, userId);
-    const ownDraft =
-      meeting.status === 'draft' && meeting.created_by === userId;
-    if (!access.canDelete && !ownDraft) {
-      // A reader who can see it learns they can't delete it; anyone else
-      // gets the 404 a missing id does.
-      if ((await this.readableEvent(chapterId, meeting, userId)) === false) {
+    if (!access.canDelete) {
+      // Anyone who can't read the minutes gets the 404 a missing id does,
+      // the author too once the event no longer shows itself to them.
+      if (
+        (await this.readableEvent(chapterId, meeting, userId, access)) === false
+      ) {
         throw new NotFoundException('Minutes not found');
+      }
+      const ownDraft =
+        meeting.status === 'draft' && meeting.created_by === userId;
+      if (ownDraft) {
+        await this.meetingRepo.delete(chapterId, id);
+        return;
       }
       throw new ForbiddenException(
         'Only someone who can delete minutes can delete these.',
@@ -350,19 +376,19 @@ export class MeetingService {
 
   // ── Reading rules ─────────────────────────────────────────────────────────
 
+  /** The viewer's meetings permissions, from one resolve of their set. */
   private async access(
     chapterId: string,
     userId: string,
   ): Promise<ViewerAccess> {
-    const [canEditAny, canDelete] = await Promise.all([
-      this.rbac.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.MEETINGS_EDIT,
-      ]),
-      this.rbac.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.MEETINGS_DELETE,
-      ]),
-    ]);
-    return { canEditAny, canDelete };
+    const held = new Set(
+      await this.rbac.getEffectivePermissions(chapterId, userId),
+    );
+    const has = (permission: string) => held.has('*') || held.has(permission);
+    return {
+      canEditAny: has(SystemPermissions.MEETINGS_EDIT),
+      canDelete: has(SystemPermissions.MEETINGS_DELETE),
+    };
   }
 
   private readable(
@@ -371,11 +397,12 @@ export class MeetingService {
     access: ViewerAccess,
     eventVisible: (eventId: string) => boolean,
   ): boolean {
-    if (meeting.status === 'draft') {
-      return meeting.created_by === viewerId || access.canEditAny;
-    }
-    if (!meeting.event_id) return access.canEditAny;
-    return eventVisible(meeting.event_id) || access.canEditAny;
+    if (access.canEditAny) return true;
+    // Minutes whose event is gone are for `meetings:edit` holders alone.
+    if (!meeting.event_id || !eventVisible(meeting.event_id)) return false;
+    // A draft is its author's until it is posted; the author still has to be
+    // someone the event shows itself to.
+    return meeting.status === 'posted' || meeting.created_by === viewerId;
   }
 
   /**
@@ -387,8 +414,8 @@ export class MeetingService {
     chapterId: string,
     meeting: Meeting,
     viewerId: string,
+    access: ViewerAccess,
   ): Promise<Event | null | false> {
-    const access = await this.access(chapterId, viewerId);
     const event = meeting.event_id
       ? await this.events
           .findById(meeting.event_id, chapterId, viewerId)
@@ -419,20 +446,27 @@ export class MeetingService {
       });
   }
 
-  /** The row, when `userId` may change it; the right refusal otherwise. */
+  /**
+   * The row, when `userId` may change it; the right refusal otherwise. The
+   * author must still be able to read it: an author the event no longer
+   * invites, or whose minutes lost their event, gets the 404 any other
+   * reader does (§ Who can read minutes).
+   */
   private async editable(
     chapterId: string,
     id: string,
     userId: string,
-  ): Promise<Meeting> {
+  ): Promise<{ meeting: Meeting; access: ViewerAccess }> {
     const meeting = await this.meetingRepo.findById(chapterId, id);
     if (!meeting) throw new NotFoundException('Minutes not found');
-    if (meeting.created_by === userId) return meeting;
     const access = await this.access(chapterId, userId);
-    if (access.canEditAny) return meeting;
-    if ((await this.readableEvent(chapterId, meeting, userId)) === false) {
+    if (access.canEditAny) return { meeting, access };
+    if (
+      (await this.readableEvent(chapterId, meeting, userId, access)) === false
+    ) {
       throw new NotFoundException('Minutes not found');
     }
+    if (meeting.created_by === userId) return { meeting, access };
     throw new ForbiddenException(
       'Only the officer who started these minutes, or someone who can edit any minutes, can change them.',
     );
@@ -443,12 +477,16 @@ export class MeetingService {
     meeting: Meeting,
     event: Event | null,
     viewerId: string,
+    access: ViewerAccess,
   ): Promise<MeetingView> {
-    const [sections, attendees, access] = await Promise.all([
-      this.getTemplate(chapterId),
-      event ? this.attendeesOf(event.id) : Promise.resolve(null),
-      this.access(chapterId, viewerId),
-    ]);
+    const sections = await this.getTemplate(chapterId);
+    // The check-ins go out only while the chapter shows Attendees: the
+    // event's own roster is an officer read (`events:update`), and a chapter
+    // that switched the section off chose not to show it to readers.
+    const attendees =
+      event && sections.includes('attendees')
+        ? await this.attendeesOf(event.id)
+        : null;
     return {
       meeting,
       content: readMeetingContent(meeting.content),
@@ -575,11 +613,12 @@ export class MeetingService {
     }
   }
 
-  private alreadyStarted(existing: Meeting): ConflictException {
+  private alreadyStarted(): ConflictException {
     return new ConflictException({
       code: 'meeting.already_started',
+      // No id: a draft is its author's, so another officer learns only that
+      // minutes exist (§ Who can read minutes).
       message: 'This meeting already has minutes.',
-      meeting_id: existing.id,
     });
   }
 

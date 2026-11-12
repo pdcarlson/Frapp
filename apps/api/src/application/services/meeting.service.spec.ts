@@ -110,7 +110,7 @@ describe('MeetingService', () => {
   let repo: jest.Mocked<IMeetingRepository>;
   let attendance: jest.Mocked<Pick<IAttendanceRepository, 'findByEvent'>>;
   let eventService: jest.Mocked<
-    Pick<EventService, 'findById' | 'findByChapter' | 'create'>
+    Pick<EventService, 'findById' | 'findVisibleByIds' | 'create'>
   >;
   let notifyMembers: jest.Mock;
   let service: MeetingService;
@@ -184,8 +184,11 @@ describe('MeetingService', () => {
           return row;
         },
       ),
-      findByChapter: jest.fn(async (_chapterId: string, viewer?: string) =>
-        [...events.values()].filter((row) => !viewer || sees(viewer, row)),
+      findVisibleByIds: jest.fn(
+        async (ids: string[], _chapterId: string, viewer: string) =>
+          ids
+            .map((id) => events.get(id))
+            .filter((row): row is Event => !!row && sees(viewer, row)),
       ),
       create: jest.fn(async (input) => {
         const row = event({
@@ -199,6 +202,9 @@ describe('MeetingService', () => {
     };
     notifyMembers = jest.fn().mockResolvedValue(undefined);
     const rbac = {
+      getEffectivePermissions: jest.fn(
+        async (_chapterId: string, userId: string) => PERMISSIONS[userId] ?? [],
+      ),
       memberHasAnyPermission: jest.fn(
         async (_chapterId: string, userId: string, wanted: string[]) =>
           wanted.some((permission) => has(userId, permission)),
@@ -245,6 +251,21 @@ describe('MeetingService', () => {
   });
 
   describe('start', () => {
+    it('leaves attendees out when the chapter turned that section off', async () => {
+      repo.findTemplate.mockResolvedValue({
+        chapter_id: CHAPTER,
+        sections: ['summary', 'decisions'],
+        updated_by: PRESIDENT,
+        updated_at: '2026-11-10T00:00:00.000Z',
+      });
+      const view = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'chapter',
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(view.attendees).toBeNull();
+      expect(attendance.findByEvent).not.toHaveBeenCalled();
+    });
+
     it('starts a draft for the event, carrying the event notes into the summary', async () => {
       events.set(CHAPTER_EVENT.id, event({ notes: 'Budget passed 30-2.' }));
       const view = await service.start(CHAPTER, SECRETARY, {
@@ -261,7 +282,7 @@ describe('MeetingService', () => {
       expect(view.can_edit).toBe(true);
     });
 
-    it('answers with the minutes that exist when the event has some', async () => {
+    it('refuses a second start without naming minutes the viewer may not read', async () => {
       rows.set('mtg-1', meeting());
       await expect(
         service.start(CHAPTER, VP, {
@@ -269,8 +290,15 @@ describe('MeetingService', () => {
           event_id: CHAPTER_EVENT.id,
         }),
       ).rejects.toMatchObject({
-        response: { code: 'meeting.already_started', meeting_id: 'mtg-1' },
+        response: { code: 'meeting.already_started' },
       });
+      const refusal = await service
+        .start(CHAPTER, VP, {
+          meeting_type: 'chapter',
+          event_id: CHAPTER_EVENT.id,
+        })
+        .catch((error: { getResponse(): object }) => error.getResponse());
+      expect(refusal).not.toHaveProperty('meeting_id');
     });
 
     it('refuses an event the officer cannot see', async () => {
@@ -569,6 +597,31 @@ describe('MeetingService', () => {
       rows.set('mtg-1', meeting());
       await service.delete(CHAPTER, 'mtg-1', SECRETARY);
       expect(rows.has('mtg-1')).toBe(false);
+    });
+
+    it("keeps another officer's draft out of reach of one who only records", async () => {
+      rows.set('mtg-1', meeting());
+      await expect(service.delete(CHAPTER, 'mtg-1', VP)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-1', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(rows.has('mtg-1')).toBe(true);
+    });
+
+    it('refuses the author once the event no longer shows itself to them', async () => {
+      rows.set(
+        'mtg-exec',
+        meeting({ id: 'mtg-exec', event_id: EXEC_EVENT.id, created_by: JAKE }),
+      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.post(CHAPTER, 'mtg-exec', JAKE, meeting().updated_at),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(rows.has('mtg-exec')).toBe(true);
     });
 
     it('keeps posted minutes from their author', async () => {

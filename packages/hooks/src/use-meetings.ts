@@ -111,6 +111,8 @@ export function useStartMeeting() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "start"],
+    // A lost answer to a start leaves the retry a 409 for minutes that exist.
+    retry: false,
     mutationFn: async (body: StartMeetingBody) => {
       const { data, error } = await client.POST("/v1/meetings", { body });
       if (error) throw error;
@@ -134,6 +136,8 @@ export function useUpdateMeeting() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "update"],
+    // A save is compare-and-set: a retry after a lost answer is refused as stale.
+    retry: false,
     mutationFn: async ({
       id,
       body,
@@ -166,6 +170,8 @@ export function usePostMeeting() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "post"],
+    // Posting is compare-and-set, and a retry would be refused as stale.
+    retry: false,
     mutationFn: async ({
       id,
       expectedUpdatedAt,
@@ -197,6 +203,8 @@ export function useDeleteMeeting() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "delete"],
+    // A retry after a lost answer finds nothing to delete.
+    retry: false,
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/v1/meetings/{id}", {
         params: { path: { id } },
