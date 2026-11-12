@@ -473,7 +473,8 @@ const HERE_FOLDED = "here";
  * not a member's own exact name: when "Rush" is both a role and a member, the
  * token is ambiguous and, like every ambiguity here, reaches nobody. Tiers
  * and groups (#4076) ride the same list as roles, and when several of them
- * share the name they are one target ({@link sharedName}).
+ * share the name they are one target ({@link sharedName}), except two roles
+ * or two tiers, which stay ambiguous.
  * `@everyone` and `@here` are the exceptions below.
  */
 function matchMentionRole(
@@ -507,10 +508,15 @@ function matchMentionRole(
   const exact = tierPredicates<MentionCandidate>(token).slice(0, EXACT_TIERS);
   if (exact.some((pred) => candidates.some(pred))) return null;
   if (hits.length === 1) return hits[0]!;
-  // Two of one kind (two roles folding to one name) stay ambiguous: the
-  // picker offered one of them and the token can't say which.
-  const kinds = new Set(hits.map((role) => role.kind ?? "role"));
-  if (kinds.size < hits.length) return null;
+  // Two roles or two tiers folding to one name stay ambiguous: the picker
+  // offered one of them and the token can't say which. Two groups don't: a
+  // pledge class or class year can take a hand-made group's name (the
+  // database makes them), and each is plainly the set the sender named, so
+  // they reach together like a tier and role sharing a name.
+  const kinds = hits.map((role) => role.kind ?? "role");
+  if (kinds.some((kind, i) => kind !== "group" && kinds.indexOf(kind) !== i)) {
+    return null;
+  }
   return sharedName(hits);
 }
 

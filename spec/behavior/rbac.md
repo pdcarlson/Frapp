@@ -104,7 +104,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - The color is one of ten fixed palette values (`ROLE_COLOR_PALETTE` in `packages/validation/src/role-colors.ts`), each readable as text on every charcoal surface. Role create and update refuse any other value (`400`), and `null` clears it. Red and gold are left out: red means a mention or an error, and gold is the Ask surface's.
   - A member's name in chat takes the color of their highest-ranked colored role: the lowest `display_order` among their roles that has one. A member with no colored role reads in the plain foreground, and the viewer's own name keeps the chapter accent. `GET /v1/members/roster` carries it per member as `role_color`, so no client needs `role_ids` to paint a name. Clients paint only palette values, so an older stored hex paints nothing.
   - Seeded roles get palette defaults from `DEFAULT_SYSTEM_ROLES` (`apps/api/src/domain/constants/permissions.ts`), which owns the per-role values. The rule is that the officer and Alumni roles are colored and Everyone and New Member are not, so officers stand out.
-- Roles have a **mentionable** switch (2026-11-06, owner direction: "anyone can ping any role by default. officers can change defaults"): on by default for every row of `roles`, seeded, created on the Roles page or imported, except the Everyone role, which starts off ([The Everyone role](#the-everyone-role)). Mention resolution and the picker read `roles` and `members.role_ids` (#3638). A `roles:manage` holder turns it off on the web Roles page; while it is off, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can `@` the role in chat. The mention rules are in [`chat/README.md`](chat/README.md#role-mentions) § Role mentions.
+- Roles have a **mentionable** switch (2026-11-06, owner direction: "anyone can ping any role by default. officers can change defaults"): on by default for every row of `roles`, seeded, created on the Roles page or imported, except the Everyone role, which starts off ([The Everyone role](#the-everyone-role)). Mention resolution and the picker read `roles` and `members.role_ids` (#3638), and since #4076 the chapter's tiers and groups with who is in each. A `roles:manage` holder turns it off on the web Roles page; while it is off, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can `@` the role in chat. The mention rules are in [`chat/README.md`](chat/README.md#role-mentions) § Role mentions.
 - A user with no assigned roles has zero permissions (fail-safe closed).
 
 ## The Everyone role
@@ -164,11 +164,11 @@ Every write below takes `roles:manage` and the [rank rules](#rank); reading take
 
 ### Tiers can be pinged
 
-Paul and Shawn, 2026-11-11 (#4076): a tier's name is a mention. `@<tier name>` reaches everyone holding any role in the tier, and each tier carries a `mentionable` switch, on by default, with a role's rule ([`chat/README.md` § Role mentions](chat/README.md#role-mentions)). It is set on the tier's page under Roles by anyone who can edit that tier.
+Paul and Shawn, 2026-11-11 (#4076): a tier's name is a mention. `@<tier name>` reaches everyone holding any role in the tier, and each tier carries a `mentionable` switch, on by default, with a role's rule ([`chat/README.md` § Role mentions](chat/README.md#role-mentions)). A tier holding the Everyone role also follows the Everyone role's switch, so `@Members` is officers-only wherever `@everyone` is. It is set on the tier's page under Roles by anyone who can edit that tier.
 
 ### Groups are not roles
 
-A group ([`members.md` § Groups](members.md#groups)) is a named set of members with no permissions, kept apart from roles in its own table so that nothing granting access can be attached to one. `groups:manage` manages them. A group can stand on a channel's who-can-see and who-can-post lists (`group:<id>`), which is the one thing it opens.
+A group ([`members.md` § Groups](members.md#groups)) is a named set of members with no permissions, kept apart from roles in its own table so that nothing granting access can be attached to one. `groups:manage` manages them. A group can stand on a channel's who-can-see and who-can-post lists (`group:<id>`), which is the one thing it opens; so once a list names one, changing its members or deleting it also needs `channels:manage`. A class year's group can't stand on a list, since members set their own graduation year.
 
 ## Rank
 

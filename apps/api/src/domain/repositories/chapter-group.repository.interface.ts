@@ -34,11 +34,18 @@ export interface IChapterGroupRepository {
   delete(id: string, chapterId: string): Promise<void>;
   /**
    * Who is in each group of the chapter, every kind
-   * (`chapter_group_memberships`). One read for the whole chapter.
+   * (`chapter_group_memberships`), read whole however many pages it takes.
    */
   findMemberships(chapterId: string): Promise<ChapterGroupMembership[]>;
-  /** The groups one member is in, every kind. */
+  /** Who is in one group now, sorted. */
+  findMemberIds(chapterId: string, groupId: string): Promise<string[]>;
+  /**
+   * The groups one member is in that can open a channel: every kind but a
+   * class year (`groupKindOpensChannels`). For channel access only.
+   */
   findGroupIdsForUser(chapterId: string, userId: string): Promise<string[]>;
+  /** Whether any channel's or category's who-can-see or who-can-post names it. */
+  isNamedOnChannelList(chapterId: string, groupId: string): Promise<boolean>;
   /**
    * A manual group's members set to exactly `userIds`, all or none
    * (`set_chapter_group_members`). Resolves to the members after, or to why

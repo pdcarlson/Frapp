@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
 import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
 import type { Role } from '#domain/entities/role.entity';
@@ -58,7 +59,7 @@ describe('ChannelAccessListService.listOptions', () => {
 });
 
 describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
-  it('offers groups after tiers and roles with who is in them, hiding an automatic one nobody is in', async () => {
+  it('offers groups after tiers and roles with who is in them, hiding an automatic one nobody is in and every class year', async () => {
     const groups = createChapterGroupRepoMock();
     const group = (id: string, name: string, kind: string) => ({
       id,
@@ -73,14 +74,31 @@ describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
       updated_at: '2026-11-12T00:00:00Z',
     });
     groups.findByChapter.mockImplementation(async () => [
+      group('g-year', 'Class of 2027', 'class_year'),
       group('g-class', 'Alpha', 'pledge_class'),
       group('g-empty', 'Beta', 'pledge_class'),
       group('g-floor', 'Third floor', 'manual'),
       { ...group('g-other', 'Elsewhere', 'manual'), chapter_id: 'ch-2' },
     ]);
     groups.findMemberships.mockResolvedValue([
-      { chapter_id: 'ch-1', group_id: 'g-class', user_id: 'u2' },
-      { chapter_id: 'ch-1', group_id: 'g-class', user_id: 'u1' },
+      {
+        chapter_id: 'ch-1',
+        group_id: 'g-class',
+        user_id: 'u2',
+        kind: 'pledge_class',
+      },
+      {
+        chapter_id: 'ch-1',
+        group_id: 'g-class',
+        user_id: 'u1',
+        kind: 'pledge_class',
+      },
+      {
+        chapter_id: 'ch-1',
+        group_id: 'g-year',
+        user_id: 'u1',
+        kind: 'class_year',
+      },
     ]);
     const service = new ChannelAccessListService(
       {
@@ -116,5 +134,49 @@ describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
       },
       { entry: 'group:g-empty', kind: 'group', user_ids: [], hidden: true },
     ]);
+  });
+});
+
+describe('ChannelAccessListService.normalize — groups (#4076)', () => {
+  const FLOOR = '00000000-0000-4000-8000-0000000000f1';
+  const YEAR = '00000000-0000-4000-8000-0000000000f2';
+  const FOREIGN = '00000000-0000-4000-8000-0000000000f3';
+  const service = () => {
+    const groups = createChapterGroupRepoMock();
+    groups.findByChapter.mockResolvedValue([
+      { id: FLOOR, chapter_id: 'ch-1', kind: 'manual', name: 'Third floor' },
+      {
+        id: YEAR,
+        chapter_id: 'ch-1',
+        kind: 'class_year',
+        name: 'Class of 2027',
+      },
+      { id: FOREIGN, chapter_id: 'ch-2', kind: 'manual', name: 'Elsewhere' },
+    ]);
+    return new ChannelAccessListService(
+      {} as IRoleRepository,
+      {} as IRoleTierRepository,
+      {} as IMemberRepository,
+      {} as IChatCategoryRepository,
+      groups,
+    );
+  };
+
+  it("keeps a chapter group's entry", async () => {
+    await expect(
+      service().normalize('ch-1', { who_can_see: [`group:${FLOOR}`] }),
+    ).resolves.toEqual({ who_can_see: [`group:${FLOOR}`] });
+  });
+
+  it("refuses another chapter's group", async () => {
+    await expect(
+      service().normalize('ch-1', { who_can_post: [`group:${FOREIGN}`] }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('refuses a class year, whose members set their own year', async () => {
+    await expect(
+      service().normalize('ch-1', { who_can_see: [`group:${YEAR}`] }),
+    ).rejects.toThrow(/class year/);
   });
 });

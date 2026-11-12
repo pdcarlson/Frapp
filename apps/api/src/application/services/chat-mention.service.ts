@@ -467,6 +467,11 @@ function nameIsFree(name: string): boolean {
  * Everyone role included (its holders are the tier's members as much as
  * anyone's), so a member whose role leaves the tier stops getting it. In tier
  * order, highest first, with the tier's own switch.
+ *
+ * A tier holding the Everyone role reaches nearly the whole chapter, so it is
+ * `@everyone` under another name: it also follows the Everyone role's switch
+ * (#4191, officers only by default), or `@Members` would let any member ping
+ * everyone past the rule `@everyone` keeps.
  */
 function mentionTierViews(
   tiers: readonly RoleTier[],
@@ -476,21 +481,23 @@ function mentionTierViews(
   return [...tiers]
     .filter((tier) => nameIsFree(tier.name))
     .sort((a, b) => a.position - b.position)
-    .map((tier) => ({
-      role_id: tier.id,
-      kind: 'tier' as const,
-      name: tier.name,
-      color: null,
-      member_ids: [
-        ...new Set(
-          roles
-            .filter((role) => role.tier_id === tier.id)
-            .flatMap((role) => holders.get(role.id) ?? []),
-        ),
-      ],
-      open_to_all: tier.mentionable !== false,
-      mentionable: false,
-    }));
+    .map((tier) => {
+      const inTier = roles.filter((role) => role.tier_id === tier.id);
+      const everyone = inTier.find(isEveryoneRole);
+      return {
+        role_id: tier.id,
+        kind: 'tier' as const,
+        name: tier.name,
+        color: null,
+        member_ids: [
+          ...new Set(inTier.flatMap((role) => holders.get(role.id) ?? [])),
+        ],
+        open_to_all:
+          tier.mentionable !== false &&
+          (!everyone || everyone.mentionable !== false),
+        mentionable: false,
+      };
+    });
 }
 
 /**

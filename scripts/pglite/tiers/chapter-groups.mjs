@@ -279,6 +279,27 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
       reads.inGroup === true && reads.outOfGroup === false,
       reads,
     );
+    // A class year never opens a channel: U1 has 2028, set by themselves.
+    await db.query(`update chat_channels set who_can_see = $2 where id = $1`, [
+      CHAN,
+      [`group:${y2028}`],
+    ]);
+    const yearRead = await canRead(A(1));
+    const yearKind = (
+      await rows(
+        `select kind from chapter_group_memberships where group_id = $1 and user_id = $2`,
+        [y2028, U(1)],
+      )
+    )[0]?.kind;
+    check(
+      "a class year on a list admits nobody, its own members included",
+      yearRead === false && yearKind === "class_year",
+      { yearRead, yearKind },
+    );
+    await db.query(`update chat_channels set who_can_see = $2 where id = $1`, [
+      CHAN,
+      [`group:${floor}`],
+    ]);
     check(
       "a list refuses an entry kind it doesn't know",
       await refused(`update chat_channels set who_can_see = $2 where id = $1`, [

@@ -10,11 +10,15 @@ import type {
   ChapterGroupMembership,
 } from '#domain/entities/chapter-group.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { fetchAllPages } from '../supabase.utils';
 import {
   PG_FOREIGN_KEY_VIOLATION,
   PG_NO_DATA_FOUND,
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
+
+/** Rows per membership page; the server's own cap may be lower. */
+const MEMBERSHIP_PAGE = 1000;
 
 /** `chapter_groups` and who is in each (#4076). */
 @Injectable()
@@ -92,12 +96,36 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
   }
 
   async findMemberships(chapterId: string): Promise<ChapterGroupMembership[]> {
-    const { data, error } = await this.supabase
-      .from('chapter_group_memberships')
-      .select('chapter_id, group_id, user_id')
-      .eq('chapter_id', chapterId);
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    // Paged: the view has a row per member per automatic group plus every
+    // manual pick, past PostgREST's `max_rows` in a chapter of a few hundred,
+    // and a short read would drop members from a group's list without error.
+    // (group_id, user_id) is unique in the view, so the order is total.
+    return fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chapter_group_memberships')
+          .select('chapter_id, group_id, user_id, kind')
+          .eq('chapter_id', chapterId)
+          .order('group_id', { ascending: true })
+          .order('user_id', { ascending: true })
+          .range(from, to),
+      { pageSize: MEMBERSHIP_PAGE },
+    );
+  }
+
+  async findMemberIds(chapterId: string, groupId: string): Promise<string[]> {
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chapter_group_memberships')
+          .select('user_id')
+          .eq('chapter_id', chapterId)
+          .eq('group_id', groupId)
+          .order('user_id', { ascending: true })
+          .range(from, to),
+      { pageSize: MEMBERSHIP_PAGE },
+    );
+    return rows.map((row) => row.user_id);
   }
 
   async findGroupIdsForUser(
@@ -108,9 +136,34 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
       .from('chapter_group_memberships')
       .select('group_id')
       .eq('chapter_id', chapterId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      // Only groups that can open a channel (`groupKindOpensChannels`).
+      .neq('kind', 'class_year');
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => row.group_id);
+  }
+
+  async isNamedOnChannelList(
+    chapterId: string,
+    groupId: string,
+  ): Promise<boolean> {
+    const entry = `group:${groupId}`;
+    const filter = `who_can_see.cs.{${entry}},who_can_post.cs.{${entry}}`;
+    const [channels, categories] = await Promise.all([
+      this.supabase
+        .from('chat_channels')
+        .select('id', { count: 'exact', head: true })
+        .eq('chapter_id', chapterId)
+        .or(filter),
+      this.supabase
+        .from('chat_channel_categories')
+        .select('id', { count: 'exact', head: true })
+        .eq('chapter_id', chapterId)
+        .or(filter),
+    ]);
+    if (channels.error) throw new SupabaseQueryError(channels.error);
+    if (categories.error) throw new SupabaseQueryError(categories.error);
+    return (channels.count ?? 0) + (categories.count ?? 0) > 0;
   }
 
   async setMembers(

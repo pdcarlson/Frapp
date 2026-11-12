@@ -43,6 +43,17 @@ export interface ChapterGroupMembership {
   chapter_id: string;
   group_id: string;
   user_id: string;
+  /** The group's kind, so a reader can tell a class year apart. */
+  kind: ChapterGroupKind;
+}
+
+/**
+ * Whether a group of this kind can open a channel that lists it. A class year
+ * can't: members set their own graduation year, so it is for `@`-mentions
+ * only (`can_read_chat_channel` holds the same rule).
+ */
+export function groupKindOpensChannels(kind: ChapterGroupKind): boolean {
+  return kind !== 'class_year';
 }
 
 /** A manual group's hand-picked member (`chapter_group_members`). */

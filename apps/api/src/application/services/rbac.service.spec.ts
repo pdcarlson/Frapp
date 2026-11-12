@@ -2095,6 +2095,46 @@ describe('RbacService', () => {
       ]);
     });
 
+    it('carries group entries with groups, and never a class year (#4076)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([role('role-member', 5)]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['role-member'] }),
+      ]);
+      mockGroupRepo.findMemberships.mockResolvedValue([
+        {
+          chapter_id: 'ch-1',
+          group_id: 'g-floor',
+          user_id: 'user-1',
+          kind: 'manual',
+        },
+        {
+          chapter_id: 'ch-1',
+          group_id: 'g-alpha',
+          user_id: 'user-1',
+          kind: 'pledge_class',
+        },
+        {
+          chapter_id: 'ch-1',
+          group_id: 'g-2027',
+          user_id: 'user-1',
+          kind: 'class_year',
+        },
+      ]);
+
+      const [without] = await service.getChapterMemberAccess('ch-1');
+      const [withGroups] = await service.getChapterMemberAccess('ch-1', true);
+
+      expect([...(without?.channel_access.entries ?? [])]).toEqual([
+        'role:role-member',
+      ]);
+      expect([...(withGroups?.channel_access.entries ?? [])].sort()).toEqual([
+        'group:g-alpha',
+        'group:g-floor',
+        'role:role-member',
+      ]);
+      expect(mockGroupRepo.findMemberships).toHaveBeenCalledTimes(1);
+    });
+
     // `role_ids` isn't foreign-keyed; the per-member read and the database
     // match an uppercase id, so the push audience must too.
     it('matches a role id stored in uppercase', async () => {

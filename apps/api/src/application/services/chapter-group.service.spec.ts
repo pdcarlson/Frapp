@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { ChapterGroupService, withMembers } from './chapter-group.service';
@@ -45,6 +46,7 @@ describe('ChapterGroupService (#4076)', () => {
   let audit: AuditLogServiceMock;
   let roles: { findByChapter: jest.Mock };
   let tiers: { findByChapter: jest.Mock };
+  let rbac: { memberHasAnyPermission: jest.Mock };
   let service: ChapterGroupService;
 
   beforeEach(() => {
@@ -60,11 +62,13 @@ describe('ChapterGroupService (#4076)', () => {
         .fn()
         .mockResolvedValue([{ chapter_id: CHAPTER, name: 'Exec board' }]),
     };
+    rbac = { memberHasAnyPermission: jest.fn().mockResolvedValue(false) };
     service = new ChapterGroupService(
       repo,
       roles as unknown as IRoleRepository,
       tiers as unknown as IRoleTierRepository,
       audit as never,
+      rbac as never,
     );
   });
 
@@ -80,8 +84,18 @@ describe('ChapterGroupService (#4076)', () => {
         group('m', 'Third floor'),
       ]);
       repo.findMemberships.mockResolvedValue([
-        { chapter_id: CHAPTER, group_id: 'y', user_id: 'u2' },
-        { chapter_id: CHAPTER, group_id: 'p', user_id: 'u1' },
+        {
+          chapter_id: CHAPTER,
+          group_id: 'y',
+          user_id: 'u2',
+          kind: 'class_year',
+        },
+        {
+          chapter_id: CHAPTER,
+          group_id: 'p',
+          user_id: 'u1',
+          kind: 'pledge_class',
+        },
       ]);
 
       const list = await service.list(CHAPTER);
@@ -225,9 +239,7 @@ describe('ChapterGroupService (#4076)', () => {
   describe('setMembers', () => {
     it('replaces the list and audits who it was before and after', async () => {
       repo.findById.mockResolvedValue(group('m', 'Third floor'));
-      repo.findMemberships.mockResolvedValue([
-        { chapter_id: CHAPTER, group_id: 'm', user_id: 'u1' },
-      ]);
+      repo.findMemberIds.mockResolvedValue(['u1']);
       repo.setMembers.mockResolvedValue(['u2']);
 
       const view = await service.setMembers('m', CHAPTER, ACTOR, ['u2']);
@@ -239,6 +251,34 @@ describe('ChapterGroupService (#4076)', () => {
           diff: { members: { from: ['u1'], to: ['u2'] } },
         }),
       );
+    });
+
+    it('needs channels:manage once a channel list names the group', async () => {
+      repo.findById.mockResolvedValue(group('m', 'Exec'));
+      repo.isNamedOnChannelList.mockResolvedValue(true);
+
+      await expect(
+        service.setMembers('m', CHAPTER, ACTOR, [ACTOR]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(rbac.memberHasAnyPermission).toHaveBeenCalledWith(CHAPTER, ACTOR, [
+        'channels:manage',
+      ]);
+      expect(repo.setMembers).not.toHaveBeenCalled();
+
+      rbac.memberHasAnyPermission.mockResolvedValue(true);
+      repo.setMembers.mockResolvedValue([ACTOR]);
+      await expect(
+        service.setMembers('m', CHAPTER, ACTOR, [ACTOR]),
+      ).resolves.toMatchObject({ member_ids: [ACTOR] });
+    });
+
+    it('asks for nothing more when no list names the group', async () => {
+      repo.findById.mockResolvedValue(group('m', 'Third floor'));
+      repo.setMembers.mockResolvedValue(['u1']);
+
+      await service.setMembers('m', CHAPTER, ACTOR, ['u1']);
+
+      expect(rbac.memberHasAnyPermission).not.toHaveBeenCalled();
     });
 
     it('refuses an automatic group, whose members follow their data', async () => {
@@ -273,6 +313,16 @@ describe('ChapterGroupService (#4076)', () => {
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'chapter_group_deleted' }),
       );
+    });
+
+    it('needs channels:manage to delete a group a channel list names', async () => {
+      repo.findById.mockResolvedValue(group('m', 'Exec'));
+      repo.isNamedOnChannelList.mockResolvedValue(true);
+
+      await expect(service.remove('m', CHAPTER, ACTOR)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(repo.delete).not.toHaveBeenCalled();
     });
 
     it('refuses an automatic group', async () => {

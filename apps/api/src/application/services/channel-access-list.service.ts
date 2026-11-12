@@ -23,6 +23,7 @@ import { CHAT_CATEGORY_REPOSITORY } from '#domain/repositories/chat.repository.i
 import type { IChatCategoryRepository } from '#domain/repositories/chat.repository.interface';
 import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
 import { withMembers } from './chapter-group.service';
+import { groupKindOpensChannels } from '#domain/entities/chapter-group.entity';
 
 /** One thing a who-can-see or who-can-post list can name, as the editor offers it. */
 export interface ChannelAccessOption {
@@ -306,8 +307,13 @@ export class ChannelAccessListService {
           hidden: role.system_key === SystemRoleKeys.MEMBER,
         };
       });
+    // A class year never goes on a list: members set their own graduation
+    // year (`groupKindOpensChannels`).
     const groupOptions: ChannelAccessOption[] = withMembers(
-      groups.filter((group) => group.chapter_id === chapterId),
+      groups.filter(
+        (group) =>
+          group.chapter_id === chapterId && groupKindOpensChannels(group.kind),
+      ),
       [],
     ).map((group) => {
       const entry = channelAccessEntry('group', group.id);
@@ -350,8 +356,8 @@ export class ChannelAccessListService {
       if (list.length === 0) {
         throw new BadRequestException(
           field === 'who_can_see'
-            ? 'Pick at least one tier or role who can see it, or choose everyone'
-            : 'Pick at least one tier or role who can post, or choose everyone who can see it',
+            ? 'Pick at least one tier, role or group who can see it, or choose everyone'
+            : 'Pick at least one tier, role or group who can post, or choose everyone who can see it',
         );
       }
       if (list.length > CHANNEL_ACCESS_LIST_MAX) {
@@ -392,7 +398,17 @@ export class ChannelAccessListService {
           .filter((group) => group.chapter_id === chapterId)
           .map((group) => channelAccessEntry('group', group.id)),
       ]);
+      const yearIds = new Set(
+        groups
+          .filter((group) => !groupKindOpensChannels(group.kind))
+          .map((group) => group.id),
+      );
       for (const { kind, id } of parsed) {
+        if (kind === 'group' && yearIds.has(id)) {
+          throw new BadRequestException(
+            "A class year can't decide who sees a channel, because members set their own graduation year. Make a group and pick its members instead.",
+          );
+        }
         if (!known.has(channelAccessEntry(kind, id))) {
           throw new BadRequestException(
             `That ${kind} isn't in this chapter anymore. Reload and pick again.`,

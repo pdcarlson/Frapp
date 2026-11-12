@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -20,7 +21,9 @@ import type {
   ChapterGroup,
   ChapterGroupMembership,
 } from '#domain/entities/chapter-group.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { RbacService } from './rbac.service';
 
 /** `target_type` of a group's audit rows. */
 const AUDIT_TARGET_TYPE = 'chapter_group';
@@ -34,10 +37,12 @@ export type ChapterGroupView = ChapterGroup & { member_ids: string[] };
  * who-can-post lists.
  *
  * Reads need `members:view` and writes `groups:manage` (the controller).
- * There is no rank rule here, unlike roles and tiers: a group grants nothing,
- * so putting someone in one can't lift what they can do. What it can do is
- * let them see a channel listing it, which is the channel's officers' call,
- * made when they list the group.
+ * There is no rank rule here, unlike roles and tiers: a group grants no
+ * permission, so putting someone in one can't lift what they can do. What it
+ * can do is let them see a channel listing it, so once a channel or category
+ * list names a group, changing its members or deleting it also needs
+ * `channels:manage` ({@link ChapterGroupService.assertMayChangeAccess}). A
+ * class year can't go on a list at all (members set their own year).
  *
  * Only a manual group's name and members are written here. An automatic
  * group (a pledge class's, a graduation year's) follows the members' data,
@@ -56,6 +61,7 @@ export class ChapterGroupService {
     @Inject(ROLE_TIER_REPOSITORY)
     private readonly tierRepo: IRoleTierRepository,
     private readonly audit: ChapterAuditLogService,
+    private readonly rbac: RbacService,
   ) {}
 
   /**
@@ -215,6 +221,8 @@ export class ChapterGroupService {
     if (!group) throw new NotFoundException(NOT_FOUND);
     if (group.kind !== 'manual') throw new BadRequestException(AUTOMATIC);
 
+    await this.assertMayChangeAccess(chapterId, actorUserId, id);
+
     const before = await this.memberIdsOf(chapterId, id);
     const after = await this.groupRepo.setMembers(id, chapterId, memberIds);
     if (after === 'group_not_found') throw new NotFoundException(NOT_FOUND);
@@ -246,6 +254,7 @@ export class ChapterGroupService {
     const group = await this.groupRepo.findById(id, chapterId);
     if (!group) throw new NotFoundException(NOT_FOUND);
     if (group.kind !== 'manual') throw new BadRequestException(AUTOMATIC);
+    await this.assertMayChangeAccess(chapterId, actorUserId, id);
     await this.groupRepo.delete(id, chapterId);
     await this.audit.record({
       chapterId,
@@ -258,11 +267,29 @@ export class ChapterGroupService {
   }
 
   private async memberIdsOf(chapterId: string, groupId: string) {
-    const memberships = await this.groupRepo.findMemberships(chapterId);
-    return memberships
-      .filter((row) => row.group_id === groupId)
-      .map((row) => row.user_id)
-      .sort();
+    return [...(await this.groupRepo.findMemberIds(chapterId, groupId))].sort();
+  }
+
+  /**
+   * A group a channel or category list names decides who reads and posts
+   * there, so changing who is in it, or deleting it, is a change to that
+   * channel's access: it needs `channels:manage`, as editing the list itself
+   * does. Without this a `groups:manage` holder (a house manager) could add
+   * themselves to "Exec" and read the exec channel. A group no list names
+   * grants nothing, so `groups:manage` alone is enough for it.
+   */
+  private async assertMayChangeAccess(
+    chapterId: string,
+    actorUserId: string,
+    groupId: string,
+  ): Promise<void> {
+    if (!(await this.groupRepo.isNamedOnChannelList(chapterId, groupId))) {
+      return;
+    }
+    const may = await this.rbac.memberHasAnyPermission(chapterId, actorUserId, [
+      SystemPermissions.CHANNELS_MANAGE,
+    ]);
+    if (!may) throw new ForbiddenException(GATES_A_CHANNEL);
   }
 
   /**
@@ -304,6 +331,8 @@ export class ChapterGroupService {
 }
 
 const NOT_FOUND = 'Group not found';
+const GATES_A_CHANNEL =
+  'A channel uses this group to decide who can see or post in it, so only someone who can manage channels can change who is in it.';
 const NAME_TAKEN =
   'A role, tier or group already has that name. Pick another so @mentions reach the right people.';
 const NOT_A_MEMBER =

@@ -465,6 +465,31 @@ describe("resolveMentions with roles", () => {
     );
   });
 
+  it("reaches two groups sharing a name together, as a pledge class can take a group's name (#4076)", () => {
+    const manual: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-manual",
+      kind: "group",
+      member_ids: [JANE.user_id],
+    };
+    const pledgeClass: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-class",
+      kind: "group",
+      member_ids: [BOB.user_id],
+    };
+    expect(
+      resolveMentions("@Officers", roster, [manual, pledgeClass]).sort(),
+    ).toEqual([BOB.user_id, JANE.user_id].sort());
+  });
+
+  it("still reaches nobody when two tiers fold to the same name", () => {
+    const a: MentionRole = { ...OFFICERS, role_id: "tier-a", kind: "tier" };
+    const b: MentionRole = { ...OFFICERS, role_id: "tier-b", kind: "tier" };
+    const group: MentionRole = { ...OFFICERS, role_id: "g", kind: "group" };
+    expect(resolveMentions("@Officers", roster, [a, b, group])).toEqual([]);
+  });
+
   it("leaves out the shared-name sets this sender may not ping", () => {
     const tier: MentionRole = {
       ...OFFICERS,

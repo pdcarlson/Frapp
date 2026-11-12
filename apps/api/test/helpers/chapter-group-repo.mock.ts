@@ -14,7 +14,9 @@ export function createChapterGroupRepoMock(): ChapterGroupRepoMock {
     update: jest.fn(),
     delete: jest.fn(),
     findMemberships: jest.fn().mockResolvedValue([]),
+    findMemberIds: jest.fn().mockResolvedValue([]),
     findGroupIdsForUser: jest.fn().mockResolvedValue([]),
+    isNamedOnChannelList: jest.fn().mockResolvedValue(false),
     setMembers: jest.fn(),
   };
 }

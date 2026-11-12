@@ -16,6 +16,7 @@ import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
 import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
 import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
+import { groupKindOpensChannels } from '#domain/entities/chapter-group.entity';
 import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
@@ -1137,7 +1138,10 @@ export class RbacService {
         : Promise.resolve([]),
     ]);
     const groupsOf = new Map<string, string[]>();
-    for (const { user_id, group_id } of memberships) {
+    for (const { user_id, group_id, kind } of memberships) {
+      // A class year opens no channel, as `findGroupIdsForUser` and
+      // `can_read_chat_channel` read it.
+      if (!groupKindOpensChannels(kind)) continue;
       const list = groupsOf.get(user_id);
       if (list) list.push(group_id);
       else groupsOf.set(user_id, [group_id]);

@@ -36,12 +36,17 @@
 --   a class year's row     made the first time a member of the chapter has
 --                          that year (a member joins, or a user sets their
 --                          year). Never deleted: one nobody has any more is
---                          left out of the lists that offer groups, and stays
---                          valid in a channel list that already names it.
+--                          left out of the lists that offer groups.
+--
+-- A class year is for @mentions only. Members set their own graduation year
+-- (PATCH /v1/users/me), so a channel list naming a year would let anyone in
+-- by changing theirs: the API refuses one on a list, and a class_year row of
+-- the view admits nobody to a channel here either.
 --
 -- WHO IS IN A GROUP
 --
--- `chapter_group_memberships` (a view): one row per (group, member). The API
+-- `chapter_group_memberships` (a view): one row per (group, member), with the
+-- group's kind. The API
 -- reads it for mentions, channel access and the Groups page, and
 -- `can_read_chat_channel` reads it for message RLS and realtime topics. It is
 -- the one definition, so the server's channel check, its push audience and
@@ -50,7 +55,8 @@
 -- CHANNEL LISTS
 --
 -- `chat_access_list_valid` takes `group:<id>` beside `tier:` and `role:`;
--- `can_read_chat_channel` admits a member of a listed group; deleting a group
+-- `can_read_chat_channel` admits a member of a listed manual or pledge-class
+-- group (never a class year, above); deleting a group
 -- takes its entry off every list (`chat_access_strip_entry`, as a deleted role
 -- or tier does). Its TypeScript twin is `canAccessChannel`, whose holder
 -- (`RbacService.getChannelAccessHolder`) reads the same view.
@@ -264,17 +270,17 @@ $$;
 
 create or replace view public.chapter_group_memberships
 with (security_invoker = true) as
-  select gm.chapter_id, gm.group_id, gm.user_id
+  select gm.chapter_id, gm.group_id, gm.user_id, 'manual'::text as kind
     from public.chapter_group_members gm
   union all
-  select g.chapter_id, g.id as group_id, m.user_id
+  select g.chapter_id, g.id as group_id, m.user_id, g.kind
     from public.chapter_groups g
     join public.members m
       on m.chapter_id = g.chapter_id
      and m.pledge_class_id = g.pledge_class_id
    where g.kind = 'pledge_class'
   union all
-  select g.chapter_id, g.id as group_id, m.user_id
+  select g.chapter_id, g.id as group_id, m.user_id, g.kind
     from public.chapter_groups g
     join public.members m
       on m.chapter_id = g.chapter_id
@@ -284,7 +290,7 @@ with (security_invoker = true) as
    where g.kind = 'class_year';
 
 comment on view public.chapter_group_memberships is
-  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members. The one definition the API and can_read_chat_channel both read. See 20261113040002_chapter_groups.sql.';
+  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members, with the group''s kind. The one definition the API and can_read_chat_channel both read. A class_year row never opens a channel: members set their own graduation year. See 20261113040002_chapter_groups.sql.';
 
 -- The API reads it with the service role; nothing on a client does.
 revoke all on public.chapter_group_memberships from public;
@@ -518,6 +524,9 @@ as $$
               from public.chapter_group_memberships gm
               where gm.chapter_id = c.chapter_id
                 and gm.user_id = u.id
+                -- A member sets their own graduation year, so a class year
+                -- would let anyone in: it is for @mentions only.
+                and gm.kind <> 'class_year'
                 and ('group:' || gm.group_id::text) = any (c.who_can_see)
             )
           else false

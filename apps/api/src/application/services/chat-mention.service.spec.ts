@@ -197,12 +197,44 @@ describe('mentionRoleViews', () => {
       );
     });
 
+    it("makes a tier holding the Everyone role follow @everyone's switch (#4191)", () => {
+      const withEveryone = tiered.map((r) =>
+        r.id === 'member' ? { ...r, tier_id: 't-members' } : r,
+      );
+      const members_ = (everyoneOn: boolean) =>
+        mentionRoleViews(
+          withEveryone.map((r) =>
+            r.id === 'member' ? { ...r, mentionable: everyoneOn } : r,
+          ),
+          members,
+          { tiers: [tier('t-members', 'Members', 3)] },
+        ).find((view) => view.kind === 'tier');
+
+      // Off (the default): @Members is officers-only, as @everyone is.
+      expect(members_(false)).toMatchObject({
+        open_to_all: false,
+        member_ids: ['u1', 'u2', 'u3', 'u4'],
+      });
+      // A chapter that opened @everyone opens it too.
+      expect(members_(true)?.open_to_all).toBe(true);
+    });
+
     it('reaches the members of a group now, before @here', () => {
       const views = mentionRoleViews(roles, members, {
         groups: [group('g-floor', 'Third floor')],
         memberships: [
-          { chapter_id: 'ch-1', group_id: 'g-floor', user_id: 'u2' },
-          { chapter_id: 'ch-1', group_id: 'g-floor', user_id: 'u4' },
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u2',
+            kind: 'manual',
+          },
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u4',
+            kind: 'manual',
+          },
         ],
       });
       expect(views.find((view) => view.kind === 'group')).toMatchObject({
@@ -232,7 +264,12 @@ describe('mentionRoleViews', () => {
         tiers: [tier('t-exec', 'Everyone', 1)],
         groups: [group('g-here', 'here')],
         memberships: [
-          { chapter_id: 'ch-1', group_id: 'g-here', user_id: 'u1' },
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-here',
+            user_id: 'u1',
+            kind: 'manual',
+          },
         ],
       });
       expect(views.filter((view) => view.kind !== 'role')).toEqual([]);
@@ -385,14 +422,23 @@ describe('ChatMentionService.resolveForSend', () => {
         withSets(
           [],
           [floor],
-          [{ chapter_id: 'ch-1', group_id: 'g-1', user_id: 'u1' }],
+          [
+            {
+              chapter_id: 'ch-1',
+              group_id: 'g-1',
+              user_id: 'u1',
+              kind: 'manual',
+            },
+          ],
         ).resolveForSend('ch-1', 'u2', '@Third floor quiet hours'),
       ).resolves.toEqual(['u1']);
     });
 
     it('reaches nobody through a group switched off, unless an officer sends', async () => {
       const off = { ...floor, mentionable: false };
-      const rows = [{ chapter_id: 'ch-1', group_id: 'g-1', user_id: 'u1' }];
+      const rows = [
+        { chapter_id: 'ch-1', group_id: 'g-1', user_id: 'u1', kind: 'manual' },
+      ];
       await expect(
         withSets([], [off], rows).resolveForSend('ch-1', 'u2', '@Third floor'),
       ).resolves.toEqual([]);

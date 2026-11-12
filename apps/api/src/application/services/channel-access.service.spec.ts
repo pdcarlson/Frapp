@@ -243,6 +243,27 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it("asks for the caller's groups only when a list names a group (#4076)", async () => {
+      const groupChannel: ChatChannel = {
+        ...roleGatedChannel,
+        who_can_see: ['group:g-floor'],
+      };
+      mockChannelRepo.findById.mockResolvedValue(groupChannel);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
+        holderOf('group:g-floor'),
+      );
+
+      await expect(
+        service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
+      ).resolves.toBe(groupChannel);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
+        'chap-1',
+        member,
+        true,
+      );
+    });
+
     it('gates posting on the who-can-post list', async () => {
       mockChannelRepo.findById.mockResolvedValue(readOnlyChannel);
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
