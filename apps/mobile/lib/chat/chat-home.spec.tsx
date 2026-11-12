@@ -2275,6 +2275,58 @@ describe("Chat home: the swipe to Messages", () => {
     expect(push).toHaveBeenCalledWith("/messages");
   });
 
+  it("never also opens the channel the swipe started on", () => {
+    // Paul, 2026-11-12: a swipe into Messages from a channel row opened the
+    // channel too, on top of Messages. A full-width row never sees the
+    // finger leave it, so its release reads as a tap unless the swipe holds
+    // the touch.
+    const push = vi.mocked(useRouter)().push;
+    const now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    try {
+      const tree = render();
+      const gesture = pan(tree);
+      const general = () =>
+        rowNamed(tree, "general").find(
+          (node) => (node.type as unknown) === "Pressable",
+        );
+      vi.mocked(push).mockClear();
+
+      act(() => gesture.handlers.onStart!({}));
+      act(() =>
+        gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
+      );
+      // The row's release can land on either side of the pan's finalize.
+      act(() => general().props.onPress());
+      act(() => gesture.handlers.onFinalize!({}, true));
+      act(() => general().props.onPress());
+      act(() => general().props.onLongPress?.());
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith("/messages");
+
+      // A slide that took the touch over but stopped short opens nothing.
+      vi.mocked(push).mockClear();
+      now.mockReturnValue(20_000);
+      act(() => gesture.handlers.onStart!({}));
+      act(() =>
+        gesture.handlers.onEnd!({ translationX: -30, velocityX: 0 }, true),
+      );
+      act(() => gesture.handlers.onFinalize!({}, true));
+      act(() => general().props.onPress());
+      expect(push).not.toHaveBeenCalled();
+
+      // A tap a moment later, which never activates the pan, opens the row.
+      now.mockReturnValue(21_000);
+      act(() => gesture.handlers.onFinalize!({}, false));
+      act(() => general().props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c-general" },
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("holds while a menu is open over Chat home", () => {
     const tree = render();
     expect(pan(tree).config?.enabled).toBe(true);

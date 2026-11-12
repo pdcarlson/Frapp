@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -7,6 +7,7 @@ import {
   MESSAGES_SWIPE_FAIL_Y,
   opensMessages,
 } from "@/lib/chat/messages-swipe";
+import { createSwipeClaim, SwipeClaimProvider } from "@/lib/swipe-claim";
 
 /**
  * Chat home's swipe to Messages (#3774): a slide right to left opens it, as
@@ -18,6 +19,11 @@ import {
  * actions), the way an open overlay holds screen gestures elsewhere
  * (`useHoldSwipeBack`): a drag across a menu must not open Messages behind
  * it. A pan the system cancels (`success` false) opens nothing.
+ *
+ * Once the pan takes the touch over, it holds it: the rows inside read the
+ * claim it hands down (`lib/swipe-claim.ts`) and drop the press the swipe's
+ * release would otherwise give the row it started on. A slide that activates
+ * the pan is never a tap, whether or not it went far enough to open Messages.
  */
 export function MessagesSwipeArea({
   enabled,
@@ -27,6 +33,7 @@ export function MessagesSwipeArea({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const [claim] = useState(createSwipeClaim);
   const swipe = useMemo(
     () =>
       Gesture.Pan()
@@ -34,15 +41,19 @@ export function MessagesSwipeArea({
         .runOnJS(true)
         .activeOffsetX([MESSAGES_SWIPE_ACTIVATE_X, Number.MAX_SAFE_INTEGER])
         .failOffsetY([-MESSAGES_SWIPE_FAIL_Y, MESSAGES_SWIPE_FAIL_Y])
+        .onStart(() => claim.claim())
         .onEnd((event, success) => {
           if (success && opensMessages(event)) router.push("/messages");
-        }),
-    [router, enabled],
+        })
+        .onFinalize(() => claim.release()),
+    [router, enabled, claim],
   );
   return (
-    <GestureDetector gesture={swipe}>
-      <View style={styles.area}>{children}</View>
-    </GestureDetector>
+    <SwipeClaimProvider value={claim}>
+      <GestureDetector gesture={swipe}>
+        <View style={styles.area}>{children}</View>
+      </GestureDetector>
+    </SwipeClaimProvider>
   );
 }
 
