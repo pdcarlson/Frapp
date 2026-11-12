@@ -6,7 +6,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  onTestFinished,
+} from "vitest";
 import { useEffect, useState, type ReactNode } from "react";
 
 /**
@@ -198,6 +206,11 @@ const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
 const mockDeleteChannel = vi.fn();
+// The rail's New channel panel (#3838).
+const createChannelState = vi.hoisted(() => ({
+  mutateAsync: vi.fn(),
+  isPending: false,
+}));
 const mockSetRailLevel = vi.fn();
 const mockRouterPush = vi.fn();
 const railRowActions = vi.hoisted(() => ({
@@ -376,30 +389,33 @@ vi.mock("@/components/service/log-hours-form", async (importOriginal) => ({
     </div>
   ),
 }));
-vi.mock("@/components/points/points-adjustment-form", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/components/points/points-adjustment-form")
-  >()),
-  PointsAdjustmentForm: (props: {
-    submitToChannel?: (input: unknown) => Promise<unknown>;
-  }) => (
-    <div data-testid="points-form">
-      <button
-        data-testid="points-form-post"
-        onClick={() =>
-          void props.submitToChannel?.({
-            target_user_id: "u-2",
-            amount: 5,
-            category: "MANUAL",
-            reason: "Ran the table",
-          })
-        }
-      >
-        post
-      </button>
-    </div>
-  ),
-}));
+vi.mock(
+  "@/components/points/points-adjustment-form",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/components/points/points-adjustment-form")
+    >()),
+    PointsAdjustmentForm: (props: {
+      submitToChannel?: (input: unknown) => Promise<unknown>;
+    }) => (
+      <div data-testid="points-form">
+        <button
+          data-testid="points-form-post"
+          onClick={() =>
+            void props.submitToChannel?.({
+              target_user_id: "u-2",
+              amount: 5,
+              category: "MANUAL",
+              reason: "Ran the table",
+            })
+          }
+        >
+          post
+        </button>
+      </div>
+    ),
+  }),
+);
 vi.mock("./event-quick-form", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./event-quick-form")>()),
   EventQuickForm: (props: {
@@ -526,9 +542,11 @@ vi.mock("@repo/hooks", async () => ({
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
         deleteChannelConfirmTitle,
+        deleteChannelTypeLabel,
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        deleteChannelTypeLabel,
         canSetChannelBackground,
         claimViewedChannel,
         deleteChannelConfirmTitle,
@@ -570,6 +588,9 @@ vi.mock("@repo/hooks", async () => ({
   // them, so a payload that is already sorted could not tell a faithful
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
+  // The rail's New channel panel (#3838).
+  useCreateChannel: () => createChannelState,
+  useChannelAccessOptions: () => ({ data: [], isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -4151,7 +4172,8 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     stubWidth(1440);
     const onClose = vi.fn();
     const { rerender } = render(<ChatShell toolBeside onClose={onClose} />);
-    const header = screen.getByRole("button", { name: "Show members" })
+    const header = screen
+      .getByRole("button", { name: "Show members" })
       .closest("header") as HTMLElement;
     const close = within(header).getByRole("button", { name: "Close chat" });
     // The tool page header's X, the same 36px control. No pull into the
@@ -5192,7 +5214,15 @@ describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
     await waitFor(() => {
       expect(screen.getByText("Delete #random?")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete channel" }));
+    // Delete waits for the channel's name, typed exactly (#3838).
+    const deleteButton = screen.getByRole("button", { name: "Delete channel" });
+    expect(deleteButton).toBeDisabled();
+    const typed = screen.getByLabelText("Type random to confirm");
+    fireEvent.change(typed, { target: { value: "Random" } });
+    expect(deleteButton).toBeDisabled();
+    fireEvent.change(typed, { target: { value: "random" } });
+    expect(deleteButton).toBeEnabled();
+    fireEvent.click(deleteButton);
     await waitFor(() => {
       expect(mockDeleteChannel).toHaveBeenCalledWith("chan-random");
     });
@@ -5946,7 +5976,9 @@ describe("ChatShell's two lists (#3774)", () => {
       screen.getByText("Choose one from the list to open it."),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
-    expect(screen.queryByText(/No direct messages yet/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/No direct messages yet/),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the chapter's order and setup checklist out of Direct messages", () => {

@@ -314,11 +314,17 @@ beforeEach(() => {
 });
 
 describe("MessageThreadScreen (#3785)", () => {
-  it("draws the parent, the reply count, then the replies under a Thread header", () => {
+  it("draws the parent, the reply count, then the replies under a header naming the parent", () => {
     const tree = render();
     const text = screenText(tree);
-    expect(text).toContain("Thread");
-    expect(text).toContain("#general");
+    // The parent's words over who wrote it and where (#4297).
+    const header = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "header" &&
+        node.props.children === "Who's driving Saturday?",
+    );
+    expect(header).toBeDefined();
+    expect(text).toContain("Casey · #general");
     expect(text).toContain("2 replies");
     // Inverted, as s05's list is: newest first in the data, so it draws at
     // the bottom, and the parent rides the footer, which draws at the top.
@@ -909,6 +915,36 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     });
     const tree = render();
     expect(rowFor(tree, ROOT).props.replyParent).toBe(quoted);
+    act(() => tree.unmount());
+  });
+});
+
+describe("MessageThreadScreen's header (#4297, slice 5)", () => {
+  const titleOf = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "header" &&
+        typeof node.props.children === "string" &&
+        node.props.numberOfLines === 1,
+    ).props.children as string;
+
+  it("says Thread over the channel while the parent is from someone the viewer blocked", () => {
+    thread = threadState({ root: message(ROOT, { sender_id: BLOCKED }) });
+    const tree = render();
+    expect(titleOf(tree)).toBe("Thread");
+    const text = screenText(tree);
+    expect(text).not.toContain("Blake");
+    expect(text).toContain("#general");
+    act(() => tree.unmount());
+  });
+
+  it("names the viewer's own parent as You", () => {
+    thread = threadState({
+      root: message(ROOT, { sender_id: VIEWER, content: "Rides at 10" }),
+    });
+    const tree = render();
+    expect(titleOf(tree)).toBe("Rides at 10");
+    expect(screenText(tree)).toContain("You · #general");
     act(() => tree.unmount());
   });
 });

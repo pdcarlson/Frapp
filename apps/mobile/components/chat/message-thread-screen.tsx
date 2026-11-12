@@ -90,6 +90,7 @@ import {
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
+import { threadHeaderLines } from "@/lib/chat/thread-header";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -241,6 +242,13 @@ export function MessageThreadScreen({
     const parent: ChatMessage = { ...root, thread: null };
     return applyBlockList([parent], blockState, viewerId).rows[0] ?? null;
   }, [root, blockState, viewerId]);
+  // Named by the parent's words over who wrote it and where (#4297).
+  const header = threadHeaderLines({
+    root: rootRow,
+    viewerId,
+    nameFor,
+    channelTitle,
+  });
   const rows = useMemo(
     () => applyBlockList(thread.messages, blockState, viewerId).rows,
     [thread.messages, blockState, viewerId],
@@ -773,10 +781,10 @@ export function MessageThreadScreen({
               numberOfLines={1}
               style={styles.headerName}
             >
-              Thread
+              {header.title}
             </Text>
             <Text numberOfLines={1} style={styles.headerChannel}>
-              {channelTitle}
+              {header.subtitle}
             </Text>
           </View>
           {thread.root ? (

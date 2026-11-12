@@ -41,7 +41,7 @@ import { SignInScreen } from "./sign-in-screen";
 import {
   EMAIL_SEND_CAPPED_COPY,
   WRONG_CREDENTIALS_COPY,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
 
 const EMAIL = "new.member@example.com";
 const INVITE = "/join?token=inv-1";
