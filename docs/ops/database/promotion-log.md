@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Clear deleted chat cards' payloads (#1575)
+
+### 20261112060000_clear_deleted_message_payloads.sql
+
+- **Purpose**: **Deletes data.** On every `chat_messages` row with `is_deleted = true`, sets `payload` to null, except an imported Discord row, whose archive sidecar is cut down to `source` and `author_username` (the handle the import backfills read). That is the shape a delete writes since #4421 (`tombstonePayload`). It removes the card data (an event's name, times and place; a poll's question and options; a task's fields) that deletes before #4421 left behind, which any member of the channel can still read straight from `chat_messages`. No row is removed, and `content`, `metadata`, reactions, card responses and report snapshots stay. `scripts/pglite/tiers/clear-deleted-message-payloads.mjs` runs it against seeded rows.
+- **Checks**: Before `db push`, note the time and count, as of it: `select kind, count(*) from public.chat_messages where is_deleted and payload is not null and created_at < '<time>' group by kind order by 2 desc;` (what it clears, by kind; imported rows are cut down, not cleared) and `select count(*) from public.chat_messages where not is_deleted and payload is not null and created_at < '<time>';` (live cards). After, `select count(*) from public.chat_messages where is_deleted and payload is not null and kind <> 'imported';` returns 0, and the live-card count for the same `created_at < '<time>'` cutoff is unchanged unless a card in it was deleted in between (a delete since #4421 also clears its payload).
+- **Promoter notes**: **Merging this PR is the owner's approval.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate. **Merge only with or after #4421** (the API change): it runs once, so merged first, every card deleted before #4421 deploys keeps its data, and with #4421 not yet live a vote on a deleted poll card would skip the poll rules. Before the production push, take and record your own backup per [`promotion.md`](promotion.md) (the only copy of rows deleted since the last nightly dump). After production, delete the "Rows deleted before #1575 still hold their `payload`" bullet in `spec/behavior/chat/README.md` § Edit and delete and the matching clause in `spec/behavior/events.md`. One `update` per kind group, touching only deleted rows with a payload; no trigger fires on `payload`, and Realtime sends each subscribed member an UPDATE for a row they already draw as a tombstone. Idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-clear-deleted-chat-card-payloads-20261112060000) § Rollback clear deleted chat card payloads.
+
 ## 2026-11-12: Unread badges count per channel (#3728)
 
 ### 20261112010000_chat_unread_counts_per_channel.sql
