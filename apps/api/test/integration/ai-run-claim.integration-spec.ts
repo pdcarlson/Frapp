@@ -110,6 +110,7 @@ describeIntegration('AI runs are claimed by one worker at a time', () => {
           `race-${i}`,
           now,
           LEASE_MS,
+          ['integration_probe'],
         ),
       ),
     );

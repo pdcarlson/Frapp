@@ -73,6 +73,8 @@ describe('isAiRunRef', () => {
     ['an array at the top', [UUID]],
     ['null', null],
     ['a string', UUID],
+    ['a Date', new Date(0)],
+    ['a Map', new Map([['meeting_id', UUID]])],
   ])('refuses %s', (_label, value) => {
     expect(isAiRunRef(value)).toBe(false);
   });

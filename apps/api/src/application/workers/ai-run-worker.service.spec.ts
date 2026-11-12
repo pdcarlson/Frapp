@@ -1,4 +1,4 @@
-import { AiRunWorkerService } from './ai-run-worker.service';
+import { AiRunWorkerService, withoutMessage } from './ai-run-worker.service';
 import {
   AiRunFailure,
   AiRunRegistry,
@@ -7,6 +7,7 @@ import {
 } from '../services/ai-run-registry';
 import { FakeAiRunRepository } from '#test/helpers/fake-ai-run.repository';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { RbacService } from '../services/rbac.service';
 import type { AiRunRef } from '#domain/entities/ai-run.entity';
 import { AI_RUN_LEASE_MS, aiRunFailureMessage } from '#domain/utils/ai-runs';
 
@@ -47,12 +48,14 @@ describe('AiRunWorkerService', () => {
   let runs: FakeAiRunRepository;
   let members: jest.Mocked<Pick<IMemberRepository, 'findByUserAndChapter'>>;
   let registry: AiRunRegistry;
+  let rbac: { memberHasAnyPermission: jest.Mock };
 
   const worker = (clock: Date = T0) => {
     const w = new AiRunWorkerService(
       runs,
       members as unknown as IMemberRepository,
       registry,
+      rbac as unknown as RbacService,
     );
     w.now = () => clock;
     return w;
@@ -77,6 +80,7 @@ describe('AiRunWorkerService', () => {
       findByUserAndChapter: jest.fn().mockResolvedValue({ id: 'member' }),
     };
     registry = new AiRunRegistry();
+    rbac = { memberHasAnyPermission: jest.fn().mockResolvedValue(true) };
   });
 
   afterAll(() => {
@@ -259,13 +263,22 @@ describe('AiRunWorkerService', () => {
 
   it('stops a try that runs past its time limit and frees the slot', async () => {
     registry.register(
-      handler({ timeoutMs: 5, run: () => new Promise<never>(() => undefined) }),
+      handler({
+        timeoutMs: 1000,
+        run: () => new Promise<never>(() => undefined),
+      }),
     );
     const queued = await enqueue();
     const w = worker();
+    jest.useFakeTimers();
 
-    await w.drain(T0);
-    await w.idle();
+    try {
+      await w.drain(T0);
+      await jest.advanceTimersByTimeAsync(1000);
+      await w.idle();
+    } finally {
+      jest.useRealTimers();
+    }
 
     expect(runs.row(queued.id)).toEqual(
       expect.objectContaining({
@@ -309,14 +322,152 @@ describe('AiRunWorkerService', () => {
     expect(runs.row(queued.id).failure_reason).toBe('not_permitted');
   });
 
-  it('fails a run of a kind no handler serves', async () => {
+  it('leaves a run of a kind this build does not serve to a build that does', async () => {
+    // A replica still on the old build during a deploy, say.
+    registry.register(handler({ kind: 'document_index' }));
     const queued = await enqueue();
+    const claim = jest.spyOn(runs, 'claimNext');
+    const w = worker();
+
+    await expect(w.drain(T0)).resolves.toBe(0);
+    expect(claim).toHaveBeenCalledWith(
+      expect.any(String),
+      T0,
+      AI_RUN_LEASE_MS,
+      ['document_index'],
+    );
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({ status: 'queued', attempt_count: 0 }),
+    );
+  });
+
+  it('claims nothing at all with no handler registered', async () => {
+    await enqueue();
+    const claim = jest.spyOn(runs, 'claimNext');
+
+    await expect(worker().drain(T0)).resolves.toBe(0);
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it('fails a run whose acting member no longer holds the permission the kind needs', async () => {
+    const minutes = handler({ runPermissions: ['meetings:manage'] });
+    registry.register(minutes);
+    const queued = await enqueue();
+    rbac.memberHasAnyPermission.mockResolvedValue(false);
     const w = worker();
 
     await w.drain(T0);
     await w.idle();
 
-    expect(runs.row(queued.id).failure_reason).toBe('unknown_kind');
+    expect(rbac.memberHasAnyPermission).toHaveBeenCalledWith(CHAPTER, OFFICER, [
+      'meetings:manage',
+    ]);
+    expect(minutes.run).not.toHaveBeenCalled();
+    expect(runs.row(queued.id).failure_reason).toBe('not_permitted');
+  });
+
+  it('gives a run back on shutdown without using a try, for another replica to take at once', async () => {
+    registry.register(
+      handler({ run: () => new Promise<never>(() => undefined) }),
+    );
+    const queued = await enqueue();
+    const w = worker();
+    await w.drain(T0);
+    expect(runs.row(queued.id).attempt_count).toBe(1);
+
+    await w.onApplicationShutdown();
+
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({
+        status: 'queued',
+        attempt_count: 0,
+        lock_token: null,
+        lease_expires_at: null,
+      }),
+    );
+    // A process shutting down claims nothing more.
+    await expect(w.drain(T0)).resolves.toBe(0);
+  });
+
+  it('gives a run back for later, without using a try, when AI was switched off after the claim', async () => {
+    const minutes = handler();
+    registry.register(minutes);
+    const queued = await enqueue();
+    process.env.AI_ENABLED = '';
+    const w = worker();
+
+    await w.drain(T0);
+    await w.idle();
+
+    expect(minutes.run).not.toHaveBeenCalled();
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({
+        status: 'queued',
+        attempt_count: 0,
+        lock_token: null,
+        lease_expires_at: at(AI_RUN_LEASE_MS).toISOString(),
+      }),
+    );
+  });
+
+  it('stops a try whose lease another worker took, and writes nothing', async () => {
+    const slow = stuck();
+    registry.register(handler({ run: () => slow.promise }));
+    const queued = await enqueue();
+    const w = worker();
+    w.heartbeatMs = 5;
+    jest.spyOn(runs, 'renewLease').mockResolvedValue(false);
+
+    await w.drain(T0);
+    await w.idle();
+    slow.resolve({ draft_id: DRAFT });
+
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({ status: 'running', result_ref: null }),
+    );
+  });
+
+  it('stops a try on its own once renewals keep failing and its lease has run out', async () => {
+    const slow = stuck();
+    let signal: AbortSignal | undefined;
+    registry.register(
+      handler({
+        run: (context) => {
+          signal = context.signal;
+          return slow.promise;
+        },
+      }),
+    );
+    const queued = await enqueue();
+    let clock = T0;
+    const w = worker();
+    w.now = () => clock;
+    w.heartbeatMs = 5;
+    const renew = jest
+      .spyOn(runs, 'renewLease')
+      .mockRejectedValue(new Error('connection refused'));
+
+    await w.drain(T0);
+    // Renewals fail while the lease still holds: the try keeps going.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(renew).toHaveBeenCalled();
+    expect(signal?.aborted).toBe(false);
+    // AI off so the freed slot is not refilled: the run is claimable again
+    // at this instant, and this spec is about the stop, not the next claim.
+    process.env.AI_ENABLED = '';
+    clock = at(AI_RUN_LEASE_MS);
+    await w.idle();
+    slow.resolve({ draft_id: DRAFT });
+
+    expect(signal?.aborted).toBe(true);
+    // Nothing written: by now another worker may hold the run.
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({
+        status: 'running',
+        attempt_count: 1,
+        result_ref: null,
+      }),
+    );
   });
 
   it('refuses a result that is not ids and counts', async () => {
@@ -375,9 +526,10 @@ describe('AiRunWorkerService', () => {
 
     await expect(w.drain(T0)).resolves.toBe(4);
     await expect(w.drain(T0)).resolves.toBe(0);
+    expect(runs.rows.filter((row) => row.status === 'running')).toHaveLength(4);
+    // Each run that finishes frees a slot, and the worker claims the next
+    // straight away rather than at the next tick.
     hold.resolve({ draft_id: DRAFT });
-    await w.idle();
-    await expect(w.drain(T0)).resolves.toBe(2);
     await w.idle();
     expect(runs.rows.every((row) => row.status === 'succeeded')).toBe(true);
   });
@@ -420,5 +572,18 @@ describe('AiRunWorkerService', () => {
     await worker().handlePrune();
 
     expect(runs.rows.map((row) => row.id)).toEqual([recent.id]);
+  });
+
+  it('reports an unexpected error by its class and stack, never its message', () => {
+    const thrown = new TypeError('the model answered: Brother Smith moved to');
+    const safe = withoutMessage(thrown);
+
+    expect(safe.name).toBe('TypeError');
+    expect(safe.message).not.toContain('Smith');
+    expect(safe.stack).not.toContain('Smith');
+    expect(safe.stack).toContain(' at ');
+    expect(withoutMessage('a bare string with text').message).not.toContain(
+      'text',
+    );
   });
 });

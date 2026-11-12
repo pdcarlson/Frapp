@@ -61,13 +61,13 @@ try {
         [chapter, key, U, JSON.stringify(input), max],
       )
     ).rows;
-  const claim = async (worker, now) =>
+  // The kinds the calling API process serves, as an array literal.
+  const claim = async (worker, now, kinds = ["minutes_draft"]) =>
     (
-      await db.query(`select * from claim_ai_run($1, $2::timestamptz, $3)`, [
-        worker,
-        now,
-        LEASE,
-      ])
+      await db.query(
+        `select * from claim_ai_run($1, $2::timestamptz, $3, $4::text[])`,
+        [worker, now, LEASE, `{${kinds.join(",")}}`],
+      )
     ).rows;
   // What `SupabaseAiRunRepository.complete` sends.
   const complete = async (id, token, now) =>
@@ -244,6 +244,59 @@ try {
     "the same claim moves on to the next run",
   ]);
 
+  // Only the kinds the caller serves. `next` is held by now and `doomed` is
+  // finished, so the only claimable run is the other kind's.
+  const otherKind = (
+    await db.query(
+      `select * from enqueue_ai_run($1, 'document_index', 'document:1', null, null, '{}'::jsonb, 3)`,
+      [CH],
+    )
+  ).rows[0];
+  const kindsAt = at(base + 2 * LEASE + 1);
+  checks.push([
+    (await claim("worker-old", kindsAt)).length === 0 &&
+      (await claim("worker-none", kindsAt, [])).length === 0 &&
+      (await row(otherKind.id)).attempt_count === 0,
+    "a worker claims only kinds it serves, and a run of another kind keeps its tries",
+  ]);
+  const newBuild = await claim("worker-new", kindsAt, [
+    "minutes_draft",
+    "document_index",
+  ]);
+  checks.push([
+    newBuild[0]?.id === otherKind.id,
+    "a worker that serves the kind claims it",
+  ]);
+
+  // Asking again.
+  const again = (await enqueue(CH, "meeting:doomed"))[0];
+  checks.push([
+    again.id === doomed.id &&
+      again.status === "queued" &&
+      again.attempt_count === 0 &&
+      again.failure_reason === null &&
+      again.finished_at === null,
+    "enqueueing a failed run's key again queues the same run afresh",
+  ]);
+  const done = (await enqueue(CH, `meeting:${MEETING}`))[0];
+  checks.push([
+    done.id === runId && done.status === "succeeded",
+    "enqueueing a succeeded run's key again returns it as it is",
+  ]);
+
+  // The claim's lock. The race itself needs real connections
+  // (`apps/api/test/integration/ai-run-claim.integration-spec.ts`); this
+  // keeps the clause that makes it hold from being dropped unseen.
+  const claimSource = (
+    await db.query(
+      `select prosrc from pg_proc where proname = 'claim_ai_run' and pronamespace = 'public'::regnamespace`,
+    )
+  ).rows[0]?.prosrc;
+  checks.push([
+    /for\s+update\s+skip\s+locked/i.test(claimSource ?? ""),
+    "claim_ai_run takes its row with for update skip locked",
+  ]);
+
   // Table invariants.
   checks.push([
     await rejects(`update ai_runs set status = 'failed' where id = $1`, [
@@ -252,7 +305,9 @@ try {
     "a failed run must say why",
   ]);
   checks.push([
-    await rejects(`select * from claim_ai_run('w', now(), 0)`),
+    await rejects(
+      `select * from claim_ai_run('w', now(), 0, '{minutes_draft}')`,
+    ),
     "a lease shorter than 10 seconds is refused",
   ]);
 
@@ -291,7 +346,7 @@ try {
     ).rows[0].ok;
   const fns = [
     "public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer)",
-    "public.claim_ai_run(text, timestamptz, integer)",
+    "public.claim_ai_run(text, timestamptz, integer, text[])",
   ];
   let clientCanCall = false;
   for (const role of ["anon", "authenticated"]) {

@@ -40,4 +40,13 @@ describe('AiRunRegistry', () => {
       new AiRunRegistry().register(handler({ maxAttempts })),
     ).toThrow(/tries/);
   });
+
+  it.each([0, 999, 2.5, 60 * 60_000 + 1])(
+    'refuses a %p ms time limit',
+    (timeoutMs) => {
+      expect(() =>
+        new AiRunRegistry().register(handler({ timeoutMs })),
+      ).toThrow(/time limit/);
+    },
+  );
 });

@@ -17,8 +17,10 @@ import {
   isAiRunRef,
 } from '#domain/utils/ai-runs';
 import { AiRunRegistry } from './ai-run-registry';
-import { RbacService } from './rbac.service';
-import { AiRunWorkerService } from '../workers/ai-run-worker.service';
+import {
+  AiRunWorkerService,
+  handlerView,
+} from '../workers/ai-run-worker.service';
 
 /** The refusal every AI run route gives while `AI_ENABLED` is off. */
 export function aiNotAvailable(): NotFoundException {
@@ -68,9 +70,8 @@ export interface AiRunView {
  * here, and members read them.
  *
  * Who may read a run: the member who started it, the member it acts for, and
- * anyone holding one of the `viewPermissions` its kind's handler names, all
- * in the run's own chapter. Everyone else gets the same 404 as for a run that
- * does not exist.
+ * anyone its kind's handler lets read it (`canView`), all in the run's own
+ * chapter. Everyone else gets the same 404 as for a run that does not exist.
  */
 @Injectable()
 export class AiRunService {
@@ -78,12 +79,13 @@ export class AiRunService {
     @Inject(AI_RUN_REPOSITORY) private readonly runs: IAiRunRepository,
     private readonly registry: AiRunRegistry,
     private readonly worker: AiRunWorkerService,
-    private readonly rbac: RbacService,
   ) {}
 
   /**
-   * Queues a run, or returns the run already queued for this dedupe key,
-   * whatever its status. The errors other than "not available" are a
+   * Queues a run, or returns the run already made for this dedupe key while
+   * it is queued, running or succeeded. A failed or cancelled run for the key
+   * is queued again as a fresh run, so asking again after a failure tries
+   * again. The errors other than "not available" are a
    * feature's bugs, not a member's: an unregistered kind, a key or input
    * that is not ids, or a member-reading kind with no member.
    */
@@ -158,11 +160,9 @@ export class AiRunService {
     if (run.requested_by === userId || run.acting_user_id === userId) {
       return true;
     }
-    const permissions = this.registry.get(run.kind)?.viewPermissions ?? [];
-    if (permissions.length === 0) return false;
-    return this.rbac.memberHasAnyPermission(run.chapter_id, userId, [
-      ...permissions,
-    ]);
+    const handler = this.registry.get(run.kind);
+    if (!handler?.canView) return false;
+    return handler.canView(handlerView(run), userId);
   }
 
   private toView(run: AiRun): AiRunView {

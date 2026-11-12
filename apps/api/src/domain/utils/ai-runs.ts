@@ -34,6 +34,9 @@ export const AI_RUN_HEARTBEAT_MS = 60_000;
 /** A try that runs longer than this is stopped and counts as a failed try. */
 export const AI_RUN_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
+/** The longest time limit a handler may ask for: one hour. */
+export const AI_RUN_MAX_TIMEOUT_MS = 60 * 60_000;
+
 /** Tries per run unless its handler says otherwise. Never more than 10 (the table's check). */
 export const AI_RUN_DEFAULT_MAX_ATTEMPTS = 3;
 export const AI_RUN_MAX_ATTEMPTS_CEILING = 10;
@@ -80,6 +83,10 @@ export function isAiRunRef(value: unknown): value is AiRunRef {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
   }
+  // A plain object only: a Date, a Map or a class instance would serialize
+  // to something other than what was checked.
+  const proto = Object.getPrototypeOf(value) as unknown;
+  if (proto !== Object.prototype && proto !== null) return false;
   const entries = Object.entries(value);
   if (entries.length > MAX_REF_KEYS) return false;
   return entries.every(([key, item]) => {

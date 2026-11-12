@@ -19,7 +19,7 @@
 --
 -- RLS is on with no policies: the API reads and writes with the service role,
 -- and decides who may read a run (the member who started it, the member it acts
--- for, or an officer the kind's handler names).
+-- for, or whoever the kind's handler lets read it).
 
 create or replace function public.ai_run_ref_is_ids_only(p_ref jsonb)
 returns boolean
@@ -135,19 +135,34 @@ create index if not exists idx_ai_runs_claimable
   on public.ai_runs (created_at, id)
   where status in ('queued', 'running');
 
--- "My runs", newest first.
+-- "My runs", newest first: the runs a member started, and the runs that act
+-- for them (one `or` over both, so each side has its own index).
 create index if not exists idx_ai_runs_requester
   on public.ai_runs (chapter_id, requested_by, created_at desc);
+
+create index if not exists idx_ai_runs_acting_user
+  on public.ai_runs (chapter_id, acting_user_id, created_at desc);
 
 -- The daily prune of finished runs.
 create index if not exists idx_ai_runs_finished
   on public.ai_runs (finished_at)
   where status in ('succeeded', 'failed', 'cancelled');
 
--- Enqueue once per (chapter, kind, dedupe key). A second call returns the run
--- the first one made, whatever its status. Under two concurrent calls the
--- loser's `on conflict do nothing` waits for the winner's commit, and its
--- select, a new statement, then sees the winner's row.
+-- Enqueue once per (chapter, kind, dedupe key).
+--
+-- A second call while the run is queued, running or succeeded returns that run
+-- as it is: asking twice for the same thing makes one run, and a finished
+-- result is not made again. A run that failed or was cancelled is queued again
+-- in place, as a fresh run (no tries used, no failure, new input and members),
+-- so a member who asks again after a failure gets a new try rather than the
+-- old failure back. A feature whose source can change after a success puts a
+-- version in the key (`document:<uuid>:<updated epoch>`), and one whose run is
+-- per member puts the member in it.
+--
+-- Under two concurrent calls the loser's `on conflict` waits for the winner's
+-- commit. On a new row its `do update` then finds the row queued, skips it,
+-- and its select, a new statement, sees the winner's row; on a failed row the
+-- winner has already requeued it, so the loser does the same.
 create or replace function public.enqueue_ai_run(
   p_chapter_id uuid,
   p_kind text,
@@ -171,7 +186,23 @@ begin
       p_chapter_id, p_kind, p_dedupe_key, p_requested_by, p_acting_user_id,
       coalesce(p_input_ref, '{}'::jsonb), p_max_attempts
     )
-    on conflict (chapter_id, kind, dedupe_key) do nothing
+    on conflict (chapter_id, kind, dedupe_key) do update
+      set status = 'queued',
+          requested_by = excluded.requested_by,
+          acting_user_id = excluded.acting_user_id,
+          input_ref = excluded.input_ref,
+          max_attempts = excluded.max_attempts,
+          attempt_count = 0,
+          failure_reason = null,
+          result_ref = null,
+          lock_token = null,
+          locked_by = null,
+          lease_expires_at = null,
+          started_at = null,
+          finished_at = null,
+          created_at = now(),
+          updated_at = now()
+      where r.status in ('failed', 'cancelled')
     returning r.*;
 
   if not found then
@@ -186,9 +217,14 @@ end;
 $$;
 
 comment on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) is
-  'Creates the run for (chapter, kind, dedupe key), or returns the one that already exists. See 20261112020000_ai_runs.sql.';
+  'Creates the run for (chapter, kind, dedupe key); queues a failed or cancelled one again in place; otherwise returns the one that exists. See 20261112020000_ai_runs.sql.';
 
 -- Claim the oldest claimable run for one worker, or return no row.
+--
+-- Only runs of `p_kinds`, the kinds the calling API process has a handler for:
+-- during a deploy an old replica must not claim, and spend tries on, a kind
+-- only the new build knows. A kind no build serves stays queued (a feature
+-- that removes a kind cancels its runs in the same change).
 --
 -- Claimable: queued or running, with no lease or a lease that ran out at
 -- `p_now` (a dead worker's run, or a pause that ended). `for update skip
@@ -202,7 +238,8 @@ comment on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, i
 create or replace function public.claim_ai_run(
   p_worker_id text,
   p_now timestamptz,
-  p_lease_seconds integer
+  p_lease_seconds integer,
+  p_kinds text[]
 )
 returns setof public.ai_runs
 language plpgsql
@@ -217,12 +254,16 @@ begin
     raise exception 'claim_ai_run: lease must be 10 to 3600 seconds'
       using errcode = 'check_violation';
   end if;
+  if p_kinds is null or cardinality(p_kinds) = 0 then
+    return;
+  end if;
 
   loop
     select r.* into v_run
       from public.ai_runs r
      where r.status in ('queued', 'running')
        and (r.lease_expires_at is null or r.lease_expires_at <= p_now)
+       and r.kind = any(p_kinds)
      order by r.created_at, r.id
      limit 1
      for update skip locked;
@@ -264,30 +305,30 @@ begin
 end;
 $$;
 
-comment on function public.claim_ai_run(text, timestamptz, integer) is
-  'Leases the oldest claimable AI run to p_worker_id and raises its attempt count, failing runs that used every attempt on the way. Returns the claimed run, or no row. See 20261112020000_ai_runs.sql.';
+comment on function public.claim_ai_run(text, timestamptz, integer, text[]) is
+  'Leases the oldest claimable AI run of one of p_kinds to p_worker_id and raises its attempt count, failing runs that used every attempt on the way. Returns the claimed run, or no row. See 20261112020000_ai_runs.sql.';
 
 -- Service role only, as every RPC the API alone calls.
 revoke execute on function public.ai_run_ref_is_ids_only(jsonb) from public;
 revoke execute on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) from public;
-revoke execute on function public.claim_ai_run(text, timestamptz, integer) from public;
+revoke execute on function public.claim_ai_run(text, timestamptz, integer, text[]) from public;
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke execute on function public.ai_run_ref_is_ids_only(jsonb) from anon;
     revoke execute on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) from anon;
-    revoke execute on function public.claim_ai_run(text, timestamptz, integer) from anon;
+    revoke execute on function public.claim_ai_run(text, timestamptz, integer, text[]) from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke execute on function public.ai_run_ref_is_ids_only(jsonb) from authenticated;
     revoke execute on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) from authenticated;
-    revoke execute on function public.claim_ai_run(text, timestamptz, integer) from authenticated;
+    revoke execute on function public.claim_ai_run(text, timestamptz, integer, text[]) from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant execute on function public.ai_run_ref_is_ids_only(jsonb) to service_role;
     grant execute on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) to service_role;
-    grant execute on function public.claim_ai_run(text, timestamptz, integer) to service_role;
+    grant execute on function public.claim_ai_run(text, timestamptz, integer, text[]) to service_role;
   end if;
 end
 $$;

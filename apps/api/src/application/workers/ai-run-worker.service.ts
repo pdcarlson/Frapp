@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import { ReportedCron } from './reported-cron.decorator';
@@ -32,17 +37,25 @@ import {
   type AiRunHandler,
   type AiRunHandlerRun,
 } from '../services/ai-run-registry';
+import { RbacService } from '../services/rbac.service';
 
 /** Why a try stopped before its handler settled. */
-type Stop = 'timeout' | 'lease_lost';
+type Stop = 'timeout' | 'lease_lost' | 'shutdown';
+
+const STOP_MESSAGES: Record<Stop, string> = {
+  timeout: 'The try ran past its time limit',
+  lease_lost: 'Lost the lease',
+  shutdown: 'The process is shutting down',
+};
 
 class TryStopped extends Error {
   constructor(readonly stop: Stop) {
-    super(
-      stop === 'timeout' ? 'The try ran past its time limit' : 'Lost the lease',
-    );
+    super(STOP_MESSAGES[stop]);
   }
 }
+
+/** How long shutdown waits for stopped tries to give their runs back. */
+const SHUTDOWN_WAIT_MS = 10_000;
 
 /**
  * Runs the AI run queue (#4310): claims runs from `ai_runs` with a lease and
@@ -62,7 +75,7 @@ class TryStopped extends Error {
  * answer or member text (ADR-28 decision 8).
  */
 @Injectable()
-export class AiRunWorkerService {
+export class AiRunWorkerService implements OnApplicationShutdown {
   private readonly logger = new Logger(AiRunWorkerService.name);
 
   /** This process's name in the lease, for reading logs only. */
@@ -78,14 +91,49 @@ export class AiRunWorkerService {
    */
   private claiming = false;
 
+  /** A wake that arrived while claiming: claim once more before stopping. */
+  private claimAgain = false;
+
+  /** Claims started because a run finished and freed a slot. */
+  private readonly refills = new Set<Promise<void>>();
+
+  /** Stops the try in progress, for each run this process holds. */
+  private readonly halts = new Set<(why: Stop) => void>();
+
+  /** Set once the process starts shutting down; nothing new is claimed. */
+  private stopping = false;
+
   /** The clock for lease renewals and finish times. A spec replaces it. */
   now: () => Date = () => new Date();
+
+  /** How often a try renews its lease. A spec shortens it. */
+  heartbeatMs = AI_RUN_HEARTBEAT_MS;
 
   constructor(
     @Inject(AI_RUN_REPOSITORY) private readonly runs: IAiRunRepository,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
     private readonly registry: AiRunRegistry,
+    private readonly rbac: RbacService,
   ) {}
+
+  /**
+   * A deploy stops each try in progress and gives its run back without using
+   * a try, so another replica picks it up at once instead of after the lease,
+   * and a run is not failed by deploys landing during its tries.
+   */
+  async onApplicationShutdown(): Promise<void> {
+    this.stopping = true;
+    for (const halt of this.halts) halt('shutdown');
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      this.idle(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, SHUTDOWN_WAIT_MS);
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+  }
 
   /**
    * The fallback tick: picks up runs whose worker died, runs paused for a
@@ -146,43 +194,85 @@ export class AiRunWorkerService {
    * claim's clock.
    */
   async drain(now: Date): Promise<number> {
-    if (this.claiming) return 0;
+    if (this.claiming) {
+      // The loop in progress may already have found nothing; make it look
+      // once more, so the work this wake was for is not left to the tick.
+      this.claimAgain = true;
+      return 0;
+    }
+    // Only kinds this build serves: an old replica mid-deploy leaves a new
+    // kind to the replicas that know it.
+    const kinds = this.registry.kinds();
+    if (kinds.length === 0 || this.stopping) return 0;
     this.claiming = true;
     let started = 0;
     try {
-      while (this.active.size < AI_RUN_MAX_CONCURRENT) {
-        const run = await this.runs.claimNext(
-          this.workerId,
-          now,
-          AI_RUN_LEASE_MS,
-        );
-        if (!run) break;
-        started += 1;
-        const work: Promise<void> = this.execute(run)
-          .catch((error: unknown) => {
-            // `execute` handles the handler's own errors; this is the
-            // database failing under it. The lease runs out and the next
-            // tick tries again.
-            reportCaughtFailure(this.logger, {
-              level: 'error',
-              site: 'ai-run-execute',
-              message: `AI run ${run.id} could not record its outcome`,
-              error,
-            });
-          })
-          .finally(() => this.active.delete(work));
-        this.active.add(work);
-      }
+      do {
+        this.claimAgain = false;
+        started += await this.claimUpTo(now, kinds);
+      } while (this.claimAgain && this.active.size < AI_RUN_MAX_CONCURRENT);
     } finally {
       this.claiming = false;
     }
     return started;
   }
 
+  private async claimUpTo(now: Date, kinds: string[]): Promise<number> {
+    let started = 0;
+    while (this.active.size < AI_RUN_MAX_CONCURRENT && !this.stopping) {
+      const run = await this.runs.claimNext(
+        this.workerId,
+        now,
+        AI_RUN_LEASE_MS,
+        kinds,
+      );
+      if (!run) break;
+      started += 1;
+      const work: Promise<void> = this.execute(run)
+        .catch((error: unknown) => {
+          // `execute` handles the handler's own errors; this is the
+          // database failing under it. The lease runs out and the next
+          // tick tries again.
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'ai-run-execute',
+            message: `AI run ${run.id} could not record its outcome`,
+            error,
+          });
+        })
+        .finally(() => {
+          this.active.delete(work);
+          this.refill();
+        });
+      this.active.add(work);
+    }
+    return started;
+  }
+
+  /**
+   * A finished run frees a slot: claim the next one now, so a backlog drains
+   * at four at a time rather than four per tick.
+   */
+  private refill(): void {
+    if (this.stopping || !isAiEnabled()) return;
+    const claim: Promise<void> = this.drain(this.now())
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'ai-run-refill',
+          message: 'AI run refill failed; the next tick will claim it',
+          error,
+        });
+      })
+      .finally(() => this.refills.delete(claim));
+    this.refills.add(claim);
+  }
+
   /** Resolves when every run this process started has settled. */
   async idle(): Promise<void> {
-    while (this.active.size > 0) {
-      await Promise.allSettled([...this.active]);
+    while (this.active.size > 0 || this.refills.size > 0) {
+      await Promise.allSettled([...this.active, ...this.refills]);
     }
   }
 
@@ -204,17 +294,19 @@ export class AiRunWorkerService {
     }
 
     if (!isAiEnabled()) {
-      // Switched off between the claim and here: put it back for later.
-      await this.runs.retryLater(
+      // Switched off between the claim and here: give it back for later,
+      // without counting this claim as a try.
+      await this.runs.release(
         run.id,
         token,
+        run.attempt_count - 1,
         new Date(this.now().getTime() + AI_RUN_LEASE_MS),
         this.now(),
       );
       return;
     }
 
-    if (!(await this.actingMemberStillBelongs(handler, run))) {
+    if (!(await this.actingMemberMayRun(handler, run))) {
       await this.runs.fail(run.id, token, 'not_permitted', this.now());
       return;
     }
@@ -252,28 +344,43 @@ export class AiRunWorkerService {
   }
 
   /**
-   * A run that reads as a member checks that the member is still in the
-   * chapter. One that names a member without needing one checks the same,
+   * Checked on every try, so what the member could do when they asked does
+   * not carry over: a run that reads as a member checks that the member is
+   * still in the chapter and, when the kind names `runPermissions`, still
+   * holds one. One that names a member without needing one checks the same,
    * since a run never reads as someone who has left. Whether that member can
    * open each source is the handler's to check as it reads, at that moment.
    */
-  private async actingMemberStillBelongs(
+  private async actingMemberMayRun(
     handler: AiRunHandler,
     run: AiRun,
   ): Promise<boolean> {
-    if (!run.acting_user_id) return !handler.actsForMember;
+    if (!run.acting_user_id) {
+      return !handler.actsForMember && !handler.runPermissions?.length;
+    }
     const member = await this.members.findByUserAndChapter(
       run.acting_user_id,
       run.chapter_id,
     );
-    return member !== null;
+    if (member === null) return false;
+    if (!handler.runPermissions?.length) return true;
+    return this.rbac.memberHasAnyPermission(
+      run.chapter_id,
+      run.acting_user_id,
+      [...handler.runPermissions],
+    );
   }
 
   /**
    * Runs one try, renewing the lease while it works. Rejects with
-   * `TryStopped` when the try runs past its limit or the lease is lost, even
-   * if the handler ignores its signal, so one stuck handler cannot hold a
-   * slot forever.
+   * `TryStopped` when the try runs past its limit, the lease is lost, or the
+   * process shuts down, even if the handler ignores its signal, so one stuck
+   * handler cannot hold a slot forever.
+   *
+   * A renewal that errors (the database unreachable) is reported and tried
+   * on the next beat. Once the last lease this worker holds for certain has
+   * run out, the try stops itself: another worker may have claimed the run
+   * by then, and two must never work on it at once.
    */
   private async runHandler(
     handler: AiRunHandler,
@@ -291,21 +398,39 @@ export class AiRunWorkerService {
       stopped(new TryStopped(why));
     };
 
+    this.halts.add(halt);
+
+    // The lease the claim wrote; each renewal that lands moves it on.
+    let heldUntil = run.lease_expires_at
+      ? new Date(run.lease_expires_at).getTime()
+      : this.now().getTime() + AI_RUN_LEASE_MS;
     const timeout = setTimeout(
       () => halt('timeout'),
       handler.timeoutMs ?? AI_RUN_DEFAULT_TIMEOUT_MS,
     );
     const heartbeat = setInterval(() => {
+      const at = this.now();
+      if (at.getTime() >= heldUntil) {
+        halt('lease_lost');
+        return;
+      }
       this.runs
-        .renewLease(run.id, token, this.now(), AI_RUN_LEASE_MS)
+        .renewLease(run.id, token, at, AI_RUN_LEASE_MS)
         .then((held) => {
-          if (!held) halt('lease_lost');
+          if (held) heldUntil = at.getTime() + AI_RUN_LEASE_MS;
+          else halt('lease_lost');
         })
-        .catch(() => {
-          // A missed renewal is tried again on the next beat; the lease
-          // outlasts several beats.
+        .catch((error: unknown) => {
+          // Tried again on the next beat; the lease outlasts several beats,
+          // and the check above stops the try once it has run out.
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'ai-run-lease-renewal',
+            message: `AI run ${run.id} could not renew its lease`,
+            error,
+          });
         });
-    }, AI_RUN_HEARTBEAT_MS);
+    }, this.heartbeatMs);
     timeout.unref?.();
     heartbeat.unref?.();
 
@@ -319,6 +444,7 @@ export class AiRunWorkerService {
         stop,
       ]);
     } finally {
+      this.halts.delete(halt);
       clearTimeout(timeout);
       clearInterval(heartbeat);
       // A handler that settles after `halt` is ignored; keep its rejection
@@ -339,6 +465,13 @@ export class AiRunWorkerService {
       );
       return;
     }
+    if (error instanceof TryStopped && error.stop === 'shutdown') {
+      this.logger.log(
+        `AI run ${run.id} given back on shutdown, try ${run.attempt_count} not counted`,
+      );
+      await this.runs.release(run.id, token, run.attempt_count - 1, null, now);
+      return;
+    }
 
     const failure = error instanceof AiRunFailure ? error : null;
     const timedOut = error instanceof TryStopped;
@@ -357,7 +490,7 @@ export class AiRunWorkerService {
         level: 'warning',
         site: 'ai-run-handler-threw',
         message: `AI run ${run.id} (${run.kind}) threw on try ${run.attempt_count} of ${run.max_attempts}`,
-        error,
+        error: withoutMessage(error),
         tags: { kind: run.kind },
       });
     }
@@ -377,8 +510,29 @@ export class AiRunWorkerService {
   }
 }
 
+/**
+ * A handler's unexpected error with its message left out: the error class and
+ * the stack frames, which say where it broke, and nothing a provider or a
+ * model said, which can quote the prompt (ADR-28 decision 8). The log and
+ * Sentry both get this copy.
+ */
+export function withoutMessage(error: unknown): Error {
+  const name =
+    error instanceof Error
+      ? error.constructor.name || error.name || 'Error'
+      : typeof error;
+  const safe = new Error(`AI run handler threw ${name}`);
+  safe.name = name;
+  const frames =
+    error instanceof Error && typeof error.stack === 'string'
+      ? error.stack.split('\n').filter((line) => /^\s+at /.test(line))
+      : [];
+  safe.stack = [`${name}: AI run handler threw ${name}`, ...frames].join('\n');
+  return safe;
+}
+
 /** What a handler sees of its run: no lease, no dedupe key. */
-function handlerView(run: AiRun): AiRunHandlerRun {
+export function handlerView(run: AiRun): AiRunHandlerRun {
   return {
     id: run.id,
     chapter_id: run.chapter_id,

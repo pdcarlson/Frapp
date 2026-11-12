@@ -217,7 +217,12 @@ export interface Database {
        * no row; `returns setof ai_runs`.
        */
       claim_ai_run: {
-        Args: { p_worker_id: string; p_now: string; p_lease_seconds: number };
+        Args: {
+          p_worker_id: string;
+          p_now: string;
+          p_lease_seconds: number;
+          p_kinds: string[];
+        };
         Returns: AiRun[];
       };
       /**

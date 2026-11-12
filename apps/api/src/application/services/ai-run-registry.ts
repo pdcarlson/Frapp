@@ -7,6 +7,7 @@ import type {
 import {
   AI_RUN_KIND,
   AI_RUN_MAX_ATTEMPTS_CEILING,
+  AI_RUN_MAX_TIMEOUT_MS,
 } from '#domain/utils/ai-runs';
 
 /** What a handler is told about the run it is working on. */
@@ -85,14 +86,29 @@ export interface AiRunHandler {
    */
   actsForMember: boolean;
   /**
-   * Who, besides the member who started a run and the member it acts for, may
-   * read it: any one of these permissions. Leave it out to keep runs private
-   * to those two.
+   * Permissions the acting member must still hold, any one of them, when the
+   * run runs (a minutes draft names the permission that lets a member edit
+   * minutes). Checked on every try, so a member who lost the role since
+   * asking gets `not_permitted` and nothing is read. Leave it out when
+   * membership is enough.
    */
-  viewPermissions?: readonly string[];
+  runPermissions?: readonly string[];
+  /**
+   * Whether a member other than the one who started the run, or the one it
+   * acts for, may read it. Those two always may. Leave it out to keep runs
+   * private to them. A run shows only status and ids, but who may see that a
+   * run about something exists follows who may open that something
+   * (`spec/behavior/ai.md` § Whose access an AI run uses), so this is the
+   * kind's own check against the run's sources, made when it is read.
+   */
+  canView?(run: AiRunHandlerRun, userId: string): Promise<boolean>;
   /** Tries before the run fails. Default 3, at most 10. */
   maxAttempts?: number;
-  /** How long one try may run before it is stopped. Default 10 minutes. */
+  /**
+   * How long one try may run before it is stopped. Default 10 minutes; 1
+   * second to 1 hour. A try is stopped at this limit even if its lease would
+   * still hold.
+   */
   timeoutMs?: number;
   /**
    * Does the work. Return a result reference (`{ draft_id: '<uuid>' }`) or
@@ -140,6 +156,17 @@ export class AiRunRegistry {
     ) {
       throw new Error(
         `AI run kind "${handler.kind}" asks for ${max} tries; 1 to ${AI_RUN_MAX_ATTEMPTS_CEILING} are allowed`,
+      );
+    }
+    const timeout = handler.timeoutMs;
+    if (
+      timeout !== undefined &&
+      (!Number.isInteger(timeout) ||
+        timeout < 1000 ||
+        timeout > AI_RUN_MAX_TIMEOUT_MS)
+    ) {
+      throw new Error(
+        `AI run kind "${handler.kind}" asks for a ${timeout} ms time limit; 1000 to ${AI_RUN_MAX_TIMEOUT_MS} ms are allowed`,
       );
     }
     this.handlers.set(handler.kind, handler);

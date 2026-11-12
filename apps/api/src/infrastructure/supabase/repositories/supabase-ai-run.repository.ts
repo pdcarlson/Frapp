@@ -53,11 +53,14 @@ export class SupabaseAiRunRepository implements IAiRunRepository {
     workerId: string,
     now: Date,
     leaseMs: number,
+    kinds: readonly string[],
   ): Promise<AiRun | null> {
+    if (kinds.length === 0) return null;
     const { data, error } = await this.supabase.rpc('claim_ai_run', {
       p_worker_id: workerId,
       p_now: now.toISOString(),
       p_lease_seconds: Math.round(leaseMs / 1000),
+      p_kinds: [...kinds],
     });
     if (error) throw new SupabaseQueryError(error);
     return (data ?? [])[0] ?? null;
@@ -115,6 +118,21 @@ export class SupabaseAiRunRepository implements IAiRunRepository {
       // A pause, as on `discord_imports`: no token, an expiry ahead. The
       // claim skips the run until then.
       lease_expires_at: notBefore.toISOString(),
+    });
+  }
+
+  async release(
+    id: string,
+    lockToken: string,
+    attemptCount: number,
+    notBefore: Date | null,
+    now: Date,
+  ): Promise<boolean> {
+    return this.writeHeld(id, lockToken, {
+      status: 'queued',
+      attempt_count: Math.max(0, attemptCount),
+      ...released(now),
+      lease_expires_at: notBefore ? notBefore.toISOString() : null,
     });
   }
 

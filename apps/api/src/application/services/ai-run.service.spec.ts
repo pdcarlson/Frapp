@@ -1,7 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { AiRunService } from './ai-run.service';
 import { AiRunRegistry, type AiRunHandler } from './ai-run-registry';
-import type { RbacService } from './rbac.service';
 import type { AiRunWorkerService } from '../workers/ai-run-worker.service';
 import { FakeAiRunRepository } from '#test/helpers/fake-ai-run.repository';
 
@@ -12,11 +11,14 @@ const PRESIDENT = '44444444-4444-4444-8444-444444444444';
 const MEMBER = '55555555-5555-4555-8555-555555555555';
 const MEETING = '0a000000-0000-4000-8000-000000004310';
 
+/** Lets a member read a run when they could open its meeting. */
+const canView = jest.fn<Promise<boolean>, [unknown, string]>();
+
 const minutes: AiRunHandler = {
   kind: 'minutes_draft',
   label: 'Drafting minutes',
   actsForMember: true,
-  viewPermissions: ['events:update'],
+  canView,
   run: async () => undefined,
 };
 
@@ -25,7 +27,6 @@ describe('AiRunService', () => {
   let runs: FakeAiRunRepository;
   let registry: AiRunRegistry;
   let worker: { wake: jest.Mock };
-  let rbac: { memberHasAnyPermission: jest.Mock };
   let service: AiRunService;
 
   const draft = (overrides: Record<string, unknown> = {}) =>
@@ -45,12 +46,11 @@ describe('AiRunService', () => {
     registry = new AiRunRegistry();
     registry.register(minutes);
     worker = { wake: jest.fn() };
-    rbac = { memberHasAnyPermission: jest.fn().mockResolvedValue(false) };
+    canView.mockReset().mockResolvedValue(false);
     service = new AiRunService(
       runs,
       registry,
       worker as unknown as AiRunWorkerService,
-      rbac as unknown as RbacService,
     );
   });
 
@@ -87,6 +87,44 @@ describe('AiRunService', () => {
 
       await draft();
       expect(worker.wake).not.toHaveBeenCalled();
+    });
+
+    it('asking again after a failure queues the same run afresh, with the new asker', async () => {
+      const run = await draft();
+      Object.assign(runs.row(run.id), {
+        status: 'failed',
+        failure_reason: 'handler_failed',
+        attempt_count: 3,
+        finished_at: '2026-11-12T10:00:00.000Z',
+      });
+      worker.wake.mockClear();
+
+      const again = await draft({
+        requestedBy: PRESIDENT,
+        actingUserId: PRESIDENT,
+      });
+
+      expect(again.id).toBe(run.id);
+      expect(again).toEqual(
+        expect.objectContaining({
+          status: 'queued',
+          attempt_count: 0,
+          failure_reason: null,
+          finished_at: null,
+          requested_by: PRESIDENT,
+          acting_user_id: PRESIDENT,
+        }),
+      );
+      expect(runs.rows).toHaveLength(1);
+      expect(worker.wake).toHaveBeenCalledTimes(1);
+    });
+
+    it('asking again after a cancel queues it again too', async () => {
+      const run = await draft();
+      await service.cancel(CHAPTER, run.id);
+      await expect(draft()).resolves.toEqual(
+        expect.objectContaining({ id: run.id, status: 'queued' }),
+      );
     });
 
     it('takes the kind’s own number of tries', async () => {
@@ -154,7 +192,7 @@ describe('AiRunService', () => {
           failure_message: null,
         }),
       );
-      expect(rbac.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(canView).not.toHaveBeenCalled();
     });
 
     it('the member it acts for', async () => {
@@ -163,16 +201,16 @@ describe('AiRunService', () => {
       ).resolves.toEqual(expect.objectContaining({ id: runId }));
     });
 
-    it('a member holding a permission the kind names', async () => {
-      rbac.memberHasAnyPermission.mockResolvedValue(true);
+    it('a member the kind lets read it, asked about this run', async () => {
+      canView.mockResolvedValue(true);
       await expect(
         service.getForMember(CHAPTER, MEMBER, runId),
       ).resolves.toEqual(expect.objectContaining({ id: runId }));
-      expect(rbac.memberHasAnyPermission).toHaveBeenCalledWith(
-        CHAPTER,
+      expect(canView).toHaveBeenCalledWith(
+        expect.objectContaining({ id: runId, chapter_id: CHAPTER }),
         MEMBER,
-        ['events:update'],
       );
+      expect(canView.mock.calls[0][0]).not.toHaveProperty('lock_token');
     });
 
     it('nobody else: a 404, as for a run that does not exist', async () => {
@@ -187,11 +225,11 @@ describe('AiRunService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('a kind with no view permissions is private to its two members', async () => {
+    it('a kind with no view rule is private to its two members', async () => {
       registry.register({
         ...minutes,
         kind: 'private_kind',
-        viewPermissions: undefined,
+        canView: undefined,
       });
       const id = (
         await draft({
@@ -200,12 +238,12 @@ describe('AiRunService', () => {
           actingUserId: OFFICER,
         })
       ).id;
-      rbac.memberHasAnyPermission.mockResolvedValue(true);
+      canView.mockResolvedValue(true);
 
       await expect(
         service.getForMember(CHAPTER, MEMBER, id),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(rbac.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(canView).not.toHaveBeenCalled();
     });
 
     it('shows a failure in plain words', async () => {

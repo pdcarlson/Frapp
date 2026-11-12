@@ -11,7 +11,7 @@ import type {
 
 /**
  * An in-memory `ai_runs` that keeps the queue's rules (#4310): one run per
- * (chapter, kind, dedupe key), a claim that skips held leases and raises the
+ * (chapter, kind, dedupe key) that a failure or cancel lets be queued again, a claim that skips held leases and raises the
  * attempt count, runs that used every try failing on the next claim, and
  * writes conditional on the lock token and `running`.
  *
@@ -30,6 +30,28 @@ export class FakeAiRunRepository implements IAiRunRepository {
         row.kind === input.kind &&
         row.dedupe_key === input.dedupeKey,
     );
+    if (
+      existing &&
+      (existing.status === 'failed' || existing.status === 'cancelled')
+    ) {
+      const at = new Date().toISOString();
+      Object.assign(existing, {
+        status: 'queued',
+        requested_by: input.requestedBy,
+        acting_user_id: input.actingUserId,
+        input_ref: structuredClone(input.input),
+        max_attempts: input.maxAttempts,
+        attempt_count: 0,
+        failure_reason: null,
+        result_ref: null,
+        ...released(),
+        started_at: null,
+        finished_at: null,
+        created_at: at,
+        updated_at: at,
+      } satisfies Partial<AiRun>);
+      return { ...existing };
+    }
     if (existing) return { ...existing };
     const at = new Date().toISOString();
     const row: AiRun = {
@@ -61,10 +83,12 @@ export class FakeAiRunRepository implements IAiRunRepository {
     workerId: string,
     now: Date,
     leaseMs: number,
+    kinds: readonly string[],
   ): Promise<AiRun | null> {
     const nowIso = now.toISOString();
     for (const row of this.rows) {
       if (row.status !== 'queued' && row.status !== 'running') continue;
+      if (!kinds.includes(row.kind)) continue;
       if (row.lease_expires_at !== null && row.lease_expires_at > nowIso)
         continue;
       if (row.attempt_count >= row.max_attempts) {
@@ -141,6 +165,20 @@ export class FakeAiRunRepository implements IAiRunRepository {
       status: 'queued',
       ...released(),
       lease_expires_at: notBefore.toISOString(),
+    });
+  }
+
+  async release(
+    id: string,
+    lockToken: string,
+    attemptCount: number,
+    notBefore: Date | null,
+  ): Promise<boolean> {
+    return this.writeHeld(id, lockToken, {
+      status: 'queued',
+      attempt_count: Math.max(0, attemptCount),
+      ...released(),
+      lease_expires_at: notBefore ? notBefore.toISOString() : null,
     });
   }
 

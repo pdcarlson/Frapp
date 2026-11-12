@@ -159,8 +159,10 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
   });
 
   describe('the worker’s writes', () => {
-    it('claimNext sends the lease in whole seconds and reads an empty answer as nothing to do', async () => {
-      await expect(repo.claimNext('w1', NOW, 300_000)).resolves.toBeNull();
+    it('claimNext sends the lease in whole seconds and the kinds served, and reads an empty answer as nothing to do', async () => {
+      await expect(
+        repo.claimNext('w1', NOW, 300_000, ['minutes_draft']),
+      ).resolves.toBeNull();
       expect(harness.rpcCalls).toEqual([
         {
           fn: 'claim_ai_run',
@@ -168,9 +170,15 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
             p_worker_id: 'w1',
             p_now: NOW.toISOString(),
             p_lease_seconds: 300,
+            p_kinds: ['minutes_draft'],
           },
         },
       ]);
+    });
+
+    it('claimNext with no kinds served asks nothing', async () => {
+      await expect(repo.claimNext('w1', NOW, 300_000, [])).resolves.toBeNull();
+      expect(harness.rpcCalls).toEqual([]);
     });
 
     it('scopes every write after a claim to the run, its lock token, and running', async () => {
@@ -183,9 +191,10 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
       );
       await repo.complete('run-b', TOKEN, null, NOW);
       await repo.fail('run-a-other', TOKEN, 'source_gone', NOW);
+      await repo.release('run-a', TOKEN, 0, null, NOW);
 
       const writes = harness.ops.filter((op) => op.mode === 'update');
-      expect(writes).toHaveLength(4);
+      expect(writes).toHaveLength(5);
       for (const op of writes) {
         expect(op.filters).toEqual(
           expect.arrayContaining([
@@ -220,6 +229,20 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
           lock_token: null,
           locked_by: null,
           lease_expires_at: notBefore.toISOString(),
+        }),
+      );
+    });
+
+    it('a release queues the run again with the try given back, claimable at once', async () => {
+      await expect(repo.release('run-a', TOKEN, 0, null, NOW)).resolves.toBe(
+        true,
+      );
+      expect(harness.rows('ai_runs').find((row) => row.id === 'run-a')).toEqual(
+        expect.objectContaining({
+          status: 'queued',
+          attempt_count: 0,
+          lock_token: null,
+          lease_expires_at: null,
         }),
       );
     });
