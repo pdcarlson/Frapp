@@ -3,9 +3,9 @@ import { join } from "node:path";
 
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: merge Backwork department case variants (20261112153000) ───
+// ─── Functional: merge Backwork department case variants (20261112154000) ───
 //
-// 20261112153000 merges departments whose codes differ only in case or spaces
+// 20261112154000 merges departments whose codes differ only in case or spaces
 // (#3918). It changes production data, and replay runs it against an empty
 // table, so replay alone proves nothing. This tier seeds two chapters and
 // checks:
@@ -28,7 +28,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back.
 console.log(
-  "\n=== Functional: merge Backwork department case variants (20261112153000) ===",
+  "\n=== Functional: merge Backwork department case variants (20261112154000) ===",
 );
 {
   const A = "a3918000-0000-4000-8000-00000000000a";
@@ -55,7 +55,7 @@ console.log(
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261112153000_merge_backwork_department_case_variants.sql",
+      "supabase/migrations/20261112154000_merge_backwork_department_case_variants.sql",
     ),
     "utf8",
   );

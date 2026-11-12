@@ -3808,9 +3808,9 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-## Rollback merge Backwork department case variants (20261112153000)
+## Rollback merge Backwork department case variants (20261112154000)
 
-* **Migration**: `20261112153000_merge_backwork_department_case_variants.sql`
+* **Migration**: `20261112154000_merge_backwork_department_case_variants.sql`
 
 Folds each chapter's Backwork departments whose codes differ only in case or spaces into one. Course entries are merged, files moved, the other department rows deleted (their course entries cascade), and the kept department's empty full name filled. **It cannot be reverted by a migration**: the deleted rows and each file's earlier `department_id` are gone from the database. Nothing needs them back: since #4485 every upload and the web upload sheet treat those codes as one department, so splitting them again would only bring the duplicate back.
 
