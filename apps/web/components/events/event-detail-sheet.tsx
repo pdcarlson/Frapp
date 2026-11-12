@@ -198,7 +198,10 @@ export function EventDetailSheet({
   // `null` for a one-time event, which then shows no cadence badge at all.
   // The head's rule when the caller knows the series: a generated meeting
   // carries none of its own, and would otherwise read as one-time.
-  const cadence = recurrenceLabel(seriesRule ?? resolvedEvent?.recurrence_rule);
+  const cadence = recurrenceLabel(
+    seriesRule ?? resolvedEvent?.recurrence_rule,
+    resolvedEvent?.start_time,
+  );
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,

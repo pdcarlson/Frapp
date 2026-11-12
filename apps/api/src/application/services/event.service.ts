@@ -21,6 +21,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  checkSeriesLength,
   eventLimitsAudience,
   eventOthersInvited,
 } from '@repo/validation';
@@ -184,6 +185,14 @@ export class EventService {
 
     const setsRequirements = await this.canSetRequirements(rawInput);
     const input = setsRequirements ? rawInput : withoutRequirements(rawInput);
+
+    // The DTO checks the rule's shape; whether it fits this first meeting (an
+    // UNTIL that leaves no second meeting, or one past the series cap) needs
+    // the start, so it is checked here, before anything is written.
+    if (input.recurrence_rule) {
+      const problem = checkSeriesLength(input.recurrence_rule, start);
+      if (problem) throw new BadRequestException(problem);
+    }
 
     // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
     // `required_role_ids` gate read access — list, detail, search and the
@@ -389,6 +398,27 @@ export class EventService {
       (input.location !== undefined || input.recurrence_rule !== undefined
         ? await this.findById(id, chapterId)
         : null);
+
+    // An instance edit writes the rule onto this row as it stands, with no
+    // regenerate, so a rule that doesn't fit its start (an UNTIL before the
+    // second meeting, or past the series cap) is refused here as on create.
+    // Only when the rule or the start actually changes: the web editor sends
+    // the stored rule back on every save, and a rename must not be judged on
+    // a rule nobody touched.
+    const row = before;
+    const ruleOrStartChanged =
+      !!row &&
+      (input.recurrence_rule !== row.recurrence_rule ||
+        (input.start_time !== undefined &&
+          new Date(input.start_time).getTime() !==
+            new Date(row.start_time).getTime()));
+    if (input.recurrence_rule && row && ruleOrStartChanged) {
+      const problem = checkSeriesLength(
+        input.recurrence_rule,
+        input.start_time ?? row.start_time,
+      );
+      if (problem) throw new BadRequestException(problem);
+    }
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...patch,
