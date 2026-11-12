@@ -14,6 +14,8 @@ import type { IEventRepository } from '#domain/repositories/event.repository.int
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
 import { RbacService } from './rbac.service';
 import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
 import {
@@ -23,6 +25,10 @@ import {
   type EventAttendanceFields,
 } from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
+import {
+  canAnchorCheckIn,
+  isNearCheckInScreen,
+} from '#domain/utils/check-in-screen';
 import {
   mintCheckInToken,
   verifyCheckInToken,
@@ -44,7 +50,41 @@ export interface CheckInOptions {
   manualCode?: string;
   lat?: number;
   lng?: number;
+  /** The phone's reported accuracy, in meters. Widens the screen check. */
+  accuracyMeters?: number;
 }
+
+/** Where the host screen (s22) says it is, when it can tell. */
+export interface CheckInScreenFix {
+  lat?: number;
+  lng?: number;
+  accuracyMeters?: number;
+}
+
+/**
+ * How check-in is guarding presence for an event, as the host screen reports
+ * it (#4532):
+ *
+ * - `zone`: the event has a drawn zone, and that is the check.
+ * - `screen`: members must be near a screen that showed the code.
+ * - `no_location`: no screen could tell where it is, so the code is required
+ *   but distance isn't checked. The host screen tells the officer once.
+ * - `not_open` / `closed`: outside the check-in window; nothing is stored.
+ */
+export type CheckInScreenCheck =
+  'zone' | 'screen' | 'no_location' | 'not_open' | 'closed';
+
+/**
+ * Member-facing refusals for the screen check. Exported so the specs and the
+ * shared error map (`SERVER_MESSAGE_COPY` in `@repo/validation`, keyed by
+ * these exact sentences) can't drift from what is thrown.
+ */
+export const CHECK_IN_NEEDS_CODE =
+  'Scan the code on the check-in screen to check in';
+export const CHECK_IN_NEEDS_LOCATION =
+  'This check-in needs your location. Allow location for Frapp and scan again.';
+export const CHECK_IN_TOO_FAR =
+  'You need to be near the check-in screen to check in';
 
 @Injectable()
 export class AttendanceService {
@@ -55,6 +95,8 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
+    private readonly screenRepo: IEventCheckInScreenRepository,
     private readonly rbac: RbacService,
   ) {}
 
@@ -90,6 +132,71 @@ export class AttendanceService {
       );
     }
     return secret;
+  }
+
+  /**
+   * Record that the host screen (s22) is showing the code, and where it is
+   * (#4532). Called about once a minute while the screen is up, by an officer
+   * with `events:update` (the mint's gate).
+   *
+   * Stored only inside the check-in window, and only until it closes: a
+   * screen opened early stores nothing until the window opens, and the row's
+   * `expires_at` is the window's close, after which nothing reads it and the
+   * sweep deletes it. A drawn zone wins over the screen, so with one the
+   * screen's location isn't stored at all; the row still marks the code as in
+   * use, which makes it required.
+   */
+  async reportCheckInScreen(
+    eventId: string,
+    chapterId: string,
+    fix: CheckInScreenFix,
+  ): Promise<{ check: CheckInScreenCheck }> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const now = new Date();
+    const { opensAt, closesAt } = checkInWindowBounds(
+      new Date(event.start_time),
+      new Date(event.end_time),
+      event.check_in_opens_minutes,
+    );
+    if (Number.isNaN(opensAt.getTime()) || Number.isNaN(closesAt.getTime())) {
+      throw new BadRequestException('Event times are invalid');
+    }
+    if (now < opensAt) return { check: 'not_open' };
+    if (now > closesAt) return { check: 'closed' };
+
+    const hasZone =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+    const { lat, lng, accuracyMeters } = fix;
+    const location =
+      !hasZone &&
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      typeof accuracyMeters === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      canAnchorCheckIn(accuracyMeters)
+        ? { lat, lng, accuracy_m: accuracyMeters }
+        : null;
+
+    const row = await this.screenRepo.recordShown({
+      eventId,
+      chapterId,
+      nowIso: now.toISOString(),
+      expiresAt: closesAt.toISOString(),
+      location,
+    });
+
+    if (hasZone) return { check: 'zone' };
+    return { check: row.lat !== null ? 'screen' : 'no_location' };
+  }
+
+  /** The sweep's half of the retention rule above. */
+  async deleteExpiredCheckInScreens(): Promise<number> {
+    return this.screenRepo.deleteExpired(new Date().toISOString());
   }
 
   async checkIn(
@@ -133,18 +240,28 @@ export class AttendanceService {
 
     // ── Rotating token ──────────────────────────────────────────────────
     //
-    // Verified when supplied; never required. That is the spec's design, not an
-    // oversight: `spec/ui/mobile/patterns.md` is explicit that "the rotating
-    // code raises effort; the geofence enforces presence", and
-    // `spec/behavior/events.md` keeps the chat event card as an additional
-    // self-service check-in surface, which posts no token at all.
+    // Verified when supplied. Required once an officer's screen has shown the
+    // code for this event (#4532): from then until check-in closes, a
+    // check-in without it (the chat event card, or a client that just leaves
+    // it out) is refused and told to scan. Before that, the event card's plain
+    // self check-in works as it always has, so an event nobody hosts a QR for
+    // keeps its one-tap check-in.
     //
-    // The consequence is worth stating plainly: a caller who simply omits
-    // `token` skips this check, so the token is an assurance signal (it catches
-    // a forwarded screenshot or a stale code), not an access control. The
-    // geofence below is the control. Making the token mandatory needs a
-    // per-event opt-in flag — filed as follow-up work rather than invented here.
-    if (options.token !== undefined || options.manualCode !== undefined) {
+    // A code alone is still not proof of presence: any displayed code can be
+    // screenshotted and forwarded inside its window. What makes it one is the
+    // location check below, against the drawn zone or the screen.
+    const screen = await this.screenRepo.findLive(
+      eventId,
+      chapterId,
+      now.toISOString(),
+    );
+    const hasCode =
+      options.token !== undefined || options.manualCode !== undefined;
+    if (screen && !hasCode) {
+      throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
+    }
+
+    if (hasCode) {
       const secret = this.requireTokenSecret();
       const accepted =
         (options.token !== undefined &&
@@ -200,6 +317,40 @@ export class AttendanceService {
 
       if (!pointInPolygon(lat, lng, event.check_in_zone)) {
         throw new ForbiddenException('You need to be at the event to check in');
+      }
+    }
+    // ── Near the screen ─────────────────────────────────────────────────
+    //
+    // With no drawn zone, the screen showing the code is the zone (#4532): a
+    // member must be within 100 yards of where it last said it was, plus both
+    // phones' accuracy, capped (`isNearCheckInScreen`). A screen that couldn't
+    // tell where it is stored no location, and then nothing here runs.
+    if (
+      (event.check_in_zone === null || event.check_in_zone === undefined) &&
+      screen &&
+      screen.lat !== null &&
+      screen.lng !== null
+    ) {
+      const { lat, lng } = options;
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        throw new BadRequestException(CHECK_IN_NEEDS_LOCATION);
+      }
+
+      const near = isNearCheckInScreen(
+        {
+          lat: screen.lat,
+          lng: screen.lng,
+          accuracy_m: screen.accuracy_m ?? 0,
+        },
+        { lat, lng, accuracy_m: options.accuracyMeters ?? null },
+      );
+      if (!near) {
+        throw new ForbiddenException(CHECK_IN_TOO_FAR);
       }
     }
 

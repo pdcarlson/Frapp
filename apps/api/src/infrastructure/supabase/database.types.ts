@@ -56,6 +56,7 @@ import type {
   DiscordAuthorLink,
   Event,
   EventAttendance,
+  EventCheckInScreen,
   FinancialInvoice,
   FinancialTransaction,
   Invite,
@@ -144,6 +145,7 @@ export interface Database {
       point_transactions: TableDefinition<PointTransaction>;
       events: TableDefinition<Event>;
       event_attendance: TableDefinition<EventAttendance>;
+      event_check_in_screens: TableDefinition<EventCheckInScreen>;
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
       chat_messages: TableDefinition<ChatMessage>;

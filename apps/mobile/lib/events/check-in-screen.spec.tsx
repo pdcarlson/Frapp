@@ -21,7 +21,7 @@ import {
   ALREADY_CHECKED_IN_TITLE,
   CHECK_IN_CODE_REFUSED_MESSAGE,
 } from "@/lib/events/check-in-outcome";
-import { requireForegroundFix } from "@/lib/location";
+import { requireForegroundFix, tryForegroundFix } from "@/lib/location";
 
 /**
  * s18's refusal wiring (#2297), rendered (#2416).
@@ -155,10 +155,11 @@ vi.mock("expo-camera", () => ({
 // `expo-location` is not loaded.
 vi.mock("@/lib/location", () => ({
   requireForegroundFix: vi.fn(),
-  latLngOf: (fix: { lat: number; lng: number }) => ({
-    lat: fix.lat,
-    lng: fix.lng,
-  }),
+  // No location unless a spec gives one: the scan goes without it.
+  tryForegroundFix: vi.fn(async () => ({
+    fix: null,
+    permission: { granted: false, canAskAgain: true },
+  })),
 }));
 
 vi.mock("@/lib/connection/use-connection", () => ({
@@ -172,8 +173,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import CheckInScreen from "@/app/(app)/check-in";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
-const refocus = (expoRouter as unknown as { __refocus: () => void })
-  .__refocus;
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 /** "The member left this screen": the other half of `__refocus`. */
 const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
@@ -300,15 +300,13 @@ const manualSubmit = (tree: ReactTestRenderer) =>
     .findByType("BottomSheetModal" as never)
     .find(
       (node) =>
-        node.type === ("Pressable" as never) &&
-        drawnText(node) === "Check in",
+        node.type === ("Pressable" as never) && drawnText(node) === "Check in",
     );
 
 /** A control found by what it draws. */
 const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
   tree.root.find(
-    (node) =>
-      node.type === ("Pressable" as never) && drawnText(node) === label,
+    (node) => node.type === ("Pressable" as never) && drawnText(node) === label,
   );
 
 /** Types a plausible code and submits it, settling the async submit. */
@@ -860,6 +858,42 @@ describe("Check-in before its event has loaded", () => {
     act(() => tree.unmount());
   });
 
+  it("sends the phone's position, accuracy and all, for the officer's screen to check (#4532)", async () => {
+    vi.mocked(requireForegroundFix).mockClear();
+    vi.mocked(tryForegroundFix).mockResolvedValueOnce({
+      fix: { lat: 42.73, lng: -73.68, accuracy_meters: 12 },
+      permission: { granted: true, canAskAgain: true },
+    });
+    checkIn.mockResolvedValue({});
+    loaded = { ...ZONED, check_in_zone: null };
+    const tree = render();
+    await scan(tree, qrFor("evt-1"));
+
+    expect(tryForegroundFix).toHaveBeenCalledWith("high");
+    expect(requireForegroundFix).not.toHaveBeenCalled();
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "evt-1",
+        lat: 42.73,
+        lng: -73.68,
+        accuracy_meters: 12,
+      }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("still sends the code when the phone gives no position: the server says if it needed one", async () => {
+    checkIn.mockResolvedValue({});
+    loaded = { ...ZONED, check_in_zone: null };
+    const tree = render();
+    await scan(tree, qrFor("evt-1"));
+
+    const sent = checkIn.mock.calls[0][0] as Record<string, unknown>;
+    expect(sent.eventId).toBe("evt-1");
+    expect(sent).not.toHaveProperty("lat");
+    act(() => tree.unmount());
+  });
+
   it("says so, with a way to try again, when the event didn't load", () => {
     const refetch = vi.fn();
     state.useEvent = () => ({
@@ -1104,7 +1138,8 @@ describe("Check-in's manual code", () => {
     // A stale, screenshotted or malformed QR says nothing about the code the
     // member is about to type off the host's screen, and nor does a request
     // that never got a real answer.
-    const TOKEN_TOO_LONG = "token must be shorter than or equal to 256 characters";
+    const TOKEN_TOO_LONG =
+      "token must be shorter than or equal to 256 characters";
     for (const [refusal, shown] of [
       [
         { statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE },

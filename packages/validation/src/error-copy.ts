@@ -125,6 +125,13 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "You can only check in while the event is on.",
   "This event checks you in by location — use the Frapp mobile app to check in.":
     "This event checks you in by location. Open Frapp on your phone to check in.",
+  // Check-in near the QR screen (#4532).
+  "Scan the code on the check-in screen to check in":
+    "Scan the code on the officer's screen to check in.",
+  "This check-in needs your location. Allow location for Frapp and scan again.":
+    "This check-in needs your location. Allow location for Frapp and scan again.",
+  "You need to be near the check-in screen to check in":
+    "You need to be near the officer's screen to check in.",
   "Cannot mark auto-absent before the grace period ends":
     "Wait until the grace period ends to mark absences.",
   // Chat

@@ -150,9 +150,14 @@ export interface CheckInVariables {
   token?: string;
   /** Short code typed off the host screen when the camera fails. */
   manualCode?: string;
-  /** Required by the server when the event defines a check-in geofence. */
+  /**
+   * Required by the server when the event defines a check-in geofence, or
+   * when an officer's screen showing the code reported where it is (#4532).
+   */
   lat?: number;
   lng?: number;
+  /** The phone's reported accuracy, in meters, when it gives one. */
+  accuracy_meters?: number;
 }
 
 /**
@@ -396,6 +401,68 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
     // asking again, and a transient failure or a 401 is asked again by the
     // fallback poll, not at once.
     retry: false,
+  });
+}
+
+/**
+ * How the server is checking presence for an event, as `PUT
+ * /v1/events/{eventId}/attendance/check-in-screen` answers (#4532):
+ * `screen` (members must be within 100 yards of a screen showing the code),
+ * `no_location` (no screen could tell where it is, so distance isn't
+ * checked), `zone` (the event's drawn zone), or `not_open` / `closed`
+ * (outside the check-in window).
+ */
+export type CheckInScreenCheck =
+  "zone" | "screen" | "no_location" | "not_open" | "closed";
+
+const CHECK_IN_SCREEN_CHECKS: readonly CheckInScreenCheck[] = [
+  "zone",
+  "screen",
+  "no_location",
+  "not_open",
+  "closed",
+];
+
+/** The `check` from the route's answer, or `null` for anything else. */
+export function checkInScreenCheckOf(
+  response: unknown,
+): CheckInScreenCheck | null {
+  if (typeof response !== "object" || response === null) return null;
+  const check = (response as { check?: unknown }).check;
+  return CHECK_IN_SCREEN_CHECKS.includes(check as CheckInScreenCheck)
+    ? (check as CheckInScreenCheck)
+    : null;
+}
+
+export interface CheckInScreenVariables {
+  eventId: string;
+  /** Left out when the screen can't tell where it is. */
+  lat?: number;
+  lng?: number;
+  accuracy_meters?: number;
+}
+
+/**
+ * The host screen (s22) telling the server it is showing the code, and where
+ * it is (#4532). Sent about once a minute while a code is drawn, so members
+ * are checked against where the screen is now. Officer-only, like the mint.
+ * Resolves to the server's check (see {@link CheckInScreenCheck}).
+ */
+export function useReportCheckInScreen() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["attendance", "check-in-screen"],
+    mutationFn: async ({
+      eventId,
+      ...body
+    }: CheckInScreenVariables): Promise<CheckInScreenCheck | null> => {
+      const result = await client.PUT(
+        "/v1/events/{eventId}/attendance/check-in-screen",
+        { params: { path: { eventId } }, body },
+      );
+      throwUnlessOk(result);
+      return checkInScreenCheckOf(result.data);
+    },
   });
 }
 

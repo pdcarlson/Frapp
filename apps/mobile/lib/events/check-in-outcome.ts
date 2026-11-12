@@ -71,6 +71,22 @@ export const CHECK_IN_CODE_REFUSED_MESSAGE =
   "That check-in code is not valid for this event, or it has expired";
 
 /**
+ * The API's refusal of a check-in with no code once an officer's screen has
+ * shown one for the event (#4532). The chat event card reads it to swap its
+ * Check in for Scan code; a spec reads it from the API's source.
+ */
+export const CHECK_IN_NEEDS_CODE_MESSAGE =
+  "Scan the code on the check-in screen to check in";
+
+/** Whether a failed check-in was refused for carrying no code. */
+export function needsScannedCode(error: unknown): boolean {
+  return (
+    statusOf(error) === 403 &&
+    serverMessageOf(error) === CHECK_IN_NEEDS_CODE_MESSAGE
+  );
+}
+
+/**
  * The scanned code's field in the API's check-in body (`CheckInDto`). Its
  * validation refusals are class-validator's own messages, which start with
  * the property's name ("token must be shorter than or equal to 256

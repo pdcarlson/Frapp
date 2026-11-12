@@ -90,10 +90,24 @@ export async function requestForegroundPermission(): Promise<ForegroundPermissio
   return { granted: permission.granted, canAskAgain: permission.canAskAgain };
 }
 
+/**
+ * How hard to try for a fix. `balanced` is the default: the drawn-zone and
+ * study checks are building-scale. `high` is for a check against another
+ * phone's position (check-in near the QR screen, #4532): on iOS `Balanced`
+ * means "within 100 m", which is the whole radius, so the screen and the
+ * member each ask for one GPS fix instead.
+ */
+export type FixPrecision = "balanced" | "high";
+
 /** One position fix. Assumes permission is already granted. */
-export async function readForegroundFix(): Promise<LocationFix> {
+export async function readForegroundFix(
+  precision: FixPrecision = "balanced",
+): Promise<LocationFix> {
   const position = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Balanced,
+    accuracy:
+      precision === "high"
+        ? Location.Accuracy.High
+        : Location.Accuracy.Balanced,
   });
   const accuracy_meters = accuracyMetersOf(position.coords.accuracy);
   return accuracy_meters === undefined
@@ -118,14 +132,39 @@ export const LOCATION_UNAVAILABLE =
 
 export async function requireForegroundFix(
   deniedMessage: string,
+  precision: FixPrecision = "balanced",
 ): Promise<LocationFix> {
   const permission = await requestForegroundPermission();
   if (!permission.granted) throw new MemberFacingError(deniedMessage);
   try {
-    return await readForegroundFix();
+    return await readForegroundFix(precision);
   } catch {
     // Location services off, or no fix in time: the platform's own error
     // names neither, and the member's fix is the same for both.
     throw new MemberFacingError(LOCATION_UNAVAILABLE);
+  }
+}
+
+/**
+ * A fix if the phone will give one, without insisting: prompts for While-Using
+ * permission the first time, and resolves to `null` when it is refused or no
+ * fix comes. For checks the server decides on its own (the QR screen's
+ * distance check, #4532): the member's scan still goes, and the server says
+ * whether a location was needed.
+ */
+export async function tryForegroundFix(
+  precision: FixPrecision = "balanced",
+): Promise<{ fix: LocationFix | null; permission: ForegroundPermission }> {
+  let permission: ForegroundPermission;
+  try {
+    permission = await requestForegroundPermission();
+  } catch {
+    return { fix: null, permission: { granted: false, canAskAgain: false } };
+  }
+  if (!permission.granted) return { fix: null, permission };
+  try {
+    return { fix: await readForegroundFix(precision), permission };
+  } catch {
+    return { fix: null, permission };
   }
 }
