@@ -257,7 +257,7 @@ export interface Database {
         Returns: ChapterDirectoryEntry[];
       };
       /**
-       * `20261112020000` (#3965). Chat search with a filter and no text: each
+       * `20261112131300` (#3965). Chat search with a filter and no text: each
        * handed channel's newest matches through an index, merged, newest
        * first. Reads only the channel ids it is handed (the caller decides
        * access); `p_has` is `file | image | link | poll`; at most 100 rows.

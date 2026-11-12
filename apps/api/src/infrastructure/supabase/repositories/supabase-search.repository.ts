@@ -333,7 +333,7 @@ export class SupabaseSearchRepository implements ISearchRepository {
    * A message search with a filter and no text ("everything Ryan posted this
    * week"; `SearchService` allows an empty query only beside a filter), through
    * `search_chat_messages_filtered`
-   * (20261112020000_chat_search_filter_only.sql, #3965).
+   * (20261112131300_chat_search_filter_only.sql, #3965).
    *
    * The function asks each channel for its own newest `limit` matches, a
    * backward walk of a `(channel_id, created_at desc)` index that stops at the

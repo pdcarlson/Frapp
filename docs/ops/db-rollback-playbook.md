@@ -3748,9 +3748,9 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback chat search with a filter and no text (20261112020000)
+## Rollback chat search with a filter and no text (20261112131300)
 
-* **Migration**: `20261112020000_chat_search_filter_only.sql`
+* **Migration**: `20261112131300_chat_search_filter_only.sql`
 
 One new function and two new partial indexes. It writes no row on apply.
 

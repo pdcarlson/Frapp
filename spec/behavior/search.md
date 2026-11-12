@@ -89,7 +89,7 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
   to narrow by, and `channel_id IN (…) ORDER BY created_at DESC LIMIT 10` cannot walk an index in
   order across a list of channels, so the old query read every message of the caller's channels
   that passed the filter, then sorted. That case now goes to `search_chat_messages_filtered`
-  (migration `20261112020000`), one call for every readable channel. It takes each channel's
+  (migration `20261112131300`), one call for every readable channel. It takes each channel's
   newest 10 matches through a `(channel_id, created_at desc)` index, a walk that stops at 10,
   and keeps the newest 10 overall. A rare trait has its own index so that walk does not read a
   whole channel to find nothing: `poll` and `link` each have a partial index holding only their
