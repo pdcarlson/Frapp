@@ -546,7 +546,7 @@ function ChatAdminBody({
       toast({
         variant: "destructive",
         description:
-          "Add a tier or role to each chosen list, or pick Everyone.",
+          "Add a tier, role or group to each chosen list, or pick Everyone.",
       });
       return;
     }

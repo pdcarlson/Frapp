@@ -193,6 +193,15 @@ export const MEMBER_ORDER_NUMBER_MAX = 1_000_000;
 export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
 
 /**
+ * Groups (#4076). The name bound mirrors the CHECK constraint in
+ * `20261113040002_chapter_groups.sql`; the counts are API-side caps on one
+ * chapter's manual groups and one `PUT /v1/groups/:id/members`.
+ */
+export const GROUP_NAME_MAX_LENGTH = 80;
+export const GROUPS_MAX = 200;
+export const GROUP_MEMBERS_MAX = 2_000;
+
+/**
  * Event types (#3730). The name bound mirrors the CHECK constraint in
  * `20261111200000_event_types.sql`; the count is an API-side cap on one
  * chapter's list, which the New event form shows whole.

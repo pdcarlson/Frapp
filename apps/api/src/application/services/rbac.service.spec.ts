@@ -7,6 +7,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RbacService } from './rbac.service';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import {
+  createChapterGroupRepoMock,
+  type ChapterGroupRepoMock,
+} from '#test/helpers/chapter-group-repo.mock';
 import {
   ROLE_TIER_REPOSITORY,
   type IRoleTierRepository,
@@ -45,6 +50,7 @@ describe('RbacService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockChapterAuditLogService: AuditLogServiceMock;
+  let mockGroupRepo: ChapterGroupRepoMock;
   let mockTierRepo: jest.Mocked<IRoleTierRepository>;
 
   beforeEach(async () => {
@@ -96,6 +102,7 @@ describe('RbacService', () => {
     };
 
     mockChapterAuditLogService = createAuditLogServiceMock();
+    mockGroupRepo = createChapterGroupRepoMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -108,6 +115,7 @@ describe('RbacService', () => {
           provide: ChapterAuditLogService,
           useValue: mockChapterAuditLogService,
         },
+        { provide: CHAPTER_GROUP_REPOSITORY, useValue: mockGroupRepo },
       ],
     }).compile();
 
@@ -967,6 +975,7 @@ describe('RbacService', () => {
       position: position as number,
       name: id as string,
       permissions: [],
+      mentionable: true,
       created_at: '2026-11-11T00:00:00Z',
       updated_at: '2026-11-11T00:00:00Z',
     }));
@@ -1936,11 +1945,10 @@ describe('RbacService', () => {
         roleFixture({ id: 'r-pres', chapter_id: 'ch-1', permissions: ['*'] }),
       ]);
 
-      const holder = await service.getChannelAccessHolder('ch-1', [
-        'r-officer',
-        'r-alumni',
-        'r-pres',
-      ]);
+      const holder = await service.getChannelAccessHolder('ch-1', {
+        user_id: 'u-1',
+        role_ids: ['r-officer', 'r-alumni', 'r-pres'],
+      });
 
       expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
         ['r-officer', 'r-alumni', 'r-pres'],
@@ -1967,18 +1975,69 @@ describe('RbacService', () => {
         }),
       ]);
 
-      const holder = await service.getChannelAccessHolder('ch-1', [
-        'r-foreign',
-      ]);
+      const holder = await service.getChannelAccessHolder('ch-1', {
+        user_id: 'u-1',
+        role_ids: ['r-foreign'],
+      });
 
       expect(holder).toEqual(EMPTY_ACCESS_HOLDER);
     });
 
     it('reads nothing for a member with no roles', async () => {
-      await expect(service.getChannelAccessHolder('ch-1', [])).resolves.toBe(
-        EMPTY_ACCESS_HOLDER,
-      );
+      await expect(
+        service.getChannelAccessHolder('ch-1', {
+          user_id: 'u-1',
+          role_ids: [],
+        }),
+      ).resolves.toBe(EMPTY_ACCESS_HOLDER);
       expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+      expect(mockGroupRepo.findGroupIdsForUser).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing for no membership', async () => {
+      await expect(
+        service.getChannelAccessHolder('ch-1', null, true),
+      ).resolves.toBe(EMPTY_ACCESS_HOLDER);
+      expect(mockGroupRepo.findGroupIdsForUser).not.toHaveBeenCalled();
+    });
+
+    it('adds the groups a member is in only when asked (#4076)', async () => {
+      mockRoleRepo.findByIds.mockResolvedValue([
+        roleFixture({ id: 'r-officer', chapter_id: 'ch-1', tier_id: null }),
+      ]);
+      mockGroupRepo.findGroupIdsForUser.mockResolvedValue(['g-floor']);
+
+      const without = await service.getChannelAccessHolder('ch-1', {
+        user_id: 'u-1',
+        role_ids: ['r-officer'],
+      });
+      expect(mockGroupRepo.findGroupIdsForUser).not.toHaveBeenCalled();
+      expect(without.entries).toEqual(new Set(['role:r-officer']));
+
+      const withGroups = await service.getChannelAccessHolder(
+        'ch-1',
+        { user_id: 'u-1', role_ids: ['r-officer'] },
+        true,
+      );
+      expect(mockGroupRepo.findGroupIdsForUser).toHaveBeenCalledWith(
+        'ch-1',
+        'u-1',
+      );
+      expect(withGroups.entries).toEqual(
+        new Set(['role:r-officer', 'group:g-floor']),
+      );
+      expect(withGroups.wildcard).toBe(false);
+      expect(withGroups.alumniEntries).toBeNull();
+    });
+
+    it('gives a member with no roles their groups', async () => {
+      mockGroupRepo.findGroupIdsForUser.mockResolvedValue(['g-floor']);
+      const holder = await service.getChannelAccessHolder(
+        'ch-1',
+        { user_id: 'u-1', role_ids: [] },
+        true,
+      );
+      expect(holder.entries).toEqual(new Set(['group:g-floor']));
     });
   });
 

@@ -39,6 +39,8 @@ import { ChannelAccessListService } from '../../src/application/services/channel
 import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import { createChapterGroupRepoMock } from './chapter-group-repo.mock';
 import { ChatBlockService } from '../../src/application/services/chat-block.service';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChannelCacheService } from '../../src/application/services/channel-cache.service';
@@ -229,6 +231,8 @@ export async function createChatServiceFixture() {
     deleteChapterLevel: jest.fn(),
   };
 
+  const mockGroupRepo = createChapterGroupRepoMock();
+
   const mockChannelCache = {
     get: jest.fn(),
     set: jest.fn(),
@@ -333,6 +337,7 @@ export async function createChatServiceFixture() {
       ChannelAccessListService,
       { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
       { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
+      { provide: CHAPTER_GROUP_REPOSITORY, useValue: mockGroupRepo },
       {
         provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
         useValue: mockChatNotificationPrefs,
@@ -366,6 +371,7 @@ export async function createChatServiceFixture() {
     mockRbac,
     mockRoleRepo,
     mockTierRepo,
+    mockGroupRepo,
     mockChatBlocks,
     mockReportRepo,
     mockThreadRepo,

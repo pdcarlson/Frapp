@@ -11,6 +11,8 @@ import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.inte
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import { SupabaseRoleTierRepository } from '../../infrastructure/supabase/repositories/supabase-role-tier.repository';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import { SupabaseChapterGroupRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-group.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import {
@@ -40,6 +42,11 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
     { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
+    // Groups (#4076): RbacService reads who is in them for channel lists.
+    {
+      provide: CHAPTER_GROUP_REPOSITORY,
+      useClass: SupabaseChapterGroupRepository,
+    },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     // Chapter creation seeds the default channels and onboarding posts the
@@ -65,6 +72,7 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     CHAPTER_REPOSITORY,
     ROLE_REPOSITORY,
     ROLE_TIER_REPOSITORY,
+    CHAPTER_GROUP_REPOSITORY,
     MEMBER_REPOSITORY,
   ],
 })

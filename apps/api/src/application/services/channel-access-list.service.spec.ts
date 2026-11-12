@@ -1,3 +1,5 @@
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
+import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
 import type { Role } from '#domain/entities/role.entity';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
@@ -45,11 +47,74 @@ describe('ChannelAccessListService.listOptions', () => {
           ]),
       } as unknown as IMemberRepository,
       {} as IChatCategoryRepository,
+      createChapterGroupRepoMock(),
     );
 
     const options = await service.listOptions('ch-1');
     expect(
       Object.fromEntries(options.map((option) => [option.name, option.hidden])),
     ).toEqual({ Everyone: true, 'Rush Chair': false });
+  });
+});
+
+describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
+  it('offers groups after tiers and roles with who is in them, hiding an automatic one nobody is in', async () => {
+    const groups = createChapterGroupRepoMock();
+    const group = (id: string, name: string, kind: string) => ({
+      id,
+      chapter_id: 'ch-1',
+      kind,
+      name,
+      color: null,
+      mentionable: true,
+      pledge_class_id: kind === 'pledge_class' ? `pc-${id}` : null,
+      class_year: null,
+      created_at: '2026-11-12T00:00:00Z',
+      updated_at: '2026-11-12T00:00:00Z',
+    });
+    groups.findByChapter.mockImplementation(async () => [
+      group('g-class', 'Alpha', 'pledge_class'),
+      group('g-empty', 'Beta', 'pledge_class'),
+      group('g-floor', 'Third floor', 'manual'),
+      { ...group('g-other', 'Elsewhere', 'manual'), chapter_id: 'ch-2' },
+    ]);
+    groups.findMemberships.mockResolvedValue([
+      { chapter_id: 'ch-1', group_id: 'g-class', user_id: 'u2' },
+      { chapter_id: 'ch-1', group_id: 'g-class', user_id: 'u1' },
+    ]);
+    const service = new ChannelAccessListService(
+      {
+        findByChapter: jest.fn().mockResolvedValue([role('r-chair', 'Chair')]),
+      } as unknown as IRoleRepository,
+      {
+        findByChapter: jest.fn().mockResolvedValue([]),
+      } as unknown as IRoleTierRepository,
+      {
+        findByChapter: jest.fn().mockResolvedValue([]),
+      } as unknown as IMemberRepository,
+      {} as IChatCategoryRepository,
+      groups,
+    );
+
+    const options = await service.listOptions('ch-1');
+
+    expect(
+      options.map(({ entry, kind, user_ids, hidden }) => ({
+        entry,
+        kind,
+        user_ids,
+        hidden,
+      })),
+    ).toEqual([
+      { entry: 'role:r-chair', kind: 'role', user_ids: [], hidden: false },
+      { entry: 'group:g-floor', kind: 'group', user_ids: [], hidden: false },
+      {
+        entry: 'group:g-class',
+        kind: 'group',
+        user_ids: ['u1', 'u2'],
+        hidden: false,
+      },
+      { entry: 'group:g-empty', kind: 'group', user_ids: [], hidden: true },
+    ]);
   });
 });

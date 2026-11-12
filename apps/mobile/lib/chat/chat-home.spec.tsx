@@ -1308,7 +1308,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(updateMutateAsync).not.toHaveBeenCalled();
     expect(
       form.findByProps({ accessibilityLiveRegion: "polite" }).props.children,
-    ).toBe("Add a tier or role to each chosen list, or pick Everyone.");
+    ).toBe("Add a tier, role or group to each chosen list, or pick Everyone.");
 
     act(() => access().props.onChange(["tier:exec"]));
     updateMutateAsync.mockResolvedValue(undefined);

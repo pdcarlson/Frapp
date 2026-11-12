@@ -448,6 +448,49 @@ describe("resolveMentions with roles", () => {
     expect(resolveMentions("@VicePresident", roster, [VP, twin])).toEqual([]);
   });
 
+  it("reaches a tier and a role sharing a name together (#4076)", () => {
+    const tier: MentionRole = {
+      ...OFFICERS,
+      role_id: "tier-officers",
+      kind: "tier",
+      member_ids: [JANE.user_id],
+    };
+    const role: MentionRole = {
+      ...OFFICERS,
+      kind: "role",
+      member_ids: [BOB.user_id],
+    };
+    expect(resolveMentions("@Officers", roster, [role, tier]).sort()).toEqual(
+      [BOB.user_id, JANE.user_id].sort(),
+    );
+  });
+
+  it("leaves out the shared-name sets this sender may not ping", () => {
+    const tier: MentionRole = {
+      ...OFFICERS,
+      role_id: "tier-officers",
+      kind: "tier",
+      member_ids: [JANE.user_id],
+      mentionable: false,
+    };
+    const group: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-officers",
+      kind: "group",
+      member_ids: [BOB.user_id],
+    };
+    expect(resolveMentions("@Officers", roster, [tier, group])).toEqual([
+      BOB.user_id,
+    ]);
+    // None allowed: the token is still consumed, so no member takes it.
+    expect(
+      resolveMentions("@Officers", roster, [
+        tier,
+        { ...group, mentionable: false },
+      ]),
+    ).toEqual([]);
+  });
+
   it("never reaches a role holder outside the roster it was given", () => {
     const stranger: MentionRole = {
       ...OFFICERS,
@@ -805,9 +848,9 @@ describe("names with spaces (#3825)", () => {
   });
 
   it("reads a known name as one token, as written", () => {
-    expect(
-      findMentionSpans("hey @winston hewitt, you in?", { names }),
-    ).toEqual([{ start: 4, end: 19, token: "winston hewitt" }]);
+    expect(findMentionSpans("hey @winston hewitt, you in?", { names })).toEqual(
+      [{ start: 4, end: 19, token: "winston hewitt" }],
+    );
   });
 
   it("still stops at whitespace without the names, as every body did before", () => {
@@ -897,14 +940,17 @@ describe("names with spaces (#3825)", () => {
         mentionable: true,
       },
     ];
-    expect(resolveMentions("@Vice President", [...chapter, vice], roles)).toEqual(
-      ["u-vice"],
-    );
+    expect(
+      resolveMentions("@Vice President", [...chapter, vice], roles),
+    ).toEqual(["u-vice"]);
   });
 
   describe("a spaced name next to someone the first word names", () => {
     const JORDAN = { user_id: "u-jordan", display_name: "Jordan" };
-    const JORDAN_WILL = { user_id: "u-jordan-will", display_name: "Jordan Will" };
+    const JORDAN_WILL = {
+      user_id: "u-jordan-will",
+      display_name: "Jordan Will",
+    };
     const both = [JORDAN, JORDAN_WILL, JANE];
 
     it("leaves prose after a one-word name alone", () => {
@@ -943,8 +989,18 @@ describe("names with spaces (#3825)", () => {
     it("reads a send's tokens once, for the resolver and the permission pre-read", () => {
       // An empty "Vice President" role must not hide a held "Vice" role.
       const roles: MentionRole[] = [
-        { role_id: "r-v", name: "Vice", member_ids: ["u-sam"], mentionable: false },
-        { role_id: "r-vp", name: "Vice President", member_ids: [], mentionable: true },
+        {
+          role_id: "r-v",
+          name: "Vice",
+          member_ids: ["u-sam"],
+          mentionable: false,
+        },
+        {
+          role_id: "r-vp",
+          name: "Vice President",
+          member_ids: [],
+          mentionable: true,
+        },
       ];
       expect(
         extractMentionTokens(

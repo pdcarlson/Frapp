@@ -35,7 +35,7 @@ export function channelAccessSummaryLine(
       : "Everyone who can see it can post.";
   }
   if (value.length === 0) {
-    return `Pick a tier or role. Until you do, only the President can ${verb}.`;
+    return `Pick a tier, role or group. Until you do, only the President can ${verb}.`;
   }
   return optionsReady
     ? `Reaches ${peopleCount(channelAccessReach(value, options))}. The President can always ${verb}.`

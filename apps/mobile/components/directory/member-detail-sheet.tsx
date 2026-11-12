@@ -17,10 +17,12 @@ import {
   useMemberDisplayNames,
   usePermissionList,
   useRemoveMember,
+  groupsOfMember,
+  useGroups,
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import { can, resolveRoleChips } from "@repo/validation";
+import { can, resolveRoleChips, roleColorOrNull } from "@repo/validation";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
 import { StatusDot } from "@/components/account/status-dot";
@@ -208,6 +210,11 @@ export const MemberDetailSheet = forwardRef<
   const roleChips = useMemo(
     () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
+  );
+  const groupsQuery = useGroups({ enabled: !!userId });
+  const memberGroups = useMemo(
+    () => groupsOfMember(groupsQuery.data, userId),
+    [groupsQuery.data, userId],
   );
 
   const canEditRoles = can("roles:manage", permissions);
@@ -607,6 +614,47 @@ export const MemberDetailSheet = forwardRef<
                   <Text style={styles.meta}>No roles</Text>
                 )}
               </View>
+
+              {/*
+                Groups (#4076): read-only here, as Slack's profile lists a
+                person's user groups; officers edit them in Chapter settings
+                on web. Left out until the list loads, and on a failed read,
+                rather than claiming "No groups".
+              */}
+              {groupsQuery.data ? (
+                <View style={styles.rolesBlock}>
+                  <View style={styles.rolesHeader}>
+                    <Text
+                      style={styles.sectionLabel}
+                      accessibilityRole="header"
+                    >
+                      Groups
+                    </Text>
+                  </View>
+                  {memberGroups.length > 0 ? (
+                    <View style={styles.chips}>
+                      {memberGroups.map((group) => {
+                        const hex = roleColorOrNull(group.color);
+                        return (
+                          <View key={group.id} style={styles.chip}>
+                            <View
+                              style={[
+                                styles.chipDot,
+                                hex
+                                  ? { backgroundColor: hex }
+                                  : styles.chipDotPlain,
+                              ]}
+                            />
+                            <Text style={styles.chipText}>{group.name}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.meta}>No groups</Text>
+                  )}
+                </View>
+              ) : null}
 
               {classRows.length > 0 ? (
                 <ListSection>

@@ -164,8 +164,8 @@ export function ChannelAccessField({
           <p className="text-caption text-muted-foreground" aria-live="polite">
             {chosen.length === 0
               ? question === "see"
-                ? "Add a tier or role. Until you do, only the President can see it."
-                : "Add a tier or role. Until you do, only the President can post."
+                ? "Add a tier, role or group. Until you do, only the President can see it."
+                : "Add a tier, role or group. Until you do, only the President can post."
               : optionsState === "ready"
                 ? `Reaches ${peopleCount(channelAccessReach(chosen, options))}. The President can always ${question === "see" ? "see it" : "post"}.`
                 : `The President can always ${question === "see" ? "see it" : "post"}.`}
@@ -249,6 +249,13 @@ function AddEntry({
   const kinds = [...new Set(shown.map((option) => option.kind))].sort(
     compareChannelAccessKinds,
   );
+  // "Find a tier, role or group", naming only what this picker offers: the
+  // module Who can lists hold tiers and roles, never groups (#4076).
+  const findLabel = `Find a ${orList(
+    [...new Set(options.map((option) => option.kind))]
+      .sort(compareChannelAccessKinds)
+      .map((kind) => kind.toLowerCase()),
+  )}`;
   const close = () => {
     setOpen(false);
     setQuery("");
@@ -290,13 +297,13 @@ function AddEntry({
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder="Find a tier or role"
+            placeholder={findLabel}
             className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
           />
           <CommandList className="max-h-72 p-1">
             {optionsState === "loading" ? (
               <p role="status" className="px-2 py-3 text-sm text-muted">
-                Loading tiers and roles
+                Loading who you can add
               </p>
             ) : optionsState === "error" ? (
               <p role="status" className="px-2 py-3 text-sm text-muted">
@@ -343,4 +350,10 @@ function AddEntry({
       </PopoverContent>
     </Popover>
   );
+}
+
+/** "tier, role or group": a list read as alternatives. */
+function orList(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? "tier or role";
+  return `${words.slice(0, -1).join(", ")} or ${words.at(-1)}`;
 }

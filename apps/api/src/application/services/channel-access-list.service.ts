@@ -17,27 +17,31 @@ import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
 import { CHAT_CATEGORY_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatCategoryRepository } from '#domain/repositories/chat.repository.interface';
 import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+import { withMembers } from './chapter-group.service';
 
 /** One thing a who-can-see or who-can-post list can name, as the editor offers it. */
 export interface ChannelAccessOption {
-  /** The entry as stored: `tier:<id>` or `role:<id>`. */
+  /** The entry as stored: `tier:<id>`, `role:<id>` or `group:<id>`. */
   entry: string;
-  kind: 'tier' | 'role';
+  kind: 'tier' | 'role' | 'group';
   id: string;
   name: string;
-  /** A role's color; `null` for a tier and an uncolored role. */
+  /** A role's or group's color; `null` for a tier and an uncolored one. */
   color: string | null;
   /** For a role, its tier (`null` outside the tiers); always `null` for a tier. */
   tier_id: string | null;
   /** The `users.id` of every member it names, so the editor can count who a list reaches. */
   user_ids: string[];
   /**
-   * The Everyone role (#4191): not offered to add, since it names only the
-   * members whose rows hold it, not everyone; a list that already names it
-   * still shows it. `false` for every other option.
+   * Not offered to add, though a list that already names it still shows it:
+   * the Everyone role (#4191), which names only the members whose rows hold
+   * it, not everyone; and an automatic group nobody is in (#4076), a class
+   * year everyone left. `false` for every other option.
    */
   hidden: boolean;
 }
@@ -80,9 +84,8 @@ const LISTED_TYPES: ReadonlySet<ChannelType> = new Set([
  * hold (#3722), and the check every write of one goes through.
  *
  * The options are tiers first (highest first), then roles in the chapter's
- * role order: the two kinds the lists take today. Groups (#4076) add their
- * own kind here and in `CHANNEL_ACCESS_ENTRY_KINDS`; the editor groups by
- * `kind`, so it needs no change to show them.
+ * role order, then groups (#4076): manual ones, pledge classes, class years.
+ * The editor groups by `kind`.
  */
 @Injectable()
 export class ChannelAccessListService {
@@ -93,6 +96,8 @@ export class ChannelAccessListService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(CHAT_CATEGORY_REPOSITORY)
     private readonly categoryRepo: IChatCategoryRepository,
+    @Inject(CHAPTER_GROUP_REPOSITORY)
+    private readonly groupRepo: IChapterGroupRepository,
   ) {}
 
   /**
@@ -231,10 +236,12 @@ export class ChannelAccessListService {
   }
 
   async listOptions(chapterId: string): Promise<ChannelAccessOption[]> {
-    const [tiers, roles, members] = await Promise.all([
+    const [tiers, roles, members, groups, memberships] = await Promise.all([
       this.tierRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
       this.memberRepo.findByChapter(chapterId),
+      this.groupRepo.findByChapter(chapterId),
+      this.groupRepo.findMemberships(chapterId),
     ]);
     const chapterRoles = roles.filter((role) => role.chapter_id === chapterId);
     const tierOfRole = new Map(
@@ -259,6 +266,9 @@ export class ChannelAccessListService {
         const tierId = tierOfRole.get(roleId);
         if (tierId) hold(channelAccessEntry('tier', tierId), member.user_id);
       }
+    }
+    for (const { group_id, user_id } of memberships) {
+      hold(channelAccessEntry('group', group_id), user_id);
     }
     const usersOf = (entry: string) => [...(holdersOf.get(entry) ?? [])].sort();
 
@@ -296,12 +306,29 @@ export class ChannelAccessListService {
           hidden: role.system_key === SystemRoleKeys.MEMBER,
         };
       });
-    return [...tierOptions, ...roleOptions];
+    const groupOptions: ChannelAccessOption[] = withMembers(
+      groups.filter((group) => group.chapter_id === chapterId),
+      [],
+    ).map((group) => {
+      const entry = channelAccessEntry('group', group.id);
+      const userIds = usersOf(entry);
+      return {
+        entry,
+        kind: 'group',
+        id: group.id,
+        name: group.name,
+        color: group.color ?? null,
+        tier_id: null,
+        user_ids: userIds,
+        hidden: group.kind !== 'manual' && userIds.length === 0,
+      };
+    });
+    return [...tierOptions, ...roleOptions, ...groupOptions];
   }
 
   /**
    * Check the lists a write sends and return them as stored: sorted, without
-   * repeats, every entry naming a tier or role of this chapter. `undefined`
+   * repeats, every entry naming a tier, role or group of this chapter. `undefined`
    * stays `undefined` (leave it alone) and `null` stays `null` (everyone).
    *
    * An empty list is refused: it would admit nobody but `*`, which is never
@@ -329,7 +356,7 @@ export class ChannelAccessListService {
       }
       if (list.length > CHANNEL_ACCESS_LIST_MAX) {
         throw new BadRequestException(
-          `A list can name at most ${CHANNEL_ACCESS_LIST_MAX} tiers and roles`,
+          `A list can name at most ${CHANNEL_ACCESS_LIST_MAX} tiers, roles and groups`,
         );
       }
       entries.push(...list);
@@ -339,16 +366,19 @@ export class ChannelAccessListService {
       const parsed = entries.map((entry) => {
         const value = parseChannelAccessEntry(entry.toLowerCase());
         if (!value) {
-          throw new BadRequestException(`Not a tier or role: ${entry}`);
+          throw new BadRequestException(`Not a tier, role or group: ${entry}`);
         }
         return value;
       });
-      const [tiers, roles] = await Promise.all([
+      const [tiers, roles, groups] = await Promise.all([
         parsed.some((entry) => entry.kind === 'tier')
           ? this.tierRepo.findByChapter(chapterId)
           : Promise.resolve([]),
         parsed.some((entry) => entry.kind === 'role')
           ? this.roleRepo.findByChapter(chapterId)
+          : Promise.resolve([]),
+        parsed.some((entry) => entry.kind === 'group')
+          ? this.groupRepo.findByChapter(chapterId)
           : Promise.resolve([]),
       ]);
       const known = new Set([
@@ -358,6 +388,9 @@ export class ChannelAccessListService {
         ...roles
           .filter((role) => role.chapter_id === chapterId)
           .map((role) => channelAccessEntry('role', role.id)),
+        ...groups
+          .filter((group) => group.chapter_id === chapterId)
+          .map((group) => channelAccessEntry('group', group.id)),
       ]);
       for (const { kind, id } of parsed) {
         if (!known.has(channelAccessEntry(kind, id))) {

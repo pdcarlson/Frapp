@@ -196,6 +196,68 @@ create trigger trg_chapter_group_members_manual_only
   before insert or update on public.chapter_group_members
   for each row execute function public.chapter_group_members_manual_only();
 
+-- Set a manual group's members to exactly `p_user_ids`, in one transaction
+-- (`PUT /v1/groups/:id/members`). Refuses with no_data_found when the group
+-- isn't a manual group of the chapter, and with the member foreign key's
+-- foreign_key_violation when someone listed isn't a member of the chapter;
+-- either way nothing changes. Returns the members after.
+create or replace function public.set_chapter_group_members(
+  p_chapter_id uuid,
+  p_group_id uuid,
+  p_user_ids uuid[]
+)
+returns setof uuid
+language plpgsql
+volatile
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  perform 1
+     from public.chapter_groups g
+    where g.id = p_group_id
+      and g.chapter_id = p_chapter_id
+      and g.kind = 'manual'
+      for update;
+  if not found then
+    raise exception 'set_chapter_group_members: no manual group % in chapter %',
+      p_group_id, p_chapter_id
+      using errcode = 'no_data_found';
+  end if;
+
+  delete from public.chapter_group_members gm
+   where gm.group_id = p_group_id
+     and gm.user_id <> all (coalesce(p_user_ids, '{}'::uuid[]));
+
+  insert into public.chapter_group_members (group_id, chapter_id, user_id)
+  select distinct p_group_id, p_chapter_id, u
+    from unnest(coalesce(p_user_ids, '{}'::uuid[])) as u
+  on conflict (group_id, user_id) do nothing;
+
+  return query
+    select gm.user_id
+      from public.chapter_group_members gm
+     where gm.group_id = p_group_id
+     order by gm.user_id;
+end;
+$$;
+
+revoke all on function public.set_chapter_group_members(uuid, uuid, uuid[])
+  from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on function public.set_chapter_group_members(uuid, uuid, uuid[]) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on function public.set_chapter_group_members(uuid, uuid, uuid[]) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.set_chapter_group_members(uuid, uuid, uuid[]) to service_role;
+  end if;
+end
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 3. Who is in each group.
 -- ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ export * from "./chapter-query-keys";
 export * from "./chat-record-writes";
 export * from "./use-members";
 export * from "./member-avatar-color";
+export * from "./use-groups";
 export * from "./use-pledge-classes";
 export * from "./fraternal-order";
 export * from "./setup-checklist";

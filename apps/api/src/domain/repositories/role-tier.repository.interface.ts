@@ -15,7 +15,7 @@ export interface IRoleTierRepository {
   update(
     id: string,
     chapterId: string,
-    data: Pick<Partial<RoleTier>, 'name' | 'permissions'>,
+    data: Pick<Partial<RoleTier>, 'name' | 'permissions' | 'mentionable'>,
   ): Promise<RoleTier | null | undefined>;
   /**
    * Every tier of the chapter, in `ids` order, positions 1 to n. `'stale'`

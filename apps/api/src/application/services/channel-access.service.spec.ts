@@ -231,7 +231,8 @@ describe('ChannelAccessService', () => {
       ).resolves.toBe(roleGatedChannel);
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
 
       mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
@@ -357,7 +358,10 @@ describe('ChannelAccessService', () => {
         },
         { user_id: 'no-role', role_rank: null, role_id: null, role_name: null },
       ]);
-      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        false,
+      );
     });
 
     it('lists only who its who-can-see list names, and the wildcard', async () => {
@@ -601,7 +605,8 @@ describe('ChannelAccessService', () => {
 
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
     });
 

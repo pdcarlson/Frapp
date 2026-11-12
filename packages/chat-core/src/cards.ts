@@ -251,13 +251,18 @@ const AUDIT_ACTION_PHRASES: Record<string, string> = {
   role_tier_updated: "edited a tier",
   role_tier_deleted: "removed a tier",
   role_tiers_reordered: "reordered the tiers",
+  chapter_group_created: "added a group",
+  chapter_group_updated: "edited a group",
+  chapter_group_members_set: "changed who is in a group",
+  chapter_group_deleted: "removed a group",
   member_removed: "removed a member",
   member_profile_corrected: "edited a member's profile",
   presidency_transferred: "handed over the presidency",
   presidency_claimed: "claimed the presidency",
   president_orphaned: "left the chapter without a president",
   ai_settings_updated: "changed the AI settings",
-  ai_diagnostics_started: "turned on saving Ask Frapp answers for the Frapp team",
+  ai_diagnostics_started:
+    "turned on saving Ask Frapp answers for the Frapp team",
   ai_diagnostics_stopped: "turned off saving Ask Frapp answers",
 };
 

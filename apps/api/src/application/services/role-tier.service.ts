@@ -100,7 +100,8 @@ export class RoleTierService {
   }
 
   /**
-   * Rename a tier, set its permissions, or both. A new list rewrites every
+   * Rename a tier, set its permissions, switch whether anyone can `@` it
+   * (#4076), or any of them. A new list rewrites every
    * role in the tier in the same transaction (the database's tier trigger),
    * each with its own overrides applied.
    */
@@ -108,10 +109,15 @@ export class RoleTierService {
     tierId: string,
     chapterId: string,
     actorUserId: string,
-    data: { name?: string; permissions?: string[] },
+    data: { name?: string; permissions?: string[]; mentionable?: boolean },
   ): Promise<RoleTier> {
-    const changes: { name?: string; permissions?: string[] } = {};
+    const changes: {
+      name?: string;
+      permissions?: string[];
+      mentionable?: boolean;
+    } = {};
     if (data.name !== undefined) changes.name = tierName(data.name);
+    if (data.mentionable !== undefined) changes.mentionable = data.mentionable;
     if (data.permissions !== undefined) {
       changes.permissions = tierPermissions(data.permissions);
     }
@@ -277,6 +283,9 @@ function diffTier(before: RoleTier, after: RoleTier): Record<string, unknown> {
   const diff: Record<string, unknown> = {};
   if (before.name !== after.name) {
     diff.name = { from: before.name, to: after.name };
+  }
+  if (before.mentionable !== after.mentionable) {
+    diff.mentionable = { from: before.mentionable, to: after.mentionable };
   }
   const added = addedPermissions(before.permissions, after.permissions);
   const removed = addedPermissions(after.permissions, before.permissions);

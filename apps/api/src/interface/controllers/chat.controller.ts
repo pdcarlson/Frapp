@@ -177,7 +177,7 @@ export class ChatController {
   @Get('mention-roles')
   @ApiOperation({
     summary:
-      'The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each',
+      'The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each',
   })
   @ApiOkResponse({ type: MentionRoleDto, isArray: true })
   async getMentionRoles(
@@ -185,8 +185,9 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<MentionRoleDto[]> {
     const roles = await this.mentions.listMentionRoles(chapterId, userId);
-    return roles.map(({ role_id, name, color, mentionable }) => ({
+    return roles.map(({ role_id, kind, name, color, mentionable }) => ({
       role_id,
+      kind,
       name,
       color,
       mentionable,

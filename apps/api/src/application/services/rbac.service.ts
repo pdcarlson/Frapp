@@ -14,6 +14,8 @@ import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.inte
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
 import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
@@ -177,6 +179,8 @@ export class RbacService {
     @Inject(ROLE_TIER_REPOSITORY)
     private readonly tierRepo: IRoleTierRepository,
     private readonly chapterAuditLogService: ChapterAuditLogService,
+    @Inject(CHAPTER_GROUP_REPOSITORY)
+    private readonly groupRepo: IChapterGroupRepository,
   ) {}
 
   /**
@@ -1019,15 +1023,33 @@ export class RbacService {
    * `roles`, re-scoped to the chapter, so a stale or foreign id in
    * `role_ids` contributes nothing. The chat hot path calls it only when a
    * list or the Alumni rule can decide (`needsAccessHolder`).
+   *
+   * `withGroups` adds the groups they are in (#4076), a second read in
+   * parallel. A caller passes `listsNameGroups` of the channels it decides,
+   * so a channel no list of which names a group costs nothing more; without
+   * them a `group:` entry admits nobody but `*` (fails closed).
    */
   async getChannelAccessHolder(
     chapterId: string,
-    roleIds: readonly string[] | null | undefined,
+    member: Pick<Member, 'user_id' | 'role_ids'> | null | undefined,
+    withGroups = false,
   ): Promise<ChannelAccessHolder> {
-    if (!roleIds?.length) return EMPTY_ACCESS_HOLDER;
-    const roles = await this.roleRepo.findByIds([...roleIds], chapterId);
+    if (!member) return EMPTY_ACCESS_HOLDER;
+    const roleIds = member.role_ids ?? [];
+    const [roles, groupIds] = await Promise.all([
+      roleIds.length > 0
+        ? this.roleRepo.findByIds([...roleIds], chapterId)
+        : Promise.resolve([]),
+      withGroups
+        ? this.groupRepo.findGroupIdsForUser(chapterId, member.user_id)
+        : Promise.resolve([]),
+    ]);
+    if (roles.length === 0 && groupIds.length === 0) {
+      return EMPTY_ACCESS_HOLDER;
+    }
     return accessHolderFromRoles(
       roles.filter((role) => role.chapter_id === chapterId),
+      groupIds,
     );
   }
 
@@ -1098,14 +1120,28 @@ export class RbacService {
    * nothing, exactly as the per-member resolver's `findByIds(ids, chapterId)`
    * guarantees. A user with two membership rows (the read is not keyed on
    * user) gets one entry with both rows' roles unioned.
+   *
+   * `withGroups` also reads who is in each group (#4076), so `channel_access`
+   * carries `group:` entries: the push audience and the channel member list
+   * pass it for a channel whose lists name a group (`listsNameGroups`).
    */
   async getChapterMemberAccess(
     chapterId: string,
+    withGroups = false,
   ): Promise<ChapterMemberAccess[]> {
-    const [members, roles] = await Promise.all([
+    const [members, roles, memberships] = await Promise.all([
       this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
+      withGroups
+        ? this.groupRepo.findMemberships(chapterId)
+        : Promise.resolve([]),
     ]);
+    const groupsOf = new Map<string, string[]>();
+    for (const { user_id, group_id } of memberships) {
+      const list = groupsOf.get(user_id);
+      if (list) list.push(group_id);
+      else groupsOf.set(user_id, [group_id]);
+    }
 
     const roleById = new Map(
       roles
@@ -1147,7 +1183,10 @@ export class RbacService {
               ...(isEveryoneRole(top) ? { everyone: true } : {}),
             }
           : null,
-        channel_access: accessHolderFromRoles(liveRoles),
+        channel_access: accessHolderFromRoles(
+          liveRoles,
+          groupsOf.get(userId) ?? [],
+        ),
       };
     });
   }

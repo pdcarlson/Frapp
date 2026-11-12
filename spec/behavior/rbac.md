@@ -14,6 +14,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `events:delete`       | Delete events                                          |
 | `members:invite`      | Invite members by email or link, and revoke invites    |
 | `members:remove`      | Remove members from the chapter                        |
+| `groups:manage`       | Create, rename and delete groups, choose who is in them, and switch their ping ([`members.md` § Groups](members.md#groups), #4076) |
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
 | `points:view_all`     | View all members' transactions (not just own)          |
@@ -86,7 +87,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - The **member defaults** (Paul, 2026-11-07, #3709: start from social trust and let chapters tighten it) are `members:view`, `events:create`, `backwork:upload`, `service:log`, `polls:create`, and the six member recruitment keys (`rush:view`, `rush:add`, `rush:notes`, `rush:vote`, `rush:view_results`, `rush:bid`; [`rush.md`](rush.md#permissions)). Each of the top three tiers gives them, so an officer invited straight into their own role (who then holds no Everyone role) can do what the members they lead can. `events:create` puts an event on the calendar; making anyone required and attaching points take `events:update` ([`events.md`](events.md#event-creation)).
   - **Exec board** (tier 1) gives its roles the member defaults, `events:update` and `events:delete` (edit and delete any event, which is what makes one required or worth points, #3709), `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887), `meetings:record` (starting minutes, #4312), the officer defaults below, and `roles:manage`, `chapter-config:view` and `chapter-config:manage`. In it: **President** (also `*`, as an override), **Vice President** and **Secretary** (nothing beyond the tier), and **Treasurer** (also `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `reports:export`, `events:create`, `events:update`, as overrides, kept from before tiers so a chapter that takes an event key off the tier doesn't take it from the Treasurer).
   - **Officers and chairs** (tier 2) gives the member defaults and the officer defaults. No role is seeded into it; it is where a chapter puts its chairs.
-  - The **officer defaults** (Paul, 2026-11-10, #4068 decision 9) are `service:approve`, `announcements:post`, `tasks:manage`, `channels:create` and `channels:manage`. They reach chapters created from #4071's second PR on; no existing chapter gained them, and granting them there is each chapter's own choice (#3858 is Paul's own chapter). `roles:manage` on the whole top tier is safe because of the [rank rules](#rank): the Vice President cannot edit the President's role, a fellow officer's, or the Exec board itself.
+  - The **officer defaults** (Paul, 2026-11-10, #4068 decision 9) are `service:approve`, `announcements:post`, `tasks:manage`, `channels:create` and `channels:manage`, and since #4076 `groups:manage` (which migration `20261113040002` also gave every existing tier and role holding `roles:manage` or `channels:manage`). They reach chapters created from #4071's second PR on; no existing chapter gained them, and granting them there is each chapter's own choice (#3858 is Paul's own chapter). `roles:manage` on the whole top tier is safe because of the [rank rules](#rank): the Vice President cannot edit the President's role, a fellow officer's, or the Exec board itself.
   - **Members** (tier 3) gives the member defaults. In it: **Everyone** ([The Everyone role](#the-everyone-role)).
   - **New members** (tier 4) gives `members:view`, `backwork:upload`. In it: **New Member**.
   - **Every starting tier** also gives `ai:use` (#4308, 2026-11-12), so every active member can use the AI features the president turns on, once they say yes on the AI sheet. Chapters created before that hold it only through the President's `*`, until they grant it.
@@ -160,6 +161,14 @@ Every write below takes `roles:manage` and the [rank rules](#rank); reading take
 - **`PATCH /v1/roles/:id`** takes `tier_id` (a tier of the chapter, or `null` for outside the tiers) and `permission_overrides`, merged into what the role has: `true` switches a permission on for the role, `false` switches it off, `null` clears the override so the tier decides. One request sends either these or a whole `permissions` list, not both (`400`). The wildcard is never an override a request can set, clear or flip.
 - **`POST /v1/roles`** takes an optional `tier_id`. A role created with a list holds exactly that list; one created with an empty list takes its tier's.
 - Each tier change writes a `chapter_audit_log` row (`role_tier_created`, `role_tier_updated`, `role_tier_deleted`, `role_tiers_reordered`) mirrored to `#chapter-audit`; a role's move and its override changes are in its `role_updated` row (`tier_id` and `permission_overrides`, each from and to).
+
+### Tiers can be pinged
+
+Paul and Shawn, 2026-11-11 (#4076): a tier's name is a mention. `@<tier name>` reaches everyone holding any role in the tier, and each tier carries a `mentionable` switch, on by default, with a role's rule ([`chat/README.md` § Role mentions](chat/README.md#role-mentions)). It is set on the tier's page under Roles by anyone who can edit that tier.
+
+### Groups are not roles
+
+A group ([`members.md` § Groups](members.md#groups)) is a named set of members with no permissions, kept apart from roles in its own table so that nothing granting access can be attached to one. `groups:manage` manages them. A group can stand on a channel's who-can-see and who-can-post lists (`group:<id>`), which is the one thing it opens.
 
 ## Rank
 

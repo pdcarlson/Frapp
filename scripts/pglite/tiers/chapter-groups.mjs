@@ -77,8 +77,7 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
       )
     ).map((r) => r.user_id);
   const groupId = async (where, params) =>
-    (await rows(`select id from chapter_groups where ${where}`, params))[0]
-      ?.id;
+    (await rows(`select id from chapter_groups where ${where}`, params))[0]?.id;
   const canRead = async (auth) => {
     await setAuth({ uid: auth, jwtRole: "authenticated" });
     const ok = (await rows(`select can_read_chat_channel($1) as ok`, [CHAN]))[0]
@@ -144,9 +143,13 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
     const alphaName = (
       await rows(`select name from chapter_groups where id = $1`, [alpha])
     )[0]?.name;
-    check("a renamed pledge class renames its group", alphaName === "Alpha Alpha", {
-      alphaName,
-    });
+    check(
+      "a renamed pledge class renames its group",
+      alphaName === "Alpha Alpha",
+      {
+        alphaName,
+      },
+    );
 
     const y2027 = await groupId(`chapter_id = $1 and class_year = 2027`, [CH]);
     const y2028 = await groupId(`chapter_id = $1 and class_year = 2028`, [CH]);
@@ -156,10 +159,10 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
       y2028: await membersOf(y2028),
     };
     // The data changes: U2 joins Alpha, U1 moves to 2028, U3 fixes their year.
-    await db.query(`update members set pledge_class_id = $1 where user_id = $2`, [
-      PC_ALPHA,
-      U(2),
-    ]);
+    await db.query(
+      `update members set pledge_class_id = $1 where user_id = $2`,
+      [PC_ALPHA, U(2)],
+    );
     await db.query(`update users set graduation_year = 2028 where id = $1`, [
       U(1),
     ]);
@@ -200,6 +203,33 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
       "a manual group's members are the ones picked",
       same(await membersOf(floor), [U(1), U(3)]),
       await membersOf(floor),
+    );
+    const setTo = async (ids) =>
+      (
+        await rows(`select set_chapter_group_members($1, $2, $3) as u`, [
+          CH,
+          floor,
+          ids,
+        ])
+      ).map((r) => r.u);
+    const replaced = await setTo([U(3), U(2), U(2)]);
+    const restored = await setTo([U(1), U(3)]);
+    check(
+      "set_chapter_group_members sets exactly the list, and refuses a non-member or an automatic group whole",
+      same(replaced, [U(2), U(3)]) &&
+        same(restored, [U(1), U(3)]) &&
+        (await refused(`select set_chapter_group_members($1, $2, $3)`, [
+          CH,
+          floor,
+          [U(2), "a4076000-0000-4000-8000-0000000000f9"],
+        ])) &&
+        (await refused(`select set_chapter_group_members($1, $2, $3)`, [
+          CH,
+          y2027,
+          [U(2)],
+        ])) &&
+        same(await membersOf(floor), [U(1), U(3)]),
+      { replaced, restored },
     );
     check(
       "only a manual group takes hand-picked members",
@@ -258,10 +288,10 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
     );
 
     // U1 leaves the chapter: out of the manual group too.
-    await db.query(`delete from members where user_id = $1 and chapter_id = $2`, [
-      U(1),
-      CH,
-    ]);
+    await db.query(
+      `delete from members where user_id = $1 and chapter_id = $2`,
+      [U(1), CH],
+    );
     check(
       "a member who leaves the chapter leaves its groups",
       same(await membersOf(floor), [U(3)]),
@@ -269,10 +299,10 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
     );
 
     // Deleting the group (or a pledge class) takes it off every list.
-    await db.query(
-      `update chat_channels set who_can_see = $2 where id = $1`,
-      [CHAN, [`group:${alpha}`, `group:${floor}`].sort()],
-    );
+    await db.query(`update chat_channels set who_can_see = $2 where id = $1`, [
+      CHAN,
+      [`group:${alpha}`, `group:${floor}`].sort(),
+    ]);
     await db.query(`delete from chapter_groups where id = $1`, [floor]);
     await db.query(`delete from chapter_pledge_classes where id = $1`, [
       PC_ALPHA,
