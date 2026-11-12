@@ -1,11 +1,47 @@
-import { Task, TaskSubtask } from '../entities/task.entity';
+import { Task, TaskStatus, TaskSubtask } from '../entities/task.entity';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
+/**
+ * Where a page of tasks resumes: the `created_at` and `id` of the last row of
+ * the page before. Both, because `created_at` alone ties (every row inserted
+ * in one transaction shares `now()`), and a tie at a page boundary would
+ * repeat or drop rows.
+ */
+export interface TaskListCursor {
+  created_at: string;
+  id: string;
+}
+
+/**
+ * Which of a chapter's tasks to read (#4037). Every filter is applied in SQL,
+ * on the stored status (never the display `OVERDUE`). Rows come newest first,
+ * `created_at` then `id`, a total order, so a page never repeats or skips one.
+ */
+export interface TaskListQuery {
+  /** Only this assignee's tasks. */
+  assigneeId?: string;
+  /** Leave out this assignee's tasks. */
+  notAssigneeId?: string;
+  /** Only tasks this member created. */
+  createdBy?: string;
+  /** Only tasks in this stored status. */
+  status?: TaskStatus;
+  /** `true`: only confirmed tasks; `false`: only unconfirmed ones. */
+  confirmed?: boolean;
+  /** Resume after this row. */
+  after?: TaskListCursor;
+  /**
+   * At most this many rows. Omitted: every matching row, read in pages so the
+   * database's row cap never cuts the list short.
+   */
+  limit?: number;
+}
+
 export interface ITaskRepository {
   findById(id: string, chapterId: string): Promise<Task | null>;
-  findByChapter(chapterId: string): Promise<Task[]>;
-  findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]>;
+  /** The chapter's tasks that match `query`, newest first. */
+  findByChapter(chapterId: string, query?: TaskListQuery): Promise<Task[]>;
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;
   /**

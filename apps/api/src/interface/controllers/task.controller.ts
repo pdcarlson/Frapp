@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -31,7 +32,10 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
+import { clampListLimit } from '#domain/constants/list-query-limits';
+import { parseBooleanQueryParam } from '../utils/query-boolean';
 import {
+  ListTasksQueryDto,
   CreateTaskDto,
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
@@ -56,17 +60,29 @@ export class TaskController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List tasks (own or all for admins)' })
+  @ApiOperation({
+    summary: 'List tasks (own or all for admins)',
+    description:
+      'Newest first, by `created_at` then `id`. Send `limit` (and, for the next page, `before` and `before_id` from the last task received) to page; a page shorter than `limit` is the last. With neither, every task is returned, as before paging existed.',
+  })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @Query() query: ListTasksQueryDto,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
       userId,
       [SystemPermissions.TASKS_MANAGE],
     );
-    return this.taskService.list(chapterId, userId, isAdmin);
+    const paged = query.limit !== undefined || query.before !== undefined;
+    return this.taskService.list(chapterId, userId, isAdmin, {
+      confirmed: parseBooleanQueryParam(query.confirmed),
+      ...(query.before && query.before_id
+        ? { after: { created_at: query.before, id: query.before_id } }
+        : {}),
+      ...(paged ? { limit: clampListLimit(query.limit) } : {}),
+    });
   }
 
   @Get(':id')

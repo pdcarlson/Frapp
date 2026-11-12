@@ -1,6 +1,7 @@
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
+import type { TaskListOptions } from './task.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
@@ -168,15 +169,35 @@ function servePolls(
   );
 }
 
-/** `TaskService.list` answers the caller's own tasks and the chapter-wide list separately. */
+/**
+ * `TaskService.list` answers the caller's own tasks and the chapter-wide list
+ * separately, each narrowed as the repository narrows it in SQL (#4037).
+ */
 function serveTasks(
   taskService: { list: jest.Mock },
   own: TaskView[],
   all: TaskView[] = [],
 ) {
   taskService.list.mockImplementation(
-    (_chapterId: string, _userId: string, isAdmin: boolean) =>
-      Promise.resolve(isAdmin ? all : own),
+    (
+      _chapterId: string,
+      _userId: string,
+      isAdmin: boolean,
+      options: TaskListOptions = {},
+    ) => {
+      const rows = (isAdmin ? all : own).filter(
+        (row) =>
+          (options.status === undefined ||
+            row.stored_status === options.status) &&
+          (options.confirmed === undefined ||
+            (row.confirmed_at !== null) === options.confirmed) &&
+          (options.createdBy === undefined ||
+            row.created_by === options.createdBy) &&
+          (options.notAssigneeId === undefined ||
+            row.assignee_id !== options.notAssigneeId),
+      );
+      return Promise.resolve(rows.slice(0, options.limit ?? rows.length));
+    },
   );
 }
 
@@ -512,7 +533,9 @@ describe('ActivityService', () => {
       const view = await service.getActivity(CHAPTER, ME, null);
 
       expect(taskService.list).toHaveBeenCalledTimes(1);
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, false);
+      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, false, {
+        confirmed: false,
+      });
       expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
         'sooner',
         'later',
@@ -591,7 +614,19 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true);
+      // Two filtered reads, never the chapter's whole history (#4037).
+      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
+        status: TaskStatus.COMPLETED,
+        confirmed: false,
+        notAssigneeId: ME,
+      });
+      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
+        createdBy: ME,
+        limit: 25,
+      });
+      for (const [, , , options] of taskService.list.mock.calls) {
+        expect(options).toBeDefined();
+      }
       expect(view.needs_you.task_confirmations.map((row) => row.id)).toEqual([
         'to-confirm',
       ]);

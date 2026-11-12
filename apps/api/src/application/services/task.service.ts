@@ -7,7 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
-import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import type {
+  ITaskRepository,
+  TaskListCursor,
+} from '#domain/repositories/task.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
@@ -66,6 +69,26 @@ function isPastDue(
 
 function toDisplayStatusList(tasks: Task[]): TaskView[] {
   return tasks.map((task) => toDisplayStatus(task));
+}
+
+/**
+ * Narrows and pages `TaskService.list` (#4037). With no `limit` and no
+ * `after`, the list is every matching task: what a build that sends no
+ * parameters reads.
+ */
+export interface TaskListOptions {
+  /** `true`: only confirmed tasks; `false`: only unconfirmed ones. */
+  confirmed?: boolean;
+  /** Only tasks in this stored status. */
+  status?: TaskStatus;
+  /** Only tasks this member created. */
+  createdBy?: string;
+  /** Leave out tasks assigned to this member. */
+  notAssigneeId?: string;
+  /** Resume after this row (the last of the page before). */
+  after?: TaskListCursor;
+  /** At most this many rows. */
+  limit?: number;
 }
 
 export interface CreateTaskInput {
@@ -260,14 +283,21 @@ export class TaskService {
     }
   }
 
+  /**
+   * The chapter's tasks for a `tasks:manage` holder, otherwise the caller's
+   * own, newest first, narrowed and paged by `options` (#4037).
+   */
   async list(
     chapterId: string,
     userId: string,
     isAdmin: boolean,
+    options: TaskListOptions = {},
   ): Promise<TaskView[]> {
-    const tasks = isAdmin
-      ? await this.taskRepo.findByChapter(chapterId)
-      : await this.taskRepo.findByAssignee(chapterId, userId);
+    const tasks = await this.taskRepo.findByChapter(chapterId, {
+      ...options,
+      // Last, so no option widens a member's read past their own tasks.
+      ...(isAdmin ? {} : { assigneeId: userId }),
+    });
     return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
   }
 

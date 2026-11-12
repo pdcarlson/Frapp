@@ -5,16 +5,27 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import type {
+  ITaskRepository,
+  TaskListQuery,
+} from '#domain/repositories/task.repository.interface';
 import {
   Task,
   TaskStatus,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { escapeFilterValue, fetchAllPages } from '../supabase.utils';
 
 /** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
 const SUBTASK_READ_BATCH = 100;
+
+/**
+ * Rows per request when a list is read whole. PostgREST's default cap; a
+ * hosted project set lower still reads every row, in more trips
+ * (`fetchAllPages`).
+ */
+const TASK_PAGE_SIZE = 1000;
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
@@ -34,25 +45,46 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return data;
   }
 
-  async findByChapter(chapterId: string): Promise<Task[]> {
-    const { data, error } = await this.supabase
-      .from('tasks')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
-    if (error) throw new SupabaseQueryError(error);
-    return data || [];
-  }
+  async findByChapter(
+    chapterId: string,
+    query: TaskListQuery = {},
+  ): Promise<Task[]> {
+    const build = () => {
+      let q = this.supabase
+        .from('tasks')
+        .select('*')
+        .eq('chapter_id', chapterId);
+      if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
+      if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
+      if (query.createdBy) q = q.eq('created_by', query.createdBy);
+      if (query.status) q = q.eq('status', query.status);
+      if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
+      if (query.confirmed === false) q = q.is('confirmed_at', null);
+      if (query.after) {
+        // Strictly after the cursor in (created_at desc, id desc): an earlier
+        // `created_at`, or the same one and a lower `id`. Spelled without a
+        // nested `and()`: at or before its time, and then either earlier or
+        // lower.
+        const at = escapeFilterValue(query.after.created_at);
+        q = q
+          .lte('created_at', query.after.created_at)
+          .or(
+            `created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`,
+          );
+      }
+      return q
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
+    };
 
-  async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
-    const { data, error } = await this.supabase
-      .from('tasks')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('assignee_id', assigneeId)
-      .order('created_at', { ascending: false });
-    if (error) throw new SupabaseQueryError(error);
-    return data || [];
+    if (query.limit !== undefined) {
+      const { data, error } = await build().limit(query.limit);
+      if (error) throw new SupabaseQueryError(error);
+      return data ?? [];
+    }
+    return fetchAllPages((from, to) => build().range(from, to), {
+      pageSize: TASK_PAGE_SIZE,
+    });
   }
 
   async create(data: TablesInsert<'tasks'>): Promise<Task> {

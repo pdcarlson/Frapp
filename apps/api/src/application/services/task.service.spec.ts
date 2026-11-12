@@ -65,7 +65,6 @@ describe('TaskService', () => {
     mockTaskRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
-      findByAssignee: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       confirmCompletionAtomic: jest.fn(),
@@ -924,24 +923,39 @@ describe('TaskService', () => {
 
       const result = await service.list('ch-1', 'user-1', true);
 
-      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(mockTaskRepo.findByAssignee).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {});
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
     });
 
     it('should list tasks by assignee when not admin', async () => {
-      mockTaskRepo.findByAssignee.mockResolvedValue([baseTask]);
+      mockTaskRepo.findByChapter.mockResolvedValue([baseTask]);
 
       const result = await service.list('ch-1', 'user-1', false);
 
-      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-      );
-      expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
+        assigneeId: 'user-1',
+      });
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
+    });
+
+    it('passes paging and filters through, and keeps a member to their own tasks', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([]);
+      const after = { created_at: '2026-01-01T00:00:00+00:00', id: 'task-9' };
+
+      await service.list('ch-1', 'user-1', false, {
+        confirmed: true,
+        after,
+        limit: 50,
+      });
+
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
+        confirmed: true,
+        after,
+        limit: 50,
+        assigneeId: 'user-1',
+      });
     });
 
     it('should display OVERDUE status for past-due tasks', async () => {

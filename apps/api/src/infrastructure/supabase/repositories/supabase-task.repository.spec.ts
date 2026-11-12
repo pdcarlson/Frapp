@@ -69,6 +69,103 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     expect(tasks.map((t) => t.id)).toEqual([TASK_B]);
   });
 
+  it.each([
+    ['assignee', { assigneeId: USER_SHARED }],
+    ['not-assignee', { notAssigneeId: '0c000000-0000-4000-8000-000000000060' }],
+    ['creator', { createdBy: USER_SHARED }],
+    ['status', { status: TaskStatus.TODO }],
+    ['unconfirmed', { confirmed: false }],
+    ['page', { limit: 10 }],
+    [
+      'cursor',
+      {
+        after: {
+          created_at: '2026-02-01T00:00:00.000Z',
+          id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        },
+        limit: 10,
+      },
+    ],
+  ] as const)(
+    'findByChapter keeps the chapter predicate with the %s filter (#4037)',
+    async (_name, query) => {
+      const tasks = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByChapter(CHAPTER_B, { ...query }),
+      );
+
+      expect(tasks.map((t) => t.id)).toEqual([TASK_B]);
+    },
+  );
+
+  describe('findByChapter past the 1,000-row cap (#4037)', () => {
+    /** 2,500 tasks; the first 1,500 share one `created_at`, as one transaction's inserts do. */
+    const many = () =>
+      Array.from({ length: 2500 }, (_, index) => {
+        const n = String(index).padStart(12, '0');
+        return inB({
+          id: `0b000000-0000-4000-8000-${n}`,
+          title: `Task ${index}`,
+          description: null,
+          assignee_id: USER_SHARED,
+          created_by: USER_SHARED,
+          due_date: '2026-09-01',
+          status: 'TODO',
+          point_reward: null,
+          points_awarded: 0,
+          completed_at: null,
+          confirmed_at: index % 2 === 0 ? '2026-03-01T00:00:00.000Z' : null,
+          created_at:
+            index < 1500
+              ? '2026-01-01T00:00:00.000Z'
+              : `2026-02-01T00:00:${String(index % 60).padStart(2, '0')}.${String(index).padStart(6, '0')}Z`,
+        });
+      });
+
+    beforeEach(() => {
+      // The database answers at most 1,000 rows a request, as PostgREST does.
+      harness = createTenantHarness({
+        tables: { tasks: [...seed().tasks, ...many()] },
+        maxRows: 1000,
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+    });
+
+    it('reads every row when no page is asked for', async () => {
+      const tasks = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByChapter(CHAPTER_B),
+      );
+
+      expect(tasks).toHaveLength(2501);
+      expect(new Set(tasks.map((t) => t.id)).size).toBe(2501);
+    });
+
+    it('reaches every row page by page, through a tie on created_at', async () => {
+      const seen: string[] = [];
+      let after: { created_at: string; id: string } | undefined;
+      for (;;) {
+        const page = await repo.findByChapter(CHAPTER_B, { after, limit: 200 });
+        seen.push(...page.map((t) => t.id));
+        if (page.length < 200) break;
+        const last = page[page.length - 1];
+        after = { created_at: last.created_at, id: last.id };
+      }
+
+      expect(seen).toHaveLength(2501);
+      expect(new Set(seen).size).toBe(2501);
+    });
+
+    it('filters on confirmation in SQL, past the cap', async () => {
+      const open = await repo.findByChapter(CHAPTER_B, { confirmed: false });
+      const confirmed = await repo.findByChapter(CHAPTER_B, {
+        confirmed: true,
+      });
+
+      expect(open).toHaveLength(1251);
+      expect(confirmed).toHaveLength(1250);
+      expect(open.every((t) => t.confirmed_at === null)).toBe(true);
+    });
+  });
+
   it('update refuses an id belonging to another chapter', async () => {
     await expect(
       harness.expectTenantScoped(CHAPTER_B, () =>

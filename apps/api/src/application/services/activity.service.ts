@@ -727,14 +727,29 @@ export class ActivityService {
     assigned: ActivityTask[];
   }> {
     const canManage = can(SystemPermissions.TASKS_MANAGE, permissions);
-    // The caller's own tasks come from the assignee-scoped read, never out
-    // of the chapter-wide one: that one is unbounded and cut at the database's
-    // row cap, so in a chapter with a long task history a manager's own open
-    // task could fall outside it.
-    const [own, all] = await Promise.all([
-      this.taskService.list(chapterId, userId, false),
+    // Each list is its own read, filtered in SQL, so none depends on reading
+    // the chapter's whole task history (#4037).
+    const [own, waiting, made] = await Promise.all([
+      this.taskService.list(chapterId, userId, false, { confirmed: false }),
+      // Every one, not a page: `needs_you_count` counts them. The set is the
+      // chapter's finished-but-unconfirmed work, not its history. Confirming
+      // your own completion is refused (`TaskService.confirmCompletion`, the
+      // no-self-award rule), so yours are not offered as waiting on you.
       canManage
-        ? this.taskService.list(chapterId, userId, true)
+        ? this.taskService.list(chapterId, userId, true, {
+            status: TaskStatus.COMPLETED,
+            confirmed: false,
+            notAssigneeId: userId,
+          })
+        : Promise.resolve([]),
+      // Only while the caller can still read tasks they don't hold: a creator
+      // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
+      // row that opens to a refusal is worse than no row.
+      canManage
+        ? this.taskService.list(chapterId, userId, true, {
+            createdBy: userId,
+            limit: LIST_LIMIT,
+          })
         : Promise.resolve([]),
     ]);
 
@@ -743,24 +758,10 @@ export class ActivityService {
       // By day, and within a day by time, a task with no time last: it is
       // due by the end of the day.
       .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
-    // Confirming your own completion is refused (`TaskService.confirmCompletion`,
-    // the no-self-award rule), so it is not offered as waiting on you.
-    const confirmations = canManage
-      ? all
-          .filter(
-            (task) =>
-              task.stored_status === TaskStatus.COMPLETED &&
-              !task.confirmed_at &&
-              task.assignee_id !== userId,
-          )
-          .sort(byAscending((task) => task.completed_at ?? task.created_at))
-      : [];
-    // Only while the caller can still read tasks they don't hold: a creator
-    // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
-    // row that opens to a refusal is worse than no row.
-    const assigned = canManage
-      ? all.filter((task) => task.created_by === userId).sort(byNewest)
-      : [];
+    const confirmations = waiting.sort(
+      byAscending((task) => task.completed_at ?? task.created_at),
+    );
+    const assigned = made.sort(byNewest);
 
     const names = await this.namesOf(
       [...mine, ...confirmations, ...assigned].flatMap((task) => [
