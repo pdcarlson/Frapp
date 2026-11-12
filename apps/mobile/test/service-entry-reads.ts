@@ -11,8 +11,8 @@ import { expect } from "vitest";
  * until that id is known it sends nothing. `enabled` left out defaults to on,
  * which is exactly the unscoped read.
  *
- * Shared by `lib/more/service-hours-screen.spec.tsx` and
- * `lib/more/you-profile.spec.tsx`, so the rule is stated once. Web's
+ * Used by `lib/more/service-hours-screen.spec.tsx`; Profile's read, shared
+ * with web, is pinned in `packages/hooks/src/profile-stats.hook.spec.tsx`. Web's
  * approval queue is the one deliberate unscoped caller
  * (`apps/web/components/service/service-page.spec.tsx`).
  */

@@ -27,7 +27,6 @@ import { ProfileSection } from "@/components/profile/profile-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet } from "@/components/ui/sheet";
 import {
   ErrorState,
   OfflineState,
@@ -37,6 +36,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   PanelBody,
+  Panel,
   PanelContent,
   PanelFooter,
   PanelHeader,
@@ -244,11 +244,13 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
     <div className="space-y-10">
       {confirmDialog}
       {body}
-      <Sheet
+      <Panel
         open={editingClass !== null && members !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditingClassId(null);
         }}
+        docked
+        backLabel={`Back to ${classTerm}`}
       >
         {editingClass && members ? (
           <ClassMembersEditor
@@ -261,7 +263,7 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
             onDone={() => setEditingClassId(null)}
           />
         ) : null}
-      </Sheet>
+      </Panel>
     </div>
   );
 }

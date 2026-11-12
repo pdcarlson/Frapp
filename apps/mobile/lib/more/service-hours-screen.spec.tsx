@@ -386,7 +386,8 @@ describe("Service hours on a module-off refusal (#2718)", () => {
  * screen, which lists the entries and totals them as the viewer's own hours,
  * must ask for the viewer's entries. It once didn't, and an
  * officer saw the chapter's entries, unnamed, totalled as their own.
- * `you-profile.spec.tsx` pins the same for s12.
+ * `packages/hooks/src/profile-stats.hook.spec.tsx` pins the same for the
+ * Profile cards (s15) on both apps.
  */
 describe("Service hours reads only the viewer's entries", () => {
   beforeEach(() => {

@@ -41,6 +41,9 @@ const LOADED_USER = {
 };
 let currentUser: Record<string, unknown> = LOADED_USER;
 let hiddenFeatures = new Set<string>();
+/** The member's weekly study goal in minutes (#1062), from `useMyGoals`. */
+let studyGoal: number | null = null;
+const goalReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 /** True while `/v1/users/me/permissions` hasn't answered. */
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
@@ -93,6 +96,11 @@ vi.mock("@/components/profile/edit-profile-sheet", async () => {
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useOwnAvatarTint: () => null,
+  useMyGoals: (options?: { enabled?: boolean }) => {
+    goalReadOptions.push(options);
+    return { data: { points: null, service: null, study: studyGoal } };
+  },
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({
@@ -252,6 +260,37 @@ describe("You tab clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("0.0 hrs");
     expect(screenText(tree)).not.toContain("2.0 hrs");
+  });
+
+  it("reads the week against the member's study goal when the chapter sets one (#1062)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    studyGoal = 360;
+    sessions = [
+      {
+        id: "session-1",
+        status: "COMPLETED",
+        start_time: new Date(2026, 9, 3, 10, 0).toISOString(),
+        end_time: new Date(2026, 9, 3, 14, 0).toISOString(),
+        total_foreground_minutes: 240,
+      },
+    ];
+    try {
+      expect(screenText(render())).toContain("4.0 / 6.0 hrs");
+    } finally {
+      studyGoal = null;
+    }
+  });
+
+  it("doesn't read the study goal when Study is hidden", () => {
+    hiddenFeatures = new Set(["study"]);
+    goalReadOptions.length = 0;
+    try {
+      render();
+      expect(goalReadOptions.length).toBeGreaterThan(0);
+      expect(goalReadOptions.every((o) => o?.enabled === false)).toBe(true);
+    } finally {
+      hiddenFeatures = new Set();
+    }
   });
 });
 

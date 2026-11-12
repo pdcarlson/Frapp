@@ -27,6 +27,19 @@ const mocks = vi.hoisted(() => {
       fetchStatus: "idle" as string,
       refetch: vi.fn(),
     },
+    stats: {
+      points: 1240 as number | null,
+      serviceHours: "18.5" as string | null,
+      hasChapter: true,
+      visible: true,
+      pointsFailed: false,
+      serviceFailed: false,
+    },
+    permissions: ["members:view"] as string[],
+    memberByUserId: vi.fn<(userId: string) => { data: unknown }>(() => ({
+      data: undefined,
+    })),
+    classSection: vi.fn<(props: Record<string, unknown>) => null>(() => null),
     updateUser: {
       mutateAsync: vi.fn<(body: Record<string, unknown>) => Promise<unknown>>(
         () => Promise.resolve({}),
@@ -43,10 +56,25 @@ vi.mock("@/components/profile/profile-photo-control", () => ({
     mocks.photoControl(props),
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useCurrentUser: () => mocks.userQuery,
-  useUpdateUser: () => mocks.updateUser,
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    profileIdentityLine: actual.profileIdentityLine,
+    profileStatsErrorNote: actual.profileStatsErrorNote,
+    useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+    useCurrentUser: () => mocks.userQuery,
+    useUpdateUser: () => mocks.updateUser,
+    useMyProfileStats: () => mocks.stats,
+    usePermissionList: () => mocks.permissions,
+    useMemberByUserId: (userId: string) => mocks.memberByUserId(userId),
+  };
+});
+
+// The class rows are `MemberPledgeClassSection`'s own spec's business; the
+// panel's job is what it hands them.
+vi.mock("@/components/members/member-pledge-class-section", () => ({
+  MemberPledgeClassSection: (props: Record<string, unknown>) =>
+    mocks.classSection(props),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -317,9 +345,7 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Enter a phone number",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a phone number");
     expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
   });
 
@@ -347,5 +373,109 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     render(<ProfilePanel />);
 
     expect(screen.getByDisplayValue("Troy, NY")).toBeTruthy();
+  });
+});
+
+describe("ProfilePanel — what the phone's Profile shows (#4137)", () => {
+  beforeEach(() => {
+    resetQueries();
+    mocks.stats.points = 1240;
+    mocks.stats.serviceHours = "18.5";
+    mocks.stats.pointsFailed = false;
+    mocks.stats.serviceFailed = false;
+    mocks.stats.hasChapter = true;
+    mocks.stats.visible = true;
+    mocks.permissions = ["members:view"];
+    mocks.memberByUserId.mockClear();
+    mocks.classSection.mockClear();
+  });
+
+  it("shows your points and approved service hours", () => {
+    render(<ProfilePanel />);
+    expect(screen.getByText("Points").nextElementSibling).toHaveTextContent(
+      "1,240",
+    );
+    expect(
+      screen.getByText("Service hours").nextElementSibling,
+    ).toHaveTextContent("18.5");
+  });
+
+  it("draws a dash, not a zero, for a number not read yet, and says which read failed", () => {
+    mocks.stats.points = null;
+    mocks.stats.serviceHours = null;
+    mocks.stats.serviceFailed = true;
+    render(<ProfilePanel />);
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    expect(
+      screen.getByText("Service hours couldn't load just now."),
+    ).toBeInTheDocument();
+  });
+
+  it("puts major · company · year under the name, from what is saved", () => {
+    mocks.userQuery.data = {
+      id: "u-1",
+      email: "member@example.com",
+      display_name: "Member",
+      major: "Economics",
+      current_company: "Acme",
+      graduation_year: 2027,
+    };
+    render(<ProfilePanel />);
+    expect(screen.getByText("Economics · Acme · '27")).toBeInTheDocument();
+  });
+
+  it("keeps that line on what is saved while you type", async () => {
+    mocks.userQuery.data = {
+      id: "u-1",
+      email: "member@example.com",
+      display_name: "Member",
+      major: "Economics",
+      graduation_year: 2027,
+    };
+    render(<ProfilePanel />);
+    const major = screen.getByLabelText("Major");
+    await userEvent.clear(major);
+    await userEvent.type(major, "History");
+    expect(screen.getByText("Economics · '27")).toBeInTheDocument();
+    expect(screen.queryByText("History · '27")).toBeNull();
+  });
+
+  it("says to choose a chapter when there is none to read points in", () => {
+    mocks.stats.hasChapter = false;
+    mocks.stats.points = null;
+    mocks.stats.serviceHours = null;
+    render(<ProfilePanel />);
+    expect(
+      screen.getByText("Choose a chapter to see your points."),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the numbers out for a role that can't read them", () => {
+    mocks.stats.visible = false;
+    render(<ProfilePanel />);
+    expect(screen.queryByText("Points")).toBeNull();
+    expect(screen.queryByText("Service hours")).toBeNull();
+  });
+
+  it("hands your class and number to read-only rows", () => {
+    mocks.memberByUserId.mockReturnValue({
+      data: { id: "m-1", pledge_class_id: "pc-1", order_number: 41 },
+    });
+    render(<ProfilePanel />);
+    expect(mocks.memberByUserId).toHaveBeenCalledWith("u-1");
+    expect(mocks.classSection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        memberId: "m-1",
+        pledgeClassId: "pc-1",
+        orderNumber: 41,
+        canEdit: false,
+      }),
+    );
+  });
+
+  it("doesn't read your membership without the Directory's permission", () => {
+    mocks.permissions = [];
+    render(<ProfilePanel />);
+    expect(mocks.memberByUserId).not.toHaveBeenCalledWith("u-1");
   });
 });

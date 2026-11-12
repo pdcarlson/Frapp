@@ -563,6 +563,14 @@ export class StandingPointsDto implements StandingPoints {
 
   @ApiProperty({ description: 'How many members the board ranks.' })
   ranked: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s points goal this semester (#1062), or null when the chapter sets none for them.',
+  })
+  goal: number | null;
 }
 
 export class StandingRequiredEventsDto implements StandingRequiredEvents {
@@ -585,6 +593,14 @@ export class StandingServiceDto implements StandingService {
 
   @ApiProperty({ description: 'Service minutes waiting for approval.' })
   pending_minutes: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s service goal this semester in minutes (#1062), or null for none.',
+  })
+  goal_minutes: number | null;
 }
 
 export class StandingStudyDto implements StandingStudy {
@@ -596,6 +612,14 @@ export class StandingStudyDto implements StandingStudy {
 
   @ApiProperty({ format: 'date-time' })
   week_start: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s study goal for the week in minutes (#1062), or null for none.',
+  })
+  goal_minutes: number | null;
 }
 
 export class ActivityStandingDto implements ActivityStanding {

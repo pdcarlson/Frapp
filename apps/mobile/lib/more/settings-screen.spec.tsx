@@ -475,7 +475,7 @@ describe("Settings copy", () => {
 
   it("leaves the chapter's side to Chapter settings (#4074)", () => {
     // Even for the President: the accent, chat background and study zones
-    // moved to More → Admin → Chapter settings.
+    // moved to You → Admin → Chapter settings.
     state.permissions = ["*"];
     const text = screenText(render());
     expect(text).not.toContain("Chapter accent");

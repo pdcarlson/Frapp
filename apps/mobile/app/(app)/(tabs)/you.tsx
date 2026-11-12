@@ -9,6 +9,7 @@ import {
   useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
+  useMyGoals,
   useMyPermissions,
   useNowDate,
   usePermissionList,
@@ -52,7 +53,11 @@ import {
   selectInvoiceRows,
   selectNextDueInvoice,
 } from "@/lib/dues/invoices";
-import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
+import {
+  formatHoursLabel,
+  formatHoursValue,
+  startOfWeek,
+} from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -135,9 +140,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Trailing statuses
  *
- * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
- * anywhere, so the row shows the week's real total with no denominator (see
- * `components/study/week-summary.tsx`). Neither Study nor Dues renders a
+ * Canvas draws "4.0 / 6.0" on Study: the week's real total over the member's
+ * weekly study goal, which officers set in Chapter settings (#1062,
+ * `useMyGoals`). With no goal the row shows the total with no denominator
+ * (see `components/study/week-summary.tsx`). Neither Study nor Dues renders a
  * placeholder while its query is in flight: a row that says "0.0 hrs" for a
  * beat at a member who studied all week is worse than one that says nothing
  * yet.
@@ -239,13 +245,20 @@ export default function YouScreen() {
   // narrows and sorts the whole session list, and the answer only changes once a
   // week.
   const weekStart = startOfWeek(now).getTime();
+  // With a weekly goal (#1062) the row reads "4.0 / 6.0 hrs", as the board
+  // draws it. The goal is its own small read (`GET /v1/goals/mine`, fresh for
+  // five minutes), not the whole Activity standing.
+  const studyGoal =
+    useMyGoals({ enabled: !hiddenFeatures.has("study") }).data?.study ?? null;
   const studyThisWeek = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const minutes = selectSessionHistory(sessionsQuery.data)
       .filter((row) => Date.parse(row.startTime) >= weekStart)
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
-    return formatHoursLabel(minutes);
-  }, [sessionsQuery.data, weekStart]);
+    return studyGoal
+      ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
+      : formatHoursLabel(minutes);
+  }, [sessionsQuery.data, weekStart, studyGoal]);
 
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;

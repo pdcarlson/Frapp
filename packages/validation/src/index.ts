@@ -32,6 +32,7 @@ export * from "./beta-off-modules";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
+export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 export * from "./chat-backgrounds";
@@ -61,6 +62,9 @@ export * from "./event-attendance";
 // Editing or deleting an existing event: what a save sends, and whether to
 // ask "this event or all upcoming" first. Web and the phone share it (#3667).
 export * from "./event-edit";
+// Absence excuses for required events: the late window and reason limit the
+// API enforces and the apps read (#3735).
+export * from "./event-excuse";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,
@@ -153,6 +157,8 @@ export {
   RELEASE_NOTE_VERSION_PATTERN,
   RELEASE_NOTES,
   type ReleaseNote,
+  releaseNoteGroups,
+  releaseNoteStoreText,
   releaseNoteText,
   releaseNoteVersion,
   type ReleaseNoteVersion,

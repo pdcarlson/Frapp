@@ -24,6 +24,7 @@ import type {
   ChapterDocumentFolder,
   ChapterDocumentStar,
   ChapterDuesConfig,
+  ChapterGoalRow,
   ChapterPointsConfig,
   ChapterServiceConfig,
   ChapterWorkflow,
@@ -56,6 +57,7 @@ import type {
   Event,
   EventAttendance,
   EventCheckInScreen,
+  EventExcuse,
   EventType,
   FinancialInvoice,
   FinancialTransaction,
@@ -156,6 +158,7 @@ export interface Database {
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
+      chapter_goals: TableDefinition<ChapterGoalRow>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       chapter_points_config: TableDefinition<ChapterPointsConfig>;
       chapter_service_config: TableDefinition<ChapterServiceConfig>;
@@ -188,6 +191,7 @@ export interface Database {
       discord_oauth_states: TableDefinition<DiscordOAuthState>;
       event_attendance: TableDefinition<EventAttendance>;
       event_check_in_screens: TableDefinition<EventCheckInScreen>;
+      event_excuses: TableDefinition<EventExcuse>;
       event_types: TableDefinition<EventType>;
       events: TableDefinition<Event>;
       financial_invoices: TableDefinition<FinancialInvoice>;
@@ -404,6 +408,21 @@ export interface Database {
       confirm_task_completion: {
         Args: { p_task_id: string; p_chapter_id: string };
         Returns: Task[];
+      };
+      /**
+       * `20261113040003` (#3735) — move a PENDING excuse to a decision and
+       * write the attendance it implies in the same transaction. Empty when
+       * the excuse was no longer pending.
+       */
+      decide_event_excuse: {
+        Args: {
+          p_excuse_id: string;
+          p_chapter_id: string;
+          p_decision: 'APPROVED' | 'DECLINED';
+          p_decided_by: string;
+          p_mark_absent: boolean;
+        };
+        Returns: EventExcuse[];
       };
       /**
        * `20261105220000`. Deletes the channel groups a `purging` import
@@ -996,6 +1015,14 @@ export interface Database {
       unlink_discord_author: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: number | null;
+      };
+      /**
+       * `20261113040003` (#3735) — delete a PENDING or APPROVED excuse, and an
+       * approved one's EXCUSED attendance row. Empty when there was none.
+       */
+      withdraw_event_excuse: {
+        Args: { p_event_id: string; p_user_id: string; p_chapter_id: string };
+        Returns: EventExcuse[];
       };
       /**
        * `20261112165050` (#720) — one batch of a source's passages, written

@@ -4,16 +4,21 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
+import type { IEventExcuseRepository } from '#domain/repositories/event-excuse.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
+import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
 import { RbacService } from './rbac.service';
@@ -56,6 +61,33 @@ export interface CheckInOptions {
   accuracyMeters?: number;
 }
 
+/**
+ * How an event requires a member, by `attendanceFor`: through a role it names
+ * (`'role'`), through its default (`'default'`), or not at all (`null`).
+ */
+function requiredBy(
+  event: EventAttendanceFields,
+  roleIds: string[],
+): 'role' | 'default' | null {
+  const attendance = attendanceFor(event, roleIds);
+  if (attendance.status !== 'required') return null;
+  return attendance.byRole ? 'role' : 'default';
+}
+
+/**
+ * Whether a member the event requires is held to it. Alumni cannot check in
+ * to an event that doesn't name a role of theirs, so one required only by the
+ * default is not; a role that names an alumnus is an explicit decision.
+ */
+function holdsTo(
+  by: 'role' | 'default' | null,
+  roleIds: string[],
+  alumniRoleId: string | null,
+): boolean {
+  if (by === 'role') return true;
+  if (by !== 'default') return false;
+  return !alumniRoleId || !roleIds.includes(alumniRoleId);
+}
 /** Where the host screen (s22) says it is, when it can tell. */
 export interface CheckInScreenFix {
   lat?: number;
@@ -80,6 +112,8 @@ export const CHECK_IN_TOO_FAR =
 
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
+
   constructor(
     @Inject(ATTENDANCE_REPOSITORY)
     private readonly attendanceRepo: IAttendanceRepository,
@@ -87,6 +121,8 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    @Inject(EVENT_EXCUSE_REPOSITORY)
+    private readonly excuseRepo: IEventExcuseRepository,
     @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
     private readonly screenRepo: IEventCheckInScreenRepository,
     private readonly rbac: RbacService,
@@ -418,6 +454,22 @@ export class AttendanceService {
       throw new ConflictException('Already checked in for this event');
     }
 
+    // They came after all: a pending excuse no longer asks anything of its
+    // receiver (#3735), and approving it would tell them they were excused
+    // while the roster says present. An approved one can't be here, since its
+    // EXCUSED row refuses the check-in above. Best-effort: the check-in has
+    // landed, and a leftover excuse only reaches the receiver's list.
+    try {
+      await this.excuseRepo.withdrawAtomic(event.chapter_id, eventId, userId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'check-in-drop-pending-excuse',
+        message: `Could not drop the pending excuse of ${userId} for event ${eventId} after check-in`,
+        error,
+      });
+    }
+
     return attendance;
   }
 
@@ -521,22 +573,55 @@ export class AttendanceService {
     // the visibility rule is a disclosure, not a mismatch. A required member
     // is always an invited one.
     const required = allMembers
-      .map((m) => ({ m, attendance: attendanceFor(event, m.role_ids) }))
-      .filter(({ attendance }) => attendance.status === 'required');
-    // Only members required by the default can be alumni to drop: a role that
-    // names an alumnus is an explicit decision to hold them to it.
-    if (!required.some(({ attendance }) => !attendance.byRole)) {
-      return required.map(({ m }) => m);
-    }
-    const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+      .map((m) => ({ m, by: requiredBy(event, m.role_ids) }))
+      .filter(({ by }) => by !== null);
+    // The Alumni role is read only when someone is required by the default,
+    // the one case it can drop.
+    const alumniRoleId = required.some(({ by }) => by === 'default')
+      ? await this.rbac.getAlumniRoleId(chapterId)
+      : null;
     return required
-      .filter(
-        ({ m, attendance }) =>
-          attendance.byRole ||
-          !alumniRoleId ||
-          !m.role_ids.includes(alumniRoleId),
-      )
+      .filter(({ m, by }) => holdsTo(by, m.role_ids, alumniRoleId))
       .map(({ m }) => m);
+  }
+
+  /**
+   * Whether `event` requires the member holding `roleIds`: the single-member
+   * form of {@link resolveRequiredMembers}, through the same two helpers, so
+   * the member who may send an excuse (#3735) is exactly one the sweep would
+   * mark absent.
+   */
+  async requiresMember(
+    chapterId: string,
+    event: EventAttendanceFields,
+    roleIds: string[],
+  ): Promise<boolean> {
+    if (!eventRequiresAnyone(event)) return false;
+    const by = requiredBy(event, roleIds);
+    if (by === null) return false;
+    const alumniRoleId =
+      by === 'default' ? await this.rbac.getAlumniRoleId(chapterId) : null;
+    return holdsTo(by, roleIds, alumniRoleId);
+  }
+
+  /**
+   * The members of `userIds` with an excuse of one of `statuses` for the
+   * event (#3735). The sweep skips pending and approved; the pre-event
+   * reminder skips approved, since a member with a pending excuse may still
+   * be declined and expected.
+   */
+  async excusedUserIds(
+    chapterId: string,
+    eventId: string,
+    statuses: readonly EventExcuseStatus[],
+  ): Promise<Set<string>> {
+    return new Set(
+      await this.excuseRepo.findUserIdsByEventAndStatus(
+        chapterId,
+        eventId,
+        statuses,
+      ),
+    );
   }
 
   async markAutoAbsent(
@@ -579,11 +664,25 @@ export class AttendanceService {
     const usersWithAttendanceRecords = new Set(
       existingRecords.map((r) => r.user_id),
     );
+    // A member whose excuse is waiting on the receiver, or was approved, is
+    // not marked (#3735). Pending stays pending past the grace period: the
+    // receiver decides, and a decline then marks them absent itself
+    // (`decide_event_excuse`), since this sweep runs once per event. An
+    // approved excuse already wrote EXCUSED, so it is skipped above as well;
+    // reading it here too keeps the rule from depending on that write.
+    const excused = await this.excusedUserIds(chapterId, eventId, [
+      'PENDING',
+      'APPROVED',
+    ]);
 
     const membersToMark = requiredMembers.filter((member) => {
       const isCheckedInOrExcused = checkedInOrExcused.has(member.user_id);
       const hasExistingRecord = usersWithAttendanceRecords.has(member.user_id);
-      return !isCheckedInOrExcused && !hasExistingRecord;
+      return (
+        !isCheckedInOrExcused &&
+        !hasExistingRecord &&
+        !excused.has(member.user_id)
+      );
     });
 
     if (membersToMark.length === 0) {

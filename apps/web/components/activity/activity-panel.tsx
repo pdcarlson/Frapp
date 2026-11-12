@@ -19,6 +19,7 @@ import { TaskCard } from "@/components/chat/renderers/task-card";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelHeader,
@@ -29,7 +30,6 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Sheet } from "@/components/ui/sheet";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { eventDeepLink } from "@/lib/events/event-links";
 import type { ActivityRow } from "@repo/hooks";
@@ -76,7 +76,12 @@ export function ActivityPanel({
   onActed: () => void;
 }) {
   return (
-    <Sheet open={row !== null} onOpenChange={(open) => !open && onClose()}>
+    <Panel
+      open={row !== null}
+      onOpenChange={(open) => !open && onClose()}
+      docked
+      backLabel="Back to activity"
+    >
       {row ? (
         <PanelContent aria-describedby={undefined}>
           <PanelHeader>{PANEL_TITLES[row.kind]}</PanelHeader>
@@ -98,7 +103,7 @@ export function ActivityPanel({
           </PanelBody>
         </PanelContent>
       ) : null}
-    </Sheet>
+    </Panel>
   );
 }
 

@@ -734,6 +734,7 @@ export default function DocumentsScreen() {
         onChangeText={setSearch}
         placeholder="Search documents"
         accessibilityLabel="Search documents"
+        searchGlyph
       />
 
       {folders.length > 0 ? (

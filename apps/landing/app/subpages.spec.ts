@@ -1,6 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RELEASE_NOTES, formatReleaseNoteDate } from "@repo/validation";
+import {
+  RELEASE_NOTES,
+  formatReleaseNoteDate,
+  releaseNoteGroups,
+} from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import AboutPage, { metadata as aboutMetadata } from "./about/page";
 import ChangelogPage, { metadata as changelogMetadata } from "./changelog/page";
@@ -54,7 +58,10 @@ describe("/changelog", () => {
       expect(shown).toContain(formatReleaseNoteDate(note.date));
       expect(changelog).toContain(`dateTime="${note.date}"`);
       expect(shown).toContain(note.title);
-      for (const change of note.changes) expect(shown).toContain(change);
+      for (const group of releaseNoteGroups(note)) {
+        if (group.label) expect(shown).toContain(group.label);
+        for (const change of group.lines) expect(shown).toContain(change);
+      }
     }
     expect(shown).not.toContain("Nothing here yet.");
   });

@@ -361,14 +361,14 @@ Officers get what they need on their feet: take attendance at the door with a QR
 > | track service and study hours | **web only** | *Corrected 2026-11-11 (#3897): the next binary has an approve control. An officer holding `service:approve` approves or rejects a pending entry from the Activity sheet (`components/activity/activity-sheet.tsx`, `useReviewServiceEntry`). The listing text is unchanged, pending Paul; what follows is the 2026-09-21 record.* No approve control on iOS — Service hours' log sheet (`components/service-hours/log-hours-sheet.tsx`) holds its only two mutations, `useCreateServiceEntry` and the proof photo's `useRequestServiceProofUploadUrl`, neither of which approves anything, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
 > | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
 >
-> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/you-profile.spec.tsx` pin the fix.
+> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `packages/hooks/src/profile-stats.hook.spec.tsx` (the Profile cards, moved there from `lib/more/profile-screen.spec.tsx` in #4137) pin the fix.
 
 Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
 > **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
 > and send you an invite link". Neither half holds: the app has its own create-chapter flow
 > (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
-> our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
+> our chapter" and from You), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
 > founder needs no invite. What is invite-only is joining an existing chapter.
 
 Features
