@@ -6,7 +6,7 @@ import { AnalyticsService } from '../analytics.service';
 
 /** What the gateway knows about a finished call beyond its usage record. */
 export interface AiCallShape {
-  kind: 'structured' | 'cited' | 'embedding';
+  kind: 'structured' | 'cited' | 'embedding' | 'transcription';
   /**
    * A streamed call has no span of its own (a span cannot stay open across
    * the reader's pauses), so its counts are not put on whatever span is
@@ -88,6 +88,7 @@ export class AiTelemetryService implements IAiTelemetry {
         input_tokens: record.inputTokens,
         output_tokens: record.outputTokens,
         cached_input_tokens: record.cachedInputTokens,
+        audio_seconds: record.audioSeconds ?? 0,
         cost_micro_usd: record.costMicroUsd,
         latency_ms: record.latencyMs,
         citations_kept: shape.citationsKept,

@@ -9,6 +9,8 @@ import { AI_CONSENT_SHEET, AI_FAMILY_SWITCH } from './ai-consent-sheet';
  */
 const SHEET_VERSIONS: Record<number, string> = {
   1: 'providers=anthropic,google;data=questions,chapter_records,roster,channel_messages,meetings',
+  // #712: AssemblyAI transcribes a meeting's recording.
+  2: 'providers=anthropic,google,assemblyai;data=questions,chapter_records,roster,channel_messages,meetings',
 };
 
 function coverage(): string {

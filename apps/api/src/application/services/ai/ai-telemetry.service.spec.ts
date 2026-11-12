@@ -65,6 +65,7 @@ describe('AiTelemetryService', () => {
       input_tokens: 1200,
       output_tokens: 300,
       cached_input_tokens: 1000,
+      audio_seconds: 0,
       cost_micro_usd: 5400,
       latency_ms: 812,
       citations_kept: 2,

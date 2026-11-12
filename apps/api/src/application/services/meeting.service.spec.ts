@@ -613,6 +613,40 @@ describe('MeetingService', () => {
       expect(notifyMembers).toHaveBeenCalledTimes(1);
     });
 
+    it('tells the members who were at the meeting that a recording was uploaded, linking the event and not the draft', async () => {
+      const draft = meeting();
+      const told = await service.notifyRecordingUploaded(
+        CHAPTER,
+        draft,
+        SECRETARY,
+        {
+          title: 'Meeting recording uploaded',
+          body: 'A recording was uploaded.',
+        },
+      );
+      // Present and late; not the excused, the absent or the uploader.
+      const [, audience, payload] = notifyMembers.mock.calls[0];
+      expect([...audience].sort()).toEqual(
+        [JAKE, VP].filter((id) => id !== SECRETARY).sort(),
+      );
+      expect(told).toBe(audience.length);
+      expect(payload.title).toBe('Meeting recording uploaded');
+      // The minutes are a draft the members cannot open.
+      expect(payload.data).toEqual({
+        target: { screen: 'events', eventId: CHAPTER_EVENT.id },
+      });
+    });
+
+    it('tells the members the event invites when nobody checked in', async () => {
+      attendance.findByEvent.mockResolvedValue([]);
+      await service.notifyRecordingUploaded(CHAPTER, meeting(), SECRETARY, {
+        title: 't',
+        body: 'b',
+      });
+      const [, audience] = notifyMembers.mock.calls[0];
+      expect([...audience].sort()).toEqual([JAKE, PRESIDENT, VP].sort());
+    });
+
     it('tells only the members an Exec meeting invites', async () => {
       rows.set(
         'mtg-exec',

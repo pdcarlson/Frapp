@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -17,6 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   MEETING_DRAFT_FAILURES,
@@ -24,7 +26,10 @@ import {
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_NOTES_MAX_LENGTH,
+  MAX_MEETING_RECORDING_BYTES,
   MEETING_OTHER_LABEL_MAX_LENGTH,
+  MEETING_RECORDING_FAILURES,
+  MEETING_RECORDING_STATUSES,
   MEETING_SECTION_KEYS,
   MEETING_STATUSES,
   MEETING_TEXT_MAX_LENGTH,
@@ -456,4 +461,131 @@ export class MeetingDraftDto {
       'Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
   })
   blocked: 'chapter_off' | 'consent_required' | null;
+}
+
+// ── Uploading a recording (#712) ─────────────────────────────────────────────
+
+export class StartMeetingRecordingDto {
+  @ApiProperty({
+    maxLength: 200,
+    description: 'The file’s own name, shown back to the officer.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  file_name: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'The browser’s name for the file’s type. May be empty; the file’s extension decides then.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  mime_type?: string | null;
+
+  @ApiProperty({
+    maximum: MAX_MEETING_RECORDING_BYTES,
+    description: 'The file’s size in bytes.',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_MEETING_RECORDING_BYTES)
+  size_bytes: number;
+
+  @ApiProperty({
+    description: 'The recording’s length in seconds, as the browser read it.',
+  })
+  @IsNumber()
+  @Min(0)
+  @Max(360000)
+  duration_seconds: number;
+
+  @ApiProperty({
+    description:
+      'The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused.',
+  })
+  @IsStrictBoolean()
+  notice_confirmed: boolean;
+}
+
+export class ConfirmMeetingRecordingDto {
+  @ApiProperty({ format: 'uuid', description: 'The upload that finished.' })
+  @IsUUID()
+  upload_id: string;
+}
+
+export class MeetingRecordingUploadDto {
+  @ApiProperty({ format: 'uuid' })
+  upload_id: string;
+  @ApiProperty({ description: 'The private bucket the file goes to.' })
+  bucket: string;
+  @ApiProperty({ description: 'Where in the bucket the file goes.' })
+  path: string;
+  @ApiProperty({
+    description:
+      'Signs this one resumable upload (`x-signature`). Good for two hours.',
+  })
+  token: string;
+  @ApiProperty({ description: 'The type to store the file under.' })
+  content_type: string;
+}
+
+export class MeetingRecordingDto {
+  @ApiProperty({ enum: MEETING_RECORDING_STATUSES })
+  status: (typeof MEETING_RECORDING_STATUSES)[number];
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  upload_id: string | null;
+  @ApiProperty({ type: String, nullable: true })
+  file_name: string | null;
+  @ApiProperty({ type: Number, nullable: true })
+  size_bytes: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`.',
+  })
+  duration_seconds: number | null;
+  @ApiProperty({ enum: MEETING_RECORDING_FAILURES, nullable: true })
+  failure: (typeof MEETING_RECORDING_FAILURES)[number] | null;
+  @ApiProperty({ type: String, nullable: true })
+  failure_message: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes.',
+  })
+  transcript: string | null;
+  @ApiProperty({ type: Number, nullable: true })
+  speaker_count: number | null;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  uploaded_at: string | null;
+  @ApiProperty({
+    description:
+      'False when this server has no transcription provider set up: the upload step is not offered.',
+  })
+  available: boolean;
+  @ApiProperty({
+    enum: ['chapter_off', 'consent_required'],
+    nullable: true,
+    description:
+      'Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
+  })
+  blocked: 'chapter_off' | 'consent_required' | null;
+  @ApiProperty({ description: 'The largest file this server takes, in bytes.' })
+  max_bytes: number;
+  @ApiProperty({
+    description: 'The longest recording this server takes, in seconds.',
+  })
+  max_seconds: number;
+  @ApiProperty({
+    type: MeetingRecordingUploadDto,
+    nullable: true,
+    description: 'Only in the answer to starting an upload.',
+  })
+  upload: MeetingRecordingUploadDto | null;
 }

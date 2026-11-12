@@ -70,6 +70,8 @@ function liveAdapter(candidate: BakeOffCandidate, env: Env): ILanguageModel {
     const needs: Record<AiProvider, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       google: 'GOOGLE_VERTEX_PROJECT and GOOGLE_VERTEX_CREDENTIALS_JSON',
+      // A transcription vendor: no language model here to bake off.
+      assemblyai: 'a language model, which AssemblyAI is not,',
       scripted: '',
     };
     throw new Error(`${candidate.id} needs ${needs[candidate.provider]} set.`);

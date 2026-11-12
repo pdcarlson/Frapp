@@ -35,6 +35,7 @@ import {
   aiCatalogEntry,
   aiCostMicroUsd,
   type AiCatalogEntry,
+  type AiTokenCatalogEntry,
   type AiCitedTaskName,
   type AiEmbeddingTaskName,
   type AiStructuredTaskName,
@@ -114,11 +115,14 @@ export interface AiPrompt {
   signal?: AbortSignal;
 }
 
-type EntryOfKind<K extends AiCatalogEntry['kind']> = K extends 'embedding'
+/** The kinds of call this gateway makes; a transcription is not one. */
+type GatewayCallKind = AiTokenCatalogEntry['kind'];
+
+type EntryOfKind<K extends GatewayCallKind> = K extends 'embedding'
   ? EmbeddingCatalogEntry
   : GenerationCatalogEntry;
 
-interface Admitted<E extends AiCatalogEntry> {
+interface Admitted<E extends AiTokenCatalogEntry> {
   entry: E;
   model: ILanguageModel;
   call: AiCallDescriptor;
@@ -398,7 +402,7 @@ export class AiGatewayService {
    * Steps 1 to 3: decide whether the call is made. Returns what the call
    * needs, or the `unavailable` result to hand straight back.
    */
-  private async admit<K extends AiCatalogEntry['kind']>(
+  private async admit<K extends GatewayCallKind>(
     task: AiTaskName,
     kind: K,
     prompt: Pick<AiPrompt, 'promptVersion' | 'system' | 'messages'>,
@@ -407,11 +411,14 @@ export class AiGatewayService {
   ): Promise<Admitted<EntryOfKind<K>> | AiUnavailable> {
     if (!isAiEnabled()) return { status: 'unavailable', reason: 'disabled' };
 
-    const entry = aiCatalogEntry(task);
-    if (entry.kind !== kind) {
+    const found = aiCatalogEntry(task);
+    if (found.kind !== kind) {
       // The task-name types already prevent this; a cast got past them.
-      throw new Error(`AI task ${task} is ${entry.kind}, not ${kind}`);
+      throw new Error(`AI task ${task} is ${found.kind}, not ${kind}`);
     }
+    // A transcription task never gets here: its kind is none of this
+    // gateway's three, and `AiTranscriptionService` serves it.
+    const entry = found;
 
     const model = this.models.resolve(entry.provider);
     if (!model) return { status: 'unavailable', reason: 'not_configured' };
@@ -476,8 +483,8 @@ export class AiGatewayService {
    * record what it cost whether it returned or threw.
    */
   private attempt<R>(
-    admitted: Admitted<AiCatalogEntry>,
-    kind: AiCallShape['kind'],
+    admitted: Admitted<AiTokenCatalogEntry>,
+    kind: GatewayCallKind,
     run: () => Promise<Finished<R>>,
   ): Promise<R> {
     return this.telemetry.inSpan(admitted.call, async () => {
@@ -501,7 +508,7 @@ export class AiGatewayService {
 
   /** Step 6: the ledger row, then the event. */
   private async settle(
-    admitted: Admitted<AiCatalogEntry>,
+    admitted: Admitted<AiTokenCatalogEntry>,
     startedAt: number,
     summary: CallSummary,
   ): Promise<void> {
@@ -579,7 +586,7 @@ function citedOutcome(
 }
 
 function shapeOf(
-  kind: AiCallShape['kind'],
+  kind: GatewayCallKind,
   value: unknown,
   streamed = false,
 ): AiCallShape {
@@ -594,7 +601,7 @@ function shapeOf(
 
 function failure(
   error: unknown,
-  kind: AiCallShape['kind'],
+  kind: GatewayCallKind,
   streamed = false,
 ): CallSummary {
   return {

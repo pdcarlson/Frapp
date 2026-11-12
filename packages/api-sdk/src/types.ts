@@ -4422,6 +4422,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{id}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the recording stands: none, uploading, transcribing, ready (with the transcript) or failed, and what this server takes */
+        get: operations["MeetingRecordingController_get_v1"];
+        put?: never;
+        /** Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored */
+        post: operations["MeetingRecordingController_start_v1"];
+        /** Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends */
+        delete: operations["MeetingRecordingController_remove_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/recording/uploaded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed */
+        post: operations["MeetingRecordingController_uploaded_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6672,7 +6708,7 @@ export interface components {
         };
         AiConsentSheetProviderDto: {
             /** @enum {string} */
-            key: "anthropic" | "google";
+            key: "anthropic" | "google" | "assemblyai";
             /**
              * @description The company's own name, shown as is.
              * @example Anthropic
@@ -7805,6 +7841,68 @@ export interface components {
              * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
              */
             expected_updated_at: string;
+        };
+        MeetingRecordingUploadDto: {
+            /** Format: uuid */
+            upload_id: string;
+            /** @description The private bucket the file goes to. */
+            bucket: string;
+            /** @description Where in the bucket the file goes. */
+            path: string;
+            /** @description Signs this one resumable upload (`x-signature`). Good for two hours. */
+            token: string;
+            /** @description The type to store the file under. */
+            content_type: string;
+        };
+        MeetingRecordingDto: {
+            /** @enum {string} */
+            status: "none" | "uploading" | "transcribing" | "ready" | "failed";
+            /** Format: uuid */
+            upload_id: string | null;
+            file_name: string | null;
+            size_bytes: number | null;
+            /** @description Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`. */
+            duration_seconds: number | null;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "not_permitted" | "upload_incomplete" | "unreadable" | "too_long" | "no_speech" | "failed" | null;
+            failure_message: string | null;
+            /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
+            transcript: string | null;
+            speaker_count: number | null;
+            /** Format: date-time */
+            uploaded_at: string | null;
+            /** @description False when this server has no transcription provider set up: the upload step is not offered. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
+            /** @description Only in the answer to starting an upload. */
+            upload: components["schemas"]["MeetingRecordingUploadDto"] | null;
+        };
+        StartMeetingRecordingDto: {
+            /** @description The file’s own name, shown back to the officer. */
+            file_name: string;
+            /** @description The browser’s name for the file’s type. May be empty; the file’s extension decides then. */
+            mime_type?: string | null;
+            /** @description The file’s size in bytes. */
+            size_bytes: number;
+            /** @description The recording’s length in seconds, as the browser read it. */
+            duration_seconds: number;
+            /** @description The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused. */
+            notice_confirmed: boolean;
+        };
+        ConfirmMeetingRecordingDto: {
+            /**
+             * Format: uuid
+             * @description The upload that finished.
+             */
+            upload_id: string;
         };
     };
     responses: never;
@@ -17935,6 +18033,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_remove_v1: {
+        parameters: {
+            query?: {
+                upload_id?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_uploaded_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
                 };
             };
             /** @description Error */

@@ -1,4 +1,11 @@
-import { Controller, Get, INestApplication, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  INestApplication,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Request } from 'express';
 import request from 'supertest';
@@ -28,6 +35,11 @@ class EchoController {
   echo(@Req() req: Request): { ip?: string; ips: string[] } {
     return { ip: req.ip, ips: req.ips };
   }
+
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
 }
 
 /** No `environment` configures for this process, which under Jest is `local`. */
@@ -52,12 +64,45 @@ function headerList(value: string | string[] | undefined): string[] {
 }
 
 describe('configureApp', () => {
-  let app: INestApplication;
+  describe('JSON bodies', () => {
+    let app: INestApplication;
+    beforeAll(async () => {
+      app = await createConfiguredEchoApp();
+    });
+    afterAll(async () => {
+      await app.close();
+    });
 
+    it('takes a two-hour transcript as notes, which Express’s 100 KB default would refuse', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(160_000) })
+        .expect(201);
+      expect(res.body).toEqual({ length: 160_000 });
+    });
+
+    // The global filter answers both as 500 today, where 413 and 400 are
+    // meant (#4404); what this guards is that the answer names its request.
+    it('names the request when it refuses a body over the limit, or one that is not JSON', async () => {
+      const tooLarge = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(1_100_000) });
+      expect(tooLarge.status).toBeGreaterThanOrEqual(400);
+      expect(tooLarge.body.requestId).toMatch(/^req_/);
+
+      const malformed = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .set('content-type', 'application/json')
+        .send('{"text":');
+      expect(malformed.status).toBeGreaterThanOrEqual(400);
+      expect(malformed.body.requestId).toMatch(/^req_/);
+    });
+  });
+
+  let app: INestApplication;
   beforeAll(async () => {
     app = await createConfiguredEchoApp();
   });
-
   afterAll(async () => {
     await app?.close();
   });

@@ -24,6 +24,9 @@ export const AI_SPEND_CAP_DEFAULTS_USD = {
   AI_MEMBER_DAILY_CAP_USD: 2,
   AI_ANTHROPIC_MONTHLY_CAP_USD: 150,
   AI_GOOGLE_MONTHLY_CAP_USD: 50,
+  // Transcription only (#712): about 100 hours of meetings a month at the
+  // catalog's price, which is ten chapters each recording two a week.
+  AI_ASSEMBLYAI_MONTHLY_CAP_USD: 25,
 } as const;
 
 type CapVariable = keyof typeof AI_SPEND_CAP_DEFAULTS_USD;
@@ -32,6 +35,7 @@ type CapVariable = keyof typeof AI_SPEND_CAP_DEFAULTS_USD;
 const PLATFORM_CAP_VARIABLE: Record<AiProvider, CapVariable | null> = {
   anthropic: 'AI_ANTHROPIC_MONTHLY_CAP_USD',
   google: 'AI_GOOGLE_MONTHLY_CAP_USD',
+  assemblyai: 'AI_ASSEMBLYAI_MONTHLY_CAP_USD',
   // Scripted replies cost nothing, so no account can be overspent. Its calls
   // still count against the chapter's and the member's caps at catalog
   // prices, which is how a local run exercises those.

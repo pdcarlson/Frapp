@@ -31,22 +31,38 @@ interface CatalogEntryBase {
   family: AiFeatureFamily;
   provider: AiProvider;
   model: string;
-  inputUsdPerMillionTokens: number;
 }
 
 export interface GenerationCatalogEntry extends CatalogEntryBase {
   kind: 'structured' | 'cited';
   maxOutputTokens: number;
   effort: LanguageModelEffort;
+  inputUsdPerMillionTokens: number;
   outputUsdPerMillionTokens: number;
 }
 
 export interface EmbeddingCatalogEntry extends CatalogEntryBase {
   kind: 'embedding';
   dimensions: number;
+  inputUsdPerMillionTokens: number;
 }
 
-export type AiCatalogEntry = GenerationCatalogEntry | EmbeddingCatalogEntry;
+/**
+ * A recording in, its transcript out (#712). Priced by the hour of audio,
+ * not by the token, and served by a transcriber
+ * (`domain/adapters/transcription.interface.ts`) through
+ * `AiTranscriptionService`, never by `AiGatewayService`.
+ */
+export interface TranscriptionCatalogEntry extends CatalogEntryBase {
+  kind: 'transcription';
+  usdPerAudioHour: number;
+}
+
+/** A task priced by the token: what `AiGatewayService` serves. */
+export type AiTokenCatalogEntry =
+  GenerationCatalogEntry | EmbeddingCatalogEntry;
+
+export type AiCatalogEntry = AiTokenCatalogEntry | TranscriptionCatalogEntry;
 
 const CLAUDE_SONNET = {
   provider: 'anthropic',
@@ -126,6 +142,30 @@ export const AI_MODEL_CATALOG = {
     dimensions: 1536,
     inputUsdPerMillionTokens: 0.15,
   },
+  /**
+   * A meeting's recording, written out with speaker labels (#712).
+   *
+   * **The vendor is not chosen.** ADR-28 leaves it to a bake-off on one real
+   * recorded meeting between AssemblyAI and Google's transcription model, and
+   * #712 stays open for it. Both adapters exist. This entry names AssemblyAI
+   * because it is the only one of the two that takes a whole chapter meeting
+   * in one request: Google's model stops at 30 minutes with speaker labels,
+   * and Frapp does not cut audio into pieces. Moving it to Google is this
+   * entry's `provider`, `model` and price (`gemini-3.5-transcribe`, about
+   * $0.35 an hour), and taking AssemblyAI off the AI sheet
+   * (`ai-consent-sheet.ts`).
+   *
+   * The model id and the price ($0.21 an hour, and $0.02 for speaker labels)
+   * are the research's figures of 2026-11-11, read from search results, and
+   * are confirmed at the vendor before the first paid call.
+   */
+  'meetings.transcribe': {
+    family: 'meetings',
+    kind: 'transcription',
+    provider: 'assemblyai',
+    model: 'universal-3-5-pro',
+    usdPerAudioHour: 0.23,
+  },
 } as const satisfies Record<string, AiCatalogEntry>;
 
 export type AiTaskName = keyof typeof AI_MODEL_CATALOG;
@@ -137,6 +177,7 @@ type TasksOfKind<K extends AiCatalogEntry['kind']> = {
 export type AiStructuredTaskName = TasksOfKind<'structured'>;
 export type AiCitedTaskName = TasksOfKind<'cited'>;
 export type AiEmbeddingTaskName = TasksOfKind<'embedding'>;
+export type AiTranscriptionTaskName = TasksOfKind<'transcription'>;
 
 export function aiCatalogEntry(task: AiTaskName): AiCatalogEntry {
   return AI_MODEL_CATALOG[task];
@@ -147,7 +188,7 @@ export function aiCatalogEntry(task: AiTaskName): AiCatalogEntry {
  * rounded up so a cap is never under-counted.
  */
 export function aiCostMicroUsd(
-  entry: AiCatalogEntry,
+  entry: AiTokenCatalogEntry,
   tokens: { inputTokens: number; outputTokens: number },
 ): number {
   const output =
@@ -156,5 +197,18 @@ export function aiCostMicroUsd(
       : tokens.outputTokens * entry.outputUsdPerMillionTokens;
   return Math.ceil(
     tokens.inputTokens * entry.inputUsdPerMillionTokens + output,
+  );
+}
+
+/**
+ * What transcribing `seconds` of audio costs at the catalog's price, in
+ * millionths of a US dollar, rounded up.
+ */
+export function aiTranscriptionCostMicroUsd(
+  entry: TranscriptionCatalogEntry,
+  seconds: number,
+): number {
+  return Math.ceil(
+    (Math.max(0, seconds) * entry.usdPerAudioHour * 1_000_000) / 3600,
   );
 }

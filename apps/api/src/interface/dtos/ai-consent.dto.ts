@@ -7,8 +7,8 @@ import type {
 } from '../../application/services/ai/ai-consent.service';
 
 export class AiConsentSheetProviderDto {
-  @ApiProperty({ enum: ['anthropic', 'google'] })
-  key: 'anthropic' | 'google';
+  @ApiProperty({ enum: ['anthropic', 'google', 'assemblyai'] })
+  key: 'anthropic' | 'google' | 'assemblyai';
 
   @ApiProperty({
     description: "The company's own name, shown as is.",

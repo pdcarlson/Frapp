@@ -8,8 +8,14 @@ import { z } from "zod";
  * reuses this schema rather than keeping its own).
  */
 
-/** The most notes one draft takes: about a two-hour meeting typed in full. */
-export const MEETING_NOTES_MAX_LENGTH = 40_000;
+/**
+ * The most notes one draft takes. Typed notes never come near it: it is sized
+ * for the transcript of a two-hour recording (#712), which is about 18,000
+ * spoken words, or 120,000 characters with its speaker labels. It was 40,000
+ * until recordings arrived (2026-11-12). The table's own check is the
+ * backstop (`meeting_drafts_notes_len`).
+ */
+export const MEETING_NOTES_MAX_LENGTH = 160_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
 export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v1";

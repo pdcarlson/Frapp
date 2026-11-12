@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   DEFAULT_MEETING_SECTIONS,
+  MEETING_NOTES_MAX_LENGTH,
   type MeetingDraftOutput,
 } from '@repo/validation';
 import type {
@@ -335,9 +336,9 @@ describe('MeetingDraftService', () => {
     it('refuses empty notes and notes past the limit', async () => {
       const { ask } = setup();
       await expect(ask('   ')).rejects.toBeInstanceOf(BadRequestException);
-      await expect(ask('x'.repeat(40_001))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        ask('x'.repeat(MEETING_NOTES_MAX_LENGTH + 1)),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('refuses a draft over minutes someone saved since', async () => {

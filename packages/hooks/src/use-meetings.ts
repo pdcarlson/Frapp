@@ -374,3 +374,139 @@ export function useDiscardMeetingDraft() {
       }),
   });
 }
+
+// ── Uploading a recording (#712) ─────────────────────────────────────────────
+
+/** Where a meeting's uploaded recording stands. */
+export type MeetingRecordingState =
+  components["schemas"]["MeetingRecordingDto"];
+export type StartMeetingRecordingBody =
+  components["schemas"]["StartMeetingRecordingDto"];
+
+const meetingRecordingKey = (
+  chapterId: string | null | undefined,
+  id: string,
+) => ["meetings", chapterId, "recording", id] as const;
+
+/** How often the page asks while a recording is being transcribed. */
+const TRANSCRIBING_POLL_MS = 4000;
+
+/**
+ * Where one meeting's recording stands, for someone who may edit its
+ * minutes. `null` means there is no recording upload here for this viewer
+ * (no AI on this server, minutes they can't edit, a module that is off), and
+ * the caller shows the notes box alone. While a recording is being
+ * transcribed the query asks again every four seconds, and stops when it
+ * ends, so the state survives a reload or a closed tab.
+ */
+export function useMeetingRecording(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingRecordingKey(chapterId, id ?? ""),
+    queryFn: async (): Promise<MeetingRecordingState | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings/{id}/recording",
+        { params: { path: { id: id! } } },
+      );
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "transcribing"
+        ? TRANSCRIBING_POLL_MS
+        : false,
+  });
+}
+
+/**
+ * Start an upload: the server checks the file and answers with where to send
+ * it (`upload`). Refusals carry a code: `meeting.recording_notice_required`,
+ * `meeting.recording_format`, `meeting.recording_too_large`,
+ * `meeting.recording_too_short`, `meeting.recording_too_long`,
+ * `meeting.recording_unavailable`, `meeting.standards_refused`,
+ * `meeting.draft_posted`, `ai.chapter_off`, `ai.consent.required`.
+ */
+export function useStartMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "start"],
+    // A retry after a lost answer would replace the upload it just started.
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: StartMeetingRecordingBody;
+    }) => {
+      const { data, error } = await client.POST(
+        "/v1/meetings/{id}/recording",
+        { params: { path: { id } }, body },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      // The signature is for the uploader alone, not for the cache.
+      queryClient.setQueryData(meetingRecordingKey(chapterId, id), {
+        ...data,
+        upload: null,
+      });
+    },
+  });
+}
+
+/** The file is in storage: transcribe it. Safe to send twice. */
+export function useConfirmMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "uploaded"],
+    mutationFn: async ({ id, uploadId }: { id: string; uploadId: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/meetings/{id}/recording/uploaded",
+        { params: { path: { id } }, body: { upload_id: uploadId } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingRecordingKey(chapterId, id), data);
+    },
+  });
+}
+
+/** Remove the recording and its transcript, and stop a transcription. */
+export function useRemoveMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "remove"],
+    // With `uploadId`, only that upload is removed: what a page giving up on
+    // its own upload sends, so it cannot take down one that replaced it.
+    mutationFn: async ({ id, uploadId }: { id: string; uploadId?: string }) => {
+      const { error } = await client.DELETE("/v1/meetings/{id}/recording", {
+        params: {
+          path: { id },
+          ...(uploadId ? { query: { upload_id: uploadId } } : {}),
+        },
+      });
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) =>
+      queryClient.invalidateQueries({
+        queryKey: meetingRecordingKey(chapterId, id),
+      }),
+  });
+}

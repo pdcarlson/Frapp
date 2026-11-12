@@ -1057,6 +1057,7 @@ export {
 // Minutes drafted from notes (#4312): the model's output schema, the draft's
 // states and the words each failure shows.
 export * from "./meeting-draft";
+export * from "./meeting-recording";
 
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
