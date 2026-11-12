@@ -5,6 +5,7 @@ import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
+import type { ChatView } from "@/components/layout/shell-prefs";
 import {
   isNavItemVisible,
   ProtectedNavItem,
@@ -57,7 +58,19 @@ type AppNavProps = {
    * instead of a link to `/chat`. `open` marks it the way a current row is
    * marked. Absent, the row is the plain link it is below that width.
    */
-  chatRow?: { onSelect: () => void; open: boolean };
+  chatRow?: {
+    onSelect: (view: ChatView) => void;
+    open: boolean;
+    /** Which list the open panel shows (#3774). */
+    view: ChatView;
+  };
+  /**
+   * Which list chat shows, for the two chat rows when they are links (below
+   * the side-by-side width, and in the drawer): the row for the list on
+   * screen at `/chat` is the current page, and Chat links back to channels
+   * from Direct messages (#3774).
+   */
+  chatView?: ChatView;
   /**
    * Clicking the open tool's row closes it (#3779). Given, the row whose
    * route is open becomes a button that calls this instead of a link to the
@@ -71,8 +84,35 @@ type AppNavProps = {
    * until the count clears (#3824).
    */
   highlighted?: ReadonlySet<string>;
+  /** Rows with a mention-red count (today Direct messages, #3774). */
+  counts?: ReadonlyMap<string, number>;
   className?: string;
 };
+
+/**
+ * The two rows that open the chat panel (#3774): Chat on the chapter's
+ * channels, Direct messages on the member's conversations.
+ */
+const CHAT_ROW_VIEW: Readonly<Record<string, ChatView>> = {
+  chat: "channels",
+  direct: "direct",
+};
+
+/** The toggle's action, as its tooltip and pressed state name it. */
+const CHAT_ROW_ACTION: Readonly<Record<ChatView, [string, string]>> = {
+  channels: ["Open chat", "Close chat"],
+  direct: ["Open direct messages", "Close direct messages"],
+};
+
+/** What a screen reader hears after a counted row's name. */
+function countLabel(id: string, value: number): string {
+  if (id === "direct") {
+    return value === 1
+      ? "1 unread conversation"
+      : `${value} unread conversations`;
+  }
+  return `${value} new`;
+}
 
 /** What a screen reader hears after a highlighted row's name. */
 const HIGHLIGHT_LABEL: Record<string, string> = {
@@ -111,8 +151,10 @@ export function AppNav({
   onNavigate,
   variant = "column",
   chatRow,
+  chatView = "channels",
   onCloseTool,
   highlighted,
+  counts,
   className,
 }: AppNavProps) {
   const isDrawer = variant === "drawer";
@@ -155,49 +197,77 @@ export function AppNav({
             {section.label}
           </p>
         )}
-        {visibleItems.map((item) => (
-          <ProtectedNavItem
-            key={item.id}
-            item={item}
-            current={
-              chatRow && item.id === "chat"
-                ? chatRow.open
-                  ? "true"
-                  : undefined
-                : currentFor(item, pathname)
-            }
-            permissions={permissions}
-            iconClassName={navIconClassName}
-            onNavigate={onNavigate}
-            focusClassName={FOCUS_RING_SHELL}
-            isModuleEnabled={isModuleEnabled}
-            hiddenFeatures={hiddenFeatures}
-            collapsed={isCollapsed}
-            highlight={
-              highlighted?.has(item.id)
-                ? (HIGHLIGHT_LABEL[item.id] ?? "new")
-                : undefined
-            }
-            {...(chatRow && item.id === "chat"
-              ? {
-                  onSelect: chatRow.onSelect,
-                  pressed: chatRow.open,
-                  selectLabel: chatRow.open ? "Close chat" : "Open chat",
-                }
-              : // Only the row whose own page is open. A Settings tool's
-                // route marks the Settings row too (`activeFor`), and there
-                // the row stays the way back to the Settings hub.
-                onCloseTool &&
-                  item.id !== "chat" &&
-                  currentFor(item, pathname) === "page"
+        {visibleItems.map((item) => {
+          const rowView = CHAT_ROW_VIEW[item.id];
+          const count = counts?.get(item.id);
+          const shared = {
+            permissions,
+            iconClassName: navIconClassName,
+            onNavigate,
+            focusClassName: FOCUS_RING_SHELL,
+            isModuleEnabled,
+            hiddenFeatures,
+            collapsed: isCollapsed,
+            highlight: highlighted?.has(item.id)
+              ? (HIGHLIGHT_LABEL[item.id] ?? "new")
+              : undefined,
+            count: count
+              ? { value: count, label: countLabel(item.id, count) }
+              : undefined,
+          };
+          if (rowView && chatRow) {
+            // A toggle from the side-by-side width up: the row of the list
+            // on screen closes the panel, the other switches it in place.
+            const open = chatRow.open && chatRow.view === rowView;
+            const [openLabel, closeLabel] = CHAT_ROW_ACTION[rowView];
+            return (
+              <ProtectedNavItem
+                key={item.id}
+                item={item}
+                current={open ? "true" : undefined}
+                onSelect={() => chatRow.onSelect(rowView)}
+                pressed={open}
+                selectLabel={open ? closeLabel : openLabel}
+                {...shared}
+              />
+            );
+          }
+          if (rowView) {
+            // A link: both rows go to `/chat`, so the list on screen says
+            // which of them is the current page.
+            const here = pathname === "/chat" && chatView === rowView;
+            const linked =
+              item.id === "chat" && chatView === "direct"
+                ? { ...item, href: "/chat?view=channels" }
+                : item;
+            return (
+              <ProtectedNavItem
+                key={item.id}
+                item={linked}
+                current={here ? "page" : undefined}
+                {...shared}
+              />
+            );
+          }
+          return (
+            <ProtectedNavItem
+              key={item.id}
+              item={item}
+              current={currentFor(item, pathname)}
+              {...shared}
+              {...(onCloseTool && currentFor(item, pathname) === "page"
                 ? {
+                    // Only the row whose own page is open. A Settings tool's
+                    // route marks the Settings row too (`activeFor`), and
+                    // there the row stays the way back to the Settings hub.
                     onSelect: onCloseTool,
                     pressed: true,
                     selectLabel: `Close ${item.label}`,
                   }
                 : {})}
-          />
-        ))}
+            />
+          );
+        })}
       </div>
     );
   });
