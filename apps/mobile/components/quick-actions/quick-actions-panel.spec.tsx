@@ -233,12 +233,17 @@ describe("editing in place", () => {
   });
 });
 
-/** WCAG 2.2 relative-luminance contrast of two opaque `#RRGGBB` colours. */
+/**
+ * WCAG 2.2 relative-luminance contrast of two opaque `#RRGGBB` colours.
+ * `@repo/color`'s `contrastRatio` is the repo's one implementation, but
+ * `apps/mobile/package.json` (a frozen hotspot) doesn't declare that package,
+ * so this spec carries the formula, with the same 0.03928 threshold.
+ */
 function contrast(a: string, b: string): number {
   const luminance = (hex: string) => {
     const [r, g, b] = [1, 3, 5].map((i) => {
       const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
     });
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
   };
@@ -267,6 +272,15 @@ describe("the edit badges' glyphs (#4393)", () => {
       // The badge is the nearest ancestor that paints a fill.
       let badge = glyph.parent;
       while (badge && !fillOf(badge)) badge = badge.parent;
+      // A faded ancestor would draw the pair at a lower ratio than the one
+      // measured here (the add tray dims its faces), so nothing above the
+      // glyph may carry opacity.
+      for (let node = glyph.parent; node; node = node.parent) {
+        const opacity = [node.props.style]
+          .flat(Infinity)
+          .reduce<number>((o, style) => style?.opacity ?? o, 1);
+        expect(opacity, "a badge glyph sits under a faded ancestor").toBe(1);
+      }
       return { ink: glyph.props.stroke as string, fill: fillOf(badge!)! };
     });
   };

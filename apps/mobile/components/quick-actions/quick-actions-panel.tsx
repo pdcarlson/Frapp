@@ -207,13 +207,24 @@ function ActionFace({
 }) {
   const { tokens } = useFrappTheme();
   return (
-    <View style={[styles.face, dimmed && styles.dimmed]}>
-      <View style={[styles.disc, pressed && styles.discPressed]}>
-        <NavGlyph
-          paths={GLYPHS[actionKey]}
-          color={tokens.color.text.foreground}
-          size={GLYPH_SIZE}
-        />
+    <View style={styles.face}>
+      {/* The badge's anchor, the disc's size. A dimmed face fades its disc and
+          label but never its badge: the add tray dims every face, and a plus
+          drawn at half opacity falls back under 3:1 (#4393). */}
+      <View>
+        <View
+          style={[
+            styles.disc,
+            pressed && styles.discPressed,
+            dimmed && styles.dimmed,
+          ]}
+        >
+          <NavGlyph
+            paths={GLYPHS[actionKey]}
+            color={tokens.color.text.foreground}
+            size={GLYPH_SIZE}
+          />
+        </View>
         {badge === "remove" ? (
           <Pressable
             accessibilityRole="button"
@@ -230,7 +241,7 @@ function ActionFace({
           </View>
         ) : null}
       </View>
-      <Text numberOfLines={1} style={styles.label}>
+      <Text numberOfLines={1} style={[styles.label, dimmed && styles.dimmed]}>
         {QUICK_ACTION_LABELS[actionKey]}
       </Text>
     </View>
