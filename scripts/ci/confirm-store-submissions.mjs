@@ -272,7 +272,9 @@ export function nextStep(row) {
         ? `with ${submitCommand(row.store, row.build)}`
         : "by hand";
     const tried = row.retriedFrom?.length ? ` It was already retried ${row.retriedFrom.length === 1 ? "once" : `${row.retriedFrom.length} times`} (first try ${row.retriedFrom[0]}).` : "";
-    const retryFailed = row.retryError ? ` Retrying it failed: ${row.retryError}.` : "";
+    const retryFailed = row.retryError
+      ? ` Retrying it failed: ${row.retryError}. EAS may still have started that retry, so check expo.dev (Submissions) for a newer submission of this build before retrying again.`
+      : "";
     return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}.${tried}${retryFailed} The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
   }
   if (row.failedReads >= MAX_FAILED_READS || row.status === "unread") {
