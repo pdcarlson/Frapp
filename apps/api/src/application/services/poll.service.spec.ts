@@ -728,11 +728,11 @@ describe('PollService', () => {
           payload: { ...(cardPoll.payload as object), closes_at: null },
         };
         mockMessageRepo.findById.mockResolvedValue(openEnded);
-        mockMessageRepo.update.mockResolvedValue(openEnded);
+        mockMessageRepo.updateIfLive.mockResolvedValue(openEnded);
 
         await service.close('msg-1', 'user-2', 'ch-1', async () => true);
 
-        expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-1', {
+        expect(mockMessageRepo.updateIfLive).toHaveBeenCalledWith('msg-1', {
           payload: {
             ...(openEnded.payload as object),
             closed_at: expect.any(String),
