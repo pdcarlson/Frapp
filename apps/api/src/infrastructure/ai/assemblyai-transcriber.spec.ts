@@ -94,10 +94,21 @@ describe('AssemblyAiTranscriber', () => {
       // Blank and over-long phrases are dropped.
       keyterms_prompt: ['Priya Natarajan'],
     });
-    expect(fetch.mock.calls[3]).toEqual([
+    // The vendor's copy stays until the caller says the transcript is stored.
+    expect(fetch.mock.calls.map(([, init]) => init.method)).not.toContain(
+      'DELETE',
+    );
+  });
+
+  it('deletes the job at the vendor when asked, and never throws', async () => {
+    const { fetch, transcriber } = adapter([() => json({})]);
+    await transcriber.discard('job-1');
+    expect(fetch.mock.calls[0]).toEqual([
       `${ASSEMBLYAI_BASE_URL}/v2/transcript/job-1`,
       expect.objectContaining({ method: 'DELETE' }),
     ]);
+    const failing = adapter([() => json({ error: 'nope' }, 500)]);
+    await expect(failing.transcriber.discard('job-1')).resolves.toBeUndefined();
   });
 
   it('resumes a job from an earlier try without submitting, and so without paying, again', async () => {
@@ -106,10 +117,7 @@ describe('AssemblyAiTranscriber', () => {
     await expect(transcriber.transcribe(input)).resolves.toMatchObject({
       durationSeconds: 598,
     });
-    expect(fetch.mock.calls.map(([, init]) => init.method)).toEqual([
-      'GET',
-      'DELETE',
-    ]);
+    expect(fetch.mock.calls.map(([, init]) => init.method)).toEqual(['GET']);
     expect(input.onJobStarted).not.toHaveBeenCalled();
   });
 
@@ -144,8 +152,6 @@ describe('AssemblyAiTranscriber', () => {
     expect((error as LanguageModelError).kind).toBe('invalid_request');
     expect(JSON.stringify(error)).not.toContain('secret-link');
     expect((error as Error).message).not.toContain('secret-link');
-    // Still deleted at the vendor.
-    expect(fetch.mock.calls[2][1].method).toBe('DELETE');
   });
 
   it.each([

@@ -23,6 +23,7 @@ import {
   type ITranscriberRegistry,
   type TranscriberLimits,
   type TranscriptionAudio,
+  type TranscriptionResult,
   type TranscriptionUtterance,
 } from '#domain/adapters/transcription.interface';
 import {
@@ -209,13 +210,9 @@ export class AiTranscriptionService {
         });
       };
 
+      let result: TranscriptionResult;
       try {
-        const result = await this.run(transcriber, entry, task, input);
-        await settle(
-          { outcome: 'completed', errorKind: null },
-          Math.max(0, Math.ceil(result.durationSeconds)),
-        );
-        return { status: 'ok', ...result } as const;
+        result = await this.run(transcriber, entry, task, input);
       } catch (error) {
         // An adapter only throws `LanguageModelError`; anything else is a
         // bug, and is replaced, because an arbitrary error's message could
@@ -227,7 +224,31 @@ export class AiTranscriptionService {
         await settle({ outcome: 'error', errorKind: failure.kind }, 0);
         throw failure;
       }
+      // Outside the `try`, as the gateway settles: a ledger write that fails
+      // is not a provider error, and must not be settled a second time as one.
+      await settle(
+        { outcome: 'completed', errorKind: null },
+        Math.max(0, Math.ceil(result.durationSeconds)),
+      );
+      return { status: 'ok', ...result } as const;
     });
+  }
+
+  /**
+   * Has the provider delete what it keeps of a job. No consent or spend
+   * check: it sends nothing and costs nothing. Never throws.
+   */
+  async discard(task: AiTranscriptionTaskName, jobId: string): Promise<void> {
+    // With the server switch off too: turning AI off must not strand a
+    // recording at the provider.
+    const transcriber = this.transcribers.resolve(entryOf(task).provider);
+    if (!transcriber) return;
+    try {
+      await transcriber.discard(jobId);
+    } catch {
+      // The port says it never throws; this is the belt. The job id names a
+      // member's recording at the provider, so nothing is logged.
+    }
   }
 
   private run(

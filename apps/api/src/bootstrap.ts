@@ -183,11 +183,6 @@ export function configureApp(
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  // Here, not in `main.ts`, so the e2e suite parses bodies as production does.
-  (app as NestExpressApplication).useBodyParser('json', {
-    limit: JSON_BODY_LIMIT,
-  });
-
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 
   // Same ConsoleLogger format as Nest's default, with requestId on the
@@ -203,6 +198,13 @@ export function configureApp(
   // the rest of the request shares (#3728). `RequestReadsInterceptor` below
   // ends that sharing at a write's handler.
   app.use(requestReadsMiddleware);
+
+  // Here, not in `main.ts`, so the e2e suite parses bodies as production does.
+  // After the request id: this registers the parser at once, and a body it
+  // refuses (malformed, or over the limit) must still answer with an id.
+  (app as NestExpressApplication).useBodyParser('json', {
+    limit: JSON_BODY_LIMIT,
+  });
 
   app.useGlobalInterceptors(
     new LoggingInterceptor(),

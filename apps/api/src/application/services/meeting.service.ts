@@ -732,9 +732,9 @@ export class MeetingService {
       ...notice,
       category: 'events',
       priority: 'NORMAL',
-      data: {
-        target: { screen: 'events', eventId: event.id, meetingId: meeting.id },
-      },
+      // The event, not the minutes: they are a draft, which the members
+      // being told cannot open.
+      data: { target: { screen: 'events', eventId: event.id } },
     });
     return audience.length;
   }

@@ -492,9 +492,14 @@ export function useRemoveMeetingRecording() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "recording", "remove"],
-    mutationFn: async ({ id }: { id: string }) => {
+    // With `uploadId`, only that upload is removed: what a page giving up on
+    // its own upload sends, so it cannot take down one that replaced it.
+    mutationFn: async ({ id, uploadId }: { id: string; uploadId?: string }) => {
       const { error } = await client.DELETE("/v1/meetings/{id}/recording", {
-        params: { path: { id } },
+        params: {
+          path: { id },
+          ...(uploadId ? { query: { upload_id: uploadId } } : {}),
+        },
       });
       if (error) throw error;
       return id;

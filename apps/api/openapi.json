@@ -14829,6 +14829,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "upload_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14851,7 +14860,7 @@
             "bearer": []
           }
         ],
-        "summary": "Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed",
+        "summary": "Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends",
         "tags": [
           "Meetings"
         ]

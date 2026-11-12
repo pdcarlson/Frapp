@@ -101,6 +101,21 @@ export class SupabaseMeetingRecordingRepository implements IMeetingRecordingRepo
     return (data?.length ?? 0) > 0;
   }
 
+  async releaseAttendeeNotice(
+    chapterId: string,
+    meetingId: string,
+  ): Promise<void> {
+    const patch: TablesUpdate<'meeting_recordings'> = {
+      attendees_notified_at: null,
+    };
+    const { error } = await this.supabase
+      .from('meeting_recordings')
+      .update(patch)
+      .eq('meeting_id', meetingId)
+      .eq('chapter_id', chapterId);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async delete(chapterId: string, meetingId: string): Promise<void> {
     const { error } = await this.supabase
       .from('meeting_recordings')

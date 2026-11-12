@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   NotFoundException,
 } from '@nestjs/common';
 import { MEETING_RECORDING_FAILURE_COPY } from '@repo/validation';
@@ -93,6 +94,10 @@ class FakeRecordings implements IMeetingRecordingRepository {
     this.row.attendees_notified_at = at;
     return Promise.resolve(true);
   }
+  releaseAttendeeNotice(): Promise<void> {
+    if (this.row) this.row.attendees_notified_at = null;
+    return Promise.resolve();
+  }
   delete(): Promise<void> {
     this.row = null;
     return Promise.resolve();
@@ -180,6 +185,7 @@ function setup(
             },
           },
     ),
+    discard: jest.fn().mockResolvedValue(undefined),
     transcribe: jest.fn().mockResolvedValue({
       status: 'ok',
       durationSeconds: 4318.4,
@@ -246,6 +252,13 @@ function setup(
     upload,
     context,
   };
+}
+
+/** An upload that has been confirmed and is waiting on its run. */
+async function transcribing(harness: ReturnType<typeof setup>) {
+  const target = await harness.upload();
+  await harness.service.uploaded(CHAPTER, MEETING, SECRETARY, target.upload_id);
+  return target;
 }
 
 describe('MeetingRecordingService', () => {
@@ -449,6 +462,39 @@ describe('MeetingRecordingService', () => {
       await expect(refusal).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('refuses, and keeps nothing, when the chapter or the officer said no while the file was uploading', async () => {
+      const { service, upload, consent, runs, files, recordings, meetings } =
+        setup();
+      const target = await upload();
+      consent.check.mockResolvedValue({
+        allowed: false,
+        reason: 'chapter_off',
+      });
+      await expect(
+        service.uploaded(CHAPTER, MEETING, SECRETARY, target.upload_id),
+      ).rejects.toBeInstanceOf(HttpException);
+      expect(runs.enqueue).not.toHaveBeenCalled();
+      expect(meetings.notifyRecordingUploaded).not.toHaveBeenCalled();
+      expect(recordings.row).toMatchObject({
+        status: 'failed',
+        failure_code: 'chapter_off',
+      });
+      expect(files.size).toBe(0);
+    });
+
+    it('queues nothing for minutes that became Standards while the file was uploading', async () => {
+      const { service, upload, runs, meetings } = setup();
+      const target = await upload();
+      meetings.editableBy.mockResolvedValue(
+        meeting({ meeting_type: 'standards' as never }),
+      );
+      await expect(
+        service.uploaded(CHAPTER, MEETING, SECRETARY, target.upload_id),
+      ).rejects.toBeInstanceOf(HttpException);
+      expect(runs.enqueue).not.toHaveBeenCalled();
+      expect(meetings.notifyRecordingUploaded).not.toHaveBeenCalled();
+    });
+
     it('keeps nothing when the run cannot be queued', async () => {
       const { service, upload, runs, files, recordings, meetings } = setup();
       const target = await upload();
@@ -465,28 +511,23 @@ describe('MeetingRecordingService', () => {
       expect(meetings.notifyRecordingUploaded).not.toHaveBeenCalled();
     });
 
-    it('still transcribes when the notice to attendees fails', async () => {
-      const { service, upload, meetings } = setup();
-      meetings.notifyRecordingUploaded.mockRejectedValue(new Error('push'));
+    it('still transcribes when the notice to attendees fails, and leaves it to be sent by the next upload', async () => {
+      const { service, upload, meetings, recordings } = setup();
+      meetings.notifyRecordingUploaded.mockRejectedValueOnce(new Error('push'));
       const target = await upload();
       await expect(
         service.uploaded(CHAPTER, MEETING, SECRETARY, target.upload_id),
       ).resolves.toMatchObject({ status: 'transcribing' });
+      // The claim is given back: nobody was told.
+      expect(recordings.row!.attendees_notified_at).toBeNull();
+      const again = await upload();
+      await service.uploaded(CHAPTER, MEETING, SECRETARY, again.upload_id);
+      expect(meetings.notifyRecordingUploaded).toHaveBeenCalledTimes(2);
+      expect(recordings.row!.attendees_notified_at).not.toBeNull();
     });
   });
 
   describe('the run', () => {
-    async function transcribing(harness: ReturnType<typeof setup>) {
-      const target = await harness.upload();
-      await harness.service.uploaded(
-        CHAPTER,
-        MEETING,
-        SECRETARY,
-        target.upload_id,
-      );
-      return target;
-    }
-
     it('writes the transcript with numbered speakers and deletes the audio', async () => {
       const harness = setup();
       const target = await transcribing(harness);
@@ -562,6 +603,65 @@ describe('MeetingRecordingService', () => {
         harness.transcription.transcribe.mock.calls[1][1].resumeJobId,
       ).toBe('job-7');
       expect(harness.recordings.row!.status).toBe('ready');
+      // The provider's copy goes only once the transcript is stored: the
+      // first try left it for the second to read.
+      expect(harness.transcription.discard).toHaveBeenCalledTimes(1);
+      expect(harness.transcription.discard).toHaveBeenCalledWith(
+        'meetings.transcribe',
+        'job-7',
+      );
+    });
+
+    it("has the provider delete its copy when the officer stops a transcription, and when a tab gives up on someone else's upload does nothing", async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      harness.recordings.row!.provider_job_id = 'job-9';
+
+      // Another tab's failed upload names its own upload, not this one.
+      await harness.service.remove(
+        CHAPTER,
+        MEETING,
+        SECRETARY,
+        '00000000-0000-4000-8000-00000000dead',
+      );
+      expect(harness.recordings.row!.upload_id).toBe(target.upload_id);
+      expect(harness.files.size).toBe(1);
+      expect(harness.transcription.discard).not.toHaveBeenCalled();
+      expect(harness.runs.cancel).not.toHaveBeenCalled();
+
+      await harness.service.remove(CHAPTER, MEETING, SECRETARY);
+      // The run is stopped, so nothing more is spent on it.
+      expect(harness.runs.cancel).toHaveBeenCalledWith(CHAPTER, RUN);
+      expect(harness.recordings.row).toBeNull();
+      expect(harness.files.size).toBe(0);
+      expect(harness.transcription.discard).toHaveBeenCalledWith(
+        'meetings.transcribe',
+        'job-9',
+      );
+    });
+
+    it('deletes the audio of a run that ends after the minutes were posted and the row went', async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      harness.transcription.transcribe.mockImplementationOnce(
+        async (
+          _task: string,
+          input: { onJobStarted(id: string): Promise<void> },
+        ) => {
+          await input.onJobStarted('job-3');
+          // Posting the minutes removes the row under the run.
+          harness.recordings.row = null;
+          throw new LanguageModelError('invalid_request', 'assemblyai');
+        },
+      );
+      await expect(
+        harness.service.run(harness.context(target.upload_id)),
+      ).rejects.toBeInstanceOf(AiRunFailure);
+      expect(harness.files.size).toBe(0);
+      expect(harness.transcription.discard).toHaveBeenCalledWith(
+        'meetings.transcribe',
+        'job-3',
+      );
     });
 
     it('fails for good, and deletes the audio, when the last try fails', async () => {
@@ -767,6 +867,36 @@ describe('MeetingRecordingService', () => {
         storage_path: null,
       });
       expect(harness.files.size).toBe(0);
+    });
+
+    it('settles a transcription whose run died with nobody watching, and deletes its audio', async () => {
+      const harness = setup();
+      await transcribing(harness);
+      harness.runs.getForMember.mockResolvedValue({
+        status: 'failed',
+        failure_reason: 'attempts_exhausted',
+      });
+      await harness.service.sweepAudio();
+      expect(harness.recordings.row).toMatchObject({
+        status: 'failed',
+        storage_path: null,
+      });
+      expect(harness.files.size).toBe(0);
+    });
+
+    it('deletes a file a failed delete left behind an ended recording', async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      // The transcript was written, and deleting the audio failed.
+      Object.assign(harness.recordings.row!, {
+        status: 'ready',
+        transcript: 'Speaker 1: Call to order.',
+      });
+      expect(harness.files.has(target.path)).toBe(true);
+      await harness.service.sweepAudio();
+      expect(harness.files.size).toBe(0);
+      expect(harness.recordings.row!.storage_path).toBeNull();
+      expect(harness.recordings.row!.status).toBe('ready');
     });
 
     it('deletes audio no recording names any more, and only that', async () => {

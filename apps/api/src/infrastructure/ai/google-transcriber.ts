@@ -1,9 +1,6 @@
-import { ApiError, GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import type { GoogleVertexEnvSettings } from '../../config/ai-config';
-import {
-  LanguageModelError,
-  type LanguageModelErrorKind,
-} from '#domain/adapters/language-model.interface';
+import { toLanguageModelError } from './google-language-model';
 import type {
   ITranscriber,
   TranscriptionRequest,
@@ -133,6 +130,9 @@ export class GoogleTranscriber implements ITranscriber {
       throw toLanguageModelError(error);
     }
   }
+
+  /** Answered in one request, with the audio inline: Google holds no job. */
+  async discard(): Promise<void> {}
 }
 
 /** `"12.5s"` (a protobuf duration) as milliseconds. */
@@ -140,40 +140,4 @@ function offsetMs(offset: string | undefined): number | null {
   if (!offset) return null;
   const seconds = Number.parseFloat(offset);
   return Number.isFinite(seconds) ? Math.round(seconds * 1000) : null;
-}
-
-const KIND_BY_STATUS: Record<number, LanguageModelErrorKind> = {
-  400: 'invalid_request',
-  401: 'auth',
-  403: 'auth',
-  404: 'invalid_request',
-  408: 'timeout',
-  413: 'invalid_request',
-  422: 'invalid_request',
-  429: 'rate_limited',
-  504: 'timeout',
-};
-
-/** Keeps the kind and the status, and none of Google's text. */
-function toLanguageModelError(error: unknown): LanguageModelError {
-  if (error instanceof LanguageModelError) return error;
-  if (error instanceof ApiError) {
-    const status = typeof error.status === 'number' ? error.status : undefined;
-    const kind =
-      status === undefined
-        ? 'unknown'
-        : (KIND_BY_STATUS[status] ??
-          (status >= 500 ? 'overloaded' : 'unknown'));
-    return new LanguageModelError(kind, 'google', { status });
-  }
-  if (error instanceof Error && error.name === 'AbortError') {
-    return new LanguageModelError('aborted', 'google');
-  }
-  if (
-    error instanceof TypeError &&
-    (error.message === 'fetch failed' || error.cause !== undefined)
-  ) {
-    return new LanguageModelError('connection', 'google');
-  }
-  return new LanguageModelError('unknown', 'google');
 }

@@ -65,6 +65,8 @@ export interface IMeetingRecordingRepository {
     meetingId: string,
     at: string,
   ): Promise<boolean>;
+  /** Gives the claim back when nothing could be sent. */
+  releaseAttendeeNotice(chapterId: string, meetingId: string): Promise<void>;
   delete(chapterId: string, meetingId: string): Promise<void>;
   /**
    * Every row that still names a file, in every chapter, oldest first: what

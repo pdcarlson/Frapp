@@ -1,4 +1,4 @@
-import { LanguageModelError } from '#domain/adapters/language-model.interface';
+import { abortableSleep } from './abortable-sleep';
 import type {
   ITranscriber,
   TranscriptionRequest,
@@ -39,25 +39,13 @@ export class ScriptedTranscriber implements ITranscriber {
       durationSeconds: request.audio.durationSeconds,
     };
   }
+
+  /** Nothing is kept anywhere. */
+  async discard(): Promise<void> {}
 }
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) {
-    return Promise.reject(new LanguageModelError('aborted', 'scripted'));
-  }
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(done, ms);
-    function done() {
-      signal?.removeEventListener('abort', stop);
-      resolve();
-    }
-    function stop() {
-      clearTimeout(timer);
-      reject(new LanguageModelError('aborted', 'scripted'));
-    }
-    signal?.addEventListener('abort', stop, { once: true });
-  });
+  return abortableSleep(ms, 'scripted', signal);
 }
 
 function scriptedMeeting(

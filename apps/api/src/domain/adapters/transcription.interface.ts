@@ -96,10 +96,17 @@ export interface ITranscriber {
    * (`language-model.interface.ts`), which carries no text from the vendor:
    * `invalid_request` for a file the vendor could not read as audio.
    *
-   * An adapter deletes whatever the vendor keeps of the recording and its
-   * transcript once it has the result, where the vendor lets it.
+   * It leaves the vendor's copy in place: the caller may have to read the
+   * same job again on a second try, so `discard` is a separate step.
    */
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>;
+  /**
+   * Deletes whatever the vendor keeps of the job `onJobStarted` named: the
+   * recording and its transcript, where the vendor lets it. Called once the
+   * transcript is stored, and when the recording is stopped, replaced or
+   * fails for good. Never throws; a job the vendor no longer has is fine.
+   */
+  discard(jobId: string): Promise<void>;
 }
 
 /**

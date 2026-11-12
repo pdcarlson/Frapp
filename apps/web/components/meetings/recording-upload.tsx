@@ -173,6 +173,12 @@ export function RecordingUpload({
     return () => window.removeEventListener("beforeunload", warn);
   }, [sending]);
   useEffect(() => () => abort.current?.abort(), []);
+  // The recording was removed or replaced from outside this row (Clear
+  // notes, another tab) while this tab was still sending it: stop sending.
+  const sendingId = sending?.uploadId ?? null;
+  useEffect(() => {
+    if (sendingId && state.upload_id !== sendingId) abort.current?.abort();
+  }, [sendingId, state.upload_id]);
 
   async function handleOpen() {
     setProblem(null);
@@ -281,7 +287,10 @@ export function RecordingUpload({
     } catch (error) {
       if (controller.signal.aborted) return;
       // Nothing half-sent is kept: the officer starts again with the file.
-      void remove.mutateAsync({ id: meetingId }).catch(() => undefined);
+      // Only this upload: another tab may have replaced it since.
+      void remove
+        .mutateAsync({ id: meetingId, uploadId: target.upload_id })
+        .catch(() => undefined);
       setProblem(
         error instanceof ResumableUploadError
           ? error.failure === "network"
@@ -302,10 +311,15 @@ export function RecordingUpload({
 
   async function handleRemove(ask: ConfirmRequest | null) {
     if (ask && !(await confirm(ask))) return;
+    // Cancelling an upload under way removes that upload and no other.
+    const own = sending?.uploadId;
     abort.current?.abort();
     setProblem(null);
     try {
-      await remove.mutateAsync({ id: meetingId });
+      await remove.mutateAsync({
+        id: meetingId,
+        ...(own ? { uploadId: own } : {}),
+      });
     } catch (error) {
       setProblem(
         getErrorMessage(error, "Couldn't remove the recording. Try again."),

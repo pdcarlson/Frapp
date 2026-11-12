@@ -4386,7 +4386,7 @@ export interface paths {
         put?: never;
         /** Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored */
         post: operations["MeetingRecordingController_start_v1"];
-        /** Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed */
+        /** Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends */
         delete: operations["MeetingRecordingController_remove_v1"];
         options?: never;
         head?: never;
@@ -17863,7 +17863,9 @@ export interface operations {
     };
     MeetingRecordingController_remove_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                upload_id?: string;
+            };
             header?: never;
             path: {
                 id: string;

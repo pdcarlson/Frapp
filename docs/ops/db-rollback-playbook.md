@@ -3797,6 +3797,8 @@ One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usa
 drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
 drop function if exists public.expire_ai_spend_holds(timestamptz);
 drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
+-- Since 20261112200000_meeting_recordings.sql the function takes a 19th argument (p_audio_seconds):
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer);
 drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
 drop table if exists public.ai_usage_events;
 drop function if exists public.ai_usage_charge(text, bigint, bigint);
@@ -3948,7 +3950,7 @@ alter table public.ai_suggestions drop column if exists dedupe_key;
 
 One new bucket (`meeting-audio`), one new table (`meeting_recordings`) with two trigger functions, an `audio_seconds` column on `ai_usage_events`, `assemblyai` in that table's provider check, `settle_ai_spend` and `ai_chapter_usage` recreated to carry the seconds, and a wider length check on `meeting_drafts.notes`. It writes nothing on apply.
 
-**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every `/v1/meetings/{id}/recording` route answers 404 and nothing is uploaded or transcribed. The two sweeps keep running with the switch off: one deletes any audio left in the bucket within the hour, the other deletes each `meeting_recordings` row 30 days after its upload. The ledger changes are additive, and the API from before this migration works against them unchanged.
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every `/v1/meetings/{id}/recording` route answers 404 and nothing is uploaded or transcribed. The two sweeps keep running with the switch off: one, every 30 minutes, deletes the audio of every ended recording and any file no row names, and ends an upload or a transcription left unfinished once it is six hours old, so audio caught mid-upload when the switch went off can sit in the bucket that long; the other deletes each `meeting_recordings` row 30 days after its upload. The ledger changes are additive, and the API from before this migration works against them unchanged.
 
 To remove the recording table and bucket, in a later forward migration. Empty the bucket first (the audio sweep does, or delete its objects through the Storage API; a bucket with objects cannot be deleted, and deleting `storage.objects` rows in SQL orphans the files):
 

@@ -116,7 +116,7 @@ end $$;
 --   - with the meeting (`on delete cascade`);
 --   - when the minutes are posted (trigger below);
 --   - when the officer who uploaded it deletes their account (trigger below);
---   - when the officer removes the recording or clears their notes, and 30
+--   - when the officer removes the recording (the web's Clear notes does), and 30
 --     days after the upload whatever else happened (both in the API).
 --
 -- Locks. The foreign keys add triggers to `meetings`, `chapters`, `users`

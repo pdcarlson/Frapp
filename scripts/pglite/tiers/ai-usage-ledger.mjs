@@ -342,7 +342,7 @@ try {
     ).rows[0].ok;
   const fns = [
     "public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz)",
-    "public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz)",
+    "public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer)",
     "public.expire_ai_spend_holds(timestamptz)",
     "public.ai_chapter_usage(uuid, timestamptz, timestamptz)",
   ];

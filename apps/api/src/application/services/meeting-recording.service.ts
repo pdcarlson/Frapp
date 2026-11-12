@@ -54,6 +54,7 @@ import {
   type AiRunContext,
   type AiRunHandler,
 } from './ai-run-registry';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { AiTranscriptionService } from './ai/ai-transcription.service';
 import { AiConsentService } from './ai/ai-consent.service';
 import { aiConsentRefusal } from './ai/ai-consent-refusal';
@@ -283,6 +284,12 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     if (earlier?.status === 'transcribing' && earlier.run_id) {
       await this.runs.cancel(chapterId, earlier.run_id);
     }
+    if (earlier?.provider_job_id) {
+      await this.transcription.discard(
+        MEETING_TRANSCRIPTION_TASK,
+        earlier.provider_job_id,
+      );
+    }
 
     const uploadId = randomUUID();
     const path = `${chapterId}/${meetingId}/${uploadId}.${meetingRecordingExtension(mimeType)}`;
@@ -425,15 +432,25 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     chapterId: string,
     meetingId: string,
     userId: string,
+    uploadId?: string,
   ): Promise<void> {
     await this.meetings.editableBy(chapterId, meetingId, userId);
     const recording = await this.recordings.find(chapterId, meetingId);
     if (!recording) return;
+    // A tab giving up on its own upload names it, so it cannot take down the
+    // upload another officer, or another tab, has since replaced it with.
+    if (uploadId && recording.upload_id !== uploadId) return;
     if (recording.status === 'transcribing' && recording.run_id) {
       await this.runs.cancel(chapterId, recording.run_id);
     }
     await this.recordings.delete(chapterId, meetingId);
     if (recording.storage_path) await this.deleteAudio(recording.storage_path);
+    if (recording.provider_job_id) {
+      await this.transcription.discard(
+        MEETING_TRANSCRIPTION_TASK,
+        recording.provider_job_id,
+      );
+    }
   }
 
   // ── Sweeps ────────────────────────────────────────────────────────────────
@@ -464,7 +481,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
         const age = now.getTime() - Date.parse(recording.created_at);
         if (age > ABANDONED_UPLOAD_MS) {
           await this.fail(recording, ['uploading'], 'upload_incomplete');
-          deleted += 1;
+          if (recording.storage_path) deleted += 1;
         }
       } else if (recording.status === 'transcribing') {
         await this.settled(recording);
@@ -525,11 +542,18 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     ) {
       return;
     }
+    // The provider's id for the work, from an earlier try or from this one,
+    // so whatever ends the run can have the provider delete its copy.
+    let jobId = recording.provider_job_id;
     const fail = async (
       failure: MeetingRecordingFailure,
       reason: AiRunFailureReason,
     ): Promise<never> => {
-      await this.fail(recording, ['transcribing'], failure);
+      await this.fail(
+        { ...recording, provider_job_id: jobId },
+        ['transcribing'],
+        failure,
+      );
       throw new AiRunFailure(reason, `meeting transcription ended: ${failure}`);
     };
     if (!userId) return fail('not_permitted', 'not_permitted');
@@ -593,13 +617,14 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
           vocabulary,
           promptVersion: MEETING_TRANSCRIPTION_VERSION,
           resumeJobId: recording.provider_job_id,
-          onJobStarted: async (jobId) => {
+          onJobStarted: async (startedId) => {
+            jobId = startedId;
             await this.recordings.step(
               chapterId,
               meetingId,
               uploadId,
               ['transcribing'],
-              { provider_job_id: jobId.slice(0, 200) },
+              { provider_job_id: startedId.slice(0, 200) },
             );
           },
           signal,
@@ -669,8 +694,13 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       },
     );
     // Written or not (the officer may have uploaded again or removed it),
-    // this upload's audio has no further use.
+    // this upload's audio has no further use, here or at the provider. The
+    // provider's copy goes only now, after the transcript is stored: a try
+    // that died before this line reads the same job again.
     await this.deleteAudio(path);
+    if (jobId) {
+      await this.transcription.discard(MEETING_TRANSCRIPTION_TASK, jobId);
+    }
     if (!written) return;
     return {
       meeting_id: meetingId,
@@ -733,8 +763,8 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
   }
 
   /**
-   * Ends a recording as failed and deletes its audio. The file goes whether
-   * or not the row was still this upload's to end.
+   * Ends a recording as failed and deletes its audio, here and at the
+   * provider. Both go whether or not the row was still this upload's to end.
    */
   private async fail(
     recording: MeetingRecording,
@@ -754,8 +784,16 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
         finished_at: new Date().toISOString(),
       },
     );
-    if (ended && recording.storage_path) {
+    // The path and the job are this upload's alone, so both go even when the
+    // row was replaced, or removed by the minutes being posted.
+    if (recording.storage_path) {
       await this.deleteAudio(recording.storage_path);
+    }
+    if (recording.provider_job_id) {
+      await this.transcription.discard(
+        MEETING_TRANSCRIPTION_TASK,
+        recording.provider_job_id,
+      );
     }
     return ended;
   }
@@ -779,8 +817,9 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     meeting: Meeting,
     uploaderId: string,
   ): Promise<void> {
+    let claimed = false;
     try {
-      const claimed = await this.recordings.claimAttendeeNotice(
+      claimed = await this.recordings.claimAttendeeNotice(
         chapterId,
         meeting.id,
         new Date().toISOString(),
@@ -795,10 +834,21 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
           body: MEETING_RECORDING_NOTIFICATION.body(meeting.event_name),
         },
       );
-    } catch {
-      this.logger.warn(
-        `Could not tell attendees about the recording for meeting ${meeting.id}`,
-      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'meeting-recording-notice',
+        message: `could not tell attendees about the recording for meeting ${meeting.id}`,
+        error,
+      });
+      // The claim is given back, so the next upload for this meeting tells
+      // them. Nothing was sent, or some were: telling a few twice is the
+      // safe side of telling nobody.
+      if (claimed) {
+        await this.recordings
+          .releaseAttendeeNotice(chapterId, meeting.id)
+          .catch(() => undefined);
+      }
     }
   }
 

@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,6 +17,7 @@ import {
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
+  ApiQuery,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -107,14 +109,17 @@ export class MeetingRecordingController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed',
+      "Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends",
   })
+  @ApiQuery({ name: 'upload_id', required: false, format: 'uuid' })
   @ApiNoContentResponse()
   async remove(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('upload_id', new ParseUUIDPipe({ optional: true }))
+    uploadId?: string,
   ): Promise<void> {
-    await this.recordings.remove(chapterId, id, userId);
+    await this.recordings.remove(chapterId, id, userId, uploadId);
   }
 }

@@ -1,3 +1,4 @@
+import { abortableSleep } from './abortable-sleep';
 import {
   LanguageModelError,
   type LanguageModelErrorKind,
@@ -99,13 +100,10 @@ export class AssemblyAiTranscriber implements ITranscriber {
     if (transcript.status !== 'completed') {
       // `error`: AssemblyAI could not fetch or decode the file. Its own
       // message is dropped; the caller says "couldn't be read as audio".
-      await this.discard(id!);
       throw new LanguageModelError('invalid_request', 'assemblyai');
     }
 
-    const result = toResult(transcript, request.audio.durationSeconds);
-    await this.discard(id!);
-    return result;
+    return toResult(transcript, request.audio.durationSeconds);
   }
 
   private async submit(
@@ -157,7 +155,7 @@ export class AssemblyAiTranscriber implements ITranscriber {
   }
 
   /** Removes the transcript at AssemblyAI. Never throws. */
-  private async discard(id: string): Promise<void> {
+  async discard(id: string): Promise<void> {
     try {
       await this.call(
         'DELETE',
@@ -268,19 +266,5 @@ function toLanguageModelError(error: unknown): LanguageModelError {
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) {
-    return Promise.reject(new LanguageModelError('aborted', 'assemblyai'));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(done, ms);
-    function done() {
-      signal?.removeEventListener('abort', stop);
-      resolve();
-    }
-    function stop() {
-      clearTimeout(timer);
-      reject(new LanguageModelError('aborted', 'assemblyai'));
-    }
-    signal?.addEventListener('abort', stop, { once: true });
-  });
+  return abortableSleep(ms, 'assemblyai', signal);
 }

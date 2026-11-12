@@ -22,7 +22,18 @@ function storage(fileSize: number) {
     const headers = new Headers(init?.headers);
     const method = init?.method ?? "GET";
     calls.push({ method, offset: headers.get("Upload-Offset") });
+    // What the real server refuses a request without.
+    if (headers.get("Tus-Resumable") !== "1.0.0") {
+      return new Response(null, { status: 412 });
+    }
     if (method === "POST") {
+      const meta = headers.get("Upload-Metadata") ?? "";
+      if (
+        headers.get("x-signature") !== TARGET.token ||
+        !meta.includes(`contentType ${btoa(TARGET.contentType)}`)
+      ) {
+        return new Response(null, { status: 400 });
+      }
       return new Response(null, {
         status: 201,
         headers: { Location: "/storage/v1/upload/resumable/sign/abc" },
@@ -33,6 +44,9 @@ function storage(fileSize: number) {
         status: 200,
         headers: { "Upload-Offset": String(have), "Upload-Length": String(fileSize) },
       });
+    }
+    if (headers.get("Content-Type") !== "application/offset+octet-stream") {
+      return new Response(null, { status: 415 });
     }
     const planned = fail.shift();
     const body = init?.body as Blob;
@@ -104,6 +118,26 @@ describe("uploadResumable", () => {
       { method: "PATCH", offset: "0" },
       { method: "HEAD", offset: null },
       { method: "PATCH", offset: String(RESUMABLE_CHUNK_BYTES / 2) },
+    ]);
+  });
+
+  it("tries a piece again when Storage is briefly unwell", async () => {
+    const server = storage(10);
+    server.fail.push(new Response(null, { status: 503 }));
+    await uploadResumable(file(10), TARGET, { ...OPTIONS, fetch: server.send });
+    expect(server.received()).toBe(10);
+  });
+
+  it("takes Storage's count when it disagrees about how much has arrived", async () => {
+    const size = RESUMABLE_CHUNK_BYTES + 100;
+    const server = storage(size);
+    server.fail.push(new Response(null, { status: 409 }));
+    await uploadResumable(file(size), TARGET, { ...OPTIONS, fetch: server.send });
+    expect(server.received()).toBe(size);
+    expect(server.calls.slice(1, 4).map((call) => call.method)).toEqual([
+      "PATCH",
+      "HEAD",
+      "PATCH",
     ]);
   });
 

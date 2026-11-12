@@ -29,6 +29,7 @@ function harness(transcriber: Partial<ITranscriber> | null = {}) {
       : {
           provider: 'assemblyai',
           limits: { maxDurationSeconds: 36_000, maxBytes: 5 * 1024 ** 3 },
+          discard: jest.fn().mockResolvedValue(undefined),
           transcribe: jest.fn().mockResolvedValue({
             utterances: [
               { speaker: 'A', text: 'Hello.', startMs: 0, endMs: 500 },
@@ -241,6 +242,25 @@ describe('AiTranscriptionService', () => {
         costMicroUsd: 0,
       }),
     );
+  });
+
+  it('does not settle a finished transcription a second time, as an error, when the ledger write fails', async () => {
+    const h = harness();
+    h.recorder.record.mockRejectedValueOnce(new Error('ledger down'));
+    await expect(h.transcribe()).rejects.toThrow('ledger down');
+    expect(h.recorder.record).toHaveBeenCalledTimes(1);
+    expect(h.recorder.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed' }),
+    );
+  });
+
+  it('has the vendor delete a job, and never throws doing it', async () => {
+    const discard = jest.fn().mockRejectedValue(new Error('gone'));
+    const h = harness({ discard });
+    await expect(
+      h.service.discard('meetings.transcribe', 'job-1'),
+    ).resolves.toBeUndefined();
+    expect(discard).toHaveBeenCalledWith('job-1');
   });
 
   it('replaces an error that is not the adapter’s own, which could quote the link', async () => {
