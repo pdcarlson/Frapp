@@ -4,10 +4,10 @@ import { AI_CONSENT_CHECK } from '#domain/adapters/ai-consent-check.interface';
 import { AI_SPEND_RESERVATION } from '#domain/adapters/ai-spend-reservation.interface';
 import { AI_USAGE_RECORDER } from '#domain/adapters/ai-usage-recorder.interface';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
+import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { AllowAllAiConsentCheck } from '../../infrastructure/ai/allow-all-ai-consent-check';
-import { DiscardingAiUsageRecorder } from '../../infrastructure/ai/discarding-ai-usage-recorder';
-import { UnlimitedAiSpendReservation } from '../../infrastructure/ai/unlimited-ai-spend-reservation';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentSeamModule } from './ai-consent-seam.module';
 import { AiSpendSeamModule } from './ai-spend-seam.module';
@@ -23,6 +23,38 @@ const track = jest.fn().mockResolvedValue(undefined);
 })
 class FakeAnalyticsModule {}
 
+const RESERVATION = '0c000000-0000-4000-8000-000000000714';
+const rpc = jest.fn((fn: string) => {
+  if (fn === 'reserve_ai_spend') {
+    return Promise.resolve({
+      data: [
+        {
+          reservation_id: RESERVATION,
+          refused: null,
+          platform_spent_before: 0,
+          platform_spent_after: 1,
+        },
+      ],
+      error: null,
+    });
+  }
+  if (fn === 'settle_ai_spend') {
+    return Promise.resolve({ data: 'settled', error: null });
+  }
+  return Promise.resolve({
+    data: null,
+    error: { message: `unexpected ${fn}` },
+  });
+});
+
+/** The app's Supabase module is global; this stands in for it. */
+@Global()
+@Module({
+  providers: [{ provide: SUPABASE_CLIENT, useValue: { rpc } }],
+  exports: [SUPABASE_CLIENT],
+})
+class FakeSupabaseModule {}
+
 async function compile(env: Record<string, string>) {
   const saved = { ...process.env };
   // Only what the test passes: a key or a switch exported in the shell (or
@@ -33,7 +65,9 @@ async function compile(env: Record<string, string>) {
   delete process.env.ANTHROPIC_API_KEY;
   Object.assign(process.env, env);
   try {
-    return await Test.createTestingModule({ imports: [AiModule] })
+    return await Test.createTestingModule({
+      imports: [FakeSupabaseModule, AiModule],
+    })
       .overrideModule(AnalyticsModule)
       .useModule(FakeAnalyticsModule)
       .compile();
@@ -48,19 +82,23 @@ describe('AiModule', () => {
     if (original === undefined) delete process.env.AI_ENABLED;
     else process.env.AI_ENABLED = original;
     track.mockClear();
+    rpc.mockClear();
   });
 
-  it('binds each seam to its no-op default, from its own module', async () => {
+  it('binds each seam from its own module: spend and usage to one ledger', async () => {
     const moduleRef = await compile({});
     expect(
       moduleRef.select(AiConsentSeamModule).get<unknown>(AI_CONSENT_CHECK),
     ).toBeInstanceOf(AllowAllAiConsentCheck);
-    expect(
-      moduleRef.select(AiSpendSeamModule).get<unknown>(AI_SPEND_RESERVATION),
-    ).toBeInstanceOf(UnlimitedAiSpendReservation);
-    expect(
-      moduleRef.select(AiUsageSeamModule).get<unknown>(AI_USAGE_RECORDER),
-    ).toBeInstanceOf(DiscardingAiUsageRecorder);
+    const spend = moduleRef
+      .select(AiSpendSeamModule)
+      .get<unknown>(AI_SPEND_RESERVATION);
+    const usage = moduleRef
+      .select(AiUsageSeamModule)
+      .get<unknown>(AI_USAGE_RECORDER);
+    expect(spend).toBeInstanceOf(AiSpendLedgerService);
+    // One instance: a hold and its settlement go through the same ledger.
+    expect(usage).toBe(spend);
   });
 
   it('boots with nothing configured and answers "not available"', async () => {
@@ -86,6 +124,8 @@ describe('AiModule', () => {
       ),
     ).resolves.toEqual({ status: 'unavailable', reason: 'not_configured' });
     expect(track).not.toHaveBeenCalled();
+    // Nothing was held: a call that is not made touches no ledger.
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('serves a call end to end through the scripted adapter', async () => {
@@ -108,5 +148,30 @@ describe('AiModule', () => {
       citations: [],
     });
     expect(track).toHaveBeenCalledTimes(1);
+
+    // Held before the call, settled after it, against the same row, with no
+    // text in either.
+    expect(rpc.mock.calls.map(([fn]) => fn)).toEqual([
+      'reserve_ai_spend',
+      'settle_ai_spend',
+    ]);
+    const [[, held], [, settled]] = rpc.mock.calls as unknown as [
+      [string, Record<string, unknown>],
+      [string, Record<string, unknown>],
+    ];
+    expect(held).toMatchObject({
+      p_chapter_id: 'c',
+      p_user_id: 'u',
+      p_task: 'ask.answer',
+      p_provider: 'scripted',
+      // Scripted replies cost nothing: no platform cap.
+      p_platform_cap_micro_usd: null,
+    });
+    expect(settled).toMatchObject({
+      p_reservation_id: RESERVATION,
+      p_outcome: 'completed',
+      p_bill_reservation: false,
+    });
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain('When is formal?');
   });
 });

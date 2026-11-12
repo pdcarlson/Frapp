@@ -8,12 +8,28 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
+  memberAvatarTint,
   useActiveChapterId,
+  useChapterRoster,
   useMarkNotificationRead,
   useMarkNotificationsRead,
+  useMemberDisplayNames,
   useNotifications,
   useNowDate,
+  useViewerUserId,
 } from "@repo/hooks";
+import {
+  NOTIFICATION_KIND_LABEL,
+  NOTIFICATION_TILE_GLYPH,
+  NOTIFICATION_TILE_HUE,
+  isTileKind,
+  notificationLook,
+  notificationPreview,
+  notificationTitle,
+  titleAroundName,
+  type NotificationKind,
+} from "@repo/hooks/notification-rows";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { CheckAllGlyph } from "@/components/control-glyphs";
@@ -29,6 +45,7 @@ import {
 import {
   ErrorState,
   NoChapterState,
+  SkeletonBlock,
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
@@ -41,11 +58,12 @@ import {
   NOTIFICATION_FALLBACK_PATHNAME,
   openNotificationTarget,
 } from "@/lib/notifications/targets";
-import { typeRole, useFrappTheme } from "@/lib/theme";
-import {
-  type ChapterBranding,
-  useChapterBranding,
-} from "@/lib/chapter-branding";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { MemberAvatar } from "@/components/member-avatar";
+import { NavGlyph } from "@/components/nav-glyph";
+import { AnnouncementGlyph } from "@/components/chat/card-glyphs";
+import { initialsFor } from "@/lib/chat/display-name";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
 
 /**
@@ -57,12 +75,12 @@ import { InlineNote } from "@/components/inline-note";
  * nothing on this screen depends on it, which is why the history renders
  * identically with push switched off.
  *
- * ## The category label under each row is derived
+ * ## Each row says who and what (#4346)
  *
- * A notification row does not store its category: `NotificationService`
- * persists `data: payload.data ?? {}` and forwards `category` only to the push
- * provider for delivery telemetry. What the row does carry is the deep-link
- * target, so the label comes from `data.target.screen` — see `lib/more/notifications.ts`.
+ * The picture, the kind's badge or tile, the name's colour and the mention
+ * chips come from `@repo/hooks/notification-rows`, which the web drawer draws
+ * from too, over the roster chat already caches. The category word that sat
+ * under each row until then is the badge's spoken label now.
  *
  * ## "Mark all read" is one request
  *
@@ -83,10 +101,20 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
+  // The roster every chat screen already reads (cached, `staleTime` 60s), for
+  // each row's picture, name colour and mention chips (#4346). No read of
+  // its own on this path (#3728).
+  const roster = useChapterRoster();
+  const names = useMemberDisplayNames();
+  const viewerId = useViewerUserId();
+  const people = useMemo<NotificationPeople>(
+    () => ({ viewerId, members: roster.data ?? null, names }),
+    [viewerId, roster.data, names],
+  );
   const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkNotificationsRead();
@@ -114,7 +142,9 @@ export default function NotificationsScreen() {
     setMarkAllNote(null);
     markAll.mutate(undefined, {
       onError: () =>
-        setMarkAllNote("Couldn't mark them read. Check your connection and try again."),
+        setMarkAllNote(
+          "Couldn't mark them read. Check your connection and try again.",
+        ),
     });
   }
 
@@ -132,9 +162,7 @@ export default function NotificationsScreen() {
       );
     }
     if (groups.length === 0) {
-      return (
-        <InlineNote>{"You're all caught up."}</InlineNote>
-      );
+      return <InlineNote>{"You're all caught up."}</InlineNote>;
     }
     return groups.map((group) => (
       <View key={group.heading} style={styles.group}>
@@ -143,6 +171,7 @@ export default function NotificationsScreen() {
           <NotificationListRow
             key={row.id}
             row={row}
+            people={people}
             onPress={() => {
               if (row.isUnread) markRead.mutate(row.id);
               // Resolves to this screen when the target is unrecognized, so
@@ -190,50 +219,225 @@ export default function NotificationsScreen() {
   );
 }
 
-/** Exported so a spec can render one row without the whole screen. */
+/**
+ * Who a row's people are: the viewer, for the mention test, and the roster,
+ * for names, pictures and colours. Worked out once by the screen and handed
+ * to every row, rather than each row building the roster's maps again.
+ */
+export interface NotificationPeople {
+  viewerId: string | null;
+  members: readonly { user_id: string; display_name: string }[] | null;
+  names: Pick<
+    ReturnType<typeof useMemberDisplayNames>,
+    "nameFor" | "avatarFor" | "roleColorFor" | "avatarTintFor"
+  > | null;
+}
+
+const NO_PEOPLE: NotificationPeople = {
+  viewerId: null,
+  members: null,
+  names: null,
+};
+
+/**
+ * One notification (#4346), drawn as the web drawer draws it: the picture of
+ * who it is about with a badge for its kind, or a tile where no person is
+ * behind it; the title with the person's name in their colour and the time
+ * beside it; the preview with chat's mention chips. A row that mentions you
+ * wears the @ badge in the chapter accent and is not tinted (Shawn's pick,
+ * 2026-11-11). Exported so a spec can render one row without the screen.
+ */
 export function NotificationListRow({
   row,
+  people = NO_PEOPLE,
   onPress,
 }: {
   row: NotificationRow;
+  people?: NotificationPeople;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const feedback = usePressFeedback();
+
+  const look = notificationLook(row);
+  const names = people.names;
+  const personName =
+    look.personId && names ? names.nameFor(look.personId) : null;
+  const nameColor =
+    look.personId && names ? names.roleColorFor(look.personId) : null;
+  const shownTitle = notificationTitle(row.title);
+  const title = titleAroundName(shownTitle, personName);
+  const preview = notificationPreview(row.body, people.members);
+  const previewText = preview.map((segment) => segment.text).join("");
+  const kindLabel = NOTIFICATION_KIND_LABEL[look.kind];
 
   return (
     <Pressable
       accessibilityRole="button"
       // The Pressable is one node, so its texts aren't read on their own: the
-      // label carries the body too, all of it, though the row shows two lines.
-      // `listRowHint` joins them as sentences, the way a row's hint is.
-      accessibilityLabel={
-        row.body ? listRowHint(row.title, row.body) : row.title
-      }
+      // label says the kind (the badge can't be seen), then the title and the
+      // body, all of it, though the row shows two lines.
+      accessibilityLabel={listRowHint(
+        `${kindLabel}: ${shownTitle}`,
+        previewText || undefined,
+      )}
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}
       android_ripple={feedback.ripple}
       style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
+      testID={`notification-row-${look.kind}`}
     >
       <View style={row.isUnread ? styles.dot : styles.dotSpacer} />
+      <NotificationPicture
+        kind={look.kind}
+        personId={look.personId}
+        personName={personName}
+        people={people}
+      />
       <View style={styles.rowText}>
-        <Text
-          style={[styles.rowTitle, row.isUnread ? null : styles.rowTitleRead]}
-        >
-          {row.title}
-        </Text>
-        {row.body ? (
-          <Text style={styles.rowBody} numberOfLines={2}>
-            {row.body}
+        <View style={styles.titleLine}>
+          <Text
+            style={[styles.rowTitle, row.isUnread ? null : styles.rowTitleRead]}
+          >
+            {title ? (
+              <>
+                {title.before}
+                <Text style={nameColor ? { color: nameColor } : null}>
+                  {title.name}
+                </Text>
+                <Text style={styles.rowTitleRest}>{title.after}</Text>
+              </>
+            ) : (
+              shownTitle
+            )}
+          </Text>
+          <Text style={styles.rowTime}>{row.time}</Text>
+        </View>
+        {preview.length > 0 ? (
+          <Text
+            style={[styles.rowBody, row.isUnread ? null : styles.rowBodyRead]}
+            numberOfLines={2}
+          >
+            {preview.some((segment) => segment.mention)
+              ? preview.map((segment, index) =>
+                  segment.mention ? (
+                    <Text key={index} style={styles.mentionChip}>
+                      {segment.text}
+                    </Text>
+                  ) : (
+                    segment.text
+                  ),
+                )
+              : previewText}
           </Text>
         ) : null}
-        <Text style={styles.rowMeta}>
-          {[row.categoryLabel, row.time].filter(Boolean).join(" · ")}
-        </Text>
       </View>
     </Pressable>
+  );
+}
+
+/** The row's picture: a person with a kind badge, or a kind's tile. */
+function NotificationPicture({
+  kind,
+  personId,
+  personName,
+  people,
+}: {
+  kind: NotificationKind;
+  personId: string | null;
+  personName: string | null;
+  people: NotificationPeople;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
+  if (isTileKind(kind)) {
+    // The initials avatar's paint, so a tile and a picture sit at one
+    // strength.
+    const paint = memberAvatarTint(NOTIFICATION_TILE_HUE[kind]);
+    return (
+      <View
+        style={[styles.tile, { backgroundColor: paint.fill }]}
+        testID={`notification-tile-${kind}`}
+      >
+        <NavGlyph
+          paths={NAV_GLYPHS[NOTIFICATION_TILE_GLYPH[kind]]}
+          color={paint.text}
+          size={TILE_GLYPH_SIZE}
+        />
+      </View>
+    );
+  }
+  const names = people.names;
+  return (
+    <View style={styles.picture}>
+      <MemberAvatar
+        uri={personId && names ? names.avatarFor(personId) : null}
+        initials={personName ? initialsFor(personName) : ""}
+        size={PICTURE_SIZE}
+        tint={personId && names ? names.avatarTintFor(personId) : null}
+        style={styles.avatar}
+        textStyle={styles.avatarText}
+      />
+      <KindBadge kind={kind} />
+    </View>
+  );
+}
+
+function KindBadge({ kind }: { kind: NotificationKind }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  // The mention is the badge in gold: the in-body mention chip's fixed pair
+  // (`components.md` § In-body mention chip), inverted so it reads at 18pt.
+  // Fixed, never the chapter accent, so a mention looks alike in every
+  // chapter (`foundations.md` §5, as changed in #4346). A join is the success
+  // green.
+  const tone =
+    kind === "mention"
+      ? {
+          fill: tokens.color.semantic.mentionChipText,
+          ink: tokens.color.semantic.mentionChip,
+        }
+      : kind === "join"
+        ? {
+            fill: tokens.color.semantic.success,
+            ink: tokens.color.surface.background,
+          }
+        : {
+            fill: tokens.color.surface.popover,
+            ink: tokens.color.text.mutedForeground,
+          };
+  const mark =
+    kind === "mention"
+      ? "@"
+      : kind === "channel"
+        ? "#"
+        : kind === "join"
+          ? "+"
+          : null;
+  return (
+    <View
+      style={[styles.badge, { backgroundColor: tone.fill }]}
+      testID={`notification-badge-${kind}`}
+    >
+      {mark ? (
+        <Text style={[styles.badgeMark, { color: tone.ink }]}>{mark}</Text>
+      ) : kind === "announcement" ? (
+        <AnnouncementGlyph
+          focused
+          accent={tone.ink}
+          muted={tone.ink}
+          size={BADGE_GLYPH_SIZE}
+        />
+      ) : (
+        <NavGlyph
+          paths={NAV_GLYPHS.chat}
+          color={tone.ink}
+          size={BADGE_GLYPH_SIZE}
+        />
+      )}
+    </View>
   );
 }
 
@@ -242,18 +446,17 @@ const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
 
 /**
  * The list's loading state: a group caption over rows on
- * {@link NotificationListRow}'s own styles (the dot's column, the 20pt title
- * and body lines, the meta line), so the real list lands in place. The dot
- * column is left empty, as on a read row: which rows are unread isn't known
- * yet.
+ * {@link NotificationListRow}'s own styles (the dot's column, the picture's
+ * circle, the 20pt title and body lines), so the real list lands in place.
+ * The dot column is left empty, as on a read row: which rows are unread isn't
+ * known yet.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
 export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
-  const { caption, label } = tokens.typography.role;
+  const styles = createStyles(tokens);
+  const { label } = tokens.typography.role;
 
   return (
     <SkeletonRegion label="Loading notifications" style={styles.group}>
@@ -261,6 +464,11 @@ export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
           <View style={styles.dotSpacer} />
+          <SkeletonBlock
+            width={PICTURE_SIZE}
+            height={PICTURE_SIZE}
+            radius={avatarRadius(PICTURE_SIZE)}
+          />
           <View style={styles.rowText}>
             <SkeletonText
               role={label}
@@ -270,11 +478,6 @@ export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
               }
             />
             <SkeletonText role={label} lineHeight={LINE_HEIGHT} width="86%" />
-            <SkeletonText
-              role={caption}
-              width="24%"
-              style={styles.rowMetaSkeleton}
-            />
           </View>
         </View>
       ))}
@@ -289,9 +492,15 @@ export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
  */
 const LINE_HEIGHT = 20;
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+/** The picture's circle: a notice row is a step roomier than chat's 32. */
+const PICTURE_SIZE = 36;
+/** The kind badge on the picture's corner, and the glyph inside it. */
+const BADGE_SIZE = 18;
+const BADGE_GLYPH_SIZE = 11;
+const TILE_GLYPH_SIZE = 20;
+
+function createStyles(tokens: SignetTokens) {
   const DOT_SIZE = tokens.spacing.sm;
-  const META_MARGIN_TOP = tokens.spacing.xs;
   return StyleSheet.create({
     group: {
       gap: tokens.spacing.xs,
@@ -313,36 +522,105 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
     },
-    // Centred on the title's first line, as drawn, however many lines the
-    // title wraps to.
+    // Centred on the picture, which the title's first line is centred on too.
     dot: {
       width: DOT_SIZE,
       height: DOT_SIZE,
       borderRadius: DOT_SIZE / 2,
-      marginTop: (LINE_HEIGHT - DOT_SIZE) / 2,
-      backgroundColor: brand.accent,
+      marginTop: (PICTURE_SIZE - DOT_SIZE) / 2,
+      // Neutral, as the web drawer's and chat's unread are: the accent is
+      // never a state (`components.md` § A list inside a drawer or popover
+      // is flat; foundations.md §5). It was the accent until #4346.
+      backgroundColor: tokens.color.text.foreground,
     },
     dotSpacer: {
       width: DOT_SIZE,
     },
-    // Title and body read as one sentence at one size, as s14 sets them, and
-    // the meta line sits a step below.
+    picture: {
+      width: PICTURE_SIZE,
+      height: PICTURE_SIZE,
+    },
+    // Chat's author avatar (`message-item.tsx`), a step larger.
+    avatar: {
+      width: PICTURE_SIZE,
+      height: PICTURE_SIZE,
+      borderRadius: avatarRadius(PICTURE_SIZE),
+      backgroundColor: tokens.color.surface.popover,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarText: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.mutedForeground,
+    },
+    // Rounded square, so a notice nobody sent never reads as a person.
+    tile: {
+      width: PICTURE_SIZE,
+      height: PICTURE_SIZE,
+      borderRadius: tokens.radius.control,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // Ringed in the screen's own ground so it reads as sitting on the circle.
+    badge: {
+      position: "absolute",
+      right: -tokens.spacing.xs,
+      bottom: -tokens.spacing.xs,
+      width: BADGE_SIZE + 4,
+      height: BADGE_SIZE + 4,
+      borderRadius: (BADGE_SIZE + 4) / 2,
+      borderWidth: 2,
+      borderColor: tokens.color.surface.background,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    badgeMark: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.bold,
+      }),
+      lineHeight: BADGE_SIZE - 2,
+    },
     rowText: {
       flex: 1,
+      gap: 2,
+    },
+    titleLine: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: tokens.spacing.sm,
+      minHeight: LINE_HEIGHT,
     },
     rowTitle: {
       ...typeRole(tokens.typography.role.label),
       lineHeight: LINE_HEIGHT,
       color: tokens.color.text.foreground,
+      flex: 1,
     },
     // Read rows recede rather than disappear, as drawn: the title drops to the
-    // body's tone, so the row reads as one quieter sentence. Colour, not
+    // body's tone and to regular weight, so a read row reads quieter even
+    // where a role colour keeps its name bright. Colour and weight, not
     // opacity, so the press lift behind it is as strong as any other row's.
     rowTitleRead: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.regular,
+      }),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.mutedForeground,
     },
-    // The title's size at regular weight. It used to be the body role (16),
-    // larger than the 14pt title above it.
+    // "in #general", "joined": the part of the title that isn't the person.
+    rowTitleRest: {
+      color: tokens.color.text.mutedForeground,
+    },
+    rowTime: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    // The title's size at regular weight.
     rowBody: {
       ...typeRole({
         ...tokens.typography.role.label,
@@ -351,14 +629,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       lineHeight: LINE_HEIGHT,
       color: tokens.color.text.mutedForeground,
     },
-    rowMeta: {
-      ...typeRole(tokens.typography.role.caption),
+    rowBodyRead: {
       color: tokens.color.text.muted,
-      marginTop: META_MARGIN_TOP,
     },
-    // The meta line's margin, read from it so the two can't drift.
-    rowMetaSkeleton: {
-      marginTop: META_MARGIN_TOP,
+    // Chat's in-body mention chip (`message-markdown.tsx`), the fixed gold.
+    mentionChip: {
+      backgroundColor: tokens.color.semantic.mentionChip,
+      color: tokens.color.semantic.mentionChipText,
     },
   });
 }

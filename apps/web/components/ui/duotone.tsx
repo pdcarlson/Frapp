@@ -6,7 +6,9 @@
  * fill of its own hue — white at 6% when neutral, the stroke hue at 18% when
  * active — and detail strokes (clock hands, calendar rules, checkmarks, bell
  * clappers) stay stroke-only. A state change recolors the one glyph; there is
- * no second, filled variant to swap to.
+ * no second, filled variant to swap to. The one exception is `markFillProps`
+ * below, for Documents' Star and Pin (§1 rule 1's note, #4289): the same
+ * glyph, filled solid while on.
  *
  * This module holds only the recipe. The glyphs themselves live with the
  * surface that owns their intents — `components/layout/nav-glyphs.tsx` for the
@@ -37,6 +39,19 @@ export function fillProps(active: boolean | undefined) {
   return active
     ? { fill: "currentColor", fillOpacity: 0.18 }
     : { fill: "#FFFFFF", fillOpacity: 0.06 };
+}
+
+/**
+ * Documents' Star and Pin: solid in their hue while on, the neutral
+ * silhouette while off. The one exception to §1
+ * rule 1's "recolor, never fill", because at 18% an on mark read as the off
+ * outline in another colour (#4289). Path data is unchanged: the same glyph,
+ * filled.
+ */
+export function markFillProps(active: boolean | undefined) {
+  return active
+    ? { fill: "currentColor", fillOpacity: 1 }
+    : fillProps(false);
 }
 
 export const stroke = {

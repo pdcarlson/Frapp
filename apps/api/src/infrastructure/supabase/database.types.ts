@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
   AiRun,
+  AiSuggestion,
   ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
@@ -154,6 +155,7 @@ export interface Database {
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      ai_suggestions: TableDefinition<AiSuggestion>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
@@ -228,6 +230,86 @@ export interface Database {
           p_kinds: string[];
         };
         Returns: AiRun[];
+      };
+      /**
+       * `20261112130000` (#714) — holds an AI call's worst-case cost against
+       * the platform, chapter and member caps. One row: the hold's id, or the
+       * cap it would cross. Amounts are bigint micro-USD.
+       */
+      reserve_ai_spend: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string | null;
+          p_run_id: string | null;
+          p_task: string;
+          p_family: string;
+          p_provider: string;
+          p_model: string;
+          p_prompt_version: string;
+          p_reserved_cost_micro_usd: number;
+          p_chapter_cap_micro_usd: number | null;
+          p_member_cap_micro_usd: number | null;
+          p_platform_cap_micro_usd: number | null;
+          p_now: string;
+        };
+        Returns: {
+          reservation_id: string | null;
+          refused: string | null;
+          platform_spent_before: number | string;
+          platform_spent_after: number | string;
+        }[];
+      };
+      /**
+       * `20261112130000` (#714) — settles a hold with the call's real counts
+       * and cost, or records a call made with no hold. Returns `settled`,
+       * `inserted` or `missing`.
+       */
+      settle_ai_spend: {
+        Args: {
+          p_reservation_id: string | null;
+          p_chapter_id: string;
+          p_user_id: string | null;
+          p_run_id: string | null;
+          p_task: string;
+          p_family: string;
+          p_provider: string;
+          p_model: string;
+          p_prompt_version: string;
+          p_outcome: string;
+          p_error_kind: string | null;
+          p_input_tokens: number;
+          p_output_tokens: number;
+          p_cached_input_tokens: number;
+          p_cost_micro_usd: number;
+          p_bill_reservation: boolean;
+          p_latency_ms: number;
+          p_now: string;
+        };
+        Returns: string;
+      };
+      /** `20261112130000` (#714) — expires unsettled holds; returns the count. */
+      expire_ai_spend_holds: {
+        Args: { p_older_than: string };
+        Returns: number;
+      };
+      /**
+       * `20261112130000` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
+       * row per task, provider and model. Bigint columns may arrive as strings.
+       */
+      ai_chapter_usage: {
+        Args: { p_chapter_id: string; p_from: string; p_to: string };
+        Returns: {
+          task: string;
+          provider: string;
+          model: string;
+          calls: number | string;
+          input_tokens: number | string;
+          output_tokens: number | string;
+          cached_input_tokens: number | string;
+          cost_micro_usd: number | string;
+          estimated_cost_micro_usd: number | string;
+          unsettled_calls: number | string;
+        }[];
       };
       /**
        * `20260816190000` (C1 of #937). Unread and mention tallies for every

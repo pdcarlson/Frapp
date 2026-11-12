@@ -230,7 +230,7 @@ describe('AiGatewayService', () => {
       },
     );
 
-    it.each(['chapter_cap', 'platform_cap'] as const)(
+    it.each(['chapter_cap', 'member_cap', 'platform_cap'] as const)(
       'stops at the caps (%s): nothing sent or recorded',
       async (reason) => {
         const h = harness({ 'ask.answer': () => ({ text: 'x' }) });

@@ -21,6 +21,12 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 > API-key path. It is off until `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_CREDENTIALS_JSON` are set.
 > The eval harness is provider-neutral and the bake-off command exists; its first paid run waits on
 > the credentials, so "Not verified" below still stands.
+>
+> **Updated 2026-11-12 ([#714](https://github.com/pdcarlson/Frapp/issues/714)).** The ledger and
+> the caps of decision 1 are built: `ai_usage_events`, one row per provider call, held before the
+> call against the chapter's month, the member's day and the provider's month, and settled before
+> the gateway returns ([`billing.md` § Caps](../../behavior/billing.md#caps)).
+> Consent is still to come.
 
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR

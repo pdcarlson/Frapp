@@ -123,6 +123,7 @@ import { useConnection } from "@/lib/connection/use-connection";
 import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
@@ -670,6 +671,12 @@ export default function ChatHomeScreen() {
         </Text>
       ) : null}
 
+      <ScreenReady
+        ready={
+          chapterScope === "none" ||
+          (!channelsQuery.isPending && !holdingForLaunch)
+        }
+      />
       {chapterScope === "none" ? (
         // A member with no membership is on their way to `/join`
         // (`useOnboardingRedirect`); this is what a member of several

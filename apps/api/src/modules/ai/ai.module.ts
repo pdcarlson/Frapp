@@ -13,7 +13,9 @@ import { AiUsageSeamModule } from './ai-usage-seam.module';
  * injects `AiGatewayService`; it never injects an adapter or a seam.
  *
  * The three seams are their own modules so the slices that fill them
- * (consent #4308, the ledger and caps #714) each change one file.
+ * change a binding, not the gateway. The ledger and caps (#714) fill the
+ * spend and usage seams (`AiSpendLedgerModule`); consent (#4308) fills its
+ * own.
  */
 @Module({
   imports: [

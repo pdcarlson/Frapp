@@ -33,6 +33,7 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import {
   isNotificationCategoryKey,
   isSupportedTimeZone,
+  withoutObjectReplacement,
 } from '@repo/validation';
 import { ChatBlockService } from './chat-block.service';
 
@@ -218,6 +219,22 @@ function isWithheldChatRow(
   return typeof senderId !== 'string' || blocked.includes(senderId);
 }
 
+/**
+ * The payload with U+FFFC cleaned out of its title and body (#4346). Both
+ * carry text a member typed (a task's title, an event's name, a group DM's
+ * name, a message), and a phone keyboard can leave the placeholder in any of
+ * it, which the push and the in-app list both drew as a broken "OBJ" box.
+ * Cleaned once here, at the door every notification comes through.
+ */
+function cleanText(payload: NotifyPayload): NotifyPayload {
+  if (!`${payload.title}${payload.body}`.includes('\uFFFC')) return payload;
+  return {
+    ...payload,
+    title: withoutObjectReplacement(payload.title).trim(),
+    body: withoutObjectReplacement(payload.body).trim(),
+  };
+}
+
 /** In-app insert shape shared by `notifyUser` and the batched chapter path. */
 function inAppRow(
   userId: string,
@@ -277,8 +294,9 @@ export class NotificationService {
   async notifyUser(
     userId: string,
     chapterId: string,
-    payload: NotifyPayload,
+    sent: NotifyPayload,
   ): Promise<void> {
+    let payload = cleanText(sent);
     const category = payload.category ?? 'default';
     const priority = payload.priority ?? 'NORMAL';
 
@@ -392,8 +410,9 @@ export class NotificationService {
   async notifyMembers(
     chapterId: string,
     memberUserIds: readonly string[],
-    payload: NotifyPayload,
+    sent: NotifyPayload,
   ): Promise<void> {
+    const payload = cleanText(sent);
     const userIds = [...new Set(memberUserIds)];
     if (userIds.length === 0) return;
 

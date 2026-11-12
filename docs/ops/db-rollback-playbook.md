@@ -3782,3 +3782,39 @@ drop function if exists public.enqueue_ai_run(uuid, text, text, uuid, uuid, json
 drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
+
+## Rollback the AI usage ledger (20261112130000)
+
+* **Migration**: `20261112130000_ai_usage_ledger.sql`
+
+One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops every AI call, and with it every hold. Reverting the API code alone is not enough while `AI_ENABLED` is on: the gateway's seams would fall back to no caps at all, so turn AI off before reverting.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses the spend record every allowance, overage and reconciliation is computed from, so export it first if any chapter has used AI:
+
+```sql
+drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
+drop function if exists public.expire_ai_spend_holds(timestamptz);
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
+drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
+drop table if exists public.ai_usage_events;
+drop function if exists public.ai_usage_charge(text, bigint, bigint);
+```
+
+## Rollback AI suggestions (20261112130001)
+
+* **Migration**: `20261112130001_ai_suggestions.sql`
+
+One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
+
+To remove it all, in a later forward migration:
+
+```sql
+drop trigger if exists events_drop_ai_suggestions on public.events;
+drop trigger if exists chat_channels_drop_ai_suggestions on public.chat_channels;
+drop function if exists public.ai_suggestions_drop_for_source();
+drop table if exists public.ai_suggestions;
+```

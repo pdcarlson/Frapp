@@ -5,6 +5,7 @@ import {
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
 import { validateDevLogEnv } from '../application/services/dev-log.service';
 import { validateAiEnv } from './ai-config';
+import { validateAiSpendEnv } from './ai-spend-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -93,6 +94,10 @@ const REQUIRED_ENV_VARS = [
 //                        adapter; both or neither, and the JSON must be a
 //                        service account's key file (checked at boot)
 //   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
+//   - AI_CHAPTER_MONTHLY_CAP_USD / AI_MEMBER_DAILY_CAP_USD /
+//     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD
+//                        the spend caps in dollars; unset is the default in
+//                        config/ai-spend-config.ts (validateAiSpendEnv)
 //
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
@@ -137,7 +142,7 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error(devLogProblems.join(' '));
   }
 
-  const aiProblems = validateAiEnv(config);
+  const aiProblems = [...validateAiEnv(config), ...validateAiSpendEnv(config)];
   if (aiProblems.length > 0) {
     throw new Error(aiProblems.join(' '));
   }
