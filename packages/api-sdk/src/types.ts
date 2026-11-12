@@ -6194,7 +6194,7 @@ export interface components {
             /** @enum {string} */
             kind: "task";
             /** @enum {string} */
-            status: "pending" | "accepted" | "dismissed" | "expired";
+            status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
             source: components["schemas"]["AiSuggestionSourceDto"];
             /**
              * Format: uuid

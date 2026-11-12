@@ -482,7 +482,7 @@ AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed
 | `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
 | `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
 
-`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted.
+`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
 
 ## Member Onboarding Funnel
 

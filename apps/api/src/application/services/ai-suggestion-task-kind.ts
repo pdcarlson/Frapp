@@ -55,8 +55,13 @@ function dateOrNull(value: unknown): string | null {
     : value;
 }
 
+/** Longer than any ISO 8601 instant, so a model's essay is not one. */
+const INSTANT_MAX_LENGTH = 40;
+
 function instantOrNull(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== 'string' || value.length > INSTANT_MAX_LENGTH) {
+    return null;
+  }
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 

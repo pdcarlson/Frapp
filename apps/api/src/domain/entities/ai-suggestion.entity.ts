@@ -22,8 +22,13 @@ export const AI_SUGGESTION_SOURCE_TYPES = [
 export type AiSuggestionSourceType =
   (typeof AI_SUGGESTION_SOURCE_TYPES)[number];
 
+/**
+ * `accepting` is the moment between Accept and the change being made: the row
+ * keeps its text, so a failed commit puts it back to `pending` intact.
+ */
 export const AI_SUGGESTION_STATUSES = [
   'pending',
+  'accepting',
   'accepted',
   'dismissed',
   'expired',
@@ -47,7 +52,7 @@ export interface AiSuggestion {
   kind: AiSuggestionKind;
   source_type: AiSuggestionSourceType;
   source_id: string;
-  /** The proposal. Emptied (`{}`) once decided or expired. */
+  /** The proposal. Emptied (`{}`) once accepted, dismissed or expired. */
   payload: AiSuggestionPayload;
   /**
    * The words it came from, kept only when they appear word for word in the
@@ -65,6 +70,8 @@ export interface AiSuggestion {
   decided_at: string | null;
   /** The id of what accepting made (a task id for a task suggestion). */
   result_id: string | null;
+  /** When its batch push went out; null while it is still owed. */
+  notified_at: string | null;
   expires_at: string;
   created_at: string;
 }

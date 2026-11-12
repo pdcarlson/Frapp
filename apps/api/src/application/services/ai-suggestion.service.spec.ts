@@ -11,6 +11,7 @@ import type {
 } from '#domain/repositories/ai-suggestion.repository.interface';
 import {
   AI_SUGGESTION_LIST_LIMIT,
+  AI_SUGGESTION_STALE_ACCEPT_MS,
   AiSuggestionService,
   verifiedQuote,
 } from './ai-suggestion.service';
@@ -33,6 +34,10 @@ class FakeRepo implements IAiSuggestionRepository {
   rows: AiSuggestion[] = [];
   private seq = 0;
 
+  private find(chapterId: string, id: string): AiSuggestion | undefined {
+    return this.rows.find((r) => r.chapter_id === chapterId && r.id === id);
+  }
+
   insertBatch = jest.fn(
     async (chapterId: string, rows: readonly NewAiSuggestion[]) => {
       const written: AiSuggestion[] = [];
@@ -53,6 +58,7 @@ class FakeRepo implements IAiSuggestionRepository {
           decided_by: null,
           decided_at: null,
           result_id: null,
+          notified_at: null,
           created_at: NOW.toISOString(),
         };
         this.rows.push(stored);
@@ -62,10 +68,29 @@ class FakeRepo implements IAiSuggestionRepository {
     },
   );
 
+  listUnnotified = jest.fn(async (chapterId: string, batchId: string) =>
+    this.rows
+      .filter(
+        (r) =>
+          r.chapter_id === chapterId &&
+          r.batch_id === batchId &&
+          r.status === 'pending' &&
+          r.notified_at === null,
+      )
+      .map((r) => ({ ...r })),
+  );
+
+  markNotified = jest.fn(
+    async (chapterId: string, ids: readonly string[], now: string) => {
+      for (const id of ids) {
+        const row = this.find(chapterId, id);
+        if (row) row.notified_at = now;
+      }
+    },
+  );
+
   findById = jest.fn(async (chapterId: string, id: string) => {
-    const row = this.rows.find(
-      (r) => r.chapter_id === chapterId && r.id === id,
-    );
+    const row = this.find(chapterId, id);
     return row ? { ...row } : null;
   });
 
@@ -86,7 +111,7 @@ class FakeRepo implements IAiSuggestionRepository {
               (r.source_type === query.source.type &&
                 r.source_id === query.source.id)),
         )
-        .slice(0, query.limit)
+        .slice(query.offset, query.offset + query.limit)
         .map((r) => ({ ...r })),
   );
 
@@ -94,80 +119,70 @@ class FakeRepo implements IAiSuggestionRepository {
     async (
       chapterId: string,
       id: string,
-      decision: Parameters<IAiSuggestionRepository['claim']>[2],
+      claim: Parameters<IAiSuggestionRepository['claim']>[2],
     ) => {
-      const row = this.rows.find(
-        (r) =>
-          r.chapter_id === chapterId &&
-          r.id === id &&
-          r.status === 'pending' &&
-          r.expires_at > decision.now,
-      );
-      if (!row) return null;
+      const row = this.find(chapterId, id);
+      if (!row || row.status !== 'pending' || row.expires_at <= claim.now) {
+        return null;
+      }
       Object.assign(row, {
-        status: decision.status,
-        decided_by: decision.decidedBy,
-        decided_at: decision.now,
-        edited: decision.edited,
-        payload: {},
-        quote: null,
-        quote_author_id: null,
+        status: claim.status,
+        decided_by: claim.decidedBy,
+        decided_at: claim.now,
+        edited: claim.edited,
+        ...(claim.status === 'dismissed' ? NO_TEXT : {}),
       });
       return { ...row };
     },
   );
 
-  release = jest.fn(
-    async (
-      chapterId: string,
-      id: string,
-      original: Pick<AiSuggestion, 'payload' | 'quote' | 'quote_author_id'>,
-    ) => {
-      const row = this.rows.find(
-        (r) =>
-          r.chapter_id === chapterId &&
-          r.id === id &&
-          r.status === 'accepted' &&
-          !r.result_id,
-      );
-      if (row) {
-        Object.assign(row, original, {
-          status: 'pending',
-          decided_by: null,
-          decided_at: null,
-          edited: false,
-        });
-      }
+  finishAccept = jest.fn(
+    async (chapterId: string, id: string, resultId: string) => {
+      const row = this.find(chapterId, id);
+      if (!row || row.status !== 'accepting') return null;
+      Object.assign(row, NO_TEXT, { status: 'accepted', result_id: resultId });
+      return { ...row };
     },
   );
 
-  setResult = jest.fn(
-    async (chapterId: string, id: string, resultId: string) => {
-      const row = this.rows.find(
-        (r) => r.chapter_id === chapterId && r.id === id,
-      );
-      if (row) row.result_id = resultId;
-    },
-  );
+  release = jest.fn(async (chapterId: string, id: string) => {
+    const row = this.find(chapterId, id);
+    if (row?.status === 'accepting') Object.assign(row, BACK_TO_WAITING);
+  });
+
+  releaseStale = jest.fn(async (before: string) => {
+    const stale = this.rows.filter(
+      (r) => r.status === 'accepting' && (r.decided_at ?? '') < before,
+    );
+    for (const row of stale) Object.assign(row, BACK_TO_WAITING);
+    return stale.length;
+  });
 
   expireDue = jest.fn(async (now: string) => {
     const due = this.rows.filter(
       (r) => r.status === 'pending' && r.expires_at <= now,
     );
     for (const row of due) {
-      Object.assign(row, {
-        status: 'expired',
-        payload: {},
-        quote: null,
-        quote_author_id: null,
-      });
+      Object.assign(row, NO_TEXT, { status: 'expired' });
     }
     return due.map((r) => ({ chapter_id: r.chapter_id, kind: r.kind }));
   });
 }
 
+const NO_TEXT = { payload: {}, quote: null, quote_author_id: null };
+const BACK_TO_WAITING = {
+  status: 'pending' as const,
+  decided_by: null,
+  decided_at: null,
+  edited: false,
+};
+
 function build(
-  options: { permissions?: Record<string, string[]>; openable?: string[] } = {},
+  options: {
+    permissions?: Record<string, string[]>;
+    openable?: string[];
+    chapterModules?: Record<string, boolean>;
+  } = {},
 ) {
   const repo = new FakeRepo();
   const permissions: Record<string, string[]> = options.permissions ?? {
@@ -204,6 +219,12 @@ function build(
         new Set(ids.filter((id) => openable.has(id))),
     ),
   };
+  const chapters = {
+    findById: jest.fn(async () => ({
+      id: CHAPTER,
+      enabled_modules: options.chapterModules ?? {},
+    })),
+  };
   const service = new AiSuggestionService(
     repo,
     [new TaskSuggestionKind(tasks as never)],
@@ -211,6 +232,7 @@ function build(
     rbac as never,
     notifications as never,
     analytics as never,
+    chapters as never,
   );
   service.now = () => NOW;
   return {
@@ -291,6 +313,50 @@ describe('AiSuggestionService (#4309)', () => {
       expect(again.created).toHaveLength(0);
       expect(repo.rows).toHaveLength(10);
       expect(notifications.notifyMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('still sends the push when a retry finds the rows written but the push never sent', async () => {
+      const { service, notifications, repo } = build();
+      notifications.notifyMembers.mockRejectedValueOnce(new Error('expo down'));
+      await proposeTen(service);
+      expect(repo.rows.every((row) => row.notified_at === null)).toBe(true);
+
+      const again = await proposeTen(service);
+      expect(again.created).toHaveLength(0);
+      expect(notifications.notifyMembers).toHaveBeenCalledTimes(2);
+      expect(repo.rows.every((row) => row.notified_at !== null)).toBe(true);
+
+      await proposeTen(service);
+      expect(notifications.notifyMembers).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends no push when the chapter has the kind’s module off', async () => {
+      const { service, notifications, repo } = build({
+        chapterModules: { tasks: false },
+      });
+      await proposeTen(service);
+      expect(repo.rows).toHaveLength(10);
+      expect(notifications.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('drops a proposal too large to store instead of failing the batch', async () => {
+      const { service } = build();
+      const { created, dropped } = await service.proposeBatch({
+        chapterId: CHAPTER,
+        batchId: BATCH,
+        requestedFor: OFFICER,
+        source: { type: 'meeting', id: MEETING, title: 'Chapter meeting' },
+        proposals: [
+          taskProposal('Book the venue'),
+          taskProposal('Huge', {
+            // Every field within its own limit, but three bytes a character.
+            subtasks: Array.from({ length: 20 }, () => '€'.repeat(200)),
+            description: '€'.repeat(2000),
+          }),
+        ],
+      });
+      expect(created).toHaveLength(1);
+      expect(dropped).toBe(1);
     });
 
     it('sends no push to a member who could accept none of the batch', async () => {
@@ -427,6 +493,32 @@ describe('AiSuggestionService (#4309)', () => {
       });
       expect(list.items).toHaveLength(AI_SUGGESTION_LIST_LIMIT);
       expect(list.has_more).toBe(true);
+    });
+
+    it('reads past a full page of suggestions the caller can’t open', async () => {
+      const OTHER = '99999999-9999-4999-8999-999999999999';
+      const { service } = build();
+      await service.proposeBatch({
+        chapterId: CHAPTER,
+        batchId: BATCH,
+        requestedFor: OFFICER,
+        source: { type: 'meeting', id: OTHER, title: 'Exec meeting' },
+        proposals: Array.from({ length: AI_SUGGESTION_LIST_LIMIT }, (_, i) =>
+          taskProposal(`Exec ${i}`),
+        ),
+      });
+      await service.proposeBatch({
+        chapterId: CHAPTER,
+        batchId: '88888888-8888-4888-8888-888888888888',
+        requestedFor: OFFICER,
+        source: { type: 'meeting', id: MEETING, title: 'Chapter meeting' },
+        proposals: [taskProposal('Mine')],
+      });
+      const list = await service.listForUser(CHAPTER, OFFICER, {
+        enabledModules,
+      });
+      expect(list.items.map((row) => row.payload.title)).toEqual(['Mine']);
+      expect(list.has_more).toBe(false);
     });
   });
 
@@ -589,6 +681,47 @@ describe('AiSuggestionService (#4309)', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('holds the suggestion, text and all, while the task is made, and turns away a second tap meanwhile', async () => {
+      const { service, tasks, repo } = build();
+      const { created } = await proposeTen(service);
+      let finish: (task: { id: string; title: string }) => void = () =>
+        undefined;
+      tasks.create.mockImplementationOnce(
+        () =>
+          new Promise<{ id: string; title: string }>((resolve) => {
+            finish = resolve;
+          }),
+      );
+
+      const first = service.accept(CHAPTER, OFFICER, created[0].id, {
+        enabledModules,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(repo.rows[0]).toMatchObject({
+        status: 'accepting',
+        payload: expect.objectContaining({ title: 'Task 1' }),
+      });
+      await expect(
+        service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules }),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.accepting' },
+      });
+      await expect(
+        service.dismiss(CHAPTER, OFFICER, created[0].id),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.accepting' },
+      });
+
+      finish({ id: '77777777-7777-4777-8777-777777777777', title: 'Task 1' });
+      const decided = await first;
+      expect(decided.suggestion).toMatchObject({
+        status: 'accepted',
+        payload: {},
+        result_id: '77777777-7777-4777-8777-777777777777',
+      });
+      expect(tasks.create).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses when the tasks module is off', async () => {
       const { service, tasks } = build();
       const { created } = await proposeTen(service);
@@ -666,6 +799,30 @@ describe('AiSuggestionService (#4309)', () => {
           count: 10,
         },
       );
+    });
+
+    it('puts back an accept the API never finished, after ten minutes', async () => {
+      const { service, repo } = build();
+      const { created } = await proposeTen(service);
+      Object.assign(repo.rows[0], {
+        status: 'accepting',
+        decided_by: OFFICER,
+        decided_at: NOW.toISOString(),
+      });
+
+      service.now = () => new Date(NOW.getTime() + 60 * 1000);
+      expect(await service.releaseStaleAccepts()).toBe(0);
+
+      service.now = () =>
+        new Date(NOW.getTime() + AI_SUGGESTION_STALE_ACCEPT_MS + 1000);
+      expect(await service.releaseStaleAccepts()).toBe(1);
+      expect(repo.rows[0]).toMatchObject({
+        status: 'pending',
+        decided_by: null,
+        payload: expect.objectContaining({ title: 'Task 1' }),
+      });
+      await service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules });
+      expect(repo.rows[0].status).toBe('accepted');
     });
 
     it('refuses to accept one whose time is up before the sweep reaches it', async () => {

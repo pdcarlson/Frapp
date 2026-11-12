@@ -32,11 +32,17 @@ export interface ListPendingAiSuggestionsQuery {
   source?: { type: AiSuggestionSourceType; id: string };
   /** Rows that have not expired at this instant. */
   now: string;
+  /** Rows to skip, for reading past rows the caller can't see. */
+  offset: number;
   limit: number;
 }
 
-export interface AiSuggestionDecision {
-  status: 'accepted' | 'dismissed';
+export interface AiSuggestionClaim {
+  /**
+   * `accepting` holds the row, text and all, while the change is made;
+   * `dismissed` decides it and empties its text in the same write.
+   */
+  status: 'accepting' | 'dismissed';
   decidedBy: string;
   edited: boolean;
   now: string;
@@ -44,18 +50,28 @@ export interface AiSuggestionDecision {
 
 /**
  * `ai_suggestions` (#4309). Chapter-first on every read and write a member
- * reaches. `expireDue` alone crosses chapters, for the hourly sweep.
+ * reaches. `expireDue` and `releaseStale` alone cross chapters, for the
+ * hourly sweep.
  */
 export interface IAiSuggestionRepository {
   /**
    * Writes a batch. Idempotent on `(batch_id, ordinal)`: a row already written
-   * is left alone and not returned, so a retried run writes and notifies
-   * nothing twice. Returns the rows this call wrote.
+   * is left alone and not returned. Returns the rows this call wrote.
    */
   insertBatch(
     chapterId: string,
     rows: readonly NewAiSuggestion[],
   ): Promise<AiSuggestion[]>;
+
+  /** A batch's waiting rows whose push has not gone out yet. */
+  listUnnotified(chapterId: string, batchId: string): Promise<AiSuggestion[]>;
+
+  /** Records that these rows' batch push went out. */
+  markNotified(
+    chapterId: string,
+    ids: readonly string[],
+    now: string,
+  ): Promise<void>;
 
   findById(chapterId: string, id: string): Promise<AiSuggestion | null>;
 
@@ -66,28 +82,35 @@ export interface IAiSuggestionRepository {
   ): Promise<AiSuggestion[]>;
 
   /**
-   * Decides a waiting, unexpired suggestion, and empties its text in the same
-   * write. Null when it was not waiting any more (someone else decided it, or
-   * it expired): the caller re-reads to say which.
+   * Takes a waiting, unexpired suggestion. Null when it was not waiting any
+   * more (someone else took it, or it expired): the caller re-reads to say
+   * which.
    */
   claim(
     chapterId: string,
     id: string,
-    decision: AiSuggestionDecision,
+    claim: AiSuggestionClaim,
   ): Promise<AiSuggestion | null>;
 
   /**
-   * Puts back an acceptance whose commit failed: waiting again, with its text.
-   * Only while it has no result, so a committed acceptance is never undone.
+   * Finishes an accept: `accepting` to `accepted`, with what it made, and
+   * empties its text. Null when the row is no longer `accepting` (its source
+   * was deleted meanwhile).
    */
-  release(
+  finishAccept(
     chapterId: string,
     id: string,
-    original: Pick<AiSuggestion, 'payload' | 'quote' | 'quote_author_id'>,
-  ): Promise<void>;
+    resultId: string,
+  ): Promise<AiSuggestion | null>;
 
-  /** Records what accepting made. */
-  setResult(chapterId: string, id: string, resultId: string): Promise<void>;
+  /** Puts an accept whose commit failed back to waiting, text intact. */
+  release(chapterId: string, id: string): Promise<void>;
+
+  /**
+   * Puts back every accept, in every chapter, left `accepting` since before
+   * `before`: the API died between Accept and the change. Returns how many.
+   */
+  releaseStale(before: string): Promise<number>;
 
   /**
    * Expires every waiting suggestion whose time is up, in every chapter, and

@@ -7,7 +7,7 @@ import type {
 } from '../database.types';
 import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import type {
-  AiSuggestionDecision,
+  AiSuggestionClaim,
   IAiSuggestionRepository,
   ListPendingAiSuggestionsQuery,
   NewAiSuggestion,
@@ -19,6 +19,14 @@ const NO_TEXT = {
   payload: {},
   quote: null,
   quote_author_id: null,
+} as const satisfies TablesUpdate<'ai_suggestions'>;
+
+/** An accept that didn't finish, back to waiting with its text. */
+const BACK_TO_WAITING = {
+  status: 'pending',
+  decided_by: null,
+  decided_at: null,
+  edited: false,
 } as const satisfies TablesUpdate<'ai_suggestions'>;
 
 /**
@@ -54,6 +62,36 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     return data ?? [];
   }
 
+  async listUnnotified(
+    chapterId: string,
+    batchId: string,
+  ): Promise<AiSuggestion[]> {
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('batch_id', batchId)
+      .eq('status', 'pending')
+      .is('notified_at', null)
+      .order('ordinal', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async markNotified(
+    chapterId: string,
+    ids: readonly string[],
+    now: string,
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    const { error } = await this.supabase
+      .from('ai_suggestions')
+      .update({ notified_at: now })
+      .eq('chapter_id', chapterId)
+      .in('id', [...ids]);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async findById(chapterId: string, id: string): Promise<AiSuggestion | null> {
     const { data, error } = await this.supabase
       .from('ai_suggestions')
@@ -86,8 +124,8 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     }
     const { data, error } = await request
       .order('created_at', { ascending: false })
-      .order('ordinal', { ascending: true })
-      .limit(query.limit);
+      .order('id', { ascending: true })
+      .range(query.offset, query.offset + query.limit - 1);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
@@ -95,14 +133,15 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
   async claim(
     chapterId: string,
     id: string,
-    decision: AiSuggestionDecision,
+    claim: AiSuggestionClaim,
   ): Promise<AiSuggestion | null> {
     const update: TablesUpdate<'ai_suggestions'> = {
-      ...NO_TEXT,
-      status: decision.status,
-      decided_by: decision.decidedBy,
-      decided_at: decision.now,
-      edited: decision.edited,
+      // An accept keeps the text until the change is made (`finishAccept`).
+      ...(claim.status === 'dismissed' ? NO_TEXT : {}),
+      status: claim.status,
+      decided_by: claim.decidedBy,
+      decided_at: claim.now,
+      edited: claim.edited,
     };
     const { data, error } = await this.supabase
       .from('ai_suggestions')
@@ -110,48 +149,55 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
       .eq('chapter_id', chapterId)
       .eq('id', id)
       .eq('status', 'pending')
-      .gt('expires_at', decision.now)
+      .gt('expires_at', claim.now)
       .select()
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
-  async release(
+  async finishAccept(
     chapterId: string,
     id: string,
-    original: Pick<AiSuggestion, 'payload' | 'quote' | 'quote_author_id'>,
-  ): Promise<void> {
+    resultId: string,
+  ): Promise<AiSuggestion | null> {
     const update: TablesUpdate<'ai_suggestions'> = {
-      payload: original.payload,
-      quote: original.quote,
-      quote_author_id: original.quote_author_id,
-      status: 'pending',
-      decided_by: null,
-      decided_at: null,
-      edited: false,
+      ...NO_TEXT,
+      status: 'accepted',
+      result_id: resultId,
     };
-    const { error } = await this.supabase
+    const { data, error } = await this.supabase
       .from('ai_suggestions')
       .update(update)
       .eq('chapter_id', chapterId)
       .eq('id', id)
-      .eq('status', 'accepted')
-      .is('result_id', null);
+      .eq('status', 'accepting')
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async release(chapterId: string, id: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('ai_suggestions')
+      .update(BACK_TO_WAITING)
+      .eq('chapter_id', chapterId)
+      .eq('id', id)
+      .eq('status', 'accepting');
     if (error) throw new SupabaseQueryError(error);
   }
 
-  async setResult(
-    chapterId: string,
-    id: string,
-    resultId: string,
-  ): Promise<void> {
-    const { error } = await this.supabase
+  async releaseStale(before: string): Promise<number> {
+    // Cross-chapter by design: the hourly sweep serves the whole database.
+    const { data, error } = await this.supabase
       .from('ai_suggestions')
-      .update({ result_id: resultId })
-      .eq('chapter_id', chapterId)
-      .eq('id', id);
+      .update(BACK_TO_WAITING)
+      .eq('status', 'accepting')
+      .lt('decided_at', before)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length;
   }
 
   async expireDue(

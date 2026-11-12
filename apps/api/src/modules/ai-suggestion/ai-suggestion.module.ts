@@ -11,7 +11,9 @@ import { AiSuggestionExpiryService } from '../../application/workers/ai-suggesti
 import { AiSuggestionController } from '../../interface/controllers/ai-suggestion.controller';
 import { AiEnabledGuard } from '../../interface/guards/ai-enabled.guard';
 import { SupabaseAiSuggestionRepository } from '../../infrastructure/supabase/repositories/supabase-ai-suggestion.repository';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { AI_SUGGESTION_REPOSITORY } from '#domain/repositories/ai-suggestion.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { RbacModule } from '../rbac/rbac.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -58,6 +60,9 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
       provide: AI_SUGGESTION_REPOSITORY,
       useClass: SupabaseAiSuggestionRepository,
     },
+    // The batch push reads the chapter's modules (a kind's module off means
+    // nobody is told).
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
 })
 export class AiSuggestionModule {}

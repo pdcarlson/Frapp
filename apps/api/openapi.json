@@ -19466,6 +19466,7 @@
             "type": "string",
             "enum": [
               "pending",
+              "accepting",
               "accepted",
               "dismissed",
               "expired"

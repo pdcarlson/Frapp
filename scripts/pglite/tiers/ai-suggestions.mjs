@@ -6,8 +6,11 @@ import { db, miss } from "../harness.mjs";
 //
 //   - a decided or expired row can't keep text (the payload, the quote or
 //     whose words it was), so a decided suggestion holds no AI output;
+//   - a row mid-accept (`accepting`) keeps its text and must say when the
+//     accept began, so a failed accept can be put back intact;
 //   - a batch can't be written twice: (batch_id, ordinal) is unique;
-//   - deleting an event or a channel deletes its waiting suggestions, keeps
+//   - deleting an event or a channel deletes its waiting and mid-accept
+//     suggestions, keeps
 //     its decided ones, and leaves another source's alone;
 //   - a client role can't execute the trigger function.
 //
@@ -102,13 +105,37 @@ console.log("\n=== Functional: ai_suggestions (20261112020000) ===");
       {},
     );
 
+    check(
+      "an accept can't begin without saying when",
+      await refused(() =>
+        db.query(
+          `update ai_suggestions set status = 'accepting'
+            where batch_id = $1 and ordinal = 0`,
+          [BATCH],
+        ),
+      ),
+      {},
+    );
+    check(
+      "a row mid-accept keeps its text, and its push can be marked sent",
+      !(await refused(() =>
+        db.query(
+          `update ai_suggestions
+              set status = 'accepting', decided_at = now(), notified_at = now()
+            where batch_id = $1 and ordinal = 0`,
+          [BATCH],
+        ),
+      )),
+      {},
+    );
+
     await db.query(`delete from events where id = $1`, [EV]);
     const afterEvent = await rows(
       `select ordinal, status from ai_suggestions where batch_id = $1 order by ordinal`,
       [BATCH],
     );
     check(
-      "deleting an event deletes its waiting suggestions and keeps its decided one",
+      "deleting an event deletes its waiting and mid-accept suggestions and keeps its decided one",
       JSON.stringify(afterEvent.map((r) => [r.ordinal, r.status])) ===
         JSON.stringify([
           [1, "accepted"],

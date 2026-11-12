@@ -47,6 +47,7 @@ const waiting = (batch: string) => ({
   decided_by: null,
   decided_at: null,
   result_id: null,
+  notified_at: null,
   expires_at: '2026-11-26T12:00:00.000Z',
   created_at: '2026-11-12T11:00:00.000Z',
 });
@@ -92,6 +93,7 @@ describe('SupabaseAiSuggestionRepository — tenant scope', () => {
         permissions: ['tasks:manage'],
         source: { type: 'meeting', id: MEETING },
         now: NOW,
+        offset: 0,
         limit: 10,
       }),
     );
@@ -102,23 +104,24 @@ describe('SupabaseAiSuggestionRepository — tenant scope', () => {
     const rows = await repo.listPending(CHAPTER_A, {
       permissions: [],
       now: NOW,
+      offset: 0,
       limit: 10,
     });
     expect(rows).toEqual([]);
     expect(harness.ops).toHaveLength(0);
   });
 
-  it('claim decides only this chapter’s row and empties its text', async () => {
+  it('claim dismisses only this chapter’s row and empties its text', async () => {
     const claimed = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.claim(CHAPTER_A, SUG_A, {
-        status: 'accepted',
+        status: 'dismissed',
         decidedBy: USER_A,
         edited: false,
         now: NOW,
       }),
     );
     expect(claimed).toMatchObject({
-      status: 'accepted',
+      status: 'dismissed',
       payload: {},
       quote: null,
     });
@@ -136,25 +139,79 @@ describe('SupabaseAiSuggestionRepository — tenant scope', () => {
     expect(claimed).toBeNull();
   });
 
-  it('release and setResult stay in the chapter', async () => {
-    await repo.claim(CHAPTER_A, SUG_A, {
-      status: 'accepted',
+  it('an accept holds its text until finishAccept, which stays in the chapter', async () => {
+    const held = await repo.claim(CHAPTER_A, SUG_A, {
+      status: 'accepting',
       decidedBy: USER_A,
       edited: false,
       now: NOW,
     });
-    await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.release(CHAPTER_A, SUG_A, {
-        payload: { title: 'Book the venue' },
-        quote: 'book the venue',
-        quote_author_id: null,
-      }),
+    expect(held).toMatchObject({
+      status: 'accepting',
+      quote: 'book the venue',
+    });
+    const finished = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.finishAccept(CHAPTER_A, SUG_A, TASK),
     );
-    await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.setResult(CHAPTER_A, SUG_A, TASK),
-    );
+    expect(finished).toMatchObject({
+      status: 'accepted',
+      result_id: TASK,
+      payload: {},
+      quote: null,
+    });
+    expect(await repo.finishAccept(CHAPTER_B, SUG_A, TASK)).toBeNull();
     const twin = harness.rows('ai_suggestions').find((r) => r.id === SUG_B);
     expect(twin?.result_id).toBeNull();
+  });
+
+  it('release puts an accept back to waiting, in this chapter only', async () => {
+    await repo.claim(CHAPTER_A, SUG_A, {
+      status: 'accepting',
+      decidedBy: USER_A,
+      edited: true,
+      now: NOW,
+    });
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.release(CHAPTER_A, SUG_A),
+    );
+    const row = harness.rows('ai_suggestions').find((r) => r.id === SUG_A);
+    expect(row).toMatchObject({
+      status: 'pending',
+      decided_by: null,
+      decided_at: null,
+      edited: false,
+      quote: 'book the venue',
+    });
+  });
+
+  it('listUnnotified and markNotified stay in the chapter', async () => {
+    const owed = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.listUnnotified(CHAPTER_A, BATCH_A),
+    );
+    expect(owed.map((row) => row.id).sort()).toEqual([SUG_A, SUG_A_DONE]);
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.markNotified(CHAPTER_A, [SUG_A, SUG_B], NOW),
+    );
+    const rows = harness.rows('ai_suggestions');
+    expect(rows.find((r) => r.id === SUG_A)?.notified_at).toBe(NOW);
+    expect(rows.find((r) => r.id === SUG_B)?.notified_at).toBeNull();
+  });
+
+  it('releaseStale crosses chapters by design and leaves a recent accept alone', async () => {
+    // The hourly sweep serves the whole database.
+    for (const [chapter, id] of [
+      [CHAPTER_A, SUG_A],
+      [CHAPTER_B, SUG_B],
+    ] as const) {
+      await repo.claim(chapter, id, {
+        status: 'accepting',
+        decidedBy: USER_A,
+        edited: false,
+        now: NOW,
+      });
+    }
+    expect(await repo.releaseStale(NOW)).toBe(0);
+    expect(await repo.releaseStale('2026-11-12T12:10:00.000Z')).toBe(2);
   });
 
   it('insertBatch writes the chapter it is given', async () => {

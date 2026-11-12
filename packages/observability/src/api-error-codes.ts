@@ -72,6 +72,7 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.suggestion.forbidden",
   "ai.suggestion.expired",
   "ai.suggestion.decided",
+  "ai.suggestion.accepting",
   "ai.suggestion.incomplete",
 ] as const;
 

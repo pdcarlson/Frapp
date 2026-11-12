@@ -24,11 +24,17 @@
 --      none: who decided, when, and what it became (`result_id`) stay, the
 --      text goes (`ai_suggestions_decided_hold_no_text`). That keeps the
 --      table outside spec/behavior/ai.md § Stored AI text.
+--    - `accepting` is the moment between an officer's Accept and the change
+--      being made. The row keeps its text, so a commit that fails, or an API
+--      that dies mid-accept, puts it back to `pending` intact (the API
+--      releases one left `accepting` for ten minutes).
 --    - `quote_author_id` is whose words the quote is, when they are a
---      member's (a chat message). Consent uses it: a member who turns AI off
---      takes their words out of every waiting suggestion.
+--      member's (a chat message). For the consent work (#4308): a member who
+--      turns AI off takes their words out of every waiting suggestion.
+--    - `notified_at` marks the rows whose batch push went out, so a run that
+--      retries after writing its rows but before the push still sends it.
 -- 2. `ai_suggestions_drop_for_source()`, fired after a delete on `events` and
---    `chat_channels`: their waiting suggestions go with them. A decided row
+--    `chat_channels`: their waiting (and mid-accept) suggestions go with them. A decided row
 --    holds no text and is kept as the record of the decision. The trigger for
 --    minutes (`source_type = 'meeting'`) is added with the meetings table.
 --
@@ -57,20 +63,21 @@ create table if not exists public.ai_suggestions (
   quote_author_id uuid references users(id) on delete set null,
   required_permission text not null,
   status text not null default 'pending'
-    check (status in ('pending', 'accepted', 'dismissed', 'expired')),
+    check (status in ('pending', 'accepting', 'accepted', 'dismissed', 'expired')),
   edited boolean not null default false,
   decided_by uuid references users(id) on delete set null,
   decided_at timestamptz,
   result_id uuid,
+  notified_at timestamptz,
   expires_at timestamptz not null,
   created_at timestamptz not null default now(),
   constraint ai_suggestions_batch_ordinal_key unique (batch_id, ordinal),
   constraint ai_suggestions_decided_hold_no_text check (
-    status = 'pending'
+    status in ('pending', 'accepting')
     or (payload = '{}'::jsonb and quote is null and quote_author_id is null)
   ),
   constraint ai_suggestions_decided_has_time check (
-    (status in ('accepted', 'dismissed')) = (decided_at is not null)
+    (status in ('accepting', 'accepted', 'dismissed')) = (decided_at is not null)
   )
 );
 
@@ -84,12 +91,22 @@ create index if not exists idx_ai_suggestions_pending
 -- The list for one source (a meeting's review screen), and the delete trigger.
 create index if not exists idx_ai_suggestions_pending_source
   on public.ai_suggestions (source_type, source_id)
-  where status = 'pending';
+  where status in ('pending', 'accepting');
+
+-- A batch's rows still owed their push.
+create index if not exists idx_ai_suggestions_unnotified
+  on public.ai_suggestions (batch_id)
+  where notified_at is null;
 
 -- The hourly expiry sweep.
 create index if not exists idx_ai_suggestions_pending_expiry
   on public.ai_suggestions (expires_at)
   where status = 'pending';
+
+-- The sweep's release of an accept that never finished.
+create index if not exists idx_ai_suggestions_accepting
+  on public.ai_suggestions (decided_at)
+  where status = 'accepting';
 
 -- Consent: take a member's words out of every waiting suggestion.
 create index if not exists idx_ai_suggestions_quote_author
@@ -109,7 +126,7 @@ begin
    where source_type = tg_argv[0]
      and source_id = old.id
      and chapter_id = old.chapter_id
-     and status = 'pending';
+     and status in ('pending', 'accepting');
   return old;
 end;
 $$;

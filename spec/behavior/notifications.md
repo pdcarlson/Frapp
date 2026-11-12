@@ -60,7 +60,9 @@ its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread rep
 (mobile opens that as the thread over its channel; web's drawer opens the channel,
 [`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId`, `tasks` sends
 `taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
-`discord_import` send a bare `screen`. `chat_reports` names the officer report queue
+`discord_import` send a bare `screen`. `ai_suggestions` sends `batchId`, `sourceType`
+and `sourceId`, for the review screen of what an AI run drafted (#4309); no client routes
+it yet, so it falls through to the notification list until the review screens ship. `chat_reports` names the officer report queue
 (the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
 resolves it to `/chat-admin#reported-messages`, the queue at the foot of Chat admin, and mobile, which has no queue, falls through to the
 notification list like any screen it does not route. `discord_import` is the notice
@@ -419,6 +421,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Tasks         | Task overdue                                                       | NORMAL                      |
 | Tasks         | Task marked completed (to creator, needs confirmation)             | NORMAL                      |
 | Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
+| Tasks         | Suggested tasks to review: one push per batch an AI run drafts, to the member the run acted for, only when they could accept at least one now (the permission, the module on, the source open to them). Category `tasks`; target `ai_suggestions` with `batchId`, `sourceType`, `sourceId` ([`ai.md` § Suggestions](ai.md#suggestions), #4309) | NORMAL |
 | Service       | Service hours approved                                             | NORMAL                      |
 | Service       | Service hours rejected                                             | NORMAL                      |
 | Admin         | New member joined (to members who can open the roster and invite or assign roles: `members:view` with `members:invite` or `roles:manage`; never the joiner, #3656). Category `members`, which those members can switch off (**Someone joins the chapter**, #4008); the other Admin rows have no switch | NORMAL |

@@ -27,6 +27,10 @@ import {
   AI_SUGGESTION_SOURCE_ACCESS,
   type AiSuggestionSourceAccess,
 } from './ai-suggestion-sources';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
 import { RbacService } from './rbac.service';
 import { NotificationService } from './notification.service';
 import { AnalyticsService } from './analytics.service';
@@ -42,6 +46,16 @@ export const AI_SUGGESTION_LIST_LIMIT = 200;
 export const AI_SUGGESTION_DECIDE_MAX = 50;
 /** The longest quote kept, in characters (`ai_suggestions.quote`). */
 export const AI_SUGGESTION_QUOTE_MAX_LENGTH = 1000;
+/**
+ * The largest proposal kept, in bytes of JSON. Under the table's 16000-byte
+ * check, which measures Postgres's own rendering (a little longer), so a
+ * proposal that passes here never fails the insert and takes the batch with it.
+ */
+export const AI_SUGGESTION_PAYLOAD_MAX_BYTES = 15000;
+/** Pages of waiting rows the list reads looking for ones the caller may see. */
+const LIST_MAX_PAGES = 5;
+/** An accept still `accepting` after this long died mid-way and is put back. */
+export const AI_SUGGESTION_STALE_ACCEPT_MS = 10 * 60 * 1000;
 
 const WILDCARD = '*';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -129,9 +143,11 @@ export function verifiedQuote(
  *   they could accept something in it.
  * - **Shown only to people who could accept it**: the kind's permission, the
  *   kind's module on, and the source open to them.
- * - **No text once decided.** Accepting, dismissing and expiring empty the
- *   proposal and its quote in the same write; the record of who decided,
- *   when, and what it became stays.
+ * - **No text once decided.** Dismissing and expiring empty the proposal and
+ *   its quote in the same write, and accepting empties them in the write that
+ *   records what it made; the record of who decided, when, and what it became
+ *   stays. Between Accept and that write the row is `accepting` and keeps its
+ *   text, so a change that fails puts it back intact.
  */
 @Injectable()
 export class AiSuggestionService {
@@ -158,6 +174,8 @@ export class AiSuggestionService {
     private readonly rbac: RbacService,
     private readonly notifications: NotificationService,
     private readonly analytics: AnalyticsService,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapters: IChapterRepository,
   ) {
     this.kinds = new Map(kindHandlers.map((h) => [h.kind, h]));
     this.sources = new Map(sourceAccess.map((s) => [s.sourceType, s]));
@@ -189,7 +207,12 @@ export class AiSuggestionService {
         ordinal < AI_SUGGESTION_BATCH_MAX && handler
           ? handler.normalizeProposal(proposal.payload)
           : null;
-      if (!handler || !payload) {
+      if (
+        !handler ||
+        !payload ||
+        Buffer.byteLength(JSON.stringify(payload)) >
+          AI_SUGGESTION_PAYLOAD_MAX_BYTES
+      ) {
         dropped += 1;
         return;
       }
@@ -213,9 +236,11 @@ export class AiSuggestionService {
     });
 
     const created = await this.repo.insertBatch(input.chapterId, rows);
+    // A retry of a batch whose rows were written but whose push never went
+    // out writes nothing new and still sends the push.
+    await this.notifyBatch(input);
 
     if (created.length > 0) {
-      await this.notifyBatch(input, created);
       for (const [kind, count] of countBy(created, (row) => row.kind)) {
         this.emit(
           this.analytics.trackForChapter(
@@ -231,58 +256,82 @@ export class AiSuggestionService {
 
   /**
    * One push for the whole batch, to each member it names who could accept
-   * at least one of its suggestions. Best-effort: the suggestions are saved
-   * whatever happens here, and the Suggested list shows them.
+   * at least one of its suggestions now (the kind's module on in the chapter,
+   * its permission held, its source open to them). Sent for the batch's rows
+   * still owed one, then marked, so a retried run sends it once it gets this
+   * far. Best-effort: the suggestions are saved whatever happens here, and
+   * the Suggested list shows them.
    */
-  private async notifyBatch(
-    input: ProposeAiSuggestionsInput,
-    created: readonly AiSuggestion[],
-  ): Promise<void> {
-    const candidates = [
-      ...new Set(
-        input.notify ?? (input.requestedFor ? [input.requestedFor] : []),
-      ),
-    ];
-    if (candidates.length === 0) return;
+  private async notifyBatch(input: ProposeAiSuggestionsInput): Promise<void> {
     try {
+      const owed = await this.repo.listUnnotified(
+        input.chapterId,
+        input.batchId,
+      );
+      if (owed.length === 0) return;
+
+      const candidates = [
+        ...new Set(
+          input.notify ?? (input.requestedFor ? [input.requestedFor] : []),
+        ),
+      ];
+      const chapter =
+        candidates.length > 0
+          ? await this.chapters.findById(input.chapterId)
+          : null;
+      const enabledModules = chapter?.enabled_modules ?? null;
       const recipients: string[] = [];
       for (const userId of candidates) {
         const visible = await this.visibleTo(
           input.chapterId,
           userId,
-          created,
-          null,
+          owed,
+          enabledModules,
         );
         if (visible.length > 0) recipients.push(userId);
       }
-      if (recipients.length === 0) return;
 
-      const kinds = [...new Set(created.map((row) => row.kind))];
-      const only = kinds.length === 1 ? this.kinds.get(kinds[0]) : undefined;
-      await this.notifications.notifyMembers(input.chapterId, recipients, {
-        title: input.source.title,
-        body: only
-          ? only.describeBatch(created.length)
-          : `${created.length} suggestions to review`,
-        priority: 'NORMAL',
-        category: only?.pushCategory ?? 'default',
-        data: {
-          target: {
-            screen: 'ai_suggestions',
-            batchId: input.batchId,
-            sourceType: input.source.type,
-            sourceId: input.source.id,
-          },
-        },
-      });
+      if (recipients.length > 0) {
+        const kinds = [...new Set(owed.map((row) => row.kind))];
+        const only = kinds.length === 1 ? this.kinds.get(kinds[0]) : undefined;
+        await this.sendBatchPush(input, recipients, owed.length, only);
+      }
+      // Marked whether or not anyone could be told: nobody is owed it then.
+      await this.repo.markNotified(
+        input.chapterId,
+        owed.map((row) => row.id),
+        this.now().toISOString(),
+      );
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',
         site: 'ai-suggestions-notify',
-        message: `batch push failed for ${created.length} suggestions in chapter ${input.chapterId}`,
+        message: `batch push failed in chapter ${input.chapterId}`,
         error,
       });
     }
+  }
+
+  private async sendBatchPush(
+    input: ProposeAiSuggestionsInput,
+    recipients: readonly string[],
+    count: number,
+    only: AiSuggestionKindHandler | undefined,
+  ): Promise<void> {
+    await this.notifications.notifyMembers(input.chapterId, [...recipients], {
+      title: input.source.title,
+      body: only ? only.describeBatch(count) : `${count} suggestions to review`,
+      priority: 'NORMAL',
+      category: only?.pushCategory ?? 'default',
+      data: {
+        target: {
+          screen: 'ai_suggestions',
+          batchId: input.batchId,
+          sourceType: input.source.type,
+          sourceId: input.source.id,
+        },
+      },
+    });
   }
 
   // ------------------------------------------------------------------- list
@@ -304,7 +353,7 @@ export class AiSuggestionService {
       userId,
     );
     const held = new Set(permissions);
-    const rows = await this.repo.listPending(chapterId, {
+    const filter = {
       permissions: held.has(WILDCARD)
         ? null
         : [...this.kinds.values()]
@@ -312,17 +361,36 @@ export class AiSuggestionService {
             .filter((permission) => held.has(permission)),
       source: options.source,
       now: this.now().toISOString(),
-      limit: AI_SUGGESTION_LIST_LIMIT + 1,
-    });
-    const page = rows.slice(0, AI_SUGGESTION_LIST_LIMIT);
-    const items = await this.visibleTo(
-      chapterId,
-      userId,
-      page,
-      options.enabledModules,
-      held,
-    );
-    return { items, has_more: rows.length > AI_SUGGESTION_LIST_LIMIT };
+    };
+    // Rows the caller can't open (another member's DM, an Exec meeting) are
+    // filtered after the read, so read on past them, a page at a time, until
+    // the list is full or the pages run out.
+    const items: AiSuggestion[] = [];
+    for (let page = 0; page < LIST_MAX_PAGES; page += 1) {
+      const rows = await this.repo.listPending(chapterId, {
+        ...filter,
+        offset: page * AI_SUGGESTION_LIST_LIMIT,
+        limit: AI_SUGGESTION_LIST_LIMIT,
+      });
+      const visible = await this.visibleTo(
+        chapterId,
+        userId,
+        rows,
+        options.enabledModules,
+        held,
+      );
+      for (const row of visible) {
+        if (items.length === AI_SUGGESTION_LIST_LIMIT) {
+          return { items, has_more: true };
+        }
+        items.push(row);
+      }
+      if (rows.length < AI_SUGGESTION_LIST_LIMIT) {
+        return { items, has_more: false };
+      }
+    }
+    // Pages left unread may hold more the caller could see.
+    return { items, has_more: true };
   }
 
   /**
@@ -388,7 +456,9 @@ export class AiSuggestionService {
    * Accepts a suggestion as `userId`, with their edits when they made any.
    * Re-checks their permission and source access now, commits through the
    * kind's ordinary service, and puts the suggestion back if that fails.
-   * A second accept by the same member returns the first one's outcome.
+   * The suggestion is held as `accepting`, text and all, until the change is
+   * made. A second accept by the same member after it finished returns the
+   * first one's outcome; one while it is still being made answers 409.
    */
   async accept(
     chapterId: string,
@@ -416,7 +486,7 @@ export class AiSuggestionService {
     const edited = !samePayload(payload, row.payload);
 
     const claimed = await this.repo.claim(chapterId, id, {
-      status: 'accepted',
+      status: 'accepting',
       decidedBy: userId,
       edited,
       now: this.now().toISOString(),
@@ -438,20 +508,23 @@ export class AiSuggestionService {
         source: { type: row.source_type, id: row.source_id },
       }));
     } catch (error) {
-      await this.release(chapterId, row);
+      await this.release(chapterId, id);
       throw error;
     }
 
+    // What the officer sees if the last write doesn't land: the change was
+    // made, so the answer is success either way.
+    let finished: AiSuggestion | null = null;
     try {
-      await this.repo.setResult(chapterId, id, resultId);
+      finished = await this.repo.finishAccept(chapterId, id, resultId);
     } catch (error) {
-      // The change is made and the suggestion is decided; only the link from
-      // one to the other is missing. Failing the request would invite a retry
-      // that finds it decided anyway.
+      // The change is made but the suggestion still reads `accepting`. The
+      // sweep puts it back to waiting after ten minutes, where an officer
+      // could accept it again; reported so that is noticed.
       reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'ai-suggestion-result',
-        message: `result link not saved for suggestion ${id}`,
+        level: 'error',
+        site: 'ai-suggestion-finish',
+        message: `accepted suggestion ${id} not marked accepted`,
         error,
       });
     }
@@ -463,7 +536,16 @@ export class AiSuggestionService {
       }),
     );
     return {
-      suggestion: { ...claimed, result_id: resultId },
+      // Null when its source was deleted while the change was made: the
+      // suggestion went with it.
+      suggestion: finished ?? {
+        ...claimed,
+        status: 'accepted',
+        payload: {},
+        quote: null,
+        quote_author_id: null,
+        result_id: resultId,
+      },
       result: { kind: row.kind, id: resultId },
     };
   }
@@ -599,6 +681,15 @@ export class AiSuggestionService {
             : null,
       };
     }
+    // Mid-accept, or (re-read after a lost claim) put back by an accept that
+    // failed: either way it may be waiting again in a moment.
+    if (row.status === 'accepting' || this.isWaiting(row)) {
+      throw new ConflictException({
+        code: 'ai.suggestion.accepting',
+        message:
+          'Someone is already accepting this suggestion. Try again in a moment.',
+      });
+    }
     if (row.status === 'pending' || row.status === 'expired') {
       throw new ConflictException({
         code: 'ai.suggestion.expired',
@@ -626,26 +717,34 @@ export class AiSuggestionService {
     return row;
   }
 
-  private async release(chapterId: string, row: AiSuggestion): Promise<void> {
+  private async release(chapterId: string, id: string): Promise<void> {
     try {
-      await this.repo.release(chapterId, row.id, {
-        payload: row.payload,
-        quote: row.quote,
-        quote_author_id: row.quote_author_id,
-      });
+      await this.repo.release(chapterId, id);
     } catch (error) {
-      // The suggestion stays accepted with no result, and the change was not
-      // made. Reported; the officer makes the change by hand.
+      // It stays `accepting`, text intact, and the sweep puts it back.
       reportCaughtFailure(this.logger, {
-        level: 'error',
+        level: 'warning',
         site: 'ai-suggestion-release',
-        message: `could not put back suggestion ${row.id} after its commit failed`,
+        message: `could not put back suggestion ${id} after its commit failed`,
         error,
       });
     }
   }
 
   // ----------------------------------------------------------------- expire
+
+  /**
+   * Puts back to waiting every accept left `accepting` for ten minutes: the
+   * API stopped between Accept and the change. Called by the hourly sweep,
+   * before `expireDue`. Returns how many.
+   */
+  async releaseStaleAccepts(): Promise<number> {
+    return this.repo.releaseStale(
+      new Date(
+        this.now().getTime() - AI_SUGGESTION_STALE_ACCEPT_MS,
+      ).toISOString(),
+    );
+  }
 
   /**
    * Expires every waiting suggestion whose time is up, in every chapter, and
