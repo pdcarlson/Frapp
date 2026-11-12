@@ -1193,3 +1193,11 @@ export {
 // Study zone shapes: a circle or a traced outline, and the polygon a circle
 // is stored as (map picker, Pick study zones on a map).
 export * from "./study-zone-shape";
+
+export {
+  GOAL_METRICS,
+  GOAL_ROLE_LIMIT,
+  GOAL_TARGET_MAX,
+  isGoalTarget,
+} from "./chapter-goals";
+export type { GoalMetric } from "./chapter-goals";

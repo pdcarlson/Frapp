@@ -38,7 +38,7 @@ import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 type Patch = (diff: PatchChapterConfig, successTitle: string) => Promise<void>;
 
 /** A bounded whole number as typed, or the sentence saying why it isn't one. */
-function readBounded(
+export function readBounded(
   draft: string,
   min: number,
   max: number,
@@ -52,7 +52,7 @@ function readBounded(
   return { value };
 }
 
-function NumberRule({
+export function NumberRule({
   label,
   hint,
   suffix,
@@ -175,7 +175,7 @@ export function RulesList({ children }: { children: ReactNode }) {
   );
 }
 
-function SaveRow({
+export function SaveRow({
   dirty,
   saving,
   disabled,

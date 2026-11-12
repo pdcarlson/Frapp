@@ -768,10 +768,10 @@ describe("Activity screen (#3897)", () => {
 
   describe("This semester (the standing)", () => {
     const standingRead = {
-      points: { total: 42, rank: 5, ranked: 58 },
+      points: { total: 42, rank: 5, ranked: 58, goal: null },
       required_events: { required: 8, attended: 6, excused: 0 },
-      service: { approved_minutes: 270, pending_minutes: 0 },
-      study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
+      service: { approved_minutes: 270, pending_minutes: 0, goal_minutes: null },
+      study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z", goal_minutes: null },
       unavailable: [],
     };
     const standingRow = (tree: ReactTestRenderer, id: string) =>

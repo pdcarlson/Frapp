@@ -97,6 +97,11 @@ function build(
     entries?: ServiceEntry[];
     sessions?: StudySession[];
     since?: Date | null;
+    goals?: {
+      points: number | null;
+      service: number | null;
+      study: number | null;
+    };
   } = {},
 ) {
   const pointsService = {
@@ -121,6 +126,13 @@ function build(
   const rbacService = {
     getAlumniRoleId: jest.fn().mockResolvedValue(ALUMNI_ROLE),
   };
+  const goalService = {
+    goalsForMember: jest
+      .fn()
+      .mockResolvedValue(
+        options.goals ?? { points: null, service: null, study: null },
+      ),
+  };
   const memberRepo = {
     findByUserAndChapter: jest.fn().mockResolvedValue({
       user_id: ME,
@@ -138,6 +150,7 @@ function build(
     studyService as never,
     eventService as never,
     rbacService as never,
+    goalService as never,
     memberRepo as never,
     attendanceRepo as never,
   );
@@ -148,6 +161,7 @@ function build(
     studyService,
     eventService,
     attendanceRepo,
+    goalService,
   };
 }
 
@@ -176,7 +190,12 @@ describe('ActivityStandingService', () => {
         ],
       });
       const standing = await read(service);
-      expect(standing.points).toEqual({ total: 42, rank: 2, ranked: 3 });
+      expect(standing.points).toEqual({
+        total: 42,
+        rank: 2,
+        ranked: 3,
+        goal: null,
+      });
       expect(pointsService.getLeaderboard).toHaveBeenCalledWith(
         CHAPTER,
         'semester',
@@ -200,6 +219,7 @@ describe('ActivityStandingService', () => {
         total: 0,
         rank: null,
         ranked: 1,
+        goal: null,
       });
     });
   });
@@ -371,6 +391,7 @@ describe('ActivityStandingService', () => {
       expect((await read(service)).service).toEqual({
         approved_minutes: 120,
         pending_minutes: 45,
+        goal_minutes: null,
       });
       expect(serviceEntryService.findByChapterFiltered).toHaveBeenCalledWith(
         CHAPTER,
@@ -400,6 +421,7 @@ describe('ActivityStandingService', () => {
       expect((await read(service, null, weekStart)).study).toEqual({
         minutes: 70,
         week_start: weekStart.toISOString(),
+        goal_minutes: null,
       });
       // The week bound is the query's, and the read is the one that settles
       // nothing (so a hot read never writes).
@@ -421,6 +443,38 @@ describe('ActivityStandingService', () => {
       expect(acceptableWeekStart(new Date(at(10 * HOUR)), NOW)).toBe(true);
       expect(acceptableWeekStart(new Date(at(-9 * DAY)), NOW)).toBe(false);
       expect(acceptableWeekStart(new Date(at(2 * DAY)), NOW)).toBe(false);
+    });
+  });
+
+  describe('goals', () => {
+    it("carries the member's goal on points, service and study", async () => {
+      const { service, goalService } = build({
+        roleIds: [PLEDGE_ROLE],
+        board: [{ user_id: ME, total: 12 }],
+        goals: { points: 40, service: 600, study: 360 },
+      });
+      const standing = await read(service);
+      expect(standing.points?.goal).toBe(40);
+      expect(standing.service?.goal_minutes).toBe(600);
+      expect(standing.study?.goal_minutes).toBe(360);
+      expect(goalService.goalsForMember).toHaveBeenCalledWith(CHAPTER, [
+        PLEDGE_ROLE,
+      ]);
+    });
+
+    it('keeps the numbers, with no goal, when goals cannot be read', async () => {
+      const { service, goalService } = build({
+        board: [{ user_id: ME, total: 12 }],
+      });
+      goalService.goalsForMember.mockRejectedValue(new Error('db'));
+      const standing = await read(service);
+      expect(standing.points).toMatchObject({ total: 12, goal: null });
+      expect(standing.study?.goal_minutes).toBeNull();
+      expect(standing.unavailable).toEqual([]);
+      expect(reportSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'activity-standing:goals' }),
+      );
     });
   });
 

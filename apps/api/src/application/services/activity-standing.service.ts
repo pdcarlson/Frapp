@@ -11,6 +11,8 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import type { Event } from '#domain/entities/event.entity';
 import type { StudySessionStatus } from '#domain/entities/study.entity';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { ChapterGoalService } from './chapter-goal.service';
+import type { GoalMetric } from '#domain/entities/chapter-goal.entity';
 import { EventService } from './event.service';
 import { memberAttendance } from './event-role-targeting';
 import type { EnabledModules } from './module-gate';
@@ -39,6 +41,8 @@ export interface StandingPoints {
   rank: number | null;
   /** How many members the board ranks. */
   ranked: number;
+  /** The member's points goal this semester, or `null` for none. */
+  goal: number | null;
 }
 
 /** Required events this semester, as the attendance sweep holds the member to them. */
@@ -59,6 +63,8 @@ export interface StandingRequiredEvents {
 export interface StandingService {
   approved_minutes: number;
   pending_minutes: number;
+  /** The member's service goal this semester, in minutes, or `null`. */
+  goal_minutes: number | null;
 }
 
 /** Study time this week, counted as the Study screen counts it. */
@@ -66,6 +72,8 @@ export interface StandingStudy {
   minutes: number;
   /** The start of the week the minutes are counted from. */
   week_start: string;
+  /** The member's study goal for the week, in minutes, or `null`. */
+  goal_minutes: number | null;
 }
 
 export interface ActivityStanding {
@@ -139,6 +147,7 @@ export class ActivityStandingService {
     private readonly studyService: StudyService,
     private readonly eventService: EventService,
     private readonly rbacService: RbacService,
+    private readonly goalService: ChapterGoalService,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     @Inject(ATTENDANCE_REPOSITORY)
@@ -179,31 +188,58 @@ export class ActivityStandingService {
       return result.value;
     };
 
+    // The member's row, read once: their roles decide which events hold
+    // them and which goal is theirs.
+    const member = this.memberRepo.findByUserAndChapter(userId, chapterId);
+    // Goals only draw a bar, so a failed read leaves the numbers standing
+    // without one rather than failing them.
+    const goals: Promise<Record<GoalMetric, number | null>> = member
+      .then((row) =>
+        this.goalService.goalsForMember(chapterId, row?.role_ids ?? []),
+      )
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'activity-standing:goals',
+          message: `Activity standing could not read goals for chapter ${chapterId}`,
+          error,
+        });
+        return { points: null, service: null, study: null };
+      });
+
     const [points, requiredEvents, service, study] = await Promise.all([
       on('points')
-        ? this.settle('points', chapterId, () =>
-            this.readPoints(chapterId, userId),
-          )
+        ? this.settle('points', chapterId, async () => ({
+            ...(await this.readPoints(chapterId, userId)),
+            goal: (await goals).points,
+          }))
         : OFF,
       on('events')
         ? this.settle('required_events', chapterId, async () =>
             this.readRequiredEvents(
               chapterId,
               userId,
+              await member,
               await sinceOrThrow(),
               now,
             ),
           )
         : OFF,
       on('hours')
-        ? this.settle('service', chapterId, async () =>
-            this.readService(chapterId, userId, await sinceOrThrow()),
-          )
+        ? this.settle('service', chapterId, async () => ({
+            ...(await this.readService(
+              chapterId,
+              userId,
+              await sinceOrThrow(),
+            )),
+            goal_minutes: (await goals).service,
+          }))
         : OFF,
       on('hours')
-        ? this.settle('study', chapterId, () =>
-            this.readStudy(chapterId, userId, weekStart),
-          )
+        ? this.settle('study', chapterId, async () => ({
+            ...(await this.readStudy(chapterId, userId, weekStart)),
+            goal_minutes: (await goals).study,
+          }))
         : OFF,
     ]);
 
@@ -230,7 +266,7 @@ export class ActivityStandingService {
   private async readPoints(
     chapterId: string,
     userId: string,
-  ): Promise<StandingPoints> {
+  ): Promise<Omit<StandingPoints, 'goal'>> {
     // The board already holds the member's semester total: every current
     // member is on it (at 0 with no points), and so is anyone who scored in
     // the window. Reading the total anywhere else would load their whole
@@ -250,13 +286,11 @@ export class ActivityStandingService {
   private async readRequiredEvents(
     chapterId: string,
     userId: string,
+    member: Awaited<ReturnType<IMemberRepository['findByUserAndChapter']>>,
     since: Date | null,
     now: Date,
   ): Promise<StandingRequiredEvents> {
-    const [member, alumniRoleId] = await Promise.all([
-      this.memberRepo.findByUserAndChapter(userId, chapterId),
-      this.rbacService.getAlumniRoleId(chapterId),
-    ]);
+    const alumniRoleId = await this.rbacService.getAlumniRoleId(chapterId);
     if (!member) return { required: 0, attended: 0, excused: 0 };
 
     // Nothing from before they joined holds them, however the event reads.
@@ -314,7 +348,7 @@ export class ActivityStandingService {
     chapterId: string,
     userId: string,
     since: Date | null,
-  ): Promise<StandingService> {
+  ): Promise<Omit<StandingService, 'goal_minutes'>> {
     // The archived semester owns its whole last day, so this semester's
     // service starts the day after (`spec/behavior/semester-rollover.md`).
     const startDate = since
@@ -338,7 +372,7 @@ export class ActivityStandingService {
     chapterId: string,
     userId: string,
     weekStart: Date,
-  ): Promise<StandingStudy> {
+  ): Promise<Omit<StandingStudy, 'goal_minutes'>> {
     const sessions = await this.studyService.listSessionsStartedSince(
       userId,
       chapterId,

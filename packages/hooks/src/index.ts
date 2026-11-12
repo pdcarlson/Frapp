@@ -24,6 +24,7 @@ export * from "./use-chat-catch-up";
 export * from "./use-ai-report";
 export * from "./use-activity";
 export * from "./activity-standing";
+export * from "./chapter-goals";
 export * from "./use-activity-unread";
 export * from "./use-activity-links";
 export * from "./activity-rows";

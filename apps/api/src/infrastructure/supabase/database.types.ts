@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ChapterGoalRow } from '#domain/entities/chapter-goal.entity';
 import type {
   ActivityItemRead,
   AiReport,
@@ -216,6 +217,7 @@ export interface Database {
       ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
       ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
       ai_reports: TableDefinition<AiReport>;
+      chapter_goals: TableDefinition<ChapterGoalRow>;
     };
     Views: Record<string, never>;
     Functions: {

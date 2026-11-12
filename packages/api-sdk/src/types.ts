@@ -3928,6 +3928,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter's goals for points, service hours and study hours */
+        get: operations["GoalsController_getGoals_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/{metric}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace one measure's goals */
+        put: operations["GoalsController_setGoals_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -7685,6 +7719,8 @@ export interface components {
             rank: number | null;
             /** @description How many members the board ranks. */
             ranked: number;
+            /** @description The caller’s points goal this semester (#1062), or null when the chapter sets none for them. */
+            goal: number | null;
         };
         StandingRequiredEventsDto: {
             /** @description Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in. */
@@ -7699,12 +7735,16 @@ export interface components {
             approved_minutes: number;
             /** @description Service minutes waiting for approval. */
             pending_minutes: number;
+            /** @description The caller’s service goal this semester in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
         };
         StandingStudyDto: {
             /** @description Minutes from study sessions that started this week and have ended. */
             minutes: number;
             /** Format: date-time */
             week_start: string;
+            /** @description The caller’s study goal for the week in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
         };
         ActivityStandingDto: {
             /** @description Null when Points is off or couldn’t be read. */
@@ -7737,6 +7777,26 @@ export interface components {
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        RoleGoalDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description Points for a points goal; minutes for a service or study goal. */
+            target: number;
+        };
+        GoalSetDto: {
+            /** @description Every member's goal (points, or minutes for hours), or null for none. */
+            everyone: number | null;
+            /** @description Roles held to a different goal. A member with several is held to the one on their highest-ranked role. */
+            roles: components["schemas"]["RoleGoalDto"][];
+        };
+        ChapterGoalsDto: {
+            /** @description Points this semester. */
+            points: components["schemas"]["GoalSetDto"];
+            /** @description Approved service minutes this semester. */
+            service: components["schemas"]["GoalSetDto"];
+            /** @description Study minutes this week (Sunday to Saturday). */
+            study: components["schemas"]["GoalSetDto"];
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -17467,6 +17527,75 @@ export interface operations {
         requestBody?: never;
         responses: {
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_getGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGoalsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_setGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                metric: "points" | "service" | "study";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalSetDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalSetDto"];
+                };
+            };
+            /** @description A target out of range, a role named twice, or a role not in this chapter. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
