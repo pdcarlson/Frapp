@@ -32,7 +32,7 @@ describe('scriptedMinutesDraft', () => {
         'someone needs to call the venue',
       ].join('\n'),
     });
-    const reply = await scriptedMinutesDraft({
+    const reply = scriptedMinutesDraft({
       messages: prompt.messages,
     } as never);
     const draft = MeetingDraftOutputSchema.parse(

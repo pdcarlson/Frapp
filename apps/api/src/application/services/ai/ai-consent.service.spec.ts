@@ -346,12 +346,28 @@ describe('AiConsentService', () => {
 
   describe('the chapter switches', () => {
     it('are all off for a chapter that never changed one', async () => {
-      await expect(service.getChapterSettings(CHAPTER)).resolves.toEqual({
+      await expect(
+        service.getChapterSettings(CHAPTER, ['role-member']),
+      ).resolves.toEqual({
         ask: false,
         meeting_notes: false,
         chat_source: false,
         updated_at: null,
+        can_change: false,
       });
+    });
+
+    it('tell the president, and only the president, they can change them', async () => {
+      await expect(
+        service.getChapterSettings(CHAPTER, [PRESIDENT_ROLE]),
+      ).resolves.toMatchObject({ can_change: true });
+      await expect(
+        service.getChapterSettings(CHAPTER, []),
+      ).resolves.toMatchObject({ can_change: false });
+      // Another chapter's President role is not this chapter's.
+      await expect(
+        service.getChapterSettings(OTHER_CHAPTER, [PRESIDENT_ROLE]),
+      ).resolves.toMatchObject({ can_change: false });
     });
 
     it('can be changed by the president only', async () => {

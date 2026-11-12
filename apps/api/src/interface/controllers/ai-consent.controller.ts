@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Put,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -13,6 +21,7 @@ import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
+import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import {
@@ -44,10 +53,16 @@ const AI_OFF = {
  * `AiEnabledGuard` comes first, so a server with `AI_ENABLED` off answers 404
  * `ai.not_available` on every route, as if none existed. Free tier: answering
  * the sheet, No above all, is never paid functionality.
+ *
+ * With no `ChapterGuard`, nothing else resolves the caller's Frapp user id
+ * from their Supabase session: `AuthSyncInterceptor` does, as on the other
+ * chapter-less routes (`/v1/users/me`, invites). Without it `@CurrentUser('id')`
+ * was undefined and every read answered 500 (found walking the sheet, #4308).
  */
 @ApiTags('AI')
 @ApiBearerAuth()
 @UseGuards(AiEnabledGuard, SupabaseAuthGuard)
+@UseInterceptors(AuthSyncInterceptor)
 @FreeTier()
 @Controller('ai')
 export class AiConsentController {
@@ -104,14 +119,15 @@ export class AiChapterSettingsController {
   @ApiOperation({
     summary: 'Get the chapter’s AI switches',
     description:
-      'Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.',
+      'Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.',
   })
   @ApiOkResponse({ type: AiChapterSettingsDto })
   @ApiNotFoundResponse(AI_OFF)
   getSettings(
     @CurrentChapterId() chapterId: string,
+    @CurrentMember() member: MemberContext,
   ): Promise<AiChapterSettingsDto> {
-    return this.consent.getChapterSettings(chapterId);
+    return this.consent.getChapterSettings(chapterId, member.role_ids);
   }
 
   @Patch('settings')

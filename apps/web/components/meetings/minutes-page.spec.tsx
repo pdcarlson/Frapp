@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   requestDraft: vi.fn(),
   discardDraft: vi.fn(),
   useDraft: vi.fn(),
+  ensureConsent: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -50,6 +51,13 @@ vi.mock("@repo/hooks", () => ({
         display_name: "Sam Lee",
       },
     ],
+  }),
+}));
+
+vi.mock("@/components/ai/ai-consent-sheet", () => ({
+  useAiConsentGate: () => ({
+    ensureConsent: mocks.ensureConsent,
+    consentDialog: null,
   }),
 }));
 
@@ -153,6 +161,7 @@ beforeEach(() => {
     mocks.requestDraft,
     mocks.discardDraft,
     mocks.useDraft,
+    mocks.ensureConsent,
   ]) {
     fn.mockReset();
   }
@@ -612,14 +621,31 @@ describe("MinutesPage", () => {
       ).toBeTruthy();
     });
 
-    it("says plainly when the member hasn't agreed to AI, and when a draft failed", () => {
+    it("opens the AI sheet on the first ask, and drafts nothing on a No", async () => {
       mocks.draft.current = { ...NO_DRAFT, blocked: "consent_required" };
       loaded(ownDraft());
-      const first = render(<MinutesPage id="m-1" />);
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
+      mocks.ensureConsent.mockResolvedValueOnce(false);
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
       expect(screen.getByText(/you haven't agreed to that yet/)).toBeTruthy();
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.ensureConsent).toHaveBeenCalledTimes(1));
+      expect(mocks.requestDraft).not.toHaveBeenCalled();
       expect(
-        screen.getByRole("button", { name: "Draft minutes" }),
-      ).toHaveProperty("disabled", true);
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
+      mocks.ensureConsent.mockResolvedValueOnce(true);
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+    });
+
+    it("says plainly when a draft failed, and keeps the notes", () => {
+      loaded(ownDraft());
+      const first = render(<div />);
       first.unmount();
 
       mocks.draft.current = {

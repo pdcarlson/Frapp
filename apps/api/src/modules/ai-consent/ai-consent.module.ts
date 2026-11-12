@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
+import { AuthModule } from '../auth/auth.module';
 import { AiConsentService } from '../../application/services/ai/ai-consent.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import {
@@ -21,9 +23,13 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
  * chat authors said yes (#4314).
  */
 @Module({
+  // `AuthSyncInterceptor` resolves the caller on the chapter-less sheet
+  // routes; it needs `AuthService` and `TimeZoneSyncService`.
+  imports: [AuthModule],
   controllers: [AiConsentController, AiChapterSettingsController],
   providers: [
     AiConsentService,
+    AuthSyncInterceptor,
     { provide: AI_CONSENT_REPOSITORY, useClass: SupabaseAiConsentRepository },
     // The president check resolves the chapter's `PRESIDENT` role.
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },

@@ -10348,7 +10348,7 @@
     },
     "/v1/ai/settings": {
       "get": {
-        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.",
+        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.",
         "operationId": "AiChapterSettingsController_getSettings_v1",
         "parameters": [],
         "responses": {
@@ -21276,13 +21276,18 @@
             "format": "date-time",
             "nullable": true,
             "description": "When a switch last changed. Null when none ever has."
+          },
+          "can_change": {
+            "type": "boolean",
+            "description": "Whether the caller may change the switches: they hold the chapter's President role. A hint for drawing the page; PATCH checks again."
           }
         },
         "required": [
           "ask",
           "meeting_notes",
           "chat_source",
-          "updated_at"
+          "updated_at",
+          "can_change"
         ]
       },
       "UpdateAiChapterSettingsDto": {

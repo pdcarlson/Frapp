@@ -19,6 +19,7 @@ import type {
   ConfirmRequest,
   ConfirmResult,
 } from "@/components/shared/confirm-dialog";
+import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { getErrorMessage } from "@/lib/utils";
 
 /** `2026-11-09` for the calendar day `value` falls on where the reader is. */
@@ -78,6 +79,8 @@ export function NotesDraftPanel({
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
+  // The AI sheet opens here, where the officer first reaches for the draft.
+  const { ensureConsent, consentDialog } = useAiConsentGate();
   const [notes, setNotes] = useState(state.notes);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -122,6 +125,15 @@ export function NotesDraftPanel({
       return;
     }
     setProblem(null);
+    if (needsConsent) {
+      try {
+        // A No leaves everything as it was: the notes stay in the box.
+        if (!(await ensureConsent())) return;
+      } catch {
+        setProblem("Couldn't check your AI choice. Try again in a moment.");
+        return;
+      }
+    }
     if (hasContent) {
       const answer = await confirm({
         title: "Replace what's written?",
@@ -292,7 +304,7 @@ export function NotesDraftPanel({
         ) : (
           <Button
             variant={hasContent ? "secondary" : "default"}
-            disabled={disabled || needsConsent}
+            disabled={disabled}
             onClick={() => void handleDraft()}
           >
             {reviewed ? "Draft again" : "Draft minutes"}
@@ -344,6 +356,7 @@ export function NotesDraftPanel({
           ) : null}
         </div>
       ) : null}
+      {consentDialog}
     </section>
   );
 }
