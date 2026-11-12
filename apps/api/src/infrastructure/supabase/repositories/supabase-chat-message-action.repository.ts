@@ -122,7 +122,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     });
     if (error) {
       // The RPC names each refusal in its message and the slot in DETAIL
-      // (`20261112280000_signup_headcount_close.sql`); anything else is a
+      // (`20261113040001_signup_headcount_close.sql`); anything else is a
       // failure.
       const reason = SIGNUP_REFUSALS[error.message];
       if (reason) {
