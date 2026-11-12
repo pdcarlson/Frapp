@@ -181,6 +181,16 @@ function DockedPanel({
 const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
 
 /**
+ * A docked panel's body and footer keep to the panel's width, centred, on a
+ * page wider than it (chat closed, the tool column the whole window): a
+ * profile or a form stretched to 1200px reads as a table, not a record. The
+ * inset grows rather than a `max-w` box, so the body's scrollbar stays at the
+ * column's edge. Beside chat the column is narrower than this and it is the
+ * plain 20px inset.
+ */
+const DOCKED_INSET_CLASS = "px-[max(1.25rem,calc((100%_-_576px)/2_+_1.25rem))]";
+
+/**
  * Marks content that answers Escape itself, such as a task card in edit
  * (#4512): Escape pressed inside it is its own, so the panel stays open.
  * Radix hears Escape on the document before any React handler, so the
@@ -244,7 +254,12 @@ export function PanelHeader({
   actions,
   className,
 }: {
-  children: React.ReactNode;
+  /**
+   * The title. Leave it out when the body heads the record itself with
+   * `PanelTitle` (the member panel's name under the photo): the row then
+   * carries only the way back or the close, and `actions`.
+   */
+  children?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
 }) {
@@ -262,15 +277,19 @@ export function PanelHeader({
         >
           <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
         </IconButton>
-        <h2
-          id={dock.titleId}
-          className={cn(
-            "min-w-0 flex-1 truncate text-body font-semibold",
-            className,
-          )}
-        >
-          {children}
-        </h2>
+        {children ? (
+          <h2
+            id={dock.titleId}
+            className={cn(
+              "min-w-0 flex-1 truncate text-body font-semibold",
+              className,
+            )}
+          >
+            {children}
+          </h2>
+        ) : (
+          <div className="flex-1" />
+        )}
         {actions ? (
           <div className="flex shrink-0 items-center">{actions}</div>
         ) : null}
@@ -284,9 +303,13 @@ export function PanelHeader({
         className,
       )}
     >
-      <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
-        {children}
-      </SheetTitle>
+      {children ? (
+        <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
+          {children}
+        </SheetTitle>
+      ) : (
+        <div className="flex-1" />
+      )}
       {actions ? (
         <div className="flex h-[26px] shrink-0 items-center self-start">
           {actions}
@@ -294,6 +317,30 @@ export function PanelHeader({
       ) : null}
     </div>
   );
+}
+
+/**
+ * A title drawn in the body rather than the header row (the member panel's
+ * name under the photo). It names the panel either way: the sheet's dialog
+ * title, or the heading a docked panel's region is labelled by. Use it only
+ * with a `PanelHeader` that has no title of its own.
+ */
+export function PanelTitle({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const dock = React.useContext(PanelDockContext);
+  if (dock) {
+    return (
+      <h2 id={dock.titleId} className={className}>
+        {children}
+      </h2>
+    );
+  }
+  return <SheetTitle className={className}>{children}</SheetTitle>;
 }
 
 /**
@@ -309,10 +356,12 @@ export function PanelBody<T extends "div" | "form" = "div">({
   ...props
 }: { as?: T } & React.ComponentPropsWithoutRef<T>) {
   const Component = (as ?? "div") as React.ElementType;
+  const docked = React.useContext(PanelDockContext) !== null;
   return (
     <Component
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-1",
+        docked && DOCKED_INSET_CLASS,
         className,
       )}
       {...props}
@@ -332,10 +381,12 @@ export function PanelFooter({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<"div">) {
+  const docked = React.useContext(PanelDockContext) !== null;
   return (
     <div
       className={cn(
         "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-4",
+        docked && DOCKED_INSET_CLASS,
         className,
       )}
       {...props}

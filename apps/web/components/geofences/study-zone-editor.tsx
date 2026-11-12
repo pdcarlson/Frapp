@@ -238,7 +238,9 @@ export function StudyZoneEditor({
           as="form"
           id="study-zone-form"
           onSubmit={submit}
-          className="@container pt-4"
+          // The full column, not the docked panel's centred width: from
+          // `@4xl` the form and the map sit side by side.
+          className="@container px-5 pt-4"
         >
           <div className="flex min-h-0 flex-1 flex-col gap-6 @4xl:flex-row">
             <div className="flex shrink-0 flex-col gap-4 @4xl:w-[300px]">
@@ -312,7 +314,7 @@ export function StudyZoneEditor({
             </div>
           </div>
         </PanelBody>
-        <PanelFooter>
+        <PanelFooter className="px-5">
           <Button
             type="button"
             variant="secondary"

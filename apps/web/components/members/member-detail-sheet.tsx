@@ -45,12 +45,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
-import { Sheet, SheetTitle } from "@/components/ui/sheet";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
+  PanelHeader,
+  PanelTitle,
 } from "@/components/shared/panel";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
@@ -177,6 +179,14 @@ type MemberDetailSheetProps = {
    * per-member read needs `points:view_all`, which most viewers lack.
    */
   points?: number | null;
+  /**
+   * Open inside the page that lists the member (Directory, Alumni) rather
+   * than over everything (`Panel`'s `docked`, components.md § Surface size).
+   * Chat, which has no page of its own for a member, leaves it off.
+   */
+  docked?: boolean;
+  /** The docked back arrow's name: where it goes ("Back to directory"). */
+  backLabel?: string;
 };
 
 /**
@@ -292,6 +302,8 @@ export function MemberDetailSheet({
   initialMember,
   identity,
   points,
+  docked = false,
+  backLabel,
 }: MemberDetailSheetProps) {
   const memberQuery = useMemberByUserId(userId ?? "");
   const rolesQuery = useRoles();
@@ -550,7 +562,12 @@ export function MemberDetailSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Panel
+      open={open}
+      onOpenChange={onOpenChange}
+      docked={docked}
+      backLabel={backLabel}
+    >
       {/*
         `aria-describedby={undefined}`: with no `SheetDescription` rendered,
         Radix warns on every open for a `Content` that points at a description
@@ -559,14 +576,15 @@ export function MemberDetailSheet({
       <PanelContent aria-describedby={undefined}>
         {/*
           The title row's band with no title in it: the name heads the body.
-          The close button `SheetContent` draws sits at its end, and the `⋯`
+          The sheet's close button sits at its end (docked, the back arrow
+          leads it instead), and the `⋯`
           beside it holds what a viewer only now and then reaches for
           (components.md § Settings live a couple of taps away), never on the
           profile's face. Absent when it would hold nothing.
         */}
-        <div className="flex h-14 shrink-0 items-start justify-end py-[15px] pr-14">
-          {canRemove || canCorrect ? (
-            <div className="flex h-[26px] items-center">
+        <PanelHeader
+          actions={
+            canRemove || canCorrect ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <IconButton
@@ -599,9 +617,9 @@ export function MemberDetailSheet({
                   ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-          ) : null}
-        </div>
+            ) : undefined
+          }
+        />
         {/* `gap-0`: the blocks below carry their own top margins. */}
         <PanelBody className="gap-0">
           <div className="flex flex-col items-center gap-2 text-center">
@@ -620,9 +638,9 @@ export function MemberDetailSheet({
                 {initials(displayName)}
               </AvatarFallback>
             </Avatar>
-            <SheetTitle className="break-words text-lg font-bold leading-[26px]">
+            <PanelTitle className="break-words text-lg font-bold leading-[26px]">
               {displayName}
-            </SheetTitle>
+            </PanelTitle>
             {meta ? (
               <p className="text-caption text-muted-foreground">{meta}</p>
             ) : null}
@@ -918,6 +936,6 @@ export function MemberDetailSheet({
           />
         ) : null}
       </PanelContent>
-    </Sheet>
+    </Panel>
   );
 }
