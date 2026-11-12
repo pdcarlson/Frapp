@@ -426,7 +426,12 @@ export class ActivityService {
       this.settle('tasks', chapterId, () =>
         on('tasks')
           ? this.readTasks(chapterId, userId, permissions)
-          : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+          : Promise.resolve({
+              mine: [],
+              confirmations: [],
+              confirmationsWaiting: 0,
+              assigned: [],
+            }),
       ),
       this.settle('hours_approvals', chapterId, () =>
         on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
@@ -470,6 +475,7 @@ export class ActivityService {
     const taskLists = valueOf('tasks', tasks, {
       mine: [],
       confirmations: [],
+      confirmationsWaiting: 0,
       assigned: [],
     });
     const hoursApprovals = valueOf('hours_approvals', hours, []);
@@ -480,7 +486,7 @@ export class ActivityService {
 
     const needsYouCount =
       taskLists.mine.length +
-      taskLists.confirmations.length +
+      taskLists.confirmationsWaiting +
       hoursApprovals.length +
       pollLists.unvoted.length +
       comingUp.filter((event) => event.check_in_open && !event.checked_in)
@@ -724,24 +730,34 @@ export class ActivityService {
   ): Promise<{
     mine: ActivityTask[];
     confirmations: ActivityTask[];
+    /** All of them, not only the 25 read. */
+    confirmationsWaiting: number;
     assigned: ActivityTask[];
   }> {
     const canManage = can(SystemPermissions.TASKS_MANAGE, permissions);
     // Each list is its own read, filtered in SQL, so none depends on reading
     // the chapter's whole task history (#4037).
-    const [own, waiting, made] = await Promise.all([
+    // Finished tasks waiting on a confirm: the 25 waiting longest, and how
+    // many wait in all, for `needs_you_count`. Confirming your own completion
+    // is refused (`TaskService.confirmCompletion`, the no-self-award rule), so
+    // yours are not offered as waiting on you.
+    const waitingFilter = {
+      status: TaskStatus.COMPLETED,
+      confirmed: false,
+      notAssigneeId: userId,
+    };
+    const [own, waiting, waitingCount, made] = await Promise.all([
       this.taskService.list(chapterId, userId, false, { confirmed: false }),
-      // Every one, not a page: `needs_you_count` counts them. The set is the
-      // chapter's finished-but-unconfirmed work, not its history. Confirming
-      // your own completion is refused (`TaskService.confirmCompletion`, the
-      // no-self-award rule), so yours are not offered as waiting on you.
       canManage
         ? this.taskService.list(chapterId, userId, true, {
-            status: TaskStatus.COMPLETED,
-            confirmed: false,
-            notAssigneeId: userId,
+            ...waitingFilter,
+            order: 'longest_waiting',
+            limit: LIST_LIMIT,
           })
         : Promise.resolve([]),
+      canManage
+        ? this.taskService.count(chapterId, userId, true, waitingFilter)
+        : Promise.resolve(0),
       // Only while the caller can still read tasks they don't hold: a creator
       // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
       // row that opens to a refusal is worse than no row.
@@ -758,9 +774,8 @@ export class ActivityService {
       // By day, and within a day by time, a task with no time last: it is
       // due by the end of the day.
       .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
-    const confirmations = waiting.sort(
-      byAscending((task) => task.completed_at ?? task.created_at),
-    );
+    // Already oldest first from the database.
+    const confirmations = waiting;
     const assigned = made.sort(byNewest);
 
     const names = await this.namesOf(
@@ -790,6 +805,7 @@ export class ActivityService {
     return {
       mine: mine.map(toRow),
       confirmations: confirmations.map(toRow),
+      confirmationsWaiting: waitingCount,
       assigned: assigned.map(toRow),
     };
   }

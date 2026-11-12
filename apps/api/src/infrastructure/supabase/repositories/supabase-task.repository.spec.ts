@@ -97,6 +97,102 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     },
   );
 
+  describe('findByChapter filters narrow in SQL (#4037)', () => {
+    const OTHER = '0c000000-0000-4000-8000-000000000060';
+    /** Four tasks per chapter, each failing a different filter. */
+    const rows = (scope: typeof inA, prefix: string) =>
+      [
+        [
+          '1',
+          { status: 'TODO', assignee_id: USER_SHARED, created_by: USER_SHARED },
+        ],
+        [
+          '2',
+          {
+            status: 'COMPLETED',
+            assignee_id: OTHER,
+            created_by: USER_SHARED,
+            completed_at: '2026-01-03T00:00:00Z',
+          },
+        ],
+        [
+          '3',
+          {
+            status: 'COMPLETED',
+            assignee_id: USER_SHARED,
+            created_by: OTHER,
+            completed_at: '2026-01-02T00:00:00Z',
+          },
+        ],
+        [
+          '4',
+          {
+            status: 'COMPLETED',
+            assignee_id: OTHER,
+            created_by: OTHER,
+            completed_at: '2026-01-01T00:00:00Z',
+            confirmed_at: '2026-01-05T00:00:00Z',
+          },
+        ],
+      ].map(([n, fields]) =>
+        scope({
+          id: `${prefix}000000-0000-4000-a000-00000000000${n as string}`,
+          title: `Task ${n as string}`,
+          description: null,
+          due_date: '2026-09-01',
+          point_reward: null,
+          points_awarded: 0,
+          completed_at: null,
+          confirmed_at: null,
+          created_at: `2026-01-0${n as string}T00:00:00.000Z`,
+          ...(fields as object),
+        }),
+      );
+    const id = (n: number) => `0b000000-0000-4000-a000-00000000000${n}`;
+
+    beforeEach(() => {
+      harness = createTenantHarness({
+        tables: { tasks: [...rows(inA, '0a'), ...rows(inB, '0b')] },
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+    });
+
+    it.each([
+      ['assignee', { assigneeId: USER_SHARED }, [3, 1]],
+      ['not-assignee', { notAssigneeId: USER_SHARED }, [4, 2]],
+      ['creator', { createdBy: USER_SHARED }, [2, 1]],
+      ['status', { status: TaskStatus.TODO }, [1]],
+      ['unconfirmed', { confirmed: false }, [3, 2, 1]],
+      ['confirmed', { confirmed: true }, [4]],
+    ] as const)(
+      'the %s filter leaves out what it should',
+      async (_name, query, expected) => {
+        const tasks = await harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.findByChapter(CHAPTER_B, { ...query }),
+        );
+
+        expect(tasks.map((t) => t.id)).toEqual(expected.map(id));
+      },
+    );
+
+    it('orders a waiting list longest-waiting first, and counts it in SQL', async () => {
+      const waiting = {
+        status: TaskStatus.COMPLETED,
+        confirmed: false,
+      } as const;
+
+      const tasks = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByChapter(CHAPTER_B, { ...waiting, order: 'longest_waiting' }),
+      );
+      const count = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.countByChapter(CHAPTER_B, waiting),
+      );
+
+      expect(tasks.map((t) => t.id)).toEqual([id(3), id(2)]);
+      expect(count).toBe(2);
+    });
+  });
+
   describe('findByChapter past the 1,000-row cap (#4037)', () => {
     /**
      * 2,500 tasks in each chapter (the harness pairs twins); the first 1,500
@@ -157,6 +253,25 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
       expect(seen).toHaveLength(2501);
       expect(new Set(seen).size).toBe(2501);
+    });
+
+    it('fills a page even when the row cap is below the limit', async () => {
+      harness = createTenantHarness({
+        tables: { tasks: [...seed().tasks, ...many()] },
+        maxRows: 50,
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+
+      const page = await repo.findByChapter(CHAPTER_B, { limit: 200 });
+
+      // So a client may read a short page as the last one.
+      expect(page).toHaveLength(200);
+    });
+
+    it('counts past the cap', async () => {
+      await expect(
+        repo.countByChapter(CHAPTER_B, { confirmed: false }),
+      ).resolves.toBe(1251);
     });
 
     it('filters on confirmation in SQL, past the cap', async () => {

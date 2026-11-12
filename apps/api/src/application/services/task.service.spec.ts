@@ -65,6 +65,7 @@ describe('TaskService', () => {
     mockTaskRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      countByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       confirmCompletionAtomic: jest.fn(),
@@ -954,6 +955,28 @@ describe('TaskService', () => {
         confirmed: true,
         after,
         limit: 50,
+        assigneeId: 'user-1',
+      });
+    });
+
+    it('refuses a calendar-invalid cursor with a 400, not a database 500', async () => {
+      await expect(
+        service.list('ch-1', 'user-1', true, {
+          after: { created_at: '2026-02-30T00:00:00Z', id: 'task-9' },
+          limit: 50,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('counts in SQL, a member only their own', async () => {
+      mockTaskRepo.countByChapter.mockResolvedValue(3);
+
+      await expect(
+        service.count('ch-1', 'user-1', false, { confirmed: false }),
+      ).resolves.toBe(3);
+      expect(mockTaskRepo.countByChapter).toHaveBeenCalledWith('ch-1', {
+        confirmed: false,
         assigneeId: 'user-1',
       });
     });

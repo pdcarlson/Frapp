@@ -25,6 +25,7 @@ import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
 import { formatTaskDue, joinFacts } from './push-copy';
+import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
@@ -85,6 +86,8 @@ export interface TaskListOptions {
   createdBy?: string;
   /** Leave out tasks assigned to this member. */
   notAssigneeId?: string;
+  /** `newest` (default) or `longest_waiting`, as the repository orders them. */
+  order?: 'newest' | 'longest_waiting';
   /** Resume after this row (the last of the page before). */
   after?: TaskListCursor;
   /** At most this many rows. */
@@ -293,12 +296,31 @@ export class TaskService {
     isAdmin: boolean,
     options: TaskListOptions = {},
   ): Promise<TaskView[]> {
+    // The regex on the DTO lets a calendar-invalid instant (2026-02-30)
+    // through, and Postgres would answer it with a 500.
+    instantOrThrow('before', options.after?.created_at);
     const tasks = await this.taskRepo.findByChapter(chapterId, {
       ...options,
       // Last, so no option widens a member's read past their own tasks.
       ...(isAdmin ? {} : { assigneeId: userId }),
     });
     return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
+  }
+
+  /** How many tasks {@link list} would return with no `limit`, counted in SQL. */
+  async count(
+    chapterId: string,
+    userId: string,
+    isAdmin: boolean,
+    options: Pick<
+      TaskListOptions,
+      'confirmed' | 'status' | 'createdBy' | 'notAssigneeId'
+    > = {},
+  ): Promise<number> {
+    return this.taskRepo.countByChapter(chapterId, {
+      ...options,
+      ...(isAdmin ? {} : { assigneeId: userId }),
+    });
   }
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {

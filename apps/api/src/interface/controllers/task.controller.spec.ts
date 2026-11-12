@@ -96,13 +96,13 @@ describe('TaskController', () => {
       const beforeId = '0b000000-0000-4000-8000-000000000001';
 
       await controller.list(chapterId, userId, {
-        limit: 500,
+        limit: 200,
         before,
         before_id: beforeId,
       });
       await controller.list(chapterId, userId, { before, before_id: beforeId });
 
-      // Clamped to the 200 maximum; `before` alone pages at the default 50.
+      // A cursor without a `limit` pages at the default 50.
       expect(taskService.list).toHaveBeenNthCalledWith(
         1,
         chapterId,

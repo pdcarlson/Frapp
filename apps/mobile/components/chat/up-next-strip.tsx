@@ -123,8 +123,8 @@ export function selectNextEvent(
  */
 /**
  * `viewerUserId` is required, not optional, because `GET /v1/tasks` widens for
- * an admin — `task.service.ts` returns `isAdmin ? findByChapter(chapterId) :
- * findByAssignee(chapterId, userId)` — and this strip is drawn as the viewer's
+ * an admin — `TaskService.list` reads the whole chapter for `tasks:manage` and
+ * pins everyone else to `assigneeId: userId` — and this strip is drawn as the viewer's
  * one glanceable "what's next". Unfiltered, a `tasks:manage` officer saw
  * whichever member's task fell due soonest, in destructive red, occupying the
  * single slot their own task should hold; tapping it landed on a board that is

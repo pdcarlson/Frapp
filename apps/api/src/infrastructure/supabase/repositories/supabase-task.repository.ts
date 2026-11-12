@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type {
   ITaskRepository,
+  TaskListFilter,
   TaskListQuery,
 } from '#domain/repositories/task.repository.interface';
 import {
@@ -21,9 +22,8 @@ import { escapeFilterValue, fetchAllPages } from '../supabase.utils';
 const SUBTASK_READ_BATCH = 100;
 
 /**
- * Rows per request when a list is read whole. PostgREST's default cap; a
- * hosted project set lower still reads every row, in more trips
- * (`fetchAllPages`).
+ * Rows per request. PostgREST's default cap; a hosted project set lower still
+ * reads every row, in more trips (`fetchAllPages`).
  */
 const TASK_PAGE_SIZE = 1000;
 
@@ -50,39 +50,73 @@ export class SupabaseTaskRepository implements ITaskRepository {
     query: TaskListQuery = {},
   ): Promise<Task[]> {
     const build = () => {
-      let q = this.supabase
-        .from('tasks')
-        .select('*')
-        .eq('chapter_id', chapterId);
-      if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
-      if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
-      if (query.createdBy) q = q.eq('created_by', query.createdBy);
-      if (query.status) q = q.eq('status', query.status);
-      if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
-      if (query.confirmed === false) q = q.is('confirmed_at', null);
-      if (query.after) {
-        // Strictly after the cursor in (created_at desc, id desc): an earlier
-        // `created_at`, or the same one and a lower `id`. Spelled without a
-        // nested `and()`: at or before its time, and then either earlier or
-        // lower.
-        const at = escapeFilterValue(query.after.created_at);
-        q = q
-          .lte('created_at', query.after.created_at)
-          .or(`created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`);
+      const q = this.filtered(
+        this.supabase.from('tasks').select('*'),
+        chapterId,
+        query,
+      );
+      if (query.order === 'longest_waiting') {
+        return q
+          .order('completed_at', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true });
       }
       return q
         .order('created_at', { ascending: false })
         .order('id', { ascending: false });
     };
 
-    if (query.limit !== undefined) {
-      const { data, error } = await build().limit(query.limit);
-      if (error) throw new SupabaseQueryError(error);
-      return data ?? [];
-    }
+    // Paged even under a `limit`: only an empty page proves the rows ran out
+    // (`fetchAllPages`), so a hosted row cap below `limit` still returns a full
+    // page, and a caller can read a short page as the last one.
     return fetchAllPages((from, to) => build().range(from, to), {
-      pageSize: TASK_PAGE_SIZE,
+      pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+      limit: query.limit,
     });
+  }
+
+  async countByChapter(
+    chapterId: string,
+    query: TaskListFilter = {},
+  ): Promise<number> {
+    const { count, error } = await this.filtered(
+      this.supabase.from('tasks').select('id', { count: 'exact', head: true }),
+      chapterId,
+      query,
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
+  }
+
+  /** The chapter predicate, then every filter `query` sets, in SQL (#4037). */
+  private filtered<
+    Q extends {
+      eq(column: string, value: unknown): Q;
+      neq(column: string, value: unknown): Q;
+      is(column: string, value: null): Q;
+      not(column: string, operator: string, value: unknown): Q;
+      lte(column: string, value: unknown): Q;
+      or(filters: string): Q;
+    },
+  >(q: Q, chapterId: string, query: TaskListFilter & TaskListQuery): Q {
+    q = q.eq('chapter_id', chapterId);
+    if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
+    if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
+    if (query.createdBy) q = q.eq('created_by', query.createdBy);
+    if (query.status) q = q.eq('status', query.status);
+    if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
+    if (query.confirmed === false) q = q.is('confirmed_at', null);
+    if (query.after) {
+      // Strictly after the cursor in (created_at desc, id desc): an earlier
+      // `created_at`, or the same one and a lower `id`. Spelled without a
+      // nested `and()`: at or before its time, and then either earlier or
+      // lower.
+      const at = escapeFilterValue(query.after.created_at);
+      q = q
+        .lte('created_at', query.after.created_at)
+        .or(`created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`);
+    }
+    return q;
   }
 
   async create(data: TablesInsert<'tasks'>): Promise<Task> {

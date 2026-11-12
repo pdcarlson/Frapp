@@ -81,7 +81,10 @@ const event = (overrides: Partial<Event>): Event =>
   }) as Event;
 
 function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
-  const taskService = { list: jest.fn().mockResolvedValue([]) };
+  const taskService = {
+    list: jest.fn().mockResolvedValue([]),
+    count: jest.fn().mockResolvedValue(0),
+  };
   const serviceEntryService = {
     findByChapterFiltered: jest.fn().mockResolvedValue([]),
   };
@@ -174,10 +177,22 @@ function servePolls(
  * separately, each narrowed as the repository narrows it in SQL (#4037).
  */
 function serveTasks(
-  taskService: { list: jest.Mock },
+  taskService: { list: jest.Mock; count: jest.Mock },
   own: TaskView[],
   all: TaskView[] = [],
 ) {
+  const matching = (isAdmin: boolean, options: TaskListOptions) =>
+    (isAdmin ? all : own).filter(
+      (row) =>
+        (options.status === undefined ||
+          row.stored_status === options.status) &&
+        (options.confirmed === undefined ||
+          (row.confirmed_at !== null) === options.confirmed) &&
+        (options.createdBy === undefined ||
+          row.created_by === options.createdBy) &&
+        (options.notAssigneeId === undefined ||
+          row.assignee_id !== options.notAssigneeId),
+    );
   taskService.list.mockImplementation(
     (
       _chapterId: string,
@@ -185,19 +200,22 @@ function serveTasks(
       isAdmin: boolean,
       options: TaskListOptions = {},
     ) => {
-      const rows = (isAdmin ? all : own).filter(
-        (row) =>
-          (options.status === undefined ||
-            row.stored_status === options.status) &&
-          (options.confirmed === undefined ||
-            (row.confirmed_at !== null) === options.confirmed) &&
-          (options.createdBy === undefined ||
-            row.created_by === options.createdBy) &&
-          (options.notAssigneeId === undefined ||
-            row.assignee_id !== options.notAssigneeId),
-      );
+      const rows = matching(isAdmin, options);
+      if (options.order === 'longest_waiting') {
+        rows.sort((a, b) =>
+          (a.completed_at ?? '').localeCompare(b.completed_at ?? ''),
+        );
+      }
       return Promise.resolve(rows.slice(0, options.limit ?? rows.length));
     },
+  );
+  taskService.count.mockImplementation(
+    (
+      _chapterId: string,
+      _userId: string,
+      isAdmin: boolean,
+      options: TaskListOptions = {},
+    ) => Promise.resolve(matching(isAdmin, options).length),
   );
 }
 
@@ -615,17 +633,29 @@ describe('ActivityService', () => {
       const view = await service.getActivity(CHAPTER, ME, null);
 
       // Two filtered reads, never the chapter's whole history (#4037).
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
+      const waiting = {
         status: TaskStatus.COMPLETED,
         confirmed: false,
         notAssigneeId: ME,
+      };
+      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
+        ...waiting,
+        order: 'longest_waiting',
+        limit: 25,
       });
+      expect(taskService.count).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        true,
+        waiting,
+      );
       expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
         createdBy: ME,
         limit: 25,
       });
-      for (const [, , , options] of taskService.list.mock.calls) {
-        expect(options).toBeDefined();
+      // Every chapter-wide read is narrowed and capped.
+      for (const [, , isAdmin, options] of taskService.list.mock.calls) {
+        if (isAdmin) expect(options).toHaveProperty('limit', 25);
       }
       expect(view.needs_you.task_confirmations.map((row) => row.id)).toEqual([
         'to-confirm',
@@ -1516,6 +1546,33 @@ describe('ActivityService', () => {
     expect(view.unavailable).toEqual(['tasks']);
     expect(view.needs_you.tasks).toEqual([]);
     expect(view.needs_you.polls).toHaveLength(1);
+  });
+
+  it('counts every completion waiting on a confirm, past the 25 it reads (#4037)', async () => {
+    const { service, taskService } = build([
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.TASKS_MANAGE,
+    ]);
+    serveTasks(
+      taskService,
+      [],
+      Array.from({ length: 40 }, (_, index) =>
+        task({
+          id: `done-${index}`,
+          assignee_id: OTHER,
+          status: TaskStatus.COMPLETED,
+          stored_status: TaskStatus.COMPLETED,
+          completed_at: iso(-HOUR * (index + 1)),
+        }),
+      ),
+    );
+
+    const view = await service.getActivity(CHAPTER, ME, null);
+
+    expect(view.needs_you.task_confirmations).toHaveLength(25);
+    // Longest waiting first.
+    expect(view.needs_you.task_confirmations[0].id).toBe('done-39');
+    expect(view.needs_you_count).toBe(40);
   });
 
   it('caps each list at 25 rows and counts what waits before the cap', async () => {
