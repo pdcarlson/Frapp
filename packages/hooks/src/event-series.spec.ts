@@ -150,6 +150,21 @@ describe("seriesCadenceLabel", () => {
     ).toBe("Every month on the last Friday");
   });
 
+  it("names a by-date structured rule's usual day, not a clamped row's", () => {
+    // Built from local parts so the day holds in any test zone.
+    const on31 = [
+      new Date(2027, 0, 31, 12).toISOString(),
+      new Date(2027, 2, 31, 12).toISOString(),
+    ];
+    const feb28 = new Date(2027, 1, 28, 12).toISOString();
+    expect(
+      seriesCadenceLabel("FREQ=MONTHLY;INTERVAL=1;COUNT=6;TZID=UTC", feb28, [
+        ...on31,
+        feb28,
+      ]),
+    ).toBe("Every month on the 31st");
+  });
+
   // Built from local parts so the weekday holds in any test zone.
   const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
   it("names the weekday most meetings fall on, not one moved meeting's", () => {

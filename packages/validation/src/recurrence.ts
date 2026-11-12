@@ -26,10 +26,14 @@
  *   included) or `UNTIL` (`YYYYMMDD`, the last day a meeting may fall on, in
  *   the rule's zone), and `TZID` (the zone whose wall clock the series keeps,
  *   so a 7 PM meeting stays at 7 PM across a DST change). Chapters keep no
- *   zone of their own, so the zone is the creating officer's, which is the
- *   chapter's in practice. A monthly rule without `BYDAY` meets on the first
- *   meeting's day of the month (the 31st falls back to a short month's last
- *   day). A weekly rule must name its days.
+ *   zone of their own, so the zone will be the creating officer's, which is
+ *   the chapter's in practice. A monthly rule without `BYDAY` meets on its
+ *   `BYMONTHDAY` (1-31; the 31st falls back to a short month's last day), so
+ *   a head clamped to Feb 28 still hands on the 31st; without either, on the
+ *   first meeting's day of the month. A weekly rule must name its days.
+ *
+ * The API accepts and steps a structured rule today; the Repeat controls send
+ * one from #4488's UI PR. Until then every client writes a legacy token.
  *
  * The head row is always the series' first meeting; the rule makes the
  * meetings after it.
@@ -127,6 +131,12 @@ export interface RepeatRule {
   byDay: WeekdayCode[];
   /** Monthly only: meet on the nth weekday; `null` meets on the day of month. */
   nthWeekday: { n: NthWeek; day: WeekdayCode } | null;
+  /**
+   * Monthly by date only: the day of the month it meets on (1-31), written as
+   * `BYMONTHDAY`. `null` reads the first meeting's day, which a clamped head
+   * (Feb 28 for a series on the 31st) gets wrong, so writers set it.
+   */
+  monthDay: number | null;
   end: RepeatEnd;
   /** The zone whose wall clock the series keeps (IANA name). */
   timeZone: string;
@@ -153,6 +163,7 @@ function legacyRule(token: RecurrenceRule): ParsedRepeatRule {
     // stepper reads an empty list that way.
     byDay: [],
     nthWeekday: null,
+    monthDay: null,
     end: { kind: "rolling", children: LEGACY_CHILD_COUNT[token] },
     timeZone: "UTC",
   };
@@ -161,6 +172,7 @@ function legacyRule(token: RecurrenceRule): ParsedRepeatRule {
 const UNTIL_PATTERN = /^(\d{4})(\d{2})(\d{2})$/;
 const NTH_PATTERN = /^(-1|[1-4])(SU|MO|TU|WE|TH|FR|SA)$/;
 const POSITIVE_INT = /^[1-9]\d{0,3}$/;
+const MONTH_DAY = /^([1-9]|[12]\d|3[01])$/;
 
 function isWeekdayCode(value: string): value is WeekdayCode {
   return (WEEKDAY_CODES as readonly string[]).includes(value);
@@ -195,7 +207,15 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   }
   for (const key of fields.keys()) {
     if (
-      !["FREQ", "INTERVAL", "BYDAY", "COUNT", "UNTIL", "TZID"].includes(key)
+      ![
+        "FREQ",
+        "INTERVAL",
+        "BYDAY",
+        "BYMONTHDAY",
+        "COUNT",
+        "UNTIL",
+        "TZID",
+      ].includes(key)
     ) {
       return null;
     }
@@ -212,7 +232,10 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   if (interval > MAX_REPEAT_INTERVAL) return null;
 
   const timeZone = fields.get("TZID");
-  if (!timeZone || !isSupportedTimeZone(timeZone)) return null;
+  // Untrimmed is refused rather than trimmed: the zone check trims, Intl
+  // doesn't, so " America/New_York" would pass here and throw when stepped.
+  if (!timeZone || timeZone !== timeZone.trim()) return null;
+  if (!isSupportedTimeZone(timeZone)) return null;
 
   const countText = fields.get("COUNT");
   const untilText = fields.get("UNTIL");
@@ -232,8 +255,16 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   }
 
   const byDayText = fields.get("BYDAY");
+  const monthDayText = fields.get("BYMONTHDAY");
   let byDay: WeekdayCode[] = [];
   let nthWeekday: RepeatRule["nthWeekday"] = null;
+  let monthDay: number | null = null;
+  if (monthDayText !== undefined) {
+    // By date or by weekday, never both.
+    if (freq !== "MONTHLY" || byDayText !== undefined) return null;
+    if (!MONTH_DAY.test(monthDayText)) return null;
+    monthDay = Number(monthDayText);
+  }
   if (freq === "WEEKLY") {
     if (!byDayText) return null;
     const days = byDayText.split(",");
@@ -259,6 +290,7 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
     interval,
     byDay,
     nthWeekday,
+    monthDay,
     end,
     timeZone,
   };
@@ -277,6 +309,8 @@ export function formatRepeatRule(rule: RepeatRule): string {
     parts.push(`BYDAY=${days.join(",")}`);
   } else if (rule.freq === "MONTHLY" && rule.nthWeekday) {
     parts.push(`BYDAY=${rule.nthWeekday.n}${rule.nthWeekday.day}`);
+  } else if (rule.freq === "MONTHLY" && rule.monthDay !== null) {
+    parts.push(`BYMONTHDAY=${rule.monthDay}`);
   }
   if (rule.end.kind === "count") parts.push(`COUNT=${rule.end.count}`);
   else parts.push(`UNTIL=${rule.end.until.replace(/-/g, "")}`);
@@ -364,16 +398,29 @@ function offsetAt(instant: number, timeZone: string): number {
   return wallAsUtc(wallClockAt(instant, timeZone)) - instant;
 }
 
+const HALF_DAY_MS = 12 * 3_600_000;
+
 /**
  * The instant a wall clock in `timeZone` reads `clock`. A time skipped by a
- * spring-forward change lands just after the gap, as calendar apps do.
+ * spring-forward change (2:30 AM in the gap) lands after the gap, at the
+ * same distance past it (3:30 AM), as calendar apps do; a time a fall-back
+ * change repeats takes its first reading.
+ *
+ * The two offsets in play are the zone's half a day either side, which no
+ * real zone changes twice within. Each gives a candidate instant; a candidate
+ * whose own offset agrees with the one it was made from reads `clock`.
  */
 function instantAt(clock: WallClock, timeZone: string): number {
   const guess = wallAsUtc(clock);
-  const first = offsetAt(guess, timeZone);
-  const candidate = guess - first;
-  const second = offsetAt(candidate, timeZone);
-  return second === first ? candidate : guess - second;
+  const before = offsetAt(guess - HALF_DAY_MS, timeZone);
+  const after = offsetAt(guess + HALF_DAY_MS, timeZone);
+  const readsClock = (offset: number) =>
+    offsetAt(guess - offset, timeZone) === offset;
+  const valid = [before, after].filter(readsClock);
+  // Overlap: both read the clock; the larger offset is the earlier instant.
+  if (valid.length > 0) return guess - Math.max(...valid);
+  // Gap: neither does. The smaller offset lands after it.
+  return guess - Math.min(before, after);
 }
 
 /** A calendar day as a day number (days since 1970-01-01). */
@@ -420,8 +467,10 @@ function nthWeekdayOfMonth(
 }
 
 /**
- * Bounds every scan: a rule that matches rarely (a monthly rule whose
- * meetings all fall before `skipBefore`) still terminates.
+ * Bounds every scan, in steps of the rule's interval (not in days, weeks or
+ * months, which a large interval would use up long before a full series): a
+ * rule that matches rarely (a monthly rule whose meetings all fall before
+ * `skipBefore`) still terminates.
  */
 const MAX_SCAN_STEPS = 2_000;
 
@@ -446,7 +495,8 @@ function* patternDays(
         : [weekdayOf(firstDay)];
     // Weeks run Sunday to Saturday, as the S M T W T F S chips read.
     const weekStart = firstDay - weekdayOf(firstDay);
-    for (let w = 0; w <= MAX_SCAN_STEPS; w += rule.interval) {
+    for (let i = 0; i <= MAX_SCAN_STEPS; i++) {
+      const w = i * rule.interval;
       for (const weekday of days) {
         const day = weekStart + w * 7 + weekday;
         if (day > firstDay) yield day;
@@ -455,7 +505,8 @@ function* patternDays(
     return;
   }
   // MONTHLY
-  for (let k = 0; k <= MAX_SCAN_STEPS; k += rule.interval) {
+  for (let i = 0; i <= MAX_SCAN_STEPS; i++) {
+    const k = i * rule.interval;
     const monthIndex = first.month - 1 + k;
     const year = first.year + Math.floor(monthIndex / 12);
     const month = (monthIndex % 12) + 1;
@@ -466,7 +517,7 @@ function* patternDays(
           rule.nthWeekday.n,
           WEEKDAY_CODES.indexOf(rule.nthWeekday.day),
         )
-      : Math.min(first.day, daysInMonth(year, month));
+      : Math.min(rule.monthDay ?? first.day, daysInMonth(year, month));
     const day = dayNumber(year, month, dayOfMonth);
     if (day > firstDay) yield day;
   }
@@ -553,13 +604,6 @@ export function checkSeriesLength(
   return null;
 }
 
-/** Number of meetings after the first a legacy token makes. */
-export function recurrenceChildCount(
-  rule: string | null | undefined,
-): number | null {
-  return isRecurrenceRule(rule) ? LEGACY_CHILD_COUNT[rule] : null;
-}
-
 /**
  * How many meetings a new series holds, its first included, and when the
  * last one starts. `null` for a rule this module can't read.
@@ -631,7 +675,8 @@ const NTH_WORDS: Record<NthWeek, string> = {
   [-1]: "last",
 };
 
-function ordinalDay(day: number): string {
+/** "1st", "2nd", "11th", "23rd": a day of the month as said aloud. */
+export function ordinal(day: number): string {
   const tens = day % 100;
   if (tens >= 11 && tens <= 13) return `${day}th`;
   switch (day % 10) {
@@ -659,34 +704,6 @@ function weekdaysPhrase(days: readonly number[]): string {
   return joinWords(sorted.map((d) => WEEKDAY_SHORT[d]!));
 }
 
-/**
- * The nth weekday that `at` is in its month, in `timeZone`: what a
- * "Monthly on the second Tuesday" preset offers for a meeting on that day.
- * A day in the month's last seven days answers `-1` only when `preferLast`.
- */
-export function nthWeekdayOf(
-  at: Date,
-  timeZone: string,
-  preferLast = false,
-): { n: NthWeek; day: WeekdayCode } {
-  const clock = wallClockAt(at.getTime(), timeZone);
-  const weekday = weekdayOf(dayNumber(clock.year, clock.month, clock.day));
-  const isLast = clock.day + 7 > daysInMonth(clock.year, clock.month);
-  const n = Math.ceil(clock.day / 7);
-  return {
-    n: preferLast && isLast ? -1 : (Math.min(n, 4) as NthWeek),
-    day: WEEKDAY_CODES[weekday]!,
-  };
-}
-
-/** The weekday code `at` falls on in `timeZone`. */
-export function weekdayCodeOf(at: Date, timeZone: string): WeekdayCode {
-  const clock = wallClockAt(at.getTime(), timeZone);
-  return WEEKDAY_CODES[
-    weekdayOf(dayNumber(clock.year, clock.month, clock.day))
-  ]!;
-}
-
 /** "the second Tuesday", "the last Friday". */
 export function nthWeekdayPhrase(nth: {
   n: NthWeek;
@@ -695,27 +712,49 @@ export function nthWeekdayPhrase(nth: {
   return `the ${NTH_WORDS[nth.n]} ${WEEKDAY_LONG[WEEKDAY_CODES.indexOf(nth.day)]}`;
 }
 
+/** The day number of `instant` on the wall clock of `timeZone`. */
+function zonedDayNumber(instant: number, timeZone: string): number {
+  const clock = wallClockAt(instant, timeZone);
+  return dayNumber(clock.year, clock.month, clock.day);
+}
+
 /**
  * How a structured rule says when it repeats: "Every Mon and Thu", "Every
  * other Tuesday", "Every 3 weeks on Wednesday", "Every month on the second
  * Tuesday", "Every 2 months on the 9th", "Every day". `start` (the first
- * meeting) supplies the day of the month a by-date monthly rule meets on.
- * `null` for a legacy token or anything unreadable, which callers describe
- * their own way.
+ * meeting) supplies the day of the month a by-date monthly rule without
+ * `BYMONTHDAY` meets on. `null` for a legacy token or anything unreadable,
+ * which callers describe their own way.
+ *
+ * - `timeZone` says it as a reader in that zone sees it: a meeting at 11 PM
+ *   Monday in New York is Tuesday in Berlin, so its days move with the
+ *   first meeting's (push copy names the recipient's own day).
+ * - `monthDay` stands in for a by-date monthly rule's missing `BYMONTHDAY`
+ *   (the series' usual day, when the caller holds its meetings).
  */
 export function describeRepeatPattern(
   rule: unknown,
   start: Date | string,
+  options: { timeZone?: string; monthDay?: number | null } = {},
 ): string | null {
   const parsed = parseRepeatRule(rule);
   if (!parsed || parsed.legacy) return null;
+  const startMs = new Date(start).getTime();
+  // How many days the reader's calendar is ahead of the rule's at the first
+  // meeting: -1, 0 or 1.
+  const shift =
+    options.timeZone && !Number.isNaN(startMs)
+      ? zonedDayNumber(startMs, options.timeZone) -
+        zonedDayNumber(startMs, parsed.timeZone)
+      : 0;
+  const shiftWeekday = (weekday: number) => (((weekday + shift) % 7) + 7) % 7;
   const n = parsed.interval;
   switch (parsed.freq) {
     case "DAILY":
       return n === 1 ? "Every day" : `Every ${n} days`;
     case "WEEKLY": {
       const days = weekdaysPhrase(
-        parsed.byDay.map((code) => WEEKDAY_CODES.indexOf(code)),
+        parsed.byDay.map((code) => shiftWeekday(WEEKDAY_CODES.indexOf(code))),
       );
       if (n === 1) return `Every ${days}`;
       if (n === 2) return `Every other ${days}`;
@@ -724,11 +763,22 @@ export function describeRepeatPattern(
     case "MONTHLY": {
       const every = n === 1 ? "Every month" : `Every ${n} months`;
       if (parsed.nthWeekday) {
-        return `${every} on ${nthWeekdayPhrase(parsed.nthWeekday)}`;
+        const weekday = shiftWeekday(
+          WEEKDAY_CODES.indexOf(parsed.nthWeekday.day),
+        );
+        return `${every} on ${nthWeekdayPhrase({
+          n: parsed.nthWeekday.n,
+          day: WEEKDAY_CODES[weekday]!,
+        })}`;
       }
-      const at = new Date(start);
-      if (Number.isNaN(at.getTime())) return every;
-      return `${every} on the ${ordinalDay(wallClockAt(at.getTime(), parsed.timeZone).day)}`;
+      const ruleDay =
+        parsed.monthDay ??
+        options.monthDay ??
+        (Number.isNaN(startMs)
+          ? null
+          : wallClockAt(startMs, parsed.timeZone).day);
+      if (ruleDay === null) return every;
+      return `${every} on the ${ordinal(Math.min(31, Math.max(1, ruleDay + shift)))}`;
     }
   }
 }
@@ -736,19 +786,39 @@ export function describeRepeatPattern(
 /**
  * The rule a series carries once its first `consumed` meetings have left it,
  * for when the API hands a series to a later meeting (a started head split
- * off by a series edit, or a head canceled on its own). A `COUNT` counts from
- * the head, so it drops by what left, or the series would grow by that many
- * the next time it is regenerated; `null` when fewer than two meetings would
- * remain, so the new head stands alone. An `UNTIL` or a legacy token is
- * unchanged. A rule this module can't read is returned as it was.
+ * off by a series edit, or a head canceled on its own), whose start was
+ * `headStart`.
+ *
+ * - A `COUNT` counts from the head, so it drops by what left, or the series
+ *   would grow by that many the next time it is regenerated; `null` when
+ *   fewer than two meetings would remain, so the new head stands alone.
+ * - A by-date monthly rule without `BYMONTHDAY` gains the old head's day, so
+ *   a new head clamped to a short month (Feb 28 for the 31st) doesn't move
+ *   the series to its own day.
+ * - Otherwise an `UNTIL` is unchanged, and so is a legacy token. A rule this
+ *   module can't read is returned as it was.
  */
 export function advanceRepeatRule(
   rule: string | null,
   consumed: number,
+  headStart: Date | string,
 ): string | null {
   const parsed = parseRepeatRule(rule);
-  if (!parsed || parsed.legacy || parsed.end.kind !== "count") return rule;
-  const count = parsed.end.count - consumed;
-  if (count < 2) return null;
-  return formatRepeatRule({ ...parsed, end: { kind: "count", count } });
+  if (!parsed || parsed.legacy) return rule;
+  let next: RepeatRule = parsed;
+  if (parsed.end.kind === "count") {
+    const count = parsed.end.count - consumed;
+    if (count < 2) return null;
+    next = { ...next, end: { kind: "count", count } };
+  }
+  const headMs = new Date(headStart).getTime();
+  if (
+    parsed.freq === "MONTHLY" &&
+    !parsed.nthWeekday &&
+    parsed.monthDay === null &&
+    !Number.isNaN(headMs)
+  ) {
+    next = { ...next, monthDay: wallClockAt(headMs, parsed.timeZone).day };
+  }
+  return next === parsed ? rule : formatRepeatRule(next);
 }

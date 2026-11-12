@@ -356,6 +356,18 @@ export class EventService {
         ? await this.findById(id, chapterId)
         : null);
 
+    // An instance edit writes the rule onto this row as it stands, with no
+    // regenerate, so a rule that doesn't fit its start (an UNTIL before the
+    // second meeting, or past the series cap) is refused here as on create.
+    if (input.recurrence_rule) {
+      const row = before ?? (await this.findById(id, chapterId));
+      const problem = checkSeriesLength(
+        input.recurrence_rule,
+        input.start_time ?? row.start_time,
+      );
+      if (problem) throw new BadRequestException(problem);
+    }
+
     const updated = await this.eventRepo.update(id, chapterId, {
       ...patch,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`

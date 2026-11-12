@@ -1,4 +1,4 @@
-import { describeRepeatPattern } from '@repo/validation';
+import { describeRepeatPattern, ordinal } from '@repo/validation';
 
 /**
  * How a push names a time: what a member glancing at a lock screen needs, in
@@ -94,21 +94,6 @@ function zoneLabel(at: Date, timeZone: string): string {
   return part?.value ?? timeZone;
 }
 
-function ordinal(n: number): string {
-  const tens = n % 100;
-  if (tens >= 11 && tens <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
 export interface EventWhenOptions {
   /** The zone to render in: the recipient's, or a fallback. */
   timeZone: string;
@@ -162,7 +147,11 @@ export function formatEventWhen(
       case 'MONTHLY':
         return `Monthly on the ${ordinal(start.day)}, ${hours}${zone}, from ${from}`;
       default: {
-        const pattern = describeRepeatPattern(options.recurrence, startAt);
+        // Said in the recipient's zone like the rest of the line, so a
+        // Monday 11 PM series in New York reads as Tuesday in Berlin.
+        const pattern = describeRepeatPattern(options.recurrence, startAt, {
+          timeZone,
+        });
         if (pattern) return `${pattern}, ${hours}${zone}, from ${from}`;
       }
     }

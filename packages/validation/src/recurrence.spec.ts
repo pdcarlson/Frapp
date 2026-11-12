@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_SERIES_MEETINGS,
+  advanceRepeatRule,
+  ordinal,
   RECURRENCE_RULES,
   checkSeriesLength,
   describeRepeatPattern,
@@ -8,14 +10,13 @@ import {
   formatRepeatRule,
   isRecurrenceRule,
   isRepeatRule,
-  nthWeekdayOf,
   parseRepeatRule,
-  recurrenceChildCount,
   seriesChildStarts,
   type RepeatRule,
 } from "./recurrence";
 
 const NY = "America/New_York";
+const BERLIN = "Europe/Berlin";
 
 /** Wall-clock reading in New York, "YYYY-MM-DD HH:MM". */
 function ny(at: Date): string {
@@ -38,6 +39,7 @@ function rule(overrides: Partial<RepeatRule>): string {
     interval: 1,
     byDay: ["MO"],
     nthWeekday: null,
+    monthDay: null,
     end: { kind: "count", count: 4 },
     timeZone: NY,
     ...overrides,
@@ -59,15 +61,6 @@ describe("isRecurrenceRule (legacy tokens)", () => {
     for (const value of [null, undefined, 12, {}, ["WEEKLY"]]) {
       expect(isRecurrenceRule(value)).toBe(false);
     }
-  });
-});
-
-describe("recurrenceChildCount", () => {
-  it("returns the legacy tokens' fixed lengths", () => {
-    expect(recurrenceChildCount("WEEKLY")).toBe(12);
-    expect(recurrenceChildCount("BIWEEKLY")).toBe(6);
-    expect(recurrenceChildCount("MONTHLY")).toBe(6);
-    expect(recurrenceChildCount("FREQ=DAILY")).toBeNull();
   });
 });
 
@@ -102,6 +95,17 @@ describe("parseRepeatRule / formatRepeatRule", () => {
     });
   });
 
+  it("writes and reads a by-date monthly rule's day", () => {
+    const text = rule({ freq: "MONTHLY", byDay: [], monthDay: 31 });
+    expect(text).toBe(
+      "FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=31;COUNT=4;TZID=America/New_York",
+    );
+    expect(parseRepeatRule(text)).toMatchObject({
+      monthDay: 31,
+      nthWeekday: null,
+    });
+  });
+
   it("reads a legacy token as its pattern with a rolling length", () => {
     expect(parseRepeatRule("BIWEEKLY")).toMatchObject({
       legacy: "BIWEEKLY",
@@ -133,6 +137,13 @@ describe("parseRepeatRule / formatRepeatRule", () => {
     "FREQ=DAILY;UNTIL=20270230;TZID=UTC", // no Feb 30
     "FREQ=DAILY;COUNT=3;TZID=UTC;WKST=MO", // unknown key
     "FREQ=DAILY;FREQ=DAILY;COUNT=3;TZID=UTC",
+    "FREQ=DAILY;COUNT=3;TZID= America/New_York", // untrimmed zone
+    "FREQ=DAILY;COUNT=3;TZID=America/New_York ",
+    "FREQ=MONTHLY;BYMONTHDAY=0;COUNT=3;TZID=UTC",
+    "FREQ=MONTHLY;BYMONTHDAY=32;COUNT=3;TZID=UTC",
+    "FREQ=MONTHLY;BYMONTHDAY=05;COUNT=3;TZID=UTC",
+    "FREQ=MONTHLY;BYMONTHDAY=9;BYDAY=2TU;COUNT=3;TZID=UTC", // both anchors
+    "FREQ=WEEKLY;BYDAY=MO;BYMONTHDAY=9;COUNT=3;TZID=UTC",
   ])("rejects %j", (value) => {
     expect(parseRepeatRule(value)).toBeNull();
     expect(isRepeatRule(value)).toBe(false);
@@ -220,6 +231,43 @@ describe("seriesChildStarts", () => {
       start,
     )!;
     expect(starts.map(ny)).toEqual(["2027-02-28 10:00", "2027-03-31 10:00"]);
+  });
+
+  it("keeps BYMONTHDAY=31 from a head clamped to Feb 28", () => {
+    // The head a promotion left on Feb 28; the series still meets on the 31st.
+    const start = new Date("2027-02-28T15:00:00Z");
+    const starts = seriesChildStarts(
+      rule({
+        freq: "MONTHLY",
+        byDay: [],
+        monthDay: 31,
+        end: { kind: "count", count: 3 },
+      }),
+      start,
+    )!;
+    expect(starts.map(ny)).toEqual(["2027-03-31 10:00", "2027-04-30 10:00"]);
+  });
+
+  it("makes a whole series at the largest interval", () => {
+    const starts = seriesChildStarts(
+      rule({
+        interval: 30,
+        byDay: ["MO"],
+        end: { kind: "count", count: MAX_SERIES_MEETINGS },
+      }),
+      new Date("2027-01-05T00:00:00Z"),
+    )!;
+    expect(starts).toHaveLength(MAX_SERIES_MEETINGS - 1);
+    const monthly = seriesChildStarts(
+      rule({
+        freq: "MONTHLY",
+        byDay: [],
+        interval: 30,
+        end: { kind: "count", count: MAX_SERIES_MEETINGS },
+      }),
+      new Date("2027-01-05T00:00:00Z"),
+    )!;
+    expect(monthly).toHaveLength(MAX_SERIES_MEETINGS - 1);
   });
 
   it("stops on the until day, inclusive, in the rule's zone", () => {
@@ -322,6 +370,40 @@ describe("describeRepeatPattern", () => {
     expect(describeRepeatPattern(text, start)).toBe(expected);
   });
 
+  it("names BYMONTHDAY over the first meeting's day", () => {
+    expect(
+      describeRepeatPattern(
+        rule({ freq: "MONTHLY", byDay: [], monthDay: 31 }),
+        "2027-02-28T15:00:00Z",
+      ),
+    ).toBe("Every month on the 31st");
+  });
+
+  it("takes a caller's usual day for a monthly rule without BYMONTHDAY", () => {
+    expect(
+      describeRepeatPattern(
+        rule({ freq: "MONTHLY", byDay: [] }),
+        "2027-02-28T15:00:00Z",
+        { monthDay: 31 },
+      ),
+    ).toBe("Every month on the 31st");
+  });
+
+  it("says the days a reader in another zone sees", () => {
+    // Monday 11 PM in New York is Tuesday 5 AM in Berlin.
+    const late = "2027-01-05T04:00:00Z";
+    expect(
+      describeRepeatPattern(rule({ byDay: ["MO", "TH"] }), late, {
+        timeZone: BERLIN,
+      }),
+    ).toBe("Every Tue and Fri");
+    expect(
+      describeRepeatPattern(rule({ byDay: ["MO", "TH"] }), late, {
+        timeZone: NY,
+      }),
+    ).toBe("Every Mon and Thu");
+  });
+
   it("leaves legacy tokens to their callers", () => {
     expect(describeRepeatPattern("WEEKLY", start)).toBeNull();
   });
@@ -349,15 +431,114 @@ describe("describeSeriesLength", () => {
   });
 });
 
-describe("nthWeekdayOf", () => {
-  it("names the week of the month a day is in", () => {
-    expect(nthWeekdayOf(new Date("2027-01-13T00:00:00Z"), NY)).toEqual({
-      n: 2,
-      day: "TU",
+/** Wall-clock reading in Berlin, "YYYY-MM-DD HH:MM". */
+function berlin(at: Date): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: BERLIN,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(at);
+}
+
+describe("stepping across a DST change", () => {
+  it("lands a 2:30 AM New York meeting after the spring-forward gap", () => {
+    // 2027-03-14 2:00 EST jumps to 3:00 EDT; 2:30 AM doesn't exist.
+    const starts = seriesChildStarts(
+      rule({ freq: "DAILY", byDay: [], end: { kind: "count", count: 3 } }),
+      "2027-03-13T07:30:00Z", // Mar 13, 2:30 AM EST
+    );
+    expect(starts?.map(ny)).toEqual(["2027-03-14 03:30", "2027-03-15 02:30"]);
+  });
+
+  it("lands a 2:30 AM Berlin meeting after the spring-forward gap", () => {
+    // 2027-03-28 2:00 CET jumps to 3:00 CEST.
+    const starts = seriesChildStarts(
+      rule({
+        freq: "DAILY",
+        byDay: [],
+        end: { kind: "count", count: 3 },
+        timeZone: BERLIN,
+      }),
+      "2027-03-27T01:30:00Z", // Mar 27, 2:30 AM CET
+    );
+    expect(starts?.map(berlin)).toEqual([
+      "2027-03-28 03:30",
+      "2027-03-29 02:30",
+    ]);
+  });
+
+  it("takes the first 1:30 AM of a fall-back night", () => {
+    // 2027-11-07 2:00 EDT falls back to 1:00 EST; 1:30 AM happens twice.
+    const starts = seriesChildStarts(
+      rule({ freq: "DAILY", byDay: [], end: { kind: "count", count: 2 } }),
+      "2027-11-06T05:30:00Z", // Nov 6, 1:30 AM EDT
+    );
+    expect(starts?.map((at) => at.toISOString())).toEqual([
+      "2027-11-07T05:30:00.000Z", // 1:30 AM EDT, not 6:30Z (EST)
+    ]);
+  });
+});
+
+describe("advanceRepeatRule", () => {
+  const head = "2027-01-04T00:00:00Z";
+
+  it("drops a COUNT by the meetings that left", () => {
+    expect(
+      advanceRepeatRule(rule({ end: { kind: "count", count: 8 } }), 2, head),
+    ).toBe(rule({ end: { kind: "count", count: 6 } }));
+  });
+
+  it("is null when fewer than two meetings would remain", () => {
+    expect(
+      advanceRepeatRule(rule({ end: { kind: "count", count: 3 } }), 2, head),
+    ).toBeNull();
+    expect(
+      advanceRepeatRule(rule({ end: { kind: "count", count: 3 } }), 1, head),
+    ).toBe(rule({ end: { kind: "count", count: 2 } }));
+  });
+
+  it("leaves an UNTIL and a legacy token as they were", () => {
+    const until = rule({ end: { kind: "until", until: "2027-03-01" } });
+    expect(advanceRepeatRule(until, 3, head)).toBe(until);
+    expect(advanceRepeatRule("WEEKLY", 3, head)).toBe("WEEKLY");
+  });
+
+  it("pins a by-date monthly rule to the old head's day", () => {
+    // Head on Jan 31 in New York; the successor on Feb 28 must not move the
+    // series to the 28th.
+    const monthly = rule({
+      freq: "MONTHLY",
+      byDay: [],
+      end: { kind: "until", until: "2027-06-30" },
     });
-    expect(nthWeekdayOf(new Date("2027-01-30T00:00:00Z"), NY, true)).toEqual({
-      n: -1,
-      day: "FR",
-    });
+    expect(advanceRepeatRule(monthly, 1, "2027-01-31T23:00:00Z")).toBe(
+      rule({
+        freq: "MONTHLY",
+        byDay: [],
+        monthDay: 31,
+        end: { kind: "until", until: "2027-06-30" },
+      }),
+    );
+  });
+});
+
+describe("ordinal", () => {
+  it("says a day of the month aloud", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 31].map(ordinal)).toEqual([
+      "1st",
+      "2nd",
+      "3rd",
+      "4th",
+      "11th",
+      "12th",
+      "13th",
+      "21st",
+      "22nd",
+      "23rd",
+      "31st",
+    ]);
   });
 });

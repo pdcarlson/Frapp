@@ -104,7 +104,7 @@
 ## Events & Attendance
 
 - Admins create events with name, description, location, start/end time, point value, mandatory flag, and optional recurrence rule.
-- **Recurring events:** Weekly, biweekly, or monthly. Auto-generates individual event instances.
+- **Recurring events:** Daily, weekly on chosen days, or monthly by date or by nth weekday, every N days, weeks or months, ending after a number of meetings or on a date, and keeping the wall-clock time across DST (#4488, #3662). Auto-generates individual event instances. Format and behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
 - Check-in atomically creates an attendance record AND awards the event's point value.

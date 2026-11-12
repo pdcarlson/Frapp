@@ -91,6 +91,17 @@ describe('formatEventWhen', () => {
     ).toBe('Every month on the second Monday, 8–9 PM, from Nov 9');
   });
 
+  it("names a structured rule's days as the recipient's calendar has them", () => {
+    // Mon 10 PM in Los Angeles is Tue 1 AM in New York.
+    expect(
+      formatEventWhen('2026-11-10T06:00:00Z', '2026-11-10T07:00:00Z', {
+        ...NY,
+        recurrence:
+          'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/Los_Angeles',
+      }),
+    ).toBe('Every Tue and Fri, 1–2 AM, from Nov 10');
+  });
+
   it('keeps the pattern for a weekly event that runs past midnight', () => {
     expect(
       formatEventWhen('2026-11-14T03:00:00Z', '2026-11-14T07:00:00Z', {

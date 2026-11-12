@@ -923,13 +923,11 @@ export {
   formatRepeatRule,
   isRecurrenceRule,
   isRepeatRule,
-  nthWeekdayOf,
   nthWeekdayPhrase,
+  ordinal,
   parseRepeatRule,
-  recurrenceChildCount,
   seriesChildStarts,
   seriesExtent,
-  weekdayCodeOf,
 } from "./recurrence";
 export type {
   NthWeek,

@@ -160,11 +160,14 @@ export class EventSeriesService {
    * its own zone, keeping the wall-clock time across DST (#3662); a legacy
    * token steps in UTC as it always did.
    *
-   * Skipping rather than filtering is load-bearing. Filtering a fixed window
-   * anchored on the parent's original `start_time` meant that once a series
-   * grew older than that window — 12 weeks, or 6 months — every candidate fell
-   * in the past and a rule change regenerated **nothing**, leaving a parent
-   * advertising a rule with no occurrences behind it.
+   * For a legacy token, skipping rather than filtering is load-bearing: its
+   * run is counted from `skipBefore`, not from the head. Filtering a fixed
+   * window anchored on the parent's original `start_time` meant that once a
+   * series grew older than that window — 12 weeks, or 6 months — every
+   * candidate fell in the past and a rule change regenerated **nothing**,
+   * leaving a parent advertising a rule with no occurrences behind it. A
+   * structured rule's `COUNT` or `UNTIL` is fixed from the head, so for one
+   * the past meetings are filtered out and only those still to come are made.
    */
   private buildOccurrencePayloads(
     parent: Event,
@@ -348,21 +351,26 @@ export class EventSeriesService {
     // only then discovered it had nothing to rebuild with. The DTO already
     // checks the rule's shape; this also catches one that doesn't fit the
     // series' first meeting (an UNTIL before its second, or past the cap).
+    //
+    // A started head is checked in `splitStartedHead` instead, against the
+    // meeting that becomes the series' first: the head itself is retired.
+    const now = Date.now();
+    const headStarted = new Date(parent.start_time).getTime() <= now;
     if (regenerates && nextRule) {
       if (!isRepeatRule(nextRule)) {
         throw new BadRequestException('recurrence_rule is not a repeat rule');
       }
-      const problem = checkSeriesLength(
-        nextRule,
-        normalized.start_time ?? parent.start_time,
-      );
-      if (problem) throw new BadRequestException(problem);
+      if (!headStarted) {
+        const problem = checkSeriesLength(
+          nextRule,
+          normalized.start_time ?? parent.start_time,
+        );
+        if (problem) throw new BadRequestException(problem);
+      }
     }
 
     // What members are told moved, judged against the series as it stood.
     const change = eventChangeOf(parent, normalized);
-
-    const now = Date.now();
 
     // Resolve children before any write: `parent_event_id` is
     // `on delete set null`, so a parent removed first takes the pointers with it.
@@ -387,7 +395,7 @@ export class EventSeriesService {
     // occurrence. Once it has started, writing the patch to it edits a meeting
     // that already happened, and its `event_attendance` rows then describe an
     // event as it never was.
-    if (new Date(parent.start_time).getTime() <= now) {
+    if (headStarted) {
       return this.splitStartedHead({
         parent,
         children,
@@ -551,8 +559,20 @@ export class EventSeriesService {
     const consumed = 1 + past.length;
     const seriesRule =
       nextRule === parent.recurrence_rule
-        ? advanceRepeatRule(nextRule, consumed)
+        ? advanceRepeatRule(nextRule, consumed, parent.start_time)
         : nextRule;
+
+    // The successor is the series' first meeting from here, so a regenerated
+    // rule must fit it, not the retired head: an UNTIL that leaves it no
+    // second meeting would otherwise make a lone head that still carries a
+    // rule. Checked before the first write.
+    if (regenerates && seriesRule) {
+      const problem = checkSeriesLength(
+        seriesRule,
+        retimed.start_time ?? successor.start_time,
+      );
+      if (problem) throw new BadRequestException(problem);
+    }
 
     // Retire the head. `recurrence_rule` and nothing else: every one of its own
     // fields keeps the value it had while the meeting was happening, so the
@@ -593,7 +613,7 @@ export class EventSeriesService {
       ...carried,
       ...retimed,
       recurrence_rule: regenerates
-        ? advanceRepeatRule(parent.recurrence_rule, consumed)
+        ? advanceRepeatRule(parent.recurrence_rule, consumed, parent.start_time)
         : seriesRule,
       parent_event_id: null,
     });
@@ -697,6 +717,7 @@ export class EventSeriesService {
       recurrence_rule: advanceRepeatRule(
         parent.recurrence_rule,
         1 + past.length,
+        parent.start_time,
       ),
       parent_event_id: null,
     });
