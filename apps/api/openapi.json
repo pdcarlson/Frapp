@@ -16100,7 +16100,8 @@
               "hours",
               "rush",
               "system_audit",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -16154,7 +16155,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -16578,7 +16580,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -16777,7 +16780,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ]
           },
           "payload": {

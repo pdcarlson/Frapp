@@ -16,6 +16,7 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
+import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -220,6 +221,25 @@ function withoutServerPollFields(
   delete card.closed_at;
   delete card.closed_by;
   return card;
+}
+
+/**
+ * The card payload a client's send stores. A poll card drops the fields only
+ * `PollService.close` writes. A sign-up card (#3926) is checked and rebuilt
+ * from its known fields, because `claim_signup_slots` trusts its slots' ids
+ * and limits on every claim; a card that can't be read is refused with a 400
+ * rather than stored as a card nobody can sign up on.
+ */
+function cardPayloadForSend(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (kind === 'signup') {
+    const checked = normalizeSignupCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  return withoutServerPollFields(kind, payload);
 }
 
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
@@ -1033,6 +1053,9 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+    // Before anything is written (thread follows, the attachment repair), so
+    // a card that can't be stored costs nothing.
+    const payload = cardPayloadForSend(kind, input.payload);
 
     const gatedModule = MODULE_GATED_KINDS[kind];
     if (
@@ -1097,7 +1120,7 @@ export class ChatService {
         content: input.content,
         type: 'TEXT',
         kind,
-        payload: withoutServerPollFields(kind, input.payload),
+        payload,
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
         thread_root_id: threadRootId,

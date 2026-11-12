@@ -5641,14 +5641,16 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,event:false,task:false,hours:false,points:false",
+      "poll:true,signup:true,event:false,task:false,hours:false,points:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
-    ).toBe("poll:false,event:true,task:false,hours:false,points:false");
+    ).toBe(
+      "poll:false,signup:true,event:true,task:false,hours:false,points:false",
+    );
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,event:false,task:false,hours:false,points:false",
+      "poll:false,signup:true,event:false,task:false,hours:false,points:false",
     );
   });
 
@@ -5664,26 +5666,30 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
           ],
         },
       }),
-    ).toBe("poll:false,event:false,task:true,hours:true,points:true");
+    ).toBe(
+      "poll:false,signup:true,event:false,task:true,hours:true,points:true",
+    );
     // Without `members:view` the task and points forms can't list anyone;
     // logging your own hours needs no roster.
     expect(
       formsFor({
         data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
       }),
-    ).toBe("poll:false,event:false,task:false,hours:true,points:false");
+    ).toBe(
+      "poll:false,signup:true,event:false,task:false,hours:true,points:false",
+    );
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe(
-      "poll:loading,event:loading,task:loading,hours:loading,points:loading",
+      "poll:loading,signup:true,event:loading,task:loading,hours:loading,points:loading",
     );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
   });
 });

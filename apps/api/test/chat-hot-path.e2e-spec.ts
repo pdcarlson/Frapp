@@ -196,6 +196,7 @@ describe('Chat hot path (e2e)', () => {
     findOne: jest.fn(),
     updateForVote: jest.fn(),
     findActionsOnMessages: jest.fn(),
+    claimSignupSlots: jest.fn(),
   };
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),

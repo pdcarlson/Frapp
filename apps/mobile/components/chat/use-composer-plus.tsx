@@ -24,6 +24,7 @@ import {
 } from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
+import { NewSignupSheet } from "@/components/chat/new-signup-sheet";
 import {
   NewEventSheet,
   type EventCreatedOutcome,
@@ -38,7 +39,13 @@ import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
  * The forms the phone's + offers, in the menu's order. Points waits for a
  * phone form (#3865).
  */
-export const PHONE_PLUS_COMMANDS = ["poll", "event", "task", "hours"] as const;
+export const PHONE_PLUS_COMMANDS = [
+  "poll",
+  "signup",
+  "event",
+  "task",
+  "hours",
+] as const;
 
 type ChannelForm = "event" | "task" | "hours";
 
@@ -46,10 +53,14 @@ const NO_FORMS: ReadonlySet<ChannelForm> = new Set();
 
 /** What each form's posted-but-not-quite outcome is called in its alert. */
 const OUTCOME_TITLES: Record<
-  "poll" | "task" | "hours",
+  "poll" | "signup" | "task" | "hours",
   { posted: string; unconfirmed: string }
 > = {
   poll: { posted: "Poll posted", unconfirmed: "Couldn't confirm the poll" },
+  signup: {
+    posted: "Sign-up sheet posted",
+    unconfirmed: "Couldn't confirm the sign-up sheet",
+  },
   task: { posted: "Task created", unconfirmed: "Couldn't confirm the task" },
   hours: { posted: "Hours logged", unconfirmed: "Couldn't confirm the hours" },
 };
@@ -62,7 +73,7 @@ const OUTCOME_TITLES: Record<
  * read this before trying again.
  */
 export function presentPostOutcome(
-  form: "poll" | "task" | "hours",
+  form: "poll" | "signup" | "task" | "hours",
   result: { warning?: string; unconfirmed?: boolean },
   alert: typeof Alert.alert = Alert.alert,
 ): void {
@@ -117,7 +128,12 @@ export function useComposerPlus({
   channelId: string | null | undefined;
   channel: Pick<
     UseChatChannelResult,
-    "sendPoll" | "postTask" | "postHours" | "trackEventCard" | "photos"
+    | "sendPoll"
+    | "sendSignup"
+    | "postTask"
+    | "postHours"
+    | "trackEventCard"
+    | "photos"
   >;
   /** A reply is staged (the + isn't offered while editing at all). */
   replying: boolean;
@@ -170,6 +186,7 @@ export function useComposerPlus({
 
   const plusRef = useRef<BottomSheetModal>(null);
   const pollRef = useRef<BottomSheetModal>(null);
+  const signupRef = useRef<BottomSheetModal>(null);
   const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
@@ -212,6 +229,10 @@ export function useComposerPlus({
         pollRef.current?.present();
         return;
       }
+      if (command === "signup") {
+        signupRef.current?.present();
+        return;
+      }
       if (command === "points") return;
       setNow(new Date());
       if (mountedForms.has(command)) {
@@ -238,14 +259,29 @@ export function useComposerPlus({
     useCallback(() => {
       if (!channelId) return;
       return () => {
-        for (const ref of [plusRef, pollRef, eventRef, taskRef, hoursRef]) {
+        for (const ref of [
+          plusRef,
+          pollRef,
+          signupRef,
+          eventRef,
+          taskRef,
+          hoursRef,
+        ]) {
           ref.current?.dismiss();
         }
       };
     }, [channelId]),
   );
 
-  const { sendPoll, postTask, postHours, trackEventCard } = channel;
+  const { sendPoll, sendSignup, postTask, postHours, trackEventCard } = channel;
+  const postSignupHere = useCallback(
+    async (signup: Parameters<typeof sendSignup>[0]) => {
+      const result = await sendSignup(signup);
+      if (result.ok) presentPostOutcome("signup", result);
+      return result;
+    },
+    [sendSignup],
+  );
   const postPollHere = useCallback(
     async (poll: Parameters<typeof sendPoll>[0]) => {
       const result = await sendPoll(poll);
@@ -287,6 +323,11 @@ export function useComposerPlus({
         ref={pollRef}
         onPost={postPollHere}
         canCloseEarly={can("polls:create", granted)}
+      />
+      <NewSignupSheet
+        key={`signup-${key}`}
+        ref={signupRef}
+        onPost={postSignupHere}
       />
       {mountedForms.has("event") && eventChat ? (
         <SheetBoundary key={`event-${key}`} onError={() => dropForm("event")}>

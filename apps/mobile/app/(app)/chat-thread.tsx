@@ -293,6 +293,7 @@ function ChannelThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    sendSignup,
     postTask,
     postHours,
     trackEventCard,
@@ -1102,7 +1103,14 @@ function ChannelThreadScreen() {
 
   const composerPlus = useComposerPlus({
     channelId,
-    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    channel: {
+      sendPoll,
+      sendSignup,
+      postTask,
+      postHours,
+      trackEventCard,
+      photos,
+    },
     replying: staging.context?.kind === "reply",
     offline: appOffline,
     onPhoto: handleAttach,

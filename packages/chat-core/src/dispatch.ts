@@ -22,6 +22,7 @@ import {
   type SlashCommand,
 } from "./integrations";
 import { buildPollMessage, type PollPayload } from "./polls";
+import type { SignupPayload } from "./signups";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -228,6 +229,41 @@ export async function postPoll(
     // back out, so nothing is queued or on screen. `cause` is for the
     // caller's error reporting, which chat-core has no port for.
     return { ok: false, error: "Couldn't post that poll. Try again.", cause };
+  }
+}
+
+/**
+ * Posts a sign-up sheet card the New sign-up sheet form built
+ * (`buildSignupMessage`, #3926), on web's + card and the phone's sheet.
+ * Through the outbox like a poll, so it is optimistic and survives going
+ * offline, and it leaves the channel's saved draft alone. Never rejects; the
+ * outcomes are `postPoll`'s.
+ */
+export async function postSignup(
+  ctx: ChatActionContext,
+  channelId: string,
+  signup: { content: string; payload: SignupPayload },
+): Promise<
+  { ok: true; warning?: string } | { ok: false; error: string; cause?: unknown }
+> {
+  if (!ctx.userId) {
+    return { ok: false, error: SIGNED_OUT_POST_COPY };
+  }
+  try {
+    const sent = await sendMessage(ctx, {
+      channelId,
+      content: signup.content,
+      kind: "signup",
+      payload: signup.payload as unknown as Record<string, unknown>,
+      keepDraft: true,
+    });
+    return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
+  } catch (cause) {
+    return {
+      ok: false,
+      error: "Couldn't post that sign-up sheet. Try again.",
+      cause,
+    };
   }
 }
 

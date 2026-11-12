@@ -6,7 +6,10 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type { IChatMessageActionRepository } from '#domain/repositories/chat.repository.interface';
-import { ChatMessageActionDuplicateError } from '#domain/repositories/chat.repository.interface';
+import {
+  ChatMessageActionDuplicateError,
+  SignupClaimRefusedError,
+} from '#domain/repositories/chat.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { ChatMessageAction } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
@@ -104,4 +107,36 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       payload: row.payload ?? {},
     }));
   }
+
+  async claimSignupSlots(
+    messageId: string,
+    userId: string,
+    slotIds: string[],
+  ): Promise<{ action: ChatMessageAction; updated: boolean }> {
+    const { data, error } = await this.supabase.rpc('claim_signup_slots', {
+      p_message_id: messageId,
+      p_user_id: userId,
+      p_slot_ids: slotIds,
+    });
+    if (error) {
+      // The RPC names each refusal in its message and the slot in DETAIL
+      // (`20261112170000_signup_card_claims.sql`); anything else is a failure.
+      const reason = SIGNUP_REFUSALS[error.message];
+      if (reason) {
+        throw new SignupClaimRefusedError(reason, error.details || null);
+      }
+      throw new SupabaseQueryError(error);
+    }
+    const result = data as { action?: ChatMessageAction; updated?: boolean };
+    if (!result?.action) {
+      throw new Error('claim_signup_slots returned no row');
+    }
+    return { action: result.action, updated: result.updated === true };
+  }
 }
+
+const SIGNUP_REFUSALS: Record<string, SignupClaimRefusedError['reason']> = {
+  signup_card_missing: 'missing',
+  signup_slot_unknown: 'unknown_slot',
+  signup_slot_full: 'full',
+};

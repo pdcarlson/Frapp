@@ -3808,6 +3808,20 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
+## Rollback sign-up sheet claims (20261112170000)
+
+* **Migration**: `20261112170000_signup_card_claims.sql`
+
+One function, `claim_signup_slots(uuid, uuid, text[])`, which the API calls for a tap on a sign-up sheet card (#3926). It writes nothing on apply and changes no table; the claims it writes are ordinary `chat_message_actions` rows.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function, and refuses to post a `signup` card. Cards already posted stay in the timeline: a client that doesn't know the kind draws its title as text. Removing the function without reverting the API makes every sign-up tap a 500.
+
+To remove the function, do it in a later forward migration:
+
+```sql
+drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
+```
+
 ## Rollback request context lookup (20261112151000)
 
 * **Migration**: `20261112151000_request_context_lookup.sql`
