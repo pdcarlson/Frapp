@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 import {
   AA_TEXT,
@@ -144,8 +148,10 @@ describe("the accent preview's label tone, computed from the draft", () => {
    * lifted `--card` until the resolver substituted it, so `#0086FE` became the
    * band's example (its figures are pinned in the test below). The darker
    * neutral ladder (2026-11-05) gives `#0080FD` back to the band — kept on the
-   * card at 4.70 — but `#0086FE` stays the cited example, as it clears the
-   * card on the value with the wider margin.
+   * card at 4.70 — and `#0086FE` was the cited example, clearing the card on
+   * the value with the wider margin. The 2026-11-12 ladder (#3826) emptied the
+   * band (both are substituted now), and #4388 deleted the warning; the sweep
+   * below fails if a ladder change reopens it.
    *
    * The first fix here made it worse in a quiet way — `pickAccessibleColor(...)
    * ?? gold.onHouse` reasserted the very tone the picker had just rejected, so
@@ -175,8 +181,8 @@ describe("the accent preview's label tone, computed from the draft", () => {
      * The claim the first fix made and could not keep. A two-tone ladder
      * cannot clear 4.5:1 against every fill — a mid-tone is far enough from
      * both ends to fail each. So the contract is not "always legible", it is
-     * "always the best available, and say so when that is not enough", which
-     * is what `previewInkFailsAA` drives.
+     * "always the best available". Saying so when that is not enough was the
+     * label warning #4388 deleted, once no kept colour could reach it (below).
      *
      * `#767676` is the mid-grey `pickAccessibleColor`'s own docstring names as
      * the case where "a ladder anchored at the extremes can still run dry".
@@ -194,13 +200,13 @@ describe("the accent preview's label tone, computed from the draft", () => {
 
   it("finds the band empty on the 2026-11-12 ladder: every kept accent's label clears AA", () => {
     // The band is "kept by the resolver on `--card`, yet its best label ink
-    // misses AA", where the label warning fires. The Accent card's comments
-    // cite it. On the 2026-11-05 ladder `#0086FE` was its example (4.99:1 on
+    // misses AA", where a label warning used to fire. On the 2026-11-05 ladder `#0086FE` was its example (4.99:1 on
     // the card, ink 4.45:1). The 2026-11-12 ladder (#3826) lightened `--card`
     // to `#262626`, and keeping an accent there takes enough luminance that
     // `onHouse` ink always clears: the closest a kept colour comes is 4.75:1.
-    // So the label warning is a guard no real input reaches today; the screen
-    // test drives it with a stubbed ink, and #4388 asks whether to keep it.
+    // So the label warning was a guard no real input reached, and #4388
+    // deleted it. If this fails, a ladder change reopened the band: bring a
+    // warning back to the Accent card, with its writing.md row.
     const onCard = (accent: string) =>
       resolveChapterAccentColor(accent, {
         background: SURFACE.card,
@@ -218,14 +224,35 @@ describe("the accent preview's label tone, computed from the draft", () => {
         }
       }
     }
-    expect(closest).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(
+      closest,
+      "a kept accent's best label misses AA again: the Accent card needs its label warning back (#4388)",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it("sweeps the backdrop the Accent tab actually resolves against", () => {
+    // The sweep above is the only guard for the deleted label warning (#4388),
+    // and it measures on `--card` with the house-gold fallback. If the tab
+    // moved its resolver to another backdrop, the sweep would stay green
+    // against a band it no longer guards.
+    const tab = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "settings-accent-tab.tsx",
+      ),
+      "utf8",
+    );
+    expect(tab).toMatch(
+      /resolveChapterAccentColor\([^)]*background: signetDarkTokens\.color\.surface\.card,\s*fallbackAccent: signetDarkTokens\.color\.gold\.house,/,
+    );
   });
 
   it("prints a failing ratio below the minimum it is compared with", () => {
     // Truncated, not rounded: 4.46 is under 4.5:1 and must not read "4.5".
     expect(formatFailingRatio(4.46)).toBe("4.4");
-    // `#008AF1` is the page-level example because its best ink sits in the
-    // band rounding got wrong, [4.45, 4.5).
+    // `#008AF1` was the label warning's example (deleted in #4388): its best
+    // ink sits in the band rounding got wrong, [4.45, 4.5). The server
+    // disclosure prints through the same function.
     const ink = previewInkFor("#008AF1")!.ratio;
     expect(ink).toBeGreaterThanOrEqual(4.45);
     expect(ink).toBeLessThan(AA_TEXT);
