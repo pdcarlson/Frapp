@@ -91,6 +91,9 @@ describe("buildChapterConfigFromArchetype", () => {
     seed.modules.chat = !seed.modules.chat;
     (seed.vocabulary as unknown as Record<string, string>).pledge = "edited";
     seed.workflows[0]!.enabled = !seed.workflows[0]!.enabled;
+    // The seed's entries aren't frozen (only the array is), so edit one in
+    // place: a shallow copy of the array would pass a push and fail this.
+    (seed.customFields[0] as { label: string }).label = "edited";
     seed.customFields.push({ ...seed.customFields[0]! });
 
     expect(ARCHETYPES.ifc.modules).toEqual(ifcModules);
