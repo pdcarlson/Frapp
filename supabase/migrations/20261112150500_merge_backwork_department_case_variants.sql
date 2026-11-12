@@ -1,53 +1,58 @@
 -- Merge Backwork departments whose codes differ only in case or spaces (#3918).
 --
--- spec/behavior/backwork.md § Auto-Vivification owns the rule: a department
--- code matches trimmed and in any case, and a new one is stored trimmed and
--- upper-cased (#4485, `findDepartmentByCode` / `departmentCodeKey` in
--- packages/validation/src/backwork-courses.ts). Before #4485 an upload matched
--- the code exactly, so an uploader who typed "math" beside the chapter's
--- "MATH" created a second department. Its files sit under a different course
--- entry, miss that course's name and nicknames, and show as a separate
--- department in the filters. This folds each such group into one department,
--- the same way an officer's "Merge {CODE} into…" does
--- (BackworkService.mergeDepartments).
+-- #4485 (the code half of #3918) makes a department code match trimmed and in
+-- any case, and stores a new one trimmed and upper-cased: `departmentCodeKey`
+-- and `findDepartmentByCode` in packages/validation/src/backwork-courses.ts,
+-- stated in spec/behavior/backwork.md § Auto-Vivification. Before it, an
+-- upload matched the code exactly, so an uploader who typed "math" beside the
+-- chapter's "MATH" created a second department. Its files sit under a
+-- different course entry, miss that course's name and nicknames, and show as a
+-- separate department in the filters. This folds each such group into one
+-- department.
 --
 -- ORDER: merge with or after #4485. This runs once; merged first, an upload
--- between the two deploys can create a new variant that stays.
+-- between the two deploys can create a new variant that stays (harmless to
+-- uploads once #4485 is live, and an officer can merge it by hand).
 --
 -- WHAT THIS CHANGES, per chapter, for each group of departments whose codes
--- are equal once trimmed and upper-cased (`upper(btrim(code, whitespace))`):
+-- are equal once trimmed and upper-cased (`upper(btrim(code, ws))`, `ws` being
+-- every character JS's `trim()` removes, so the groups are #4485's):
 --
 -- - The department kept (the winner) is, in order: one whose code is already
 --   stored as the key ("MATH", not "math" or " MATH"); then one with a full
 --   name; then the oldest; then the lowest id. It keeps its code as stored.
--- - Each other department in the group (a loser), best-ranked first:
+-- - Each other department in the group (a loser), best-ranked first, goes the
+--   way an officer's "Merge {CODE} into…" takes it
+--   (BackworkService.mergeDepartments), plus one step that merge lacks:
 --   - its course entries (`backwork_courses`) fold into the winner's entry for
---     the same course number through `backwork_course_write`, fill-only and
---     clamped, exactly as the API's merge does: the winner's name stays (the
+--     the same course number through `backwork_course_write` with the API
+--     merge's arguments (fill-only, clamped): the winner's name stays (the
 --     loser's when the winner has none), and the loser's nicknames and name
 --     join the winner's nicknames;
 --   - its files (`backwork_resources.department_id`) move to the winner;
---   - its full name fills the winner's when the winner has none;
+--   - its full name fills the winner's when the winner has none (the extra
+--     step). When the winner has one, the loser's full name is dropped, as the
+--     API merge drops it;
 --   - it is deleted, and its now-folded course entries cascade with it.
 --
 -- Nothing else: no file is deleted, and a file's title, course number,
 -- professor and tags are untouched. A department with no case variant is not
--- touched, not even to upper-case its code. Tested against seeded rows by
+-- touched, not even to upper-case its code, and neither are codes that are
+-- only whitespace. Tested against seeded rows by
 -- scripts/pglite/tiers/merge-backwork-department-case-variants.mjs.
 --
 -- No trigger fires on `backwork_departments`, `backwork_resources` or
 -- `backwork_courses`. Idempotent: once merged, no group has a second member,
 -- so a second run changes nothing.
 --
--- Trimming: Postgres's `btrim` trims only the characters it is given, so this
--- passes the ASCII whitespace JS's `trim()` removes. Upper-casing a non-ASCII
--- code can differ between Postgres and JS (JS's "ß" becomes "SS"); department
--- codes are course prefixes like "MATH", so no group is expected to split on
--- that.
+-- Upper-casing a non-ASCII code can differ between Postgres and JS (JS's "ß"
+-- becomes "SS"); department codes are course prefixes like "MATH", so no group
+-- is expected to split on that.
 
 do $$
 declare
-  ws constant text := E' \t\n\r\f\x0B';
+  -- JS trim(): WhiteSpace (incl. every Zs space) and LineTerminator.
+  ws constant text := E' \t\n\x0B\f\r\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF';
   m record;
   c record;
 begin

@@ -14,10 +14,13 @@ import { db, miss } from "../harness.mjs";
 //     migration's order (the code stored as its key, then a full name, then
 //     the oldest), keeping its code as stored;
 //   - every file under a loser moves to the winner, and no file is lost;
+//   - the groups are JS `trim()`'s: a tab and a no-break space pad a variant
+//     as a space does, and codes that are only whitespace are left alone;
 //   - a loser's course entry folds into the winner's, fill-only: the
 //     winner's name stays, or the loser's fills an empty one, and the loser's
 //     nicknames and name join the winner's nicknames; a course only the loser
-//     had moves over;
+//     had moves over; past the table's limits the fold clamps rather than
+//     fails (a nickname over 60 characters dropped, the first 20 kept);
 //   - a loser's full name fills a winner that has none;
 //   - a department with no variant, and another chapter's same code, are not
 //     touched, not even upper-cased;
@@ -42,6 +45,13 @@ console.log(
   const PHYS_LOWER = d("07"); // A, "phys", named "Physics"
   const BIO = d("08"); // A, "bio", no variant
   const B_MATH = d("09"); // B, "math", no variant in its chapter
+  const MATH_TAB = d("10"); // A, "\tmath"
+  const MATH_NBSP = d("11"); // A, "Math" + U+00A0
+  const BLANK = d("12"); // A, " "
+  const BLANK_2 = d("13"); // A, "  "
+  const NBSP = "\u00A0";
+  const twenty = Array.from({ length: 20 }, (_, i) => `n${String(i + 1).padStart(2, "0")}`);
+  const long = "x".repeat(61);
   const sql = readFileSync(
     join(
       process.cwd(),
@@ -88,7 +98,11 @@ console.log(
         ('${PHYS}', '${A}', 'PHYS', null, now()),
         ('${PHYS_LOWER}', '${A}', 'phys', 'Physics', now() - interval '1 day'),
         ('${BIO}', '${A}', 'bio', null, now()),
-        ('${B_MATH}', '${B}', 'math', null, now());
+        ('${B_MATH}', '${B}', 'math', null, now()),
+        ('${MATH_TAB}', '${A}', E'\\tmath', null, now()),
+        ('${MATH_NBSP}', '${A}', 'Math${NBSP}', null, now()),
+        ('${BLANK}', '${A}', ' ', null, now()),
+        ('${BLANK_2}', '${A}', '  ', null, now());
       insert into backwork_resources
         (id, chapter_id, department_id, course_number, uploader_id, title, storage_path, file_hash)
       values
@@ -97,12 +111,18 @@ console.log(
         ('${f("03")}', '${A}', '${MATH_SPACED}', '2010', '${U}', 'Exam 3', 'a/3.pdf', 'h3918-3'),
         ('${f("04")}', '${A}', '${CHEM}', '1100', '${U}', 'Lab 1', 'a/4.pdf', 'h3918-4'),
         ('${f("05")}', '${A}', '${BIO}', '1000', '${U}', 'Quiz', 'a/5.pdf', 'h3918-5'),
-        ('${f("06")}', '${B}', '${B_MATH}', '1010', '${U}', 'Exam', 'b/1.pdf', 'h3918-6');
+        ('${f("06")}', '${B}', '${B_MATH}', '1010', '${U}', 'Exam', 'b/1.pdf', 'h3918-6'),
+        ('${f("07")}', '${A}', '${MATH_TAB}', '1010', '${U}', 'Exam 4', 'a/7.pdf', 'h3918-7'),
+        ('${f("08")}', '${A}', '${MATH_NBSP}', '1010', '${U}', 'Exam 5', 'a/8.pdf', 'h3918-8');
       insert into backwork_courses (chapter_id, department_id, course_number, name, nicknames) values
         ('${A}', '${MATH}', '1010', null, '{Calc}'),
         ('${A}', '${MATH_LOWER}', '1010', 'Calculus I', '{Calc 1}'),
         ('${A}', '${MATH_SPACED}', '2010', 'Linear Algebra', '{}'),
-        ('${A}', '${PHYS_LOWER}', '1110', 'Mechanics', '{}');
+        ('${A}', '${PHYS_LOWER}', '1110', 'Mechanics', '{}'),
+        ('${A}', '${CHEM_NAMED}', '1100', 'General Chemistry', '{}'),
+        ('${A}', '${CHEM}', '1100', 'Gen Chem', '{Gen Chem I}'),
+        ('${A}', '${CHEM_NAMED}', '1200', 'Organic', '{${twenty.join(",")}}'),
+        ('${A}', '${CHEM}', '1200', '${long}', '{Orgo}');
     `);
 
     await db.exec(sql);
@@ -111,7 +131,7 @@ console.log(
     check(
       "each group collapses to one department, keeping the winner's code as stored",
       JSON.stringify(a.map((r) => r.id).sort()) ===
-        JSON.stringify([MATH, CHEM_NAMED, PHYS, BIO].sort()),
+        JSON.stringify([MATH, CHEM_NAMED, PHYS, BIO, BLANK, BLANK_2].sort()),
       a,
     );
     check(
@@ -134,6 +154,12 @@ console.log(
       a.find((r) => r.id === BIO)?.code === "bio",
       a,
     );
+    check(
+      "codes that are only whitespace are left alone",
+      a.find((r) => r.id === BLANK)?.code === " " &&
+        a.find((r) => r.id === BLANK_2)?.code === "  ",
+      a,
+    );
     const b = await departments(B);
     check(
       "another chapter's same code is not touched",
@@ -142,12 +168,12 @@ console.log(
     );
 
     const moved = await Promise.all(
-      ["01", "02", "03", "04", "05", "06"].map((n) => fileDepartment(f(n))),
+      ["01", "02", "03", "04", "05", "06", "07", "08"].map((n) => fileDepartment(f(n))),
     );
     check(
       "every file under a loser moves to its winner, and the rest stay",
       JSON.stringify(moved) ===
-        JSON.stringify([MATH, MATH, MATH, CHEM_NAMED, BIO, B_MATH]),
+        JSON.stringify([MATH, MATH, MATH, CHEM_NAMED, BIO, B_MATH, MATH, MATH]),
       moved,
     );
 
@@ -166,10 +192,24 @@ console.log(
     );
     const mech = await course(PHYS, "1110");
     check("a course moves with a named loser too", mech?.name === "Mechanics", mech);
+    const chem = await course(CHEM_NAMED, "1100");
+    check(
+      "a named winner course keeps its name, and the loser's name joins its nicknames",
+      chem?.name === "General Chemistry" &&
+        JSON.stringify(chem.nicknames) === JSON.stringify(["Gen Chem I", "Gen Chem"]),
+      chem,
+    );
+    const organic = await course(CHEM_NAMED, "1200");
+    check(
+      "past the limits the fold clamps: a losing name over 60 characters dropped, the first 20 kept",
+      organic?.name === "Organic" &&
+        JSON.stringify(organic.nicknames) === JSON.stringify(twenty),
+      organic,
+    );
     const orphans = (
       await db.query(
         `select count(*)::int as n from backwork_courses where department_id = any($1::uuid[])`,
-        [[MATH_LOWER, MATH_SPACED, CHEM, PHYS_LOWER]],
+        [[MATH_LOWER, MATH_SPACED, CHEM, PHYS_LOWER, MATH_TAB, MATH_NBSP]],
       )
     ).rows[0].n;
     check("no course entry is left on a deleted department", orphans === 0, orphans);
