@@ -1,4 +1,9 @@
-import type { AskSourceKind, AskSourcePage } from '@repo/validation';
+import {
+  isModuleEnabled,
+  type AskSourceKind,
+  type AskSourcePage,
+} from '@repo/validation';
+import { WILDCARD } from '#domain/constants/permissions';
 
 /**
  * A live read Ask can make while answering (`spec/behavior/ai.md` § Live
@@ -15,10 +20,10 @@ import type { AskSourceKind, AskSourcePage } from '@repo/validation';
  * - **It reads through the same application service the route calls,** with
  *   the chapter and the user from the request's guards. A tool never takes a
  *   chapter, a user or any other argument from a model.
- * - **`effect` is `read` for every tool Ask runs.** The acting agent (#718)
- *   adds `propose` tools, whose result is a saved proposal a person accepts
- *   (`ai.md` § Suggestions). Ask's loop refuses to run anything but `read`,
- *   so a question can never change anything.
+ * - **`effect` is `read` for every tool Ask runs.** The acting agent (#718,
+ *   `../act/act-tool.ts`) has `propose` tools, whose result is a saved
+ *   proposal a person accepts (`ai.md` § Suggestions). Ask's loop refuses
+ *   to run anything but `read`, so a question can never change anything.
  * - **Its result says which chapter it read,** and Ask drops a result whose
  *   chapter is not the request's.
  *
@@ -45,22 +50,48 @@ export interface AskToolResult {
 
 export type AskToolEffect = 'read' | 'propose';
 
-export interface AskTool {
+/**
+ * What every tool a model can name declares, whether it reads (Ask) or
+ * proposes a change (the acting agent, `../act/act-tool.ts`). One shape, so
+ * one rule decides what a member is offered: {@link toolsMemberMayUse}.
+ */
+export interface AgentToolSpec {
   /** What the planning call names. `snake_case`. */
   readonly name: string;
-  /** One sentence for the planning call: when this tool answers a question. */
+  /** One sentence for the planning call: when this tool fits. */
   readonly description: string;
-  /** What a citation of the result is called and where it opens. */
-  readonly kind: AskSourceKind;
-  readonly title: string;
-  readonly page: AskSourcePage;
   /** The permission the mirrored route requires of its caller. */
   readonly permission: string;
   /** The module the mirrored route belongs to, or null for an always-on one. */
   readonly module: string | null;
   readonly effect: AskToolEffect;
+}
+
+export interface AskTool extends AgentToolSpec {
+  /** What a citation of the result is called and where it opens. */
+  readonly kind: AskSourceKind;
+  readonly title: string;
+  readonly page: AskSourcePage;
   /** The read. Null when there is nothing to say (no events, no invoices). */
   run(context: AskToolContext): Promise<AskToolResult | null>;
+}
+
+/**
+ * Of `tools`, the ones this member may be offered: the mirrored route's
+ * permission held (or the wildcard) and its module on. A tool that fails
+ * either is never shown to a model, so for that member it does not exist
+ * (`docs/security/ai-prompt-injection.md` C2).
+ */
+export function toolsMemberMayUse<T extends AgentToolSpec>(
+  tools: readonly T[],
+  heldPermissions: ReadonlySet<string>,
+  enabledModules: Record<string, boolean> | null,
+): T[] {
+  return tools.filter(
+    (tool) =>
+      (heldPermissions.has(WILDCARD) || heldPermissions.has(tool.permission)) &&
+      (tool.module === null || isModuleEnabled(enabledModules, tool.module)),
+  );
 }
 
 /** Injection token for the list of tools Ask may offer. */

@@ -16,7 +16,10 @@ import {
   verifiedQuote,
 } from './ai-suggestion.service';
 import { TaskSuggestionKind } from './ai-suggestion-task-kind';
-import type { AiSuggestionSourceAccess } from './ai-suggestion-sources';
+import {
+  RequestSuggestionSource,
+  type AiSuggestionSourceAccess,
+} from './ai-suggestion-sources';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
 const OFFICER = '22222222-2222-4222-8222-222222222222';
@@ -1060,6 +1063,113 @@ describe('AiSuggestionService (#4309)', () => {
         service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules }),
       ).rejects.toMatchObject({ response: { code: 'ai.suggestion.expired' } });
     });
+  });
+});
+
+describe("a member's own request as a source (#718)", () => {
+  const OTHER_OFFICER = '88888888-8888-4888-8888-888888888888';
+
+  function buildRequests() {
+    const repo = new FakeRepo();
+    const held = ['members:view', 'tasks:manage'];
+    const rbac = {
+      getEffectivePermissions: jest.fn(async () => held),
+      memberHasAnyPermission: jest.fn(async () => true),
+    };
+    const tasks = {
+      create: jest.fn(async (input: { title: string }) => ({
+        id: '77777777-7777-4777-8777-777777777777',
+        ...input,
+      })),
+    };
+    const analytics = {
+      track: jest.fn(async () => undefined),
+      trackForChapter: jest.fn(async () => undefined),
+    };
+    const service = new AiSuggestionService(
+      repo,
+      [new TaskSuggestionKind(tasks as never)],
+      [new RequestSuggestionSource()],
+      rbac as never,
+      { notifyMembers: jest.fn(async () => undefined) } as never,
+      analytics as never,
+      {
+        findById: jest.fn(async () => ({ id: CHAPTER, enabled_modules: {} })),
+      } as never,
+    );
+    service.now = () => NOW;
+    return { service, repo, tasks, analytics };
+  }
+
+  const ask = (service: AiSuggestionService, userId: string, title: string) =>
+    service.proposeBatch({
+      chapterId: CHAPTER,
+      batchId: `${userId.slice(0, 8)}-0000-4000-8000-${String(title.length).padStart(12, '0')}`,
+      requestedFor: userId,
+      source: { type: 'request', id: userId, title: 'Ask Frapp' },
+      proposals: [taskProposal(title)],
+      notify: [],
+      expiresWithinDays: 1,
+    });
+
+  it('is gone in a day, whatever its kind allows', async () => {
+    const { service } = buildRequests();
+    const { created } = await ask(service, OFFICER, 'Book the bus');
+    expect(created[0].expires_at).toBe(
+      new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    );
+  });
+
+  it('can be opened and accepted by the member who asked, and by nobody else', async () => {
+    const { service, tasks } = buildRequests();
+    const { created } = await ask(service, OFFICER, 'Book the bus');
+    const source = { type: 'request' as const, id: OFFICER };
+
+    const theirs = await service.listForUser(CHAPTER, OTHER_OFFICER, {
+      enabledModules,
+      source,
+    });
+    expect(theirs.items).toHaveLength(0);
+    await expect(
+      service.accept(CHAPTER, OTHER_OFFICER, created[0].id, { enabledModules }),
+    ).rejects.toMatchObject({ response: { code: 'ai.suggestion.not_found' } });
+    await expect(
+      service.dismiss(CHAPTER, OTHER_OFFICER, created[0].id),
+    ).rejects.toMatchObject({ response: { code: 'ai.suggestion.not_found' } });
+    expect(tasks.create).not.toHaveBeenCalled();
+
+    const mine = await service.listForUser(CHAPTER, OFFICER, {
+      enabledModules,
+      source,
+    });
+    expect(mine.items).toHaveLength(1);
+    await service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules });
+    expect(tasks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays out of the Suggested list, even for the member who asked', async () => {
+    const { service } = buildRequests();
+    await ask(service, OFFICER, 'Book the bus');
+    const all = await service.listForUser(CHAPTER, OFFICER, { enabledModules });
+    expect(all.items).toHaveLength(0);
+  });
+
+  it("withdrawSource takes back one member's waiting request and no other", async () => {
+    const { service, repo, analytics } = buildRequests();
+    await ask(service, OFFICER, 'Book the bus');
+    await ask(service, OTHER_OFFICER, 'Order shirts');
+    expect(
+      await service.withdrawSource(CHAPTER, { type: 'request', id: OFFICER }),
+    ).toBe(1);
+    expect(repo.rows.map((row) => row.source_id)).toEqual([OTHER_OFFICER]);
+    expect(analytics.trackForChapter).toHaveBeenCalledWith(
+      'ai-suggestions-withdrawn',
+      CHAPTER,
+      { kind: 'task', count: 1 },
+    );
+    expect(
+      await service.withdrawSource(CHAPTER, { type: 'request', id: OFFICER }),
+    ).toBe(0);
   });
 });
 

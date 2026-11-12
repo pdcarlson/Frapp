@@ -99,3 +99,21 @@ export class MeetingSuggestionSource implements AiSuggestionSourceAccess {
     return this.meetings.readableAmong(chapterId, userId, sourceIds);
   }
 }
+
+/**
+ * A member's own request to the acting agent (#718). The proposal it made is
+ * theirs alone: `source_id` is the member who asked, and nobody else can
+ * open, accept or dismiss it, whatever they hold.
+ */
+@Injectable()
+export class RequestSuggestionSource implements AiSuggestionSourceAccess {
+  readonly sourceType = 'request' as const;
+
+  filterOpenable(
+    _chapterId: string,
+    userId: string,
+    sourceIds: readonly string[],
+  ): Promise<Set<string>> {
+    return Promise.resolve(new Set(sourceIds.filter((id) => id === userId)));
+  }
+}

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ASK_COPY, askSavedLine } from "@repo/validation";
+import { ACT_COPY, ASK_COPY, askSavedLine } from "@repo/validation";
 
 /**
  * The Ask panel's own rules: consent before the first question leaves, and
@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   exchange: null as unknown,
   savedUntil: null as string | null,
   consent: vi.fn(),
+  actions: null as string[] | null,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -24,16 +25,32 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     stop: vi.fn(),
     reset: state.reset,
   }),
+  useActStatus: () => ({ data: state.actions }),
+  useMyPermissions: () => ({ data: { permissions: ["ai:use", "ai:act"] } }),
   useAskStatus: () => ({
     data: {
       saved_until: state.savedUntil,
-      diagnostics: { offered: false, can_change: false, ends_at: state.savedUntil },
+      diagnostics: {
+        offered: false,
+        can_change: false,
+        ends_at: state.savedUntil,
+      },
     },
   }),
 }));
 
 vi.mock("@/components/ai/ai-consent-sheet", () => ({
-  useAiConsentGate: () => ({ ensureConsent: state.consent, consentDialog: null }),
+  useAiConsentGate: () => ({
+    ensureConsent: state.consent,
+    consentDialog: null,
+  }),
+}));
+
+vi.mock("@/components/ask/act-pane", () => ({
+  useActSession: () => ({ turn: null, setTurn: vi.fn(), latestRef: { current: 0 } }),
+  ActPane: ({ actions }: { actions: string[] }) => (
+    <p>Do pane: {actions.join(", ")}</p>
+  ),
 }));
 
 const { AskPanel } = await import("./ask-panel");
@@ -88,9 +105,9 @@ describe("AskPanel", () => {
 
   it("asks an example when it is picked", async () => {
     open();
-    await userEvent.setup().click(
-      screen.getByRole("button", { name: ASK_COPY.examples[0] }),
-    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: ASK_COPY.examples[0] }));
     expect(state.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
       savedNoticeShown: false,
     });
@@ -99,10 +116,12 @@ describe("AskPanel", () => {
   it("sends nothing for a member who does not say yes, and says what to do", async () => {
     state.consent.mockResolvedValue(false);
     open();
-    await userEvent.setup().type(
-      screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      "Who is the treasurer?{Enter}",
-    );
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Who is the treasurer?{Enter}",
+      );
     expect(state.ask).not.toHaveBeenCalled();
     expect(
       await screen.findByText(ASK_COPY.unavailable.consent_required),
@@ -113,10 +132,12 @@ describe("AskPanel", () => {
   it("says so when it could not check the member's answer", async () => {
     state.consent.mockRejectedValue(new TypeError("Failed to fetch"));
     open();
-    await userEvent.setup().type(
-      screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      "Who is the treasurer?{Enter}",
-    );
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Who is the treasurer?{Enter}",
+      );
     expect(state.ask).not.toHaveBeenCalled();
     expect(
       await screen.findByRole("button", { name: ASK_COPY.try_again }),
@@ -129,10 +150,12 @@ describe("AskPanel", () => {
     expect(
       screen.getByText(askSavedLine("November 26, 2026")),
     ).toBeInTheDocument();
-    await userEvent.setup().type(
-      screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      "Who is the treasurer?{Enter}",
-    );
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Who is the treasurer?{Enter}",
+      );
     expect(state.ask).toHaveBeenCalledWith("Who is the treasurer?", {
       savedNoticeShown: true,
     });
@@ -154,10 +177,12 @@ describe("AskPanel", () => {
       failure: null,
     };
     open();
-    await userEvent.setup().type(
-      screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      "Second?{Enter}",
-    );
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Second?{Enter}",
+      );
     expect(state.ask).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: ASK_COPY.send })).toBeDisabled();
   });
@@ -242,7 +267,9 @@ describe("AskPanel", () => {
       expect(state.reset).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "Ask" })).toHaveFocus();
       view.rerender(tree(true));
-      expect(screen.getByText("The budget vote is in the minutes.")).toBeInTheDocument();
+      expect(
+        screen.getByText("The budget vote is in the minutes."),
+      ).toBeInTheDocument();
     });
 
     it("gets out of the way of a followed source where there is no room for both", async () => {
@@ -266,5 +293,46 @@ describe("AskPanel", () => {
         vi.unstubAllGlobals();
       }
     });
+  });
+});
+
+describe("Ask and Do (#718)", () => {
+  beforeEach(() => {
+    state.exchange = null;
+    state.actions = null;
+  });
+
+  it("shows no switch to a member who cannot have Ask take actions", () => {
+    open();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
+  });
+
+  it("shows no switch when the member holds the permission but no action", () => {
+    state.actions = [];
+    open();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("opens on Ask, and Do swaps the question field for the request pane", async () => {
+    state.actions = ["give_points", "create_task"];
+    open();
+    expect(
+      screen
+        .getByRole("radio", { name: ACT_COPY.mode_ask })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
+
+    await userEvent.click(
+      screen.getByRole("radio", { name: ACT_COPY.mode_do }),
+    );
+    expect(screen.getByText("Do pane: give_points, create_task")).toBeDefined();
+    expect(screen.queryByPlaceholderText(ASK_COPY.placeholder)).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("radio", { name: ACT_COPY.mode_ask }),
+    );
+    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
   });
 });

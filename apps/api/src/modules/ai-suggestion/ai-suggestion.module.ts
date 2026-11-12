@@ -3,11 +3,14 @@ import { AiSuggestionService } from '../../application/services/ai-suggestion.se
 import { AiSuggestionConsentListener } from '../../application/services/ai-suggestion-consent.listener';
 import { AI_SUGGESTION_KIND_HANDLERS } from '../../application/services/ai-suggestion-kinds';
 import { TaskSuggestionKind } from '../../application/services/ai-suggestion-task-kind';
+import { PointsSuggestionKind } from '../../application/services/ai-suggestion-points-kind';
+import { EventSuggestionKind } from '../../application/services/ai-suggestion-event-kind';
 import {
   AI_SUGGESTION_SOURCE_ACCESS,
   ChannelSuggestionSource,
   EventSuggestionSource,
   MeetingSuggestionSource,
+  RequestSuggestionSource,
 } from '../../application/services/ai-suggestion-sources';
 import { AiSuggestionExpiryService } from '../../application/workers/ai-suggestion-expiry.service';
 import { AiSuggestionController } from '../../interface/controllers/ai-suggestion.controller';
@@ -20,6 +23,7 @@ import { RbacModule } from '../rbac/rbac.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
+import { PointsModule } from '../points/points.module';
 import { EventModule } from '../event/event.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
@@ -37,6 +41,8 @@ import { MeetingTaskSuggestionsService } from '../../application/services/meetin
     AnalyticsModule,
     NotificationModule,
     TaskModule,
+    // A confirmed points change goes through the points service (#718).
+    PointsModule,
     EventModule,
     ChannelAccessModule,
     // The read rule for minutes, and the moment minutes post (#4313).
@@ -51,14 +57,21 @@ import { MeetingTaskSuggestionsService } from '../../application/services/meetin
     AiSuggestionExpiryService,
     AiEnabledGuard,
     TaskSuggestionKind,
+    PointsSuggestionKind,
+    EventSuggestionKind,
     EventSuggestionSource,
     ChannelSuggestionSource,
     MeetingSuggestionSource,
+    RequestSuggestionSource,
     MeetingTaskSuggestionsService,
     {
       provide: AI_SUGGESTION_KIND_HANDLERS,
-      useFactory: (task: TaskSuggestionKind) => [task],
-      inject: [TaskSuggestionKind],
+      useFactory: (
+        task: TaskSuggestionKind,
+        points: PointsSuggestionKind,
+        event: EventSuggestionKind,
+      ) => [task, points, event],
+      inject: [TaskSuggestionKind, PointsSuggestionKind, EventSuggestionKind],
     },
     {
       provide: AI_SUGGESTION_SOURCE_ACCESS,
@@ -66,11 +79,13 @@ import { MeetingTaskSuggestionsService } from '../../application/services/meetin
         event: EventSuggestionSource,
         channel: ChannelSuggestionSource,
         meeting: MeetingSuggestionSource,
-      ) => [event, channel, meeting],
+        request: RequestSuggestionSource,
+      ) => [event, channel, meeting, request],
       inject: [
         EventSuggestionSource,
         ChannelSuggestionSource,
         MeetingSuggestionSource,
+        RequestSuggestionSource,
       ],
     },
     {
@@ -81,6 +96,7 @@ import { MeetingTaskSuggestionsService } from '../../application/services/meetin
     // nobody is told).
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
+  // The acting agent saves its proposals here (#718).
   // Report this reads one suggestion the reporter can see (#4315).
   exports: [AiSuggestionService],
 })

@@ -17,6 +17,16 @@ import type {
  */
 export const AI_SUGGESTION_KIND_HANDLERS = 'AI_SUGGESTION_KIND_HANDLERS';
 
+export interface AiSuggestionCommitResult {
+  /** The id of what was made (the first one, when it made several). */
+  resultId: string;
+  /**
+   * Counts the accepter is told, when accepting made more than one change:
+   * how many were made and how many were left out. Numbers only, never text.
+   */
+  outcome?: Readonly<Record<string, number>>;
+}
+
 export interface AiSuggestionKindHandler {
   readonly kind: AiSuggestionKind;
   /** What the accepter must hold at the moment they accept. */
@@ -55,7 +65,13 @@ export interface AiSuggestionKindHandler {
   commit(input: {
     chapterId: string;
     userId: string;
+    /**
+     * The suggestion being accepted. A kind that makes several changes (a
+     * points change for many members) derives each one's idempotency key
+     * from it, so an accept that is retried never grants twice.
+     */
+    suggestionId: string;
     payload: AiSuggestionPayload;
     source: { type: AiSuggestionSourceType; id: string };
-  }): Promise<{ resultId: string }>;
+  }): Promise<AiSuggestionCommitResult>;
 }

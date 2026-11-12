@@ -104,6 +104,32 @@ console.log("\n=== Functional: ai_suggestions (20261112130001) ===");
       await refused(() => insert(9, "vault", EV)),
       {},
     );
+    // #718: a member's own request is a source, and a card can propose a
+    // points change or an event (20261112230000_ai_act_suggestions.sql).
+    const asked = (ordinal, kind) =>
+      db.query(
+        `insert into ai_suggestions
+           (chapter_id, batch_id, ordinal, kind, source_type, source_id,
+            payload, required_permission, expires_at)
+         values ($1, $2, $3, $4, 'request', $5, '{}'::jsonb, 'points:adjust',
+                 now() + interval '1 day')`,
+        [CH, BATCH, ordinal, kind, EV],
+      );
+    check(
+      "a member's request can hold a points change and an event",
+      !(await refused(() => asked(20, "points"))) &&
+        !(await refused(() => asked(21, "event"))),
+      {},
+    );
+    check(
+      "an unknown kind of suggestion is refused",
+      await refused(() => asked(22, "payment")),
+      {},
+    );
+    await db.query(
+      `delete from ai_suggestions where batch_id = $1 and ordinal in (20, 21)`,
+      [BATCH],
+    );
 
     check(
       "an accept can't begin without saying when",

@@ -91,6 +91,16 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.suggestion.decided",
   "ai.suggestion.accepting",
   "ai.suggestion.incomplete",
+  // The acting agent (#718): a member without `ai:act`, a points proposal
+  // for more members than the chapter's hourly limit leaves, and one whose
+  // members have all left the chapter.
+  "ai.act.forbidden",
+  "ai.suggestion.points.over_limit",
+  "ai.suggestion.points.no_members",
+  // A points proposal whose Confirm landed for some members and failed for
+  // the rest. It is a 503, so its status reports it as a server fault
+  // whatever this list says; it is here because every dotted code is listed.
+  "ai.suggestion.points.partial",
   // Two officers started minutes for one event at once, or one saved over
   // the other's newer version (#4312).
   "meeting.already_started",

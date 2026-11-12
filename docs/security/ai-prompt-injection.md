@@ -12,6 +12,10 @@ no feature built on them.) This document and the eval suite in
 agent work has a target to satisfy rather than a retrofit. Every control below is a requirement on
 work not yet done.
 
+**Status, 2026-11-12:** the paragraph above is history. The corpus, Ask and the acting agent (#718)
+now exist behind `AI_ENABLED`, with a tool registry for each. [§ 4. Controls](#4-controls) says which controls are live, and
+[§ The acting agent](#the-acting-agent-added-2026-11-12-718) covers the agent that proposes changes.
+
 ## 1. Why injection is a security boundary here, not a quality problem
 
 Two properties combine badly.
@@ -227,6 +231,35 @@ index (#4314) and on Ask (#450). They are the security-bearing subset of
 - *No action because a message asked.* No tool call is made because retrieved chat asked for it,
   and every action needs the asker's own confirmation (C3, C5).
 
+### The acting agent (added 2026-11-12, #718)
+
+How C1 to C5 are met by `ActService` (`apps/api/src/application/services/act/`), which turns an
+officer's typed request into a proposal they confirm
+([`ai.md` § Asking Frapp to do something](../../spec/behavior/ai.md#asking-frapp-to-do-something)):
+
+- **The action is picked from the officer's words alone.** One planning call is shown the request
+  and the actions that officer may take. No chat, document, roster, event title or retrieved text is
+  in it, so there is no injector whose ceiling could apply (C3). An answer naming an action that was
+  not offered, or that does not exist, is treated as no action.
+- **Details are resolved by the server, as the officer, in their chapter.** The model writes names;
+  the server looks them up in this chapter's roster and nowhere else (C4). Attendance is read only
+  for an officer who holds the attendance route's permission (C2).
+- **One place a model reads other members' text: display names.** A name the lookup cannot place
+  goes to a second call that is shown the roster's display names, one per numbered line, with line
+  breaks and separators removed. Its answer is used only as a line number of that roster, for a name
+  the officer typed, once per name. The most a planted display name can do is move a typed name onto
+  a different member of the same chapter, and the card flags every such match for the officer.
+- **Nothing is changed by asking (C5).** No tool calls a method that writes to the chapter. (The
+  tools do hold services that can: the events, attendance and member services they read through.
+  That they call only reads is a convention a reviewer checks, backed by the tool specs, not
+  something the module graph enforces.) The result is an
+  `ai_suggestions` row only the asker can open; Confirm re-checks the action's permission and goes
+  through the ordinary service.
+
+The residual is the officer's own: a request misread into a plausible card that they confirm
+without reading. The card states the action, the size and every member, and a points change keeps
+the chapter's hourly limit and its anomaly flag.
+
 ## 5. Residual risk
 
 - **Model-level susceptibility is mitigated, not eliminated.** C1–C8 constrain the *blast radius* of a
@@ -276,10 +309,10 @@ Mapping of control to enforcement:
 | Control | Graded by | Live today |
 | --- | --- | --- |
 | C1 system-channel instructions | `ask-agent.eval-spec.ts` (what the planner and the answer call are shown) | yes, behind `AI_ENABLED`: the question is the user turn, everything found is a source |
-| C2 caller's permissions | `authority-ceiling`, on tool calls the product made | yes, behind `AI_ENABLED` (`AskService.offeredTools`) |
-| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached |
-| C4 chapter scoping | `chapter-scoping` (citations and tool calls) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
-| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts` | yes, behind `AI_ENABLED`: Ask has no mutating tool and refuses to run one (#718 adds proposals) |
+| C2 caller's permissions | `authority-ceiling`, on tool calls the product made; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED` (`AskService.offeredTools`; `ActService.offered`, and again at Confirm in `AiSuggestionService.accept`) |
+| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached. The acting agent's planner is shown the officer's request and the offered actions only (`act-agent.eval-spec.ts`) |
+| C4 chapter scoping | `chapter-scoping` (citations and tool calls); `act-agent.eval-spec.ts` (a name, id or roster line outside the chapter resolves to nobody) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
+| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED`: Ask has no mutating tool and refuses to run one. A change is asked for on separate routes (`/v1/ai/act`, #718) that need `ai:act`, and the answer is a proposal the asker confirms |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding` | yes, behind `AI_ENABLED` (the gateway) |
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer) |
 | C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450) |

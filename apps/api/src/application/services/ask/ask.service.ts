@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_STREAM_VERSION,
-  isModuleEnabled,
   type AskAnswer,
   type AskSource,
   type AskStep,
@@ -14,7 +13,6 @@ import {
   type LanguageModelSource,
 } from '#domain/adapters/language-model.interface';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
-import { WILDCARD } from '#domain/constants/permissions';
 import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
@@ -47,6 +45,7 @@ import {
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
   ASK_TOOLS,
+  toolsMemberMayUse,
   type AskTool,
   type AskToolContext,
 } from './ask-tool';
@@ -114,7 +113,7 @@ function emptyAnswer(
 }
 
 /** Why a gateway call was not made, in the words the clients know. */
-function unavailableReason(result: AiUnavailable): AskUnavailableReason {
+export function unavailableReason(result: AiUnavailable): AskUnavailableReason {
   if (result.reason === 'consent') {
     return result.detail === 'chapter_off' ? 'chapter_off' : 'consent_required';
   }
@@ -125,7 +124,8 @@ function unavailableReason(result: AiUnavailable): AskUnavailableReason {
   return 'not_available';
 }
 
-function longDate(date: Date, timeZone: string): string {
+/** A day written out in full, in the asker's zone. Shared with Do (#718). */
+export function longDate(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
     month: 'long',
@@ -449,12 +449,7 @@ export class AskService {
     const held = new Set(
       await this.rbac.getEffectivePermissions(input.chapterId, input.userId),
     );
-    return readOnly.filter(
-      (tool) =>
-        (held.has(WILDCARD) || held.has(tool.permission)) &&
-        (tool.module === null ||
-          isModuleEnabled(input.enabledModules, tool.module)),
-    );
+    return toolsMemberMayUse(readOnly, held, input.enabledModules);
   }
 
   /**

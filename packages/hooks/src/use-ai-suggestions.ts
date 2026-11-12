@@ -24,6 +24,9 @@ export type AiSuggestionSourceType = AiSuggestion["source"]["type"];
 /** An officer's changes to a suggested task, sent with Accept. */
 export type TaskSuggestionEdits =
   components["schemas"]["TaskSuggestionEditsDto"];
+/** An officer's changes to a proposed points change, sent with Confirm. */
+export type PointsSuggestionEdits =
+  components["schemas"]["PointsSuggestionEditsDto"];
 export type AiSuggestionDecision =
   components["schemas"]["AiSuggestionDecisionDto"];
 export type AiSuggestionDecideItem =
@@ -112,6 +115,9 @@ function useDropFromLists() {
     });
     if (madeTasks) {
       void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      // An accepted points change or event (#718) lands on those pages.
+      void queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
+      void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     }
   };
 }
@@ -132,13 +138,15 @@ export function useAcceptAiSuggestion() {
     mutationFn: async ({
       id,
       task,
+      points,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
+      points?: PointsSuggestionEdits;
     }): Promise<AiSuggestionDecision> => {
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },
-        body: task ? { task } : {},
+        body: { ...(task ? { task } : {}), ...(points ? { points } : {}) },
       });
       throwUnlessOk(result);
       return bodyOf(result.data);

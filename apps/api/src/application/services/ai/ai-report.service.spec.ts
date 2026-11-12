@@ -356,6 +356,27 @@ describe('AiReportService', () => {
       );
     });
 
+    it('records the model behind a proposal the member asked for', async () => {
+      const { service, reports } = build({
+        suggestion: {
+          id: SUGGESTION,
+          kind: 'points',
+          status: 'pending',
+          source_type: 'request',
+          source_id: 'officer-1',
+          payload: { amount: 5, reason: 'Chapter', user_ids: ['dana'] },
+          quote: null,
+          quote_author_id: null,
+        },
+      });
+      await service.report(
+        { ...base, subject: 'ai_suggestion', subjectId: SUGGESTION },
+        NOW,
+      );
+      expect(reports.rows[0].promptVersion).toBe('act.plan@v1');
+      expect(reports.rows[0].model).toEqual(expect.any(String));
+    });
+
     it('answers 404 for a suggestion the member could not see', async () => {
       const { service } = build({ suggestion: null });
       await expect(

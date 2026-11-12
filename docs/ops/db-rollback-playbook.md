@@ -4007,3 +4007,25 @@ drop function if exists public.ai_reports_drop_for_deleted_user();
 drop table if exists public.ai_reports;
 drop function if exists public.ai_reports_refuse_deleted_users();
 ```
+
+## Rollback AI act suggestions (20261112230000)
+
+* **Migration**: `20261112230000_ai_act_suggestions.sql`
+
+Two checks on `ai_suggestions` widened: `kind` also allows `points` and `event`, and `source_type` also allows `request`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every `/v1/ai/act` route answers 404 and no row with the new values is written. Taking `ai:act` away from every role does the same for one chapter. A card that was waiting expires within a day and the hourly sweep clears it. Points, tasks and events made by confirming a card are ordinary rows and stay.
+
+To narrow the checks again, in a later forward migration after the code revert has shipped, delete the rows that use the new values first (they are unconfirmed proposals, or decided rows that hold no text):
+
+```sql
+delete from public.ai_suggestions
+ where kind in ('points', 'event') or source_type = 'request';
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_kind_check;
+alter table public.ai_suggestions
+  add constraint ai_suggestions_kind_check check (kind in ('task'));
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_source_type_check;
+alter table public.ai_suggestions
+  add constraint ai_suggestions_source_type_check
+    check (source_type in ('meeting', 'event', 'channel'));
+```

@@ -6,18 +6,26 @@
  * (ADR-28 decision 11, spec/behavior/ai.md § Suggestions).
  */
 
-/** What accepting a suggestion makes. One value per kind handler. */
-export const AI_SUGGESTION_KINDS = ['task'] as const;
+/**
+ * What accepting a suggestion makes. One value per kind handler. `points`
+ * (a points change for one or many members) and `event` are proposed by the
+ * acting agent (#718).
+ */
+export const AI_SUGGESTION_KINDS = ['task', 'points', 'event'] as const;
 export type AiSuggestionKind = (typeof AI_SUGGESTION_KINDS)[number];
 
 /**
  * What a suggestion was drawn from. A source type with no access checker
  * registered is shown to nobody (fail closed).
+ *
+ * `request` is a member's own request to the acting agent (#718): its
+ * `source_id` is that member's user id, and only they can open it.
  */
 export const AI_SUGGESTION_SOURCE_TYPES = [
   'meeting',
   'event',
   'channel',
+  'request',
 ] as const;
 export type AiSuggestionSourceType =
   (typeof AI_SUGGESTION_SOURCE_TYPES)[number];

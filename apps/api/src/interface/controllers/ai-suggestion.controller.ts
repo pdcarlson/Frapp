@@ -40,13 +40,16 @@ import {
   AiSuggestionListDto,
   DecideAiSuggestionsDto,
   ListAiSuggestionsQueryDto,
-  type TaskSuggestionEditsDto,
 } from '../dtos/ai-suggestion.dto';
 
-function taskEdits(
-  edits: TaskSuggestionEditsDto | undefined,
-): AiSuggestionEdits | undefined {
-  return edits ? { kind: 'task', fields: { ...edits } } : undefined;
+/**
+ * The changes sent with an accept, for the kind they are for. The service
+ * refuses changes for a kind other than the suggestion's.
+ */
+function editsOf(dto: AcceptAiSuggestionDto): AiSuggestionEdits | undefined {
+  if (dto.task) return { kind: 'task', fields: { ...dto.task } };
+  if (dto.points) return { kind: 'points', fields: { ...dto.points } };
+  return undefined;
 }
 
 /**
@@ -113,7 +116,7 @@ export class AiSuggestionController {
   ): Promise<AiSuggestionDecisionDto> {
     return AiSuggestionDecisionDto.from(
       await this.suggestions.accept(chapterId, userId, id, {
-        edits: taskEdits(dto.task),
+        edits: editsOf(dto),
         enabledModules,
       }),
     );
@@ -151,7 +154,7 @@ export class AiSuggestionController {
       userId,
       dto.items.map((item) =>
         item.action === 'accept'
-          ? { id: item.id, action: 'accept', edits: taskEdits(item.task) }
+          ? { id: item.id, action: 'accept', edits: editsOf(item) }
           : { id: item.id, action: 'dismiss' },
       ),
       enabledModules,
