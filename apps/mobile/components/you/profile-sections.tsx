@@ -1,6 +1,5 @@
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
@@ -13,21 +12,16 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
-import { ScreenShell } from "@/components/screen-shell";
-import { BACK_TO_MORE } from "@/components/back-row";
-import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 import {
   PROFILE_PHOTO_SIZE,
   ProfilePhoto,
 } from "@/components/profile/profile-photo";
 import {
   ListRow,
-  ListRowSkeleton,
   ListSection,
   SectionHeader,
 } from "@/components/list-section";
 import {
-  ErrorState,
   SkeletonBlock,
   SkeletonRegion,
   SkeletonText,
@@ -39,13 +33,16 @@ import {
   formatGraduationYear,
   formatHours,
   selectPointsBalance,
-  selectViewerProfile,
   sumApprovedServiceMinutes,
+  type ViewerProfile,
 } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s15 — Profile (`canvas-screens.dc.html:497`).
+ * The member's own profile, drawn on the You tab (#3839): what was s15, the
+ * pushed Profile screen, before the tab took it in. The head (photo, name,
+ * the line under it, and the points and service-hours cards) opens the tab;
+ * Details and Bio close it, under the hub's rows.
  *
  * ## Two stat cards, not three
  *
@@ -71,22 +68,28 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * Tap what you want to change (#3711, Paul 2026-11-07: "The pencil button
  * isn't obvious; drop it"). Your name, the bio card, and every row that is
  * yours to set (Phone, Major, Graduation, City, Company, and Bio while it is
- * empty) open `EditProfileSheet` (#3387). Email is the account's address and
- * the pledge class rows are an officer's, so those don't. The photo edits in
- * place (#732): `ProfilePhoto` picks, uploads and confirms it. The rows are
- * drawn only once the profile has loaded, because a sheet opened on the
- * loading or error state would prefill blanks over fields already set.
+ * empty) call `onEdit`, which opens `EditProfileSheet` (#3387). Email is the
+ * account's address and the pledge class rows are an officer's, so those
+ * don't. The photo edits in place (#732): `ProfilePhoto` picks, uploads and
+ * confirms it. The screen draws these only once the profile has loaded,
+ * because a sheet opened on the loading or error state would prefill blanks
+ * over fields already set.
  */
-export default function ProfileScreen() {
+
+/** Photo, name, the line under it, and the two stat cards. */
+export function ProfileHead({
+  profile,
+  onEdit,
+}: {
+  profile: ViewerProfile | null;
+  onEdit: () => void;
+}) {
   const { tokens } = useFrappTheme();
   // Your initials wear the color the chapter sees on them (#3860).
   const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
-  const { email: sessionEmail } = useAuthSession();
   const chapterId = useActiveChapterId();
-
   const userQuery = useCurrentUser();
-  const editSheetRef = useRef<BottomSheetModal>(null);
   const viewerUserId = useViewerUserId();
   const pointsQuery = useMyPoints();
   // Scoped to the viewer for the same reason `service-hours.tsx` is: unscoped,
@@ -95,29 +98,6 @@ export default function ProfileScreen() {
   const serviceQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
-
-  const profile = useMemo(
-    () => selectViewerProfile(userQuery.data),
-    [userQuery.data],
-  );
-  // The viewer's pledge class and order number (#3939) live on their member
-  // profile, not on `/v1/users/me`. Each row is drawn only when set, unlike
-  // the "Not set" rows below: those are the member's own to fill in under
-  // Edit, and these are an officer's, so an empty one would be a row the
-  // member can do nothing about, in a chapter that may keep neither.
-  //
-  // That read and the class list both take `members:view`, the Directory's
-  // gate, so a viewer without it is not asked for either (an empty id leaves
-  // the query off) and sees neither row, as they see no Directory.
-  const canViewMembers = can("members:view", usePermissionList());
-  const memberQuery = useMemberByUserId(
-    canViewMembers ? (viewerUserId ?? "") : "",
-  );
-  const membership = useMemo(
-    () => selectMemberDetail(memberQuery.data),
-    [memberQuery.data],
-  );
-  const classRows = usePledgeClassRows(membership);
   const pointsBalance = selectPointsBalance(pointsQuery.data);
   // `null` until the entries land, so the card shows an em dash rather than a
   // confident "0 service hrs" beside a correct name and points balance.
@@ -125,39 +105,8 @@ export default function ProfileScreen() {
   const serviceHours =
     serviceMinutes === null ? null : formatHours(serviceMinutes);
 
-  // The session's email is the one value available before `/v1/users/me`
-  // resolves, and it is the same address — so the row never sits blank while
-  // the profile loads.
-  const email = profile?.email ?? sessionEmail ?? null;
-  const openEditor = () => editSheetRef.current?.present();
-
-  if (userQuery.isPending) {
-    return (
-      <ScreenShell back={BACK_TO_MORE} title="Profile">
-        <ProfileSkeleton />
-      </ScreenShell>
-    );
-  }
-
-  // Only an error with nothing cached. TanStack keeps `data` through a failed
-  // background refetch (a return to the app refetches a stale profile), and
-  // bare `isError` would swap in this state over the Edit sheet and drop what
-  // was typed. The web panel has the same guard (`profile-panel.tsx`).
-  if (userQuery.isError && userQuery.data === undefined) {
-    return (
-      <ScreenShell back={BACK_TO_MORE} title="Profile">
-        <ErrorState
-          title="Couldn't load your profile"
-          body="You're signed in, but we couldn't reach the server."
-          onRetry={() => void userQuery.refetch()}
-          isRetrying={userQuery.isFetching}
-        />
-      </ScreenShell>
-    );
-  }
-
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Profile">
+    <>
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}
@@ -168,7 +117,7 @@ export default function ProfileScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityHint="Edits your profile"
-          onPress={openEditor}
+          onPress={onEdit}
           hitSlop={8}
           style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
@@ -212,7 +161,7 @@ export default function ProfileScreen() {
         // a membership exists (and during a hook-off incident), so this is
         // the empty-prod case rather than an edge one.
         <Text style={styles.statNote}>
-          Choose a chapter from More → Switch chapter to see your points.
+          Choose a chapter from Switch chapter below to see your points.
         </Text>
       ) : pointsQuery.isError || serviceQuery.isError ? (
         <Text style={styles.statNote}>
@@ -223,7 +172,47 @@ export default function ProfileScreen() {
               : "Service hours couldn't load just now."}
         </Text>
       ) : null}
+    </>
+  );
+}
 
+/** Details, then Bio when there is one. */
+export function ProfileDetails({
+  profile,
+  onEdit,
+}: {
+  profile: ViewerProfile | null;
+  onEdit: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { email: sessionEmail } = useAuthSession();
+  const viewerUserId = useViewerUserId();
+  // The viewer's pledge class and order number (#3939) live on their member
+  // profile, not on `/v1/users/me`. Each row is drawn only when set, unlike
+  // the "Not set" rows below: those are the member's own to fill in, and
+  // these are an officer's, so an empty one would be a row the member can do
+  // nothing about, in a chapter that may keep neither.
+  //
+  // That read and the class list both take `members:view`, the Directory's
+  // gate, so a viewer without it is not asked for either (an empty id leaves
+  // the query off) and sees neither row, as they see no Directory.
+  const canViewMembers = can("members:view", usePermissionList());
+  const memberQuery = useMemberByUserId(
+    canViewMembers ? (viewerUserId ?? "") : "",
+  );
+  const membership = useMemo(
+    () => selectMemberDetail(memberQuery.data),
+    [memberQuery.data],
+  );
+  const classRows = usePledgeClassRows(membership);
+  // The session's email is the one value available before `/v1/users/me`
+  // resolves, and it is the same address — so the row never sits blank while
+  // the profile loads.
+  const email = profile?.email ?? sessionEmail ?? null;
+
+  return (
+    <>
       <SectionHeader>Details</SectionHeader>
       <ListSection>
         <ListRow variant="detail" label="Email" value={email ?? "Not set"} />
@@ -232,14 +221,14 @@ export default function ProfileScreen() {
           label="Phone"
           value={profile?.phone ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={openEditor}
+          onPress={onEdit}
         />
         <ListRow
           variant="detail"
           label="Major"
           value={profile?.major ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={openEditor}
+          onPress={onEdit}
         />
         <ListRow
           variant="detail"
@@ -248,7 +237,7 @@ export default function ProfileScreen() {
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
           accessibilityHint={EDIT_HINT}
-          onPress={openEditor}
+          onPress={onEdit}
         />
         {classRows.map((row) => (
           <ListRow
@@ -263,14 +252,14 @@ export default function ProfileScreen() {
           label="City"
           value={profile?.currentCity ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={openEditor}
+          onPress={onEdit}
         />
         <ListRow
           variant="detail"
           label="Company"
           value={profile?.currentCompany ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={openEditor}
+          onPress={onEdit}
         />
         {profile?.bio ? null : (
           <ListRow
@@ -278,7 +267,7 @@ export default function ProfileScreen() {
             label="Bio"
             value="Not set"
             accessibilityHint={EDIT_HINT}
-            onPress={openEditor}
+            onPress={onEdit}
           />
         )}
       </ListSection>
@@ -289,7 +278,7 @@ export default function ProfileScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityHint={EDIT_HINT}
-            onPress={openEditor}
+            onPress={onEdit}
             style={({ pressed }) => [
               styles.bioCard,
               pressed ? styles.pressed : null,
@@ -299,9 +288,7 @@ export default function ProfileScreen() {
           </Pressable>
         </>
       ) : null}
-
-      <EditProfileSheet ref={editSheetRef} profile={profile} />
-    </ScreenShell>
+    </>
   );
 }
 
@@ -309,17 +296,10 @@ export default function ProfileScreen() {
 const EDIT_HINT = "Opens a sheet to edit your profile";
 
 /**
- * The Details rows every profile draws: Email, Phone, Major, Graduation,
- * City, Company. The pledge class and order number rows are left out of the
- * count: most members have neither, and they arrive with a second read. So
- * is the empty-bio row, which most members' profiles don't draw.
- */
-const DETAIL_ROWS = 6;
-
-/**
- * The screen's loading state, on the loaded screen's own styles: the photo's
- * circle with the name and meta lines under it, the two stat cards, and the
- * Details list. The Details caption is fixed text, so it is drawn as itself.
+ * The head's loading state, on the loaded head's own styles: the photo's
+ * circle with the name and meta lines under it, and the two stat cards. The
+ * You tab draws its rows under it at once, since none of them waits on the
+ * profile, and Details only once the profile has loaded.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
@@ -348,13 +328,6 @@ export function ProfileSkeleton() {
           </View>
         ))}
       </View>
-
-      <SectionHeader>Details</SectionHeader>
-      <ListSection>
-        {Array.from({ length: DETAIL_ROWS }, (_, index) => (
-          <ListRowSkeleton key={index} index={index} variant="detail" />
-        ))}
-      </ListSection>
     </SkeletonRegion>
   );
 }

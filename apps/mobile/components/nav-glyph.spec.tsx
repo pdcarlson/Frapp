@@ -22,7 +22,6 @@ import {
 import {
   ChatGlyph,
   EventsGlyph,
-  MoreGlyph,
   TasksGlyph,
 } from "@/components/tab-glyphs";
 
@@ -48,7 +47,6 @@ const TABS: ReadonlyArray<[string, typeof ChatGlyph, NavGlyphName]> = [
   ["Chat", ChatGlyph, "chat"],
   ["Events", EventsGlyph, "events"],
   ["Tasks", TasksGlyph, "tasks"],
-  ["More", MoreGlyph, "more"],
   ["Points card", PointsGlyph, "points"],
   ["Hours card", ServiceHoursGlyph, "service"],
 ];

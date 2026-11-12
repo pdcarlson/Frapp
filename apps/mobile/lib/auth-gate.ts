@@ -31,7 +31,7 @@
  *
  * So the claim is treated as an optimization, not a requirement: when it is
  * absent the app proceeds and lets the API resolve context. The picker stays a
- * deliberate destination (reached from the More hub) rather than a forced one.
+ * deliberate destination (reached from the You tab) rather than a forced one.
  *
  * ## First-run (s03) and join (s02)
  *

@@ -7,7 +7,7 @@ import {
   type MeetingSummary,
 } from "@repo/hooks";
 import { MEETING_LIST_COPY, meetingTitleLine , isBetaOffModule } from "@repo/validation";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import {
   ListRow,
@@ -32,7 +32,7 @@ export default function MinutesScreen() {
   // beta; this catches a way in that skips them (a typed link), where the
   // server would only refuse. A chapter's own switch doesn't close the
   // screen, so minutes already posted stay readable from a notification.
-  if (isBetaOffModule("meetings")) return <Redirect href="/more" />;
+  if (isBetaOffModule("meetings")) return <Redirect href="/you" />;
   return <MinutesScreenBody />;
 }
 
@@ -79,7 +79,7 @@ function MinutesScreenBody() {
 
   return (
     <ScreenShell
-      back={BACK_TO_MORE}
+      back={BACK_TO_YOU}
       title={MEETING_LIST_COPY.title}
       refresh={refresh}
     >

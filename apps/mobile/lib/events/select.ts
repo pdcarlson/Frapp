@@ -120,7 +120,7 @@ function toRow(row: Record<string, unknown>): EventRow | null {
 }
 
 /**
- * Rows for More's Host check-in row and the quick-actions host (s06 reads
+ * Rows for You's Host check-in row and the quick-actions host (s06 reads
  * `selectAllEventRows` and `selectEventList`): everything a member can still act on — upcoming, plus anything
  * whose check-in window has not closed — soonest first.
  *

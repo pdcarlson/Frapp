@@ -4,9 +4,9 @@ import {
   ActivityTabGlyph,
   ChatGlyph,
   EventsGlyph,
-  MoreGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
 import { TourHost } from "@/components/onboarding/tour";
@@ -27,9 +27,10 @@ function renderTabBar(props: BottomTabBarProps) {
 
 /**
  * The 4-tab IA (spec/ui/mobile/navigation.md § Tab bar): Chat, Activity,
- * Calendar (the `events` route) and More, owner pick 2026-11-12 (#4610). The
+ * Calendar (the `events` route) and You, owner pick 2026-11-12 (#4610). The
  * task board left the bar for a pushed screen: a member's tasks are
- * Activity's first rows and dots on the calendar.
+ * Activity's first rows and dots on the calendar. You (#3839) is the member's
+ * profile and the hub More used to be, drawn as their own avatar.
  *
  * There is no Home tab — chat is home. This navigator holds only the four
  * tabs. Every other screen in the app is pushed onto the stack above it
@@ -114,10 +115,12 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="more"
+          name="you"
           options={{
-            title: SCREEN_TITLES.more,
-            tabBarIcon: ({ focused }) => <MoreGlyph {...glyphPaint(focused)} />,
+            title: SCREEN_TITLES.you,
+            tabBarIcon: ({ focused }) => (
+              <YouTabAvatar focused={focused} accent={accent} />
+            ),
           }}
         />
       </Tabs>

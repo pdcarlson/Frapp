@@ -447,13 +447,13 @@ describe("Service hours pull to refresh (#3385)", () => {
 });
 
 /**
- * #3022. The board never drew this screen, but it opens from a More row like
- * s10–s16, so it draws the same `‹ More`.
+ * #3022. The board never drew this screen, but it opens from a You row like
+ * s10–s16, so it draws the same `‹ You`.
  */
 describe("Service hours back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
-    expectBackRow(tree, "More", "/more");
+    expectBackRow(tree, "You", "/you");
     tree.unmount();
   });
 });

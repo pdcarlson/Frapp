@@ -259,13 +259,13 @@ function primerWrites(): unknown[] {
     .map(([, value]) => value);
 }
 
-/** #3022. s16 opens from More's Settings row and draws `‹ More`. */
+/** #3022. s16 opens from You's Settings row and draws `‹ You`. */
 describe("Settings back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
 
-    expect(screenText(tree).startsWith("More\nSettings")).toBe(true);
-    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree).startsWith("You\nSettings")).toBe(true);
+    expectBackRow(tree, "You", "/you");
   });
 });
 

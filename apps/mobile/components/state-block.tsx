@@ -470,7 +470,7 @@ export function ErrorState({
 export function NoChapterState({ noun }: { noun: string }) {
   return (
     <InlineNote>
-      {`Choose a chapter from More → Switch chapter to see ${noun}.`}
+      {`Choose a chapter from You → Switch chapter to see ${noun}.`}
     </InlineNote>
   );
 }

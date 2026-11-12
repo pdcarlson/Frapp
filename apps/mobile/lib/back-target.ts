@@ -27,7 +27,8 @@ export const SCREEN_TITLES = {
   // The route stays `events` so links and notification targets keep working;
   // the tab holds tasks too, so it is named for the calendar (#4610).
   events: "Calendar",
-  more: "More",
+  // Tab 4 since #3839: the member's profile and the hub that was More.
+  you: "You",
   // A pushed screen since #4610, opened from Activity, Calendar and Up next.
   tasks: "Tasks",
   // The thread names a channel, which a capsule has no room for; "Chat" is
@@ -37,7 +38,6 @@ export const SCREEN_TITLES = {
   notifications: "Notifications",
   messages: "Messages",
   preferences: "Settings",
-  profile: "Profile",
   "service-hours": "Service hours",
   study: "Study hours",
   dues: "Dues",

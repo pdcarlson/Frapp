@@ -7,11 +7,14 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { ListRow } from "@/components/list-section";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
+ * The profile on the You tab (#3839): its head (photo, name, the stat cards)
+ * and its Details, which were s15, the pushed Profile screen. The hub's rows
+ * around them are `you-screen.spec.tsx`'s.
+ *
  * s12's service-hours total reads `GET /v1/service-entries`, which the
  * endpoint does not scope by itself: `service-entry.controller.ts` resolves
  * `userId: isAdmin ? query.userId : userId`, so a read with no `userId` hands
@@ -20,7 +23,7 @@ import { expectViewerScopedReads } from "@/test/service-entry-reads";
  * viewer's entries, and must wait for the viewer's id rather than firing
  * once unscoped. `service-hours-screen.spec.tsx` pins the same for s20.
  *
- * It renders `app/(app)/profile.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/(tabs)/you.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -54,6 +57,14 @@ const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The hub's own reads, answered empty: `you-screen.spec.tsx` owns them.
+  useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
+  useMyPermissions: () => ({ data: { permissions } }),
+  useHiddenUnsetFeatures: () => new Set<string>(),
+  useNotifications: () => ({ data: [] }),
+  useEvents: () => ({ data: [] }),
+  useStudySessions: () => ({ data: undefined }),
+  useInvoices: () => ({ data: [] }),
   useOwnAvatarTint: () => null,
   useActiveChapterId: () => "chapter-1",
   useCurrentUser: () => currentUser,
@@ -67,6 +78,20 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     usePledgeClasses(options),
   useCurrentChapter: () => ({ data: vocabulary ? { vocabulary } : undefined }),
 }));
+
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => ({ status: "online" }),
+}));
+
+// The status sheet is `status-sheet.spec.tsx`'s; here it only has to mount.
+vi.mock("@/components/account/status-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    StatusSheet: forwardRef(function StatusSheet() {
+      return null;
+    }),
+  };
+});
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ email: "member@example.test" }),
@@ -82,14 +107,21 @@ vi.mock("@/components/profile/profile-photo", () => ({
   ProfilePhoto: "ProfilePhoto",
 }));
 
-import ProfileScreen from "@/app/(app)/profile";
+import YouScreen from "@/app/(app)/(tabs)/you";
+
+/** The profile's Details rows, apart from the hub's rows around them. */
+function detailListRows(tree: ReactTestRenderer) {
+  return tree.root
+    .findAllByType(ListRow)
+    .filter((row) => row.props.variant === "detail");
+}
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <ProfileScreen />
+        <YouScreen />
       </FrappThemeProvider>,
     );
   });
@@ -117,27 +149,19 @@ describe("Profile reads only the viewer's service entries", () => {
 });
 
 /**
- * #3022. s15 is opened from More's profile card and draws `‹ More`, in its
- * loading and error states too, so a profile that won't load still has a way
- * out.
+ * #3839. The profile is the You tab, so it is titled You and has no back row:
+ * nothing is under a tab to go back to.
  */
-describe("Profile back row (#3022)", () => {
-  afterEach(() => {
-    currentUser = LOADED_USER;
-  });
-
-  it.each([
-    ["loaded", LOADED_USER],
-    ["loading", { isPending: true, isError: false, data: undefined }],
-    [
-      "failed",
-      { isPending: false, isError: true, data: undefined, refetch: vi.fn() },
-    ],
-  ])("draws ‹ More above the title when %s", (_state, user) => {
-    currentUser = user;
+describe("Profile on the You tab (#3839)", () => {
+  it("is titled You, with no back row", () => {
     const tree = render();
-    expect(screenText(tree)).toMatch(/^More\nProfile/);
-    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree)).toMatch(/^You\n/);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" && node.props.testID === "back-row",
+      ),
+    ).toHaveLength(0);
     tree.unmount();
   });
 });
@@ -167,7 +191,7 @@ describe("Profile tap to edit (#3711)", () => {
     act(() => {
       tree = create(
         <FrappThemeProvider>
-          <ProfileScreen />
+          <YouScreen />
         </FrappThemeProvider>,
         {
           createNodeMock: (element) =>
@@ -180,7 +204,7 @@ describe("Profile tap to edit (#3711)", () => {
     return { tree, present };
   }
 
-  it("draws no pencil on the back row", () => {
+  it("draws no pencil", () => {
     const { tree } = renderWithSheet();
     expect(tree.root.findAllByType(PencilGlyph)).toHaveLength(0);
     expect(
@@ -201,7 +225,7 @@ describe("Profile tap to edit (#3711)", () => {
 
   it("opens the sheet from each row the member sets, and not from Email", () => {
     const { tree, present } = renderWithSheet();
-    const rows = tree.root.findAllByType(ListRow);
+    const rows = detailListRows(tree);
     const tappable = rows
       .filter((row) => typeof row.props.onPress === "function")
       .map((row) => row.props.label);
@@ -268,7 +292,9 @@ describe("Profile stat cards and Details", () => {
 
   it("sets every Details row as a fact row", () => {
     const tree = render();
-    const rows = tree.root.findAllByType(ListRow);
+    const rows = tree.root
+      .findAllByType(ListRow)
+      .slice(-7);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
       "Phone",
@@ -303,9 +329,7 @@ describe("Profile pledge class and order number (#3939)", () => {
   });
 
   function detailRows(tree: ReactTestRenderer) {
-    return tree.root
-      .findAllByType(ListRow)
-      .map((row) => [row.props.label, row.props.value]);
+    return detailListRows(tree).map((row) => [row.props.label, row.props.value]);
   }
 
   it("draws the class and the number after Graduation, in the chapter's words", () => {

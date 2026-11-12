@@ -1020,14 +1020,14 @@ describe("s13's frame (#2485)", () => {
   });
 });
 
-/** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
+/** #3022. s13 draws its own header, so it draws the board's `‹ You` itself. */
 describe("s13's back row (#3022)", () => {
-  it("pins ‹ More above the title, outside the scrolling list", () => {
+  it("pins ‹ You above the title, outside the scrolling list", () => {
     const tree = render();
     // Pinned like every screen's capsule, so it never scrolls away: it sits
     // before the list in the tree, and the list's header starts at the title.
-    expectBackRow(tree, "More", "/more");
-    expect(screenText(tree).startsWith("More")).toBe(true);
+    expectBackRow(tree, "You", "/you");
+    expect(screenText(tree).startsWith("You")).toBe(true);
     let header!: ReactTestRenderer;
     act(() => {
       header = create(

@@ -315,7 +315,7 @@ export default function HostCheckInScreen() {
         */}
         <GlassCloseButton
           accessibilityLabel="End hosting and go back"
-          onPress={() => (below ? below.goBack() : goBackTo(router, "/more"))}
+          onPress={() => (below ? below.goBack() : goBackTo(router, "/you"))}
         />
         <Text
           accessibilityRole="header"

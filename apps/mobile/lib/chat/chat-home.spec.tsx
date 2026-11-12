@@ -354,6 +354,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(app)/(tabs)/index";
+import { FILTER_CHANNELS_LABEL } from "@repo/hooks";
 import * as Sentry from "@sentry/react-native";
 import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -1516,23 +1517,27 @@ describe("Chat home's title (#2485)", () => {
  * Settings. The notification bell (#3362) folded into the avatar: its unread
  * dot moved there and the menu's Notifications row carries the count.
  */
-describe("Chat home header: Messages and the account menu", () => {
+describe("Chat home header: Messages and the bell (#3839)", () => {
   const push = () => vi.mocked(useRouter)().push;
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   const unreadNotification = (id: string, data?: unknown) =>
     ({ id, read_at: null, data }) as (typeof notificationsData.value)[number];
 
-  it("draws no bell any more", () => {
+  it("draws Messages, then the bell, and no avatar", () => {
     const tree = render();
-
-    expect(
-      tree.root.findAll(
+    const header = tree.root.findByType(ScreenShell).props.headerAction;
+    const labels = tree.root
+      .findAll(
         (node) =>
           (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Notifications",
-      ),
-    ).toHaveLength(0);
+          (node.props.accessibilityLabel === "Messages" ||
+            node.props.accessibilityLabel === "Notifications" ||
+            node.props.accessibilityLabel === "Your account"),
+      )
+      .map((node) => node.props.accessibilityLabel);
+    expect(header).toBeTruthy();
+    expect(labels).toEqual(["Messages", "Notifications"]);
   });
 
   describe("Messages door", () => {
@@ -1596,18 +1601,19 @@ describe("Chat home header: Messages and the account menu", () => {
     });
   });
 
-  describe("account dot", () => {
-    it("draws no dot while nothing is unread", () => {
+  describe("bell", () => {
+    it("draws no badge while nothing is unread", () => {
       const tree = render();
-      const account = pressableLabelled(tree, "Your account");
 
-      expect(byTestId(tree, "account-inbox-dot")).toHaveLength(0);
-      expect(account.props.accessibilityValue).toBeUndefined();
+      expect(byTestId(tree, "notifications-badge")).toHaveLength(0);
+      expect(
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
+      ).toBeUndefined();
     });
 
-    it("draws the dot in house gold, never the chapter accent, and reads the count out", () => {
-      // A red accent, the case the fixed gold exists for: beside the channel
-      // rows' mention-red badges, an accent-filled dot would read as a mention.
+    it("draws the count in house gold, never the chapter accent, and reads it out", () => {
+      // A red accent, the case the fixed gold exists for: beside the Messages
+      // door's mention-red badge, an accent-filled count would read as one.
       branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
       notificationsData.value = [
         unreadNotification("n-1"),
@@ -1615,17 +1621,17 @@ describe("Chat home header: Messages and the account menu", () => {
         { id: "n-3", read_at: "2026-09-25T10:00:00Z" },
       ];
       const tree = render();
-      const [dot] = byTestId(tree, "account-inbox-dot").filter(
+      const [badge] = byTestId(tree, "notifications-badge").filter(
         (node) => (node.type as unknown) === "View",
       );
 
-      expect(dot).toBeDefined();
-      const style = JSON.stringify(dot!.props.style);
+      expect(screenTextOf(badge!)).toBe("2");
+      const style = JSON.stringify(badge!.props.style);
       expect(style).toContain(signetDarkTokens.color.gold.house);
       expect(style).not.toContain("#D75748");
       expect(
-        pressableLabelled(tree, "Your account").props.accessibilityValue,
-      ).toEqual({ text: "2 unread notifications" });
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
+      ).toEqual({ text: "2 unread" });
     });
 
     it("leaves chat-sourced rows to the channel badges", () => {
@@ -1636,99 +1642,24 @@ describe("Chat home header: Messages and the account menu", () => {
       const tree = render();
 
       expect(
-        pressableLabelled(tree, "Your account").props.accessibilityValue,
-      ).toEqual({ text: "1 unread notifications" });
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
+      ).toEqual({ text: "1 unread" });
     });
 
-    it("draws no dot when only chat notifications are unread", () => {
+    it("draws no badge when only chat notifications are unread", () => {
       notificationsData.value = [
         unreadNotification("n-1", { target: { screen: "chat" } }),
       ];
       const tree = render();
 
-      expect(byTestId(tree, "account-inbox-dot")).toHaveLength(0);
-    });
-  });
-
-  describe("account menu", () => {
-    const openMenu = (tree: ReactTestRenderer) =>
-      act(() => pressableLabelled(tree, "Your account").props.onPress());
-    const menuRow = (tree: ReactTestRenderer, label: string) =>
-      tree.root.findByType(ScreenShell).props.overlay.content.props.menu.visible
-        ? tree.root.find(
-            (node) =>
-              (node.type as unknown) === "Pressable" &&
-              node.props.accessibilityRole === "button" &&
-              node.findAll(
-                (inner) =>
-                  (inner.type as unknown) === "Text" &&
-                  inner.props.children === label,
-              ).length > 0,
-          )
-        : (() => {
-            throw new Error("menu closed");
-          })();
-
-    it("is closed until the avatar is pressed", () => {
-      const tree = render();
-
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
-      expect(
-        pressableLabelled(tree, "Your account").props.accessibilityState,
-      ).toEqual({ expanded: false });
+      expect(byTestId(tree, "notifications-badge")).toHaveLength(0);
     });
 
-    it("opens through the shell's overlay with Profile, Notifications and Settings", () => {
+    it("opens the inbox", () => {
       const tree = render();
-      openMenu(tree);
+      act(() => pressableLabelled(tree, "Notifications").props.onPress());
 
-      const shell = tree.root.findByType(ScreenShell);
-      expect(shell.props.overlay.open).toBe(true);
-      expect(
-        pressableLabelled(tree, "Your account").props.accessibilityState,
-      ).toEqual({ expanded: true });
-      for (const label of ["Profile", "Notifications", "Settings"]) {
-        expect(menuRow(tree, label)).toBeDefined();
-      }
-    });
-
-    it.each([
-      ["Profile", "/profile"],
-      ["Notifications", "/notifications"],
-      ["Settings", "/preferences"],
-    ])("opens %s at %s and closes", (label, href) => {
-      const tree = render();
-      openMenu(tree);
-      act(() => menuRow(tree, label).props.onPress());
-
-      expect(push()).toHaveBeenCalledWith(href);
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
-    });
-
-    it("carries the inbox's unread count on the Notifications row", () => {
-      notificationsData.value = [
-        unreadNotification("n-1"),
-        unreadNotification("n-2"),
-      ];
-      const tree = render();
-      openMenu(tree);
-      const row = menuRow(tree, "Notifications");
-
-      expect(row.props.accessibilityValue).toEqual({ text: "2 unread" });
-      expect(screenTextOf(row)).toContain("2");
-      expect(screenTextOf(menuRow(tree, "Profile"))).not.toMatch(/\d/);
-    });
-
-    it("closes from the backdrop", () => {
-      const tree = render();
-      openMenu(tree);
-      act(() =>
-        tree.root
-          .findByProps({ testID: "account-menu-backdrop" })
-          .props.onPress(),
-      );
-
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
+      expect(push()).toHaveBeenCalledWith("/notifications");
     });
   });
 });
@@ -2340,12 +2271,12 @@ describe("Chat home: the swipe to Messages", () => {
   it("holds while a menu is open over Chat home", () => {
     const tree = render();
     expect(pan(tree).config?.enabled).toBe(true);
-    const account = tree.root.find(
+    const filter = tree.root.find(
       (node) =>
-        node.props.accessibilityLabel === "Your account" &&
+        node.props.accessibilityLabel === FILTER_CHANNELS_LABEL &&
         typeof node.props.onPress === "function",
     );
-    act(() => account.props.onPress());
+    act(() => filter.props.onPress());
     expect(pan(tree).config?.enabled).toBe(false);
   });
 });

@@ -288,7 +288,7 @@ describe("Dues while dues is off", () => {
   it("sends a way in that skips More back to More, for the beta", () => {
     betaOff.keys = ["dues"];
     const tree = mount();
-    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/more"]);
+    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/you"]);
     expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(0);
   });
 
