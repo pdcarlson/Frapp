@@ -209,7 +209,8 @@ npm run supabase -- db push --local
   type-checked. The file is hand-maintained and composed from the domain
   entities; **do not** overwrite it with `supabase gen types` output. See
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
-  → "Keeping `database.types.ts` in sync" for the constraints that make
+  → "Keeping `database.types.ts` in sync" for where new entries go (in
+  alphabetical order) and the constraints that make
   the typing actually bind (`Row`/`Insert`/`Update` are mapped types so
   GenericSchema stays bound; write methods take `TablesInsert<'table'>` /
   `TablesUpdate<'table'>` and reach PostgREST uncast). The client is
