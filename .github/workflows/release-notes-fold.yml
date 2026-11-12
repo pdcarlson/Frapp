@@ -13,10 +13,13 @@ name: What's new fold
 # It runs when a line file or the notes file changes on main, so a direct edit
 # to the notes that conflicts with the bot PR rebuilds it from the new main.
 #
-# AUTO_MERGE: "true" would turn on auto-merge for the bot PR so it lands once
-# CI is green with nobody merging it. That changes AGENTS.md's "Paul merges
-# everything", so it stays "false" until Paul decides; until then the bot PR
-# is merged like any other.
+# AUTO_MERGE: "true" turns on squash auto-merge for the bot PR, so it lands
+# once its required checks pass with nobody merging it. Paul asked for this on
+# 2026-11-12 (the one exception to AGENTS.md's "Paul merges everything"). The
+# App token enables it, so the merge pushes to main as the App and starts the
+# usual main runs, this one included. Each run re-enables it, after the force
+# push, on whichever bot PR is open then. Set "false" to merge the bot PR by hand
+# again.
 #
 # The token is the base-sync GitHub App's (as in pr-base-sync.yml): a
 # GITHUB_TOKEN push or PR starts no CI, so required checks would never report.
@@ -53,7 +56,7 @@ jobs:
       deployment: false
     env:
       BRANCH: bot/whats-new
-      AUTO_MERGE: "false"
+      AUTO_MERGE: "true"
     steps:
       # The commit that triggered the run, which the `automation` environment
       # only allows on main. A later push that doesn't touch the notes may leave
@@ -107,7 +110,6 @@ jobs:
         if: steps.fold.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR: ${{ steps.fold.outputs.pr }}
         run: |
           set -euo pipefail
           git config user.name "frapp-base-sync[bot]"
@@ -117,6 +119,9 @@ jobs:
           git commit -q -m "What's new: fold the waiting lines into the notes"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
 
+          # Look the PR up again after the push: the one found before it may have
+          # merged or closed meanwhile (a run queued behind the bot PR's own merge).
+          PR="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${BRANCH}" --jq '.[0].number // empty')"
           if [ -z "$PR" ]; then
             URL="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
               --title "What's new: fold the waiting lines into the notes" \

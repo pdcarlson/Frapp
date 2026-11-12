@@ -193,6 +193,24 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
   };
 });
 
+const presentSignupSheet = vi.fn();
+vi.mock("@/components/chat/new-signup-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewSignupSheet: forwardRef(function NewSignupSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentSignupSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewSignupSheet", props);
+    }),
+  };
+});
+
 const presentPlusSheet = vi.fn();
 vi.mock("@/components/chat/composer-plus-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
@@ -334,6 +352,7 @@ function channelState(
     send: vi.fn(async () => true),
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
+    sendSignup: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
     trackEventCard: vi.fn(() => ({
@@ -2212,7 +2231,8 @@ describe("chat thread + sheet (#3865)", () => {
     const open = composer(tree).props.onOpenPlus as () => void;
     act(() => open());
     expect(presentPlusSheet).toHaveBeenCalledTimes(1);
-    expect(rowsOf(tree)).toEqual([]);
+    // A sign-up sheet needs no grant (#3926), so it is always offered.
+    expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup"]);
     expect(footerOf(tree)).toEqual([
       "Your role can't create polls, events, tasks or service hours.",
     ]);
@@ -2224,6 +2244,7 @@ describe("chat thread + sheet (#3865)", () => {
     const tree = render();
     expect(rowsOf(tree).map((row) => row.command)).toEqual([
       "poll",
+      "signup",
       "event",
       "task",
       "hours",
@@ -2248,6 +2269,8 @@ describe("chat thread + sheet (#3865)", () => {
     const tree = render();
     expect(rowsOf(tree)).toEqual([
       { command: "poll", label: "Poll", disabledReason: "Still loading" },
+      // It needs no module, so it waits on nothing (#3926).
+      { command: "signup", label: "Sign-up sheet", disabledReason: null },
     ]);
     act(() => tree.unmount());
   });
@@ -2296,6 +2319,22 @@ describe("chat thread + sheet (#3865)", () => {
       await onPost(poll);
     });
     expect(channel.sendPoll).toHaveBeenCalledWith(poll);
+    act(() => tree.unmount());
+  });
+
+  it("opens the New sign-up sheet from its row and posts through sendSignup (#3926)", async () => {
+    presentSignupSheet.mockClear();
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("signup"));
+    expect(presentSignupSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewSignupSheet" as never).props
+      .onPost as (signup: unknown) => Promise<unknown>;
+    const signup = { content: "Sober drivers", payload: {} };
+    await act(async () => {
+      await onPost(signup);
+    });
+    expect(channel.sendSignup).toHaveBeenCalledWith(signup);
     act(() => tree.unmount());
   });
 

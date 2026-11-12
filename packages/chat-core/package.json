@@ -16,6 +16,7 @@
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
     "./poll-draft": "./src/poll-draft.ts",
+    "./signups": "./src/signups.ts",
     "./plus-menu": "./src/plus-menu.ts",
     "./cards": "./src/cards.ts",
     "./activity-cards": "./src/activity-cards.ts",
@@ -50,7 +51,7 @@
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.119.0",
-    "@tanstack/react-query": "^5.105.0"
+    "@tanstack/react-query": "^5.107.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

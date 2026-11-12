@@ -35,7 +35,7 @@ describe("isRoleRefusal", () => {
 describe("channelsRoleRefusalBody", () => {
   it("names the chapter, or says this chapter before it loads", () => {
     expect(channelsRoleRefusalBody("Phi Gamma Delta")).toBe(
-      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to give you the Member role.",
+      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to check your roles.",
     );
     expect(channelsRoleRefusalBody(null)).toContain(
       "Your role in this chapter",

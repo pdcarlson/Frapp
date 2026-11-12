@@ -912,6 +912,8 @@ function ActionItemsEditor({
               <DueDateField
                 id={`${ids}-${index}-due`}
                 placeholder="Friday"
+                // An action item is due by a day: it stores no time.
+                withoutTime
                 value={item.due_date ?? ""}
                 onChange={(value) =>
                   set(index, { due_date: value ? value.slice(0, 10) : null })

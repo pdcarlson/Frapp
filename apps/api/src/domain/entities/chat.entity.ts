@@ -23,6 +23,7 @@ export const CHAT_MESSAGE_KINDS = [
   'imported',
   'loading',
   'announcement',
+  'signup',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 

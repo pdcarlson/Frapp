@@ -156,3 +156,35 @@ describe("rolesSaveFailedBody", () => {
     );
   });
 });
+
+describe("the Everyone role (#4191)", () => {
+  const roles = [
+    {
+      id: "r-everyone",
+      name: "Everyone",
+      system_key: "MEMBER",
+      permissions: ["members:view"],
+    },
+    {
+      id: "r-new",
+      name: "New Member",
+      system_key: "NEW_MEMBER",
+      permissions: ["members:view"],
+    },
+    { id: "r-chair", name: "Rush Chair", permissions: ["tasks:manage"] },
+  ];
+
+  it("offers no row for it", () => {
+    expect(
+      orderRoleOptions(parseRoleOptions(roles), ["r-everyone"]).map(
+        (o) => o.id,
+      ),
+    ).toEqual(["r-new", "r-chair"]);
+  });
+
+  it("doesn't warn about access when the save leaves Everyone to hold it", () => {
+    const options = parseRoleOptions(roles);
+    // Taking New Member away makes a pledge a plain member: no warning.
+    expect(removesBaseAccess(["r-new"], [], options)).toBe(false);
+  });
+});

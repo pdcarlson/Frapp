@@ -1,3 +1,4 @@
+import { isEveryoneRole } from "./everyone-role";
 /**
  * The fixed set of colors a chapter role can wear (#3485).
  *
@@ -131,7 +132,7 @@ function roleRows(data: unknown): Record<string, unknown>[] {
  * `never`), so it is read defensively rather than cast. A role id with no
  * match (a since-deleted role, or the list still loading) is dropped rather
  * than rendered as a raw id, and a duplicate id (the API does not dedupe
- * `role_ids`) contributes its chip only once.
+ * `role_ids`) contributes its chip only once. The Everyone role has no chip.
  */
 export function resolveRoleChips(
   rolesData: unknown,
@@ -145,6 +146,8 @@ export function resolveRoleChips(
     const name = typeof row.name === "string" && row.name ? row.name : null;
     if (!id || !name || !held.has(id)) continue;
     held.delete(id);
+    // The Everyone role (#4191) is nobody's chip: every list leaves it out.
+    if (isEveryoneRole(row)) continue;
     chips.push({
       id,
       name,

@@ -29,6 +29,36 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: What a deleted account takes with it, two AI gaps (#4504)
+
+### 20261112260000_ai_deleted_account_gaps.sql
+
+- **Purpose**: Adds `meeting_drafts.recording_uploaded_by uuid` (nullable, foreign key to `users`, partial index) and a `before insert or update` trigger that stamps it from the meeting's recording each time a draft is requested, keeping the earlier value when the recording has gone. `meeting_recordings_drop_for_deleted_user` now also deletes every draft stamped with the deleted account, so a transcript does not stay behind as another officer's draft notes, whether or not the recording's own row still exists. `ai_reports_refuse_deleted_users` now locks the reporter and quoted `users` rows `for share` before it checks `deleted_at`, so a report and an account deletion made at the same instant cannot each miss the other. Nothing is written on apply.
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'meeting_drafts' and column_name = 'recording_uploaded_by';` returns 1, `select count(*) from pg_trigger where tgname = 'meeting_drafts_stamp_recording_uploader';` returns 1, and `select prosrc like '%for share%' from pg_proc where proname = 'ai_reports_refuse_deleted_users';` returns `true`. Proven in the PGlite gate's `ai-reports` tier; the lock itself cannot be exercised there (one connection).
+- **Promoter notes**: No API change depends on it and it can ship before or after the API from the same PR. Both tables are empty until AI is on for a chapter. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-deleted-account-gaps-20261112260000) § Rollback AI deleted-account gaps.
+
+## 2026-11-12: The Member role becomes Everyone (#4191)
+
+### 20261112251000_everyone_role.sql
+
+- **Purpose**: Data-only rename. In each chapter with a seeded Member role (`system_key` MEMBER): any other role whose name reads as `@everyone` (letters and digits only, any case) is renamed "<name> (role)", and its pending invites follow it; pending invites (not used, not revoked) naming the Member role's current name are pointed at "Everyone"; then the Member role is renamed Everyone and its `mentionable` switch is turned off, so `@everyone` is officers-only. The role's id, key, tier, permissions, overrides, color and holders don't change, so no member's permissions or rank move and every stored reference to the role keeps working. The rule: [`spec/behavior/rbac.md` § The Everyone role](../../../spec/behavior/rbac.md#the-everyone-role). Verified in PGlite (`scripts/pglite/tiers/everyone-role.mjs`), including every member's effective permissions before and after, and a second run changing nothing.
+- **Checks**: Before `db push`, save what the rollback restores from: `select id, name, mentionable from roles where system_key = 'MEMBER' or lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) = 'everyone';` and `select i.id, i.role from invites i join roles r on r.chapter_id = i.chapter_id and (r.system_key = 'MEMBER' or lower(regexp_replace(r.name, '[^[:alnum:]]', '', 'g')) = 'everyone') where i.role = r.name and i.used_at is null and i.revoked_at is null;`. After, `select count(*) from roles where system_key = 'MEMBER' and (name <> 'Everyone' or mentionable);` is 0.
+- **Promoter notes**: **Production is Paul's call.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate. Either deploy order is safe: the API before this PR finds the role by its key, never its name, so it keeps working with the new name, and a phone on an older build simply shows an "Everyone" chip where it showed "Member" until it updates. One `do` block; idempotent. A chapter created by the previous API in the minutes between the migration and the API deploy is seeded with "Member"; running the migration's block again after the deploy brings it along (or an officer renames the role to Everyone, the one rename the API allows it). No audit row is written. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-everyone-role-20261112251000) § Rollback the Everyone role.
+
+## 2026-11-12: Sign-up sheet cards in chat (#3926)
+
+### 20261112250000_signup_card_claims.sql
+
+- **Purpose**: Adds `claim_signup_slots(uuid, uuid, text[])` (security definer, EXECUTE for `service_role` only), the one write behind a sign-up sheet card (`chat_messages.kind = 'signup'`). It locks the card's message row, refuses a slot whose limit other members' claims already fill (`signup_slot_full`), and writes the member's one `chat_message_actions` row with `action_type = 'signup'` (inserted, or updated in place as a vote change is). No table or column changes: `kind` has no CHECK constraint and claims are ordinary action rows, which reach clients through the existing Realtime path and SELECT policy.
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.claim_signup_slots(uuid, uuid, text[])', 'execute');` returns `false` and the same for `service_role` returns `true`. Verified on the local stack: a second member taking a full slot gets `signup_slot_full`, a slot the card doesn't list gets `signup_slot_unknown`, and a member's second claim updates their row (`updated: true`). The same rules run in CI in PGlite (`scripts/pglite/tiers/signup-card-claims.mjs`).
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never calls it. The newer API against an unmigrated database answers every sign-up tap with a 500 until the migration lands; posting a card still works. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-sign-up-sheet-claims-20261112250000) § Rollback sign-up sheet claims.
+
 ## 2026-11-12: Asking Frapp to do something (#718, on `ai-integration`)
 
 ### 20261112240000_ai_act_suggestions.sql

@@ -1470,7 +1470,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS) */
+        /** Record a reaction / vote / sign-up claim / card action (hot path; atomic dedup; vote and sign-up claim UPSERT; 409 on a full sign-up slot) */
         post: operations["ChatController_recordMessageAction_v1"];
         delete?: never;
         options?: never;
@@ -3636,7 +3636,7 @@ export interface paths {
         };
         /**
          * List polls across the chapter
-         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Everyone role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
          */
         get: operations["PollController_listPolls_v1"];
         put?: never;
@@ -4914,7 +4914,7 @@ export interface components {
             analytics_opt_out?: boolean;
             /**
              * Format: uuid
-             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
         };
@@ -5241,7 +5241,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
         };
@@ -5258,7 +5258,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
             /** @description The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller. */
@@ -5419,6 +5419,8 @@ export interface components {
             tier_id: string | null;
             /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
             user_ids: string[];
+            /** @description True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option. */
+            hidden: boolean;
         };
         MentionRoleDto: {
             /** Format: uuid */
@@ -5443,7 +5445,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -5462,7 +5464,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -5619,7 +5621,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -5680,7 +5682,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
@@ -5702,7 +5704,7 @@ export interface components {
             flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
-            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
+            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions. */
             action_type: string;
             payload?: Record<string, never>;
         };
@@ -7331,7 +7333,7 @@ export interface components {
              */
             end_date: string;
             /**
-             * @description Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @description Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.
              * @default false
              */
             promote_new_members: boolean;

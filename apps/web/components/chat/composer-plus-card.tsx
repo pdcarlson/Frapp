@@ -8,7 +8,11 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeft, X } from "lucide-react";
-import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
+import {
+  plusMenuShortcut,
+  type PlusMenuCommand,
+  type PlusMenuModel,
+} from "@repo/chat-core/plus-menu";
 import {
   Popover,
   PopoverContent,
@@ -28,6 +32,7 @@ import {
   PointsGlyph,
   PollsGlyph,
   ServiceGlyph,
+  SignupGlyph,
   TasksGlyph,
   type ChatGlyphProps,
 } from "./chat-glyphs";
@@ -53,6 +58,7 @@ import {
 
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
   poll: PollsGlyph,
+  signup: SignupGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceGlyph,
@@ -62,6 +68,7 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
 /** The form's title in the card's header. */
 export const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   poll: "New poll",
+  signup: "New sign-up sheet",
   event: "New event",
   task: "New task",
   hours: "Log service hours",
@@ -269,9 +276,11 @@ function PlusMenu({
                   Draft
                 </span>
               ) : null}
-              <span className="font-mono text-xs text-muted-foreground">
-                /{row.command}
-              </span>
+              {plusMenuShortcut(row.command) ? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {plusMenuShortcut(row.command)}
+                </span>
+              ) : null}
             </MenuRow>
           );
         })}
