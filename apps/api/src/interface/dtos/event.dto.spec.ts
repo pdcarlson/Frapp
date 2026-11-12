@@ -60,3 +60,60 @@ describe('Event DTOs — check_in_opens_minutes', () => {
     },
   );
 });
+
+/**
+ * `recurrence_rule` (#4488) through the same pipe: the legacy tokens shipped
+ * phone builds send must keep passing, a structured rule passes, and anything
+ * the series generator can't step is a 400 before a series edit deletes rows.
+ */
+describe('Event DTOs — recurrence_rule', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (
+    metatype: ArgumentMetadata['metatype'],
+    payload: unknown,
+  ) => pipe.transform(payload, { type: 'body', metatype });
+
+  const create = {
+    name: 'Chapter',
+    start_time: '2026-11-07T20:00:00.000Z',
+    end_time: '2026-11-07T21:00:00.000Z',
+  };
+
+  it.each([
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const)(
+    '%s accepts the legacy tokens and a structured rule',
+    async (_, dto, base) => {
+      for (const rule of [
+        'WEEKLY',
+        'BIWEEKLY',
+        'MONTHLY',
+        'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York',
+        'FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=31;UNTIL=20270601;TZID=UTC',
+      ]) {
+        await expect(
+          transform(dto, { ...base, recurrence_rule: rule }),
+        ).resolves.toEqual(expect.objectContaining({ recurrence_rule: rule }));
+      }
+    },
+  );
+
+  it.each([
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const)('%s refuses junk', async (_, dto, base) => {
+    for (const rule of [
+      'DAILY',
+      'weekly',
+      'FREQ=WEEKLY;BYDAY=MO;COUNT=3',
+      'FREQ=DAILY;COUNT=3;TZID= America/New_York',
+      'x'.repeat(201),
+      12,
+    ]) {
+      await expect(
+        transform(dto, { ...base, recurrence_rule: rule }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+  });
+});

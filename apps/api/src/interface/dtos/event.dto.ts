@@ -21,8 +21,12 @@ import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
   POINTS_ADJUSTMENT_MAX,
-  RECURRENCE_RULES,
+  LEGACY_CHILD_COUNT,
+  MAX_REPEAT_INTERVAL,
+  MAX_REPEAT_RULE_LENGTH,
+  MAX_SERIES_MEETINGS,
 } from '@repo/validation';
+import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
@@ -34,6 +38,18 @@ import { GeofenceCoordinateDto } from './study.dto';
  */
 const CHECK_IN_ZONE_DESCRIPTION =
   'Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.';
+
+/**
+ * Swagger description shared by the create and update rule fields. The format
+ * is owned by `packages/validation/src/recurrence.ts`.
+ */
+const RECURRENCE_RULE_DESCRIPTION =
+  `Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of ${LEGACY_CHILD_COUNT.WEEKLY}, ${LEGACY_CHILD_COUNT.BIWEEKLY} or ${LEGACY_CHILD_COUNT.MONTHLY} meetings after the first, still accepted from older phone builds) ` +
+  'or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: ' +
+  `FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-${MAX_REPEAT_INTERVAL}, ` +
+  'BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), ' +
+  `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
+  'and TZID (the zone whose wall clock the series keeps).';
 
 export class CreateEventDto {
   @ApiProperty()
@@ -82,15 +98,17 @@ export class CreateEventDto {
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)',
+    description: RECURRENCE_RULE_DESCRIPTION,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
   })
   @IsOptional()
   @IsString()
-  // Only the three rules the generator understands. Anything else was accepted
-  // and then silently generated nothing; on a series edit that meant deleting
-  // the future occurrences and rebuilding none of them. `null` still clears a
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  // Only rules the generator can step. Anything else was once accepted and
+  // then silently generated nothing; on a series edit that meant deleting the
+  // future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(RECURRENCE_RULES)
+  @IsRepeatRule()
   recurrence_rule?: string;
 
   @ApiPropertyOptional({
@@ -368,15 +386,17 @@ export class UpdateEventDto {
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)',
+    description: RECURRENCE_RULE_DESCRIPTION,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
   })
   @IsOptional()
   @IsString()
-  // Only the three rules the generator understands. Anything else was accepted
-  // and then silently generated nothing; on a series edit that meant deleting
-  // the future occurrences and rebuilding none of them. `null` still clears a
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  // Only rules the generator can step. Anything else was once accepted and
+  // then silently generated nothing; on a series edit that meant deleting the
+  // future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(RECURRENCE_RULES)
+  @IsRepeatRule()
   recurrence_rule?: string;
 
   @ApiPropertyOptional({
