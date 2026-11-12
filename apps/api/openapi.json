@@ -14701,6 +14701,98 @@
         ]
       }
     },
+    "/v1/ai/reports": {
+      "get": {
+        "operationId": "AiReportController_policy_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiReportPolicyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a report keeps, for the sheet to say before it is sent",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "Keeps that one exchange, encrypted, for 30 days, for the Frapp team; then it is deleted. Without a sealing key on the server, only the reason and note are kept. A second report of the same thing by the same member keeps nothing new (`already_reported`).",
+        "operationId": "AiReportController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAiReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiReportOutcomeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report something the AI made",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/meetings/{id}/draft": {
       "get": {
         "operationId": "MeetingDraftController_get_v1",
@@ -24403,6 +24495,90 @@
         },
         "required": [
           "question"
+        ]
+      },
+      "AiReportPolicyDto": {
+        "type": "object",
+        "properties": {
+          "keeps_text": {
+            "type": "boolean",
+            "description": "Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so."
+          },
+          "retention_days": {
+            "type": "number",
+            "description": "How many days a report is kept.",
+            "example": 30
+          }
+        },
+        "required": [
+          "keeps_text",
+          "retention_days"
+        ]
+      },
+      "CreateAiReportDto": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ask_answer",
+              "meeting_draft",
+              "ai_suggestion"
+            ],
+            "description": "What is reported: an Ask answer, the draft of a meeting’s minutes, or a suggestion."
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), or the suggestion’s id."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "harmful",
+              "private",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "The member’s own words, if they add any."
+          },
+          "receipt": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "Ask only: the answer’s `report_receipt`, exactly as the server sent it. Opaque to clients."
+          }
+        },
+        "required": [
+          "subject",
+          "subject_id",
+          "reason"
+        ]
+      },
+      "AiReportOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "already_reported": {
+            "type": "boolean",
+            "description": "This member had already reported this; nothing new was kept."
+          },
+          "kept_text": {
+            "type": "boolean",
+            "description": "Whether the text itself was kept, sealed, or only the reason and note."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When what was kept is deleted."
+          }
+        },
+        "required": [
+          "already_reported",
+          "kept_text",
+          "expires_at"
         ]
       },
       "MeetingDraftSourceDto": {

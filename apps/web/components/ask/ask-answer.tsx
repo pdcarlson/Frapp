@@ -16,6 +16,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
 import { askSourceHref } from "@/components/ask/ask-source-link";
+import { ReportAiButton } from "@/components/ai/report-ai";
 
 /**
  * One Ask exchange: the question, the answer with a numbered marker at each
@@ -77,11 +78,27 @@ export function AskExchangeView({
           </div>
         ) : null}
         {exchange.phase === "done" && exchange.answer ? (
-          <AskAnswerBody
-            answer={exchange.answer}
-            onAnswerConsent={onAnswerConsent}
-            onFollowSource={onFollowSource}
-          />
+          <>
+            <AskAnswerBody
+              answer={exchange.answer}
+              onAnswerConsent={onAnswerConsent}
+              onFollowSource={onFollowSource}
+            />
+            {/* Anything Ask wrote, or chose not to, can be reported. An
+                answer that was never attempted has nothing AI-made in it. */}
+            {exchange.answer.status !== "unavailable" && exchange.askId ? (
+              <div className="-ml-2 flex">
+                <ReportAiButton
+                  key={exchange.askId}
+                  target={{
+                    subject: "ask_answer",
+                    subjectId: exchange.askId,
+                    receipt: exchange.answer.report_receipt ?? null,
+                  }}
+                />
+              </div>
+            ) : null}
+          </>
         ) : null}
       </div>
     </article>

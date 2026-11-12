@@ -224,6 +224,7 @@ await import("./tiers/ai-suggestions.mjs");
 await import("./tiers/ai-corpus.mjs");
 await import("./tiers/ai-corpus-chat.mjs");
 await import("./tiers/ai-ask-diagnostics.mjs");
+await import("./tiers/ai-reports.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
