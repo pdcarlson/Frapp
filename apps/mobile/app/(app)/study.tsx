@@ -112,12 +112,15 @@ import {
  */
 
 /**
- * How often to re-read the member's position while the Start card is up, so
- * "0.2 mi away" turns into "You're here" as they walk in. Only while the
- * screen is focused, foregrounded and idle, and only with location already
- * allowed: it never prompts (the primer belongs to the Start tap).
+ * How often to re-read the member's position while the Start card is up and
+ * they're outside every zone, so "0.2 mi away" turns into "You're here" as
+ * they walk in. The loop's rules are at `measuring` in the screen.
  */
 const PROXIMITY_REFRESH_MS = 30 * 1000;
+/** Once the member is inside a zone the answer rarely changes: fewer fixes. */
+const PROXIMITY_REFRESH_INSIDE_MS = 2 * 60 * 1000;
+/** A fix indoors can take tens of seconds; past this the card shows no distance. */
+const PROXIMITY_FIX_TIMEOUT_MS = 15 * 1000;
 
 /** `spec/behavior/study-sessions.md`: the client heartbeats every 5 minutes. */
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -371,6 +374,10 @@ export default function StudyScreen() {
    * pending either, and choosing then would put the first zone in place before
    * the member's Retry brought the last one. The error state stands in for
    * the card meanwhile, so the open choice is never seen.
+   *
+   * This is only the choice before a location fix. Once the screen has one,
+   * the zone the member is in, else the nearest, replaces it (the proximity
+   * effect below), keeping this one on a tie, until they pick by hand.
    */
   const historyLoaded = sessionsQuery.data !== undefined;
   const lastZoneId = history[0]?.geofenceId ?? null;
@@ -401,6 +408,9 @@ export default function StudyScreen() {
     const endedZoneId = shownZoneIdRef.current;
     shownZoneIdRef.current = null;
     if (endedZoneId && zones.some((zone) => zone.id === endedZoneId)) {
+      // Held like a hand pick, so the next fix doesn't swap it for the
+      // nearest zone.
+      pickedByHandRef.current = true;
       setSelectedZoneId(endedZoneId);
     }
   }, [session, zones]);
@@ -432,53 +442,87 @@ export default function StudyScreen() {
   }, [zones]);
 
   /**
-   * Read a fix and measure every zone from it, if location is already
-   * allowed. Never asks: a member who hasn't allowed it yet meets the primer
-   * on Start, as `patterns.md` § Study sessions requires. A failure is
-   * silent; the card simply carries no distance.
+   * Whether this screen is the one on top. A visit starts on focus, so a hand
+   * pick is forgotten only then, never on a trip to another app and back.
    */
-  const proximityReadRef = useRef(false);
-  const refreshProximity = useCallback(async () => {
-    if (proximityReadRef.current || zonesRef.current.length === 0) return;
-    proximityReadRef.current = true;
-    try {
-      const permission = await readForegroundPermission();
-      if (!permission.granted) return;
-      const fix = await readForegroundFix();
-      setProximity(measureZones(zonesRef.current, fix));
-    } catch {
-      // No fix this time; the next refresh or the Start tap tries again.
-    } finally {
-      proximityReadRef.current = false;
-    }
-  }, []);
-
-  const idle = session === null;
-  const hasZones = zones.length > 0;
+  const [isFocused, setIsFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
-      // A new visit: where the member is now picks the zone again.
       pickedByHandRef.current = false;
-      if (!idle || !hasZones || !isForeground || !hoursEnabled) return undefined;
-      void refreshProximity();
-      const interval = setInterval(
-        () => void refreshProximity(),
-        PROXIMITY_REFRESH_MS,
-      );
-      return () => clearInterval(interval);
-    }, [idle, hasZones, isForeground, hoursEnabled, refreshProximity]),
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, []),
   );
+  const [zoneSheetOpen, setZoneSheetOpen] = useState(false);
+
+  /**
+   * Keep a fix while the Start card is up, and measure every zone from it.
+   *
+   * Only while the screen is focused, foregrounded and idle with zones to
+   * measure, and paused while the zone picker is open so its rows don't
+   * reorder under the member's finger. Only with location already allowed:
+   * it never asks, since the primer belongs to the Start tap (`patterns.md`
+   * § Study sessions). Every 30 seconds while the member is outside every
+   * zone, so "0.2 mi away" turns into "You're here" as they walk in, and
+   * every 2 minutes once they're in one, where the answer rarely changes.
+   *
+   * No permission, or no fix within `PROXIMITY_FIX_TIMEOUT_MS`, clears the
+   * distances rather than leaving an old "You're here" on screen. A read
+   * that lands after the loop stopped, or after Start read a newer fix, is
+   * dropped (`proximitySeqRef`).
+   */
+  const proximitySeqRef = useRef(0);
+  const measuring =
+    isFocused &&
+    session === null &&
+    zones.length > 0 &&
+    isForeground &&
+    hoursEnabled &&
+    !zoneSheetOpen;
+  useEffect(() => {
+    if (!measuring) return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const measure = async () => {
+      const seq = ++proximitySeqRef.current;
+      const apply = (next: ProximityMap | null) => {
+        if (!cancelled && seq === proximitySeqRef.current) setProximity(next);
+      };
+      let delay = PROXIMITY_REFRESH_MS;
+      try {
+        const permission = await readForegroundPermission();
+        if (!permission.granted) {
+          apply(null);
+          return;
+        }
+        const fix = await readForegroundFix("balanced", PROXIMITY_FIX_TIMEOUT_MS);
+        const next = measureZones(zonesRef.current, fix);
+        apply(next);
+        if ([...next.values()].some((p) => p.inside)) {
+          delay = PROXIMITY_REFRESH_INSIDE_MS;
+        }
+      } catch {
+        apply(null);
+      }
+      if (!cancelled) timer = setTimeout(() => void measure(), delay);
+    };
+    void measure();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [measuring]);
 
   /**
    * Offer the zone the member is standing in, or else the nearest, as soon as
    * a fix says which, the way a check-in app pre-fills the likeliest place.
-   * A zone picked by hand on this visit stays picked.
+   * The current choice wins a tie, and a zone picked by hand on this visit
+   * (or the zone of a session that just ended, or one Start was tapped for)
+   * stays picked.
    */
   useEffect(() => {
     if (!proximity || pickedByHandRef.current) return;
-    const best = bestZoneId(zones, proximity);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the member's position until they choose by hand
-    if (best) setSelectedZoneId(best);
+    setSelectedZoneId((current) => bestZoneId(zones, proximity, current) ?? current);
   }, [proximity, zones]);
 
   /**
@@ -758,6 +802,10 @@ export default function StudyScreen() {
 
   const beginSession = useCallback(async () => {
     if (!selectedZoneId) return;
+    // The member chose this zone by tapping Start for it: a fix landing now
+    // must not move the card to another zone while the request is out, or a
+    // refusal would sit under a zone other than the one refused.
+    pickedByHandRef.current = true;
     setNotice(null);
     setFailure(null);
     setIsStarting(true);
@@ -765,6 +813,7 @@ export default function StudyScreen() {
       const fix = await readForegroundFix();
       // The same fix tells the card where the member is, so a refused start
       // leaves the distance on screen beside the reason.
+      proximitySeqRef.current += 1;
       setProximity(measureZones(zonesRef.current, fix));
       requestSeqRef.current += 1;
       const response = await apiRef.current.start({
@@ -1038,7 +1087,7 @@ export default function StudyScreen() {
             notice={notice}
             failure={failure}
             onChooseZone={() => {
-              void refreshProximity();
+              setZoneSheetOpen(true);
               zoneSheetRef.current?.present();
             }}
             onStart={handleStartPress}
@@ -1084,6 +1133,7 @@ export default function StudyScreen() {
         zones={zones}
         selectedZoneId={selectedZoneId}
         proximity={proximity}
+        onDismiss={() => setZoneSheetOpen(false)}
         onSelect={(zoneId) => {
           pickedByHandRef.current = true;
           setSelectedZoneId(zoneId);

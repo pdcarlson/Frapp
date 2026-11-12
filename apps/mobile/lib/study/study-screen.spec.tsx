@@ -1010,6 +1010,58 @@ describe("Study says where you are before Start", () => {
     }
   });
 
+  it("keeps a zone picked by hand across a trip to another app", async () => {
+    zones = MAPPED;
+    vi.mocked(readForegroundFix).mockResolvedValue(IN_LIBRARY);
+    const tree = render();
+    await settle();
+    act(() => tree.root.findByType(ZonePickerSheet).props.onSelect("zone-2"));
+
+    await act(async () => appStateListener()("background"));
+    await act(async () => appStateListener()("active"));
+    await settle();
+
+    expect(selectedZoneLabel(tree)).toMatch(/^Study zone: Commons/);
+    act(() => tree.unmount());
+  });
+
+  it("leaves a refused Start under the zone that was refused", async () => {
+    // First use: location not allowed yet, so no fix picks a zone on arrival
+    // and Commons is the alphabetical default. The member is in Library.
+    zones = MAPPED;
+    vi.mocked(readForegroundPermission).mockResolvedValueOnce({
+      granted: false,
+      canAskAgain: true,
+    });
+    vi.mocked(readForegroundFix).mockResolvedValue(IN_LIBRARY);
+    api.start.mockRejectedValue({
+      statusCode: 400,
+      error: "Bad Request",
+      message: "Location is outside the geofence",
+    });
+    const tree = render();
+    await settle();
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+
+    await tapStart(tree);
+
+    expect(api.start).toHaveBeenCalledWith(
+      expect.objectContaining({ geofence_id: "zone-2" }),
+    );
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons, 0.7 mi away");
+    act(() => tree.unmount());
+  });
+
+  it("gives up on a fix that doesn't come instead of waiting forever", async () => {
+    zones = MAPPED;
+    vi.mocked(readForegroundFix).mockClear();
+    const tree = render();
+    await settle();
+
+    expect(readForegroundFix).toHaveBeenCalledWith("balanced", expect.any(Number));
+    act(() => tree.unmount());
+  });
+
   it("never asks for location on arrival", async () => {
     zones = MAPPED;
     vi.mocked(requestForegroundPermission).mockClear();

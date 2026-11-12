@@ -3,14 +3,13 @@
  *
  * The server decides whether a session may start: it checks the fix sent with
  * `POST /v1/study-sessions/start` against the zone's polygon (`pointInPolygon`
- * in `apps/api/src/domain/utils/geofence.ts`). This module runs the same
- * ray-casting test on the phone so s10 can say "You're here" or "0.4 mi away"
+ * from `@repo/validation`). This module runs that same function on the phone so s10 can say "You're here" or "0.4 mi away"
  * on the card and in the zone picker, the way a store picker lists the nearest
  * store with its distance, instead of only saying "You're outside the zone"
  * after the tap. It informs; it never blocks Start, because the fix used here
  * can be a few seconds older than the one Start sends.
  */
-import { distanceMeters } from "@repo/validation";
+import { distanceMeters, pointInPolygon } from "@repo/validation";
 import type { StudyZoneModel, ZoneCorner } from "./zones";
 
 export interface ZoneProximity {
@@ -22,19 +21,9 @@ export interface ZoneProximity {
 /** Zone id to proximity, for the zones with a readable outline. */
 export type ProximityMap = ReadonlyMap<string, ZoneProximity>;
 
-/** Ray casting, the API's `pointInPolygon` (closing edge implicit). */
+/** The API's own check (`@repo/validation`'s `pointInPolygon`), so the two can't drift. */
 export function isInsideOutline(point: ZoneCorner, outline: ZoneCorner[]): boolean {
-  if (outline.length < 3) return false;
-  let inside = false;
-  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
-    const a = outline[i]!;
-    const b = outline[j]!;
-    const crosses =
-      a.lat > point.lat !== b.lat > point.lat &&
-      point.lng < ((b.lng - a.lng) * (point.lat - a.lat)) / (b.lat - a.lat) + a.lng;
-    if (crosses) inside = !inside;
-  }
-  return inside;
+  return pointInPolygon(point.lat, point.lng, outline);
 }
 
 /**
@@ -86,14 +75,20 @@ export function measureZones(
 
 /**
  * The zone the screen should offer from a fix: one the member is inside, else
- * the nearest. Null when no zone could be measured.
+ * the nearest, keeping `currentId` on a tie. Null when no zone could be
+ * measured.
  */
 export function bestZoneId(
   zones: StudyZoneModel[],
   proximity: ProximityMap,
+  currentId: string | null = null,
 ): string | null {
-  let bestId: string | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  // The current choice wins a tie, so a member standing in two overlapping
+  // zones keeps the one they always study in (their last session's) rather
+  // than the alphabetically first.
+  const current = currentId ? proximity.get(currentId) : undefined;
+  let bestId: string | null = current ? currentId : null;
+  let bestDistance = current ? current.distanceM : Number.POSITIVE_INFINITY;
   for (const zone of zones) {
     const p = proximity.get(zone.id);
     if (!p) continue;

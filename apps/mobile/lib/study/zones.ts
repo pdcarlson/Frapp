@@ -7,7 +7,7 @@
  * `geofences: false` while still enabling `hours` — a chapter that never
  * administers zones from the app still has members who study in them.
  */
-import { studyZoneRulesLine } from "@repo/validation";
+import { isValidZoneOutline, studyZoneRulesLine } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
 
 /** One corner of a zone's outline, as `study_geofences.coordinates` stores it. */
@@ -33,16 +33,11 @@ export interface StudyZoneModel {
 }
 
 function toOutline(value: unknown): ZoneCorner[] {
-  if (!Array.isArray(value)) return [];
-  const corners: ZoneCorner[] = [];
-  for (const point of value) {
-    if (!point || typeof point !== "object") return [];
-    const { lat, lng } = point as Record<string, unknown>;
-    if (typeof lat !== "number" || typeof lng !== "number") return [];
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
-    corners.push({ lat, lng });
-  }
-  return corners.length >= 3 ? corners : [];
+  // The API's own validity rule, so the phone measures exactly the zones the
+  // server can check.
+  return isValidZoneOutline(value)
+    ? value.map((point) => ({ lat: point.lat, lng: point.lng }))
+    : [];
 }
 
 /** Server defaults, mirrored so a zone row missing a field still reads honestly. */

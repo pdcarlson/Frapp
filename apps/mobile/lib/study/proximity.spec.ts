@@ -32,7 +32,7 @@ function zones(): StudyZoneModel[] {
 }
 
 describe("isInsideOutline", () => {
-  it("matches the API's ray casting inside and outside", () => {
+  it("says inside and outside with the API's own check", () => {
     expect(isInsideOutline({ lat: 42.7305, lng: -73.6795 }, UNION)).toBe(true);
     expect(isInsideOutline({ lat: 42.7295, lng: -73.6795 }, UNION)).toBe(false);
   });
@@ -76,6 +76,16 @@ describe("bestZoneId and sortByProximity", () => {
     // Just south of the Union.
     const map = measureZones(all, { lat: 42.7295, lng: -73.6795 });
     expect(bestZoneId(all, map)).toBe("union");
+  });
+
+  it("keeps the current zone when the member is inside it and another", () => {
+    const overlapping = selectActiveZones([
+      { id: "annex", name: "Annex", coordinates: UNION },
+      { id: "library", name: "Library", coordinates: UNION },
+    ]);
+    const map = measureZones(overlapping, { lat: 42.7305, lng: -73.6795 });
+    expect(bestZoneId(overlapping, map)).toBe("annex");
+    expect(bestZoneId(overlapping, map, "library")).toBe("library");
   });
 
   it("keeps the alphabetical order without a fix", () => {

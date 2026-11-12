@@ -54,11 +54,13 @@ export interface ZonePickerSheetProps {
   /** Null until the screen has a fix (location not allowed, or still reading). */
   proximity?: ProximityMap | null;
   onSelect: (zoneId: string) => void;
+  /** The sheet closed, however it closed. The screen holds its distances still while it's up. */
+  onDismiss?: () => void;
 }
 
 export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps>(
   function ZonePickerSheet(
-    { zones, selectedZoneId, proximity = null, onSelect },
+    { zones, selectedZoneId, proximity = null, onSelect, onDismiss },
     ref,
   ) {
     const closeSheet = useSheetClose(ref);
@@ -120,6 +122,7 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
+        onDismiss={onDismiss}
       >
         <SheetBackToClose onClose={closeSheet} />
         {fitsContent ? (
