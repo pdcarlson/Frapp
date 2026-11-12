@@ -83,9 +83,16 @@ export type ConfirmRequest = {
    * channel should be harder"). GitHub and Discord ask the same way.
    */
   typeToConfirm?: { label: string; text: string };
+  /**
+   * A second way to go ahead, beside the confirm button: a repeating event's
+   * "This event only" next to "All upcoming events" (#3667), the question
+   * Google Calendar, Apple Calendar and Outlook ask. Picking it resolves with
+   * `alternative: true`.
+   */
+  alternativeLabel?: string;
 };
 
-export type ConfirmResult = { comment: string };
+export type ConfirmResult = { comment: string; alternative?: true };
 
 type PendingRequest = ConfirmRequest & {
   resolve: (result: ConfirmResult | null) => void;
@@ -235,6 +242,15 @@ export function useConfirmDialog(): {
           <Button variant="secondary" onClick={() => settle(null)}>
             {shown?.cancelLabel ?? "Cancel"}
           </Button>
+          {shown?.alternativeLabel ? (
+            <Button
+              variant="secondary"
+              disabled={!typedMatches}
+              onClick={() => settle({ comment, alternative: true })}
+            >
+              {shown.alternativeLabel}
+            </Button>
+          ) : null}
           <Button
             variant={shown?.tone === "default" ? "default" : "destructive"}
             disabled={!typedMatches}
