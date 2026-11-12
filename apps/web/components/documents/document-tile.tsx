@@ -1,15 +1,17 @@
 "use client";
 
-import { formatDay } from "@repo/formatting";
-import { classifyFile, uploadedLine } from "@repo/hooks/document-library";
+import { classifyFile } from "@repo/hooks/document-library";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
 import { OPEN_DOCUMENT_ATTRIBUTE } from "@/components/documents/document-viewer";
-import { DocumentControls } from "@/components/documents/document-row";
+import {
+  DocumentControls,
+  documentFacts,
+} from "@/components/documents/document-row";
 import { gridTileFrameClassName } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
-import { cn, labelled } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
  * The Grid layout's columns (#4175). Wider tiles than the Directory's
@@ -63,15 +65,10 @@ export function DocumentTile({
 }) {
   const pinned = !!doc.pinned_at;
   const { label: typeLabel } = classifyFile(doc);
-  // The row's meta line, in two: when and by whom, then where and what. The
-  // description keeps its own line, last, as the row puts it last.
-  const filed = [
-    doc.folder,
-    doc.document_type,
-    labelled("Effective", formatDay(doc.effective_date)),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // The row's facts (`documentFacts`), over three lines: when and by whom,
+  // then where and what, then the description, last as the row puts it.
+  const facts = documentFacts(doc, uploader);
+  const filed = facts.filed.join(" · ");
   return (
     <li className={cn("flex min-w-0 flex-col", gridTileFrameClassName)}>
       {/*
@@ -105,16 +102,16 @@ export function DocumentTile({
             {doc.title}
           </span>
           <span className="block truncate text-caption text-muted">
-            {uploadedLine(formatDay(doc.created_at), uploader)}
+            {facts.uploaded}
           </span>
           {filed ? (
             <span className="block truncate text-caption text-muted">
               {filed}
             </span>
           ) : null}
-          {doc.description ? (
+          {facts.description ? (
             <span className="block truncate text-caption text-muted">
-              {doc.description}
+              {facts.description}
             </span>
           ) : null}
         </span>

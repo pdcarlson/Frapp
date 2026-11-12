@@ -18,6 +18,27 @@ import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { cn, labelled } from "@/lib/utils";
 
+/**
+ * What a file row says about a file, in the row's order: when and by whom,
+ * then where and what, then the description. The grid's tile shows the same
+ * facts (#4175), split over its own lines, so both read from here and a fact
+ * added for one reaches the other.
+ */
+export function documentFacts(
+  doc: ChapterDocument,
+  uploader: string | null,
+): { uploaded: string | null; filed: string[]; description: string | null } {
+  return {
+    uploaded: uploadedLine(formatDay(doc.created_at), uploader),
+    filed: [
+      doc.folder,
+      doc.document_type,
+      labelled("Effective", formatDay(doc.effective_date)),
+    ].filter((part): part is string => !!part),
+    description: doc.description || null,
+  };
+}
+
 function DownloadButton({ id, title }: { id: string; title: string }) {
   const { download, fetchingId } = useDocumentDownload();
   const isFetching = fetchingId === id;
@@ -67,6 +88,7 @@ export function DocumentRow({
   onToggleStar: (doc: ChapterDocument) => void;
   onTogglePin: (doc: ChapterDocument) => void;
 }) {
+  const facts = documentFacts(doc, uploader);
   return (
     /*
     Two lines, not three, and 8px of padding rather than 12. The
@@ -85,8 +107,11 @@ export function DocumentRow({
       {/*
       s12 draws a leading file glyph on every document row —
       the accent duotone on its pinned cards, the neutral one
-      on the recent list. Web has no pin field, so every row
-      takes the neutral variant.
+      on the recent list. The row keeps the neutral one even
+      for a pinned file: its lit Pin control already says so,
+      and a 16px accent glyph beside it would say it twice.
+      The grid's tile has no Pin beside its name, so its
+      preview glyph takes the accent (`document-tile.tsx`).
     */}
       {/*
         The glyph and both lines are one button that opens the document
@@ -122,13 +147,7 @@ export function DocumentRow({
           ellipsis.
         */}
           <span className="block truncate text-caption text-muted">
-            {[
-              uploadedLine(formatDay(doc.created_at), uploader),
-              doc.folder,
-              doc.document_type,
-              labelled("Effective", formatDay(doc.effective_date)),
-              doc.description,
-            ]
+            {[facts.uploaded, ...facts.filed, facts.description]
               .filter(Boolean)
               .join(" · ")}
           </span>

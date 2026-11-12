@@ -93,6 +93,7 @@ import { UploadDocumentSheet } from "@/components/documents/upload-document-shee
 import { DocumentActionsSheet } from "@/components/documents/document-actions-sheet";
 import { MarkedCards } from "@/components/documents/marked-cards";
 import { DocumentTiles } from "@/components/documents/document-tiles";
+import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
@@ -1234,5 +1235,65 @@ describe("Documents as a grid (#4175)", () => {
       id: "d1",
       name: "Bylaws",
     });
+  });
+
+  it("marks a pinned or starred tile, on screen and for a screen reader", () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z", pinned_at: "2026-10-03T12:00:00Z" },
+      { id: "d2", title: "Budget", created_at: "2026-10-01T12:00:00Z" },
+      { id: "d3", title: "Flyer", created_at: "2026-09-01T12:00:00Z" },
+    ];
+    starRows = { folder_ids: [], document_ids: ["d1", "d2"] };
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    const value = (label: string) =>
+      tiles(tree).find((tile) => tile.props.accessibilityLabel === label)!
+        .props.accessibilityValue;
+    expect(value("Bylaws")).toEqual({ text: "Pinned for the chapter, Starred" });
+    expect(value("Budget")).toEqual({ text: "Starred" });
+    expect(value("Flyer")).toBeUndefined();
+    const grid = tree.root.findByType(DocumentTiles);
+    expect(grid.findAllByType(PinGlyph)).toHaveLength(1);
+    expect(grid.findAllByType(StarGlyph)).toHaveLength(2);
+  });
+
+  it("keeps an upload in flight as a row above the tiles", () => {
+    permissions = ["*"];
+    documentRows = [{ id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" }];
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    act(() => {
+      tree.root
+        .find((node) => typeof node.props.onPending === "function")
+        .props.onPending({ title: "Look at this", failed: null });
+    });
+    const rows = tree.root.findAllByType(ListRow);
+    expect(rows.map((row) => [row.props.label, row.props.description])).toEqual([
+      ["Look at this", "Uploading…"],
+    ]);
+    expect(tiles(tree).map((tile) => tile.props.accessibilityLabel)).toEqual([
+      "Bylaws",
+    ]);
+  });
+
+  it("takes no second press or long press on a tile whose file is opening", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockReturnValue(new Promise(() => undefined));
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    await act(async () => {
+      tiles(tree)[0]!.props.onPress();
+    });
+    const [opening, idle] = tiles(tree);
+    expect(opening!.props.disabled).toBe(true);
+    expect(opening!.props.accessibilityState).toEqual({ busy: true });
+    expect(opening!.props.onLongPress).toBeUndefined();
+    expect(opening!.props.accessibilityActions).toBeUndefined();
+    // The other tile still takes both, as the other rows do.
+    expect(idle!.props.disabled).toBe(false);
+    expect(idle!.props.onLongPress).toBeInstanceOf(Function);
   });
 });

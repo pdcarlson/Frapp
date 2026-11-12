@@ -6,24 +6,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { NavGlyph } from "@/components/nav-glyph";
 import { PressableRow } from "@/components/list-section";
+import { GridLine, toGridChunks } from "@/components/grid-line";
 import { documentMeta, type MobileDocument } from "@/lib/more/documents";
 import { PinGlyph, StarGlyph } from "./document-glyphs";
 
 type DocumentRowData = LibraryDocument<MobileDocument>;
-
-/** Tiles to a line in the Grid layout (#4175), as the Directory's. */
-export const DOCUMENT_GRID_COLUMNS = 2;
-
-/** The rows, in lines of {@link DOCUMENT_GRID_COLUMNS}. */
-export function toDocumentLines(
-  rows: readonly DocumentRowData[],
-): DocumentRowData[][] {
-  const lines: DocumentRowData[][] = [];
-  for (let i = 0; i < rows.length; i += DOCUMENT_GRID_COLUMNS) {
-    lines.push(rows.slice(i, i + DOCUMENT_GRID_COLUMNS));
-  }
-  return lines;
-}
 
 /**
  * s12's Grid layout (#4175): the files two to a line, each a tile in Google
@@ -37,8 +24,8 @@ export function toDocumentLines(
  * file's glyph takes the accent duotone, as its PINNED card does; a pinned or
  * starred tile wears the marks its row wears.
  *
- * A short last line is padded with an empty cell, so its tile keeps the
- * width of every other tile.
+ * Lines and their padding are every grid's (`components/grid-line.tsx`), so
+ * this screen and the Directory lay out alike.
  */
 export function DocumentTiles({
   rows,
@@ -65,8 +52,8 @@ export function DocumentTiles({
   const styles = createStyles(tokens);
   return (
     <View style={styles.grid}>
-      {toDocumentLines(rows).map((line) => (
-        <View key={line[0]!.doc.id} style={styles.line}>
+      {toGridChunks(rows).map((line) => (
+        <GridLine key={line[0]!.doc.id} filled={line.length}>
           {line.map((row) => {
             const { doc } = row;
             const pinned = !!doc.pinned_at;
@@ -143,13 +130,7 @@ export function DocumentTiles({
               </PressableRow>
             );
           })}
-          {Array.from(
-            { length: DOCUMENT_GRID_COLUMNS - line.length },
-            (_, i) => (
-              <View key={`pad-${i}`} style={styles.pad} />
-            ),
-          )}
-        </View>
+        </GridLine>
       ))}
     </View>
   );
@@ -158,10 +139,6 @@ export function DocumentTiles({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     grid: {
-      gap: tokens.spacing.sm,
-    },
-    line: {
-      flexDirection: "row",
       gap: tokens.spacing.sm,
     },
     // The PINNED card's shape (`marked-cards.tsx`): `card` fill, card radius,
@@ -174,9 +151,6 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-    },
-    pad: {
-      flex: 1,
     },
     preview: {
       height: 88,
