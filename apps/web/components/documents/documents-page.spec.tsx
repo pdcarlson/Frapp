@@ -415,6 +415,56 @@ describe("DocumentsPage subscription gating", () => {
     expect(uploadTrigger()).toBeDisabled();
   });
 
+  it("opens Upload docked in place of the page beside chat, and hands focus back to Upload (#4593)", async () => {
+    chapter.active();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <DocumentsPage />
+        </div>
+      </div>,
+    );
+    await userEvent.click(uploadTrigger());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const region = screen.getByRole("region", { name: "Upload document" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to documents" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Upload document" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(uploadTrigger()).toHaveFocus());
+  });
+
+  it("sends focus to the notice, not Upload, when a lapse closes the docked form", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <DocumentsPage />
+        </div>
+      </div>
+    );
+    const { rerender } = render(tree());
+    await userEvent.click(uploadTrigger());
+    expect(
+      screen.getByRole("region", { name: "Upload document" }),
+    ).toBeInTheDocument();
+
+    chapter.incomplete();
+    rerender(tree());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Upload document" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(uploadTrigger()).not.toHaveFocus();
+    expect(screen.getByRole("status")).toHaveFocus();
+  });
+
   it("leaves Upload enabled with no file and answers the press inline", async () => {
     /*
       This case reverses deliberately. It used to assert that Upload was

@@ -125,13 +125,24 @@ export function Panel({
 function DockedPanel({
   dock,
   className,
+  onCloseAutoFocus,
   children,
 }: {
   dock: PanelDock;
   className?: string;
+  /**
+   * The sheet's close-focus hook, honoured docked too: a caller that sends
+   * focus somewhere else on close (the subscription gate's notice, when a
+   * block closed the form) calls `preventDefault()` and focuses it itself.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLElement>(null);
+  const closeFocus = React.useRef(onCloseAutoFocus);
+  React.useEffect(() => {
+    closeFocus.current = onCloseAutoFocus;
+  }, [onCloseAutoFocus]);
   React.useEffect(() => {
     const box = ref.current;
     const column = box?.parentElement;
@@ -184,6 +195,9 @@ function DockedPanel({
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("pointerdown", onPointerDown, true);
       for (const child of covered) child.inert = false;
+      const event = new Event("focus.closeAutoFocus", { cancelable: true });
+      closeFocus.current?.(event);
+      if (event.defaultPrevented) return;
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
     };
   }, []);
@@ -244,7 +258,11 @@ export const PanelContent = React.forwardRef<
   const dock = React.useContext(PanelDockContext);
   if (dock) {
     return (
-      <DockedPanel dock={dock} className={className}>
+      <DockedPanel
+        dock={dock}
+        className={className}
+        onCloseAutoFocus={props.onCloseAutoFocus}
+      >
         {props.children}
       </DockedPanel>
     );
