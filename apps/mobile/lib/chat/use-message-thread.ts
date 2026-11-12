@@ -49,11 +49,12 @@ import { getSupabaseClient } from "@/lib/supabase";
  * rules 1 and 2). After a gap (reconnect, polling) the newest page is read
  * again and merged, the timeline's backfill rule for this cache.
  *
- * Mobile's twin of web's `apps/web/lib/chat/use-message-thread.ts`, line for
- * line. Each app keeps its own chat hooks (`use-chat-channel.ts` too), because
- * `@repo/hooks` doesn't depend on `@repo/chat-core` and chat-core holds no
- * React; hoisting the pair into one shared hook is #4053. Change both
- * together until then.
+ * Mobile's twin of web's `apps/web/lib/chat/use-message-thread.ts`: the same
+ * reads, gap rules, parent fold and writes, with `useHeldChannelMessage` below
+ * standing in for web's read of its timeline. Each app keeps its own chat
+ * hooks (`use-chat-channel.ts` too), because `@repo/hooks` doesn't depend on
+ * `@repo/chat-core` and chat-core holds no React; hoisting the pair into one
+ * shared hook is #4053. Change both together until then.
  */
 export function useMessageThread(
   channelId: string,
@@ -116,8 +117,30 @@ export function useMessageThread(
           supabase,
         );
         // Reopened over a cache this mount didn't page: older replies may
-        // remain, and one read of them settles it.
-        if (first) setHasOlder(true);
+        // remain. One read of them settles it now, as web's does (#4034),
+        // rather than offering "Load earlier replies" that may load nothing.
+        if (first) {
+          const cache = queryClient.getQueryData<ChannelCache>(repliesKey);
+          const oldest = cache?.order
+            .map((key) => cache.byId[key])
+            .find((message) => message?._status === "confirmed");
+          if (oldest) {
+            try {
+              const page = await loadThreadReplies(
+                queryClient,
+                api,
+                channelId,
+                rootId,
+                oldest.created_at,
+                supabase,
+              );
+              setHasOlder(page.hasMore);
+            } catch {
+              // The held replies still show; the control offers the rest.
+              setHasOlder(true);
+            }
+          }
+        }
       }
       return queryClient.getQueryData<ChannelCache>(repliesKey) ?? emptyCache();
     },
@@ -144,8 +167,11 @@ export function useMessageThread(
     previousConnection.current = connection;
     if (connection === "live" && before !== "live") {
       void queryClient.invalidateQueries({ queryKey: repliesKey, exact: true });
+      // And the parent, whose read the screen draws while the channel's
+      // cache doesn't hold it: its edits and reactions in the gap missed it.
+      void queryClient.invalidateQueries({ queryKey: metaKey, exact: true });
     }
-  }, [connection, queryClient, repliesKey]);
+  }, [connection, queryClient, repliesKey, metaKey]);
 
   // Who is typing in this thread, re-read on each status ping like the
   // channel's line; the manager hands back the same array while unchanged.
@@ -220,15 +246,7 @@ export function useMessageThread(
     } finally {
       setIsLoadingOlder(false);
     }
-  }, [
-    messages,
-    isLoadingOlder,
-    queryClient,
-    api,
-    channelId,
-    rootId,
-    supabase,
-  ]);
+  }, [messages, isLoadingOlder, queryClient, api, channelId, rootId, supabase]);
 
   const patchFollow = useCallback(
     (state: ThreadMeta["follow_state"]) =>
@@ -323,23 +341,22 @@ export function useMessageThread(
  */
 export function useHeldChannelMessage(
   channelId: string,
-  messageId: string,
+  messageId: string | null,
 ): ChatMessage | null {
   const queryClient = useQueryClient();
   const subscribe = useCallback(
     (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
     [queryClient],
   );
+  // A row is keyed by its id (a server row by its server id once merged, an
+  // optimistic one by the client id it carries as its id), so this is one
+  // lookup on each of the cache's events, not a walk of the window.
   const read = useCallback(() => {
-    const cache = queryClient.getQueryData<ChannelCache>(
+    if (!messageId) return null;
+    const row = queryClient.getQueryData<ChannelCache>(
       chatMessagesKey(channelId),
-    );
-    if (!cache) return null;
-    for (const key of cache.order) {
-      const row = cache.byId[key];
-      if (row?.id === messageId) return row;
-    }
-    return null;
+    )?.byId[messageId];
+    return row?.id === messageId ? row : null;
   }, [queryClient, channelId, messageId]);
   return useSyncExternalStore(subscribe, read, read);
 }

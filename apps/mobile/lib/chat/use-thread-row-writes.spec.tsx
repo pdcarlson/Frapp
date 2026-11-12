@@ -9,9 +9,22 @@ type Ctx = { onError: (input: ErrorInput) => void };
 const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 /** What the next dispatch does: resolve, report through `onError`, or reject. */
 let outcome: "ok" | "report" | "reject" = "ok";
+/** Holds the next dispatch open until the test reports its failure. */
+let deferNext: ((report: () => void) => void) | null = null;
 function dispatcher(fn: string) {
   return async (ctx: Ctx, args: Record<string, unknown>) => {
     calls.push({ fn, args });
+    if (deferNext) {
+      const hold = deferNext;
+      deferNext = null;
+      await new Promise<void>((resolve) =>
+        hold(() => {
+          ctx.onError({ title: "Couldn't react", description: "Too slow" });
+          resolve();
+        }),
+      );
+      return;
+    }
     if (outcome === "report") {
       ctx.onError({ title: "Couldn't react", description: "Poll is closed" });
     }
@@ -48,8 +61,12 @@ vi.mock("./use-chat-channel", async () => {
     },
   };
 });
+// The context without the outbox flush: the channel under the thread owns it.
 vi.mock("./use-chat-runtime", () => ({
-  useChatRuntime: () => ({ ctx: { queryClient: {}, apiClient: {} } }),
+  useChatActionContext: () => ({ ctx: { queryClient: {}, apiClient: {} } }),
+  useChatRuntime: () => {
+    throw new Error("the thread must not run a second outbox flush");
+  },
 }));
 
 const CHANNEL = "chan-1";
@@ -58,7 +75,12 @@ const ROOT = "root-1";
 function setup(parentHeld: boolean) {
   const refreshRoot = vi.fn();
   const hook = renderHook(() =>
-    useThreadRowWrites({ channelId: CHANNEL, rootId: ROOT, parentHeld, refreshRoot }),
+    useThreadRowWrites({
+      channelId: CHANNEL,
+      rootId: ROOT,
+      parentHeld,
+      refreshRoot,
+    }),
   );
   return { hook, refreshRoot };
 }
@@ -66,6 +88,7 @@ function setup(parentHeld: boolean) {
 beforeEach(() => {
   calls.length = 0;
   outcome = "ok";
+  deferNext = null;
 });
 
 /** The open thread's writes on the phone (#4297, slice 5), web's #4034 rule. */
@@ -117,18 +140,42 @@ describe("useThreadRowWrites", () => {
     expect(refreshRoot).not.toHaveBeenCalled();
   });
 
-  it("holds a refused reaction or vote for the screen to say, and clears it on the next", async () => {
+  it("keeps a refused reaction and a refused vote apart, as the channel's sinks do", async () => {
     const { hook } = setup(true);
     outcome = "report";
     await act(async () => {
       await hook.result.current.act("r1", "poll_vote", { option: 0 });
     });
-    expect(hook.result.current.rowError).toBe("Poll is closed");
+    expect(hook.result.current.actionError).toBe("Poll is closed");
+    expect(hook.result.current.reactionError).toBeNull();
+    // A reaction that lands doesn't wipe the vote's reason.
     outcome = "ok";
     await act(async () => {
       await hook.result.current.react("r1", "👍");
     });
-    expect(hook.result.current.rowError).toBeNull();
+    expect(hook.result.current.actionError).toBe("Poll is closed");
+    act(() => hook.result.current.clearActionError());
+    expect(hook.result.current.actionError).toBeNull();
+  });
+
+  it("drops a slow refusal that a later reaction superseded", async () => {
+    const { hook } = setup(true);
+    let reportLate!: () => void;
+    deferNext = (report) => {
+      reportLate = report;
+    };
+    let slow!: Promise<void>;
+    act(() => {
+      slow = hook.result.current.react("r1", "👍");
+    });
+    await act(async () => {
+      await hook.result.current.react("r2", "🔥");
+    });
+    await act(async () => {
+      reportLate();
+      await slow;
+    });
+    expect(hook.result.current.reactionError).toBeNull();
   });
 
   it("rejects a refused edit with the member-facing reason, so the edit keeps its text", async () => {

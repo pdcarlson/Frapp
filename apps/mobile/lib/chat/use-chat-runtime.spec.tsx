@@ -88,8 +88,9 @@ vi.mock("./network-state", () => ({
   }),
 }));
 
-const { useChatRealtimeBinding, useChatRuntime } =
+const { useChatActionContext, useChatRealtimeBinding, useChatRuntime } =
   await import("./use-chat-runtime");
+const { flushOutbox } = await import("@repo/chat-core/chat-client");
 const { chatRealtime, createBackfillFetcher } =
   await import("@repo/chat-core/realtime-manager");
 
@@ -240,6 +241,24 @@ describe("useChatRuntime", () => {
       expect(result.current.ctx).toBe(first);
       result.current.ctx?.track?.("outbox-queued", { attempts: 0 });
       expect(next).toHaveBeenCalledWith("outbox-queued", { attempts: 0 });
+    } finally {
+      viewer.id = null;
+    }
+  });
+});
+
+describe("useChatActionContext (#4297)", () => {
+  it("hands back the runtime's ctx without flushing the outbox, which the channel's runtime owns", async () => {
+    viewer.id = "viewer-1";
+    try {
+      vi.mocked(flushOutbox).mockClear();
+      const { result } = renderHook(() => useChatActionContext(), {
+        wrapper: queryWrapper(),
+      });
+      expect(result.current.ctx).not.toBeNull();
+      // The runtime's own flush, for contrast: it runs once booted.
+      renderHook(() => useChatRuntime(), { wrapper: queryWrapper() });
+      await waitFor(() => expect(flushOutbox).toHaveBeenCalledTimes(1));
     } finally {
       viewer.id = null;
     }

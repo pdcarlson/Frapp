@@ -59,7 +59,8 @@ import {
 import { groupReactions } from "@/components/chat/message-item";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
-import { BackGlyph } from "@/components/control-glyphs";
+import { BackGlyph, CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import { Chip } from "@/components/filter-chips";
 import { ErrorState } from "@/components/state-block";
 import { useScreenBelow } from "@/lib/back-target";
@@ -177,6 +178,12 @@ export function MessageThreadScreen({
   // channel's realtime; the thread's own read while it doesn't, as web's.
   const heldRoot = useHeldChannelMessage(channelId, rootId);
   const root = heldRoot ?? thread.root;
+  // The message the parent quotes, as the channel holds it: the parent's own
+  // quote draws it as the channel does, rather than "not loaded".
+  const rootQuoted = useHeldChannelMessage(
+    channelId,
+    root?.reply_to_id ?? null,
+  );
   const writes = useThreadRowWrites({
     channelId,
     rootId,
@@ -233,8 +240,9 @@ export function MessageThreadScreen({
   const focused = useIsFocused();
   useReportOpenChatTransport(focused ? thread.connection : null);
 
-  // Every message the screen draws, by id: the parent and the replies, for a
-  // reply's quote, the sheet and an edit.
+  // Every message the screen draws, by id: the parent and the replies, for
+  // the sheet and an edit. (A thread reply can't quote, so the only quote
+  // here is the parent's, looked up in the channel's cache below.)
   const byId = useMemo(() => {
     const index = new Map<string, ChatMessage>();
     if (root) index.set(root.id, root);
@@ -341,7 +349,9 @@ export function MessageThreadScreen({
   );
 
   // A stale tombstone's Reload, as the channel's (`refreshMaskedCopies`), and
-  // the thread read again so its own replies come back unmasked too.
+  // the thread read again. That re-read is a backfill of newer replies and
+  // the parent: a masked reply already held stays masked until the thread's
+  // cache is dropped, on web too (#4451).
   const maskedRefresh = useMaskedRefresh();
   const { reloadMaskedCopies } = useBlockActions();
   const onReload = useCallback(
@@ -515,8 +525,10 @@ export function MessageThreadScreen({
       placement: { startsRun: boolean; endsRun: boolean; startsDay: boolean },
     ) => {
       if (!viewerId) return null;
-      const replyParent = row.message.reply_to_id
-        ? (byId.get(row.message.reply_to_id) ?? null)
+      const quotedId = row.message.reply_to_id;
+      const replyParent = quotedId
+        ? (byId.get(quotedId) ??
+          (rootQuoted?.id === quotedId ? rootQuoted : null))
         : undefined;
       return (
         <ThreadMessageRow
@@ -548,6 +560,7 @@ export function MessageThreadScreen({
     [
       viewerId,
       byId,
+      rootQuoted,
       nameFor,
       roleColorFor,
       avatarFor,
@@ -715,6 +728,26 @@ export function MessageThreadScreen({
             {typing ?? TYPING_LINE_BLANK}
           </Text>
         </View>
+        {/* The channel's banner, for the channel's reason: a refused reaction
+            or vote rolls back silently, so this is its only report (#999).
+            Dismissible, as nothing is left to retry. */}
+        {writes.reactionError || writes.actionError ? (
+          <View style={styles.rowErrorBanner} accessibilityLiveRegion="polite">
+            <Text style={styles.rowErrorText}>
+              {writes.reactionError ?? writes.actionError}
+            </Text>
+            <IconButton
+              label="Dismiss"
+              onPress={
+                writes.reactionError
+                  ? writes.clearReactionError
+                  : writes.clearActionError
+              }
+            >
+              <CloseGlyph color={tokens.color.text.mutedForeground} />
+            </IconButton>
+          </View>
+        ) : null}
         <ChatComposer
           value={staging.value}
           onChangeText={onChangeText}
@@ -738,13 +771,11 @@ export function MessageThreadScreen({
                 ? THREAD_NO_REPLY_HINT
                 : writeBlockedReason
                   ? THREAD_OFFLINE_HINT
-                  : (writes.rowError ?? sendError)
+                  : sendError
           }
           hintTone={
             !writeBlockedReason &&
-            (staging.isEditing
-              ? !!staging.editError
-              : canReply && !!(writes.rowError ?? sendError))
+            (staging.isEditing ? !!staging.editError : canReply && !!sendError)
               ? "error"
               : "muted"
           }
@@ -834,6 +865,22 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.6,
+    },
+    rowErrorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
+      backgroundColor: tokens.color.surface.surface1,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    rowErrorText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      flex: 1,
     },
     typingSlot: {
       paddingHorizontal: tokens.spacing.lg,

@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   loadThreadReplies: vi.fn(async () => ({ hasMore: false })),
   markThreadRead: vi.fn(async () => undefined),
   sendThreadReply: vi.fn(async () => ({ error: null })),
+  backfillThreadReplies: vi.fn(async () => undefined),
+  statusListeners: new Set<(status: string) => void>(),
 }));
 
 vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
@@ -31,7 +33,10 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
   NO_TYPING_USERS: Object.freeze([]),
   POLL_INTERVAL_MS: 5_000,
   chatRealtime: {
-    subscribeStatus: () => () => undefined,
+    subscribeStatus: (listener: (status: string) => void) => {
+      mocks.statusListeners.add(listener);
+      return () => mocks.statusListeners.delete(listener);
+    },
     onThreadReply: () => () => undefined,
     getTypingUsers: () => Object.freeze([]),
     subscribeTyping: () => () => undefined,
@@ -44,6 +49,7 @@ vi.mock("@repo/chat-core/threads", async (importOriginal) => ({
   loadThreadReplies: mocks.loadThreadReplies,
   markThreadRead: mocks.markThreadRead,
   sendThreadReply: mocks.sendThreadReply,
+  backfillThreadReplies: mocks.backfillThreadReplies,
 }));
 
 const { useHeldChannelMessage, useMessageThread } =
@@ -211,7 +217,12 @@ describe("useMessageThread's reads on the phone (#4297, slice 5)", () => {
     renderHook(() => useMessageThread("c1", "root", "me"), { wrapper });
     // Without it chat-core reads no actions, and every reply opened bare.
     await waitFor(() =>
-      expect(mocks.fetchThread).toHaveBeenCalledWith({}, "c1", "root", SUPABASE),
+      expect(mocks.fetchThread).toHaveBeenCalledWith(
+        {},
+        "c1",
+        "root",
+        SUPABASE,
+      ),
     );
     await waitFor(() =>
       expect(mocks.loadThreadReplies).toHaveBeenCalledWith(
@@ -223,5 +234,74 @@ describe("useMessageThread's reads on the phone (#4297, slice 5)", () => {
         SUPABASE,
       ),
     );
+  });
+});
+
+/** The gap reads web's hook makes (#4034), on the phone (#4297, slice 5). */
+describe("useMessageThread's gap reads on the phone", () => {
+  function setup() {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    mocks.fetchThread.mockResolvedValue({
+      root: ROOT,
+      follow_state: null,
+      last_read_at: null,
+    });
+    return { queryClient, wrapper };
+  }
+
+  it("reads the replies older than the held ones when it reopens over a cache", async () => {
+    const { queryClient, wrapper } = setup();
+    queryClient.setQueryData(
+      chatThreadRepliesKey("c1", "root"),
+      cacheFromPage(
+        [
+          {
+            ...ROOT,
+            id: "r5",
+            client_message_id: "c-r5",
+            thread_root_id: "root",
+            created_at: "2026-11-10T12:05:00.000Z",
+          } as RawChatMessage,
+        ],
+        [],
+      ),
+    );
+    mocks.loadThreadReplies.mockResolvedValueOnce({ hasMore: true });
+    const { result } = renderHook(() => useMessageThread("c1", "root", "me"), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(mocks.loadThreadReplies).toHaveBeenCalledWith(
+        queryClient,
+        {},
+        "c1",
+        "root",
+        "2026-11-10T12:05:00.000Z",
+        SUPABASE,
+      ),
+    );
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+  });
+
+  it("reads the parent again when realtime comes back, as well as the replies", async () => {
+    const { queryClient, wrapper } = setup();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    renderHook(() => useMessageThread("c1", "root", "me"), { wrapper });
+    await waitFor(() => expect(mocks.fetchThread).toHaveBeenCalled());
+    act(() => mocks.statusListeners.forEach((listener) => listener("polling")));
+    act(() => mocks.statusListeners.forEach((listener) => listener("live")));
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["chat", "c1", "thread", "root"],
+      exact: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: chatThreadRepliesKey("c1", "root"),
+      exact: true,
+    });
   });
 });

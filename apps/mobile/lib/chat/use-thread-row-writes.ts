@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   actOnCard,
   closePoll as closePollAction,
@@ -9,7 +9,7 @@ import {
 } from "@repo/chat-core/chat-client";
 import { MemberFacingError } from "@repo/hooks/error-copy";
 import { withFailureMessage } from "./use-chat-channel";
-import { useChatRuntime } from "./use-chat-runtime";
+import { useChatActionContext } from "./use-chat-runtime";
 
 export interface ThreadRowWritesInput {
   channelId: string;
@@ -39,8 +39,15 @@ export interface ThreadRowWrites {
   remove: (messageId: string) => Promise<void>;
   /** Rejects with the member-facing reason, for the confirm's alert. */
   closePoll: (messageId: string) => Promise<void>;
-  /** Why the last reaction or card action didn't land, or `null`. */
-  rowError: string | null;
+  /**
+   * Why the latest reaction didn't land, or `null`; the channel's
+   * `reactionError`, the same banner (`spec/ui/mobile/patterns.md` § Chat).
+   */
+  reactionError: string | null;
+  clearReactionError: () => void;
+  /** Why the latest card action (a vote, an RSVP) didn't land: `actionError`. */
+  actionError: string | null;
+  clearActionError: () => void;
 }
 
 /**
@@ -51,10 +58,13 @@ export interface ThreadRowWrites {
  * screen reads it.
  *
  * Its own hook rather than `useChatChannel`'s writes, because that hook
- * subscribes the channel's realtime topic: the channel under this screen
- * already holds it, and a second subscriber on one topic is what
- * `realtime-resilience` rule 1 is about. This only dispatches, through the
- * same chat-core actions and the same runtime `ctx`.
+ * subscribes the channel's realtime topic and runs the outbox flush, and the
+ * channel screen under this one already does both: a second subscription on
+ * the topic is what `realtime-resilience` rules 1 and 2 guard, and a second
+ * flush POSTs every queued message twice. This only dispatches, through the
+ * same chat-core actions and the runtime's `ctx` without its flush
+ * (`useChatActionContext`). Its failures go to the channel's two sinks, kept
+ * apart and guarded the same way (`reactWithErrorSink`, `actWithErrorSink`).
  */
 export function useThreadRowWrites({
   channelId,
@@ -62,15 +72,24 @@ export function useThreadRowWrites({
   parentHeld,
   refreshRoot,
 }: ThreadRowWritesInput): ThreadRowWrites {
-  const { ctx } = useChatRuntime();
-  const [rowError, setRowError] = useState<string | null>(null);
+  const { ctx } = useChatActionContext();
+  const [reactionError, setReactionError] = useState<string | null>(null);
+  const clearReactionError = useCallback(() => setReactionError(null), []);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const clearActionError = useCallback(() => setActionError(null), []);
+  // A failure reports only while no later dispatch of its kind superseded
+  // it, so a slow refusal never lands over a later success.
+  const reactionGeneration = useRef(0);
+  const actionGeneration = useRef(0);
 
   const targetOf = useCallback(
     (messageId: string) => (messageId === rootId ? null : rootId),
     [rootId],
   );
   // Settled, not sent: a read in the same tick could land before the write
-  // commits. A failed write left the parent as it was.
+  // commits. Read after a failure too, unlike web's panel: a refusal is often
+  // the server knowing better (the parent deleted or closed elsewhere), and
+  // the read says what it kept.
   const settle = useCallback(
     async (messageId: string, write: Promise<void>) => {
       if (messageId !== rootId || parentHeld) return write;
@@ -83,40 +102,51 @@ export function useThreadRowWrites({
     [rootId, parentHeld, refreshRoot],
   );
 
-  const onRowError = useCallback(
-    (input: { title: string; description?: string }) =>
-      setRowError(input.description ?? input.title),
-    [],
-  );
+  const reactionSink = useCallback(() => {
+    const generation = ++reactionGeneration.current;
+    setReactionError(null);
+    return (input: { title: string; description?: string }) => {
+      if (reactionGeneration.current === generation) {
+        setReactionError(input.description ?? input.title);
+      }
+    };
+  }, []);
+  const actionSink = useCallback(() => {
+    const generation = ++actionGeneration.current;
+    setActionError(null);
+    return (input: { title: string; description?: string }) => {
+      if (actionGeneration.current === generation) {
+        setActionError(input.description ?? input.title);
+      }
+    };
+  }, []);
 
   const react = useCallback(
     async (messageId: string, emoji: string) => {
       if (!ctx) return;
-      setRowError(null);
       await settle(
         messageId,
         reactAction(
-          { ...ctx, onError: onRowError },
+          { ...ctx, onError: reactionSink() },
           { channelId, messageId, emoji, threadRootId: targetOf(messageId) },
         ),
       );
     },
-    [ctx, channelId, targetOf, settle, onRowError],
+    [ctx, channelId, targetOf, settle, reactionSink],
   );
 
   const unreact = useCallback(
     async (messageId: string, emoji: string) => {
       if (!ctx) return;
-      setRowError(null);
       await settle(
         messageId,
         unreactAction(
-          { ...ctx, onError: onRowError },
+          { ...ctx, onError: reactionSink() },
           { channelId, messageId, emoji, threadRootId: targetOf(messageId) },
         ),
       );
     },
-    [ctx, channelId, targetOf, settle, onRowError],
+    [ctx, channelId, targetOf, settle, reactionSink],
   );
 
   const act = useCallback(
@@ -126,11 +156,10 @@ export function useThreadRowWrites({
       payload?: Record<string, unknown>,
     ) => {
       if (!ctx) return;
-      setRowError(null);
       await settle(
         messageId,
         actOnCard(
-          { ...ctx, onError: onRowError },
+          { ...ctx, onError: actionSink() },
           {
             channelId,
             messageId,
@@ -141,7 +170,7 @@ export function useThreadRowWrites({
         ),
       );
     },
-    [ctx, channelId, targetOf, settle, onRowError],
+    [ctx, channelId, targetOf, settle, actionSink],
   );
 
   const edit = useCallback(
@@ -206,5 +235,16 @@ export function useThreadRowWrites({
     [ctx, channelId, targetOf, settle],
   );
 
-  return { react, unreact, act, edit, remove, closePoll, rowError };
+  return {
+    react,
+    unreact,
+    act,
+    edit,
+    remove,
+    closePoll,
+    reactionError,
+    clearReactionError,
+    actionError,
+    clearActionError,
+  };
 }

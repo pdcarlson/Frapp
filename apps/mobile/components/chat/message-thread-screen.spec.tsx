@@ -128,9 +128,12 @@ function threadState(overrides: Partial<ThreadStub> = {}): ThreadStub {
 let thread = threadState();
 /** The channel cache's copy of the parent (`useHeldChannelMessage`). */
 let heldRoot: ChatMessage | null = null;
+/** Other messages the channel's cache holds, by id. */
+let heldById: Record<string, ChatMessage> = {};
 vi.mock("@/lib/chat/use-message-thread", () => ({
   useMessageThread: () => thread,
-  useHeldChannelMessage: () => heldRoot,
+  useHeldChannelMessage: (_channelId: string, id: string | null) =>
+    id === ROOT ? heldRoot : id ? (heldById[id] ?? null) : null,
 }));
 
 const writes = {
@@ -140,7 +143,10 @@ const writes = {
   edit: vi.fn(async () => {}),
   remove: vi.fn(async () => {}),
   closePoll: vi.fn(async () => {}),
-  rowError: null as string | null,
+  reactionError: null as string | null,
+  clearReactionError: vi.fn(),
+  actionError: null as string | null,
+  clearActionError: vi.fn(),
 };
 let writesInput: Record<string, unknown> | null = null;
 vi.mock("@/lib/chat/use-thread-row-writes", () => ({
@@ -153,6 +159,7 @@ vi.mock("@/lib/chat/use-thread-row-writes", () => ({
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: () => {} }));
 
 const presentSheet = vi.fn();
+const dismissSheet = vi.fn();
 vi.mock("@/components/chat/message-actions-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
@@ -163,7 +170,7 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
     ) {
       useImperativeHandle(ref, () => ({
         present: presentSheet,
-        dismiss: () => {},
+        dismiss: dismissSheet,
       }));
       return createElement("MessageActionsSheet", props);
     }),
@@ -206,9 +213,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 const unblock = vi.fn(async () => {});
+const reloadMaskedCopies = vi.fn<(userId: string) => Promise<boolean>>(
+  async () => true,
+);
 vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/chat/block-actions")>()),
-  useBlockActions: () => ({ unblock, block: vi.fn() }),
+  useBlockActions: () => ({ unblock, block: vi.fn(), reloadMaskedCopies }),
 }));
 
 let writeBlockedReason: string | null = null;
@@ -257,7 +267,9 @@ beforeEach(() => {
   permissions = [];
   writeBlockedReason = null;
   heldRoot = null;
-  writes.rowError = null;
+  heldById = {};
+  writes.reactionError = null;
+  writes.actionError = null;
   writesInput = null;
   queryClient = new QueryClient();
 });
@@ -550,9 +562,7 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
       .findAllByType(ThreadMessageRow)
       .find((node) => node.props.row.message.id === id)!;
   const sheet = (tree: ReactTestRenderer) =>
-    tree.root.find(
-      (node) => (node.type as unknown) === "MessageActionsSheet",
-    );
+    tree.root.find((node) => (node.type as unknown) === "MessageActionsSheet");
 
   it("draws the parent and the replies as the timeline's rows, with their reactions", () => {
     thread = threadState({
@@ -637,16 +647,12 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     const mine = message(ROOT, { sender_id: VIEWER, content: "Mine" });
     thread = threadState({
       root: mine,
-      messages: [
-        message("r2", { thread_root_id: ROOT, sender_id: VIEWER }),
-      ],
+      messages: [message("r2", { thread_root_id: ROOT, sender_id: VIEWER })],
     });
     const tree = render();
     act(() => rowFor(tree, ROOT).props.onOpenActions(mine));
     expect(sheet(tree).props.target.canEdit).toBe(false);
-    act(() =>
-      rowFor(tree, "r2").props.onOpenActions(thread.messages[0]),
-    );
+    act(() => rowFor(tree, "r2").props.onOpenActions(thread.messages[0]));
     expect(sheet(tree).props.target.canEdit).toBe(true);
     act(() => tree.unmount());
   });
@@ -680,12 +686,78 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     act(() => tree.unmount());
   });
 
-  it("says why a reaction or a vote didn't land", () => {
-    writes.rowError = "This poll is closed";
+  it("says why a reaction or a vote didn't land, in the channel's dismissible banner", () => {
+    writes.actionError = "This poll is closed";
     const tree = render();
+    expect(screenText(tree)).toContain("This poll is closed");
+    // Not the composer's line, which stays the send's.
     const composer = tree.root.findByType(ChatComposer);
-    expect(composer.props.disabledHint).toBe("This poll is closed");
-    expect(composer.props.hintTone).toBe("error");
+    expect(composer.props.disabledHint).toBeNull();
+    const dismiss = tree.root.find(
+      (node) => node.props.label === "Dismiss" && !!node.props.onPress,
+    );
+    act(() => dismiss.props.onPress());
+    expect(writes.clearActionError).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("offers Delete on someone else's reply to a channel manager, and only to one", () => {
+    const tree = render();
+    act(() => rowFor(tree, "r1").props.onOpenActions(thread.messages[0]));
+    expect(sheet(tree).props.target.canDelete).toBe(false);
+    act(() => tree.unmount());
+
+    permissions = ["channels:manage"];
+    const again = render();
+    act(() => rowFor(again, "r1").props.onOpenActions(thread.messages[0]));
+    expect(sheet(again).props.target.canDelete).toBe(true);
+    act(() => again.unmount());
+  });
+
+  it("closes the sheet when its message is deleted while it is open", () => {
+    const tree = render();
+    act(() => rowFor(tree, "r2").props.onOpenActions(thread.messages[1]));
+    expect(dismissSheet).not.toHaveBeenCalled();
+    thread = threadState({
+      messages: [
+        thread.messages[0],
+        { ...thread.messages[1], is_deleted: true },
+      ],
+    });
+    act(() =>
+      tree.update(
+        <QueryClientProvider client={queryClient}>
+          <FrappThemeProvider>
+            <MessageThreadScreen channelId={CHANNEL} rootId={ROOT} />
+          </FrappThemeProvider>
+        </QueryClientProvider>,
+      ),
+    );
+    expect(dismissSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("reloads a stale tombstone's sender, then reads the thread again", async () => {
+    const tree = render();
+    await act(async () => rowFor(tree, "r1").props.onReload(BLOCKED));
+    expect(reloadMaskedCopies).toHaveBeenCalledWith(BLOCKED);
+    expect(thread.retryLoad).toHaveBeenCalled();
+
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    reloadMaskedCopies.mockResolvedValueOnce(false);
+    await act(async () => rowFor(tree, "r1").props.onReload(BLOCKED));
+    expect(alert).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("draws the parent's own quote from the channel's cache", () => {
+    const quoted = message("q1", { content: "Saturday's plan" });
+    heldById = { q1: quoted };
+    thread = threadState({
+      root: message(ROOT, { reply_to_id: "q1" }),
+    });
+    const tree = render();
+    expect(rowFor(tree, ROOT).props.replyParent).toBe(quoted);
     act(() => tree.unmount());
   });
 });
