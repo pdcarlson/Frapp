@@ -123,8 +123,12 @@ describe("previewKind", () => {
   it("falls back to the stored extension only when no useful type was recorded", () => {
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.pdf"))).toBe("pdf");
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.docx"))).toBe("none");
-    // The declared type wins over the name.
+    // The declared type wins over the name, even an unrecognised one the
+    // filter groups by its extension.
     expect(previewKind(doc("x", "x", "text/plain", "c/documents/x/minutes.pdf"))).toBe("none");
+    const legacy = doc("x", "x", "application/x-pdf", "c/documents/x/minutes.pdf");
+    expect(fileKind(legacy)).toBe("pdf");
+    expect(previewKind(legacy)).toBe("none");
   });
 
   // #3959: the File type filter called this an Image while the viewer showed
@@ -209,6 +213,27 @@ describe("DocumentViewer", () => {
     expect(mockSignedLinks).toHaveBeenCalledWith("d-3");
     // Nothing to draw, so no links were fetched until Download asked.
     expect(useDocumentSpy).toHaveBeenCalledWith("d-3", { enabled: false });
+  });
+
+  // #3959: the label comes from the classifier the filter uses, so an older
+  // row the filter calls a Spreadsheet isn't a bare "File" here.
+  it("names an untyped file by its stored extension, as the File type filter does", () => {
+    const old = doc("d-9", "Spring budget", null, "c/documents/d-9/budget.xlsx");
+    render(<Harness initial="d-9" documents={[old] as never[]} />);
+
+    const viewer = screen.getByRole("dialog", { name: "Spring budget" });
+    expect(
+      within(viewer).getByText("Excel spreadsheets can't be previewed yet."),
+    ).toBeInTheDocument();
+    expect(within(viewer).getAllByText(/^Excel spreadsheet · Uploaded/).length).toBeGreaterThan(0);
+  });
+
+  it("calls an image it can't draw by its type, not a Photo", () => {
+    const heic = doc("d-8", "Rush flyer", "image/heic");
+    render(<Harness initial="d-8" documents={[heic] as never[]} />);
+
+    const viewer = screen.getByRole("dialog", { name: "Rush flyer" });
+    expect(within(viewer).getByText("HEIC photos can't be previewed yet.")).toBeInTheDocument();
   });
 
   it("steps through the list in order with the arrow keys, wrapping at the ends", async () => {

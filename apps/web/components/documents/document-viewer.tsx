@@ -39,8 +39,10 @@ export type PreviewKind = "pdf" | "image" | "none";
  * fails.
  */
 export function previewKind(doc: Pick<ChapterDocument, "content_type" | "storage_path">): PreviewKind {
+  // By `type`, never `kind`: a declared type the classifier doesn't know is
+  // grouped by its extension, but previews only as what was declared.
   const file = classifyFile(doc);
-  if (file.kind === "pdf") return "pdf";
+  if (file.type === "application/pdf") return "pdf";
   if (isViewableImage(file.type)) return "image";
   return "none";
 }

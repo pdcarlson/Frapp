@@ -1,3 +1,4 @@
+import { contentTypeByExtension, fileExtension } from "@repo/validation";
 import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
 
 /**
@@ -88,39 +89,25 @@ const FILE_KIND_WORDS: Record<FileKind, readonly string[]> = {
 };
 
 /**
- * The type a stored extension stands for, when a row recorded none. Wider than
- * the upload allowlist (`@repo/validation`'s `upload-allowlists.ts`), which is
- * the gate for new files: rows filed before it existed can carry an `.odt`,
- * `.key` or `.svg`, and they still need a group and a label. No prototype, so
- * a file named `x.constructor` reads as unknown.
+ * The type a stored extension stands for, when a row recorded none: every
+ * extension the upload allowlist binds (its widest table, `archive`, so the
+ * two can't drift), plus the ones it never admitted that older rows still
+ * carry, which need a group and a label too. No prototype, so a file named
+ * `x.constructor` reads as unknown.
  */
-const EXTENSION_TYPE: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
-  pdf: "application/pdf",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  odt: "application/vnd.oasis.opendocument.text",
-  rtf: "application/rtf",
-  ppt: "application/vnd.ms-powerpoint",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  key: "application/vnd.apple.keynote",
-  odp: "application/vnd.oasis.opendocument.presentation",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  csv: "text/csv",
-  ods: "application/vnd.oasis.opendocument.spreadsheet",
-  txt: "text/plain",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  heic: "image/heic",
-  heif: "image/heif",
-  bmp: "image/bmp",
-  tif: "image/tiff",
-  tiff: "image/tiff",
-  svg: "image/svg+xml",
-});
+const EXTENSION_TYPE: Readonly<Record<string, string>> = Object.assign(
+  Object.create(null),
+  contentTypeByExtension("archive"),
+  {
+    odt: "application/vnd.oasis.opendocument.text",
+    rtf: "application/rtf",
+    key: "application/vnd.apple.keynote",
+    odp: "application/vnd.oasis.opendocument.presentation",
+    ods: "application/vnd.oasis.opendocument.spreadsheet",
+    heif: "image/heif",
+    svg: "image/svg+xml",
+  },
+);
 
 function kindOfMime(type: string): FileKind {
   if (type === "application/pdf") return "pdf";
@@ -163,8 +150,20 @@ const TYPE_LABEL: Readonly<Record<string, string>> = Object.assign(Object.create
   "application/vnd.ms-powerpoint": "PowerPoint deck",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint deck",
   "application/vnd.apple.keynote": "Keynote deck",
+  "application/vnd.oasis.opendocument.text": "OpenDocument text file",
+  "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument spreadsheet",
+  "application/vnd.oasis.opendocument.presentation": "OpenDocument presentation",
+  "application/rtf": "Rich text document",
+  "text/rtf": "Rich text document",
   "text/plain": "Text file",
   "text/csv": "CSV file",
+  // "Photo" is for what the viewer draws; these it offers as a download, and
+  // the card names them ("HEIC photos can't be previewed yet").
+  "image/heic": "HEIC photo",
+  "image/heif": "HEIF photo",
+  "image/tiff": "TIFF image",
+  "image/avif": "AVIF image",
+  "image/svg+xml": "SVG image",
 });
 
 const KIND_LABEL: Record<FileKind, string> = {
@@ -204,15 +203,21 @@ export function classifyFile(
   doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
 ): ClassifiedFile {
   const declared = doc.content_type?.split(";")[0]?.trim().toLowerCase() || null;
-  let type = declared && declared !== "application/octet-stream" ? declared : null;
-  if (type === null) {
-    const name = doc.storage_path?.split("/").pop() ?? "";
-    const dot = name.lastIndexOf(".");
-    const ext = dot > 0 ? name.slice(dot + 1).trim().toLowerCase() : "";
-    type = EXTENSION_TYPE[ext] ?? null;
-  }
-  const kind = type ? kindOfMime(type) : "other";
-  return { type, kind, label: (type && TYPE_LABEL[type]) || KIND_LABEL[kind] };
+  const type = declared && declared !== "application/octet-stream" ? declared : null;
+  const name = doc.storage_path?.split("/").pop() ?? "";
+  const fromName = EXTENSION_TYPE[fileExtension(name)] ?? null;
+  if (type === null) return describe(fromName, fromName);
+  // A declared type nothing here recognises (`text/plain` on a `.csv`, an
+  // old `application/x-pdf`) groups and names by the extension, as the filter
+  // always has. `type` stays what was declared: preview never goes past it.
+  const kind = kindOfMime(type);
+  if (kind === "other" && fromName) return describe(type, fromName);
+  return describe(type, type);
+}
+
+function describe(type: string | null, groupBy: string | null): ClassifiedFile {
+  const kind = groupBy ? kindOfMime(groupBy) : "other";
+  return { type, kind, label: (groupBy && TYPE_LABEL[groupBy]) || KIND_LABEL[kind] };
 }
 
 /** A document's format group ({@link classifyFile}). Anything unrecognised is Other. */
