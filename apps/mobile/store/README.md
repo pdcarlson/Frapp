@@ -15,7 +15,7 @@ no longer wait on a device build or on `preview` (#2415), and picked a framed de
 stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
 chapter, captures seven screens once, and frames them with a caption in the feature graphic's
 charcoal and gold, into `screenshots/app-store/` (1320 × 2868; the console took 1206 × 2622 instead, see § 6.4) and
-`screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
+`screenshots/google-play/` (1242 × 2208). No Ask screen, because production has none (#2259; the server's AI is off),
 and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
 App Review. The procedure, the captions, and where the sizes come from are in
 [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
@@ -258,7 +258,7 @@ record; each is a review-time or launch risk.
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — member-level report and block ship on mobile only in a binary built from `main` after the #2257 member-side change merged; the officer queue that reads reports is on the web dashboard only (#2311). Filtering before posting: [`spec/behavior/chat/README.md` § No pre-post content filter](../../../spec/behavior/chat/README.md#no-pre-post-content-filter) |
 | ~~[#2258](https://github.com/pdcarlson/Frapp/issues/2258)~~ | Decided 2026-09-23 (owner): Backwork stays off mobile for the beta; the web dashboard keeps it. See § Content Rights for what that changes in the console |
-| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
+| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) **Changed 2026-11-12 (#4415):** the build flag and its production fence are gone. Whether the app draws Ask is now the API's answer, so a reviewer sees no Ask while production runs with `AI_ENABLED` off, which is the default. Turning it on in production puts Ask, the AI sheet and minutes drafting in front of a reviewer in the binary already on the stores, so the listing, the review notes and the privacy answers must be updated first ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | ~~[#2261](https://github.com/pdcarlson/Frapp/issues/2261)~~ | Fixed in the repo 2026-09-23 with #2302: the Terms say 18 or older and carry the zero-tolerance clause Guideline 1.2 expects. The server refuses to add anyone to a chapter until they accept (join, onboarding). A member from before #2302 is asked by the app's Terms prompt, which is a client gate, not a server one: [`spec/behavior/legal.md`](../../../spec/behavior/legal.md#acceptance-record) § Acceptance record says what it can't block. Live only after the next Deploy production (landing, API and web) and in a binary built after it merged |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
@@ -283,19 +283,17 @@ the work; the detail lives there, not here.
 
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
 > gives the tagline as "Ask your chapter anything." and positions Frapp as the
-> AI-first operating system for Greek life, but Ask is gated behind
-> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — which alone
-> is *not* proof it is off in a build, as the dues note below explains, so an EAS
-> `production` build now refuses to evaluate its config with the flag on:
-> `apps/mobile/app.config.js`) and answers
-> from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
+> AI-first operating system for Greek life, but Ask is off in production: the app
+> draws it only when the API says the server has AI on (`AI_ENABLED`, off by default;
+> until 2026-11-12 a build flag, `EXPO_PUBLIC_ASK_ENABLED`, over a hand-written table,
+> both since deleted). Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.
 >
 > **The binary now agrees (2026-09-22).** The sign-in screen used to open on the brand
 > tagline, making in the app the claim this listing avoids. It now reads "Everything your
 > chapter needs is already in chat." ([#2298](https://github.com/pdcarlson/Frapp/issues/2298)),
-> and a build without Ask draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
+> and the app draws no Ask entry for a member without Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
 > The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
 > § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 

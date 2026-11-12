@@ -25,7 +25,7 @@ Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an a
 
 **Correction (2026-09-10):** `apps/mobile` PostHog RN has the same URL-shaped gap on capture/identify (current-route and deep-link query strings such as `/join?token=` and OAuth `state`). `posthog-react-native` inherits core `before_send` with the same CaptureEvent envelope as posthog-js; `buildMobilePostHogInitOptions` points it at the same `sanitizeIdentifiedPostHogCapture` helper (DOM-free: no `window` / `document`); since #3382 it runs behind an opt-out gate, `mobilePostHogBeforeSend` ([§ Route views](#route-views)). RN has no `property_denylist`; those keys are dropped in the sanitizer. Replay stays off. Landing still uses `sanitizeAnonymousPostHogCapture` (drops `$set`).
 
-LLM telemetry is allowed only at a real consumed server AI adapter. The mobile Ask mock (`apps/mobile/lib/ask/corpus.ts`) must not emit LLM analytics.
+LLM telemetry is allowed only at a real consumed server AI adapter. The clients' Ask surfaces (web's panel, the phone's sheet) emit no LLM analytics, and no question, answer or source text; `apps/mobile/lib/observability/wiring.spec.ts` holds the phone to that.
 
 ### Route views
 

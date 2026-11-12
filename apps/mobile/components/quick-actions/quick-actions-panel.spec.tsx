@@ -232,3 +232,42 @@ describe("editing in place", () => {
     expect(props.onSave).not.toHaveBeenCalled();
   });
 });
+
+describe("the Ask Frapp bar", () => {
+  function panel(onAsk: (() => void) | undefined, editing = false) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <QuickActionsPanel
+            shown={["message"]}
+            available={OFFICER}
+            width={374}
+            editing={editing}
+            canEdit
+            onAsk={onAsk}
+            {...props}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Ask Frapp",
+    );
+  }
+
+  it("is drawn only for a member who has Ask", () => {
+    expect(panel(undefined)).toHaveLength(0);
+    const onAsk = vi.fn();
+    const bars = panel(onAsk);
+    expect(bars).toHaveLength(1);
+    act(() => bars[0].props.onPress());
+    expect(onAsk).toHaveBeenCalledTimes(1);
+  });
+
+  it("steps aside while the actions are being edited", () => {
+    expect(panel(vi.fn(), true)).toHaveLength(0);
+  });
+});

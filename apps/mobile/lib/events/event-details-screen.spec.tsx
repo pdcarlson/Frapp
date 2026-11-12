@@ -85,6 +85,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
+// The minutes row has its own spec (`components/minutes/event-minutes-row.spec.tsx`).
+vi.mock("@/components/minutes/event-minutes-row", () => ({
+  EventMinutesRow: () => null,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: ACCENT,
