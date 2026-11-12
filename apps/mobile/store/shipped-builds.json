@@ -135,6 +135,13 @@
       "build": "12",
       "sha": "e83a01091981da4c02ca803696e4b159a9dc8967",
       "recorded": "2026-11-12"
+    },
+    {
+      "platform": "ios",
+      "version": "0.11.0",
+      "build": "19",
+      "sha": "dcdfde42275295f06702d7406320bc71f4d91110",
+      "recorded": "2026-11-12"
     }
   ]
 }
