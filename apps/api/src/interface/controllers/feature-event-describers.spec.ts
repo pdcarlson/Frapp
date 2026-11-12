@@ -121,6 +121,15 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'EventExcuseController.decide': {
+    'event-excuse-decided': [
+      [
+        'an approval',
+        { body: { decision: 'APPROVED' } },
+        { decision: 'APPROVED' },
+      ],
+    ],
+  },
   'BackworkController.confirmUpload': {
     'backwork-uploaded': [
       [

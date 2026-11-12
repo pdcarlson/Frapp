@@ -61,6 +61,9 @@ export * from "./event-attendance";
 // Editing or deleting an existing event: what a save sends, and whether to
 // ask "this event or all upcoming" first. Web and the phone share it (#3667).
 export * from "./event-edit";
+// Absence excuses for required events: the late window and reason limit the
+// API enforces and the apps read (#3735).
+export * from "./event-excuse";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,
