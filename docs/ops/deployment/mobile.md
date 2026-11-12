@@ -372,7 +372,7 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
-   is the point. **Merge it before any tester installs the build.** A build EAS reports from any
+   is the point. The job turns on squash auto-merge for it (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so it merges itself once its required checks pass and the next `auto` ship sees the build. If GitHub refuses auto-merge, the run summary says so: **merge it by hand before any tester installs the build.** A build EAS reports from any
    other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
    version, upload result, and whether it was recorded.
    If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new

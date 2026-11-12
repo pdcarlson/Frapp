@@ -1325,6 +1325,8 @@ describe("the record job", () => {
       TAG_BEFORE_UPLOAD: "${{ needs.build.outputs.tag-before-upload }}",
       DEPLOY_SHA: "${{ inputs.sha }}",
       GH_TOKEN: "${{ steps.app-token.outputs.token }}",
+      // The record PR merges itself (Paul, 2026-11-12).
+      AUTO_MERGE: "true",
       RUN_URL: RUN_URL_EXPR,
       RUN_ID: "${{ github.run_id }}",
       // Each attempt's own branch: a re-run must not collide with the PR an

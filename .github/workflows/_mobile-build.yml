@@ -769,6 +769,11 @@ jobs:
           TAG_BEFORE_UPLOAD: ${{ needs.build.outputs.tag-before-upload }}
           DEPLOY_SHA: ${{ inputs.sha }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # The record PR merges itself once its required checks pass (Paul,
+          # 2026-11-12), as the What's new bot PR does: the next `auto` ship
+          # can't see a build until it is on `main`. "false" goes back to
+          # merging it by hand.
+          AUTO_MERGE: "true"
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}

@@ -40,6 +40,16 @@
 // validated with the registry's own `parseRegistry` (`lib/shipped-builds-registry.mjs`)
 // before it is written.
 //
+// ── Why it merges itself ────────────────────────────────────────────────────
+// With AUTO_MERGE `true` (the `record` job sets it), the PR gets squash
+// auto-merge as soon as it opens. Paul asked for this on 2026-11-12: the next
+// `auto` ship can't see a build until its entry is on `main`, and a record PR
+// waiting on him made that ship build the same version again. Its required
+// checks still hold it, `api-contract-check` above all, so a contract break
+// keeps it open as before. GitHub turns auto-merge on only through GraphQL;
+// a refusal there leaves the PR open for a hand merge and is a warning, not a
+// failure, because the builds are recorded either way.
+//
 // ── How it fails ────────────────────────────────────────────────────────────
 // Exits 1 when a build it should record can't be (no token, an API refusal, a
 // wrong commit, a malformed version), and the summary then lists the entries
@@ -70,6 +80,8 @@
 //   ANDROID_UPLOAD    — the Android upload step's outcome, the same
 //   DEPLOY_SHA        — the validated SHA the run shipped and built
 //   GH_TOKEN          — the base-sync App token; empty when the mint failed
+//   AUTO_MERGE        — `true` turns on squash auto-merge for the PR, so it
+//                       merges itself once its required checks pass
 //   GITHUB_REPOSITORY — owner/repo
 //   RUN_URL, RUN_ID, RUN_ATTEMPT — this run, for the branch, the PR and the summary
 //   GITHUB_STEP_SUMMARY — where the summary goes
@@ -195,7 +207,7 @@ export function prTitle(entries) {
   return `chore(mobile): record ${entries.map(label).join(" and ")} in shipped-builds.json`;
 }
 
-export function prBody({ entries, rows, sha, runUrl, repo }) {
+export function prBody({ entries, rows, sha, runUrl, repo, autoMerge = false }) {
   const byStore = new Map(rows.map((r) => [r.store, r]));
   return [
     `[Deploy production](${runUrl}) shipped \`${sha}\`, built it on EAS, and submitted these builds to the stores without releasing them:`,
@@ -206,9 +218,15 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
       (e) => `| ${DISPLAY[e.platform]} | ${e.version} | ${e.build} | ${STORE[e.platform]} | \`${byStore.get(e.platform)?.buildId ?? "unknown"}\` |`,
     ),
     "",
-    `This adds one \`${REGISTRY_PATH}\` entry per submitted build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). Merge it before any tester installs one of these builds: until then the gate doesn't protect them.`,
+    `This adds one \`${REGISTRY_PATH}\` entry per submitted build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). ${
+      autoMerge
+        ? "It merges itself once its required checks pass, so the next `auto` ship sees these builds. Until it has merged, the gate doesn't protect them."
+        : "Merge it before any tester installs one of these builds: until then the gate doesn't protect them."
+    }`,
     "",
-    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, drop its entry before merging, or, once this has merged, move it to the registry's \`dropped\` list in a PR of its own.`,
+    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, ${
+      autoMerge ? "and this has not merged yet, drop its entry here; once it has," : "drop its entry before merging, or, once this has merged,"
+    } move it to the registry's \`dropped\` list in a PR of its own.`,
     "",
     `**If \`api-contract-check\` fails here,** \`main\` has already changed the API in a way these builds can't take (it is ahead of \`${sha}\`). Fix that on \`main\` before the next production ship, or waive a route no shipped binary calls as the README says, then re-run the check. Don't merge around it.`,
     "",
@@ -222,7 +240,7 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
  * @returns {Promise<{ outcome: "opened", url: string, branch: string } | { outcome: "already-recorded" }>}
  * @throws {Error} naming the call that failed
  */
-export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha, runUrl, runId, runAttempt }) {
+export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha, runUrl, runId, runAttempt, autoMerge = false }) {
   const call = async (method, path, body) => {
     const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
     if (!res.ok) {
@@ -258,10 +276,40 @@ export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha,
     title,
     head: branch,
     base: "main",
-    body: prBody({ entries: added, rows, sha, runUrl, repo }),
+    body: prBody({ entries: added, rows, sha, runUrl, repo, autoMerge }),
   });
   if (typeof pr?.html_url !== "string") throw new Error("POST /pulls returned no pull request URL.");
-  return { outcome: "opened", url: pr.html_url, branch };
+  const opened = { outcome: "opened", url: pr.html_url, branch };
+  if (!autoMerge) return opened;
+  return { ...opened, autoMerge: await enableAutoMerge({ token, fetchImpl, nodeId: pr.node_id }) };
+}
+
+const ENABLE_AUTO_MERGE = `mutation($id: ID!) {
+  enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) {
+    pullRequest { number }
+  }
+}`;
+
+/**
+ * Turn on squash auto-merge for the PR with GraphQL node id `nodeId`.
+ * Never throws: the PR is open and the builds are recorded whatever happens.
+ *
+ * @returns {Promise<{ on: true } | { on: false, reason: string }>}
+ */
+export async function enableAutoMerge({ token, fetchImpl, nodeId }) {
+  if (typeof nodeId !== "string" || nodeId === "") return { on: false, reason: "POST /pulls returned no node id." };
+  const res = await ghRequest({
+    token,
+    fetchImpl,
+    method: "POST",
+    path: "/graphql",
+    body: { query: ENABLE_AUTO_MERGE, variables: { id: nodeId } },
+  });
+  // GraphQL answers a refused mutation with HTTP 200 and an `errors` list.
+  const errors = Array.isArray(res.data?.errors) ? res.data.errors : [];
+  if (res.ok && errors.length === 0) return { on: true };
+  const detail = errors.map((e) => e?.message).filter(Boolean).join("; ") || (typeof res.data === "string" ? res.data : res.data?.message);
+  return { on: false, reason: `HTTP ${res.status}${detail ? `: ${detail}` : ""}` };
 }
 
 const STILL_RUNNING = new Set(["NEW", "IN_QUEUE", "IN_PROGRESS", "PENDING_CANCEL", "UNREAD", "unreported"]);
@@ -324,7 +372,14 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
   lines.push("");
   lines.push("> Production and the version tag don't depend on anything here: a failure leaves both as they are.", "");
   const uploaded = rows.some((r) => r.upload === "success");
-  if (pr?.outcome === "opened") {
+  if (pr?.outcome === "opened" && pr.autoMerge?.on) {
+    lines.push(`**Recorded in ${pr.url}.** It merges itself once its required checks pass.`, "");
+  } else if (pr?.outcome === "opened" && pr.autoMerge) {
+    lines.push(
+      `**Recorded in ${pr.url}.** Auto-merge could not be turned on (${pr.autoMerge.reason}), so merge it by hand before any tester installs these builds or the next \`auto\` ship.`,
+      "",
+    );
+  } else if (pr?.outcome === "opened") {
     lines.push(`**Recorded in ${pr.url}.** Merge it before any tester installs these builds.`, "");
   } else if (pr?.outcome === "already-recorded") {
     lines.push(`Every submitted build is already listed in \`${REGISTRY_PATH}\` on \`main\`; no PR was needed.`, "");
@@ -392,6 +447,7 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
           runUrl: env.RUN_URL,
           runId: env.RUN_ID,
           runAttempt: env.RUN_ATTEMPT,
+          autoMerge: env.AUTO_MERGE === "true",
         });
       } catch (error) {
         problems.push(`The shipped-builds PR could not be opened: ${error.message}`);
@@ -403,6 +459,7 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
   writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tag }));
   for (const problem of problems) log(`::error::${problem}`);
   if (pr?.outcome === "opened") log(`Opened ${pr.url} from ${pr.branch}.`);
+  if (pr?.autoMerge && !pr.autoMerge.on) log(`::warning::Auto-merge could not be turned on for ${pr.url} (${pr.autoMerge.reason}). Merge it by hand.`);
   return problems.length > 0 ? 1 : 0;
 }
 

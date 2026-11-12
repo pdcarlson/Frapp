@@ -303,6 +303,41 @@ describe("recordShippedBuilds", () => {
     assert.match(text, /\| iOS \| `ios-build-1` \| `FINISHED` \| 0\.9\.0 \(12\) \| `success` \| in the PR \|/);
   });
 
+  // Paul, 2026-11-12: the record PR merges itself, so the next `auto` ship
+  // sees its builds without waiting on a hand merge.
+  it("turns on squash auto-merge for the PR it opened when AUTO_MERGE is true", async () => {
+    const list = routes();
+    list[4] = { ...list[4], body: { ...list[4].body, node_id: "PR_node" } };
+    list.push({ method: "POST", path: "/graphql", body: { data: { enablePullRequestAutoMerge: { pullRequest: { number: 9000 } } } } });
+    const { code, calls, text } = await run({ AUTO_MERGE: "true" }, list);
+    assert.equal(code, 0);
+    const gql = calls.at(-1);
+    assert.equal(`${gql.method} ${new URL(gql.url).pathname}`, "POST /graphql");
+    assert.equal(gql.token, "app-token");
+    const sent = JSON.parse(gql.body);
+    assert.match(sent.query, /enablePullRequestAutoMerge\(input: \{ pullRequestId: \$id, mergeMethod: SQUASH \}\)/);
+    assert.deepEqual(sent.variables, { id: "PR_node" });
+    assert.match(JSON.parse(calls[4].body).body, /It merges itself once its required checks pass/);
+    assert.match(text, /pull\/9000\.\*\* It merges itself once its required checks pass\./);
+  });
+
+  it("leaves the PR open for a hand merge, and passes, when GitHub refuses auto-merge", async () => {
+    const list = routes();
+    list[4] = { ...list[4], body: { ...list[4].body, node_id: "PR_node" } };
+    list.push({ method: "POST", path: "/graphql", body: { errors: [{ message: "Auto merge is not allowed for this repository" }] } });
+    const { code, text, logs } = await run({ AUTO_MERGE: "true" }, list);
+    assert.equal(code, 0);
+    assert.match(text, /Auto-merge could not be turned on \(HTTP 200: Auto merge is not allowed for this repository\), so merge it by hand/);
+    assert.ok(logs.some((l) => l.startsWith("::warning::Auto-merge could not be turned on")));
+  });
+
+  it("asks for no auto-merge without AUTO_MERGE, and says to merge by hand", async () => {
+    const { calls, text } = await run();
+    assert.ok(!calls.some((c) => c.url.includes("/graphql")));
+    assert.match(JSON.parse(calls[4].body).body, /Merge it before any tester installs/);
+    assert.match(text, /Merge it before any tester installs these builds\./);
+  });
+
   it("opens no PR when every build is already listed", async () => {
     const listed = JSON.stringify({
       builds: [
