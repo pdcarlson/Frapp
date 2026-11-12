@@ -155,6 +155,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can now put your chapter's events and your tasks on Apple Calendar, Google Calendar or Outlook from the Events page, and they stay up to date.",
       "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
       "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
+      "Officers can now type @here in chat to notify only the people in a channel who are online right now.",
+      "On your phone, swiping to Messages from Chat no longer also opens the channel your finger started on.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
