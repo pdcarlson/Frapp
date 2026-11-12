@@ -29,7 +29,10 @@ const SETTLE_INTERVAL_MS = 60_000;
  * How many replies are new to the viewer in each thread they follow in the
  * open channel, by root id, for the thread card's "2 new" (#4297). Web's twin
  * is `apps/web/lib/chat/use-thread-unread.ts`; the rule for when to read is
- * chat-core's `threadVersion`, so the two read alike. On the phone the open
+ * chat-core's `threadVersion`, so the two read alike. The rest is a twin, as
+ * `use-message-thread.ts` is, because `@repo/hooks` doesn't depend on
+ * chat-core and chat-core holds no React; hoisting the twins into shared
+ * hooks is #4053. Change both together until then. On the phone the open
  * thread is its own screen over the channel, which passes no `openThreadId`:
  * a reply there re-reads once for the parent's echo and once when the thread
  * screen marks it read (`use-message-thread.ts`).
@@ -37,10 +40,10 @@ const SETTLE_INTERVAL_MS = 60_000;
  * When it reads:
  * - only while the loaded timeline holds a parent with replies;
  * - again when one of those parents gains a reply: its summary's Realtime
- *   echo moves `last_reply_at`, which is part of the query key. The open
- *   thread's own parent is left out of that, since reading it marks it read
- *   and re-reads this (`useMessageThread`), so a busy open thread costs one
- *   read per reply, not two;
+ *   echo moves `last_reply_at`, which is part of the query key. Web leaves
+ *   the open thread's parent out of that; the phone can't tell which thread
+ *   is open over the channel, so a reply there costs two reads, this one and
+ *   the one after the thread screen marks it read (`use-message-thread.ts`);
  * - every 5s while Realtime is down to polling, which never re-reads an old
  *   parent's summary, and once more when it comes back live (as
  *   `useMessageThread` does for the open thread);

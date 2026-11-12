@@ -23,6 +23,7 @@ import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@repo/chat-core/message-actions";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { AnnouncementCard } from "./announcement-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
@@ -160,6 +161,8 @@ function ThreadMessageRowBody({
   memberAvatarFor,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
+  // Before any early return: a hook (the card row's Bubbles side, below).
+  const density = useChatDensity(cached.channel_id);
 
   if (visibility === "tombstone") {
     const senderId = cached.sender_id;
@@ -288,6 +291,13 @@ function ThreadMessageRowBody({
             nameFor={nameFor}
             roleColorFor={roleColorFor}
             avatarFor={memberAvatarFor}
+            // Under the viewer's own card on the right in Bubbles, as under
+            // their own text (`MessageItem`).
+            align={
+              density === "bubbles" && message.sender_id === viewerId
+                ? "end"
+                : "start"
+            }
             unread={threadUnread}
             preview={threadPreview}
             viewerId={viewerId}

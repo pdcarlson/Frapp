@@ -8,7 +8,9 @@ import {
   fetchThreadUnread,
   loadThreadReplies,
   sendThreadReply,
+  threadCardLabel,
   threadChipLabel,
+  threadPreviewParts,
   threadVersion,
 } from "./threads";
 import { emptyCache } from "./cache";
@@ -453,5 +455,66 @@ describe("thread reads carry their actions (#4034)", () => {
     );
 
     expect(meta.root_actions).toEqual([onRoot]);
+  });
+});
+
+describe("threadPreviewParts and threadCardLabel (#4297)", () => {
+  const names = {
+    nameOf: (id: string) => (id === "u1" ? "Devin Okafor" : null),
+    fallbackLabel: (id: string) => `Member ${id.slice(0, 6)}`,
+  };
+  const reply = (
+    sender_id: string | null,
+    content = "grill is in my **garage**",
+  ) => ({
+    id: "r1",
+    sender_id,
+    content,
+    kind: "text" as const,
+    attachment_count: 0,
+    created_at: "2026-11-11T20:00:00.000Z",
+    sender_blocked: false,
+  });
+
+  test("names the replier by first name, the viewer as You, a stranger by the fallback", () => {
+    expect(threadPreviewParts(reply("u1"), "me", names)).toEqual({
+      name: "Devin",
+      fullName: "Devin Okafor",
+      text: "grill is in my garage",
+    });
+    expect(threadPreviewParts(reply("me"), "me", names).name).toBe("You");
+    expect(threadPreviewParts(reply("2f4a1c99"), "me", names).name).toBe(
+      "Member 2f4a1c",
+    );
+    expect(threadPreviewParts(reply(null), "me", names).name).toBeNull();
+  });
+
+  test("reads a file-only reply as its quote does", () => {
+    expect(
+      threadPreviewParts(
+        { ...reply("u1", ""), attachment_count: 2 },
+        null,
+        names,
+      ).text,
+    ).toBe("2 attachments");
+  });
+
+  test("says only what the card draws", () => {
+    expect(
+      threadCardLabel({
+        replies: "3 replies",
+        fresh: "2 new",
+        lastReply: "last reply 5m ago",
+        preview: { name: "Devin", text: "on my way" },
+      }),
+    ).toBe("3 replies, 2 new, last reply 5m ago, latest from Devin: on my way");
+    expect(
+      threadCardLabel({
+        replies: "1 reply",
+        fresh: null,
+        lastReply: null,
+        preview: { name: null, text: "hi" },
+      }),
+    ).toBe("1 reply, latest: hi");
   });
 });

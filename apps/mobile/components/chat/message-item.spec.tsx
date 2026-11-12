@@ -1533,6 +1533,14 @@ describe("thread chip (#3785)", () => {
     expect(chips(tree)[0]!.props.accessibilityLabel).toBe(
       "3 replies, last reply 5m ago, latest from Casey: grill is in my garage. Open thread",
     );
+    // The viewer's own latest reply reads "You".
+    const own = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadPreview: { ...preview, sender_id: VIEWER },
+    });
+    expect(chips(own)[0]!.props.accessibilityLabel).toContain(
+      "latest from You: grill is in my garage",
+    );
     // Without one, no preview line.
     const bare = renderItem(message({ thread: THREAD }), undefined, {
       onOpenThread: vi.fn(),

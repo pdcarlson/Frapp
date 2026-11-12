@@ -222,8 +222,7 @@ describe("MessageItem flags (#3921)", () => {
           (node) =>
             ((node.type as unknown) === "View" &&
               node.props.testID === "message-flag") ||
-            ((node.type as unknown) === "Text" &&
-              node.props.children === time),
+            ((node.type as unknown) === "Text" && node.props.children === time),
         )
         .map((node) =>
           node.props.testID === "message-flag" ? "flag" : "time",

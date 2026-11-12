@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { replyPreviewText } from "@repo/chat-core/reply-preview";
-import { threadChipLabel } from "@repo/chat-core/threads";
+import {
+  threadCardLabel,
+  threadChipLabel,
+  threadPreviewParts,
+} from "@repo/chat-core/threads";
 import type { ThreadLastReply, ThreadSummary } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
@@ -76,10 +80,11 @@ export interface ThreadChipProps {
  * face, first name and words). A tap pushes the thread. In cozy a connector
  * runs to it from the author's photo (`MessageItem`).
  *
- * On a narrow card "last reply" drops out whole first, then the faces one at
- * a time; the count, "new" and the chevron always show. Each drops by
- * wrapping onto a clipped second line, as web's does. The words are
- * chat-core's `threadChipLabel` and `replyPreviewText`, so the two read alike.
+ * On a narrow card "last reply" drops out whole first (measured, since React
+ * Native can't keep text from wrapping), then the faces one at a time, each
+ * wrapping onto a clipped second line; the count, "new" and the chevron always
+ * show. The words are chat-core's `threadChipLabel`, `threadPreviewParts` and
+ * `threadCardLabel`, which web's card reads too, so the two read alike.
  */
 export function ThreadChip({
   summary,
@@ -106,31 +111,29 @@ export function ThreadChip({
   const fresh = unread > 0 ? `${unread} new` : null;
 
   const previewSender = preview?.sender_id ?? null;
-  const previewAuthor = { sender_id: previewSender, author_name: null };
-  const previewFullName = preview
-    ? resolveAuthorName(previewAuthor, nameFor)
+  // Named as the timeline names an author, by the rule web's card shares.
+  const parts = preview
+    ? threadPreviewParts(preview, viewerId, {
+        nameOf: (id) =>
+          resolveAuthorName({ sender_id: id, author_name: null }, nameFor),
+        fallbackLabel: (id) =>
+          resolveAuthorLabel(
+            { sender_id: id, author_name: null },
+            nameFor,
+            null,
+          ),
+      })
     : null;
-  // Named as the timeline names an author: the roster's first name, "You",
-  // or "Member 2f4a1c" for someone who left.
-  const previewName = preview
-    ? previewSender !== null && previewSender === viewerId
-      ? "You"
-      : previewFullName
-        ? firstName(previewFullName)
-        : resolveAuthorLabel(previewAuthor, nameFor, viewerId)
-    : null;
-  const previewText = preview ? replyPreviewText(preview) : null;
+  const label = threadCardLabel({ replies, fresh, lastReply, preview: parts });
 
-  const label = [
-    replies,
-    fresh,
-    lastReply,
-    preview
-      ? `latest${previewName ? ` from ${previewName}` : ""}: ${previewText}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  // "last reply 5m ago" shows whole or not at all. React Native has no
+  // no-wrap for text, so its natural width is measured off screen and the
+  // phrase draws only where its box has that much room; the box gives way
+  // first when the row is short.
+  const [lastReplyWidth, setLastReplyWidth] = useState(0);
+  const [lastReplyRoom, setLastReplyRoom] = useState(0);
+  const lastReplyFits =
+    lastReplyWidth > 0 && lastReplyRoom >= lastReplyWidth - 0.5;
 
   return (
     <Pressable
@@ -193,9 +196,33 @@ export function ThreadChip({
           </View>
         ) : null}
         {lastReply ? (
-          <View style={styles.lastReplyBox}>
-            <View style={styles.leadShort} />
-            <Text style={styles.lastReply}>{lastReply}</Text>
+          <View
+            style={[
+              styles.lastReplyBox,
+              lastReplyWidth > 0 ? { width: lastReplyWidth } : null,
+            ]}
+            onLayout={(event) =>
+              setLastReplyRoom(event.nativeEvent.layout.width)
+            }
+          >
+            {/* Off screen in a wide box, so it measures at its full width. */}
+            <View style={styles.measure} pointerEvents="none">
+              <Text
+                style={styles.lastReply}
+                onLayout={(event) =>
+                  setLastReplyWidth(event.nativeEvent.layout.width)
+                }
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                {lastReply}
+              </Text>
+            </View>
+            {lastReplyFits ? (
+              <Text style={styles.lastReply} numberOfLines={1}>
+                {lastReply}
+              </Text>
+            ) : null}
           </View>
         ) : null}
         <DisclosureGlyph
@@ -210,9 +237,12 @@ export function ThreadChip({
             <MemberAvatar
               uri={avatarFor?.(previewSender) ?? null}
               initials={
-                previewFullName
-                  ? initialsFor(previewFullName)
-                  : authorInitialsFallback(previewAuthor)
+                parts?.fullName
+                  ? initialsFor(parts.fullName)
+                  : authorInitialsFallback({
+                      sender_id: previewSender,
+                      author_name: null,
+                    })
               }
               size={PREVIEW_FACE_SIZE}
               tint={memberAvatarTint(
@@ -225,23 +255,18 @@ export function ThreadChip({
               textStyle={styles.previewFaceText}
             />
           ) : null}
-          {previewName ? (
+          {parts?.name ? (
             <Text style={styles.previewName} numberOfLines={1}>
-              {previewName}
+              {parts.name}
             </Text>
           ) : null}
           <Text style={styles.previewText} numberOfLines={1}>
-            {previewText}
+            {parts?.text}
           </Text>
         </View>
       ) : null}
     </Pressable>
   );
-}
-
-/** A name's first word, as the Chat home preview names people. */
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0] || name;
 }
 
 function createStyles(tokens: SignetTokens) {
@@ -309,17 +334,21 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    // All or nothing: where "last reply" doesn't fit it wraps to a clipped
-    // second line rather than shrinking to "l…", and it gives way first.
+    // All or nothing, measured (above): it gives way first of all.
     lastReplyBox: {
-      flexDirection: "row",
-      flexWrap: "wrap",
       height: CAPTION_LINE,
       overflow: "hidden",
       flexShrink: 10000,
       minWidth: 0,
     },
-    leadShort: { width: 0, height: CAPTION_LINE },
+    measure: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: 1000,
+      flexDirection: "row",
+      opacity: 0,
+    },
     lastReply: {
       ...typeRole(tokens.typography.role.caption),
       lineHeight: CAPTION_LINE,

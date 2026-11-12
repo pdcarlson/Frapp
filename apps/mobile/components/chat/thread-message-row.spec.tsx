@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { setChatDensity } from "@/lib/chat/chat-density";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1469,5 +1471,34 @@ describe("ThreadMessageRow — the thread card's preview (#4297)", () => {
     expect(tree.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
       0,
     );
+  });
+
+  it("puts the card under the viewer's own poll on their side in Bubbles", () => {
+    act(() => setChatDensity("bubbles"));
+    const poll = message({
+      sender_id: VIEWER,
+      kind: "poll",
+      payload: {
+        question: "Formal theme?",
+        options: [{ id: "o1", label: "Masquerade" }],
+      },
+      thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+    });
+    const tree = renderRow(
+      { message: poll, visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    const card = tree.root.find(
+      (node) =>
+        node.props.testID === "thread-chip" &&
+        typeof node.props.style === "function",
+    );
+    const style = StyleSheet.flatten(
+      (card.props.style as (s: { pressed: boolean }) => unknown)({
+        pressed: false,
+      }) as StyleProp<ViewStyle>,
+    );
+    expect(style.alignSelf).toBe("flex-end");
+    act(() => setChatDensity("cozy"));
   });
 });
