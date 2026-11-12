@@ -108,11 +108,11 @@ export function ModuleGoals({
       title="Goals"
       hint="Each member sees a bar toward their goal at the top of Activity. Set a different goal for a role, and a member holding several answers to their highest-ranked one."
     >
-      {goals.isPending ? (
+      {goals.isPending || roles.isPending ? (
         <p className="text-caption text-muted-foreground">Loading goals</p>
-      ) : goals.isError ? (
+      ) : goals.isError || roles.isError ? (
         <p className="text-caption text-muted-foreground">
-          {`Goals couldn't load. ${errorCopy(goals.error)}`}
+          {`Goals couldn't load. ${errorCopy(goals.error ?? roles.error)}`}
         </p>
       ) : (
         <div className="space-y-6">
@@ -167,9 +167,12 @@ function GoalForm({
   const nameOf = new Map(roleOptions.map((role) => [role.id, role.name]));
   const max = maxDraft(metric);
 
-  /** A target as typed: empty is "no goal" for everyone, an error for a role. */
-  function check(key: string, draft: string, optional: boolean) {
-    if (optional && draft.trim() === "") {
+  /**
+   * A target as typed. Empty is "no goal": for everyone, or for a role set
+   * apart to be held to none (alumni, say, while everyone else owes hours).
+   */
+  function check(key: string, draft: string) {
+    if (draft.trim() === "") {
       setErrors((prev) => ({ ...prev, [key]: undefined }));
       return { value: null };
     }
@@ -183,18 +186,20 @@ function GoalForm({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const all = check("everyone", everyone, true);
+    const all = check("everyone", everyone);
     const roleTargets = rows.map((row) => ({
       role_id: row.role_id,
-      checked: check(row.role_id, row.draft, false),
+      checked: check(row.role_id, row.draft),
     }));
     if (!all || roleTargets.some((row) => !row.checked)) return;
     const unit = perUnit(metric);
+    const stored = (value: number | null) =>
+      value === null ? null : value * unit;
     const body: GoalSet = {
-      everyone: all.value === null ? null : all.value * unit,
+      everyone: stored(all.value),
       roles: roleTargets.map((row) => ({
         role_id: row.role_id,
-        target: (row.checked!.value as number) * unit,
+        target: stored(row.checked!.value),
       })),
     };
     save.mutate(body, {
@@ -225,7 +230,7 @@ function GoalForm({
           suffix={copy.suffix}
           draft={everyone}
           onDraft={setEveryone}
-          onBlur={() => void check("everyone", everyone, true)}
+          onBlur={() => void check("everyone", everyone)}
           error={errors.everyone}
           disabled={disabled}
         />
@@ -235,7 +240,7 @@ function GoalForm({
             <div key={row.role_id} className="relative">
               <NumberRule
                 label={name}
-                hint={`Members who hold ${name} work toward this instead.`}
+                hint={`Members who hold ${name} work toward this instead. Leave it empty to hold them to no goal.`}
                 suffix={copy.suffix}
                 draft={row.draft}
                 onDraft={(draft) =>
@@ -245,7 +250,7 @@ function GoalForm({
                     ),
                   )
                 }
-                onBlur={() => void check(row.role_id, row.draft, false)}
+                onBlur={() => void check(row.role_id, row.draft)}
                 error={errors[row.role_id]}
                 disabled={disabled}
               />

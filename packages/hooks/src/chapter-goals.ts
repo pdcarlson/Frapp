@@ -9,6 +9,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export type ChapterGoals = components["schemas"]["ChapterGoalsDto"];
 export type GoalSet = components["schemas"]["GoalSetDto"];
+export type MyGoals = components["schemas"]["MyGoalsDto"];
 
 /** Chapter-scoped keys; the read is `chapterGoalKeys.chapter(chapterId)`. */
 export const chapterGoalKeys = createChapterQueryKeys("chapter-goals");
@@ -16,7 +17,7 @@ export const chapterGoalKeys = createChapterQueryKeys("chapter-goals");
 /**
  * The chapter's goals for points, service hours and study hours (#1062),
  * for the officer setting them (`GET /v1/goals`, `chapter-config:view`).
- * A member never reads this: their own goal rides on the standing.
+ * A member reads only their own: on the standing, or `useMyGoals`.
  */
 export function useChapterGoals(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
@@ -32,10 +33,34 @@ export function useChapterGoals(options: { enabled?: boolean } = {}) {
   });
 }
 
+/** Keys for the caller's own goals; the read is `myGoalKeys.chapter(chapterId)`. */
+export const myGoalKeys = createChapterQueryKeys("my-goals");
+
+/**
+ * The caller's own goal on each measure (`GET /v1/goals/mine`), for a screen
+ * that draws only the goal, such as the phone's Study screen and More row,
+ * without reading the whole standing. Goals change rarely, so it stays fresh
+ * for five minutes; saving goals reads it again.
+ */
+export function useMyGoals(options: { enabled?: boolean } = {}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: myGoalKeys.chapter(chapterId!),
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/goals/mine");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+    enabled: !!chapterId && (options.enabled ?? true),
+  });
+}
+
 /**
  * Replace one measure's goals (`PUT /v1/goals/{metric}`). On success the
- * stored set replaces the cached one, and the viewer's own standing is read
- * again, since their bar may have changed with it.
+ * stored set replaces the cached one, and the viewer's own standing and
+ * goals are read again, since their bar may have changed with it.
  */
 export function useSetChapterGoals(metric: GoalMetric) {
   const client = useFrappClient();
@@ -59,6 +84,10 @@ export function useSetChapterGoals(metric: GoalMetric) {
       );
       void queryClient.invalidateQueries({
         queryKey: activityStandingKeys.chapter(chapterId),
+        exact: true,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: myGoalKeys.chapter(chapterId),
         exact: true,
       });
     },

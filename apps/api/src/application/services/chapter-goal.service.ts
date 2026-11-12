@@ -3,6 +3,7 @@ import {
   GOAL_ROLE_LIMIT,
   GOAL_TARGET_MAX,
   isGoalTarget,
+  isRoleGoalTarget,
 } from '@repo/validation';
 import {
   GOAL_METRICS,
@@ -10,10 +11,15 @@ import {
   type GoalSet,
 } from '#domain/entities/chapter-goal.entity';
 import type { Role } from '#domain/entities/role.entity';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
   CHAPTER_GOAL_REPOSITORY,
   type IChapterGoalRepository,
 } from '#domain/repositories/chapter-goal.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
 import {
   ROLE_REPOSITORY,
   type IRoleRepository,
@@ -41,7 +47,25 @@ export class ChapterGoalService {
     private readonly goalRepo: IChapterGoalRepository,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
+    private readonly auditLog: ChapterAuditLogService,
   ) {}
+
+  /**
+   * The caller's own goal on each measure, for a screen that needs only the
+   * goal (the phone's Study screen and More row), without the whole standing.
+   */
+  async goalsForUser(
+    chapterId: string,
+    userId: string,
+  ): Promise<Record<GoalMetric, number | null>> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    return this.goalsForMember(chapterId, member?.role_ids ?? []);
+  }
 
   /**
    * Every measure's goals, with roles that no longer exist left out (a role id
@@ -76,7 +100,7 @@ export class ChapterGoalService {
         throw new BadRequestException('Each role can have only one goal.');
       }
       seen.add(role.role_id);
-      if (!isGoalTarget(metric, role.target)) {
+      if (!isRoleGoalTarget(metric, role.target)) {
         throw new BadRequestException(targetMessage(metric));
       }
     }
@@ -86,6 +110,10 @@ export class ChapterGoalService {
         throw new BadRequestException('A role in this list no longer exists.');
       }
     }
+    const before =
+      (await this.goalRepo.findByChapter(chapterId)).find(
+        (row) => row.metric === metric,
+      )?.goals ?? NO_GOALS();
     const row = await this.goalRepo.upsert(
       chapterId,
       metric,
@@ -95,12 +123,22 @@ export class ChapterGoalService {
       },
       userId,
     );
+    // Audited like the rules beside it, and mirrored to #chapter-audit: a
+    // goal changes what every member's bar measures against.
+    await this.auditLog.record({
+      chapterId,
+      actorUserId: userId,
+      action: 'chapter_goals_updated',
+      targetType: 'chapter_goals',
+      targetId: null,
+      diff: { [metric]: { from: before, to: row.goals } },
+    });
     return row.goals;
   }
 
   /**
    * The member's goal on each measure: the goal on their highest-ranked role
-   * that has one, else everyone's, else `null`.
+   * set apart (which may be "no goal"), else everyone's, else `null`.
    */
   async goalsForMember(
     chapterId: string,
@@ -123,7 +161,7 @@ export class ChapterGoalService {
         .map((role, index) => [role.id, index]),
     );
     const pick = (set: GoalSet): number | null => {
-      let best: { target: number; rank: number } | null = null;
+      let best: { target: number | null; rank: number } | null = null;
       for (const goal of set.roles) {
         if (!held.has(goal.role_id)) continue;
         const at = rank.get(goal.role_id) ?? Number.POSITIVE_INFINITY;
@@ -157,7 +195,7 @@ export class ChapterGoalService {
           : null,
         roles: (Array.isArray(stored.roles) ? stored.roles : []).filter(
           (goal) =>
-            live.has(goal.role_id) && isGoalTarget(row.metric, goal.target),
+            live.has(goal.role_id) && isRoleGoalTarget(row.metric, goal.target),
         ),
       };
     }

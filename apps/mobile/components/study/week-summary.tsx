@@ -12,7 +12,7 @@ import { formatHoursValue } from "@/lib/study/format";
  * The board draws `5.4 of 6.0 hrs` over a meter. The `6.0` is the member's
  * weekly study goal, which officers set in Chapter settings → Service hours
  * (#1062, `chapter_goals`; one for everyone, or a different one for a role),
- * read here from the Activity standing (`study.goal_minutes`). With no goal
+ * read here through `useMyGoals` (`GET /v1/goals/mine`). With no goal
  * the line keeps the week's real total and session count and draws no meter:
  * a bar with an invented end would read as a chapter rule
  * (`spec/ui/mobile/screens.md`, "omitted, not faked").

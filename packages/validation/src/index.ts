@@ -1199,5 +1199,6 @@ export {
   GOAL_ROLE_LIMIT,
   GOAL_TARGET_MAX,
   isGoalTarget,
+  isRoleGoalTarget,
 } from "./chapter-goals";
 export type { GoalMetric } from "./chapter-goals";

@@ -3,9 +3,9 @@ import { Alert, AppState, StyleSheet, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
-  useActivityStanding,
   useCurrentChapter,
   useGeofences,
+  useMyGoals,
   usePermissionList,
   usePauseStudySession,
   useResumeStudySession,
@@ -152,10 +152,10 @@ export default function StudyScreen() {
   );
   const zonesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
-  // Only for the week's goal (#1062): THIS WEEK draws "of 6.0 hrs" and a
-  // meter when the chapter sets the member one. The minutes stay this
-  // screen's own, so a failed read only drops the goal.
-  const standing = useActivityStanding();
+  // The week's goal (#1062): THIS WEEK draws "of 6.0 hrs" and a meter when
+  // the chapter sets the member one. The minutes stay this screen's own, so a
+  // failed read only drops the goal.
+  const myGoals = useMyGoals();
   // A refetched page adopts a session and never clears one (below), so a
   // pull cannot end a live session.
   const refresh = useRefetchAll([chapterQuery, zonesQuery, sessionsQuery]);
@@ -970,7 +970,7 @@ export default function StudyScreen() {
         <WeekSummary
           minutes={weekTotals.minutes}
           sessionCount={weekTotals.count}
-          goalMinutes={standing.data?.study?.goal_minutes ?? null}
+          goalMinutes={myGoals.data?.study ?? null}
         />
 
         {history.length > 0 ? (

@@ -22,21 +22,22 @@ import {
   ChapterGoalsDto,
   GoalMetricParamDto,
   GoalSetDto,
+  MyGoalsDto,
 } from '../dtos/goals.dto';
 
 // Goals live beside the rules on each module's settings page, so they share
-// that page's gates: reading them is `chapter-config:view`, changing them is
-// `chapter-config:manage`. A member reads only their own goal, inside
-// `GET /v1/activity/standing`.
+// that page's gates: reading them all is `chapter-config:view`, changing them
+// is `chapter-config:manage`. A member reads only their own goal: in
+// `GET /v1/activity/standing`, or alone at `GET /v1/goals/mine`.
 @ApiTags('Goals')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-@RequirePermissions(SystemPermissions.CHAPTER_CONFIG_VIEW)
 @Controller('goals')
 export class GoalsController {
   constructor(private readonly goalService: ChapterGoalService) {}
 
   @Get()
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_VIEW)
   @ApiOperation({
     summary: "The chapter's goals for points, service hours and study hours",
   })
@@ -45,8 +46,25 @@ export class GoalsController {
     return this.goalService.getGoals(chapterId);
   }
 
+  @Get('mine')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @ApiOperation({
+    summary:
+      "The caller's own goal on each measure (points, service and study minutes), null where none",
+  })
+  @ApiOkResponse({ type: MyGoalsDto })
+  async getMyGoals(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<MyGoalsDto> {
+    return this.goalService.goalsForUser(chapterId, userId);
+  }
+
   @Put(':metric')
-  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
+  @RequirePermissions(
+    SystemPermissions.CHAPTER_CONFIG_VIEW,
+    SystemPermissions.CHAPTER_CONFIG_MANAGE,
+  )
   @ApiOperation({ summary: "Replace one measure's goals" })
   @ApiOkResponse({ type: GoalSetDto })
   @ApiBadRequestResponse({

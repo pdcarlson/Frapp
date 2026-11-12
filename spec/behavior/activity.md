@@ -115,14 +115,14 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 ## Goals
 
-What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure.
+What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:view` and `chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure. A member reads only their own: on the standing, or through `GET /v1/goals/mine` (`members:view`), which the phone's Study screen and More row use so they needn't read the whole standing.
 
 - **The window.** Points and service are per semester, the standing's window; study is per week, Sunday at local midnight, the Study screen's week.
-- **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
+- **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A role set apart with no number is held to no goal, which is how alumni or an officer role is exempted while everyone else owes hours. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
 - **Units.** Points are points. Hours are stored as minutes and typed in whole hours: up to 500 a semester for service and 80 a week for study, and up to 100,000 points (`GOAL_TARGET_MAX` in `@repo/validation`). A save naming a role the chapter doesn't have, or one role twice, is refused.
 - **A deleted role** drops out of the goals when they are next read, and the next save leaves it out.
 - **Where a member sees it.** Activity's "This semester" block draws the bar ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
-- Goal saves write no `chapter_audit_log` row yet.
+- **Audit.** Each save writes a `chapter_goals_updated` row to `chapter_audit_log`, with the measure's goals before and after as its diff.
 
 ## Unread
 

@@ -117,13 +117,13 @@ const refetchSessions = vi.fn();
 
 /** The viewer's permissions: a member unless a test says so. */
 let permissions: string[] = [];
-/** The member's weekly study goal in minutes (#1062), from the Activity standing. */
+/** The member's weekly study goal in minutes (#1062), from `useMyGoals`. */
 let studyGoal: number | null = null;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActivityStanding: () => ({
-    data: { study: { minutes: 0, week_start: "", goal_minutes: studyGoal } },
+  useMyGoals: () => ({
+    data: { points: null, service: null, study: studyGoal },
   }),
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   usePermissionList: () => permissions,

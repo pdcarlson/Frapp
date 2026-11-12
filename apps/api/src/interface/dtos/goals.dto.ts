@@ -39,13 +39,16 @@ export class RoleGoalDto implements RoleGoal {
   role_id!: string;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
     description:
-      'Points for a points goal; minutes for a service or study goal.',
+      'Points for a points goal; minutes for a service or study goal. Null holds the role to no goal.',
   })
+  @ValidateIf((_object, value) => value !== null)
   @IsInt()
   @Min(1)
   @Max(TARGET_CEILING)
-  target!: number;
+  target!: number | null;
 }
 
 export class GoalSetDto implements GoalSet {
@@ -88,4 +91,28 @@ export class ChapterGoalsDto implements ChapterGoals {
     description: 'Study minutes this week (Sunday to Saturday).',
   })
   study!: GoalSetDto;
+}
+
+export class MyGoalsDto {
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: "The caller's points goal this semester, or null.",
+  })
+  points!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The caller's approved service minutes goal this semester, or null.",
+  })
+  service!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: "The caller's study minutes goal this week, or null.",
+  })
+  study!: number | null;
 }

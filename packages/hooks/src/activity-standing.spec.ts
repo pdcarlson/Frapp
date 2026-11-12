@@ -69,6 +69,22 @@ describe("activityStandingRows", () => {
     );
   });
 
+  it("draws no goal from an older API that sends no goal fields", () => {
+    const rows = activityStandingRows({
+      points: { total: 42, rank: 5, ranked: 58 },
+      required_events: { required: 8, attended: 6, excused: 1 },
+      service: { approved_minutes: 270, pending_minutes: 90 },
+      study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
+      unavailable: [],
+    } as unknown as ActivityStanding);
+    expect(rows.map((row) => [row.id, row.value, row.progress])).toEqual([
+      ["points", "42", null],
+      ["required_events", "6 of 8", 0.75],
+      ["service", "4h 30m", null],
+      ["study", "2h 5m", null],
+    ]);
+  });
+
   it("leaves out a part the chapter has off", () => {
     const rows = activityStandingRows(
       standing({ points: null, service: null, study: null }),

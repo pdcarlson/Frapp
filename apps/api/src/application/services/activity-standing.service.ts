@@ -188,24 +188,43 @@ export class ActivityStandingService {
       return result.value;
     };
 
-    // The member's row, read once: their roles decide which events hold
-    // them and which goal is theirs.
-    const member = this.memberRepo.findByUserAndChapter(userId, chapterId);
+    // The member's row, read once and only when a part needs it: their roles
+    // decide which events hold them and which goal is theirs.
+    const wantsGoals = on('points') || on('hours');
+    const member =
+      on('events') || wantsGoals
+        ? this.memberRepo.findByUserAndChapter(userId, chapterId)
+        : Promise.resolve(null);
     // Goals only draw a bar, so a failed read leaves the numbers standing
     // without one rather than failing them.
-    const goals: Promise<Record<GoalMetric, number | null>> = member
-      .then((row) =>
-        this.goalService.goalsForMember(chapterId, row?.role_ids ?? []),
-      )
-      .catch((error: unknown) => {
-        reportCaughtFailure(this.logger, {
-          level: 'error',
-          site: 'activity-standing:goals',
-          message: `Activity standing could not read goals for chapter ${chapterId}`,
-          error,
-        });
-        return { points: null, service: null, study: null };
-      });
+    const goals: Promise<Record<GoalMetric, number | null>> = wantsGoals
+      ? member.then(
+          (row) =>
+            this.goalService
+              .goalsForMember(chapterId, row?.role_ids ?? [])
+              .catch((error: unknown) => {
+                reportCaughtFailure(this.logger, {
+                  level: 'error',
+                  site: 'activity-standing:goals',
+                  message: `Activity standing could not read goals for chapter ${chapterId}`,
+                  error,
+                });
+                return NO_GOALS;
+              }),
+          (error: unknown) => {
+            // With events on, its part reports this same failure.
+            if (!on('events')) {
+              reportCaughtFailure(this.logger, {
+                level: 'error',
+                site: 'activity-standing:member',
+                message: `Activity standing could not read the member row in chapter ${chapterId}`,
+                error,
+              });
+            }
+            return NO_GOALS;
+          },
+        )
+      : Promise.resolve(NO_GOALS);
 
     const [points, requiredEvents, service, study] = await Promise.all([
       on('points')
@@ -407,6 +426,13 @@ export class ActivityStandingService {
 type Settled<T> = { ok: true; value: T } | { ok: false };
 
 /** A part whose module is off: neither a value nor a failure. */
+/** No goal on any measure: none set, none wanted, or none readable. */
+const NO_GOALS: Readonly<Record<GoalMetric, number | null>> = {
+  points: null,
+  service: null,
+  study: null,
+};
+
 const OFF_RESULT = Symbol('off');
 const OFF: Promise<typeof OFF_RESULT> = Promise.resolve(OFF_RESULT);
 type Part<T> = Settled<T> | typeof OFF_RESULT;

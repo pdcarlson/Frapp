@@ -32,8 +32,9 @@ let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
-/** The member's weekly study goal in minutes, from the Activity standing. */
+/** The member's weekly study goal in minutes (#1062), from `useMyGoals`. */
 let studyGoal: number | null = null;
+const goalReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 /** `GET /v1/activity`: `undefined` is "not answered yet". */
 let activity: { needs_you_count: number; unavailable: string[] } | undefined;
 const activityReread = vi.hoisted(() => vi.fn());
@@ -63,9 +64,10 @@ afterEach(() => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useOwnAvatarTint: () => null,
-  useActivityStanding: () => ({
-    data: { study: { minutes: 0, week_start: "", goal_minutes: studyGoal } },
-  }),
+  useMyGoals: (options?: { enabled?: boolean }) => {
+    goalReadOptions.push(options);
+    return { data: { points: null, service: null, study: studyGoal } };
+  },
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({
@@ -245,6 +247,18 @@ describe("More hub clock (#2101)", () => {
       expect(screenText(render())).toContain("4.0 / 6.0 hrs");
     } finally {
       studyGoal = null;
+    }
+  });
+
+  it("doesn't read the study goal when Study is hidden", () => {
+    hiddenFeatures = new Set(["study"]);
+    goalReadOptions.length = 0;
+    try {
+      render();
+      expect(goalReadOptions.length).toBeGreaterThan(0);
+      expect(goalReadOptions.every((o) => o?.enabled === false)).toBe(true);
+    } finally {
+      hiddenFeatures = new Set();
     }
   });
 });

@@ -162,6 +162,7 @@ function build(
     eventService,
     attendanceRepo,
     goalService,
+    memberRepo,
   };
 }
 
@@ -474,6 +475,43 @@ describe('ActivityStandingService', () => {
       expect(reportSpy).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ site: 'activity-standing:goals' }),
+      );
+    });
+
+    it('reads neither goals nor the member row when only events-free parts are off', async () => {
+      const { service, goalService, memberRepo } = build();
+      await read(service, { points: false, events: false, hours: false });
+      expect(goalService.goalsForMember).not.toHaveBeenCalled();
+      expect(memberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+    });
+
+    it('reads no goals when points and hours are off', async () => {
+      const { service, goalService } = build();
+      await read(service, { points: false, hours: false });
+      expect(goalService.goalsForMember).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed member read once, as the member read, not as goals', async () => {
+      const { service, memberRepo } = build({
+        board: [{ user_id: ME, total: 12 }],
+      });
+      memberRepo.findByUserAndChapter.mockRejectedValue(new Error('timeout'));
+      const standing = await read(service);
+      expect(standing.points).toMatchObject({ total: 12, goal: null });
+      const sites = reportSpy.mock.calls.map(
+        ([, report]) => (report as { site: string }).site,
+      );
+      expect(sites).not.toContain('activity-standing:goals');
+      expect(sites).toContain('activity-standing:required-events');
+    });
+
+    it('names a failed member read itself when events is off', async () => {
+      const { service, memberRepo } = build();
+      memberRepo.findByUserAndChapter.mockRejectedValue(new Error('timeout'));
+      await read(service, { events: false });
+      expect(reportSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'activity-standing:member' }),
       );
     });
   });

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goals: undefined as Record<string, unknown> | undefined,
+  rolesPending: false,
   mutate: vi.fn(),
   toast: vi.fn(),
 }));
@@ -21,7 +22,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
   }),
   useSetChapterGoals: () => ({ mutate: state.mutate, isPending: false }),
-  useRoles: () => ({ data: ROLES }),
+  useRoles: () =>
+    state.rolesPending
+      ? { data: undefined, isPending: true, isError: false }
+      : { data: ROLES, isPending: false, isError: false },
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -40,6 +44,7 @@ const none = { everyone: null, roles: [] };
 describe("a module page's goals", () => {
   beforeEach(() => {
     state.goals = { points: none, service: none, study: none };
+    state.rolesPending = false;
     state.mutate.mockReset();
     state.toast.mockReset();
   });
@@ -79,15 +84,47 @@ describe("a module page's goals", () => {
     );
   });
 
-  it("won't save a role left without a number", async () => {
+  it("holds a role left empty to no goal", async () => {
+    state.goals = {
+      points: none,
+      service: { everyone: 600, roles: [] },
+      study: none,
+    };
+    const user = userEvent.setup();
+    render(<ModuleGoals metrics={["service"]} canManage />);
+    await user.click(
+      screen.getByRole("button", { name: "Different goal for a role" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "President" }));
+    await user.click(screen.getByRole("button", { name: "Save service goal" }));
+    expect(state.mutate).toHaveBeenCalledWith(
+      { everyone: 600, roles: [{ role_id: ROLES[0]!.id, target: null }] },
+      expect.anything(),
+    );
+  });
+
+  it("won't save a role with a number past the limit", async () => {
     const user = userEvent.setup();
     render(<ModuleGoals metrics={["points"]} canManage />);
     await user.click(
       screen.getByRole("button", { name: "Different goal for a role" }),
     );
     await user.click(await screen.findByRole("option", { name: "President" }));
+    await user.type(screen.getByLabelText("President"), "99999999");
     await user.click(screen.getByRole("button", { name: "Save points goal" }));
     expect(state.mutate).not.toHaveBeenCalled();
+  });
+
+  it("waits for the roles before naming a role's goal", () => {
+    state.goals = {
+      points: { everyone: 60, roles: [{ role_id: ROLES[0]!.id, target: 80 }] },
+      service: none,
+      study: none,
+    };
+    state.rolesPending = true;
+    render(<ModuleGoals metrics={["points"]} canManage />);
+    expect(screen.getByText("Loading goals")).toBeInTheDocument();
+    expect(screen.queryByText("Removed role")).toBeNull();
   });
 
   it("removes a role's own goal", async () => {

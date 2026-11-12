@@ -28,3 +28,12 @@ export function isGoalTarget(metric: GoalMetric, target: unknown): boolean {
     target <= GOAL_TARGET_MAX[metric]
   );
 }
+
+/**
+ * Whether `target` is a role's own goal: a goal this measure accepts, or
+ * `null` for "no goal" (a role held to nothing while everyone else has one,
+ * such as alumni or advisors).
+ */
+export function isRoleGoalTarget(metric: GoalMetric, target: unknown): boolean {
+  return target === null || isGoalTarget(metric, target);
+}

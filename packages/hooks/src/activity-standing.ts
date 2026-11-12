@@ -90,7 +90,9 @@ export function activityStandingRows(
     });
 
   if (standing.points) {
-    const { total, rank, ranked, goal } = standing.points;
+    // `?? null`: an API from before goals (#1062) sends no goal at all.
+    const { total, rank, ranked } = standing.points;
+    const goal = standing.points.goal ?? null;
     const place = rank === null ? null : `#${rank} of ${ranked}`;
     const ranking = rank === null ? "" : `, ranked ${rank} of ${ranked}`;
     rows.push({
@@ -127,8 +129,8 @@ export function activityStandingRows(
   }
 
   if (standing.service) {
-    const { approved_minutes, pending_minutes, goal_minutes } =
-      standing.service;
+    const { approved_minutes, pending_minutes } = standing.service;
+    const goal_minutes = standing.service.goal_minutes ?? null;
     const approved = formatMinutesRounded(approved_minutes);
     const goal =
       goal_minutes === null ? null : formatMinutesRounded(goal_minutes);
@@ -149,7 +151,7 @@ export function activityStandingRows(
   } else if (failed.has("service")) unreadable("service", "Service hours");
 
   if (standing.study) {
-    const { goal_minutes } = standing.study;
+    const goal_minutes = standing.study.goal_minutes ?? null;
     const minutes = formatMinutesRounded(standing.study.minutes);
     const goal =
       goal_minutes === null ? null : formatMinutesRounded(goal_minutes);
@@ -167,7 +169,7 @@ export function activityStandingRows(
 }
 
 /** How far `done` is toward `goal`, 0 to 1, or `null` when there is no goal. */
-function towards(done: number, goal: number | null): number | null {
-  if (goal === null || goal <= 0) return null;
+function towards(done: number, goal: number | null | undefined): number | null {
+  if (goal == null || !(goal > 0)) return null;
   return Math.min(1, Math.max(0, done / goal));
 }

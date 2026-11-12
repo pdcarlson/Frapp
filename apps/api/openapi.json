@@ -13466,6 +13466,43 @@
         ]
       }
     },
+    "/v1/goals/mine": {
+      "get": {
+        "operationId": "GoalsController_getMyGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own goal on each measure (points, service and study minutes), null where none",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
     "/v1/goals/{metric}": {
       "put": {
         "operationId": "GoalsController_setGoals_v1",
@@ -24550,7 +24587,8 @@
           },
           "target": {
             "type": "number",
-            "description": "Points for a points goal; minutes for a service or study goal."
+            "nullable": true,
+            "description": "Points for a points goal; minutes for a service or study goal. Null holds the role to no goal."
           }
         },
         "required": [
@@ -24605,6 +24643,31 @@
                 "$ref": "#/components/schemas/GoalSetDto"
               }
             ]
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
+        ]
+      },
+      "MyGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's points goal this semester, or null."
+          },
+          "service": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's approved service minutes goal this semester, or null."
+          },
+          "study": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's study minutes goal this week, or null."
           }
         },
         "required": [
