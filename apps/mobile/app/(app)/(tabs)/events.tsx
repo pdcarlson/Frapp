@@ -83,7 +83,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * it opens is hosted here rather than routed to, per
  * `spec/ui/mobile/patterns.md` § Bottom sheets.
  *
- * An officer who can create events (`events:create`) adds one from the tab
+ * A member who can create events (`events:create`, every member by default
+ * since #3709) adds one from the tab
  * bar's quick-actions + (New event, `components/quick-actions/`); the
  * one-line zero state points at it, as Tasks' does.
  *

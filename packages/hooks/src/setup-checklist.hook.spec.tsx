@@ -156,7 +156,7 @@ describe("useChapterSetupChecklist", () => {
   });
 
   it("reads no list for a line the viewer can't act on", () => {
-    reads.permissions = ["members:view", "events:create"];
+    reads.permissions = ["members:view", "events:create", "events:update"];
     const { result } = renderHook(() => useChapterSetupChecklist());
     expect(enabledCalls).toMatchObject({
       invites: false,
@@ -213,7 +213,12 @@ describe("useChapterSetupChecklist", () => {
   });
 
   it("refetches only the lists it reads", async () => {
-    reads.permissions = ["events:create", "members:view", "geofences:manage"];
+    reads.permissions = [
+      "events:create",
+      "events:update",
+      "members:view",
+      "geofences:manage",
+    ];
     const { result } = renderHook(() => useChapterSetupChecklist());
     await act(() => result.current.refetch());
     expect(refetched.sort()).toEqual(["events", "zones"]);

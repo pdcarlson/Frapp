@@ -29,6 +29,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Members create events and upload backwork by default (#3709)
+
+### 20261112152000_member_social_trust_defaults.sql
+
+- **Purpose**: Data-only permission backfill. In each chapter, the tier holding the seeded Member role (`system_key` MEMBER) and every tier ranked above it gain `events:create`, and the tiers above it gain `backwork:upload` when the Member role holds it (a chapter that took it from its members isn't handed it back). `trg_role_tiers_sync_roles` rewrites `roles.permissions` for every role in them, each keeping its own "off" overrides. A Member role outside the tiers gets `events:create` as an "on" override instead, unless it already has an override for it. Tiers ranked below the Member role's, roles outside the tiers, and chapters with no Member role are untouched. New chapters get the same from `STARTING_ROLE_TIERS`. The rule: [`spec/behavior/rbac.md` § Member defaults for chapters that already existed](../../../spec/behavior/rbac.md#member-defaults-for-chapters-that-already-existed). Verified in PGlite (`scripts/pglite/tiers/member-social-trust-defaults.mjs`), including a second run changing nothing.
+- **Checks**: After `db push`, `select c.name, t.position, t.name, 'events:create' = any (t.permissions) as creates, 'backwork:upload' = any (t.permissions) as uploads from role_tiers t join chapters c on c.id = t.chapter_id order by c.name, t.position;` shows `creates` true for the Member role's tier and every tier above it, and `select count(*) from roles where system_key = 'MEMBER' and not ('events:create' = any (permissions));` counts only Member roles with an "off" override for it.
+- **Promoter notes**: **Production is Paul's call.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate: on production it lets every member of Paul's chapter and the Apple reviewer chapter create events (#3709 asked for it, and #4068 decision 9 otherwise keeps new grants opt-in per existing chapter). Before the push, save the rows the rollback restores from: `select id, permissions from role_tiers;` and `select id, permission_overrides from roles where system_key = 'MEMBER' and tier_id is null;` (a CSV export of each is enough).
+  - **Deploy order.** `_deploy.yml` applies migrations before it deploys the API, so for the minutes between the two the previous API runs against the new grants. That API lets anyone holding `events:create` make an event required and worth points; this PR's API stores a member's event as optional and worth 0. Ship it as a `full` deploy of this commit or a later one, never `scope: migrations-only` ahead of the code, and don't roll the API back past this PR while the grants stand: roll the data back first ([`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-member-defaults-for-existing-chapters-20261112152000)).
+  - Two `update` statements; idempotent. No audit row is written. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-member-defaults-for-existing-chapters-20261112152000) § Rollback member defaults for existing chapters.
+
 ## 2026-11-12: The chapter guards read the caller in one call (#3583)
 
 ### 20261112151000_request_context_lookup.sql

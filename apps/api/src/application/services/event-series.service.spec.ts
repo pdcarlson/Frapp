@@ -25,6 +25,9 @@ const reportedAt = (site: string, level: 'error' | 'warning') =>
     expect.objectContaining({ level, tags: { caught_at: site } }),
   );
 
+/** The maker of these series, an `events:update` holder (#3709). */
+const OFFICER = 'user-officer';
+
 describe('EventSeriesService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
@@ -33,8 +36,17 @@ describe('EventSeriesService', () => {
 
   beforeEach(async () => {
     captureException.mockClear();
-    ({ service, mockEventRepo, mockNotificationService, mockMemberRepo } =
-      await createEventServiceFixture());
+    let mockRbacService: EventServiceFixture['mockRbacService'];
+    ({
+      service,
+      mockEventRepo,
+      mockNotificationService,
+      mockMemberRepo,
+      mockRbacService,
+    } = await createEventServiceFixture());
+    // An officer makes these series: making anyone required takes
+    // `events:update` (#3709).
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
   });
 
   // ── Recurring Instance Generation ───────────────────────────────────
@@ -48,6 +60,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(weeklyEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -80,6 +93,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(biweeklyEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -111,6 +125,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(monthlyEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -142,6 +157,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(weeklyEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -175,6 +191,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(zonedWeekly);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -204,6 +221,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(earlyWeekly);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -257,6 +275,7 @@ describe('EventSeriesService', () => {
       });
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Exec Meeting',
         start_time: baseEvent.start_time,
@@ -287,6 +306,7 @@ describe('EventSeriesService', () => {
 
       await expect(
         service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -324,6 +344,7 @@ describe('EventSeriesService', () => {
 
       await expect(
         service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -359,6 +380,7 @@ describe('EventSeriesService', () => {
 
       await expect(
         service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -380,6 +402,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -1117,6 +1140,7 @@ describe('EventSeriesService', () => {
         mockEventRepo.create.mockResolvedValue(overnight);
 
         await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Overnight',
           start_time: overnight.start_time,

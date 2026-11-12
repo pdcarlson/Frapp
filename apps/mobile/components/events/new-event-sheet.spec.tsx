@@ -279,6 +279,39 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
+  // #3709: every member can create an event; points and "required" are for
+  // the officers who hold events:update.
+  it("gives a member who can't edit events no points and no required default", () => {
+    permissions = ["members:view", "events:create"];
+    try {
+      const tree = render();
+      act(() => chip(tree, "Chapter meeting").props.onPress());
+      expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
+      expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
+        "More options: Optional for everyone · Doesn't repeat",
+      );
+      act(() => byLabel(tree, "More options").props.onPress());
+      expect(screenText(tree)).not.toContain("Points for attending");
+      // The Who's coming sheet offers no Required answer (#4483).
+      const attendance = tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.value?.everyone !== undefined,
+      );
+      expect(attendance.props.allowRequired).toBe(false);
+
+      act(() => createButton(tree).props.onPress());
+      expect(mutate.mock.calls[0]![0]).toMatchObject({
+        event_type_id: "type-meeting",
+        is_mandatory: false,
+      });
+      expect(mutate.mock.calls[0]![0]).not.toHaveProperty("point_value", 10);
+      act(() => tree.unmount());
+    } finally {
+      permissions = ["*"];
+    }
+  });
+
   it("says nothing is wrong until Create, and only Create brings a line back", () => {
     const tree = render();
     expect(createButton(tree).props.disabled).toBe(false);
