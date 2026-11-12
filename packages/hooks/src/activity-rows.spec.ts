@@ -9,6 +9,7 @@ import {
   activityNextUpLine,
   activityPollIsOpen,
   activityRowAction,
+  parseActivityFilter,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -1036,5 +1037,65 @@ describe("activityRowAction (#4402)", () => {
       "Formal venue?": null,
       Later: null,
     });
+  });
+});
+
+describe("the Needs you filter (#4402)", () => {
+  it("keeps every kind waiting on the member and empties the other groups", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ id: "mine", title: "Mine" })],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll()],
+      },
+      coming_up: [event({ id: "later", name: "Later" })],
+      links: [link()],
+      made_by_you: {
+        polls: [poll({ message_id: "p9", question: "Mine?" })],
+        tasks: [],
+        events: [],
+      },
+      unavailable: ["links"],
+    });
+    const groups = activityGroups(
+      data,
+      "waiting",
+      new Date("2026-11-12T00:00:00.000Z"),
+    );
+    const byId = Object.fromEntries(groups.map((group) => [group.id, group]));
+    expect(byId["needs-you"]!.rows.map((row) => row.title).sort()).toEqual([
+      "Formal venue?",
+      "Mine",
+    ]);
+    for (const id of ["coming-up", "links", "made-by-you"] as const) {
+      expect(byId[id]!.rows).toEqual([]);
+      expect(byId[id]!.unavailable).toEqual([]);
+      expect(byId[id]!.archive).toBeNull();
+    }
+    // Nothing held back under a chip.
+    expect(byId["needs-you"]!.parts.every((part) => part.limit === null)).toBe(
+      true,
+    );
+  });
+
+  it("says a Needs you section that couldn't load, whatever its kind", () => {
+    const groups = activityGroups(
+      activity({ unavailable: ["polls", "hours_approvals"] }),
+      "waiting",
+    );
+    expect(
+      groups.find((group) => group.id === "needs-you")!.unavailable,
+    ).toEqual(["hours_approvals", "polls"]);
+  });
+});
+
+describe("parseActivityFilter", () => {
+  it("reads back a chip and nothing else", () => {
+    expect(parseActivityFilter("waiting")).toBe("waiting");
+    expect(parseActivityFilter("link")).toBe("link");
+    expect(parseActivityFilter("confirm")).toBeNull();
+    expect(parseActivityFilter("bogus")).toBeNull();
+    expect(parseActivityFilter(null)).toBeNull();
   });
 });

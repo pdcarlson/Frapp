@@ -20,6 +20,10 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  readActivityFilter,
+  writeActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
@@ -381,7 +385,15 @@ export function ActivityPage() {
   const { userId } = useFrappUser();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one this person
+  // last left the page on in this browser (#4402), else All.
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const stored = useMemo(() => readActivityFilter(userId), [userId]);
+  const filter: ActivityFilter = picked ?? stored ?? "all";
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    writeActivityFilter(userId, next);
+  };
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
@@ -517,7 +529,7 @@ export function ActivityPage() {
           <GroupSection
             key={group.id}
             group={group}
-            filtered={filter !== "all"}
+            filtered={filter !== "all" && filter !== "waiting"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
             rowActions={{ gate: actionGate, onActed: actedOnRow }}
