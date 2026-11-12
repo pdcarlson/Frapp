@@ -231,6 +231,32 @@ Because `workflow_run` executes the **default branch's** copy of the workflow an
 to either take effect only after merging to `main` — they cannot be exercised from the PR that
 introduces them (unit tests + this doc are the pre-merge verification).
 
+## Merging `main` into a PR (`npm run merge:main`)
+
+When a PR needs `main` (a base-sync conflict wake, or a fix that landed there), its session runs
+`npm run merge:main` ([`scripts/merge-main.mjs`](../../scripts/merge-main.mjs)) instead of
+`git fetch origin main && git merge origin/main`. Nearly every API PR conflicts in
+`apps/api/openapi.json` and `packages/api-sdk/src/types.ts` when it merges `main`, because both are
+regenerated whole, and neither side of that conflict is right: the answer is a fresh export of the
+merged source. The script:
+
+1. refuses on uncommitted changes to tracked files, fetches `origin/main` (`--base <ref>` for
+   another), and merges it without committing;
+2. takes `main`'s side of a conflict in those two files;
+3. stops if any other file conflicts and lists it. Resolve each, `git add` it, then run
+   `npm run merge:main -- --continue`, not `git commit`, or the contract stays `main`'s;
+4. regenerates the contract whenever both sides changed it since they split, conflict or not (two
+   exports merged line by line are not an export), with the same commands as
+   `check:api-contract`, then commits the merge. A compile error leaves the merge in progress for
+   `--continue`;
+5. runs `npm run migration:renumber`, which does nothing unless `main` now has a migration that
+   sorts after one of the branch's. Its renames are left uncommitted for the session to read
+   (it lists any bare old version it could not safely rewrite) and commit.
+
+Other generated or shared files (`package-lock.json`, the shipped-builds registry) are left to the
+session or the sweep below. CI's `check:api-contract` still checks the merged contract against the
+source. Tests: `scripts/ci/__tests__/merge-main.test.mjs`, against a throwaway repository.
+
 ## Base-branch sync (`scripts/ci/pr-base-sync.mjs`)
 
 **Since 2026-11-11 a PR need not be up to date to merge** (Paul). Branch protection's "Require

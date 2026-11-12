@@ -29,8 +29,12 @@
 import { execSync } from "node:child_process";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
-/** Artifacts that must stay in sync with API source. */
-const CONTRACT_ARTIFACTS = [
+/**
+ * Artifacts that must stay in sync with API source. Also read by
+ * scripts/merge-main.mjs, which regenerates them when a merge of main touches
+ * them on both sides.
+ */
+export const CONTRACT_ARTIFACTS = [
   "apps/api/openapi.json",
   "packages/api-sdk/src/types.ts",
 ];
@@ -132,6 +136,19 @@ function run(command) {
   });
 }
 
+/**
+ * Rewrite CONTRACT_ARTIFACTS from the current source: build the shared packages
+ * the export compiles against (see main() for why it builds them itself), export
+ * the OpenAPI document, and generate the SDK types from it. Throws on a compile
+ * error. Shared with scripts/merge-main.mjs, so the two never regenerate
+ * differently.
+ */
+export function regenerateContract() {
+  run("npx turbo run build --filter='./packages/*'");
+  run("npm run openapi:export -w apps/api");
+  run("npm run generate -w packages/api-sdk");
+}
+
 function main() {
   const base = getArg("--base");
   const head = getArg("--head");
@@ -158,9 +175,7 @@ function main() {
     // working. Turbo caches it, so it costs nothing when packages are current.
     // Don't remove it because CI already prebuilds: that prebuild is exactly
     // what would hide the removal, so only a cold clone would fail (#683).
-    run("npx turbo run build --filter='./packages/*'");
-    run("npm run openapi:export -w apps/api");
-    run("npm run generate -w packages/api-sdk");
+    regenerateContract();
   } catch (error) {
     console.error("");
     console.error("Failed to regenerate API contract artifacts.");
