@@ -33,8 +33,7 @@ import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
   const EXPECTED_PUBLIC_POLICIES = [
     "chapter_audit_log.audit_log_no_delete [DELETE] to {public}",
     "chapter_audit_log.audit_log_no_update [UPDATE] to {public}",
-    "chat_message_actions.chat_message_actions_delete [DELETE] to {public}",
-    "chat_message_actions.chat_message_actions_insert [INSERT] to {public}",
+    "chat_message_actions.chat_message_actions_delete [DELETE] to {authenticated}",
     "chat_message_actions.chat_message_actions_select [SELECT] to {authenticated}",
     "chat_messages.chat_messages_select [SELECT] to {authenticated}",
     "chat_notification_preferences.chat_notification_preferences_select_own [SELECT] to {public}",
@@ -86,14 +85,14 @@ import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
   // assume it.
   // BOTH halves, deliberately. `qual` governs reads (and the row a write may
   // target); `with_check` governs what a write may create. A FOR INSERT policy
-  // like `chat_message_actions_insert` has a NULL `qual` and carries its entire
+  // has a NULL `qual` and carries its entire
   // predicate in `with_check`, so a qual-only check can never fire for it — and
   // on the FOR ALL policy it is `with_check` that gates the write path. Reading
   // only `qual` would leave the write side of both entirely unpinned.
   //
   // This is a tripwire for the obvious rewrite, not a proof: it catches the
   // literal tautologies, and an adversarial `using (id = id)` would still pass.
-  // It exists because two of these ten have no other coverage anywhere in the
+  // It exists because two of these nine have no other coverage anywhere in the
   // repo (`chat_notification_preferences_select_own`,
   // `member_custom_field_values_service_role`).
   const TAUTOLOGY = /^\s*\(*\s*(true|1\s*=\s*1)\s*\)*\s*$/i;

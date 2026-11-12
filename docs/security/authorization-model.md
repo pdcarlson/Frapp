@@ -278,7 +278,7 @@ that set still cannot see a policy *rewritten in place*, the check also rejects 
 policy a client can reach whose qualifier is a bare tautology, checking **both `qual` and
 `with_check`**. The two `auth_admin_can_read_*` policies are `using (true)` by design. They are
 exempt because they bind `supabase_auth_admin` alone, which no client request can assume. Reading only `qual` would
-miss the write path entirely: a `FOR INSERT` policy such as `chat_message_actions_insert` has a NULL
+miss the write path entirely: a `FOR INSERT` policy has a NULL
 `qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
 that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
 qualifier all unchanged — would otherwise have passed clean while letting any client insert arbitrary
@@ -290,7 +290,7 @@ This is a tripwire for the obvious rewrite, not a proof: it catches the literal 
 
 Note the limit of the guard: this inventory does **not** cover the two policies it cannot see.
 Dropping `realtime_messages_scoped_select` or `realtime_messages_scoped_insert` would leave it
-printing its clean `(10 here, 12 hosted)`. The `12` is derived from the pinned list plus those
+printing its clean `(9 here, 11 hosted)`. The `11` is derived from the pinned list plus those
 two, so it would then be reporting a hosted figure that is itself wrong. Both are exercised
 instead by `apps/web/lib/realtime/change-topics.spec.ts`, which replays the migrations on its own
 PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-never-connected--resolved-2026-08-16-867)).
@@ -300,7 +300,7 @@ PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id) AND NOT (starts_with(action_type, 'reaction:') AND chat_viewer_has_blocked(user_id, message_id))`. The first two conjuncts are a per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. The third, since `20260924170000` (#2494), withholds a blocked member's reactions from the member who blocked them. `chat_viewer_has_blocked` is `SECURITY DEFINER` too and takes no blocker parameter: it resolves the viewer from `auth.uid()`, so it only answers about the caller's own block list, and the blocked member's reads don't change. It answers false for a message the caller can't read (`can_read_chat_channel`), so over RPC it can't be used to test whether a message exists. Votes and other action types are unaffected. RLS is the only gate here: both clients hydrate reactions with a direct select (each `use-chat-channel.ts`), and live ones come over the Realtime subscription in `packages/chat-core/src/realtime-manager.ts` |
 | `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
 | `realtime.messages` | `realtime_messages_scoped_select`, `realtime_messages_scoped_insert` | **SELECT** authorises five private topics by prefix — the three change-ping topics (`notif:` / `events:` / `attendance:`) and, since 2026-09-06 (#1552, migration `20260906203000`), the two presence topics: the Directory's `presence:chapter:<chapterId>` behind chapter membership (`realtime_can_read_chapter_scope`, as `events:` already was) and chat's `chat:channel:<channelId>` behind **`can_read_chat_channel`** — the channel half of `can_read_chat_message`, extracted so the message RLS and the realtime authorisation share one definition of "may read this channel" (PUBLIC to the chapter, PRIVATE/DM/GROUP_DM to `member_ids`, ROLE_GATED by permission, a ROLE_GATED channel with no requirement to nobody). Chapter membership alone would have exposed DM presence chapter-wide. **INSERT** authorises `extension = 'presence'` on `presence:chapter:` and `presence` **or** `broadcast` on `chat:channel:` (typing is a client broadcast), each behind the same predicate as its SELECT arm; the change-ping topics are receive-only. Both `case`s end in `else false`: any other topic is denied on a private channel and must ship a branch here before it can go private. **Presence stays advisory even now:** the policies see the topic and the message extension, not the presence payload, so a member who may read a channel can still publish an entry naming another member of it. Since #3845 a chapter entry also carries a picked status and a custom line, so such a forged entry can put a status and words under another member's name, not only mark them online (accepted for now; [`chat/README.md`](../../spec/behavior/chat/README.md) § Online/offline presence). What is closed is the anon-key outsider, in both directions, on both topics |
-| `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
+| `chat_message_actions` | `_delete` | `to authenticated`, `starts_with(action_type, 'reaction:') AND chat_action_is_callers(user_id)`: a member takes back their own reaction, the one direct write both apps make (ADR-05). Since `20261112270000` (#724, #4513). Before it, this policy and an `_insert` policy found the caller through a plain `users` subselect, which sees no rows under `users`' default-deny, so neither ever matched and removing a reaction silently did nothing. `chat_action_is_callers` is `SECURITY DEFINER` and answers only whether the id is the caller's own. There is no `_insert` or `_update` policy, and INSERT and UPDATE are revoked from `anon` and `authenticated`: reactions, votes and sign-up claims are written by the API as `service_role` after its channel, poll and slot checks. Proven by execution in the client-writes tier of `chat-black-box.mjs` |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
 | `member_custom_field_values` | `_service_role` | `auth.role() = 'service_role'` — explicit rather than implicit; no non-service access |
@@ -341,12 +341,13 @@ the accepted functions below.
 
 - **`anon` may call none of them.** The Supabase advisor's lint 0028
   (`anon_security_definer_function_executable`) stays at zero.
-- **`authenticated` may call exactly these six.** The advisor's lint 0029
+- **`authenticated` may call exactly these seven.** The advisor's lint 0029
   (`authenticated_security_definer_function_executable`) still reports each of them as a WARN, since
   it has no accepted state; the acceptance is this repo's decision, recorded here and in the tier
   below. Each one backs a check that runs as the signed-in caller, so revoking it breaks that
   check: `can_read_chat_message` and `chat_viewer_has_blocked` (the `chat_message_actions` and
-  `chat_messages` policies above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
+  `chat_messages` policies above), `chat_action_is_callers` (the `chat_message_actions_delete`
+  policy above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
   `chat:channel:` topic), and `realtime_can_read_user_scope`, `realtime_can_read_chapter_scope` and
   `realtime_can_read_event_scope` (the other Realtime topics). Each resolves the caller from
   `auth.uid()`, so over RPC it only answers about what the caller may already read.
@@ -618,10 +619,10 @@ per-migration `has_function_privilege` checks in `docs/ops/database/promotion-lo
 hosted-side confirmation. Until then this paragraph said the defaults were not replayed.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
-own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
-`polqual` / `polwithcheck`, not by attempting a write as a non-owner — a policy whose `with check`
-still mentions `user_id` and `auth.uid()` without restricting them would pass. That gap is real and
-is not claimed to be closed here.
+write path has its own tier in the same file ("client writes", since `20261112270000`): it grants
+the probe `INSERT`, `UPDATE` and `DELETE` and proves that a member can insert no action row, change
+no vote, delete no vote or sign-up claim and no one else's reaction, and can take back their own
+reaction.
 
 Each reader's **exact visible set** is asserted, not a row count — a total is satisfied by the right
 *number* of wrong rows, so a policy swapping one PRIVATE row for one cross-chapter row would keep a

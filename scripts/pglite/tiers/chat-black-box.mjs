@@ -279,6 +279,103 @@ if (readSeeded) {
     }
 
 
+    // ─── chat_message_actions client writes (black-box, SET ROLE) ───────────
+    //
+    // The read tiers above grant the probe SELECT only, so until now the write
+    // policies were proven by shape alone (authorization-model.md § 4). This
+    // tier grants INSERT, UPDATE and DELETE and tries them. Clients write
+    // reactions, votes and sign-ups through the API, which checks channel
+    // access, the poll and the sign-up limit and writes as service_role. The
+    // one direct write left is taking back your own reaction (ADR-05). So:
+    //   - an insert, even of your own reaction on a message you can read, is
+    //     refused, and so is one on a channel you can't read;
+    //   - an update of your own vote is refused (no UPDATE policy: no rows);
+    //   - a delete of your own vote or sign-up removes nothing;
+    //   - a delete of your own reaction removes it, and of someone else's
+    //     removes nothing.
+    // Rolled back, so the tiers below see the seeded rows unchanged.
+    console.log("\n=== chat_message_actions client writes (black-box, SET ROLE) ===");
+    await db.exec("savepoint write_tier;");
+    try {
+      const W = {
+        ownReaction: "40000001-0000-0000-0000-000000000001",
+        ownVote: "40000002-0000-0000-0000-000000000001",
+        ownSignup: "40000003-0000-0000-0000-000000000001",
+        otherReaction: "40000004-0000-0000-0000-000000000001",
+      };
+      await db.exec(`
+        insert into chat_message_actions (id, message_id, user_id, action_type) values
+          ('${W.ownReaction}',   '${F.msgPublic}', '${F.userCId}', 'reaction:👍'),
+          ('${W.ownVote}',       '${F.msgPublic}', '${F.userCId}', 'vote'),
+          ('${W.ownSignup}',     '${F.msgPrivate}', '${F.userCId}', 'signup'),
+          ('${W.otherReaction}', '${F.msgPublic}', '${F.userAId}', 'reaction:🎉');
+        grant insert, update, delete on public.chat_message_actions to rls_probe;
+      `);
+      const asC = signedIn(F.userCAuth);
+
+      const refusedInserts = [
+        { name: "a member cannot insert their own reaction directly (the API writes it)", msg: F.msgPublic, type: "reaction:🔥" },
+        { name: "a member cannot insert a vote directly", msg: F.msgPublic, type: "vote" },
+        { name: "a member cannot insert a sign-up claim directly", msg: F.msgPublic, type: "signup" },
+        { name: "a member cannot insert a reaction on a DM they are not in", msg: F.msgDM, type: "reaction:🔥" },
+        { name: "a member cannot insert a reaction in another chapter", msg: F.msgPublicB, type: "reaction:🔥" },
+      ];
+      for (const s of refusedInserts) {
+        const probe = await probeAs(
+          asC,
+          `insert into public.chat_message_actions (message_id, user_id, action_type)
+             values ('${s.msg}', '${F.userCId}', '${s.type}') returning id::text as id`,
+        );
+        if (probe.failure !== null || probe.rows.length === 0) {
+          console.log(`OK    ${s.name}`);
+        } else {
+          miss();
+          console.log(`MISS  ${s.name}\n        ↳ the insert went through`);
+        }
+      }
+
+      const writes = [
+        {
+          name: "a member cannot change their own vote in place",
+          sql: `update public.chat_message_actions set payload = '{"option_ids":["x"]}'::jsonb
+                 where id = '${W.ownVote}' returning id::text as id`,
+          removed: [],
+        },
+        {
+          name: "a member cannot delete their own vote directly (a closed poll stays closed)",
+          sql: `delete from public.chat_message_actions where id = '${W.ownVote}' returning id::text as id`,
+          removed: [],
+        },
+        {
+          name: "a member cannot delete their own sign-up claim directly",
+          sql: `delete from public.chat_message_actions where id = '${W.ownSignup}' returning id::text as id`,
+          removed: [],
+        },
+        {
+          name: "a member cannot delete someone else's reaction",
+          sql: `delete from public.chat_message_actions where id = '${W.otherReaction}' returning id::text as id`,
+          removed: [],
+        },
+        {
+          name: "a member can take back their own reaction (ADR-05)",
+          sql: `delete from public.chat_message_actions where id = '${W.ownReaction}' returning id::text as id`,
+          removed: [W.ownReaction],
+        },
+      ];
+      for (const s of writes) {
+        const probe = await probeAs(asC, s.sql);
+        expectSet(s.name, probe, s.removed, (id) => id);
+      }
+    } catch (e) {
+      miss();
+      console.log(
+        `ERR   chat_message_actions client writes\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+      );
+    } finally {
+      await db.exec("rollback to savepoint write_tier; release savepoint write_tier;");
+    }
+
+
     // ─── chat_messages read enforcement (black-box, SET ROLE) — #977 ─────────
     //
     // The tier above proves the POLICY on `chat_message_actions` is wired to the

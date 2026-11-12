@@ -154,14 +154,15 @@ export const RLS_SMOKE = [
       rows.length === 1 && rows[0].public_exec === false && rows[0].anon_exec === false,
   },
   {
-    name: "users stays default-deny to client roles (the invariant that closes the action-write path)",
-    // chat_message_actions' INSERT/DELETE policies gate on
-    // `user_id in (select id from users where supabase_auth_id = auth.uid())`.
-    // That subselect is what refuses direct-client writes — but only while `users`
-    // has no permissive policy reachable by a client role. Adding a routine
-    // "read your own row" policy to `users` would flip cross-channel action writes
-    // live without touching chat_message_actions at all. The auth-hook policies
-    // added by 20260802120000 are scoped `TO supabase_auth_admin` and don't count.
+    name: "users stays default-deny to client roles",
+    // Clients reach `users` only through `security definer` helpers
+    // (`chat_action_is_callers`, `chat_viewer_has_blocked`, ...). Until
+    // 20261112270000, chat_message_actions' INSERT policy gated on a plain
+    // `users` subselect, and this default-deny was the only thing refusing
+    // direct-client action writes (#4513). That policy is gone, but a routine
+    // "read your own row" policy here would still widen what every client
+    // reads. The auth-hook policies added by 20260802120000 are scoped
+    // `TO supabase_auth_admin` and don't count.
     sql: `select count(*)::int as n
             from pg_policy p
             join pg_class c on c.oid = p.polrelid
@@ -257,30 +258,30 @@ export const RLS_SMOKE = [
     ok: (rows) => rows.length === 1 && rows[0].relreplident === "d",
   },
   {
-    name: "chat_message_actions INSERT scoped to the caller's own user_id (auth.uid())",
-    sql: `select pg_get_expr(polwithcheck, polrelid) as check_expr
+    name: "chat_message_actions has no client INSERT or UPDATE policy (writes go through the API) (#4513)",
+    // Reactions, votes and sign-ups are written by the API as service_role,
+    // after it checks channel access, the poll and the sign-up limit. A
+    // permissive INSERT or UPDATE policy here lets a client skip all of it.
+    sql: `select count(*)::int as n
             from pg_policy p join pg_class c on c.oid = p.polrelid
-           where c.relname = 'chat_message_actions' and polcmd = 'a'`,
-    ok: (rows) =>
-      rows.length >= 1 &&
-      rows.some(
-        (r) =>
-          /user_id/i.test(String(r.check_expr)) &&
-          /auth\.uid\(\)/i.test(String(r.check_expr)),
-      ),
+           where c.relname = 'chat_message_actions'
+             and p.polpermissive
+             and p.polcmd in ('a', 'w', '*')`,
+    ok: (rows) => rows.length === 1 && rows[0].n === 0,
   },
   {
-    name: "chat_message_actions DELETE scoped to the caller's own user_id (auth.uid())",
+    name: "chat_message_actions DELETE scoped to the caller's own reaction rows via chat_action_is_callers (#724)",
+    // Not a `users` subselect: `users` is default-deny to clients, so such a
+    // subselect inside a policy sees no rows and the policy never matches.
+    // That is how reaction removal silently did nothing until 20261112270000.
     sql: `select pg_get_expr(polqual, polrelid) as using_expr
             from pg_policy p join pg_class c on c.oid = p.polrelid
            where c.relname = 'chat_message_actions' and polcmd = 'd'`,
     ok: (rows) =>
-      rows.length >= 1 &&
-      rows.some(
-        (r) =>
-          /user_id/i.test(String(r.using_expr)) &&
-          /auth\.uid\(\)/i.test(String(r.using_expr)),
-      ),
+      rows.length === 1 &&
+      /chat_action_is_callers\(user_id\)/i.test(String(rows[0].using_expr)) &&
+      /starts_with\(action_type, 'reaction:'/i.test(String(rows[0].using_expr)) &&
+      !/from users/i.test(String(rows[0].using_expr)),
   },
   {
     name: "chapter_audit_log denies UPDATE via RLS policy (qual = false)",
