@@ -158,7 +158,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now type @here in chat to notify only the people in a channel who are online right now.",
       "On your phone, swiping to Messages from Chat no longer also opens the channel your finger started on.",
       "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
-      "On the web, Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
@@ -184,6 +183,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When you start minutes for a meeting that isn't on the calendar, you can type the day it met in words, like yesterday or Nov 4.",
       "Study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
       "Changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
+      "Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
     ],
     phone: [
       "Officers who manage roles can now set a member's pledge class and number from their profile.",
