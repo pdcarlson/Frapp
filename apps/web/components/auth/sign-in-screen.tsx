@@ -30,7 +30,7 @@ import {
   describePasswordSignInError,
   emailCooldownSeconds,
   isEmailNotConfirmed,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
 import {
   describeOAuthKickoffError,
   startWebOAuth,
@@ -71,7 +71,7 @@ import {
  * failed link back here with `authError` set; the toast below is the only
  * place that code is read.
  *
- * **Refusals are told by GoTrue's code** (`lib/auth/email-auth-errors.ts`),
+ * **Refusals are told by GoTrue's code** (`@repo/hooks/auth-error-copy`),
  * never through the API's error map, which knows none of them and printed
  * "Something went wrong" for a wrong password and an unconfirmed address
  * alike until 2026-11-09. An unconfirmed address swaps the form for "Confirm
