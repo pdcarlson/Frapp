@@ -21,6 +21,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *   success     Semantic    — status only, on its `--*-tint` fill, never a solid
  *   warning     Semantic    — "
  *   destructive Semantic    — "
+ *   info        Semantic    — " (a task In progress, #4133)
  *   mention     Mention/DM  — "you were addressed", and nothing else
  *
  * `success` and `warning` landed with the Directory & Finance slice of #920,
@@ -51,8 +52,10 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * *tint* it measures 4.08–5.16:1, so it clears on `--background` and
  * `--surface-1` but NOT on a `--popover`-seated tint (4.08). A badge that has
  * to sit in a dialog or menu needs a further lift or a solid fill; the token as
- * it stands does not cover that case, and there is still no `--info` call site
- * to have forced the question. Measured in
+ * it stands does not cover that case. Its first call site is the chat task
+ * card's In progress badge (#4133), which sits on `--card` in the thread, not
+ * in a popover; `--info-text` has since been lifted to #61A7FF, which clears
+ * 4.5:1 on the info tint over every step. Measured in
  * `components/billing/status-contrast.spec.ts` so the first consumer inherits
  * the number rather than the defect.
  *
@@ -81,6 +84,8 @@ const badgeVariants = cva(
         // 4.22:1 over `--card`, the surface a status badge normally sits on.
         destructive:
           "border-transparent bg-destructive-tint text-destructive-text",
+        // Lifted `--info-text` on the info tint: a task In progress (#4133).
+        info: "border-transparent bg-info-tint text-info-text",
         mention: "border-transparent bg-mention text-mention-foreground",
       },
     },

@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readTaskPayload } from "@repo/chat-core/cards";
 import { Badge } from "@/components/ui/badge";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
@@ -45,17 +46,6 @@ interface TaskCardProps {
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
 }
-
-/** Exported for the sign-in showcase, which draws this badge without a live task. */
-export const STATUS_BADGE: Record<
-  TaskStatus,
-  "default" | "outline" | "destructive"
-> = {
-  TODO: "outline",
-  IN_PROGRESS: "default",
-  COMPLETED: "default",
-  OVERDUE: "destructive",
-};
 
 /**
  * The due line. A countdown ("Due tomorrow", "Overdue by 2 days") only while
@@ -209,8 +199,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
-        {status && statusLabel ? (
-          <Badge variant={STATUS_BADGE[status]}>{statusLabel}</Badge>
+        {live && statusLabel ? (
+          <Badge variant={taskStatusKind(live)}>{statusLabel}</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>

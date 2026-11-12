@@ -56,7 +56,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { STATUS_BADGE } from "@/components/chat/renderers/task-card";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -253,7 +253,7 @@ function TaskCard({ t }: { t: number }) {
         {/* Keyed on the status so each change re-enters, which is the scene's one flourish. */}
         <Badge
           key={label}
-          variant={STATUS_BADGE[status]}
+          variant={taskStatusKind({ status, points_awarded: confirmed })}
           className="motion-safe:animate-count-up gap-1"
         >
           {confirmed ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
