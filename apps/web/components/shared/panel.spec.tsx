@@ -184,6 +184,78 @@ function HeadlessRecord({
   );
 }
 
+/** A page whose button opens a docked panel, beside a chat field. */
+function OpenerHarness({
+  open,
+  onOpen,
+  onClose,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div>
+      <input aria-label="Message" />
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <button type="button" onClick={onOpen}>
+            New minutes
+          </button>
+        </div>
+        <Panel
+          open={open}
+          onOpenChange={(next) => (next ? onOpen() : onClose())}
+          docked
+          backLabel="Back to meetings"
+        >
+          <PanelContent>
+            <PanelHeader>New minutes</PanelHeader>
+          </PanelContent>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+describe("Panel docked focus on close", () => {
+  it("hands focus back to the button pressed to open it, though a click left it unfocused (Safari)", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    // fireEvent.click, unlike a real Chrome click, doesn't focus the button.
+    fireEvent.pointerDown(opener);
+    fireEvent.click(opener);
+    expect(opener).not.toHaveFocus();
+    rerender(<OpenerHarness open onOpen={() => undefined} onClose={onClose} />);
+    expect(screen.getByRole("region", { name: "New minutes" })).toHaveFocus();
+
+    rerender(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    expect(opener).toHaveFocus();
+  });
+
+  it("leaves focus in chat when the panel closes while the member is typing there", () => {
+    const noop = () => undefined;
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={noop} onClose={noop} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    fireEvent.pointerDown(opener);
+    opener.focus();
+    rerender(<OpenerHarness open onOpen={noop} onClose={noop} />);
+
+    const chat = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.pointerDown(chat);
+    chat.focus();
+    rerender(<OpenerHarness open={false} onOpen={noop} onClose={noop} />);
+    expect(chat).toHaveFocus();
+  });
+});
+
 describe("Panel with the title in its body", () => {
   it("names the docked region from PanelTitle and draws no header title", () => {
     render(<HeadlessRecord docked />);

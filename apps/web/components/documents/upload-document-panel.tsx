@@ -13,7 +13,6 @@ import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -22,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
@@ -298,7 +298,8 @@ const NEW_FOLDER = "__new-folder__";
 
 /**
  * The chapter document upload panel (2026-11-06 rethink; parked follow-ups in
- * #3642). A right-side `Panel`, like the event editor and member detail, led
+ * #3642). A `Panel` docked in place of the Documents page (2026-11-12, #4593),
+ * like the event editor and the Directory's member profile, led
  * by the file well, which also takes a dropped file. Picking a file fills the
  * title from its name, guesses the type from it, and files it into the folder
  * on screen. Type is a row of chips and folder a picker of the chapter's
@@ -364,193 +365,207 @@ export function UploadDocumentPanel({
       : uploadDraft.folder;
 
   return (
-    <Sheet
-      open={uploadDialog.dialogProps.open}
-      onOpenChange={(next) => {
-        if (next) openPanel();
-        else uploadDialog.dialogProps.onOpenChange(false);
-      }}
-    >
-      <SheetTrigger asChild>
-        <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-          <Upload className="h-4 w-4" /> Upload document
-        </Button>
-      </SheetTrigger>
-      <PanelContent {...uploadDialog.contentProps} aria-describedby={undefined}>
-        <PanelHeader>Upload document</PanelHeader>
-        <PanelBody as="form" id="doc-upload-form" onSubmit={handleUpload}>
-          <UploadFileField
-            id="doc-file"
-            label="File"
-            hint={`PDFs, Office files, text, CSV or images, up to ${MAX_UPLOAD_LABEL}.`}
-            accept={acceptAttribute("document")}
-            file={uploadDraft.file}
-            error={uploadError}
-            disabled={uploading}
-            onSelect={chooseFile}
-          />
-
-          <UploadField id="doc-title" label="Title">
-            <Input
-              id="doc-title"
-              className={UPLOAD_FIELD_CLASS}
-              value={uploadDraft.title}
-              onChange={(event) => set("title", event.target.value)}
-              placeholder="Filled in from the file name"
+    <>
+      <Button
+        size="toolbar"
+        className="gap-2"
+        onClick={() => openPanel()}
+        {...gate.controlProps()}
+      >
+        <Upload className="h-4 w-4" /> Upload document
+      </Button>
+      <Panel
+        open={uploadDialog.dialogProps.open}
+        onOpenChange={(next) => {
+          if (next) {
+            openPanel();
+            return;
+          }
+          uploadDialog.dialogProps.onOpenChange(false);
+        }}
+        docked
+        backLabel="Back to documents"
+      >
+        <PanelContent
+          {...uploadDialog.contentProps}
+          aria-describedby={undefined}
+        >
+          <PanelHeader>Upload document</PanelHeader>
+          <PanelBody as="form" id="doc-upload-form" onSubmit={handleUpload}>
+            <UploadFileField
+              id="doc-file"
+              label="File"
+              hint={`PDFs, Office files, text, CSV or images, up to ${MAX_UPLOAD_LABEL}.`}
+              accept={acceptAttribute("document")}
+              file={uploadDraft.file}
+              error={uploadError}
+              disabled={uploading}
+              onSelect={chooseFile}
             />
-          </UploadField>
 
-          <div className="grid content-start gap-1.5">
-            <Label id="doc-type-label">Type</Label>
-            <div
-              role="group"
-              aria-labelledby="doc-type-label"
-              className="flex flex-wrap gap-1.5"
-            >
-              {typeOptions.map((type) => {
-                const on = !showCustomType && uploadDraft.documentType === type;
-                return (
-                  <TypeChip
-                    key={type}
-                    on={on}
-                    onClick={() => {
+            <UploadField id="doc-title" label="Title">
+              <Input
+                id="doc-title"
+                className={UPLOAD_FIELD_CLASS}
+                value={uploadDraft.title}
+                onChange={(event) => set("title", event.target.value)}
+                placeholder="Filled in from the file name"
+              />
+            </UploadField>
+
+            <div className="grid content-start gap-1.5">
+              <Label id="doc-type-label">Type</Label>
+              <div
+                role="group"
+                aria-labelledby="doc-type-label"
+                className="flex flex-wrap gap-1.5"
+              >
+                {typeOptions.map((type) => {
+                  const on =
+                    !showCustomType && uploadDraft.documentType === type;
+                  return (
+                    <TypeChip
+                      key={type}
+                      on={on}
+                      onClick={() => {
+                        setCustomTypeOpen(false);
+                        set("documentType", on ? "" : type);
+                      }}
+                    >
+                      {type}
+                    </TypeChip>
+                  );
+                })}
+                <TypeChip
+                  on={showCustomType}
+                  onClick={() => {
+                    if (showCustomType) {
                       setCustomTypeOpen(false);
-                      set("documentType", on ? "" : type);
-                    }}
-                  >
-                    {type}
-                  </TypeChip>
-                );
-              })}
-              <TypeChip
-                on={showCustomType}
-                onClick={() => {
-                  if (showCustomType) {
-                    setCustomTypeOpen(false);
-                    set("documentType", "");
-                  } else {
-                    setCustomTypeOpen(true);
-                    set("documentType", "");
+                      set("documentType", "");
+                    } else {
+                      setCustomTypeOpen(true);
+                      set("documentType", "");
+                    }
+                  }}
+                >
+                  Other
+                </TypeChip>
+              </div>
+              {showCustomType ? (
+                <Input
+                  id="doc-type-other"
+                  aria-label="Other type"
+                  autoFocus={customTypeOpen && !typeIsCustom}
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.documentType}
+                  onChange={(event) => set("documentType", event.target.value)}
+                  placeholder="Constitution, Contract, Schedule"
+                  maxLength={100}
+                />
+              ) : null}
+            </div>
+
+            <UploadField id="doc-folder" label="Folder">
+              <Select
+                value={folderValue}
+                onValueChange={(value) => {
+                  if (value === NEW_FOLDER) {
+                    setNewFolderOpen(true);
+                    set("folder", "");
+                    return;
                   }
+                  setNewFolderOpen(false);
+                  set("folder", value === NO_FOLDER ? "" : value);
                 }}
               >
-                Other
-              </TypeChip>
-            </div>
-            {showCustomType ? (
-              <Input
-                id="doc-type-other"
-                aria-label="Other type"
-                autoFocus={customTypeOpen && !typeIsCustom}
-                className={UPLOAD_FIELD_CLASS}
-                value={uploadDraft.documentType}
-                onChange={(event) => set("documentType", event.target.value)}
-                placeholder="Constitution, Contract, Schedule"
-                maxLength={100}
-              />
-            ) : null}
-          </div>
-
-          <UploadField id="doc-folder" label="Folder">
-            <Select
-              value={folderValue}
-              onValueChange={(value) => {
-                if (value === NEW_FOLDER) {
-                  setNewFolderOpen(true);
-                  set("folder", "");
-                  return;
-                }
-                setNewFolderOpen(false);
-                set("folder", value === NO_FOLDER ? "" : value);
-              }}
-            >
-              <SelectTrigger id="doc-folder" className={UPLOAD_FIELD_CLASS}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_FOLDER}>No folder</SelectItem>
-                {folders.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-                <SelectItem value={NEW_FOLDER}>New folder</SelectItem>
-              </SelectContent>
-            </Select>
-            {showNewFolder ? (
-              <Input
-                id="doc-folder-new"
-                aria-label="New folder name"
-                autoFocus={newFolderOpen && !folderIsNew}
-                className={cn(UPLOAD_FIELD_CLASS, "mt-1.5")}
-                value={uploadDraft.folder}
-                onChange={(event) => set("folder", event.target.value)}
-                placeholder="Folder name"
-                maxLength={100}
-              />
-            ) : null}
-          </UploadField>
-
-          {showDetails ? (
-            <>
-              <UploadField id="doc-description" label="Description">
-                <Textarea
-                  id="doc-description"
-                  rows={2}
-                  value={uploadDraft.description}
-                  onChange={(event) => set("description", event.target.value)}
+                <SelectTrigger id="doc-folder" className={UPLOAD_FIELD_CLASS}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_FOLDER}>No folder</SelectItem>
+                  {folders.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_FOLDER}>New folder</SelectItem>
+                </SelectContent>
+              </Select>
+              {showNewFolder ? (
+                <Input
+                  id="doc-folder-new"
+                  aria-label="New folder name"
+                  autoFocus={newFolderOpen && !folderIsNew}
+                  className={cn(UPLOAD_FIELD_CLASS, "mt-1.5")}
+                  value={uploadDraft.folder}
+                  onChange={(event) => set("folder", event.target.value)}
+                  placeholder="Folder name"
+                  maxLength={100}
                 />
-              </UploadField>
-              <UploadField id="doc-effective-date" label="Effective date">
-                <DateField
-                  id="doc-effective-date"
-                  lean="back"
-                  placeholder="e.g. September 1"
-                  className={cn(UPLOAD_FIELD_CLASS, "w-48")}
-                  value={uploadDraft.effectiveDate}
-                  onChange={(date) => set("effectiveDate", date)}
-                />
-              </UploadField>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDetailsOpen(true)}
-              className={cn(
-                "flex w-fit items-center gap-1 rounded-sm text-label font-semibold text-muted-foreground hover:text-foreground",
-                FOCUS_RING,
-              )}
-            >
-              <ChevronRight aria-hidden className="h-4 w-4" />
-              Add a description or effective date
-            </button>
-          )}
-        </PanelBody>
-        <PanelFooter>
-          {/* Cancel only closes. Gating the way out of a surface the gate just
+              ) : null}
+            </UploadField>
+
+            {showDetails ? (
+              <>
+                <UploadField id="doc-description" label="Description">
+                  <Textarea
+                    id="doc-description"
+                    rows={2}
+                    value={uploadDraft.description}
+                    onChange={(event) => set("description", event.target.value)}
+                  />
+                </UploadField>
+                <UploadField id="doc-effective-date" label="Effective date">
+                  <DateField
+                    id="doc-effective-date"
+                    lean="back"
+                    placeholder="e.g. September 1"
+                    className={cn(UPLOAD_FIELD_CLASS, "w-48")}
+                    value={uploadDraft.effectiveDate}
+                    onChange={(date) => set("effectiveDate", date)}
+                  />
+                </UploadField>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                className={cn(
+                  "flex w-fit items-center gap-1 rounded-sm text-label font-semibold text-muted-foreground hover:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                <ChevronRight aria-hidden className="h-4 w-4" />
+                Add a description or effective date
+              </button>
+            )}
+          </PanelBody>
+          <PanelFooter>
+            {/* Cancel only closes. Gating the way out of a surface the gate just
               blocked would be a trap. */}
-          <Button
-            variant="secondary"
-            className={UPLOAD_SHEET_BUTTON_CLASS}
-            onClick={() => uploadDialog.setOpen(false)}
-            disabled={uploading}
-          >
-            Cancel
-          </Button>
-          {/* Enabled with no file chosen (board `1j`): the press answers inline
+            <Button
+              variant="secondary"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              onClick={() => uploadDialog.setOpen(false)}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+            {/* Enabled with no file chosen (board `1j`): the press answers inline
               under the file field. The subscription gate still disables it. */}
-          <Button
-            form="doc-upload-form"
-            type="submit"
-            className={UPLOAD_SHEET_BUTTON_CLASS}
-            {...gate.controlProps(uploading)}
-          >
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Upload
-          </Button>
-        </PanelFooter>
-      </PanelContent>
-    </Sheet>
+            <Button
+              form="doc-upload-form"
+              type="submit"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              {...gate.controlProps(uploading)}
+            >
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Upload
+            </Button>
+          </PanelFooter>
+        </PanelContent>
+      </Panel>
+    </>
   );
 }
 
