@@ -29,7 +29,10 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockExcuseRepo: { findUserIdsByEventAndStatus: jest.Mock };
+  let mockExcuseRepo: {
+    findUserIdsByEventAndStatus: jest.Mock;
+    withdrawAtomic: jest.Mock;
+  };
   let mockRbac: {
     isAlumni: jest.Mock;
     getAlumniRoleId: jest.Mock;
@@ -111,6 +114,7 @@ describe('AttendanceService', () => {
     // Default: nobody holds an excuse.
     mockExcuseRepo = {
       findUserIdsByEventAndStatus: jest.fn().mockResolvedValue([]),
+      withdrawAtomic: jest.fn().mockResolvedValue(null),
     };
 
     // Default to an active (non-alumni) member so existing cases are unaffected.
@@ -442,6 +446,29 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
       mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
 
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it('drops a pending excuse once the member checks in (#3735)', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T18:30:00.000Z'));
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await service.checkIn('evt-1', 'user-1', 'ch-1');
+
+      expect(mockExcuseRepo.withdrawAtomic).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        'user-1',
+      );
+
+      // And a failure there doesn't undo the check-in.
+      mockExcuseRepo.withdrawAtomic.mockRejectedValueOnce(new Error('down'));
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
         baseAttendance,
       );

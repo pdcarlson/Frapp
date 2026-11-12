@@ -4,7 +4,8 @@
 // it can't see what `decide_event_excuse` and `withdraw_event_excuse` write to
 // `event_attendance`. That is where an excuse turns into how a member is
 // counted, so it is pinned here: approval writes EXCUSED (over ABSENT, never
-// over PRESENT), a late decline marks ABSENT, a decided excuse can't be
+// over PRESENT or an officer's ABSENT), a late decline marks ABSENT, a
+// decided excuse can't be
 // decided again, and withdrawing an approved one removes its EXCUSED row.
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
@@ -22,7 +23,13 @@ describeIntegration('Event excuses decide and withdraw atomically', () => {
   const chapterId = randomUUID();
   const otherChapterId = randomUUID();
   const officerId = randomUUID();
-  const memberIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const memberIds = [
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+  ];
   const eventId = randomUUID();
 
   const assertOk = (label: string, error: { message: string } | null) => {
@@ -129,13 +136,11 @@ describeIntegration('Event excuses decide and withdraw atomically', () => {
         reason: 'again',
       }),
     ).toBeNull();
-    await supabase
-      .from('event_attendance')
-      .insert({
-        event_id: eventId,
-        user_id: member,
-        status: 'ABSENT',
-      } as never);
+    await supabase.from('event_attendance').insert({
+      event_id: eventId,
+      user_id: member,
+      status: 'ABSENT',
+    } as never);
 
     // Another chapter can't decide it.
     expect(
@@ -181,17 +186,30 @@ describeIntegration('Event excuses decide and withdraw atomically', () => {
   it('approval leaves a check-in alone', async () => {
     const member = memberIds[1];
     const excuse = await submit(member);
-    await supabase
-      .from('event_attendance')
-      .insert({
-        event_id: eventId,
-        user_id: member,
-        status: 'PRESENT',
-      } as never);
+    await supabase.from('event_attendance').insert({
+      event_id: eventId,
+      user_id: member,
+      status: 'PRESENT',
+    } as never);
 
     await repo.decideAtomic(excuse.id, chapterId, 'APPROVED', officerId, false);
 
     expect((await attendanceOf(member))?.status).toBe('PRESENT');
+  });
+
+  it("approval leaves an officer's ABSENT alone", async () => {
+    const member = memberIds[4];
+    const excuse = await submit(member);
+    await supabase.from('event_attendance').insert({
+      event_id: eventId,
+      user_id: member,
+      status: 'ABSENT',
+      marked_by: officerId,
+    } as never);
+
+    await repo.decideAtomic(excuse.id, chapterId, 'APPROVED', officerId, false);
+
+    expect((await attendanceOf(member))?.status).toBe('ABSENT');
   });
 
   it('a late decline marks ABSENT; an early one writes nothing', async () => {
@@ -204,7 +222,10 @@ describeIntegration('Event excuses decide and withdraw atomically', () => {
       officerId,
       true,
     );
-    expect((await attendanceOf(late))?.status).toBe('ABSENT');
+    expect(await attendanceOf(late)).toMatchObject({
+      status: 'ABSENT',
+      marked_by: officerId,
+    });
 
     const early = memberIds[3];
     const earlyExcuse = await submit(early);

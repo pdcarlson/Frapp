@@ -18,7 +18,8 @@
 --
 --   decide_event_excuse    PENDING to APPROVED writes attendance EXCUSED with
 --                          the reason (over an ABSENT the sweep wrote, or a
---                          new row). PENDING to DECLINED writes ABSENT only
+--                          new row; never over a check-in or an officer's
+--                          ABSENT). PENDING to DECLINED writes ABSENT only
 --                          when the caller says the sweep has already passed
 --                          the event (it skipped this member while the excuse
 --                          was pending), and never over an existing row.
@@ -116,20 +117,25 @@ begin
   end if;
 
   if p_decision = 'APPROVED' then
-    -- Over ABSENT (the sweep, or an officer) or an officer's EXCUSED; never
-    -- over PRESENT or LATE, so a member who came anyway keeps their check-in.
+    -- Over the sweep's ABSENT (marked_by null: a late excuse) or an EXCUSED.
+    -- Never over PRESENT or LATE, so a member who came anyway keeps their
+    -- check-in, and never over an ABSENT an officer set: that was a decision
+    -- about this member the excuse's receiver may not hold the permission to
+    -- reverse. The API refuses both before calling (409); this is the guard.
     insert into public.event_attendance (event_id, user_id, status, excuse_reason, marked_by)
     values (v_excuse.event_id, v_excuse.user_id, 'EXCUSED', v_excuse.reason, p_decided_by)
     on conflict (event_id, user_id) do update
       set status = 'EXCUSED',
           excuse_reason = excluded.excuse_reason,
           marked_by = excluded.marked_by
-      where public.event_attendance.status in ('ABSENT', 'EXCUSED');
+      where public.event_attendance.status = 'EXCUSED'
+         or (public.event_attendance.status = 'ABSENT'
+             and public.event_attendance.marked_by is null);
   elsif p_mark_absent then
     -- The sweep already ran for this event and skipped the member while the
-    -- excuse was pending: count them as it would have.
-    insert into public.event_attendance (event_id, user_id, status)
-    values (v_excuse.event_id, v_excuse.user_id, 'ABSENT')
+    -- excuse was pending: count them as it would have, recording who decided.
+    insert into public.event_attendance (event_id, user_id, status, marked_by)
+    values (v_excuse.event_id, v_excuse.user_id, 'ABSENT', p_decided_by)
     on conflict (event_id, user_id) do nothing;
   end if;
 

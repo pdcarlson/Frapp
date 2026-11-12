@@ -7,7 +7,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { checkInWindowBounds, eventExcuseClosesAt } from '@repo/validation';
+import {
+  EVENT_EXCUSE_LATE_HOURS,
+  checkInWindowBounds,
+  eventExcuseClosesAt,
+} from '@repo/validation';
 import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
 import type { IEventExcuseRepository } from '#domain/repositories/event-excuse.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
@@ -44,7 +48,7 @@ export interface EventExcuseWithMember extends EventExcuse {
  *
  * A member the event requires sends one line any time before the event and up
  * to `EVENT_EXCUSE_LATE_HOURS` after it ends. It goes to the event's creator
- * (or, when the event has none in the chapter, to every `events:update`
+ * (or, when the creator can't act on it or sent it, to every `events:update`
  * holder), who approves or declines it; anyone with `events:update` may decide
  * too. Approving writes attendance EXCUSED, and the auto-absent sweep skips a
  * pending or approved excuse (`AttendanceService.markAutoAbsent`).
@@ -92,40 +96,62 @@ export class EventExcuseService {
     return event;
   }
 
-  /** The event's creator, when they are still a member of its chapter. */
-  private async creatorInChapter(
+  /**
+   * The event's creator, while they can act on its excuses: still a member of
+   * its chapter, and able to see the event (`isEventVisibleTo`). A creator who
+   * lost `events:update` and isn't invited to their own role-limited event
+   * would get the 404 every excuse route answers, so they don't receive it.
+   */
+  private async actingCreator(
     event: Event,
     chapterId: string,
   ): Promise<string | null> {
-    if (!event.created_by) return null;
+    const creator = event.created_by;
+    if (!creator) return null;
     const member = await this.memberRepo.findByUserAndChapter(
-      event.created_by,
+      creator,
       chapterId,
     );
-    return member ? event.created_by : null;
+    if (!member) return null;
+    const sees = await isEventVisibleTo(event, chapterId, creator, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
+    return sees ? creator : null;
+  }
+
+  private officerIds(chapterId: string): Promise<string[]> {
+    return this.rbac.findUserIdsWithPermissions(chapterId, [
+      SystemPermissions.EVENTS_UPDATE,
+    ]);
   }
 
   /**
-   * Who is told about a new excuse: the creator, or every `events:update`
-   * holder when there is no creator in the chapter. Never the sender.
+   * Who is told about excuses from `senderIds`: the acting creator for every
+   * sender but themselves, and the `events:update` holders when there is no
+   * acting creator or the creator is among the senders (nobody decides their
+   * own without `events:update`). Never a sender about their own excuse alone.
    */
   private async receiverIds(
     event: Event,
     chapterId: string,
-    senderId: string,
+    senderIds: readonly string[],
   ): Promise<string[]> {
-    const creator = await this.creatorInChapter(event, chapterId);
-    const ids = creator
-      ? [creator]
-      : await this.rbac.findUserIdsWithPermissions(chapterId, [
-          SystemPermissions.EVENTS_UPDATE,
-        ]);
-    return ids.filter((id) => id !== senderId);
+    const creator = await this.actingCreator(event, chapterId);
+    const others = senderIds.filter((id) => id !== creator);
+    const receivers = new Set<string>();
+    if (creator && others.length > 0) receivers.add(creator);
+    if (!creator || others.length < senderIds.length) {
+      for (const id of await this.officerIds(chapterId)) receivers.add(id);
+    }
+    // A sender is told only when someone else's excuse also waits on them.
+    if (senderIds.length === 1) receivers.delete(senderIds[0]);
+    return [...receivers];
   }
 
   /**
-   * Whether `userId` may decide excuses for `event`: its creator, or anyone
-   * with `events:update`. Nobody decides their own, unless they hold
+   * Whether `userId` may decide excuses for `event`: its acting creator, or
+   * anyone with `events:update`. Nobody decides their own, unless they hold
    * `events:update` (an officer can already mark themselves excused).
    */
   private async canDecide(
@@ -138,7 +164,8 @@ export class EventExcuseService {
       SystemPermissions.EVENTS_UPDATE,
     ]);
     if (officer) return true;
-    return event.created_by === userId && excuseUserId !== userId;
+    if (event.created_by !== userId || excuseUserId === userId) return false;
+    return (await this.actingCreator(event, chapterId)) === userId;
   }
 
   private async displayNames(ids: string[]): Promise<Map<string, string>> {
@@ -172,7 +199,7 @@ export class EventExcuseService {
 
     if (new Date() > eventExcuseClosesAt(new Date(event.end_time))) {
       throw new BadRequestException(
-        'Excuses for this event closed 48 hours after it ended',
+        `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
       );
     }
 
@@ -185,6 +212,13 @@ export class EventExcuseService {
     }
     if (existing?.status === 'EXCUSED') {
       throw new ConflictException('You are already excused from this event');
+    }
+    if (existing?.status === 'ABSENT' && existing.marked_by) {
+      // An officer's decision, not the sweep's: an approval may not reverse
+      // it (`decide_event_excuse`), so an excuse would ask for nothing.
+      throw new ConflictException(
+        'An officer marked you absent from this event; ask them to change it',
+      );
     }
 
     const excuse = await this.excuseRepo.create({
@@ -210,7 +244,7 @@ export class EventExcuseService {
     const event = await this.visibleEvent(eventId, chapterId, userId);
     const [excuse, creator] = await Promise.all([
       this.excuseRepo.findByEventAndUser(chapterId, eventId, userId),
-      this.creatorInChapter(event, chapterId),
+      this.actingCreator(event, chapterId),
     ]);
     // Nobody sends an excuse to themselves: their own event's goes to the
     // officers, which the clients word without a name.
@@ -282,7 +316,15 @@ export class EventExcuseService {
         'Only the event creator or an officer who can edit events sees its excuses',
       );
     }
-    const excuses = await this.excuseRepo.findByEvent(chapterId, eventId);
+    // Only current members: an excuse outlives its sender's membership (the
+    // row cascades with the user, not the member), and is no longer anyone's
+    // to decide.
+    const [all, members] = await Promise.all([
+      this.excuseRepo.findByEvent(chapterId, eventId),
+      this.memberRepo.findByChapter(chapterId),
+    ]);
+    const memberIds = new Set(members.map((m) => m.user_id));
+    const excuses = all.filter((e) => memberIds.has(e.user_id));
     const names = await this.displayNames(excuses.map((e) => e.user_id));
     return excuses.map((e) => ({
       ...e,
@@ -316,15 +358,44 @@ export class EventExcuseService {
       throw new ConflictException('This excuse has already been decided');
     }
 
+    const sender = await this.memberRepo.findByUserAndChapter(
+      excuseUserId,
+      chapterId,
+    );
+    if (!sender) {
+      throw new ConflictException('This member is no longer in the chapter');
+    }
+    const attendance = await this.attendanceRepo.findByEventAndUser(
+      eventId,
+      excuseUserId,
+    );
+    if (attendance?.status === 'PRESENT' || attendance?.status === 'LATE') {
+      // Check-in drops a pending excuse; this is the race with it.
+      throw new ConflictException('This member checked in to the event');
+    }
+    if (
+      decision === 'APPROVED' &&
+      attendance?.status === 'ABSENT' &&
+      attendance.marked_by
+    ) {
+      throw new ConflictException(
+        'An officer marked this member absent; change their attendance instead',
+      );
+    }
+
     // The sweep runs once per event, at the close of check-in, and skipped
     // this member while the excuse was pending. A decline after that counts
-    // them as the sweep would have; before it, the sweep will.
+    // them as the sweep would have, which means only while the event still
+    // requires them; before it, the sweep will.
     const { closesAt } = checkInWindowBounds(
       new Date(event.start_time),
       new Date(event.end_time),
       event.check_in_opens_minutes,
     );
-    const markAbsent = decision === 'DECLINED' && new Date() >= closesAt;
+    const markAbsent =
+      decision === 'DECLINED' &&
+      new Date() >= closesAt &&
+      (await this.attendance.requiresMember(chapterId, event, sender.role_ids));
 
     const decided = await this.excuseRepo.decideAtomic(
       excuse.id,
@@ -358,12 +429,8 @@ export class EventExcuseService {
         ['PENDING'],
       );
       if (pending.length === 0) return;
-      const creator = await this.creatorInChapter(event, chapterId);
-      const receivers = creator
-        ? [creator]
-        : await this.rbac.findUserIdsWithPermissions(chapterId, [
-            SystemPermissions.EVENTS_UPDATE,
-          ]);
+      const receivers = await this.receiverIds(event, chapterId, pending);
+      if (receivers.length === 0) return;
       const count = pending.length;
       await this.notifications.notifyMembers(chapterId, receivers, {
         title: 'Excuses waiting',
@@ -391,11 +458,9 @@ export class EventExcuseService {
     excuse: EventExcuse,
   ): Promise<void> {
     try {
-      const receivers = await this.receiverIds(
-        event,
-        chapterId,
+      const receivers = await this.receiverIds(event, chapterId, [
         excuse.user_id,
-      );
+      ]);
       if (receivers.length === 0) return;
       const names = await this.displayNames([excuse.user_id]);
       const sender = names.get(excuse.user_id) || 'A member';

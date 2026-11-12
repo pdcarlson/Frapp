@@ -31,7 +31,7 @@ describe('EventExcuseService', () => {
     withdrawAtomic: jest.Mock;
   };
   let eventRepo: { findById: jest.Mock };
-  let memberRepo: { findByUserAndChapter: jest.Mock };
+  let memberRepo: { findByUserAndChapter: jest.Mock; findByChapter: jest.Mock };
   let attendanceRepo: { findByEventAndUser: jest.Mock };
   let userRepo: { findDisplayIdentitiesByIds: jest.Mock };
   let attendance: { requiresMember: jest.Mock };
@@ -98,6 +98,12 @@ describe('EventExcuseService', () => {
     };
     eventRepo = { findById: jest.fn().mockResolvedValue(eventAt(72)) };
     memberRepo = {
+      findByChapter: jest.fn().mockResolvedValue(
+        ['member', 'creator', 'officer-1'].map((user_id) => ({
+          user_id,
+          role_ids: ['role-member'],
+        })),
+      ),
       findByUserAndChapter: jest
         .fn()
         .mockImplementation((userId: string) =>
@@ -190,6 +196,54 @@ describe('EventExcuseService', () => {
         ['officer-1', 'officer-2'],
         expect.anything(),
       );
+    });
+
+    it('goes to the officers when the creator excuses their own event', async () => {
+      await service.submit('evt-1', 'creator', 'ch-1', 'Sick');
+
+      expect(notifications.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['officer-1', 'officer-2'],
+        expect.anything(),
+      );
+    });
+
+    it('goes to the officers when the creator can no longer see the event', async () => {
+      // Required of members only; the creator holds another role and no
+      // events:update, so every excuse route would 404 them.
+      eventRepo.findById.mockResolvedValue(
+        eventAt(72, {
+          is_mandatory: false,
+          others_invited: false,
+          required_role_ids: ['role-member'],
+        }),
+      );
+      memberRepo.findByUserAndChapter.mockImplementation((userId: string) =>
+        Promise.resolve({
+          user_id: userId,
+          role_ids: userId === 'creator' ? ['role-alumni'] : ['role-member'],
+        }),
+      );
+
+      await service.submit('evt-1', 'member', 'ch-1', 'Sick');
+
+      expect(notifications.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['officer-1', 'officer-2'],
+        expect.anything(),
+      );
+    });
+
+    it('refuses an excuse over an ABSENT an officer set', async () => {
+      eventRepo.findById.mockResolvedValue(eventAt(-5));
+      attendanceRepo.findByEventAndUser.mockResolvedValue({
+        status: 'ABSENT',
+        marked_by: 'officer-1',
+      });
+
+      await expect(
+        service.submit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('refuses an event that does not require the member', async () => {
@@ -379,6 +433,51 @@ describe('EventExcuseService', () => {
       );
     });
 
+    it('does not mark absent on a late decline once the event no longer requires them', async () => {
+      eventRepo.findById.mockResolvedValue(eventAt(-3));
+      attendance.requiresMember.mockResolvedValue(false);
+
+      await service.decide('evt-1', 'member', 'ch-1', 'creator', 'DECLINED');
+
+      expect(excuseRepo.decideAtomic).toHaveBeenLastCalledWith(
+        'exc-1',
+        'ch-1',
+        'DECLINED',
+        'creator',
+        false,
+      );
+    });
+
+    it('409s a member who checked in, and an approval over an officer ABSENT', async () => {
+      attendanceRepo.findByEventAndUser.mockResolvedValueOnce({
+        status: 'PRESENT',
+      });
+      await expect(
+        service.decide('evt-1', 'member', 'ch-1', 'creator', 'APPROVED'),
+      ).rejects.toThrow('This member checked in to the event');
+
+      attendanceRepo.findByEventAndUser.mockResolvedValueOnce({
+        status: 'ABSENT',
+        marked_by: 'officer-1',
+      });
+      await expect(
+        service.decide('evt-1', 'member', 'ch-1', 'creator', 'APPROVED'),
+      ).rejects.toThrow(ConflictException);
+      expect(excuseRepo.decideAtomic).not.toHaveBeenCalled();
+    });
+
+    it('409s an excuse from someone who left the chapter', async () => {
+      memberRepo.findByUserAndChapter.mockImplementation((userId: string) =>
+        Promise.resolve(
+          userId === 'member' ? null : { user_id: userId, role_ids: [] },
+        ),
+      );
+
+      await expect(
+        service.decide('evt-1', 'member', 'ch-1', 'creator', 'APPROVED'),
+      ).rejects.toThrow('This member is no longer in the chapter');
+    });
+
     it('lets an events:update holder decide an event they did not make', async () => {
       rbac.memberHasAnyPermission.mockResolvedValue(true);
 
@@ -423,6 +522,16 @@ describe('EventExcuseService', () => {
       ]);
     });
 
+    it('leaves out excuses from members who have left', async () => {
+      excuseRepo.findByEvent.mockResolvedValue([
+        excuse(),
+        excuse({ id: 'exc-2', user_id: 'gone' }),
+      ]);
+
+      const rows = await service.list('evt-1', 'ch-1', 'creator');
+      expect(rows.map((r) => r.id)).toEqual(['exc-1']);
+    });
+
     it('refuses a member who is neither the creator nor an officer', async () => {
       await expect(service.list('evt-1', 'ch-1', 'member')).rejects.toThrow(
         ForbiddenException,
@@ -442,6 +551,35 @@ describe('EventExcuseService', () => {
         expect.objectContaining({
           body: '2 excuses for Chapter meeting still need a decision.',
         }),
+      );
+    });
+
+    it('reminds the officers when the creator has left', async () => {
+      excuseRepo.findUserIdsByEventAndStatus.mockResolvedValue(['member']);
+      memberRepo.findByUserAndChapter.mockImplementation((userId: string) =>
+        Promise.resolve(
+          userId === 'creator' ? null : { user_id: userId, role_ids: [] },
+        ),
+      );
+
+      await service.remindPending('evt-1', 'ch-1');
+
+      expect(notifications.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['officer-1', 'officer-2'],
+        expect.anything(),
+      );
+    });
+
+    it("reminds the officers, not the creator, about the creator's own excuse", async () => {
+      excuseRepo.findUserIdsByEventAndStatus.mockResolvedValue(['creator']);
+
+      await service.remindPending('evt-1', 'ch-1');
+
+      expect(notifications.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['officer-1', 'officer-2'],
+        expect.anything(),
       );
     });
 

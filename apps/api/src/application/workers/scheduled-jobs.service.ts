@@ -690,13 +690,23 @@ export class ScheduledJobsService {
       entityId: event.id,
       threshold: 'EVENT_REMINDER',
       dueDate: startsOn,
-      recipients: async () =>
-        (
-          await this.attendanceService.resolveRequiredMembers(
+      recipients: async () => {
+        const [required, excused] = await Promise.all([
+          this.attendanceService.resolveRequiredMembers(
             event.chapter_id,
             event,
-          )
-        ).map((member) => member.user_id),
+          ),
+          // An approved excuse (#3735) means they aren't expected: a push
+          // saying "Required" would contradict "You're excused". A pending
+          // one may still be declined, so it keeps the reminder.
+          this.attendanceService.excusedUserIds(event.chapter_id, event.id, [
+            'APPROVED',
+          ]),
+        ]);
+        return required
+          .map((member) => member.user_id)
+          .filter((userId) => !excused.has(userId));
+      },
       // Named for the event, like every event push (notifications.md § What a
       // push says). Only required members get a reminder, so it says so.
       title: event.name,

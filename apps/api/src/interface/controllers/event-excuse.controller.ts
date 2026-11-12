@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -39,6 +40,7 @@ import {
   MyEventExcuseDto,
   SubmitEventExcuseDto,
 } from '../dtos/event-excuse.dto';
+import { EVENT_EXCUSE_LATE_HOURS } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 /**
@@ -63,13 +65,12 @@ export class EventExcuseController {
   @Post()
   @ApiOperation({
     summary: 'Send an excuse for an event that requires you',
-    description:
-      'Any time before the event and up to 48 hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.',
+    description: `Any time before the event and up to ${EVENT_EXCUSE_LATE_HOURS} hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.`,
   })
   @ApiCreatedResponse({ type: EventExcuseDto })
   @FeatureEvent('event-excuse-sent')
   async submit(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: SubmitEventExcuseDto,
@@ -84,7 +85,7 @@ export class EventExcuseController {
   })
   @ApiOkResponse({ type: MyEventExcuseDto })
   async mine(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<MyEventExcuseDto> {
@@ -100,7 +101,7 @@ export class EventExcuseController {
   })
   @ApiNoContentResponse()
   async withdraw(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<void> {
@@ -113,7 +114,7 @@ export class EventExcuseController {
   })
   @ApiOkResponse({ type: EventExcuseWithMemberDto, isArray: true })
   async list(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<EventExcuseWithMemberDto[]> {
@@ -124,7 +125,7 @@ export class EventExcuseController {
   @ApiOperation({
     summary: "Approve or decline a member's pending excuse",
     description:
-      "The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT. 409 when it was already decided.",
+      "The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.",
   })
   @ApiOkResponse({ type: EventExcuseDto })
   @FeatureEvent(
@@ -134,8 +135,8 @@ export class EventExcuseController {
     }),
   )
   async decide(
-    @Param('eventId') eventId: string,
-    @Param('userId') excuseUserId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('userId', ParseUUIDPipe) excuseUserId: string,
     @CurrentUser('id') deciderId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: DecideEventExcuseDto,

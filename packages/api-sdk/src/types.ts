@@ -2293,7 +2293,7 @@ export interface paths {
         head?: never;
         /**
          * Approve or decline a member's pending excuse
-         * @description The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT. 409 when it was already decided.
+         * @description The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.
          */
         patch: operations["EventExcuseController_decide_v1"];
         trace?: never;
