@@ -53,7 +53,7 @@ import {
   ThreadHistoryEdge,
 } from "@/components/chat/thread-history-edge";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
-import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
+import { jumpToLatestLabel } from "@repo/chat-core/jump-to-latest";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";

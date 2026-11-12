@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import { JumpToLatestButton } from "./jump-to-latest-button";
+import { useJumpToLatest } from "@/lib/chat/use-jump-to-latest";
+import type { LatestRow } from "@repo/chat-core/jump-to-latest";
 import {
   ImageViewer,
   ImageViewerProvider,
@@ -760,6 +763,98 @@ export const MessageTimeline = forwardRef<
     hold: holdFollow,
   });
 
+  // The way back to the newest message once the member has read back through
+  // history, as mobile draws it: past one screen, or once someone else's
+  // message lands out of sight below them (`useJumpToLatest`).
+  const latestRows = useMemo<LatestRow[]>(() => {
+    const out: LatestRow[] = [];
+    for (let index = decorated.length - 1; index >= 0; index -= 1) {
+      const { message, visibility } = decorated[index]!;
+      out.push({
+        id: message.client_message_id ?? message.id,
+        own: viewerId !== null && message.sender_id === viewerId,
+        silent: visibility === "tombstone" || message.is_deleted === true,
+      });
+    }
+    return out;
+  }, [decorated, viewerId]);
+  const jump = useJumpToLatest({
+    rows: latestRows,
+    channelKey: channelId ?? null,
+    followWithin: STICK_TO_BOTTOM_SLACK_PX,
+  });
+  const markNewest = jump.markNewest;
+  const pinToBottom = stickToBottom.pinned;
+  const jumpToLatest = useCallback(() => {
+    if (!virtuoso.current) return;
+    // Instant, for the reason `scrollToMessage` gives: a smooth scroll is
+    // aimed once from estimated row heights and settles short.
+    virtuoso.current.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    pinToBottom();
+    markNewest();
+  }, [markNewest, pinToBottom]);
+
+  /*
+    The member's own send brings the list to it, wherever they were reading,
+    as the phone's Send does (`jumpToLatest` on the tap). The list used to
+    follow a new row only from within `STICK_TO_BOTTOM_SLACK_PX` of its end, so
+    a member a line or two up when they pressed Enter (a photo above that grew,
+    a nudge of the wheel) saw their message go nowhere: it landed below the
+    fold and read as unsent (2026-11-12, #4537).
+
+    A send is a key of theirs, still pending, that wasn't one on the last
+    render, wherever it sorts: an optimistic row is placed by this device's
+    clock, so one a few seconds slow puts it under another member's newer
+    message. A pending row already there (an outbox send waiting on a
+    reconnect) is not a new send, so the backfill merged in under it leaves the
+    reader where they are, and so does a channel opening onto pending rows.
+    Everyone else's message still follows only from the bottom
+    (`followOutput`).
+
+    A frame later: Virtuoso takes the new count in its own effects, so a jump
+    made in this commit lands on the row before the send (measured against the
+    real list in a browser). Not cancelled by the next render, which has
+    already recorded the key and won't schedule it again.
+  */
+  const ownPendingKeys = useMemo(() => {
+    if (viewerId === null) return [];
+    const keys: string[] = [];
+    for (const { message } of decorated) {
+      if (message.sender_id === viewerId && message._status === "pending") {
+        keys.push(message.client_message_id ?? message.id);
+      }
+    }
+    return keys;
+  }, [decorated, viewerId]);
+  const ownSendsSeen = useRef<{
+    channelKey: string | null;
+    keys: ReadonlySet<string>;
+  } | null>(null);
+  const sendFrame = useRef<number | null>(null);
+  useEffect(() => {
+    const channelKey = channelId ?? null;
+    const previous = ownSendsSeen.current;
+    const keys = new Set(ownPendingKeys);
+    ownSendsSeen.current = { channelKey, keys };
+    if (previous === null || previous.channelKey !== channelKey) return;
+    if (!ownPendingKeys.some((key) => !previous.keys.has(key))) return;
+    if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    sendFrame.current = requestAnimationFrame(() => {
+      sendFrame.current = null;
+      jumpToLatest();
+    });
+  }, [ownPendingKeys, channelId, jumpToLatest]);
+  useEffect(
+    () => () => {
+      if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    },
+    [],
+  );
+
   /*
     Load the next older page while the member sits at the top of what is
     loaded. Tracked as a state rather than answered from `startReached`, which
@@ -889,12 +984,14 @@ export const MessageTimeline = forwardRef<
   // `useStickToBottom`'s callback is stable, and must stay so: Virtuoso calls
   // a new `scrollerRef` again, which would re-pin the list to its bottom.
   const stickScrollerRef = stickToBottom.scrollerRef;
+  const jumpScrollerRef = jump.scrollerRef;
   const scrollerRef = useCallback(
     (element: HTMLElement | Window | null) => {
       scroller.current = element instanceof HTMLElement ? element : null;
       stickScrollerRef(element);
+      jumpScrollerRef(element);
     },
-    [stickScrollerRef],
+    [stickScrollerRef, jumpScrollerRef],
   );
   const reportVisible = useCallback(() => {
     const range = visibleRange.current;
@@ -1099,7 +1196,7 @@ export const MessageTimeline = forwardRef<
 
   return (
     <ImageViewerProvider value={imageViewer.open}>
-      <div className="h-full">
+      <div className="relative h-full">
         <Virtuoso
           ref={virtuoso}
           data={decorated}
@@ -1226,6 +1323,9 @@ export const MessageTimeline = forwardRef<
             entry.message.client_message_id ?? entry.message.id
           }
         />
+        {jump.showsJump ? (
+          <JumpToLatestButton hasNew={jump.hasNewBelow} onJump={jumpToLatest} />
+        ) : null}
       </div>
       <ImageViewer viewer={imageViewer} />
     </ImageViewerProvider>
