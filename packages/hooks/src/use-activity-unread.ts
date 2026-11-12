@@ -92,24 +92,33 @@ export function useActivityUnread(activity: Activity | undefined): {
       if (error) throw error;
     },
     onMutate: async (refs: ActivityItemRef[]) => {
-      if (!chapterId) return;
+      if (!chapterId) return { cancelled: false };
       const queryKey = activityKeys.chapter(chapterId);
       // A read already in flight hasn't seen this open; landing after the
-      // clear it would bring the dot back.
+      // clear it would bring the dot back. It is cancelled here and read
+      // again once the open is recorded, so what it was fetching for (a
+      // re-read after an action) still lands.
+      const cancelled = queryClient.isFetching({ queryKey, exact: true }) > 0;
       await queryClient.cancelQueries({ queryKey, exact: true });
       queryClient.setQueryData<Activity>(queryKey, (current) =>
         current ? markActivityItemsRead(current, refs) : current,
       );
+      return { cancelled };
     },
-    onSuccess: (_data, refs) => {
+    onSettled: (_data, error, refs, context) => {
       if (!chapterId) return;
       const queryKey = activityKeys.chapter(chapterId);
-      queryClient.setQueryData<Activity>(queryKey, (current) =>
-        current ? markActivityItemsRead(current, refs) : current,
-      );
-      // A read that started before the server recorded the open would still
-      // serve the dot: read again behind it.
-      if (queryClient.isFetching({ queryKey, exact: true }) > 0) {
+      if (!error) {
+        queryClient.setQueryData<Activity>(queryKey, (current) =>
+          current ? markActivityItemsRead(current, refs) : current,
+        );
+      }
+      // Read again behind a read this cancelled, or one that started before
+      // the server recorded the open and would still serve the dot.
+      if (
+        context?.cancelled ||
+        queryClient.isFetching({ queryKey, exact: true }) > 0
+      ) {
         void queryClient.invalidateQueries({ queryKey, exact: true });
       }
     },

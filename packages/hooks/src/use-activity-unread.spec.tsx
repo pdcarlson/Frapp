@@ -233,4 +233,18 @@ describe("useActivityUnread", () => {
       }),
     );
   });
+
+  it("reads again behind a read it cancelled, so an action's re-read still lands", async () => {
+    const data = read();
+    const { queryClient, wrapper } = setup(data);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    void queryClient
+      .fetchQuery({ queryKey: KEY, queryFn: () => new Promise(() => {}) })
+      .catch(() => {});
+    const { result } = renderHook(() => useActivityUnread(data), { wrapper });
+    act(() => result.current.markRead([{ kind: "link", item_id: "l1" }]));
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY, exact: true }),
+    );
+  });
 });
