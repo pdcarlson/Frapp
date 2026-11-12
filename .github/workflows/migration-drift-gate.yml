@@ -414,6 +414,9 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          # Temporary, with the `ai-integration` trigger above: remove both
+          # before the ai-integration -> main PR merges.
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
 
@@ -429,6 +432,13 @@ jobs:
               echo "::warning::github.event.before is unusable ('${BEFORE_SHA:-unset}'); measuring against HEAD~1 instead."
               BASE="HEAD~1"
             fi
+          elif [ "$EVENT_NAME" = "pull_request" ] && [ "${BASE_REF:-main}" = "ai-integration" ]; then
+            # Temporary: a slice PR into `ai-integration` is measured against
+            # that branch. Measured against main, every migration an earlier
+            # slice merged there reads as introduced by this PR.
+            git fetch --no-tags origin "ai-integration:refs/remotes/origin/ai-integration"
+            BASE="$(git merge-base HEAD refs/remotes/origin/ai-integration)"
+            [ -n "$BASE" ] || { echo "::error::No merge base with ai-integration."; exit 1; }
           elif BASE="$(git merge-base HEAD refs/remotes/origin/main 2>/dev/null)" && [ -n "$BASE" ]; then
             : # merge base found — the common ancestor of this tree and main.
           else
