@@ -502,7 +502,7 @@ export interface Database {
         Returns: boolean;
       };
       /**
-       * `20261112280000` — finish a study session behind a compare-and-set on
+       * `20261113040001` — finish a study session behind a compare-and-set on
        * status, watermark and pause, and write its STUDY award in the same
        * transaction. Empty when the compare-and-set lost.
        */

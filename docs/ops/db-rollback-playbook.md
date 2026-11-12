@@ -4292,9 +4292,9 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
-## Rollback the study-session finish (20261112280000)
+## Rollback the study-session finish (20261113040001)
 
-* **Migration**: `20261112280000_finish_study_session_rpc.sql`
+* **Migration**: `20261113040001_finish_study_session_rpc.sql`
 
 Adds `finish_study_session(...)` and the unique index `idx_study_sessions_one_active`. Nothing is backfilled and no row changes, so there is no data to restore.
 
