@@ -3748,9 +3748,9 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback service entry awarded points (20261112150000)
+## Rollback service entry awarded points (20261112152000)
 
-* **Migration**: `20261112150000_service_entry_awarded_points.sql`
+* **Migration**: `20261112152000_service_entry_awarded_points.sql`
 
 One nullable column on `service_entries` (`awarded_points`), backfilled from the SERVICE ledger, and `approve_service_entry` redefined to write it. No ledger row changes.
 
@@ -3763,6 +3763,23 @@ alter table public.service_entries drop column if exists awarded_points;
 ```
 
 Dropping the column first would fail every approval, since the function's update names it.
+
+## Rollback deleted chat messages take their notifications (20261112140000)
+
+* **Migration**: `20261112140000_notifications_chat_message_id.sql`
+
+One new column with its index, and two triggers. It writes no row on apply. Notification rows the delete trigger has removed since are gone; a rollback does not bring them back.
+
+**Revert the API first**, because the API from the same PR writes `chat_message_id` on every single-message chat notification and rewrites rows by it on an edit: redeploy the earlier API, which never touches the column. Then, to stop deletes removing notifications, **revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop trigger if exists chat_messages_forget_notifications on public.chat_messages;
+drop trigger if exists notifications_skip_deleted_message on public.notifications;
+drop function if exists public.chat_messages_forget_notifications();
+drop function if exists public.notifications_skip_deleted_message();
+drop index if exists public.idx_notifications_chat_message;
+alter table public.notifications drop column if exists chat_message_id;
+```
 
 ## Rollback chat search with a filter and no text (20261112131300)
 
@@ -3806,3 +3823,34 @@ alter table public.chat_messages drop column if exists thread_last_reply;
 Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an imported row, cut down to `source` and `author_username`. **It cannot be reverted by a migration**: the cleared values are gone from the database. Once #4421 is live nothing needs them back: no API read serves a deleted message's payload, and there is no undelete.
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
+## Rollback request context lookup (20261112151000)
+
+* **Migration**: `20261112151000_request_context_lookup.sql`
+
+One function, `get_request_context(uuid, uuid)`, which the chapter guards' prefetch calls. It writes nothing on apply and changes no table.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function. Without reverting anything, the function can also be removed: the API answers a failed call by reading the rows separately as before #3583, so chapter requests get slower by one failed call each, and Sentry shows a `get_request_context` warning until the API is reverted.
+
+To remove the function, do it in a later forward migration:
+
+```sql
+drop function if exists public.get_request_context(uuid, uuid);
+```
+
+## Rollback a member's phone number (20261112150000)
+
+* **Migration**: `20261112150000_users_phone.sql`
+
+One nullable column on `users` (`phone`) with its length check, and `anonymize_user` redefined to also clear it. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never reads or writes `phone`, so the stored numbers sit unused. That is safe to leave.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the column is gone:
+
+```sql
+-- Re-create anonymize_user from 20261111235900_chat_important_seen.sql, verbatim.
+alter table public.users
+  drop constraint if exists users_phone_length,
+  drop column if exists phone;
+```

@@ -102,8 +102,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   try {
     await db.exec(`
       begin;
-      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city)
-      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy');
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city, phone)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy', '(518) 555-0142');
       insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
       insert into members (user_id, chapter_id) values ('${U}', '${C}');
       insert into point_transactions (chapter_id, user_id, amount, category, description)
@@ -191,7 +191,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     const FUNCTIONAL = [
       {
         name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
-        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
+        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city, phone,
                      (deleted_at is not null) as tombstoned
                 from users where id = '${U}'`,
         ok: (rows) =>
@@ -202,6 +202,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows[0].avatar_url === null &&
           rows[0].graduation_year === null &&
           rows[0].current_city === null &&
+          rows[0].phone === null &&
           rows[0].tombstoned === true,
       },
       {

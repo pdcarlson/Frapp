@@ -21,6 +21,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *   success     Semantic    — status only, on its `--*-tint` fill, never a solid
  *   warning     Semantic    — "
  *   destructive Semantic    — "
+ *   info        Semantic    — " (a task In progress, #4133)
  *   mention     Mention/DM  — "you were addressed", and nothing else
  *
  * `success` and `warning` landed with the Directory & Finance slice of #920,
@@ -44,17 +45,12 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * the `color-mix` floor was the solid hue (#2376, foundations §5). Measured
  * from the tokens in `components/shared/status-tint-contrast.spec.ts`.
  *
- * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
- * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield
- * ladder took solid `--info` under the gate on plain `--card` and `--popover`
- * too. **Read the twin's own limit before building an info badge**: on the
- * *tint* it measures 4.08–5.16:1, so it clears on `--background` and
- * `--surface-1` but NOT on a `--popover`-seated tint (4.08). A badge that has
- * to sit in a dialog or menu needs a further lift or a solid fill; the token as
- * it stands does not cover that case, and there is still no `--info` call site
- * to have forced the question. Measured in
- * `components/billing/status-contrast.spec.ts` so the first consumer inherits
- * the number rather than the defect.
+ * `info` landed with its first call site, the chat task card's In progress
+ * badge (#4133, 2026-11-12). Solid `--info` misses the gate on its own tint
+ * (`components/billing/status-contrast.spec.ts` keeps that number), so, like
+ * danger, the text is the lifted `--info-text` (#61A7FF since the 2026-11-12
+ * ladder) on `--info-tint`, which clears 4.5:1 over every step, `--popover`
+ * included, measured in `components/shared/status-tint-contrast.spec.ts`.
  *
  * `mention` landed with the chat slice of #920, which brought its first call
  * sites (`components/chat/channel-list.tsx`). It is the *neutral* badge with the
@@ -81,6 +77,8 @@ const badgeVariants = cva(
         // 4.22:1 over `--card`, the surface a status badge normally sits on.
         destructive:
           "border-transparent bg-destructive-tint text-destructive-text",
+        // Lifted `--info-text` on the info tint: a task In progress (#4133).
+        info: "border-transparent bg-info-tint text-info-text",
         mention: "border-transparent bg-mention text-mention-foreground",
       },
     },
@@ -100,10 +98,11 @@ export interface BadgeProps
  *
  * Every domain status mapper returns this, so deleting a variant here becomes a
  * compile error in each of them instead of a silent fallback. It lives on the
- * primitive because five mappers now need it — `billing/invoice-status.ts`,
+ * primitive because every status mapper needs it — `billing/invoice-status.ts`,
  * `events/attendance-status.ts`, `service/service-status.ts`,
- * `study/study-status.ts` and `geofences/geofence-status.ts` — and five local
- * copies of one type is the drift `ui/typography.ts` was hoisted to stop.
+ * `study/study-status.ts`, `geofences/geofence-status.ts` and
+ * `tasks/task-status.ts` among them — and a local copy per mapper is the drift
+ * `ui/typography.ts` was hoisted to stop.
  */
 export type BadgeKind = NonNullable<BadgeProps["variant"]>;
 

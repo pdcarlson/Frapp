@@ -2,6 +2,7 @@ import { RECURRENCE_RULE_LABELS, isRecurrenceRule } from "@repo/validation";
 import { ruleTokenLabel } from "@repo/hooks/event-series";
 import {
   formatDayTime,
+  formatPoints,
   formatTimeOfDay,
   localIsoDate,
   parseInstant,
@@ -33,7 +34,7 @@ export function pointsLabel(value: unknown): string | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return null;
   }
-  return `${value} ${value === 1 ? "point" : "points"}`;
+  return formatPoints(value);
 }
 
 /**

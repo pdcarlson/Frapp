@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAccessibleChapters, useMyPermissions } from "@repo/hooks";
 import { asArray } from "@/lib/utils";
 import { isLockedOutOfChapter } from "@/lib/auth/no-access";
+import { useRolePreviewStore } from "@/lib/stores/role-preview-store";
 
 /**
  * Sends a member whose roles grant nothing to `/no-access` (#3236).
@@ -24,7 +25,11 @@ export function NoAccessRedirect() {
   const router = useRouter();
   const { data } = useMyPermissions();
   const chapters = useAccessibleChapters();
+  // A role previewed with "View as a role" (#4072) may grant nothing; that is
+  // the officer looking, not a member locked out, and the banner leads back.
+  const previewing = useRolePreviewStore((s) => s.preview !== null);
   const lockedOut =
+    !previewing &&
     chapters.isSuccess &&
     isLockedOutOfChapter(
       data?.permissions,

@@ -31,13 +31,44 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-12: Service entries record the points their approval awarded (#3868)
 
-### 20261112150000_service_entry_awarded_points.sql
+### 20261112152000_service_entry_awarded_points.sql
 
 - **Purpose**: Adds `service_entries.awarded_points integer` (nullable, `>= 0`): the SERVICE points an entry's approval awarded, 0 for a sub-rate approval, NULL until approved. Redefines `approve_service_entry(uuid, uuid, uuid, text, integer)` with the same signature and body plus `awarded_points = greatest(p_points, 0)` in its compare-and-set and the `search_path = public, pg_temp` pin from `20261107160000` restated (a `create or replace` drops it), so the EXECUTE grants from `20260603120000` (service role only) carry over. Backfills approved or awarded entries from their SERVICE ledger row (`point_transactions.metadata->>'service_entry_id'`), 0 for an approved entry with `points_awarded = false`; an awarded entry whose ledger row is gone stays NULL, which clients show as the old "Points awarded" flag. The rule is [`spec/behavior/service-hours.md` § Approval Workflow](../../../spec/behavior/service-hours.md#approval-workflow).
 - **Checks**: After `db push`, `select count(*) from service_entries where status = 'APPROVED' and awarded_points is null;` returns 0 or only entries whose ledger row was removed, and `select has_function_privilege('authenticated', 'public.approve_service_entry(uuid, uuid, uuid, text, integer)', 'execute');` still returns `false`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API selects `*` and ignores the column; the newer API against an unmigrated database still works: reads lack the field and clients fall back to the flag, and creating an entry never names the column. The `add column` with a check constraint and no default is a catalog change plus a scan to validate it; the backfill groups the SERVICE ledger rows that carry a `service_entry_id` once and joins them to the entries (no index covers that JSON key, so it is one pass over the SERVICE ledger, not one per entry), then sets 0 on approved sub-rate entries; each approved entry is updated once. `if not exists`, `create or replace` and the `awarded_points is null` guard make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-service-entry-awarded-points-20261112150000) § Rollback service entry awarded points.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-service-entry-awarded-points-20261112152000) § Rollback service entry awarded points.
+
+## 2026-11-12: The chapter guards read the caller in one call (#3583)
+
+### 20261112151000_request_context_lookup.sql
+
+- **Purpose**: Adds `get_request_context(uuid, uuid)` (security invoker, `stable`, EXECUTE for `service_role` only), which the API's chapter-guard prefetch calls with the caller's auth id and the requested chapter. It returns one jsonb object: the caller's `users.id`, the chapter's `subscription_status`, `past_due_since` and `enabled_modules`, the caller's whole `members` row in that chapter, and the `roles` rows that row names in that chapter. Before it the API read those as a chain of PostgREST calls (user, then membership, then roles), about 320 ms at production's p50; the body runs in under 1 ms. Writes no row and changes no table.
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.get_request_context(uuid, uuid)', 'execute');` returns `false` and the same for `service_role` returns `true`. Verified in PGlite (`scripts/pglite/tiers/request-context.mjs`). Once the API ships, Sentry's `POST /rest/v1/rpc/get_request_context` spans in `frapp-api` replace most `GET /rest/v1/members` and `GET /rest/v1/roles` spans, and the `ChapterGuard` and `PermissionsGuard` spans shrink.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never calls it. The newer API against an unmigrated database gets an error from the call and reads the rows separately as before #3583, so nothing breaks either way; each chapter request pays one failed call first, and Sentry gets a `get_request_context` warning (one per process every ten minutes). `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-request-context-lookup-20261112151000) § Rollback request context lookup.
+
+## 2026-11-12: A member's phone number (#3711)
+
+### 20261112150000_users_phone.sql
+
+- **Purpose**: Adds `users.phone text` (nullable) with the check `users_phone_length` (`phone is null or char_length(phone) <= 32`, added `not valid` then validated; every existing row is null). Redefines `anonymize_user` as written in `20261111235900_chat_important_seen.sql` with one more line, `phone = null`, so account deletion erases it. The member sets it through `PATCH /v1/users/me`; profile reads return it. The rule is [`spec/behavior/members.md` § Profiles](../../../spec/behavior/members.md#profiles).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'phone';` returns `1`, `select convalidated from pg_constraint where conname = 'users_phone_length';` returns `true`, and `select prosrc like '%phone = null%' from pg_proc where proname = 'anonymize_user';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never names the column. The newer API against an unmigrated database fails every profile read and `PATCH /v1/users/me` that names it, so don't deploy the API first. Adding a nullable column is metadata-only, and validating the check scans `users` once (a few hundred rows). `if not exists`, `drop constraint if exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-a-members-phone-number-20261112150000) § Rollback a member's phone number.
+
+
+## 2026-11-12: Deleting a chat message deletes its notifications (#4418)
+
+### 20261112140000_notifications_chat_message_id.sql
+
+- **Purpose**: Adds `notifications.chat_message_id` (uuid, nullable, `references chat_messages(id) on delete cascade`) and the partial index `idx_notifications_chat_message`. Adds two `security definer` trigger functions, EXECUTE revoked from `public`, `anon` and `authenticated`: `chat_messages_forget_notifications` (after `is_deleted` turns true, deletes the rows that quote the message) and `notifications_skip_deleted_message` (before insert, drops a row whose message is deleted or gone). Changes no row on apply; deletes notification rows only as messages are deleted afterwards, which Paul approved on #4418.
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'notifications' and column_name = 'chat_message_id';` returns 1 row, and `select tgname from pg_trigger where tgname in ('chat_messages_forget_notifications', 'notifications_skip_deleted_message');` returns 2 rows.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never writes the column, so it runs unchanged against the migrated database. The newer API against an unmigrated database fails every single-message chat notification insert (unknown column), so the order matters. `add column` with no default is a catalog-only change; the index is built with a plain `create index` over a table of about 700 rows on production. Rows written before it carry no message id (576 single-message chat rows on production on 2026-11-12, none about a deleted message). Verified in PGlite (`scripts/pglite/tiers/notifications-forget-deleted-message.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-deleted-chat-messages-take-their-notifications-20261112140000) § Rollback deleted chat messages take their notifications.
 
 ## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
 

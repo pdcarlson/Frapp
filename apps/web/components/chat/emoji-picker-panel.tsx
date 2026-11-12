@@ -40,7 +40,7 @@ export function EmojiPickerPanel({
       <Frimousse.Search
         autoFocus
         className={cn(
-          "m-2 rounded-md border border-input bg-surface-1 px-3 py-2 text-base outline-none transition-colors",
+          "m-2 rounded-md border border-control-edge bg-surface-1 px-3 py-2 text-base outline-none transition-colors",
           FOCUS_RING,
         )}
         placeholder="Search emoji…"

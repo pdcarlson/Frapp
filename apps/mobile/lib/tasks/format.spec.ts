@@ -70,13 +70,13 @@ describe("formatDueSubtitle", () => {
 
 describe("formatDueDate", () => {
   it("draws the plain date, whatever the countdown would say", () => {
-    expect(formatDueDate("2026-08-18")).toBe("Due Aug 18");
-    expect(formatDueDate("2026-08-14")).toBe("Due Aug 14");
+    expect(formatDueDate("2026-08-18", NOW)).toBe("Due Aug 18");
+    expect(formatDueDate("2026-08-14", NOW)).toBe("Due Aug 14");
   });
 
   it("keeps a bare date on its own day west of Greenwich", () => {
     inZone("America/Los_Angeles", () => {
-      expect(formatDueDate("2026-08-22")).toBe("Due Aug 22");
+      expect(formatDueDate("2026-08-22", NOW)).toBe("Due Aug 22");
     });
   });
 
@@ -88,13 +88,14 @@ describe("formatDueDate", () => {
 });
 
 describe("isDueUrgent", () => {
-  it("covers today, tomorrow and anything past", () => {
-    expect(isDueUrgent("2026-08-17", NOW)).toBe(true);
-    expect(isDueUrgent("2026-08-18", NOW)).toBe(true);
+  it("is red only past the due day (#4133)", () => {
     expect(isDueUrgent("2026-08-10", NOW)).toBe(true);
+    expect(isDueUrgent("2026-08-16", NOW)).toBe(true);
   });
 
-  it("leaves anything further out calm", () => {
+  it("leaves today, tomorrow and anything further out calm", () => {
+    expect(isDueUrgent("2026-08-17", NOW)).toBe(false);
+    expect(isDueUrgent("2026-08-18", NOW)).toBe(false);
     expect(isDueUrgent("2026-08-19", NOW)).toBe(false);
   });
 
@@ -119,14 +120,14 @@ describe("formatPointsChip", () => {
   it("offers points in gold before the ledger moves", () => {
     expect(formatPointsChip(5, false)).toEqual({
       tone: "offered",
-      label: "+5",
+      label: "+5 pts",
     });
   });
 
   it("marks an award only once points_awarded is true", () => {
     expect(formatPointsChip(15, true)).toEqual({
       tone: "awarded",
-      label: "+15 ✓",
+      label: "+15 pts ✓",
     });
   });
 
@@ -135,7 +136,7 @@ describe("formatPointsChip", () => {
     // claim an award that has not happened.
     expect(formatPointsChip(15, false)).toEqual({
       tone: "offered",
-      label: "+15",
+      label: "+15 pts",
     });
   });
 });

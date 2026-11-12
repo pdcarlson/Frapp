@@ -14,7 +14,11 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readEventPayload } from "@repo/chat-core/cards";
 import { can, checkInWindowBounds } from "@repo/validation";
-import { parseInstant } from "@repo/formatting";
+import {
+  formatEventWindow,
+  formatPointsChip,
+  parseInstant,
+} from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,26 +33,6 @@ interface EventCardProps {
   isConfirmed: boolean;
 }
 
-
-function formatRange(startIso: string, endIso: string): string {
-  const start = parseInstant(startIso);
-  if (!start) return startIso;
-  const date = start.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-  const startTime = start.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const end = parseInstant(endIso);
-  if (!end) return `${date}, ${startTime}`;
-  const endTime = end.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${date}, ${startTime}–${endTime}`;
-}
 
 /**
  * Event card. The chat message is an immutable creation-time snapshot (name,
@@ -129,7 +113,13 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-        <span>{formatRange(payload.start_time, payload.end_time)}</span>
+        <span>
+          {formatEventWindow(
+            payload.start_time,
+            payload.end_time,
+            new Date(now),
+          ) ?? payload.start_time}
+        </span>
         {payload.location ? (
           <>
             <span aria-hidden="true">·</span>
@@ -140,7 +130,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           </>
         ) : null}
         {payload.point_value ? (
-          <Badge variant="outline">+{payload.point_value} pts</Badge>
+          <Badge variant="outline">
+            {formatPointsChip(payload.point_value)}
+          </Badge>
         ) : null}
       </div>
       {canViewAttendance && checkedIn !== null ? (

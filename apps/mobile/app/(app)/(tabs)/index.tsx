@@ -46,10 +46,11 @@ import {
   useTasks,
   useViewerUserId,
   channelRowActions,
-  deleteChannelConfirmTitle,
-  DELETE_CHANNEL_CONFIRM_BODY,
-  DELETE_CHANNEL_LABEL,
+  errorCopy,
+  MANAGE_CHANNELS_PERMISSION,
+  useCreateChannel,
   useDeleteChannel,
+  useUpdateChannel,
   useMarkChannelRead,
   usePermissionList,
   useSetChannelNotificationLevel,
@@ -57,6 +58,7 @@ import {
   type ChatNotificationLevel,
   useOwnAvatarTint,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
 import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
@@ -74,7 +76,14 @@ import {
   MessagesButton,
   useAccountMenu,
 } from "@/components/chat/home-header";
-import { DisclosureGlyph } from "@/components/control-glyphs";
+import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import {
+  ChannelFormSheet,
+  type ChannelFormMode,
+  type ChannelFormValues,
+} from "@/components/chat/channel-form-sheet";
+import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
 import { selectViewerProfile } from "@/lib/more/profile";
 import {
   ChannelFilterButton,
@@ -266,6 +275,75 @@ export default function ChatHomeScreen() {
   const markRead = useMarkChannelRead();
   const setNotificationLevel = useSetChannelNotificationLevel();
   const deleteChannel = useDeleteChannel();
+  const createChannel = useCreateChannel();
+  const updateChannel = useUpdateChannel();
+  const canManageChannels = can(MANAGE_CHANNELS_PERMISSION, permissions);
+  // New channel and Edit channel (#3838): one sheet, mounted fresh for each
+  // opening (`formKey`), so a draft never carries to another channel.
+  const channelFormRef = useRef<BottomSheetModal>(null);
+  const [channelForm, setChannelForm] = useState<{
+    mode: ChannelFormMode;
+    key: number;
+  } | null>(null);
+  const openChannelForm = useCallback((mode: ChannelFormMode) => {
+    setChannelForm((current) => ({ mode, key: (current?.key ?? 0) + 1 }));
+  }, []);
+  // Presented once the new sheet has mounted and its ref is the new one.
+  const channelFormKey = channelForm?.key;
+  useEffect(() => {
+    if (channelFormKey !== undefined) channelFormRef.current?.present?.();
+  }, [channelFormKey]);
+  const deleteSheetRef = useRef<BottomSheetModal>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const submitChannelForm = useCallback(
+    async (values: ChannelFormValues) => {
+      const mode = channelForm?.mode;
+      if (!mode) return;
+      try {
+        if (mode.kind === "create") {
+          const created = (await createChannel.mutateAsync({
+            name: values.name,
+            description: values.description || undefined,
+            type: values.isPrivate ? "PRIVATE" : "PUBLIC",
+            category_id: values.categoryId ?? undefined,
+          })) as { id?: unknown } | undefined;
+          // Open it, as Discord does, so the first message is one tap away.
+          if (typeof created?.id === "string") openChannel(created.id);
+          return;
+        }
+        const channel = mode.channel;
+        await updateChannel.mutateAsync({
+          id: channel.id,
+          body: {
+            ...(values.name !== channel.name ? { name: values.name } : {}),
+            // Sent only when changed: a blank never-set description must
+            // not become '' (see Chat settings on web).
+            ...(values.description !== (channel.description ?? "")
+              ? { description: values.description }
+              : {}),
+            ...(values.categoryId !== channel.category_id
+              ? { category_id: values.categoryId }
+              : {}),
+          },
+        });
+      } catch (error) {
+        throw new Error(
+          errorCopy(
+            error,
+            mode.kind === "create"
+              ? "Couldn't create the channel. Check your connection and try again."
+              : "Couldn't save the channel. Check your connection and try again.",
+          ),
+        );
+      }
+    },
+    // `openChannel` is a plain function of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channelForm, createChannel, updateChannel],
+  );
   // A level pick is a queueless write, so the menu locks it offline the way
   // the thread header's level control does (connection-state.md).
   const { writeBlockedReason } = useConnection();
@@ -292,32 +370,23 @@ export default function ChatHomeScreen() {
       case "toggle-pin":
         target.onTogglePin();
         return;
+      case "edit": {
+        const channel = channels.find((c) => c.id === target.channelId);
+        if (channel) openChannelForm({ kind: "edit", channel });
+        return;
+      }
+      case "arrange":
+        router.push("/arrange-channels");
+        return;
       case "delete":
-        Alert.alert(
-          deleteChannelConfirmTitle(target.name),
-          DELETE_CHANNEL_CONFIRM_BODY,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: DELETE_CHANNEL_LABEL,
-              style: "destructive",
-              onPress: () => {
-                deleteChannel
-                  .mutateAsync(target.channelId)
-                  .catch(() =>
-                    Alert.alert(
-                      "Couldn't delete the channel",
-                      "Nothing changed. Check your connection and try again.",
-                    ),
-                  );
-              },
-            },
-          ],
-        );
+        // A sheet, not a system alert: the name has to be typed (#3838),
+        // and Android's alert holds no text field.
+        setDeleteTarget({ id: target.channelId, name: target.name });
+        deleteSheetRef.current?.present?.();
         return;
       default:
-        // Copy link and Edit channel are web's (the surface below leaves
-        // them out), and Notifications opens in the menu itself.
+        // Copy link is web's (the surface below leaves it out), and
+        // Notifications opens in the menu itself.
         return;
     }
   }
@@ -552,7 +621,7 @@ export default function ChatHomeScreen() {
                 (counts?.mentionCount ?? 0) > 0,
               pinned,
               permissions,
-              surface: { copyLink: false, edit: false },
+              surface: { copyLink: false, edit: true, arrange: true },
             }),
             canSetDisplayLock: canSetChannelDisplayLock(
               channel,
@@ -726,9 +795,22 @@ export default function ChatHomeScreen() {
         />
       ) : channels.length === 0 ? (
         // No line saying channels appear here, which would only restate what
-        // Chat is for; the one line says what to do, since mobile has no way
-        // to create a channel (writing.md §4, as amended 2026-11-05).
-        <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
+        // Chat is for; the one line says what to do (writing.md §4, as
+        // amended 2026-11-05): an officer starts one here (#3838), and
+        // anyone else asks.
+        canManageChannels ? (
+          <InlineNote
+            action={{
+              label: "New channel",
+              onPress: () =>
+                openChannelForm({ kind: "create", categoryId: null }),
+            }}
+          >
+            No channels yet.
+          </InlineNote>
+        ) : (
+          <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
+        )
       ) : (
         <>
           {/*
@@ -810,6 +892,41 @@ export default function ChatHomeScreen() {
                           direction={section.collapsed ? "right" : "down"}
                         />
                       </PressableRow>
+                      {/* New channel (#3838): beside the Channels heading
+                          and each category's, for `channels:manage`, as
+                          Discord and Slack draw it. Never on Pinned. */}
+                      {canManageChannels &&
+                      (section.key === "channels" ||
+                        section.key.startsWith("category:")) ? (
+                        <View style={styles.headingAction}>
+                          <IconButton
+                            label={
+                              section.key === "channels"
+                                ? "New channel"
+                                : `New channel in ${section.label}`
+                            }
+                            onPress={() =>
+                              openChannelForm({
+                                kind: "create",
+                                // The section key lowercases the id
+                                // (`categorySectionKey`); send the server's.
+                                categoryId: section.key.startsWith("category:")
+                                  ? (categories.find(
+                                      (c) =>
+                                        `category:${c.id.toLowerCase()}` ===
+                                        section.key,
+                                    )?.id ?? null)
+                                  : null,
+                              })
+                            }
+                          >
+                            <PlusGlyph
+                              color={tokens.color.text.mutedForeground}
+                              size={18}
+                            />
+                          </IconButton>
+                        </View>
+                      ) : null}
                       {/* Outside the fold control, so a screen reader
                           reaches it as its own button. */}
                       {index === 0 ? filterButton : null}
@@ -846,6 +963,42 @@ export default function ChatHomeScreen() {
 
       <AskSheet ref={askSheetRef} />
       <StatusSheet ref={statusSheetRef} />
+      {channelForm ? (
+        <ChannelFormSheet
+          key={channelForm.key}
+          ref={channelFormRef}
+          mode={channelForm.mode}
+          categories={categories}
+          onSubmit={submitChannelForm}
+          onDelete={
+            channelForm.mode.kind === "edit"
+              ? () => {
+                  const { id, name } = (
+                    channelForm.mode as Extract<
+                      ChannelFormMode,
+                      { kind: "edit" }
+                    >
+                  ).channel;
+                  setDeleteTarget({ id, name });
+                  // Stacks over the form (`push`), so Cancel goes back to it.
+                  deleteSheetRef.current?.present?.();
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {/* Only an officer can delete, so only theirs carries the sheet. */}
+      {canManageChannels ? (
+        <DeleteChannelSheet
+          ref={deleteSheetRef}
+          channel={deleteTarget}
+          onDelete={async (channelId) => {
+            await deleteChannel.mutateAsync(channelId);
+            // The form it may have come from is about a channel that's gone.
+            channelFormRef.current?.dismiss?.();
+          }}
+        />
+      ) : null}
       <ChannelActionsMenu
         target={menuTarget}
         onClose={closeMenu}
@@ -910,6 +1063,11 @@ export default function ChatHomeScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    headingAction: {
+      width: tokens.touch.minimum,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     headerActions: {
       flexDirection: "row",
       alignItems: "center",

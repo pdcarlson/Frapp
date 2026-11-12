@@ -6,8 +6,10 @@ import {
   useQueryClient,
   type InvalidateQueryFilters,
 } from "@tanstack/react-query";
+import { useCallback } from "react";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { usePermissionPreview } from "./permission-preview";
 
 /**
  * `enabled: false` keeps an observer from fetching, for a caller mounted where
@@ -229,6 +231,15 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const enabled = (options?.enabled ?? true) && !!chapterId;
+  // "View as a role" (#4072): the previewed set replaces the viewer's own in
+  // what screens read. `select` runs per observer, so the cached answer (and
+  // every invalidation of it) stays the viewer's own.
+  const preview = usePermissionPreview();
+  const select = useCallback(
+    <T extends { permissions?: unknown }>(data: T): T =>
+      preview ? { ...data, permissions: [...preview] } : data,
+    [preview],
+  );
   return useQuery({
     queryKey: ["user", "me", "permissions", chapterId],
     queryFn: async () => {
@@ -236,6 +247,7 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
       if (error) throw error;
       return data;
     },
+    select,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     enabled,

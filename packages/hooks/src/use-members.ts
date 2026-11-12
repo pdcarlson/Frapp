@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   useQuery,
   useMutation,
@@ -8,10 +8,18 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
+import {
+  roleColorOrNull,
+  SYSTEM_SENDER_ID,
+  type MemberDismissalKey,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { resolveDisplayName, type DisplayNameMap } from "./display-names";
-import { useViewerUserId } from "./use-user";
+import {
+  memberFallbackLabel,
+  resolveDisplayName,
+  type DisplayNameMap,
+} from "./display-names";
+import { PROFILE_QUERY_FILTERS, useViewerUserId } from "./use-user";
 import {
   memberAvatarHue,
   memberAvatarTint,
@@ -87,11 +95,97 @@ export function useChapterRoster() {
   });
 }
 
+/**
+ * Ids each chapter's roster has already been re-read for, shared by every
+ * surface for the life of the app, so one id costs one re-read however many
+ * screens name it or however often they remount.
+ */
+const rosterCatchUpTried = new Map<string, Set<string>>();
+/** Ids whose re-read failed, tried again only when a surface's ids change. */
+const rosterCatchUpFailed = new Set<string>();
+
+/** Clears {@link useRosterCatchUp}'s memory, for specs. */
+export function resetRosterCatchUpForTests(): void {
+  rosterCatchUpTried.clear();
+  rosterCatchUpFailed.clear();
+}
+
+/**
+ * Re-reads the roster when a surface is about to name a member it doesn't
+ * hold, such as someone who joined after the roster loaded and is now typing
+ * or posting (#4493, Paul, 2026-11-12). The roster is otherwise only re-read
+ * once it is a minute stale *and* something remounts or refocuses, so a new
+ * joiner read as `Member 2f4a1c` in the timeline and went unnamed on the
+ * typing line for that long, which during the beta's onboarding is most of
+ * their first conversation.
+ *
+ * Pass the surface's typists and the rows it draws. Each missing id triggers
+ * at most one re-read per chapter across every surface, so a member who really
+ * is gone (a removed member's old messages, an imported author) costs one
+ * read, not one per screen or per visit. A re-read that fails is tried again
+ * only when the surface's ids next change (a new message or typist), never in
+ * a loop against a failing API. The system sender is never looked up.
+ */
+export function useRosterCatchUp(
+  typists: readonly string[],
+  rows: readonly { sender_id?: string | null }[] = [],
+): void {
+  const chapterId = useActiveChapterId();
+  const { data, isFetching, refetch } = useChapterRoster();
+  // A string, so a fresh array of the same ids each render reruns nothing.
+  const wanted = useMemo(
+    () =>
+      [
+        ...new Set(
+          [...typists, ...rows.map((row) => row.sender_id)].filter(
+            (id): id is string => !!id && id !== SYSTEM_SENDER_ID,
+          ),
+        ),
+      ]
+        .sort()
+        .join(","),
+    [typists, rows],
+  );
+  const lastWanted = useRef(wanted);
+
+  useEffect(() => {
+    const wantedChanged = lastWanted.current !== wanted;
+    lastWanted.current = wanted;
+    if (!chapterId || !data || isFetching || !wanted) return;
+    let tried = rosterCatchUpTried.get(chapterId);
+    if (!tried) {
+      tried = new Set();
+      rosterCatchUpTried.set(chapterId, tried);
+    }
+    if (wantedChanged) {
+      for (const id of rosterCatchUpFailed) tried.delete(id);
+      rosterCatchUpFailed.clear();
+    }
+    const known = new Set(data.map((row) => row.user_id));
+    const missing = wanted
+      .split(",")
+      .filter((id) => !known.has(id) && !tried.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) tried.add(id);
+    void refetch().then((result) => {
+      if (result.isError) for (const id of missing) rosterCatchUpFailed.add(id);
+    });
+  }, [chapterId, data, isFetching, refetch, wanted]);
+}
+
 export interface MemberDisplayNames {
   /** `users.id` → `display_name`, for callers that resolve several ids at once. */
   byId: DisplayNameMap;
   /** Single-id resolver; `null` when unresolved so the caller picks its copy. */
   nameFor: (userId: string) => string | null;
+  /**
+   * The typing line's name for a member (#4493, for `typingLabel`): their
+   * name, or `Member 2f4a1c` when the roster holds them with no name set or
+   * no roster read has landed, as the timeline names them then. `null` only
+   * while a loaded roster doesn't hold them yet, so the line waits a moment
+   * for {@link useRosterCatchUp} rather than saying "Someone".
+   */
+  typistLabelFor: (userId: string) => string | null;
   /**
    * The member's photo as a renderable (signed) URL, or `null` for initials.
    * Same roster read as `nameFor`, so a chat row needs no second request.
@@ -158,6 +252,17 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [byId],
   );
 
+  const rosterLanded = query.data !== undefined;
+  const typistLabelFor = useCallback(
+    (userId: string) => {
+      const name = resolveDisplayName(byId, userId);
+      if (name) return name;
+      if (rosterLanded && !(userId in byId)) return null;
+      return memberFallbackLabel(userId);
+    },
+    [byId, rosterLanded],
+  );
+
   const avatarById = useMemo(
     () =>
       new Map(
@@ -203,6 +308,7 @@ export function useMemberDisplayNames(): MemberDisplayNames {
   return {
     byId,
     nameFor,
+    typistLabelFor,
     avatarFor,
     roleColorFor,
     avatarTintFor,
@@ -286,7 +392,13 @@ export function useUpdateMemberRoles() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["members", "update-member-roles"],
-    mutationFn: async ({ id, role_ids }: { id: string; role_ids: string[] }) => {
+    mutationFn: async ({
+      id,
+      role_ids,
+    }: {
+      id: string;
+      role_ids: string[];
+    }) => {
       const { data, error } = await client.PATCH("/v1/members/{id}/roles", {
         params: { path: { id } },
         body: { role_ids },
@@ -309,6 +421,46 @@ export function useUpdateMemberRoles() {
         queryKey: ["user", "me", "permissions", chapterId],
       });
     },
+  });
+}
+
+/**
+ * An officer fixes another member's name or graduation year (#4367,
+ * `PATCH /v1/members/{id}/profile`). Offer it only where the profile read says
+ * `viewer_can_edit_profile`: the API also refuses your own profile, anyone
+ * ranked at or above you, and a member who is in another chapter too.
+ *
+ * The name shows wherever the member does (the directory, chat's author
+ * labels through the roster, the alumni list, the activity feed), so this
+ * refetches the same reads a member's own profile edit does.
+ */
+export function useCorrectMemberProfile() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["members", "correct-member-profile"],
+    mutationFn: async ({
+      id,
+      ...body
+    }: {
+      id: string;
+      display_name?: string;
+      graduation_year?: number | null;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/members/{id}/profile", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () =>
+      Promise.all(
+        PROFILE_QUERY_FILTERS.filter(
+          // `["user", "me"]` is the viewer's own row, which this never touches.
+          (filters) => filters.queryKey?.[0] !== "user",
+        ).map((filters) => queryClient.invalidateQueries(filters)),
+      ),
   });
 }
 

@@ -22,7 +22,8 @@ export const stateMicrocopy = {
     noFilterMatches: "No actives match these filters.",
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
-    errorTitle: "Couldn't load members",
+    // The page is Directory in the nav, and the phone says the same (#4135).
+    errorTitle: "Couldn't load the directory",
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },

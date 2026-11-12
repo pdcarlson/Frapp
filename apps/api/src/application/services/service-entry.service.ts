@@ -394,7 +394,7 @@ export class ServiceEntryService {
       points_awarded: false,
       // `awarded_points` is left out on purpose: the column is null until
       // approval, and naming it here would fail every create against a
-      // database that hasn't applied 20261112150000 yet (#3868).
+      // database that hasn't applied 20261112152000 yet (#3868).
     });
 
     // The `/hours log` slash command asks us to surface a read-only hours

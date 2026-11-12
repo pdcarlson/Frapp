@@ -12,7 +12,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * shadcn scaffold it replaced:
  *
  * 1. **There is no `outline` variant.** Under Signet the outlined button IS
- *    Secondary — card fill with the stronger `--input` hairline. The scaffold's
+ *    Secondary — card fill with the `--control-edge` edge (3:1, #4389). The scaffold's
  *    `outline` (transparent fill over `bg-background`) painted a button DARKER
  *    than the card it sat on, inverting the elevation rule that carries depth
  *    on this surface (foundations.md §10). Keeping both names would have left
@@ -70,7 +70,7 @@ const buttonVariants = cva(
         // `components/shared/elevation-contrast.spec.ts`, and
         // `app/global-error.tsx` hand-copies this string class for class.
         secondary:
-          "border-input bg-card font-semibold text-foreground hover:bg-card-hover",
+          "border-control-edge bg-card font-semibold text-foreground hover:bg-card-hover",
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
         // The text's own tone, lit only on hover (2026-11-05). Ghost used to

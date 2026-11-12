@@ -69,9 +69,18 @@ vi.mock("react-virtuoso", async () => {
 });
 
 // `useAuthorAvatars` needs `FrappClientProvider`, which a bare render lacks.
+const rosterCatchUp = vi.hoisted(() =>
+  vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
+  return {
+    ...actual,
+    useAuthorAvatars: () => ({ data: {} }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+  };
 });
 
 // Radix mounts an avatar's `<img>` only once the browser loads it, which
@@ -159,6 +168,7 @@ function renderPanel(
       rootId="root"
       viewerId="me"
       nameFor={(id) => names[id] ?? null}
+      typistLabelFor={(id) => names[id] ?? null}
       avatarFor={overrides.avatarFor ?? (() => null)}
       blockState={readyBlocks}
       heldRoot={overrides.heldRoot ?? null}
@@ -293,6 +303,14 @@ describe("ThreadPanel (#3785)", () => {
     thread.typingUsers = ["paul", "me", "blocked", "shawn"];
     renderPanel();
     expect(screen.getByText("Paul and Shawn are typing…")).toBeInTheDocument();
+  });
+
+  it("asks the roster after its own typists and authors, since replies aren't in the channel's cache (#4493)", () => {
+    thread.typingUsers = ["new-joiner"];
+    renderPanel();
+    const [typists, rows] = rosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual(["new-joiner"]);
+    expect(rows).toEqual(expect.arrayContaining(thread.messages));
   });
 
   it("keeps the typing line's place when nobody types, so the reply box never moves", () => {
