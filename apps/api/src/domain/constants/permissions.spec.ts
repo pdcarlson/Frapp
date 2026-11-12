@@ -22,7 +22,8 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
 // exec roles carry the officer defaults Paul set on 2026-11-10 (#4068
 // decision 9). Since #3709 (social trust) every tier but New members also
 // carries what any member can do, events:create among it, so an officer can
-// do what the members they lead can.
+// do what the members they lead can, and the Exec board edits and deletes any
+// event, which is what makes one required or worth points.
 const MEMBER = [
   'backwork:upload',
   'events:create',
@@ -43,6 +44,8 @@ const EXEC_BOARD = [
   'channels:manage',
   'chapter-config:manage',
   'chapter-config:view',
+  'events:delete',
+  'events:update',
   'polls:view_all',
   'roles:manage',
   'service:approve',
@@ -64,7 +67,6 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         ...EXEC_BOARD,
         'billing:manage',
         'billing:view',
-        'events:update',
         'points:adjust',
         'points:view_all',
         'reports:export',
@@ -109,16 +111,20 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
 
   // #3709: every member can create an event and upload backwork, whatever
   // tier their role sits in, but only an events:update holder makes anyone
-  // required or attaches points; no starting tier but the President's `*`
-  // and the Treasurer's override carries it.
-  it('lets every tier but New members create events, and none edit them', () => {
+  // required or attaches points: of the starting tiers, the Exec board only.
+  it('lets every tier but New members create events, and only the Exec board edit them', () => {
     const [exec, chairs, members, newMembers] = STARTING_ROLE_TIERS.map(
       (tier) => new Set<string>(tier.permissions),
     );
     for (const tier of [exec, chairs, members]) {
       expect(tier.has('events:create')).toBe(true);
       expect(tier.has('backwork:upload')).toBe(true);
+    }
+    expect(exec.has('events:update')).toBe(true);
+    expect(exec.has('events:delete')).toBe(true);
+    for (const tier of [chairs, members, newMembers]) {
       expect(tier.has('events:update')).toBe(false);
+      expect(tier.has('events:delete')).toBe(false);
     }
     expect(newMembers.has('events:create')).toBe(false);
     expect(newMembers.has('backwork:upload')).toBe(true);

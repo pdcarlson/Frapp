@@ -328,7 +328,7 @@ describe("a member who can't edit events", () => {
     const result = validateNewEvent(draft({ attendance }), now, false);
     expect(result.ok).toBe(false);
     expect(!result.ok && result.errors.attendance).toBe(
-      "Only officers can make an event required. Set it to optional.",
+      "Only officers who manage events can make one required. Set it to optional.",
     );
   });
 

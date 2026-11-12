@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
@@ -23,6 +22,7 @@ import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   eventLimitsAudience,
+  eventOthersInvited,
 } from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -152,8 +152,8 @@ export class EventService {
     return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
-  async create(input: CreateEventInput): Promise<CreateEventResult> {
-    const { start_time, end_time } = input;
+  async create(rawInput: CreateEventInput): Promise<CreateEventResult> {
+    const { start_time, end_time } = rawInput;
 
     const start = new Date(start_time);
     const end = new Date(end_time);
@@ -165,6 +165,9 @@ export class EventService {
     if (end <= start) {
       throw new BadRequestException('end_time must be after start_time');
     }
+
+    const setsRequirements = await this.canSetRequirements(rawInput);
+    const input = setsRequirements ? rawInput : withoutRequirements(rawInput);
 
     // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
     // `required_role_ids` gate read access — list, detail, search and the
@@ -222,14 +225,6 @@ export class EventService {
     // foreign key's 500.
     await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
 
-    const setsRequirements = await this.canSetRequirements(input);
-    if (!setsRequirements && makesAnyoneRequired(input)) {
-      throw new ForbiddenException(
-        'Only members who can edit events can make an event required. ' +
-          'Create it as optional for everyone, or ask an officer.',
-      );
-    }
-
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -237,11 +232,8 @@ export class EventService {
       location: input.location ?? null,
       start_time: input.start_time,
       end_time: input.end_time,
-      // Every client sends a point value (the forms and `/event` default to
-      // 10), so a member's is dropped rather than refused: refusing would
-      // break every build already installed. The forms hide the field for
-      // them.
-      point_value: setsRequirements ? (input.point_value ?? 10) : 0,
+      // A member's is 0 already (`withoutRequirements`).
+      point_value: input.point_value ?? 10,
       is_mandatory: input.is_mandatory ?? false,
       recurrence_rule: input.recurrence_rule ?? null,
       parent_event_id: null,
@@ -318,7 +310,7 @@ export class EventService {
   }
 
   /**
-   * `spec/behavior/events.md` § Who creates events (#3709): any member with
+   * `spec/behavior/events.md` § Event Creation (#3709): any member with
    * `events:create` makes an event, but only an `events:update` holder (the
    * officers who edit any event and take attendance, and the President's
    * `*`) makes anyone required or attaches points. Editing an event already
@@ -426,12 +418,39 @@ export class EventService {
 }
 
 /**
- * Whether a create asks anyone to attend: everyone by default
- * (`is_mandatory`), or the holders of a listed role. Either one lets the
- * auto-absent sweep mark members absent (`eventRequiresAnyone`).
+ * A create by a member who can't make anyone required or attach points
+ * (#3709), as it is stored: worth 0 points, required for nobody, and open to
+ * exactly the members the request invited.
+ *
+ * Lowered rather than refused. Every client sends a point value (the forms
+ * and `/event` default to 10), and app builds already installed copy a
+ * type's "required for everyone" into the form, so a refusal would leave a
+ * member on one of them retrying a save that can never succeed. The current
+ * forms hide points and stop a required choice before it is sent, so only an
+ * older build or a hand-made request reaches this.
+ *
+ * - `is_mandatory` false: nobody is required by default.
+ * - A required role becomes an optional one: still invited, never marked
+ *   absent.
+ * - `others_invited` is written out as the request meant it
+ *   (`eventOthersInvited`), because a null with no required roles left would
+ *   read as "everyone", and an event meant for some roles would open to the
+ *   whole chapter.
  */
-function makesAnyoneRequired(input: CreateEventInput): boolean {
-  return (
-    input.is_mandatory === true || (input.required_role_ids?.length ?? 0) > 0
-  );
+function withoutRequirements(input: CreateEventInput): CreateEventInput {
+  const required = input.required_role_ids ?? [];
+  const optional = [
+    ...new Set([...(input.optional_role_ids ?? []), ...required]),
+  ];
+  return {
+    ...input,
+    point_value: 0,
+    is_mandatory: false,
+    required_role_ids: null,
+    optional_role_ids: optional.length > 0 ? optional : null,
+    others_invited: eventOthersInvited({
+      others_invited: input.others_invited,
+      required_role_ids: input.required_role_ids,
+    }),
+  };
 }

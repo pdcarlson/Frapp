@@ -1054,7 +1054,7 @@ describe("EventEditorDialog for a member who can't edit events", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: "Only officers can make an event required",
+          title: "Only officers who manage events can make one required",
         }),
       ),
     );

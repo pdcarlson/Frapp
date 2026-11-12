@@ -89,9 +89,11 @@ export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   {
     key: "event",
     label: "Schedule the first event",
-    // `EventController` also requires `members:view` at class level, so
+    // An officer's line: since #3709 every member holds `events:create`, so
+    // it also takes `events:update`, which the officers who run the calendar
+    // hold. `EventController` requires `members:view` at class level, so
     // `events:create` alone can't save one, on the web or the phone.
-    permissions: EVENT_CREATE_PERMISSIONS,
+    permissions: [...EVENT_CREATE_PERMISSIONS, "events:update"],
     module: "events",
     doneAt: 1,
   },

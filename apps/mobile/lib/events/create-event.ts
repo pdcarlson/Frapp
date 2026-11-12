@@ -7,6 +7,7 @@ import {
   othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
+  eventRequiresAnyone,
   describeSeriesLength,
   withEveryone,
   type EventAttendanceDraft,
@@ -255,8 +256,8 @@ export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPEN
  *
  * `setsRequirements` is whether the maker holds `events:update` (#3709). A
  * member without it makes an event worth no points (its points field is
- * hidden and ignored) and can't make anyone required, which the API refuses
- * too (`EventService.create`).
+ * hidden and ignored) and can't make anyone required, which the API holds them
+ * to as well (`EventService.create` stores such an event as optional).
  */
 export function validateNewEvent(
   draft: NewEventDraft,
@@ -285,12 +286,9 @@ export function validateNewEvent(
   const wire = attendanceToWire(draft.attendance);
   if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
-  } else if (
-    !setsRequirements &&
-    (wire.is_mandatory || wire.required_role_ids.length > 0)
-  ) {
+  } else if (!setsRequirements && eventRequiresAnyone(wire)) {
     errors.attendance =
-      "Only officers can make an event required. Set it to optional.";
+      "Only officers who manage events can make one required. Set it to optional.";
   }
 
   if (Object.keys(errors).length > 0 || opens === null) {

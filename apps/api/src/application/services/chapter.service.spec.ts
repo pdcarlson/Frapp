@@ -595,6 +595,7 @@ describe('ChapterService', () => {
         [SystemPermissions.POINTS_ADJUST]: true,
         [SystemPermissions.POINTS_VIEW_ALL]: true,
         [SystemPermissions.REPORTS_EXPORT]: true,
+        [SystemPermissions.EVENTS_CREATE]: true,
         [SystemPermissions.EVENTS_UPDATE]: true,
       });
       expect(role(SystemRoleKeys.PRESIDENT).permission_overrides).toEqual({

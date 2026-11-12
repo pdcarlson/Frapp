@@ -17785,7 +17785,7 @@
           "is_mandatory": {
             "type": "boolean",
             "default": false,
-            "description": "Whether everyone the event invites must attend. On create, true (or a non-empty `required_role_ids`) is a 403 unless the caller holds `events:update` (#3709)."
+            "description": "Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709)."
           },
           "recurrence_rule": {
             "type": "string",

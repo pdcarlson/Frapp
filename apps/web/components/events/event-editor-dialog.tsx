@@ -39,6 +39,7 @@ import {
   describeAttendance,
   emptyAttendanceDraft,
   eventLimitsAudience,
+  eventRequiresAnyone,
   isRecurrenceRule,
   describeSeriesLength,
   type EventAttendanceDraft,
@@ -544,14 +545,11 @@ export function EventEditorDialog({
     }
 
     const wire = attendanceToWire(attendance);
-    if (
-      !canSetRequirements &&
-      (wire.is_mandatory || wire.required_role_ids.length > 0)
-    ) {
+    if (!canSetRequirements && eventRequiresAnyone(wire)) {
       setShowMore(true);
       toast({
-        title: "Only officers can make an event required",
-        description: "Set it to optional, or ask an officer to make it.",
+        title: "Only officers who manage events can make one required",
+        description: "Set it to optional, or ask one of them to make it.",
         variant: "destructive",
       });
       return;

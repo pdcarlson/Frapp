@@ -177,7 +177,9 @@ const MEMBER_DEFAULT_PERMISSIONS = [
  *
  * The top three also carry {@link MEMBER_DEFAULT_PERMISSIONS}, what every
  * member can do (#3709); New members get `members:view` and
- * `backwork:upload` only.
+ * `backwork:upload` only. The top one also edits and deletes any event,
+ * which is what makes an event required or worth points (#3709), so the
+ * Vice President and Secretary can and a member can't.
  *
  * Chapters that existed before tiers were placed into the same four names by
  * migration `20261111140000_role_tiers.sql`. Changing this list changes new
@@ -190,6 +192,10 @@ export const STARTING_ROLE_TIERS = [
     name: 'Exec board',
     permissions: [
       ...MEMBER_DEFAULT_PERMISSIONS,
+      // Edit and delete any event: what makes an event required or worth
+      // points (#3709), so required attendance stays with the officers.
+      SystemPermissions.EVENTS_UPDATE,
+      SystemPermissions.EVENTS_DELETE,
       SystemPermissions.POLLS_VIEW_ALL,
       ...OFFICER_DEFAULT_PERMISSIONS,
       SystemPermissions.ROLES_MANAGE,
@@ -246,6 +252,7 @@ const SEEDED_ROLES = [
       SystemPermissions.POINTS_ADJUST,
       SystemPermissions.POINTS_VIEW_ALL,
       SystemPermissions.REPORTS_EXPORT,
+      SystemPermissions.EVENTS_CREATE,
       SystemPermissions.EVENTS_UPDATE,
     ],
     is_system: true,

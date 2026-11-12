@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import {
   baseEvent,
@@ -410,12 +406,55 @@ describe('EventService', () => {
       );
     });
 
-    it.each([
-      ['required for everyone', { is_mandatory: true }],
-      ['required for a role', { required_role_ids: ['role-officers'] }],
-    ])('is refused an event %s, and nothing is written', async (_, extra) => {
-      await expect(create(extra)).rejects.toThrow(ForbiddenException);
-      expect(mockEventRepo.create).not.toHaveBeenCalled();
+    // Lowered, not refused (#3709): app builds already installed copy a
+    // type's "required for everyone" into the form, and a refusal would leave
+    // the member retrying a save that can never succeed.
+    it('stores an event required for everyone as optional for everyone', async () => {
+      await create({ is_mandatory: true });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          others_invited: true,
+          point_value: 0,
+        }),
+      );
+    });
+
+    it('keeps a role it made required invited, as optional, and nobody else', async () => {
+      // An older build's "required for officers": `others_invited` omitted,
+      // which reads as "only the listed roles" while a role is required.
+      await create({
+        required_role_ids: ['role-officers'],
+        optional_role_ids: ['role-seniors'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          optional_role_ids: ['role-seniors', 'role-officers'],
+          // Written out: a null with no required role left would read as
+          // "everyone" and open the event to the whole chapter.
+          others_invited: false,
+        }),
+      );
+    });
+
+    it('keeps everyone else invited when the request said so', async () => {
+      await create({
+        required_role_ids: ['role-officers'],
+        others_invited: true,
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          required_role_ids: null,
+          optional_role_ids: ['role-officers'],
+          others_invited: true,
+        }),
+      );
     });
 
     it('treats a create with no maker as a member', async () => {
