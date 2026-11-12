@@ -133,7 +133,7 @@ describe('catch me up: what a misbehaving model cannot do', () => {
     expect(turn).toContain(PLANTED);
   });
 
-  it('a model that obeys the planted line still cannot put its claim in the summary', async () => {
+  it('a model that obeys the planted line cannot pin its claim on another message', async () => {
     const { points, dropped } = await summarizeWith({
       points: [
         {
@@ -144,8 +144,9 @@ describe('catch me up: what a misbehaving model cannot do', () => {
         },
       ],
     });
-    // The quote is in the planted message, not the one named, and the
-    // planted message's own words are all a point on it could show.
+    // The quote is in the planted message, not the one named. A point that
+    // named the planted message itself would stand: it opens that message,
+    // which shows who wrote it. The check proves the source, not the claim.
     expect(points).toEqual([]);
     expect(dropped).toBe(1);
   });

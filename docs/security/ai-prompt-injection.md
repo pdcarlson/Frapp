@@ -230,8 +230,12 @@ index (#4314) and on Ask (#450). They are the security-bearing subset of
 (Added 2026-11-12, #3946.) Catch me up reads chat directly, not through the index, and keeps the
 same rules: `ChatCatchUpService` checks the reader's channel access and each author's yes before the
 call, the conversation is the user turn and the instructions the system channel (C1), the call has
-no tools (C3), and every point must quote the message it names or it is dropped (C6). A planted
-message can at worst be quoted as itself. `chat-catch-up.eval-spec.ts` holds the cases.
+no tools (C3), and every point must quote the message it names or it is dropped (C6). Each message
+is sent as one line, so a message cannot draw a line that reads as another member's. What the quote
+check proves is narrow: the point opens a real message that holds the quoted words. The point's own
+sentence is the model's and is checked against nothing, so a model that believes a planted message
+can still report what it says, as a line that opens that message and shows who wrote it. It cannot
+pin the claim on another member's message. `chat-catch-up.eval-spec.ts` holds the cases.
 
 ## 5. Residual risk
 

@@ -14823,7 +14823,7 @@
             }
           },
           "400": {
-            "description": "An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`)."
+            "description": "A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`)."
           },
           "404": {
             "description": "AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`)."

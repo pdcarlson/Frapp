@@ -215,20 +215,22 @@ export class ChatCatchUpService {
 
     // 4.
     const readable = await this.readable(input, stretch.messages);
-    const base = {
-      messages_total: stretch.total - readable.blocked,
-      left_out_messages: readable.leftOut,
-    };
+    // Only the reader's blocked members wrote here: to the reader that is
+    // an empty stretch, as the timeline draws it.
+    if (stretch.total - readable.blocked === 0) return result('nothing_new');
     const { lines, dropped } = buildCatchUpLines(readable.messages);
     const counts = {
-      ...base,
+      // What was read, plus what only length kept out: older messages past
+      // the text one summary sends, and those past the most it fetches.
+      // Messages left out for consent are `left_out_messages`, never here,
+      // so "the most recent N of M" is said only when the stretch was cut.
+      messages_total:
+        lines.length + dropped + (stretch.total - stretch.messages.length),
+      left_out_messages: readable.leftOut,
       messages_read: lines.length,
       covers_from: lines[0]?.message.createdAt ?? null,
       covers_to: lines.at(-1)?.message.createdAt ?? null,
     };
-    // Only the reader's blocked members wrote here: to the reader that is
-    // an empty stretch, as the timeline draws it.
-    if (base.messages_total === 0) return result('nothing_new');
 
     // 5.
     if (lines.length < CHAT_CATCH_UP_MIN_MESSAGES && dropped === 0) {
@@ -376,11 +378,20 @@ export class ChatCatchUpService {
     if (input.unread !== undefined) {
       // The client's clock is not trusted past now: a later `as_of` would
       // only count messages the member has not been shown as unread.
-      const asOf = Math.min(Date.parse(input.unread.asOf), now.getTime());
+      const given = Date.parse(input.unread.asOf);
+      if (Number.isNaN(given)) {
+        throw new BadRequestException('unread.as_of must be a date and time');
+      }
+      const asOf = Math.min(given, now.getTime());
       const start = await this.stretches.unreadStart({
         ...scope,
         userId: input.userId,
         count: input.unread.count,
+        // The badge the client counted from leaves these out.
+        blockedUserIds: await this.blocks.findBlockedUserIds(
+          input.chapterId,
+          input.userId,
+        ),
         asOf: new Date(asOf).toISOString(),
       });
       // Fewer messages than the client counted (some were deleted since):

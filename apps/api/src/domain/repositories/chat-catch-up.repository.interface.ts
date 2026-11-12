@@ -37,8 +37,9 @@ export interface IChatCatchUpRepository {
   /**
    * When the member's unread stretch began: the send time of the `count`th
    * newest message that counted as unread at `asOf` (a timeline message from
-   * someone else, not deleted, not imported: the unread badge's rule,
-   * `get_channel_unread_counts`). Null when the channel holds fewer.
+   * someone else the member has not blocked, not deleted, not imported: the
+   * unread badge's rule, `get_channel_unread_counts`). Null when the channel
+   * holds fewer.
    */
   unreadStart(input: {
     chapterId: string;
@@ -46,6 +47,8 @@ export interface IChatCatchUpRepository {
     userId: string;
     count: number;
     asOf: string;
+    /** Members the reader blocked, whose messages the badge does not count. */
+    blockedUserIds: readonly string[];
   }): Promise<string | null>;
 
   /**
@@ -61,7 +64,8 @@ export interface IChatCatchUpRepository {
 
   /**
    * One thread: its first message and its replies. Null when `rootId` is not
-   * a timeline message of this channel.
+   * a timeline message of this channel. A thread can hang off a card or a
+   * deleted message; its replies are still read, without the first message.
    */
   readThread(input: {
     chapterId: string;

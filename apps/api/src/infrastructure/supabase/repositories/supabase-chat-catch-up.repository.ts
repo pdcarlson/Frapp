@@ -72,7 +72,9 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     userId: string;
     count: number;
     asOf: string;
+    blockedUserIds: readonly string[];
   }): Promise<string | null> {
+    const others = [input.userId, ...input.blockedUserIds];
     const { data, error } = await this.supabase
       .from('chat_messages')
       .select(
@@ -85,7 +87,7 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
       .is('thread_root_id', null)
       .eq('is_deleted', false)
       .neq('kind', 'imported')
-      .or(`sender_id.is.null,sender_id.neq.${input.userId}`)
+      .or(`sender_id.is.null,sender_id.not.in.(${others.join(',')})`)
       .lte('created_at', input.asOf)
       .order('created_at', { ascending: false })
       .range(input.count - 1, input.count - 1);
@@ -120,12 +122,27 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     rootId: string;
     limit: number;
   }): Promise<CatchUpStretch | null> {
-    const root = await this.written(input.chapterId, input.channelId)
+    // The thread exists when its first message is a timeline row of this
+    // channel, whatever that row is: a thread can hang off a card, or off a
+    // message deleted since.
+    const root = await this.supabase
+      .from('chat_messages')
+      .select(`${COLUMNS}, kind, is_deleted`)
+      .eq('channel_id', input.channelId)
+      .eq('chat_channels.chapter_id', input.chapterId)
+      .in('chat_channels.type', CHAPTER_CHANNEL_TYPES)
+      .eq('chat_channels.is_audit_log', false)
       .eq('id', input.rootId)
       .is('thread_root_id', null)
       .maybeSingle();
     if (root.error) throw new SupabaseQueryError(root.error);
     if (!root.data) return null;
+    const first = root.data as Row & { kind: string; is_deleted: boolean };
+    // Read only when it is conversation, by the rule `written` applies.
+    const firstRead =
+      !first.is_deleted &&
+      (WRITTEN_KINDS as readonly string[]).includes(first.kind) &&
+      first.content !== '';
 
     const replies = await this.written(input.chapterId, input.channelId)
       .eq('thread_root_id', input.rootId)
@@ -136,10 +153,10 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     const rows = (replies.data ?? []) as Row[];
     return {
       messages: [
-        toMessage(root.data as Row),
+        ...(firstRead ? [toMessage(first)] : []),
         ...oldestFirst(rows.map(toMessage)),
       ],
-      total: 1 + (replies.count ?? rows.length),
+      total: (firstRead ? 1 : 0) + (replies.count ?? rows.length),
     };
   }
 }

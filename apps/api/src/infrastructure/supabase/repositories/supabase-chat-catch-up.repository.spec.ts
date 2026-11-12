@@ -82,6 +82,10 @@ const seed = () => ({
       created_at: '2026-11-10T21:00:00.000Z',
       thread_root_id: ROOT_A,
     }),
+    message('a-card-reply', CHANNEL_A, CHAPTER_A, {
+      created_at: '2026-11-10T22:00:00.000Z',
+      thread_root_id: 'a-card',
+    }),
     message('dm-1', DM_A, CHAPTER_A, {
       created_at: '2026-11-10T19:00:00.000Z',
       chat_channels: { chapter_id: CHAPTER_A, type: 'DM', is_audit_log: false },
@@ -130,8 +134,9 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
       'a-2',
       ROOT_A,
       'a-reply',
+      'a-card-reply',
     ]);
-    expect(stretch.total).toBe(4);
+    expect(stretch.total).toBe(5);
     expect(stretch.messages[1]).toEqual({
       id: 'a-2',
       sender_id: USER_A,
@@ -158,8 +163,11 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
       since: SINCE,
       limit: 2,
     });
-    expect(stretch.messages.map((m) => m.id)).toEqual([ROOT_A, 'a-reply']);
-    expect(stretch.total).toBe(4);
+    expect(stretch.messages.map((m) => m.id)).toEqual([
+      'a-reply',
+      'a-card-reply',
+    ]);
+    expect(stretch.total).toBe(5);
   });
 
   it("readChannelSince returns nothing for another chapter's channel", async () => {
@@ -189,6 +197,7 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
           userId: USER_A,
           count: 1,
           asOf: '2026-11-11T00:00:00.000Z',
+          blockedUserIds: [],
         }),
       ).resolves.toBeNull();
     }
@@ -218,6 +227,15 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
         limit: 50,
       }),
     ).resolves.toBeNull();
+    // A thread hanging off a card: its replies are read, the card is not.
+    const underCard = await repo.readThread({
+      chapterId: CHAPTER_A,
+      channelId: CHANNEL_A,
+      rootId: 'a-card',
+      limit: 50,
+    });
+    expect(underCard?.messages.map((m) => m.id)).toEqual(['a-card-reply']);
+    expect(underCard?.total).toBe(1);
     // A reply is not a thread.
     await expect(
       repo.readThread({
@@ -239,6 +257,7 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
       channelId: CHANNEL_A,
       userId: USER_A,
       asOf: '2026-11-11T00:00:00.000Z',
+      blockedUserIds: [],
     };
     await expect(repo.unreadStart({ ...input, count: 1 })).resolves.toBe(
       '2026-11-10T20:00:00.000Z',
@@ -247,6 +266,11 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
       '2026-11-10T18:00:00.000Z',
     );
     await expect(repo.unreadStart({ ...input, count: 9 })).resolves.toBeNull();
+    // The badge leaves out a member the reader blocked, so the count walks
+    // back over the same messages the badge counted.
+    await expect(
+      repo.unreadStart({ ...input, count: 1, blockedUserIds: [USER_SHARED] }),
+    ).resolves.not.toBe('2026-11-10T20:00:00.000Z');
     expect(filtersOf(0)).toContainEqual([
       'chat_channels.chapter_id',
       CHAPTER_A,

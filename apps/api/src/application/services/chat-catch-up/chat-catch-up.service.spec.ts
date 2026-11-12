@@ -1,6 +1,10 @@
 import { openChatSummaryReportReceipt } from '#domain/utils/ai-report-receipt';
 import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { CatchUpMessageRow } from '#domain/repositories/chat-catch-up.repository.interface';
 import type { CatchUpOutput } from '#domain/utils/chat-catch-up';
 import type { AiObjectResult } from '../ai/ai-gateway.service';
@@ -451,6 +455,27 @@ describe('ChatCatchUpService', () => {
       });
     });
 
+    it('never calls a stretch cut short because some of it was left out', async () => {
+      // Six messages, two by someone who has not said yes... and nothing cut.
+      const { service } = build({ yes: ['lee', 'sam', 'blocked'] });
+      const summary = await service.catchUp(input(), NOW);
+      expect(summary.left_out_messages).toBeGreaterThan(0);
+      expect(summary.messages_total).toBe(summary.messages_read);
+    });
+
+    it('refuses an unread time it cannot read as a date', async () => {
+      const { service } = build({});
+      await expect(
+        service.catchUp(
+          input({
+            since: undefined,
+            unread: { count: 5, asOf: '2026-W46-1' },
+          }),
+          NOW,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('never reaches back further than thirty days', async () => {
       const { service, stretches } = build({});
       await service.catchUp(input({ since: '2026-01-01T00:00:00.000Z' }), NOW);
@@ -478,6 +503,7 @@ describe('ChatCatchUpService', () => {
         userId: READER,
         count: 140,
         asOf: NOW.toISOString(),
+        blockedUserIds: [],
       });
       expect(stretches.readChannelSince).toHaveBeenCalledWith(
         expect.objectContaining({ since: '2026-11-12T12:00:00.000Z' }),

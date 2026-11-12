@@ -104,6 +104,11 @@ export const AI_REPORT_COPY = {
   /** A receipt this server can no longer open (its key was replaced). */
   receipt_invalid:
     "This answer can't be reported any more. Ask again, then report the new answer.",
+  /** The same two, for a summary. */
+  summary_too_old:
+    "This summary is too old to report. Summarize again, then report the new one.",
+  summary_receipt_invalid:
+    "This summary can't be reported any more. Summarize again, then report the new one.",
   /** The draft or suggestion went away while the sheet was open. */
   gone: "There's nothing to report here any more. It may have been changed or removed.",
   done: "Done",

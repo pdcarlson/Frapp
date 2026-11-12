@@ -5,7 +5,7 @@ import {
   Headers,
   HttpCode,
   Post,
-  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -17,7 +17,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Response } from 'express';
 import { FALLBACK_TIME_ZONE, isSupportedTimeZone } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
@@ -84,7 +84,7 @@ export class ChatCatchUpController {
     @CurrentUser('id') userId: string,
     @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
     @Body() dto: ChatCatchUpRequestDto,
-    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ChatCatchUpDto> {
     const given = [dto.thread_root_id, dto.since, dto.unread].filter(
       (part) => part !== undefined,
@@ -95,11 +95,14 @@ export class ChatCatchUpController {
       );
     }
 
-    // A member who closed the panel: stop the model call and its spend.
+    // A member who closed the panel: stop the model call and its spend. The
+    // response's `close`, as Ask listens for: the request's has already fired
+    // by the time the body is parsed. It also fires after a normal end, when
+    // aborting does nothing.
     const abort = new AbortController();
-    request.on('close', () => {
-      if (!request.complete || request.destroyed) abort.abort();
-    });
+    response.on('close', () => abort.abort());
+    // Gone while the guards ran: `close` will not fire again.
+    if (response.destroyed) abort.abort();
 
     return this.catchUpService.catchUp({
       chapterId,

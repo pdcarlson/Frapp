@@ -2222,14 +2222,24 @@ export function ChatShell({
     threadRootId,
   );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
+  // Where a summary's line asked a thread to scroll. Dropped whenever a
+  // thread is opened or closed any other way, so it never replays.
+  const [threadJump, setThreadJump] = useState<{
+    messageId: string;
+    nonce: number;
+  } | null>(null);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {
       if (!activeChannel) return;
+      setThreadJump(null);
       setOpenThread({ channelId: activeChannel.id, rootId: message.id });
     },
     [activeChannel],
   );
-  const closeThread = useCallback(() => setOpenThread(null), []);
+  const closeThread = useCallback(() => {
+    setThreadJump(null);
+    setOpenThread(null);
+  }, []);
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -2270,10 +2280,6 @@ export function ChatShell({
       ? { channelId: activeChannelId, at: new Date().toISOString() }
       : null;
   }, [activeChannelId]);
-  const [threadJump, setThreadJump] = useState<{
-    messageId: string;
-    nonce: number;
-  } | null>(null);
   const openCatchUpPoint = useCallback(
     (point: ChatCatchUpPoint) => {
       if (!activeChannelId) return;

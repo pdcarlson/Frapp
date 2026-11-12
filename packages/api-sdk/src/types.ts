@@ -18191,7 +18191,7 @@ export interface operations {
                     "application/json": components["schemas"]["AiReportOutcomeDto"];
                 };
             };
-            /** @description An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`). */
+            /** @description A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`). */
             400: {
                 headers: {
                     [name: string]: unknown;

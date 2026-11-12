@@ -28,6 +28,11 @@ export const CATCH_UP_MESSAGE_MAX_CHARS = 1_200;
 /** The most conversation text one summary sends: about 12,000 tokens. */
 export const CATCH_UP_TRANSCRIPT_MAX_CHARS = 48_000;
 const POINT_TEXT_MAX_CHARS = 280;
+/**
+ * A quote shorter than this proves nothing: one letter is "in" any message.
+ * A message shorter than this is quoted whole.
+ */
+export const CATCH_UP_QUOTE_MIN_CHARS = 10;
 
 /** One message a summary may read: its author said yes, and it has words. */
 export interface CatchUpMessage {
@@ -52,6 +57,21 @@ export interface CatchUpLine {
 const UNNAMED_AUTHOR = 'A member';
 
 /**
+ * A message's words on one line, as the model is shown them. Line breaks
+ * become spaces: each line of the conversation is one message, so a message
+ * that held a line break could otherwise draw a line that reads as someone
+ * else's ("[m9] Sam: ..."). Cut to the per-message limit, without leaving
+ * half of a character pair at the cut.
+ */
+function oneLine(content: string): string {
+  return normalizeCorpusText(content)
+    .replace(/\s*\n\s*/g, ' ')
+    .slice(0, CATCH_UP_MESSAGE_MAX_CHARS)
+    .replace(/[\uD800-\uDBFF]$/, '')
+    .trim();
+}
+
+/**
  * The messages as numbered lines, oldest first. When they hold more text
  * than one summary sends, the oldest are dropped, since a member catching up
  * needs where the conversation ended more than where it began.
@@ -66,10 +86,7 @@ export function buildCatchUpLines(messages: readonly CatchUpMessage[]): {
   let dropped = 0;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    const text = normalizeCorpusText(message.content)
-      .replace(/\n{2,}/g, '\n')
-      .slice(0, CATCH_UP_MESSAGE_MAX_CHARS)
-      .trim();
+    const text = oneLine(message.content);
     if (!text) continue;
     if (length + text.length > CATCH_UP_TRANSCRIPT_MAX_CHARS) {
       // This message and every older one.
@@ -174,7 +191,9 @@ function oneSentence(text: string): string {
 
 /**
  * The points that stand: each names a message that was sent to the model and
- * quotes words that are in it. A message backs one point at most per kind,
+ * quotes words that are in it, enough of them to pick the message out. That
+ * is what is proved: the point opens a real message holding those words. The
+ * point's own sentence is the model's and is not checked against anything. A message backs one point at most per kind,
  * so a model that repeats itself is shown once.
  */
 export function checkCatchUpPoints(
@@ -190,7 +209,13 @@ export function checkCatchUpPoints(
     const line = byRef.get(ref);
     const text = oneSentence(point.text);
     const quote = point.quote;
-    if (!line || !text || !quote.trim() || !isQuoteGrounded(quote, line.text)) {
+    if (
+      !line ||
+      !text ||
+      quote.trim().length <
+        Math.min(CATCH_UP_QUOTE_MIN_CHARS, line.text.length) ||
+      !isQuoteGrounded(quote, line.text)
+    ) {
       dropped += 1;
       continue;
     }
