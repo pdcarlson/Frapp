@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -406,30 +407,28 @@ export function ChatSearchPanel({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1.5 text-caption text-muted-foreground">
                   From
-                  <Input
-                    type="date"
-                    className="w-auto"
+                  <DateField
+                    lean="back"
+                    className="w-40"
                     value={date.from ?? ""}
-                    max={date.to || undefined}
-                    onChange={(event) =>
+                    onChange={(from) =>
                       setDate((current) => ({
                         ...current,
-                        from: event.target.value || undefined,
+                        from: from || undefined,
                       }))
                     }
                   />
                 </label>
                 <label className="flex items-center gap-1.5 text-caption text-muted-foreground">
                   To
-                  <Input
-                    type="date"
-                    className="w-auto"
+                  <DateField
+                    lean="back"
+                    className="w-40"
                     value={date.to ?? ""}
-                    min={date.from || undefined}
-                    onChange={(event) =>
+                    onChange={(to) =>
                       setDate((current) => ({
                         ...current,
-                        to: event.target.value || undefined,
+                        to: to || undefined,
                       }))
                     }
                   />

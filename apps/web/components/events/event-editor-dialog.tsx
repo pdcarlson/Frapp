@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -54,6 +54,7 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -91,9 +92,58 @@ export function isoToLocalInput(value: unknown): string {
 }
 
 function localInputToIso(value: string): string {
+  // The editor holds a day and a time apart; either may still be empty.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return "";
   const date = parseInstant(value);
   if (!date) return "";
   return date.toISOString();
+}
+
+/**
+ * One end of an event's schedule: a day typed without a year (`DateField`,
+ * leaning ahead) beside the browser's time input. The value is the
+ * `YYYY-MM-DDTHH:MM` the editor has always held, with either half empty
+ * until it is filled in.
+ */
+function ScheduleEnd({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [day = "", time = ""] = value.split("T");
+  const join = (nextDay: string, nextTime: string) =>
+    nextDay || nextTime ? `${nextDay}T${nextTime}` : "";
+  return (
+    <fieldset className="grid gap-1">
+      <legend className="mb-1 text-sm font-semibold leading-none">
+        {label}
+      </legend>
+      <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-2">
+        <DateField
+          id={id}
+          aria-label={`${label}, day`}
+          placeholder="e.g. Friday"
+          lean="ahead"
+          value={day}
+          onChange={(nextDay) => onChange(join(nextDay, time))}
+        />
+        <Input
+          id={`${id}-time`}
+          aria-label={`${label}, time`}
+          type="time"
+          step={300}
+          value={time}
+          onChange={(event) => onChange(join(day, event.target.value))}
+        />
+      </div>
+    </fieldset>
+  );
 }
 
 /**
@@ -299,6 +349,33 @@ export function EventEditorDialog({
   const [location, setLocation] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
+  /**
+   * A new start carries the end with it, keeping the event's length, the way
+   * Google Calendar moves both: moving a meeting a day on shouldn't leave its
+   * end behind, before its start.
+   *
+   * The day field reports every keystroke, through text it can't read yet
+   * (`""`) and partial readings (`11/1` on the way to `11/15`). So the shift is
+   * measured from the last start that was a whole date and time, not from the
+   * previous keystroke: the partial steps then add up to the real move.
+   */
+  const lastWholeStart = useRef<Date | null>(null);
+  const moveStart = (next: string) => {
+    const before = lastWholeStart.current;
+    const after = parseInstant(localInputToIso(next));
+    const end = parseInstant(localInputToIso(endAt));
+    setStartAt(next);
+    if (after) lastWholeStart.current = after;
+    if (before && after && end) {
+      setEndAt(
+        isoToLocalInput(
+          new Date(
+            end.getTime() + after.getTime() - before.getTime(),
+          ).toISOString(),
+        ),
+      );
+    }
+  };
   // Held as text so a cleared field stays cleared while the officer types,
   // rather than React writing 0 back into it. An empty field still saves as 0.
   const [pointValue, setPointValue] = useState("10");
@@ -357,6 +434,7 @@ export function EventEditorDialog({
       );
       setLocation(typeof event.location === "string" ? event.location : "");
       setStartAt(isoToLocalInput(event.start_time));
+      lastWholeStart.current = parseInstant(event.start_time);
       setEndAt(isoToLocalInput(event.end_time));
       setPointValue(
         String(typeof event.point_value === "number" ? event.point_value : 10),
@@ -388,6 +466,9 @@ export function EventEditorDialog({
     setDescription("");
     setLocation(initialLocation ?? "");
     setStartAt(initialStartAt ?? "");
+    lastWholeStart.current = parseInstant(
+      localInputToIso(initialStartAt ?? ""),
+    );
     setEndAt(initialEndAt ?? "");
     setPointValue(String(initialPointValue ?? 10));
     setAttendance(emptyAttendanceDraft());
@@ -758,26 +839,22 @@ export function EventEditorDialog({
             </div>
 
             {/* Wraps by the panel's own width, not the window's: docked beside chat
-                the panel can be 375px wide on a wide screen. */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
-              <div className="grid gap-1">
-                <Label htmlFor="event-start">Start</Label>
-                <Input
-                  id="event-start"
-                  type="datetime-local"
-                  value={startAt}
-                  onChange={(eventValue) => setStartAt(eventValue.target.value)}
-                />
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor="event-end">End</Label>
-                <Input
-                  id="event-end"
-                  type="datetime-local"
-                  value={endAt}
-                  onChange={(eventValue) => setEndAt(eventValue.target.value)}
-                />
-              </div>
+                the panel can be 375px wide on a wide screen. A day and a time
+                each, the way Google Calendar takes them: the day is typed
+                without a year (#3937), the time is the browser's own. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3">
+              <ScheduleEnd
+                id="event-start"
+                label="Starts"
+                value={startAt}
+                onChange={moveStart}
+              />
+              <ScheduleEnd
+                id="event-end"
+                label="Ends"
+                value={endAt}
+                onChange={setEndAt}
+              />
             </div>
 
             <div className="grid gap-1">

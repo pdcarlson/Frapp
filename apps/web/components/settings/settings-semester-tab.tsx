@@ -7,6 +7,7 @@ import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
@@ -102,7 +103,17 @@ export function SettingsSemesterTab({
 
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!semesterLabel || !semesterStart || !semesterEnd) return;
+    if (!semesterLabel) return;
+    // The date fields hold "" while their text is not a date (`DateField`),
+    // and `required` on a text input lets any text through.
+    if (!semesterStart || !semesterEnd) {
+      toast({
+        title: "Pick a start and end date",
+        description: "Try a date like January 12 or May 8.",
+        variant: "destructive",
+      });
+      return;
+    }
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
       description: promoteNewMembers
@@ -185,21 +196,23 @@ export function SettingsSemesterTab({
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="semester-start">Start date</Label>
-                <Input
+                <DateField
                   id="semester-start"
-                  type="date"
+                  lean="nearest"
+                  placeholder="e.g. January 12"
                   value={semesterStart}
-                  onChange={(event) => form.setStart(event.target.value)}
+                  onChange={form.setStart}
                   required
                 />
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="semester-end">End date</Label>
-                <Input
+                <DateField
                   id="semester-end"
-                  type="date"
+                  lean="nearest"
+                  placeholder="e.g. May 8"
                   value={semesterEnd}
-                  onChange={(event) => form.setEnd(event.target.value)}
+                  onChange={form.setEnd}
                   required
                 />
               </div>
