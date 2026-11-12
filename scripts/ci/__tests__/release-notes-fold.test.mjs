@@ -269,8 +269,9 @@ describe("release-notes-fold.yml", () => {
     assert.match(text, /"packages\/validation\/src\/release-notes\.ts"/);
   });
 
-  it("leaves auto-merge off until Paul decides", () => {
-    assert.match(text, /AUTO_MERGE: "false"/);
+  it("turns on squash auto-merge for the bot PR (Paul, 2026-11-12)", () => {
+    assert.match(text, /AUTO_MERGE: "true"/);
+    assert.match(step("Push the fold and open its PR"), /gh pr merge "\$PR" --repo "\$GITHUB_REPOSITORY" --auto --squash/);
   });
 
   it("finds its PR by owner and branch, never a fork's same-named branch", () => {
