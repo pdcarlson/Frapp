@@ -88,7 +88,7 @@ The Notes way in, without the AI draft: an officer writes the minutes themselves
 - **Two people editing.** A save carries the version it was made on. If someone saved since, the save is refused, the officer's typing stays on screen, and the page offers to load the other version. Nothing is overwritten silently.
 - **Posting** asks first, then shows the minutes to the audience and tells each member of it once, except the officer who posted: "Minutes posted", "The minutes from {event} are up." in the `events` notification category. Posting again tells nobody, and edits after posting tell nobody.
 - **Who changes them.** The author edits their own minutes, draft or posted, while the event still shows itself to them; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
-- **Off by default during the beta.** The `meetings` module is in `BETA_OFF_MODULES`, so no chapter sees Meetings in the nav or its settings page, and every write is refused, until it is taken out of that list.
+- **On for every chapter.** The `meetings` module was held off for the beta in `BETA_OFF_MODULES` until the AI build-out reached `main`; it left that list on 2026-11-12 (Paul), so a chapter keeps minutes unless it switches the module off. Drafting from notes still needs AI on (below).
 
 ## Drafting from notes
 
