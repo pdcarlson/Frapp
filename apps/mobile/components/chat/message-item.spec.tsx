@@ -3,7 +3,7 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ThreadLastReply } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
 import { memberAvatarTint, memberHashHue } from "@repo/hooks";
@@ -190,6 +190,8 @@ function renderItem(
     roleColorFor?: (userId: string) => string | null;
     onOpenProfile?: (userId: string) => void;
     onOpenThread?: () => void;
+    threadUnread?: number;
+    threadPreview?: ThreadLastReply | null;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -211,6 +213,8 @@ function renderItem(
           onOpenActions={extra.onOpenActions}
           onOpenProfile={extra.onOpenProfile}
           onOpenThread={extra.onOpenThread}
+          threadUnread={extra.threadUnread}
+          threadPreview={extra.threadPreview}
         />
       </FrappThemeProvider>,
     );
@@ -1488,7 +1492,7 @@ describe("thread chip (#3785)", () => {
       onOpenThread,
     });
     expect(screenText(tree)).toContain("3 replies");
-    expect(screenText(tree)).toContain("· last reply 5m ago");
+    expect(screenText(tree)).toContain("last reply 5m ago");
     const chip = chips(tree)[0]!;
     expect(chip.props.accessibilityLabel).toBe(
       "3 replies, last reply 5m ago. Open thread",
@@ -1496,6 +1500,65 @@ describe("thread chip (#3785)", () => {
     act(() => chip.props.onPress());
     expect(onOpenThread).toHaveBeenCalledTimes(1);
   });
+
+  it("says how many are new to the viewer (#4297)", () => {
+    const tree = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadUnread: 2,
+    });
+    expect(screenText(tree)).toContain("2 new");
+    expect(chips(tree)[0]!.props.accessibilityLabel).toBe(
+      "3 replies, 2 new, last reply 5m ago. Open thread",
+    );
+  });
+
+  it("previews the latest reply under the count (#4297)", () => {
+    const preview = {
+      id: "reply-9",
+      sender_id: OTHER,
+      content: "grill is in my **garage**",
+      kind: "text" as const,
+      attachment_count: 0,
+      created_at: THREAD.last_reply_at,
+      sender_blocked: false,
+    };
+    const tree = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadPreview: preview,
+    });
+    expect(
+      tree.root.findAllByProps({ testID: "thread-preview" }).length,
+    ).toBeGreaterThan(0);
+    expect(screenText(tree)).toContain("grill is in my garage");
+    expect(chips(tree)[0]!.props.accessibilityLabel).toBe(
+      "3 replies, last reply 5m ago, latest from Casey: grill is in my garage. Open thread",
+    );
+    // Without one, no preview line.
+    const bare = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+    });
+    expect(bare.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
+      0,
+    );
+  });
+
+  it.each([
+    ["cozy", true],
+    ["compact", false],
+    ["bubbles", false],
+  ] as const)(
+    "runs a connector from the photo to the card in %s only (#4297)",
+    (density, drawn) => {
+      act(() => setChatDensity(density));
+      const tree = renderItem(message({ thread: THREAD }), undefined, {
+        onOpenThread: vi.fn(),
+      });
+      expect(
+        tree.root.findAllByProps({ testID: "thread-spine" }).length > 0,
+      ).toBe(drawn);
+      act(() => setChatDensity("cozy"));
+    },
+  );
 
   it("is a plain label where threads aren't offered", () => {
     const tree = renderItem(message({ thread: THREAD }));

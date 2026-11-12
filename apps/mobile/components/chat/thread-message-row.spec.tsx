@@ -1431,3 +1431,43 @@ describe("ThreadMessageRow flags", () => {
     expect(caption(tree)[0]?.props.accessibilityLabel).toBe("Important");
   });
 });
+
+describe("ThreadMessageRow — the thread card's preview (#4297)", () => {
+  const withPreview = (sender: string, evaluated: boolean) =>
+    message({
+      _blockEvaluated: evaluated,
+      thread: {
+        reply_count: 2,
+        last_reply_at: null,
+        recent_sender_ids: [sender],
+        last_reply: {
+          id: "reply-9",
+          sender_id: sender,
+          content: "see you at the lot",
+          kind: "text",
+          attachment_count: 0,
+          created_at: "2026-11-11T20:00:00.000Z",
+          sender_blocked: false,
+        },
+      },
+    });
+
+  it("shows a cleared replier's words on the card", () => {
+    const tree = renderRow(
+      { message: withPreview(FRIEND, true), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).toContain("see you at the lot");
+  });
+
+  it("never shows a blocked replier's words, even off the parent's raw echo", () => {
+    const tree = renderRow(
+      { message: withPreview(BLOCKED, false), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).not.toContain("see you at the lot");
+    expect(tree.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
+      0,
+    );
+  });
+});

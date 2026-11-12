@@ -23,6 +23,7 @@ import {
   chatThreadRepliesKey,
   optimisticMessage,
   type ChannelCache,
+  type ChatMessage,
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
@@ -433,6 +434,29 @@ export async function fetchThreadUnread(
     if (row.unread_count > 0) unread[row.thread_root_id] = row.unread_count;
   }
   return unread;
+}
+
+/**
+ * One string that changes when a loaded parent's thread gains a reply: the
+ * latest reply among them, left out the open thread's. "-" when the only
+ * loaded thread is the open one, empty when no loaded message has a thread,
+ * so nothing is read.
+ */
+export function threadVersion(
+  messages: readonly ChatMessage[],
+  openThreadId: string | null = null,
+): string {
+  let any = false;
+  let latest = "";
+  for (const message of messages) {
+    if (!message.thread) continue;
+    any = true;
+    if (message.id === openThreadId) continue;
+    const at = message.thread.last_reply_at;
+    if (at && at > latest) latest = at;
+  }
+  if (!any) return "";
+  return latest || "-";
 }
 
 /**
