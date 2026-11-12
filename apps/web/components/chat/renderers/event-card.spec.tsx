@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { chapterSubscription } from "@/tests/chapter-subscription";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventCard } from "./event-card";
 import type { ChatMessage } from "@repo/chat-core/types";
 
@@ -336,5 +336,46 @@ describe("EventCard subscription gating", () => {
     );
     expect(checkInButton).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// #4135: the time line is the shared `formatEventWindow`, the phone's words.
+describe("EventCard time line", () => {
+  beforeEach(() => {
+    chapter.active();
+    mockUseAttendance.mockReturnValue({ data: [] });
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 5, 12, 9));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("says Tonight for an evening event today, the day period once", () => {
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(2026, 5, 12, 18).toISOString(),
+          end_time: new Date(2026, 5, 12, 19).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(screen.getByText("Tonight · 6:00 – 7:00 PM")).toBeInTheDocument();
+  });
+
+  it("names tomorrow", () => {
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(2026, 5, 13, 10).toISOString(),
+          end_time: new Date(2026, 5, 13, 11).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(screen.getByText("Tomorrow · 10:00 – 11:00 AM")).toBeInTheDocument();
   });
 });

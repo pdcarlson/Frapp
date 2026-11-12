@@ -46,7 +46,17 @@ export type SignetTokens = {
       popover: string;
     };
     /** Low-opacity white so a hairline tracks whatever surface it sits on. Fixed-hex borders are banned. */
-    border: { hairline: string; input: string };
+    border: {
+      hairline: string;
+      input: string;
+      /**
+       * The edge that identifies a control: a text field, a select, a
+       * Secondary button, a switch's track, a segmented control. Strong
+       * enough to clear WCAG 1.4.11's 3:1 on every seat (foundations.md §3,
+       * #4389). `input` stays the quiet edge for everything else.
+       */
+      control: string;
+    };
     text: {
       foreground: string;
       mutedForeground: string;
@@ -170,6 +180,7 @@ const SIGNET_DARK: SignetTokens = {
     border: {
       hairline: "rgba(255,255,255,0.08)",
       input: "rgba(255,255,255,0.14)",
+      control: "rgba(255,255,255,0.42)",
     },
     text: {
       foreground: "#F5F5F5",
@@ -275,6 +286,7 @@ export function getSignetCssVars(
 
     "--border": t.color.border.hairline,
     "--input": t.color.border.input,
+    "--control-edge": t.color.border.control,
 
     "--foreground": t.color.text.foreground,
     "--muted-foreground": t.color.text.mutedForeground,

@@ -97,7 +97,7 @@ export const InlineMessageEditor = forwardRef<
           // width, growing with the draft up to the composer's own cap
           // (`max-h-40`), with the body's 16 / 25 type so the draft wraps
           // where the message did.
-          "min-h-[60px] max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-input bg-surface-1 px-3 py-2 pointer-coarse:px-3.5 pointer-coarse:py-3 text-base leading-[25px] text-foreground caret-primary transition-colors",
+          "min-h-[60px] max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-control-edge bg-surface-1 px-3 py-2 pointer-coarse:px-3.5 pointer-coarse:py-3 text-base leading-[25px] text-foreground caret-primary transition-colors",
           FOCUS_RING,
           className,
         ),

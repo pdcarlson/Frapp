@@ -15,6 +15,8 @@ export interface ViewerProfile {
   displayName: string | null;
   initials: string;
   email: string | null;
+  /** The member's own phone (#3711), as they typed it, or `null`. */
+  phone: string | null;
   graduationYear: number | null;
   major: string | null;
   currentCity: string | null;
@@ -32,6 +34,7 @@ export function selectViewerProfile(data: unknown): ViewerProfile | null {
     displayName,
     initials: initialsFor(displayName),
     email: str(data, "email"),
+    phone: str(data, "phone"),
     graduationYear: num(data, "graduation_year"),
     major: str(data, "major"),
     currentCity: str(data, "current_city"),

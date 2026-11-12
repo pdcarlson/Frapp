@@ -2,6 +2,7 @@ import type { TaskPayload } from "@repo/chat-core/cards";
 import {
   canReadCardTask,
   readLiveTask,
+  taskDueLine,
   subtaskProgress,
   taskCardControls,
   TASK_ACTION_LABELS,
@@ -21,7 +22,6 @@ import { SignetTokens } from "@repo/theme/signet";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
-import { formatDueDate, formatDueSubtitle } from "@/lib/tasks/format";
 import {
   TASK_CONFIRM_FAILURE,
   taskStatusGateRefusal,
@@ -138,7 +138,13 @@ export function TaskCard({
           />
           <CardMeta
             items={[
-              dueLine(payload.due_at ?? payload.due_date, live, now),
+              // The live due date once read (an edit can move it), on the
+              // rule every task surface shares (#4135).
+              taskDueLine(
+                live?.due ?? payload.due_at ?? payload.due_date,
+                live?.status ?? null,
+                now,
+              )?.text ?? null,
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
               ) : null,
@@ -252,18 +258,3 @@ function statusHue(live: LiveTask, tokens: SignetTokens): string {
   }
 }
 
-/**
- * The due date. Relative ("Due tomorrow", "Overdue by 2 days") only while the
- * live task says it is still open, since that is when the countdown is true.
- * A finished task, or one this viewer can't read, gets the plain date: an
- * "Overdue by 3 days" on a task that was done on time would be wrong.
- */
-function dueLine(
-  dueDate: string,
-  live: LiveTask | null,
-  now: Date,
-): string | null {
-  return live && live.status !== "COMPLETED"
-    ? formatDueSubtitle(dueDate, now)
-    : formatDueDate(dueDate);
-}

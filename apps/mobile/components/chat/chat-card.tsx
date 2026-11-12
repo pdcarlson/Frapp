@@ -1,6 +1,7 @@
 import { useMemo, type ComponentType, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { formatPointsChip } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -353,7 +354,7 @@ export function PointsChip({ points }: { points: number }) {
   const styles = useCardStyles();
   return (
     <View style={styles.pointsChip}>
-      <Text style={styles.pointsText}>+{points} pts</Text>
+      <Text style={styles.pointsText}>{formatPointsChip(points)}</Text>
     </View>
   );
 }

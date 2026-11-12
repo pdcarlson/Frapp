@@ -68,11 +68,11 @@ describe("the Semantic badge kinds", () => {
     }
   });
 
-  it("records that --info would need a lift before it gets a first call site", () => {
-    // There is no `info` badge kind, because there is no `info` call site — and
-    // a variant with no call sites is what slice 2 deleted seven of. This is
-    // here so whoever adds the first one inherits the number instead of the
-    // defect: `--info` behaves exactly as `--destructive` did.
+  it("records why the info badge's text is the lifted --info-text", () => {
+    // Solid `--info` misses the gate on its own tint, exactly as
+    // `--destructive` did, so the `info` badge kind (first call site: a task
+    // In progress on the chat card, #4133) draws `--info-text` on
+    // `--info-tint`, measured in `shared/status-tint-contrast.spec.ts`.
     expect(
       ratio(SEMANTIC.info, tint(SEMANTIC.info, SURFACE.popover)),
       "--info on its own tint over --popover",

@@ -551,6 +551,17 @@ export function ChatShell({
     }
     return map;
   }, [notificationPrefsQuery.data]);
+  // Channels whose level Settings → Chat messages decided (#3840), so their
+  // notification menus say "(your default)" (#4124).
+  const chapterLevelChannelIds = useMemo(
+    () =>
+      new Set(
+        (notificationPrefsQuery.data ?? [])
+          .filter((row) => row.from_chapter_level === true)
+          .map((row) => row.channel_id),
+      ),
+    [notificationPrefsQuery.data],
+  );
   // The rail's Hide muted filter reads this: `undefined` while the levels are
   // unknown, so the filter hides nothing on missing data (#2877). The rule is
   // shared with mobile's s04.
@@ -1862,6 +1873,8 @@ export function ChatShell({
       permissions: permissionsPayload?.permissions,
       onMarkRead: (channelId) => markReadMutate(channelId),
       notificationLevelFor: (channelId) => levelByChannelId.get(channelId),
+      notificationFromChapterLevel: (channelId) =>
+        chapterLevelChannelIds.has(channelId),
       // The header's alert only shows on the open channel, and a rail change
       // is usually to one that isn't, so a failure toasts. Per call, because
       // `mutate`'s per-call `onError` runs only for the latest call.
@@ -1905,6 +1918,7 @@ export function ChatShell({
       permissionsPayload?.permissions,
       markReadMutate,
       levelByChannelId,
+      chapterLevelChannelIds,
       setRailNotificationLevelAsync,
       toast,
       router,
@@ -3050,6 +3064,10 @@ export function ChatShell({
                 unbookmarkMessage.mutate(messageId)
               }
               notificationLevel={activeChannelLevel}
+              notificationFromChapterLevel={
+                activeChannelId !== null &&
+                chapterLevelChannelIds.has(activeChannelId)
+              }
               notificationSaving={setNotificationLevel.isPending}
               onChangeNotificationLevel={(level) => {
                 if (!activeChannel) return;

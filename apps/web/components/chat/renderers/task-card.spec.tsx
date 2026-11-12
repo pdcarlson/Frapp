@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { TaskCard } from "./task-card";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -479,5 +479,65 @@ describe("TaskCard subscription gating", () => {
       expect(start).not.toHaveAttribute("aria-describedby");
     }
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// #4133 / #4135: the badge is the phone's colour, never the chapter accent,
+// and the due line is the shared countdown, read off the live due date.
+describe("TaskCard status colour and due line", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canManage = false;
+    chapter.active();
+    mockUseTask.mockReturnValue(liveTask());
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Sat Jun 13, 2026, noon local: the snapshot's Jun 15 is two days out.
+    vi.setSystemTime(new Date(2026, 5, 13, 12));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["TODO", false, "To do", "border-border"],
+    ["IN_PROGRESS", false, "In progress", "bg-info-tint"],
+    ["COMPLETED", false, "Waiting on an officer", "bg-warning-tint"],
+    ["COMPLETED", true, "Confirmed", "bg-success-tint"],
+    ["OVERDUE", false, "Overdue", "bg-destructive-tint"],
+  ])("draws %s (awarded %s) as %s in %s, never the accent", (status, awarded, label, cls) => {
+    mockUseTask.mockReturnValue(
+      liveTask({ status, stored_status: status, points_awarded: awarded }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    const badge = screen.getByText(label);
+    expect(badge).toHaveClass(cls);
+    expect(badge).not.toHaveClass("bg-accent-subtle");
+  });
+
+  it("counts down to the due date while the task is open", () => {
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    expect(screen.getByText("Due Monday")).toBeInTheDocument();
+  });
+
+  it("reads the live due date over the snapshot's, so a moved task isn't called late", () => {
+    vi.setSystemTime(new Date(2026, 5, 17, 12));
+    mockUseTask.mockReturnValue(liveTask({ due_date: "2026-06-25" }));
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    expect(screen.getByText("Due Jun 25")).toBeInTheDocument();
+    expect(screen.queryByText(/Overdue by/)).not.toBeInTheDocument();
+  });
+
+  it("draws an overdue due line in the lifted danger tone", () => {
+    vi.setSystemTime(new Date(2026, 5, 17, 12));
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    expect(screen.getByText("Overdue by 2 days")).toHaveClass(
+      "text-destructive-text",
+    );
+  });
+
+  it("gives a viewer who can't read the task the plain date", () => {
+    render(<TaskCard message={makeMessage()} viewerId="someone" isConfirmed />);
+    expect(screen.getByText("Due Jun 15")).toBeInTheDocument();
   });
 });
