@@ -5,20 +5,22 @@
  * Every row gets a picture: the person it is about (a chat sender, or the
  * member who joined) with a small badge naming the kind of notice, or, where
  * no person is behind it (a task, an event, a bill), a tile in the kind's own
- * hue. A row that mentions the viewer wears the @ badge; it is not tinted
- * (Shawn's pick, 2026-11-11: the list stays flat, `components.md` § A list
- * inside a drawer or popover is flat).
+ * hue. A row that mentions the viewer wears the @ badge in the mention chip's
+ * fixed gold; it is not tinted (Shawn's pick, 2026-11-11: the list stays
+ * flat, `components.md` § A list inside a drawer or popover is flat).
  *
  * Pure: no query. The caller passes the roster it already holds
  * (`useChapterRoster`, cached app-wide), so the notifications path adds no
  * read of its own (#3728).
  */
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
+import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
 import {
   findMentionSpans,
   matchMentionCandidate,
   roleColor,
   spacedMentionNames,
+  SYSTEM_SENDER_ID,
   withoutObjectReplacement,
   type MentionCandidate,
   type RoleColorHex,
@@ -118,7 +120,9 @@ export interface NotificationLook {
   /**
    * The `users.id` the row is about, whose picture and name colour it wears:
    * `data.senderId` on a chat row, `data.memberUserId` on a join. `null` for
-   * a tile, and for a chat row from no one (the system sender writes none).
+   * a tile. A chat row from the system sender (`SYSTEM_SENDER_ID`: the
+   * audit bridge, poll-expiry notices, invite-accept DMs) is a tile too, as no
+   * member sent it.
    */
   personId: string | null;
   /** Whether the row's message mentioned the viewer. */
@@ -157,48 +161,28 @@ function namesOf(members: readonly MentionCandidate[]): string[] {
   return names;
 }
 
-/**
- * Whether `body` @-mentions the viewer by name, for a chat row written before
- * the API said so (`data.mentioned`, #4346). Name mentions only: a role's
- * holders and a reply's quoted author aren't in the body to find.
- */
-function bodyMentions(
-  body: string,
-  viewerId: string,
-  members: readonly MentionCandidate[],
-): boolean {
-  return findMentionSpans(body, { names: namesOf(members) }).some(
-    (span) => matchMentionCandidate(members, span.token)?.user_id === viewerId,
-  );
-}
-
-export function notificationLook(
-  row: NotificationRowInput,
-  viewer: {
-    viewerId: string | null;
-    members: readonly MentionCandidate[] | null;
-  },
-): NotificationLook {
+export function notificationLook(row: NotificationRowInput): NotificationLook {
   const data = isRecord(row.data) ? row.data : {};
   const target = isRecord(data.target) ? data.target : {};
   const screen = stringAt(target, "screen");
 
   if (screen === "chat") {
-    const personId = stringAt(data, "senderId");
-    const mentioned =
-      data.mentioned === true ||
-      (!("chatKind" in data) &&
-        !!viewer.viewerId &&
-        !!viewer.members &&
-        !!row.body &&
-        bodyMentions(row.body, viewer.viewerId, viewer.members));
+    const senderId = stringAt(data, "senderId");
+    if (senderId === SYSTEM_SENDER_ID) {
+      return { kind: "other", personId: null, mentioned: false };
+    }
+    // The server's answer only (`data.mentioned`, from the message's resolved
+    // `mentions`), never the body re-read: a row written before #4346 doesn't
+    // say, so it draws as a plain message (`components.md` § A row that
+    // mentions you, "The list is the server's").
+    const mentioned = data.mentioned === true;
     const chatKind = stringAt(data, "chatKind");
     const kind: NotificationKind = mentioned
       ? "mention"
       : chatKind && CHAT_KINDS.has(chatKind)
         ? (chatKind as NotificationKind)
         : "chat";
-    return { kind, personId, mentioned };
+    return { kind, personId: senderId, mentioned };
   }
   if (screen === "members") {
     return {
@@ -221,24 +205,38 @@ export function isTileKind(
   return kind in NOTIFICATION_TILE_HUE;
 }
 
+/** A row's title as drawn: without U+FFFC, the "OBJ" box (#4346). */
+export function notificationTitle(title: string): string {
+  return withoutObjectReplacement(title).trim();
+}
+
 /**
  * A row's title split around the person's name, so the name can wear their
- * colour and the rest ("in #general", "joined") stays quiet. The title is the
- * server's, written with the same display name, so it is shown as written;
- * `null` when the name isn't in it (no name yet, or one changed since).
+ * colour and the rest ("in #general", "joined") stays quiet. The server writes
+ * the name first ("Ryan in #general", "Owen joined", a DM's bare name) or last
+ * ("Announcement from Ryan"), so only those two places are tried: a name found
+ * anywhere would colour "Ann" inside "Announcement". `null` when the name is
+ * in neither place (no name yet, or one changed since).
  */
 export function titleAroundName(
   title: string,
   name: string | null,
 ): { before: string; name: string; after: string } | null {
   if (!name) return null;
-  const at = title.indexOf(name);
-  if (at === -1) return null;
-  return {
-    before: title.slice(0, at),
-    name,
-    after: title.slice(at + name.length),
-  };
+  // A whole word only: "Ann" must not take the start of "Announcement".
+  const wordChar = /[\p{L}\p{N}\p{M}_]/u;
+  if (title.startsWith(name) && !wordChar.test(title.charAt(name.length))) {
+    return { before: "", name, after: title.slice(name.length) };
+  }
+  const start = title.length - name.length;
+  if (title.endsWith(name) && !wordChar.test(title.charAt(start - 1))) {
+    return {
+      before: title.slice(0, title.length - name.length),
+      name,
+      after: "",
+    };
+  }
+  return null;
 }
 
 export interface PreviewSegment {
@@ -274,4 +272,37 @@ export function notificationPreview(
   }
   if (at < text.length) segments.push({ text: text.slice(at), mention: false });
   return segments;
+}
+
+/**
+ * Where a row falls and what time it shows, on the viewer's own calendar day
+ * (#1058): today's rows show a clock time ("4:00 PM"), a row from the last
+ * week its weekday ("Mon"), and anything older its date ("Aug 12"). `null`
+ * for a timestamp that doesn't parse, which drops the row on both surfaces.
+ */
+export function notificationWhen(
+  createdAt: string,
+  now: Date,
+): { isToday: boolean; time: string } | null {
+  // Full ISO timestamps pass through; a bare `YYYY-MM-DD` (not what the API
+  // writes today) still keeps its calendar day east and west of Greenwich.
+  const at = parseInstantOrBareLocalNoon(createdAt);
+  if (!at) return null;
+  const days = dayDelta(at, now);
+  if (days === 0) {
+    return {
+      isToday: true,
+      time: at.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+  }
+  return {
+    isToday: false,
+    time:
+      days < 7
+        ? at.toLocaleDateString(undefined, { weekday: "short" })
+        : at.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  };
 }

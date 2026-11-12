@@ -11,7 +11,7 @@
  * from `data.target.screen` here until #4346; the kind's badge or tile says it
  * now, and its words are read to a screen reader.
  */
-import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
+import { notificationWhen } from "@repo/hooks/notification-rows";
 import { isRecord, records, str } from "./narrow";
 import {
   resolveNotificationTarget,
@@ -54,31 +54,6 @@ function targetScreen(data: unknown): string | null {
   return isRecord(target) ? str(target, "screen") : null;
 }
 
-function parseCreatedAt(value: string): Date | null {
-  // Full ISO timestamps pass through; a bare `YYYY-MM-DD` (not what the API
-  // writes today) still keeps its calendar day east and west of Greenwich.
-  return parseInstantOrBareLocalNoon(value);
-}
-
-function formatTime(value: string): string | null {
-  const date = parseCreatedAt(value);
-  if (!date) return null;
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/** `Mon`, `Aug 12` — what an older row shows in place of a clock time. */
-function formatDay(value: string, now: Date): string | null {
-  const date = parseCreatedAt(value);
-  if (!date) return null;
-  const withinAWeek = dayDelta(date, now) < 7;
-  return withinAWeek
-    ? date.toLocaleDateString(undefined, { weekday: "short" })
-    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 function toRow(
   row: Record<string, unknown>,
   now: Date,
@@ -88,9 +63,9 @@ function toRow(
   const createdAt = str(row, "created_at");
   if (!id || !title || !createdAt) return null;
 
-  const created = parseCreatedAt(createdAt);
-  if (!created) return null;
-  const isToday = dayDelta(now, created) === 0;
+  // The day and time by the web drawer's own rule (`notificationWhen`).
+  const when = notificationWhen(createdAt, now);
+  if (!when) return null;
 
   return {
     id,
@@ -98,11 +73,11 @@ function toRow(
     body: str(row, "body"),
     data: row.data,
     target: resolveNotificationTarget(row.data),
-    time: (isToday ? formatTime(createdAt) : formatDay(createdAt, now)) ?? "",
+    time: when.time,
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.
     isUnread: str(row, "read_at") === null,
-    isToday,
+    isToday: when.isToday,
   };
 }
 
@@ -128,7 +103,7 @@ export function selectNotificationGroups(
   return groups.filter((group) => group.rows.length > 0);
 }
 
-/** Ids of every unread row — what "Mark all read" fans out over. */
+/** Ids of every unread row: whether anything is left for "Mark all read". */
 export function selectUnreadIds(data: unknown): string[] {
   return records(data)
     .filter((row) => str(row, "read_at") === null)

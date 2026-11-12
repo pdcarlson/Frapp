@@ -25,6 +25,7 @@ import {
   isTileKind,
   notificationLook,
   notificationPreview,
+  notificationTitle,
   titleAroundName,
   type NotificationKind,
 } from "@repo/hooks/notification-rows";
@@ -62,10 +63,7 @@ import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
 import { AnnouncementGlyph } from "@/components/chat/card-glyphs";
 import { initialsFor } from "@/lib/chat/display-name";
-import {
-  type ChapterBranding,
-  useChapterBranding,
-} from "@/lib/chapter-branding";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
 
 /**
@@ -103,7 +101,7 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
@@ -259,17 +257,17 @@ export function NotificationListRow({
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const feedback = usePressFeedback();
 
-  const look = notificationLook(row, people);
+  const look = notificationLook(row);
   const names = people.names;
   const personName =
     look.personId && names ? names.nameFor(look.personId) : null;
   const nameColor =
     look.personId && names ? names.roleColorFor(look.personId) : null;
-  const title = titleAroundName(row.title, personName);
+  const shownTitle = notificationTitle(row.title);
+  const title = titleAroundName(shownTitle, personName);
   const preview = notificationPreview(row.body, people.members);
   const previewText = preview.map((segment) => segment.text).join("");
   const kindLabel = NOTIFICATION_KIND_LABEL[look.kind];
@@ -281,7 +279,7 @@ export function NotificationListRow({
       // label says the kind (the badge can't be seen), then the title and the
       // body, all of it, though the row shows two lines.
       accessibilityLabel={listRowHint(
-        `${kindLabel}: ${row.title}`,
+        `${kindLabel}: ${shownTitle}`,
         previewText || undefined,
       )}
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
@@ -311,7 +309,7 @@ export function NotificationListRow({
                 <Text style={styles.rowTitleRest}>{title.after}</Text>
               </>
             ) : (
-              row.title
+              shownTitle
             )}
           </Text>
           <Text style={styles.rowTime}>{row.time}</Text>
@@ -352,8 +350,7 @@ function NotificationPicture({
   people: NotificationPeople;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
 
   if (isTileKind(kind)) {
     // The initials avatar's paint, so a tile and a picture sit at one
@@ -390,13 +387,18 @@ function NotificationPicture({
 
 function KindBadge({ kind }: { kind: NotificationKind }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
-  // The mention is the badge in colour: the chapter accent, which chat lights
-  // a message that mentions you in (#3825). A join is the success green.
+  const styles = createStyles(tokens);
+  // The mention is the badge in gold: the in-body mention chip's fixed pair
+  // (`components.md` § In-body mention chip), inverted so it reads at 18pt.
+  // Fixed, never the chapter accent, so a mention looks alike in every
+  // chapter (`foundations.md` §5, as changed in #4346). A join is the success
+  // green.
   const tone =
     kind === "mention"
-      ? { fill: brand.accentPrimary, ink: brand.accentOnPrimary }
+      ? {
+          fill: tokens.color.semantic.mentionChipText,
+          ink: tokens.color.semantic.mentionChip,
+        }
       : kind === "join"
         ? {
             fill: tokens.color.semantic.success,
@@ -453,8 +455,7 @@ const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
  */
 export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const { label } = tokens.typography.role;
 
   return (
@@ -498,7 +499,7 @@ const BADGE_SIZE = 18;
 const BADGE_GLYPH_SIZE = 11;
 const TILE_GLYPH_SIZE = 20;
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   const DOT_SIZE = tokens.spacing.sm;
   return StyleSheet.create({
     group: {
@@ -527,7 +528,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       height: DOT_SIZE,
       borderRadius: DOT_SIZE / 2,
       marginTop: (PICTURE_SIZE - DOT_SIZE) / 2,
-      backgroundColor: brand.accent,
+      // Neutral, as the web drawer's and chat's unread are: the accent is
+      // never a state (`components.md` § A list inside a drawer or popover
+      // is flat; foundations.md §5). It was the accent until #4346.
+      backgroundColor: tokens.color.text.foreground,
     },
     dotSpacer: {
       width: DOT_SIZE,
@@ -597,9 +601,15 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flex: 1,
     },
     // Read rows recede rather than disappear, as drawn: the title drops to the
-    // body's tone. Colour, not opacity, so the press lift behind it is as
-    // strong as any other row's. A name keeps its own colour either way.
+    // body's tone and to regular weight, so a read row reads quieter even
+    // where a role colour keeps its name bright. Colour and weight, not
+    // opacity, so the press lift behind it is as strong as any other row's.
     rowTitleRead: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.regular,
+      }),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.mutedForeground,
     },
     // "in #general", "joined": the part of the title that isn't the person.

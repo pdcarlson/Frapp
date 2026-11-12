@@ -462,7 +462,7 @@ describe("DashboardNotificationDrawer: rows that stand out (#4346)", () => {
     expect(row.querySelector("[data-kind-badge]")).toHaveTextContent("#");
   });
 
-  it("wears the @ badge in the chapter accent when it mentions you, and stays flat", () => {
+  it("wears the gold @ badge when it mentions you, and stays flat", () => {
     notifications.value = [
       chat(
         "n1",
@@ -476,7 +476,9 @@ describe("DashboardNotificationDrawer: rows that stand out (#4346)", () => {
     const row = screen.getByRole("link", { name: /Mentioned you\./ });
     const badge = row.querySelector("[data-kind-badge='mention']");
     expect(badge).toHaveTextContent("@");
-    expect(badge).toHaveClass("bg-primary");
+    // The mention chip's fixed gold, never the chapter accent.
+    expect(badge).toHaveClass("bg-mention-chip-text");
+    expect(badge).not.toHaveClass("bg-primary");
     expect(row).not.toHaveClass("bg-accent-subtle");
     // A name that resolves is chat's chip; one that names nobody is text.
     const chips = row.querySelectorAll("mark[data-mention]");
@@ -540,5 +542,74 @@ describe("DashboardNotificationDrawer: rows that stand out (#4346)", () => {
     const earlier = screen.getByRole("region", { name: "Earlier" });
     expect(today).toHaveTextContent("Today's notice");
     expect(earlier).toHaveTextContent("Older notice");
+  });
+});
+
+describe("DashboardNotificationDrawer: what review caught (#4346)", () => {
+  beforeEach(() => {
+    roster.value = [
+      {
+        user_id: "u-ann",
+        display_name: "Ann",
+        avatar_url: null,
+        role_color: "#F47FA4",
+      },
+    ];
+  });
+
+  it("colours the name where the server wrote it, not inside 'Announcement'", () => {
+    notifications.value = [
+      {
+        ...notification(
+          "n-ann",
+          "chat",
+          "2026-09-22T11:00:00Z",
+          "Announcement from Ann",
+        ),
+        data: {
+          target: { screen: "chat", channelId: "c1" },
+          senderId: "u-ann",
+          chatKind: "announcement",
+        },
+      },
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", {
+      name: /Announcement\.\s*Announcement from Ann/,
+    });
+    const name = row.querySelector("[data-person-name]");
+    expect(name).toHaveTextContent(/^Ann$/);
+    expect(row).toHaveTextContent("Announcement from Ann");
+  });
+
+  it("draws the system sender's row as a notice tile, not a blank person", () => {
+    notifications.value = [
+      {
+        ...notification("n-sys", "chat", "2026-09-22T11:00:00Z", "New Message"),
+        data: {
+          target: { screen: "chat", channelId: "c1" },
+          senderId: "00000000-0000-0000-0000-000000000000",
+        },
+      },
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Notice\.\s*New Message/ });
+    expect(
+      row.querySelector("[data-notification-tile='other']"),
+    ).not.toBeNull();
+  });
+
+  it("leaves U+FFFC out of a title, which carries typed text too", () => {
+    notifications.value = [
+      notification(
+        "n-task",
+        "tasks",
+        "2026-09-22T11:00:00Z",
+        "Book the venue \uFFFC",
+      ),
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Task\.\s*Book the venue/ });
+    expect(row.textContent).not.toContain("\uFFFC");
   });
 });

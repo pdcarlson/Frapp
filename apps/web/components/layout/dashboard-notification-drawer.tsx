@@ -24,6 +24,8 @@ import {
   isTileKind,
   notificationLook,
   notificationPreview,
+  notificationTitle,
+  notificationWhen,
   titleAroundName,
   type NotificationKind,
 } from "@repo/hooks/notification-rows";
@@ -43,11 +45,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  dayDelta,
-  formatRelativeDayTime,
-  parseInstantOrBareLocalNoon,
-} from "@repo/formatting";
 import { asArray, cn, initials } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -310,8 +307,6 @@ export function DashboardNotificationDrawer({
                       <li key={notification.id}>
                         <NotificationRow
                           notification={notification}
-                          isToday={group.isToday}
-                          viewerId={frappUser.userId}
                           members={rosterMembers}
                           names={names}
                           onOpen={() => {
@@ -335,32 +330,28 @@ export function DashboardNotificationDrawer({
   );
 }
 
-type DayGroup = { heading: string; isToday: boolean; rows: Notification[] };
+type TimedNotification = Notification & { time: string };
+type DayGroup = { heading: string; rows: TimedNotification[] };
 
 /**
- * Today / Earlier on the viewer's own calendar day, newest first in each, as
- * mobile s14 groups (`lib/more/notifications.ts`). An empty group is dropped,
- * so nobody sees a Today heading over nothing.
+ * Today / Earlier on the viewer's own calendar day, newest first in each, by
+ * the same rule and with the same times as mobile s14 (`notificationWhen` in
+ * `@repo/hooks/notification-rows`). An empty group is dropped, so nobody sees
+ * a Today heading over nothing, and a row whose time doesn't parse is
+ * dropped as mobile drops it.
  */
 function groupByDay(rows: readonly Notification[], now: Date): DayGroup[] {
-  const today: Notification[] = [];
-  const earlier: Notification[] = [];
+  const today: TimedNotification[] = [];
+  const earlier: TimedNotification[] = [];
   for (const row of rows) {
-    const at = parseInstantOrBareLocalNoon(row.created_at);
-    (at && dayDelta(at, now) === 0 ? today : earlier).push(row);
+    const when = notificationWhen(row.created_at, now);
+    if (!when) continue;
+    (when.isToday ? today : earlier).push({ ...row, time: when.time });
   }
   return [
-    { heading: "Today", isToday: true, rows: today },
-    { heading: "Earlier", isToday: false, rows: earlier },
+    { heading: "Today", rows: today },
+    { heading: "Earlier", rows: earlier },
   ].filter((group) => group.rows.length > 0);
-}
-
-/** A clock time under Today, where the heading already says the day. */
-function rowTime(createdAt: string, isToday: boolean): string {
-  const at = isToday ? parseInstantOrBareLocalNoon(createdAt) : null;
-  return at
-    ? at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : (formatRelativeDayTime(createdAt) ?? "");
 }
 
 type MemberNames = ReturnType<typeof useMemberDisplayNames>;
@@ -375,24 +366,21 @@ type MemberNames = ReturnType<typeof useMemberDisplayNames>;
  */
 function NotificationRow({
   notification,
-  isToday,
-  viewerId,
   members,
   names,
   onOpen,
 }: {
-  notification: Notification;
-  isToday: boolean;
-  viewerId: string | null;
+  notification: TimedNotification;
   members: readonly { user_id: string; display_name: string }[] | null;
   names: MemberNames;
   onOpen: () => void;
 }) {
   const isRead = Boolean(notification.read_at);
-  const look = notificationLook(notification, { viewerId, members });
+  const look = notificationLook(notification);
   const personName = look.personId ? names.nameFor(look.personId) : null;
   const nameColor = look.personId ? names.roleColorFor(look.personId) : null;
-  const title = titleAroundName(notification.title, personName);
+  const shownTitle = notificationTitle(notification.title);
+  const title = titleAroundName(shownTitle, personName);
   const preview = notificationPreview(notification.body, members);
 
   return (
@@ -452,11 +440,11 @@ function NotificationRow({
                 </span>
               </>
             ) : (
-              notification.title
+              shownTitle
             )}
           </span>{" "}
           <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
-            {rowTime(notification.created_at, isToday)}
+            {notification.time}
           </span>
         </span>
         {preview.length > 0 ? (
@@ -531,9 +519,11 @@ function NotificationPicture({
 }
 
 const BADGE_TONE: Partial<Record<NotificationKind, string>> = {
-  // The mention is the one badge in colour: the chapter accent, which is
-  // what chat lights a message that mentions you in (#3825).
-  mention: "bg-primary text-primary-foreground",
+  // The mention is the badge in gold: the in-body mention chip's fixed pair
+  // (`components.md` § In-body mention chip), inverted so it reads at 18px.
+  // Fixed, never the chapter accent, so a mention looks alike in every
+  // chapter (`foundations.md` §5, as changed in #4346).
+  mention: "bg-mention-chip-text text-mention-chip",
   join: "bg-success text-success-foreground",
 };
 

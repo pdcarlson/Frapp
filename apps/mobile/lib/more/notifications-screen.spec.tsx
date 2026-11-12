@@ -595,3 +595,90 @@ describe("Notification rows that stand out (#4346)", () => {
     expect(texts.join("")).not.toContain("\uFFFC");
   });
 });
+
+/**
+ * What review caught on #4346: the screen must hand its roster to the rows,
+ * the mention badge is the fixed gold and the row stays flat, and a read row
+ * reads quieter even where a role colour keeps its name bright.
+ */
+describe("Notification rows on the real screen (#4346)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  const chatRow = (over: Record<string, unknown> = {}) => ({
+    id: "n-chat",
+    title: "Ryan Castellano in #general",
+    body: "@Marcus Ellison can you cover?",
+    created_at: CREATED_AT.toISOString(),
+    read_at: null,
+    data: {
+      target: { screen: "chat", channelId: "c1" },
+      senderId: "u-ryan",
+      chatKind: "channel",
+      mentioned: true,
+    },
+    ...over,
+  });
+
+  const styleOf = (node: ReactTestRenderer["root"]) =>
+    Object.assign({}, ...[node.props.style].flat(Infinity)) as Record<
+      string,
+      unknown
+    >;
+
+  it("hands the roster to each row: the name in its colour, initials, the gold @ badge, no tint", () => {
+    inbox.data = [chatRow()];
+    const root = render().root;
+    const name = root.find(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "Ryan Castellano",
+    );
+    expect(styleOf(name).color).toBe("#8FA8FF");
+    const badge = root.find(
+      (node) =>
+        node.props.testID === "notification-badge-mention" &&
+        (node.type as unknown as string) === "View",
+    );
+    expect(styleOf(badge).backgroundColor).toBe(
+      signetDarkTokens.color.semantic.mentionChipText,
+    );
+    const row = root.find(
+      (node) =>
+        node.props.testID === "notification-row-mention" &&
+        typeof node.props.style === "function",
+    );
+    const rest = [row.props.style({ pressed: false })].flat(Infinity);
+    expect(JSON.stringify(rest)).not.toContain(
+      signetDarkTokens.color.semantic.mentionChipText,
+    );
+  });
+
+  it("draws a read row's name at regular weight, so it reads quieter than unread", () => {
+    // The title line: the Text that holds the coloured name.
+    const titleOf = (root: ReactTestRenderer["root"]) => {
+      let node = root.find(
+        (candidate) =>
+          (candidate.type as unknown as string) === "Text" &&
+          candidate.props.children === "Ryan Castellano",
+      ).parent;
+      while (node && (node.type as unknown as string) !== "Text") {
+        node = node.parent;
+      }
+      return node!;
+    };
+    inbox.data = [chatRow({ read_at: CREATED_AT.toISOString() })];
+    const read = styleOf(titleOf(render().root));
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = [chatRow()];
+    const unread = styleOf(titleOf(render().root));
+    expect(read.fontFamily).not.toBe(unread.fontFamily);
+    expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+});

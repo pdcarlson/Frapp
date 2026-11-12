@@ -3,6 +3,8 @@ import {
   isTileKind,
   notificationLook,
   notificationPreview,
+  notificationTitle,
+  notificationWhen,
   titleAroundName,
 } from "./notification-rows";
 
@@ -11,7 +13,6 @@ const MEMBERS = [
   { user_id: "ryan", display_name: "Ryan Castellano" },
   { user_id: "devin", display_name: "Devin Okafor" },
 ];
-const VIEWER = { viewerId: "me", members: MEMBERS };
 
 const chat = (data: Record<string, unknown>, body = "hello") => ({
   title: "Ryan Castellano in #general",
@@ -25,63 +26,64 @@ const chat = (data: Record<string, unknown>, body = "hello") => ({
 
 describe("notificationLook", () => {
   it("reads a chat row's kind and sender from its data", () => {
-    expect(notificationLook(chat({ chatKind: "dm" }), VIEWER)).toEqual({
+    expect(notificationLook(chat({ chatKind: "dm" }))).toEqual({
       kind: "dm",
       personId: "ryan",
       mentioned: false,
     });
-    expect(
-      notificationLook(chat({ chatKind: "announcement" }), VIEWER).kind,
-    ).toBe("announcement");
+    expect(notificationLook(chat({ chatKind: "announcement" })).kind).toBe(
+      "announcement",
+    );
   });
 
   it("draws a row that mentions the viewer as a mention, whatever its conversation", () => {
     expect(
-      notificationLook(chat({ chatKind: "channel", mentioned: true }), VIEWER),
+      notificationLook(chat({ chatKind: "channel", mentioned: true })),
     ).toEqual({ kind: "mention", personId: "ryan", mentioned: true });
   });
 
-  it("trusts the API's answer over the body once a row carries one", () => {
-    // A row written since #4346 says whether it mentioned the viewer, so a
-    // body naming them (a quote, a code span) doesn't override it.
-    const row = chat({ chatKind: "channel" }, "@Marcus Ellison can you cover?");
-    expect(notificationLook(row, VIEWER).mentioned).toBe(false);
+  it("takes the mention from the server alone, never the body re-read", () => {
+    // components.md § A row that mentions you: "The list is the server's".
+    // A row written before #4346 doesn't say, so it is a plain message even
+    // when its body names the viewer.
+    const old = chat({}, "@Marcus Ellison @Devin Okafor can you cover?");
+    expect(notificationLook(old)).toEqual({
+      kind: "chat",
+      personId: "ryan",
+      mentioned: false,
+    });
+    const said = chat(
+      { chatKind: "channel" },
+      "@Marcus Ellison can you cover?",
+    );
+    expect(notificationLook(said).mentioned).toBe(false);
   });
 
-  it("finds a name mention in the body of a row written before #4346", () => {
-    const row = chat({}, "@Marcus Ellison @Devin Okafor can you cover?");
-    expect(notificationLook(row, VIEWER)).toEqual({
-      kind: "mention",
-      personId: "ryan",
-      mentioned: true,
+  it("draws the system sender as a notice, not an unknown person", () => {
+    const row = chat({ senderId: "00000000-0000-0000-0000-000000000000" });
+    expect(notificationLook(row)).toEqual({
+      kind: "other",
+      personId: null,
+      mentioned: false,
     });
-    expect(
-      notificationLook(chat({}, "@Devin Okafor can you?"), VIEWER).kind,
-    ).toBe("chat");
-    // Without a roster yet, nothing is guessed.
-    expect(
-      notificationLook(row, { viewerId: "me", members: null }).mentioned,
-    ).toBe(false);
   });
 
   it("draws a join as the member who joined", () => {
-    const look = notificationLook(
-      {
-        title: "Owen Delacroix joined",
-        body: "New member of the chapter",
-        data: { target: { screen: "members" }, memberUserId: "owen" },
-      },
-      VIEWER,
-    );
+    const look = notificationLook({
+      title: "Owen Delacroix joined",
+      body: "New member of the chapter",
+      data: { target: { screen: "members" }, memberUserId: "owen" },
+    });
     expect(look).toEqual({ kind: "join", personId: "owen", mentioned: false });
   });
 
   it("draws a notice no person is behind as its screen's tile", () => {
     const tile = (screen: string) =>
-      notificationLook(
-        { title: "t", body: null, data: { target: { screen } } },
-        VIEWER,
-      );
+      notificationLook({
+        title: "t",
+        body: null,
+        data: { target: { screen } },
+      });
     expect(tile("tasks")).toEqual({
       kind: "tasks",
       personId: null,
@@ -91,9 +93,9 @@ describe("notificationLook", () => {
     expect(tile("billing").kind).toBe("billing");
     expect(tile("chat_reports").kind).toBe("reports");
     expect(tile("something-new").kind).toBe("other");
-    expect(
-      notificationLook({ title: "t", body: null, data: null }, VIEWER).kind,
-    ).toBe("other");
+    expect(notificationLook({ title: "t", body: null, data: null }).kind).toBe(
+      "other",
+    );
     expect(isTileKind("tasks")).toBe(true);
     expect(isTileKind("join")).toBe(false);
   });
@@ -115,6 +117,15 @@ describe("titleAroundName", () => {
       name: "Aaron Whitfield",
       after: "",
     });
+  });
+
+  it("looks only where the server puts the name, so 'Ann' never lights 'Announcement'", () => {
+    expect(titleAroundName("Announcement from Ann", "Ann")).toEqual({
+      before: "Announcement from ",
+      name: "Ann",
+      after: "",
+    });
+    expect(titleAroundName("Big news from Ann's team", "Ann")).toBeNull();
   });
 
   it("gives up when the name isn't in the title", () => {
@@ -144,5 +155,38 @@ describe("notificationPreview", () => {
     expect(notificationPreview("@Marcus Ellison hi", null)).toEqual([
       { text: "@Marcus Ellison hi", mention: false },
     ]);
+  });
+});
+
+describe("notificationTitle", () => {
+  it("drops U+FFFC from a title, which carries typed text too (a task's, an event's)", () => {
+    expect(notificationTitle("Book the venue \uFFFC")).toBe("Book the venue");
+  });
+});
+
+describe("notificationWhen", () => {
+  const NOW = new Date(2026, 7, 17, 20);
+  it("shows a clock time today, a weekday this week, and a date before that", () => {
+    const today = notificationWhen(new Date(2026, 7, 17, 9).toISOString(), NOW);
+    expect(today?.isToday).toBe(true);
+    expect(today?.time).toMatch(/9:00/);
+    const week = notificationWhen(new Date(2026, 7, 15, 9).toISOString(), NOW);
+    expect(week).toEqual({
+      isToday: false,
+      time: new Date(2026, 7, 15).toLocaleDateString(undefined, {
+        weekday: "short",
+      }),
+    });
+    const older = notificationWhen(new Date(2026, 6, 1, 9).toISOString(), NOW);
+    expect(older?.time).toBe(
+      new Date(2026, 6, 1).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      }),
+    );
+  });
+
+  it("drops a timestamp that doesn't parse", () => {
+    expect(notificationWhen("not a date", NOW)).toBeNull();
   });
 });
