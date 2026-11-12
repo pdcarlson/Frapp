@@ -16,7 +16,7 @@ const UUID = '0a000000-0000-4000-8000-000000004310';
 const MIGRATION = readFileSync(
   join(
     __dirname,
-    '../../../../../supabase/migrations/20261112140100_ai_runs.sql',
+    '../../../../../supabase/migrations/20261112165000_ai_runs.sql',
   ),
   'utf8',
 );

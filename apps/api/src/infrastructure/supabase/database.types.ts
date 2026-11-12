@@ -220,7 +220,7 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       /**
-       * `20261112140100` (#4310) — the run for (chapter, kind, dedupe key),
+       * `20261112165000` (#4310) — the run for (chapter, kind, dedupe key),
        * new or existing; `returns setof ai_runs`.
        */
       enqueue_ai_run: {
@@ -236,7 +236,7 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261112140150` (#720) — sources that need indexing, each with its
+       * `20261112165050` (#720) — sources that need indexing, each with its
        * next attempt pushed out; `returns setof corpus_sources`.
        */
       claim_corpus_sources: {
@@ -244,7 +244,7 @@ export interface Database {
         Returns: CorpusSource[];
       };
       /**
-       * `20261112140150` (#720) — one batch of a source's passages, written
+       * `20261112165050` (#720) — one batch of a source's passages, written
        * only while the source is at `p_revision`. Each chunk's `embedding` is
        * the vector as text (`[0.1,0.2]`).
        */
@@ -258,7 +258,7 @@ export interface Database {
         };
         Returns: boolean;
       };
-      /** `20261112140150` (#720) — marks a source indexed or skipped. */
+      /** `20261112165050` (#720) — marks a source indexed or skipped. */
       finish_corpus_source: {
         Args: {
           p_source_id: string;
@@ -319,7 +319,7 @@ export interface Database {
         Returns: { user_id: string; indexed: boolean }[];
       };
       /**
-       * `20261112140150` (#720) — retrieval candidates for one chapter, for a
+       * `20261112165050` (#720) — retrieval candidates for one chapter, for a
        * member of it only.
        */
       match_corpus_chunks: {
@@ -334,7 +334,7 @@ export interface Database {
         Returns: CorpusCandidate[];
       };
       /**
-       * `20261112140100` (#4310) — leases the oldest claimable run, or returns
+       * `20261112165000` (#4310) — leases the oldest claimable run, or returns
        * no row; `returns setof ai_runs`.
        */
       claim_ai_run: {
@@ -347,7 +347,7 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261112140120` (#714) — holds an AI call's worst-case cost against
+       * `20261112165020` (#714) — holds an AI call's worst-case cost against
        * the platform, chapter and member caps. One row: the hold's id, or the
        * cap it would cross. Amounts are bigint micro-USD.
        */
@@ -375,7 +375,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20261112140120` (#714) — settles a hold with the call's real counts
+       * `20261112165020` (#714) — settles a hold with the call's real counts
        * and cost, or records a call made with no hold. Returns `settled`,
        * `inserted` or `missing`.
        */
@@ -404,13 +404,13 @@ export interface Database {
         };
         Returns: string;
       };
-      /** `20261112140120` (#714) — expires unsettled holds; returns the count. */
+      /** `20261112165020` (#714) — expires unsettled holds; returns the count. */
       expire_ai_spend_holds: {
         Args: { p_older_than: string };
         Returns: number;
       };
       /**
-       * `20261112140120` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
+       * `20261112165020` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
        * row per task, provider and model. Bigint columns may arrive as strings.
        */
       ai_chapter_usage: {

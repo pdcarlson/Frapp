@@ -1,82 +1,37 @@
--- AI consent (#4308; ADR-28 decision 5, spec/behavior/ai.md § Consent).
+-- A member's phone number, its own profile field (#3711, 2026-11-12).
 --
--- Two of the three gates between Frapp's data and a model. The API checks
--- both on every AI call, in the gateway's consent seam
--- (`AiConsentService.check`), so nothing here is read by a client.
+-- Testers asked for a phone on the profile ("Can we also have a phone number
+-- included in the profile information"): a member's profile reads like a
+-- contact card, and the number is the first thing on it. Only the chapter's
+-- "Emergency contact (phone)" custom field existed, which is somebody else's
+-- number.
 --
--- 1. `chapter_ai_settings`: the president's switches, one per feature family
---    (Ask, meeting notes, chat as a source). One row per chapter, written the
---    first time the president changes a switch. No row, or a false column,
---    is off, so every chapter starts with every family off and this file
---    writes no row.
--- 2. `user_ai_consents`: each person's answer on the AI sheet, one
---    current-state row per person per sheet version, with a real No
---    (`accepted = false`). The sheet's version and contents live in the API
---    (`AI_CONSENT_SHEET`), as the Terms version does, so a store binary never
---    disagrees with the server about which sheet is current. Only a row for
---    the current version counts: a person with no row for it has not
---    answered, which counts as No, so a new version makes every earlier Yes
---    stale and asks everyone again. Rows for older versions are kept as the
---    record of what the person agreed to then. The answer is the person's,
---    not the chapter's: one Yes covers every chapter they belong to, as it
---    names the same providers and the same kinds of data.
--- 3. `anonymize_user` deletes the person's consent rows. Deleting an account
---    counts as turning AI off.
+-- One column on `users`, beside `major`, because a phone belongs to the
+-- person, not the membership: it shows in every chapter they are in, as
+-- their name and email do. Only the member sets it (`PATCH /v1/users/me`);
+-- officers never can (`spec/behavior/members.md`). Leaving it empty is how a
+-- member keeps it off their profile.
 --
--- Both tables have RLS on and no policies: the API reads and writes them
--- with the service role.
---
--- Locks. The foreign keys add triggers to `chapters` and `users`, taking a
--- SHARE ROW EXCLUSIVE lock on each until commit: from there, writes to
--- `users` (a sign-up, a profile edit) and to `chapters` wait for the file to
--- commit. The tables are new and empty and the function redefinition locks
--- the function only, so that is milliseconds.
+-- Nullable, no backfill. The check is a backstop at the API's length limit
+-- (`PHONE_MAX_LENGTH` in `@repo/validation`); the API also refuses characters
+-- a phone number doesn't have. RLS on `users` gives signed-in members no
+-- read policy (its one policy, `auth_admin_can_read_users`, is for the auth
+-- hook), so the column is read only through the API, which shows it to
+-- members who can see the directory.
+alter table public.users
+  add column if not exists phone text;
 
--- 1. ------------------------------------------------------------------------
+alter table public.users
+  drop constraint if exists users_phone_length;
+alter table public.users
+  add constraint users_phone_length
+  check (phone is null or char_length(phone) <= 32) not valid;
+alter table public.users validate constraint users_phone_length;
 
-create table if not exists public.chapter_ai_settings (
-  chapter_id uuid primary key references chapters(id) on delete cascade,
-  -- Ask Frapp: questions answered from the chapter's sources.
-  ask_enabled boolean not null default false,
-  -- Meeting notes: drafting minutes, and the tasks suggested from them.
-  meeting_notes_enabled boolean not null default false,
-  -- Chat as a source: messages in chapter channels, from members who said
-  -- yes, read by the features above.
-  chat_source_enabled boolean not null default false,
-  -- The member who last changed a switch. Users are tombstoned in place, so
-  -- `set null` rarely fires.
-  updated_by uuid references users(id) on delete set null,
-  updated_at timestamptz not null default now()
-);
-
-alter table public.chapter_ai_settings enable row level security;
-
-comment on table public.chapter_ai_settings is
-  'The president''s AI switches, one per feature family; no row is all off. API only. See 20261112140140_ai_consent.sql.';
-
--- 2. ------------------------------------------------------------------------
-
-create table if not exists public.user_ai_consents (
-  user_id uuid not null references users(id) on delete cascade,
-  sheet_version integer not null check (sheet_version >= 1),
-  -- true is Yes, false is No. No row for the current version is also No.
-  accepted boolean not null,
-  answered_at timestamptz not null default now(),
-  primary key (user_id, sheet_version)
-);
-
-alter table public.user_ai_consents enable row level security;
-
-comment on table public.user_ai_consents is
-  'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112140140_ai_consent.sql.';
-
--- 3. Account deletion purges consent rows and quotes -----------------------
-
--- `anonymize_user` is redefined in full from
--- `20261111235900_chat_important_seen.sql`; the changes are the
--- `user_ai_consents` delete and clearing the member's quotes from
--- `ai_suggestions` (`20261112140130_ai_suggestions.sql`, which this file
--- must sort after). Same signature, so its grants are kept.
+-- Account deletion clears it with the rest of the profile. `anonymize_user`
+-- is redefined in full from `20261111235900_chat_important_seen.sql`; the
+-- only change is the `phone = null` line. Same signature, so its grants are
+-- kept.
 create or replace function anonymize_user(
   p_user_id uuid,
   p_rescan_cards boolean default false
@@ -131,6 +86,7 @@ begin
          current_city = null,
          current_company = null,
          major = null,
+         phone = null,
          active_chapter_id = null,
          deleted_at = coalesce(v_user.deleted_at, now())
    where id = p_user_id
@@ -159,13 +115,6 @@ begin
   delete from activity_unread_starts where user_id = p_user_id;
   -- Important strip (#4186): which Important messages the member has seen.
   delete from chat_message_important_seen where user_id = p_user_id;
-  -- AI consent (#4308): the member's answers on the AI sheet. Deleting an
-  -- account counts as turning AI off (spec/behavior/ai.md § Consent).
-  delete from user_ai_consents where user_id = p_user_id;
-  -- AI suggestions (#4309): the member's words leave every suggestion that
-  -- quotes them, as a No on the sheet does. Decided rows hold no quote.
-  update ai_suggestions set quote = null, quote_author_id = null
-   where quote_author_id = p_user_id;
   delete from rush_candidate_votes where voter_id = p_user_id;
   delete from study_sessions where user_id = p_user_id;
 

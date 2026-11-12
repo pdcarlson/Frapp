@@ -136,7 +136,27 @@ interface RowBase {
   /** Unique on the page: the same task can sit under two groups. */
   key: string;
   title: string;
+  /**
+   * The row's second line, whole, as a screen reader says it. When `soon` is
+   * set, it ends with that phrase (`activityDetailParts`).
+   */
   detail: string;
+  /**
+   * "closes in 2 hours", "Due in 40 minutes": the closing time or due time
+   * of something that runs out within a day, said relatively, which a client
+   * draws in the warning tone (#4402, item 4). It is always `detail`'s last
+   * segment. `null` when nothing on the row is closing soon.
+   */
+  soon: string | null;
+  /**
+   * Who the row is from or about, as a `users.id`, for the face that leads
+   * it (#4402, item 4): the poster of a poll or link, whoever assigned a task
+   * to the member, the member whose completion or hours wait on them. `null`
+   * when there is no one else to show (an event, a task the member set
+   * themselves, Made by you), and the row leads with its glyph. A client that
+   * can't resolve the id on the roster (they have left) draws the glyph too.
+   */
+  faceId: string | null;
   /**
    * `warning` is an ask (`Vote`, `Confirm`, `Approve`, `Check in`): what the
    * member has to do, which a client may draw as an action rather than a
@@ -314,6 +334,8 @@ function pollClosedAt(poll: ActivityPoll): number {
 
 function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
   const closed = !activityPollIsOpen(poll, now);
+  const left = closed ? null : timeLeftWithinDay(poll.closes_at, now);
+  const soon = left ? `closes in ${left}` : null;
   const closes = poll.closes_at
     ? formatRelativeDayTime(poll.closes_at, now)
     : null;
@@ -324,10 +346,14 @@ function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
     title: poll.question,
     detail: [
       channelLabel(poll),
-      closed ? null : closes ? `closes ${closes}` : "no closing time",
+      closed
+        ? null
+        : (soon ?? (closes ? `closes ${closes}` : "no closing time")),
     ]
       .filter(Boolean)
       .join(" · "),
+    soon,
+    faceId: group === "made" ? null : poll.sender_id,
     badge: closed
       ? { label: "Closed", variant: "outline" }
       : poll.has_voted
@@ -348,10 +374,12 @@ function taskRow(
 ): ActivityRow {
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
-  const due =
-    task.stored_status === "COMPLETED"
-      ? null
-      : formatDueLabel(task.due_at ?? task.due_date, now);
+  const finished = task.stored_status === "COMPLETED";
+  const left = finished ? null : timeLeftWithinDay(task.due_at, now);
+  const soon = left ? `Due in ${left}` : null;
+  const due = finished
+    ? null
+    : (soon ?? formatDueLabel(task.due_at ?? task.due_date, now));
   const who =
     role === "mine"
       ? task.created_by_name
@@ -380,6 +408,13 @@ function taskRow(
     task,
     title: task.title,
     detail: [who, due].filter(Boolean).join(" · "),
+    soon,
+    faceId:
+      role === "confirm"
+        ? task.assignee_id
+        : role === "mine" && task.created_by !== task.assignee_id
+          ? task.created_by
+          : null,
     badge,
     glyph: role === "confirm" ? "confirm" : "task",
     dateBlock: null,
@@ -400,6 +435,8 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     ]
       .filter(Boolean)
       .join(" · "),
+    soon: null,
+    faceId: entry.user_id,
     badge: { label: "Approve", variant: "warning" },
     glyph: "hours",
     dateBlock: null,
@@ -427,6 +464,8 @@ function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
     detail: [formatRelativeDayTime(event.start_time, now), event.location]
       .filter(Boolean)
       .join(" · "),
+    soon: null,
+    faceId: null,
     badge: needsCheckIn
       ? { label: "Check in", variant: "warning" }
       : event.checked_in
@@ -462,11 +501,54 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     ]
       .filter(Boolean)
       .join(" · "),
+    soon: null,
+    faceId: link.posted_by,
     badge: null,
     glyph: "link",
     dateBlock: null,
     unread: link.unread,
     readRef: { kind: "link", item_id: link.id },
+  };
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * "40 minutes", "2 hours": how long is left until `at`, when it is in the
+ * future and less than a day away; `null` otherwise, and for a bare date,
+ * which has no time to count down to. Rounded down, so "1 hour" is never
+ * said with 59 minutes left; under a minute says "1 minute".
+ */
+function timeLeftWithinDay(at: string | null, now: Date): string | null {
+  if (!at) return null;
+  const instant = parseInstant(at);
+  if (!instant) return null;
+  const left = instant.getTime() - now.getTime();
+  if (left <= 0 || left >= 24 * HOUR_MS) return null;
+  if (left < HOUR_MS) {
+    const minutes = Math.max(1, Math.floor(left / 60_000));
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+  const hours = Math.floor(left / HOUR_MS);
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
+
+/**
+ * A row's second line split for drawing (#4402, item 4): `lead` is the
+ * detail before the closing-soon phrase, without its " · ", and `soon` that
+ * phrase, which a client draws in the warning tone. With no phrase, `lead`
+ * is the whole detail.
+ */
+export function activityDetailParts(
+  row: Pick<ActivityRow, "detail" | "soon">,
+): { lead: string; soon: string | null } {
+  if (!row.soon || !row.detail.endsWith(row.soon)) {
+    return { lead: row.detail, soon: null };
+  }
+  const lead = row.detail.slice(0, row.detail.length - row.soon.length);
+  return {
+    lead: lead.endsWith(" · ") ? lead.slice(0, -3) : lead,
+    soon: row.soon,
   };
 }
 

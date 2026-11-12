@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Eye, Loader2 } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDeleteRole, useUpdateRole } from "@repo/hooks";
 import { roleColorOrNull, type RoleColorHex } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -21,13 +22,17 @@ import { ProfileSection } from "@/components/profile/profile-section";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
 import { PermissionSwitchList } from "@/components/roles/permission-switch-list";
+import { RoleOverrideList } from "@/components/roles/role-override-list";
 import { useRolePermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { useRolesData } from "@/components/roles/use-roles-data";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useRolePreviewStore } from "@/lib/stores/role-preview-store";
 import {
   isWildcardRole,
   mayGrant,
+  previewPermissions,
   reachesOutside,
   reachesRole,
   reachesTier,
@@ -41,11 +46,13 @@ const OUTSIDE = "__outside__";
  * One role's page (#3990): its name, color, tier and @mention switch, then
  * what it can do.
  *
- * The permission switches show what the role ends up with. For a role in a
- * tier, flipping one sets that role apart from its tier for that permission
- * (the database records the difference as an override), and the row says so.
- * The two-column view Paul described, the tier's value beside the role's
- * override with a way back to "same as tier", is #4072.
+ * A role in a tier shows two columns (#4072): what its tier sets, read-only,
+ * and this role's own answer, Off, Same as tier or On
+ * (`role-override-list.tsx`). A role outside the tiers, which has no tier to
+ * follow, shows one column of live switches.
+ *
+ * "View as" opens the dashboard as a member holding only this role sees it
+ * (#4072), the way Discord's View Server As Role does.
  */
 export function RolePage({
   roleId,
@@ -127,8 +134,13 @@ function RoleBody({
   onBack: () => void;
   onOpenTier: (tierId: string) => void;
 }) {
-  const { tiers, reach, canManage, words, memberCounts } = data;
+  const { tiers, roles, reach, canManage, words, memberCounts } = data;
   const { toast } = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const startPreview = useRolePreviewStore((s) => s.start);
   const { confirm, confirmDialog } = useConfirmDialog();
   const updateRole = useUpdateRole();
   const deleteRole = useDeleteRole();
@@ -218,6 +230,21 @@ function RoleBody({
     }
   }
 
+  function viewAs() {
+    if (!activeChapterId) return;
+    const query = searchParams.toString();
+    startPreview({
+      chapterId: activeChapterId,
+      roleId: role.id,
+      roleName: role.name,
+      permissions: previewPermissions(role, roles),
+      returnTo: query ? `${pathname}?${query}` : pathname,
+    });
+    // Chat is where every member lands, so the preview starts there, with
+    // the nav as the role would have it.
+    router.push("/chat");
+  }
+
   const held = permissionsOf(role);
   const count = memberCounts?.get(role.id) ?? (memberCounts ? 0 : null);
   const lockedReason = wildcard
@@ -244,6 +271,23 @@ function RoleBody({
             }}
           />
           <h2 className="text-title text-foreground">{role.name}</h2>
+          {/*
+            Anyone who can edit roles may look (#4072), at any role but the
+            President's, which can do everything. Looking changes nothing,
+            so the rank rules that guard edits don't apply.
+          */}
+          {canManage && !wildcard ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={viewAs}
+              className="ml-auto"
+            >
+              <Eye aria-hidden />
+              View as {role.name}
+            </Button>
+          ) : null}
         </div>
         <p className="text-sm text-muted-foreground">
           {tier ? (
@@ -393,35 +437,36 @@ function RoleBody({
         title="Permissions"
         hint={
           tier
-            ? `Starts from ${tier.name}. A switch here changes this role only.`
+            ? `Starts from ${tier.name}. Pick Off or On to set this role apart; Same as ${words.singular} follows ${tier.name}, even when it changes.`
             : `This role is outside the ${words.plural}, so its permissions are its own.`
         }
       >
-        <PermissionSwitchList
-          idPrefix={`role-${role.id}`}
-          holderName={role.name}
-          isOn={(permission) => wildcard || held.includes(permission)}
-          onToggle={(permission, on) => void toggle(role, permission, on)}
-          extraPermissions={wildcard ? [] : held}
-          lockedReason={lockedReason}
-          rowNote={(permission) => {
-            if (!tier) return null;
-            const fromTier = tier.permissions.includes(permission);
-            const has = held.includes(permission);
-            if (fromTier === has) return null;
-            return has
-              ? `On for this role only. ${tier.name} has it off.`
-              : `Off for this role only. ${tier.name} has it on.`;
-          }}
-          rowLockedReason={(permission, on) =>
-            !on && !mayGrant(reach, permission)
-              ? "You can't give this, because your role doesn't have it."
-              : null
-          }
-          pendingPermission={
-            pending?.id === role.id ? pending.permission : null
-          }
-        />
+        {tier && !wildcard ? (
+          <RoleOverrideList
+            role={role}
+            tier={tier}
+            tierWord={words.singular}
+            lockedReason={lockedReason}
+            mayGrant={(permission) => mayGrant(reach, permission)}
+          />
+        ) : (
+          <PermissionSwitchList
+            idPrefix={`role-${role.id}`}
+            holderName={role.name}
+            isOn={(permission) => wildcard || held.includes(permission)}
+            onToggle={(permission, on) => void toggle(role, permission, on)}
+            extraPermissions={wildcard ? [] : held}
+            lockedReason={lockedReason}
+            rowLockedReason={(permission, on) =>
+              !on && !mayGrant(reach, permission)
+                ? "You can't give this, because your role doesn't have it."
+                : null
+            }
+            pendingPermission={
+              pending?.id === role.id ? pending.permission : null
+            }
+          />
+        )}
       </ProfileSection>
     </div>
   );

@@ -97,6 +97,9 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 | `--success` | `#4BC262` | Paid, confirmed, checked-in, inside-zone |
 | `--warning` | `#e5a000` | Pending, at-risk, degraded |
 | `--destructive` | `#FF665C` | Errors, overdue, destructive actions |
+| `--success-foreground` | `#0A0A0A` | Ink on a solid `--success` fill (a label, count or glyph): 8.67:1. White there is 2.28:1. Mobile reads it as `semantic.onSemantic` |
+| `--warning-foreground` | `#0A0A0A` | Ink on a solid `--warning` fill: 8.82:1 |
+| `--destructive-foreground` | `#0A0A0A` | Ink on a solid `--destructive` fill: 6.89:1 |
 | `--info` | `#2f81f7` | Informational status only — never a brand or accent color |
 | Mention/DM red | `#E5484D` | "You were addressed" — mention badges and DM indicators |
 | `--mention-chip` | `#2D2617` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § In-body mention chip |

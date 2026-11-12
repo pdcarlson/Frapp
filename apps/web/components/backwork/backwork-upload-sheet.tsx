@@ -49,6 +49,7 @@ import {
   MAX_BACKWORK_UPLOAD_LABEL,
   MAX_COURSE_NAME_LENGTH,
   acceptAttribute,
+  findDepartmentByCode,
   inspectUploadFile,
   readSignedUpload,
   SEMESTERS,
@@ -632,8 +633,10 @@ type CourseState =
  * What the sheet knows about the course typed so far (#3848): a course with a
  * name shows it under Course number; a course no file has yet offers a name
  * field; anything else shows nothing (an unnamed course with files is named
- * from a row's menu). The department matches by its exact code, as the API
- * resolves it on upload; the number trimmed and case-insensitively.
+ * from a row's menu). The department matches as the API resolves it on
+ * upload (`findDepartmentByCode`: trimmed, any case, #3918); the number
+ * trimmed and case-insensitively. The label keeps the department's stored
+ * spelling.
  */
 export function describeCourse(
   departmentCode: string,
@@ -646,10 +649,12 @@ export function describeCourse(
   const number = courseNumber.trim();
   if (!code || !number) return { kind: "none" };
   const key = number.toLowerCase();
-  const department = departments.find((d) => d.code === code);
+  const department = findDepartmentByCode(departments, code);
   if (!department) return { kind: "new" };
   const course = courses.find((c) => c.department_id === department.id && c.course_key === key);
-  if (course?.name) return { kind: "named", label: `${code} ${number}`, name: course.name };
+  if (course?.name) {
+    return { kind: "named", label: `${department.code.trim()} ${number}`, name: course.name };
+  }
   if (course) return { kind: "none" };
   const hasFiles = resources.some(
     (r) => r.department_id === department.id && r.course_number?.trim().toLowerCase() === key,

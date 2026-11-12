@@ -66,6 +66,11 @@ export function copyForErrorCode(code: string | null): string | null {
   if (code === "service_entry.receipt_required") {
     return "Add a photo of your proof, then submit.";
   }
+  // Refused in the browser, never by the API: the web client turns writes
+  // away while an officer views the app as a role (#4072).
+  if (code === "client.role_preview") {
+    return "You're viewing as a role. Exit the preview to make changes.";
+  }
   if (code === "legal.acceptance_required") {
     return "Accept the Terms and Privacy Policy to continue.";
   }

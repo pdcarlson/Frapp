@@ -1,4 +1,5 @@
 export * from "./use-frapp-client";
+export * from "./permission-preview";
 export * from "./use-now";
 export * from "./display-names";
 export * from "./channel-members";
@@ -25,6 +26,7 @@ export * from "./use-activity";
 export * from "./use-activity-unread";
 export * from "./use-activity-links";
 export * from "./activity-rows";
+export * from "./activity-faces";
 export * from "./event-series";
 export * from "./use-activity-feed";
 export * from "./use-attendance";

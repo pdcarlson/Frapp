@@ -27,7 +27,7 @@ function vectorLiteral(values: readonly number[]): string {
  * chapter, and written only through `write_corpus_chunks`, which takes the
  * chapter from the source row. No query here selects from `corpus_chunks`
  * directly, so there is no passage read that could forget the chapter.
- * (`20261112140150_ai_corpus.sql` has the SQL, and the PGlite gate runs it.)
+ * (`20261112165050_ai_corpus.sql` has the SQL, and the PGlite gate runs it.)
  */
 @Injectable()
 export class SupabaseCorpusRepository implements ICorpusRepository {

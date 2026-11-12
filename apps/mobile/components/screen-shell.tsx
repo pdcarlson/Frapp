@@ -87,6 +87,11 @@ type ScreenShellProps = {
    * hidden from screen readers. `content` renders nothing while closed.
    */
   overlay?: { open: boolean; content: ReactNode };
+  /**
+   * False holds the body still, for a screen whose own gesture moves
+   * something inside it (Arrange channels' drag handles, #3838).
+   */
+  scrollEnabled?: boolean;
   children: ReactNode;
 };
 
@@ -125,6 +130,7 @@ export function ScreenShell({
   headerAction,
   refresh,
   overlay,
+  scrollEnabled = true,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -156,6 +162,7 @@ export function ScreenShell({
           <View style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
+              scrollEnabled={scrollEnabled}
               stickyHeaderIndices={
                 stickyHeaderIndices.length > 0 ? stickyHeaderIndices : undefined
               }

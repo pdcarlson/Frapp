@@ -49,6 +49,7 @@ export const SCREEN_TITLES = {
   "minutes-details": "Minutes",
   // Tasks and, since #3930, events: `AI_SUGGESTION_COPY.listHeading`.
   "suggested-tasks": "Suggested",
+  "arrange-channels": "Arrange channels",
 } as const satisfies Record<string, string>;
 
 /** The group in `app/(app)/` that holds the tab navigator. */

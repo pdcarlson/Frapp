@@ -102,8 +102,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   try {
     await db.exec(`
       begin;
-      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city)
-      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy');
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city, phone)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy', '(518) 555-0142');
       insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
       insert into members (user_id, chapter_id) values ('${U}', '${C}');
       insert into point_transactions (chapter_id, user_id, amount, category, description)
@@ -206,7 +206,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     const FUNCTIONAL = [
       {
         name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
-        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
+        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city, phone,
                      (deleted_at is not null) as tombstoned
                 from users where id = '${U}'`,
         ok: (rows) =>
@@ -217,6 +217,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows[0].avatar_url === null &&
           rows[0].graduation_year === null &&
           rows[0].current_city === null &&
+          rows[0].phone === null &&
           rows[0].tombstoned === true,
       },
       {
@@ -267,7 +268,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        // #4308. Its line in the delete block (20261112140140): deleting an
+        // #4308. Its line in the delete block (20261112165040): deleting an
         // account counts as turning AI off, and only the member's rows go.
         name: "current-state purged: AI sheet answers, and only the member's",
         sql: `select (select count(*)::int from user_ai_consents where user_id = '${U}') as leftovers,
@@ -276,7 +277,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 && rows[0].leftovers === 0 && rows[0].others === 1,
       },
       {
-        // #4309. Its line in the same block (20261112140140): the member's
+        // #4309. Its line in the same block (20261112165040): the member's
         // words leave waiting suggestions, which stay; others' quotes stay.
         name: "AI suggestions drop the member's quotes, and only theirs",
         sql: `select (select count(*)::int from ai_suggestions where quote_author_id = '${U}' or quote = 'hi, Doomed User here') as leftovers,

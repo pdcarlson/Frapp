@@ -26,7 +26,7 @@ export const AI_RUN_FINISHED_STATUSES: readonly AiRunStatus[] = [
 
 /**
  * Why a run ended as `failed`. The database holds the same list (the
- * `failure_reason` check in `20261112140100_ai_runs.sql`), and
+ * `failure_reason` check in `20261112165000_ai_runs.sql`), and
  * `AI_RUN_FAILURE_MESSAGES` says each one in plain words.
  */
 export const AI_RUN_FAILURE_REASONS = [

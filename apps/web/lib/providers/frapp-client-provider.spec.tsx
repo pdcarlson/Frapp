@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("@repo/api-sdk", () => ({
   createFrappClient: (config: { getChapterId: () => string | null }) => ({
+    use: () => undefined,
     __chapterId: config.getChapterId,
   }),
 }));
@@ -12,6 +13,9 @@ vi.mock("@repo/api-sdk", () => ({
 // context is already re-scoped at the moment the cache is dropped.
 const seen: Array<string | null> = [];
 vi.mock("@repo/hooks", () => ({
+  PermissionPreviewProvider: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
   FrappClientProvider: ({
     children,
     chapterId,

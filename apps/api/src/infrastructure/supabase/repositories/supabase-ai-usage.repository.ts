@@ -26,7 +26,7 @@ const SETTLE_RESULTS: ReadonlySet<string> = new Set<AiSpendSettleResult>([
 
 /**
  * `ai_usage_events` through the service role (#714). Every call is a
- * database function (`20261112140120_ai_usage_ledger.sql`): the hold is
+ * database function (`20261112165020_ai_usage_ledger.sql`): the hold is
  * checked against the caps and inserted under the same locks, so two calls at
  * once can't both take the last of a cap.
  *

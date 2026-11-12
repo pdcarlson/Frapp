@@ -347,7 +347,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
     );
   });
 
-  it("Profile: the photo's circle, two stat cards and the five detail rows every profile draws", () => {
+  it("Profile: the photo's circle, two stat cards and the six detail rows every profile draws", () => {
     const tree = render(<ProfileSkeleton />);
     const photo = tree.root
       .findAllByType("Animated.View" as never)
@@ -361,7 +361,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
           style.backgroundColor === tokens.color.surface.card,
       ),
     ).toHaveLength(2);
-    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(5);
+    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(6);
   });
 
   it("Joined channels: rows on the card row's frame", () => {

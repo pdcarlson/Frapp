@@ -252,6 +252,7 @@ const AUDIT_ACTION_PHRASES: Record<string, string> = {
   role_tier_deleted: "removed a tier",
   role_tiers_reordered: "reordered the tiers",
   member_removed: "removed a member",
+  member_profile_corrected: "edited a member's profile",
   presidency_transferred: "handed over the presidency",
   presidency_claimed: "claimed the presidency",
   president_orphaned: "left the chapter without a president",

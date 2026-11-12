@@ -62,6 +62,7 @@ import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
 import { GetTheAppCard } from "@/components/layout/get-the-app-card";
+import { RolePreviewBanner } from "@/components/roles/role-preview-banner";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
@@ -611,6 +612,8 @@ export function DashboardShell({
         missing declaration was six of the seven routes in #1142.
       */}
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* "View as a role" (#4072): above the top bar, on every route. */}
+        <RolePreviewBanner />
         <TopBar
           // The home view is no page: "Chat" over it would name what's closed.
           pageTitle={

@@ -296,7 +296,7 @@ the chapter accent in a back-row slot (2026-11-05).
 |---|---|---|---|
 | Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on the check-in scanner (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
 | Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
-| Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
+| Edit | `PencilGlyph` | Messages' new-message button and Event details' Edit (Profile's back row until #3711) | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
@@ -627,6 +627,15 @@ rows draw the same lead at the same sizes in `text.mutedForeground`
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link` and `confirm` were added for the two kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
+
+A row from another member leads with that member's face instead
+([#4463](https://github.com/pdcarlson/Frapp/issues/4463), 2026-11-12): their
+photo or initials on their tint in a 40px circle, with the same kind glyph at
+12px in a 20px `--surface-1` disc with a 1px `--border` on the face's lower
+corner (on the phone, 12pt in a 20pt `surface1` disc with a hairline border).
+The glyph keeps its neutral colour there; only the member's own tint is
+coloured. Which rows take a face:
+[`spec/ui/web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity).
 
 | Row kind | Shape (nav set key, Phosphor name) |
 |---|---|
