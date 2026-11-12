@@ -2682,7 +2682,10 @@ export function ChatShell({
               onHide={hideFromRail}
               rowActions={rowActions}
               sidebar={sidebarControls}
-              reorder={railReorder}
+              // The chapter's order is for channels: a DM is never placed in
+              // it, and the empty categories an officer drags onto would sit
+              // in a list of conversations (#3774).
+              reorder={directView ? undefined : railReorder}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
