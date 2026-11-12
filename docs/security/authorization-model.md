@@ -169,8 +169,9 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
 
-Exact counts are not restated in this section: they move with every migration, and the numbers
-it used to give had drifted by eight tables. The query below is the table list; the policy count
+Table counts are not kept in this section: they move with every migration, and the numbers it
+used to give had drifted by eight tables. The query below lists the API-only tables (all but the
+three `*`-marked ones in § "Enforcing layer per table"); the policy count
 and its counting convention belong to § "The policies that do exist", which is reconciled against
 `pg_policies`. Do not substitute a grep over `supabase/migrations/` for either: it counts
 *history*, so a `drop policy` / `create policy` pair reads as two live policies.
@@ -212,7 +213,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | Every table the query above returns, plus `members`\*, `users`\* and `member_custom_field_values`\*. Of those, `events`†, `event_attendance`† and `notifications`† also emit a change ping. | Run the query |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | Every table the query above returns, plus `members`\*, `users`\* and `member_custom_field_values`\*. Of those, `events`†, `event_attendance`† and `notifications`† also emit a change ping. | Query rows + 3 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

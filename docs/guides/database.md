@@ -237,8 +237,8 @@ The design (canonical: [`docs/security/authorization-model.md`](../security/auth
   service-role client, which bypasses RLS; tenant isolation is therefore **application-layer**:
   every API query must filter on `chapter_id`.
 - Client-reachable policies exist only where the browser deliberately reads Postgres directly
-  (the chat hot path); `authorization-model.md` holds the per-table inventory and the policy
-  details. Do not add a permissive policy for a new table unless you are deliberately opening a
+  (the chat hot path); `authorization-model.md` § 4 gives the query that lists the API-only tables, and names every
+  table that carries a policy, with the details. Do not add a permissive policy for a new table unless you are deliberately opening a
   client-direct path; enable RLS and stop.
 
 When adding tables:

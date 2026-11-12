@@ -21,10 +21,13 @@ interface RepositoryFile {
 }
 
 /**
- * The fewest repositories both ledgers may find: a floor, so a walker that
- * silently stops finding files (a moved directory, a skipped symlink) fails
- * both, while a new repository needs no edit here. Lower it only when
- * repositories are really removed.
+ * The fewest repositories both ledgers may find: a floor, so a new repository
+ * needs no edit here. Lower it only when repositories are really removed.
+ *
+ * A floor alone stops noticing a walker that loses files once the tree grows
+ * past it, so `tenant-scope-coverage.spec.ts` also checks the walker against
+ * `git ls-files`: a committed repository it misses fails there, whatever the
+ * count.
  *
  * It used to be the exact count, which every PR adding a repository bumped,
  * so any two such PRs open at once conflicted on this line (2026-11-12, #4558).
