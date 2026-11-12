@@ -146,10 +146,10 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#0A0A0A",
-      surface1: "#111111",
-      card: "#171717",
-      popover: "#1E1E1E",
+      background: "#050505",
+      surface1: "#1A1A1A",
+      card: "#262626",
+      popover: "#313131",
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
@@ -158,14 +158,14 @@ const SIGNET_DARK: SignetTokens = {
     text: {
       foreground: "#F5F5F5",
       mutedForeground: "#C4C4C4",
-      muted: "#9E9E9E",
+      muted: "#A8A8A8",
       disabled: "#6B6B6B",
     },
     semantic: {
-      success: "#3FB950",
+      success: "#4BC262",
       warning: "#E5A000",
-      destructive: "#F85149",
-      destructiveText: "#FF7B72",
+      destructive: "#FF665C",
+      destructiveText: "#FF958A",
       info: "#2F81F7",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
@@ -176,7 +176,7 @@ const SIGNET_DARK: SignetTokens = {
       house: "#EFB63B",
       seed: "#DDB844",
       onHouse: "#2C2000",
-      askFill: "#251E0E",
+      askFill: "#2C2515",
       askBorder: "#6B5619",
       askText: "#F4CB63",
     },

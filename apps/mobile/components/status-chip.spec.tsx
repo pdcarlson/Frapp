@@ -91,7 +91,7 @@ describe("StatusChip text tone (components.md §5)", () => {
       ),
     );
     expect(label.color).toBe(tokens.color.semantic.destructiveText);
-    expect(chip.backgroundColor).toBe("rgba(248,81,73,0.13)");
+    expect(chip.backgroundColor).toBe("rgba(255,102,92,0.13)");
   });
 
   it("draws success and warning in the hue itself", () => {

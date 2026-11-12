@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import * as accentPreviewInk from "@/components/settings/accent-preview-ink";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -232,30 +233,54 @@ describe("the accent preview reports its own legibility", () => {
     chapter.active();
   });
 
-  it("warns when label text on the typed accent misses AA", async () => {
+  /**
+   * Since the 2026-11-12 surface ladder (#3826) no colour the resolver keeps
+   * on `--card` has a label under AA (`settings-contrast.spec.ts` sweeps it),
+   * so these two drive the warning with a stubbed ink on a kept colour, the
+   * way the swatch test below always has. What they pin is the screen's half:
+   * that a failing ink surfaces, and how its ratio prints.
+   */
+  const withInkRatio = async (inkRatio: number) => {
+    const real = accentPreviewInk.previewInkFor;
+    const spy = vi
+      .spyOn(accentPreviewInk, "previewInkFor")
+      .mockImplementation((fill) =>
+        fill.toUpperCase() === "#4DA3FF"
+          ? { ink: signetDarkTokens.color.gold.onHouse, ratio: inkRatio }
+          : real(fill),
+      );
     const user = userEvent.setup();
     render(<SettingsPage />);
     await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
-    await user.type(hex, "#0086FE");
-    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
-    expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+    await user.type(hex, "#4DA3FF");
+    return spy;
+  };
+
+  it("warns when label text on the typed accent misses AA", async () => {
+    const spy = await withInkRatio(4.45);
+    try {
+      expect(
+        screen.getByText(/under the 4\.5:1 minimum/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("never prints a failing ratio as 4.5:1", async () => {
-    // `#008AF1`'s best ink sits just under 4.5:1 (the band is pinned in
-    // `settings-contrast.spec.ts`): it fails AA, and rounding printed it as
+    // A ratio just under 4.5:1 fails AA, and rounding once printed it as
     // "4.5:1, under the 4.5:1 minimum".
-    const user = userEvent.setup();
-    render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
-    const hex = screen.getByLabelText(/accent color hex value/i);
-    await user.clear(hex);
-    await user.type(hex, "#008AF1");
-    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
-      /reads at 4\.4:1/,
-    );
+    const spy = await withInkRatio(4.4999);
+    try {
+      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+        /reads at 4\.4:1/,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("paints the swatch label in the ink the warning measured", async () => {
@@ -272,7 +297,7 @@ describe("the accent preview reports its own legibility", () => {
     const spy = vi
       .spyOn(accentPreviewInk, "previewInkFor")
       .mockImplementation((fill) =>
-        fill.toUpperCase() === "#0086FE"
+        fill.toUpperCase() === "#4DA3FF"
           ? { ink: "#123456", ratio: 3.27 }
           : real(fill),
       );
@@ -282,7 +307,7 @@ describe("the accent preview reports its own legibility", () => {
       await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
       const hex = screen.getByLabelText(/accent color hex value/i);
       await user.clear(hex);
-      await user.type(hex, "#0086FE");
+      await user.type(hex, "#4DA3FF");
       expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
       expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
         /reads at 3\.2:1/,

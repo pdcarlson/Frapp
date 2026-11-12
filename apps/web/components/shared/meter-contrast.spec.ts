@@ -100,15 +100,16 @@ describe("the fix that would itself have been a defect", () => {
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
     // ladder surface (and since #2586 until its hover does too), so no seed's
     // fill sits at the wash's luminance any more: the worst case is
-    // `#BF0A30`'s `#D83144` at 2.52:1 (`#800000`'s `#F42F22` at 2.68:1 before
-    // the neutral ladder and engine v2, 2026-11-05). The collision is gone, but `bg-input` is
+    // `#4B1A7E`'s `#9B70D9` at 2.65:1 since the 2026-11-12 ladder (#3826;
+    // `#BF0A30`'s `#D83144` at 2.52:1 on the 2026-11-05 ladder, `#800000`'s
+    // `#F42F22` at 2.68:1 before it). The collision is gone, but `bg-input` is
     // still a worse track than the chosen one, and that ordering, not the
     // collision, is what kept it out.
     const inputTrack = applyAlpha(WHITE, INPUT_ALPHA, SURFACE.card);
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeCloseTo(2.518, 2);
+    expect(worst).toBeCloseTo(2.65, 2);
     expect(worst).toBeLessThan(
       Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
     );
@@ -145,20 +146,17 @@ describe("why the track recedes instead of rising", () => {
     }
   });
 
-  it("records that the groove is faintest on --surface-1, which nothing uses", () => {
-    // One ladder step from the floor is 1.049:1 — under what `--card` gives
-    // and not a usable groove. Recorded rather than enforced: no surface in
-    // this app puts a meter on `--surface-1` (the sidebar is the only
-    // `--surface-1` region and it holds no meters). If one ever does, this is
-    // the number saying it needs its own answer rather than this recipe.
-    expect(ratio(TRACK, SURFACE.surface1)).toBeLessThan(1.1);
-    // And it is the *only* container that falls short, so the shortfall is a
-    // property of that one step rather than of the track.
+  it("grooves on every container above the floor, --surface-1 included", () => {
+    // On the 2026-11-05 ladder one step from the floor was 1.049:1, not a
+    // usable groove, and this test recorded `--surface-1` as the one container
+    // the recipe could not serve. The 2026-11-12 ladder (#3826) put every step
+    // at least 1.15:1 apart, so the track now grooves on `--surface-1` too
+    // (1.17:1), and no container above the floor falls short.
     const short = CONTAINERS.filter(
       (container) =>
         container !== SURFACE.background && ratio(TRACK, container) < 1.1,
     );
-    expect(short).toEqual([SURFACE.surface1]);
+    expect(short).toEqual([]);
   });
 
   it("would have caught the two candidates that wash out inside a dialog", () => {

@@ -18,7 +18,7 @@ generateRadixColors({
   appearance: "dark",
   accent: seed,
   gray: "#191919",
-  background: "#0A0A0A",
+  background: "#050505",
 })
   │
   ▼
@@ -33,6 +33,7 @@ Rules:
 
 - The raw seed **MUST NOT** paint UI directly: no component references the seed hex; only generated roles paint (§2), and §8 says which of them are contrast-gated. (The seed may appear as data, e.g. a swatch in the admin color picker.) The rule is about the reference, not the colour: the seed's own colour may still reach the screen as step 9 when it clears the §8 fill floor, and the engine lightens it when it doesn't. Decided on [#2541](https://github.com/pdcarlson/Frapp/issues/2541). The §6 residual call site paints the stored accent only after `resolveChapterAccentColor` has validated it against the surface, and retires with that unit.
 - The generator call is fixed as written above: `appearance` is always `"dark"` (Signet is dark-first), `gray` and `background` are constants matching the neutral ladder in [`foundations.md`](foundations.md).
+- **`background` is the ladder's floor, `--background`** (`#050505` since 2026-11-12). Seating it higher was tried for [#3826](https://github.com/pdcarlson/Frapp/issues/3826) and rejected: on `--card` the generator treats dark seeds as too close to its step 1 and swaps in its own saturated step 9, so maroon `#8B0000` would have painted `#FF2A1F`, navy `#1F4E79` a sky `#90CFFF` and saddle brown `#8B4513` an orange `#F17C2A`, a brand change no chapter asked for. On the floor, fills move only by the §8 lift (`#8B0000` paints `#DD5D4D`, was `#D75748`). The tints are kept apart from the lighter upper steps by the role map instead (§2, `accent-subtle-bg`).
 - Generation runs **server-side** (§4). Clients read cached tokens; they never run the generator.
 
 ## 2. Role map
@@ -44,7 +45,7 @@ Every accent role maps to a fixed step of the generated scale. Components consum
 | `accent-primary` | step 9 | Primary button fill, active RSVP, solid chips (the own chat bubble until the compact layout removed it, 2026-09-29; again since 2026-11-10 in the opt-in Bubbles density, with `on-primary` text, [components.md](components.md) §11 § Bubbles) |
 | `accent-hover` | step 10 | Hover/pressed state of primary fills |
 | `accent-ring` | step 8 | Focus rings |
-| `accent-subtle-bg` | step 3 | Tinted backgrounds: active nav item, badge/chip fills, selected rows |
+| `accent-subtle-bg` | step 5 (step 3 until 2026-11-12) | Tinted backgrounds: active nav item, badge/chip fills, selected rows. Step 5, not Radix's step 3, because the tints sit on `--surface-1` and `--card`, not on the floor the generator is seated on: on the 2026-11-12 ladder step 3 measured 1.05–1.14:1 on `--surface-1` and 1.01–1.10:1 on `--card`, step 5 measures 1.34–1.68 and 1.16–1.46, at or above step 3's figures on the 2026-11-05 ladder for all 19 corpus seeds, with `accent-text` on it over 5.3:1 ([#3826](https://github.com/pdcarlson/Frapp/issues/3826)). On `--popover` it is still no cue (1.00–1.26), as step 3 was not ([#2399](https://github.com/pdcarlson/Frapp/issues/2399)) |
 | `accent-border` | step 7 | Borders on accent-tinted surfaces (badges, selected cards) |
 | `accent-text` | step 11 | Accent-colored text and icons on neutral or subtle-bg surfaces, including the viewer's own name on a chat row ([components.md](components.md) §11) |
 | `on-primary` | contrast color | Text/icons on `accent-primary` |
@@ -155,7 +156,7 @@ under 4.5:1 on it (written before the floor took in hover, #2586), or carry the 
 keys. On a row lacking the keys, web showed the default-seed (`#DDB844`) palette from `signet.css`,
 and mobile showed the chapter's own `accent_color` only where it cleared 4.5:1 on the card, house
 gold (`#EFB63B`) otherwise. Staleness could not be read off the seed either: #2152 (`057bb1c`,
-2026-09-10) moved the generator's background from `#0E0D0B` to `#131211` (and the neutral ladder moved it again to `#0A0A0A` on 2026-11-05, engine version 2, [foundations.md](foundations.md) §2), so a row written before
+2026-09-10) moved the generator's background from `#0E0D0B` to `#131211` (and the neutral ladder moved it again to `#0A0A0A` on 2026-11-05, engine version 2, and to `#050505` on 2026-11-12, engine version 3, [foundations.md](foundations.md) §2), so a row written before
 then can hold a fill today's engine never produces for its seed (maroon `#800000` stored itself,
 1.37:1 on `--popover`, where it now paints `#F42F22`). Recomputing every row with `NULL` engine
 version fixes all three cases, because every writer replaces the whole map. The one precondition was the seed: a
