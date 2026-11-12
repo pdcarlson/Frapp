@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { statusOf, throwUnlessOk } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
 import {
+  alumniRoleIdOf,
   checkInWindowBounds,
   eventAttendanceFor,
   eventExcuseClosesAt,
@@ -12,6 +13,7 @@ import {
 } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters } from "./use-chapters";
+import { useRoles } from "./use-roles";
 
 /**
  * Absence excuses for required events, on every surface
@@ -58,8 +60,9 @@ export function useMyEventExcuse(
 }
 
 /**
- * An event's excuses, for its creator or an `events:update` holder (anyone
- * else gets a 403, which is not retried).
+ * An event's excuses, for its creator or an `events:update` holder. Anyone
+ * else gets a 403, which the app's query retry policy doesn't repeat (nor a
+ * 404 for an event that is gone).
  */
 export function useEventExcuses(
   eventId: string,
@@ -77,7 +80,6 @@ export function useEventExcuses(
     },
     staleTime: 30_000,
     enabled: (options.enabled ?? true) && !!eventId,
-    retry: (count, error) => statusOf(error) !== 403 && count < 2,
   });
 }
 
@@ -162,23 +164,33 @@ export function useDecideEventExcuse() {
 /**
  * Whether an event is required of the viewer, by default or by a role of
  * theirs (`spec/behavior/events.md` § Attendance by role): what a list row's
- * Mandatory chip says, and who is offered Can't make it. Read off the
- * memberships list the apps already hold, so it answers `false` while that
- * loads. The server's rule (`AttendanceService.requiresMember`) still
- * decides who may send an excuse.
+ * Mandatory chip says, and who is offered Can't make it. The server's rule
+ * (`AttendanceService.requiresMember`, with `holdsTo`): an alumnus is held
+ * to an event only when one of their roles is named, never by the default
+ * alone (`spec/behavior/alumni.md`). Read off the memberships list and the
+ * chapter's roles, which the apps already hold, so it answers `false` while
+ * the memberships load.
  */
 export function useRequiredOfViewer(): (
   event: EventAttendanceFields,
 ) => boolean {
   const chapterId = useActiveChapterId();
   const chapters = useListChapters();
+  const roles = useRoles();
   const roleIds = useMemo(
     () =>
       chapters.data?.find((membership) => membership.chapter_id === chapterId)
         ?.role_ids ?? [],
     [chapters.data, chapterId],
   );
-  return (event) => eventAttendanceFor(event, roleIds).status === "required";
+  const alumni = useMemo(() => {
+    const alumniId = alumniRoleIdOf(roles.data);
+    return alumniId !== undefined && roleIds.includes(alumniId);
+  }, [roles.data, roleIds]);
+  return (event) => {
+    const attendance = eventAttendanceFor(event, roleIds);
+    return attendance.status === "required" && (attendance.byRole || !alumni);
+  };
 }
 
 /** Who the excuse goes to, as the member reads it. */
@@ -235,15 +247,17 @@ export type MyExcuseView =
  * - **No excuse yet** offers Can't make it until 48 hours after the end
  *   (`eventExcuseClosesAt`), unless their row already settles it
  *   ({@link attendanceSettlesExcuse}).
- * - Held at `none` while either read is first loading, so the button never
- *   flashes for a member who already sent one.
+ * - Held at `none` while either read has no answer (loading, failed, or
+ *   paused offline): without one the screen can't tell a member who already
+ *   sent one, or checked in, from one who hasn't, and offering the button to
+ *   them would only earn a 409.
  */
 export function myExcuseView({
   required,
   mine,
-  mineLoading,
+  mineUnanswered,
   ownAttendance,
-  ownLoading,
+  ownUnanswered,
   start,
   end,
   opensMinutes,
@@ -251,9 +265,9 @@ export function myExcuseView({
 }: {
   required: boolean;
   mine: MyEventExcuse | undefined;
-  mineLoading: boolean;
+  mineUnanswered: boolean;
   ownAttendance: unknown;
-  ownLoading: boolean;
+  ownUnanswered: boolean;
   start: unknown;
   end: unknown;
   opensMinutes: unknown;
@@ -299,7 +313,8 @@ export function myExcuseView({
         };
     }
   }
-  if (!required || mineLoading || ownLoading || !valid) return { kind: "none" };
+  if (!required || mineUnanswered || ownUnanswered || !valid)
+    return { kind: "none" };
   if (attendanceSettlesExcuse(ownAttendance)) return { kind: "none" };
   if (now.getTime() > eventExcuseClosesAt(endAt).getTime()) {
     return { kind: "none" };
@@ -307,16 +322,39 @@ export function myExcuseView({
   return { kind: "offer" };
 }
 
+/** Who is looking at the receiver's list, for {@link canDecideExcuse}. */
+export interface ExcuseDecider {
+  viewerId: string | null;
+  /** Holds `events:update`, which decides any excuse, their own included. */
+  canUpdateEvents: boolean;
+}
+
 /**
- * The receiver's summary line for an event: "2 to decide · 12 excused".
- * `excused` is the caller's count: the approved excuses on the list (an
- * officer's own EXCUSED marks show on web's roster beside it).
+ * Whether the viewer may approve or decline this excuse, by the server's
+ * rule (`EventExcuseService.canDecide`): a pending one, and not their own
+ * unless they hold `events:update`. The creator's own excuse goes to the
+ * officers, so on the creator's list it is shown without buttons.
+ */
+export function canDecideExcuse(
+  excuse: Pick<EventExcuse, "status" | "user_id">,
+  decider: ExcuseDecider,
+): boolean {
+  if (excuse.status !== "PENDING") return false;
+  return decider.canUpdateEvents || excuse.user_id !== decider.viewerId;
+}
+
+/**
+ * The receiver's summary line for an event: "2 to decide · 12 excused", from
+ * the list itself: the pending excuses this viewer can decide, and the
+ * approved ones (an officer's own EXCUSED marks show on web's roster beside
+ * it).
  */
 export function excuseSummaryLine(
-  excuses: readonly Pick<EventExcuse, "status">[],
-  excused: number,
+  excuses: readonly Pick<EventExcuse, "status" | "user_id">[],
+  decider: ExcuseDecider,
 ): string | null {
-  const pending = excuses.filter((e) => e.status === "PENDING").length;
+  const pending = excuses.filter((e) => canDecideExcuse(e, decider)).length;
+  const excused = excuses.filter((e) => e.status === "APPROVED").length;
   const parts = [
     pending > 0 ? `${pending} to decide` : null,
     excused > 0 ? `${excused} excused` : null,

@@ -259,7 +259,11 @@ export default function EventDetailsScreen() {
             holder may decide them too (§ Excuses). */}
         {canDecideExcuses ||
         (viewerId !== null && event.created_by === viewerId) ? (
-          <ExcuseReviewSection eventId={event.id} />
+          <ExcuseReviewSection
+            eventId={event.id}
+            viewerId={viewerId}
+            canUpdateEvents={canDecideExcuses}
+          />
         ) : null}
 
         {event.description ? (

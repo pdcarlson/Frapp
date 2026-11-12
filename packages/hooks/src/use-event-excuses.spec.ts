@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attendanceSettlesExcuse,
+  canDecideExcuse,
   excuseReceiverLine,
   excuseSummaryLine,
   myExcuseView,
@@ -35,9 +36,9 @@ const excuse = (status: EventExcuse["status"]): EventExcuse => ({
 const base = {
   required: true,
   mine: { excuse: null, receiver: null } as MyEventExcuse,
-  mineLoading: false,
+  mineUnanswered: false,
   ownAttendance: { attendance: null },
-  ownLoading: false,
+  ownUnanswered: false,
   start: START,
   end: END,
   opensMinutes: 15,
@@ -53,9 +54,9 @@ describe("myExcuseView", () => {
     expect(myExcuseView({ ...base, required: false }).kind).toBe("none");
   });
 
-  it("holds back while either read is first loading", () => {
-    expect(myExcuseView({ ...base, mineLoading: true }).kind).toBe("none");
-    expect(myExcuseView({ ...base, ownLoading: true }).kind).toBe("none");
+  it("holds back while either read has no answer (loading, failed or paused)", () => {
+    expect(myExcuseView({ ...base, mineUnanswered: true }).kind).toBe("none");
+    expect(myExcuseView({ ...base, ownUnanswered: true }).kind).toBe("none");
   });
 
   it("closes 48 hours after the end", () => {
@@ -100,6 +101,12 @@ describe("myExcuseView", () => {
       mine: { excuse: excuse("APPROVED"), receiver: null },
     });
     expect(view).toMatchObject({ title: "Excused", canWithdraw: false });
+    const pending = myExcuseView({
+      ...base,
+      now: hoursAfterEnd(1),
+      mine: { excuse: excuse("PENDING"), receiver: null },
+    });
+    expect(pending).toMatchObject({ status: "PENDING", canWithdraw: false });
   });
 
   it("never offers Withdraw on a declined excuse", () => {
@@ -135,9 +142,27 @@ describe("excuse helpers", () => {
   });
 
   it("summarises what's left to decide and who is excused", () => {
+    const officer = { viewerId: "officer", canUpdateEvents: true };
     const rows = [excuse("PENDING"), excuse("PENDING"), excuse("APPROVED")];
-    expect(excuseSummaryLine(rows, 12)).toBe("2 to decide · 12 excused");
-    expect(excuseSummaryLine([], 0)).toBeNull();
+    expect(excuseSummaryLine(rows, officer)).toBe("2 to decide · 1 excused");
+    expect(excuseSummaryLine([], officer)).toBeNull();
+  });
+
+  it("never offers a creator their own excuse to decide, unless they hold events:update", () => {
+    const own = excuse("PENDING");
+    const creator = { viewerId: own.user_id, canUpdateEvents: false };
+    expect(canDecideExcuse(own, creator)).toBe(false);
+    expect(canDecideExcuse({ ...own, user_id: "other" }, creator)).toBe(true);
+    expect(
+      canDecideExcuse(own, { viewerId: own.user_id, canUpdateEvents: true }),
+    ).toBe(true);
+    expect(excuseSummaryLine([own], creator)).toBeNull();
+    expect(
+      canDecideExcuse(excuse("APPROVED"), {
+        viewerId: "officer",
+        canUpdateEvents: true,
+      }),
+    ).toBe(false);
   });
 
   it("puts pending excuses first, oldest first", () => {

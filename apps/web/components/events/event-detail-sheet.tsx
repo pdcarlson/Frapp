@@ -444,8 +444,11 @@ export function EventDetailSheet({
                 }
               />
             ) : null}
+            {/* Keyed by event: the sheet switches series occurrences in
+                place, and a half-typed reason must not carry over. */}
             {eventId && !usingPreviewData && !eventUnavailable ? (
               <MyExcuse
+                key={`excuse-${eventId}`}
                 eventId={eventId}
                 required={requiredOfViewer}
                 start={resolvedEvent?.start_time}
@@ -455,8 +458,14 @@ export function EventDetailSheet({
             ) : null}
             {eventId &&
             !usingPreviewData &&
+            !eventUnavailable &&
             (createdByViewer || can("events:update", permissions)) ? (
-              <ExcuseReview eventId={eventId} />
+              <ExcuseReview
+                key={`excuses-${eventId}`}
+                eventId={eventId}
+                viewerId={viewerId}
+                canUpdateEvents={can("events:update", permissions)}
+              />
             ) : null}
             <div className="rounded-lg border border-border p-3">
               <p className="mb-2 flex items-center gap-1 text-caption text-muted-foreground">

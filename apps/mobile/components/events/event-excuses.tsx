@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   errorCopy,
+  canDecideExcuse,
   excuseSummaryLine,
   myExcuseView,
   sortExcusesForReview,
@@ -13,7 +14,7 @@ import {
   useWithdrawEventExcuse,
   type EventExcuseWithMember,
 } from "@repo/hooks";
-import { EVENT_EXCUSE_REASON_MAX } from "@repo/validation";
+import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetPrimaryButton,
@@ -78,9 +79,9 @@ export function MyExcuseCard({
   const view = myExcuseView({
     required,
     mine: mine.data,
-    mineLoading: mine.isPending && !mine.isPaused,
+    mineUnanswered: mine.data === undefined,
     ownAttendance: own.data,
-    ownLoading: own.isPending && !own.isPaused,
+    ownUnanswered: own.data === undefined,
     start,
     end,
     opensMinutes,
@@ -178,26 +179,12 @@ export function MyExcuseCard({
     );
   }
 
-  const hue =
-    view.status === "APPROVED"
-      ? tokens.color.semantic.success
-      : view.status === "DECLINED"
-        ? tokens.color.semantic.destructive
-        : tokens.color.semantic.warning;
+  const hue = excuseHue(tokens, view.status);
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.title}>{view.title}</Text>
-        <StatusChip
-          label={
-            view.status === "PENDING"
-              ? "Pending"
-              : view.status === "APPROVED"
-                ? "Excused"
-                : "Declined"
-          }
-          hue={hue}
-        />
+        <StatusChip label={statusLabel("eventExcuse", view.status)} hue={hue} />
       </View>
       <Text style={styles.reason}>“{view.reason}”</Text>
       {view.detail ? <Text style={styles.caption}>{view.detail}</Text> : null}
@@ -221,7 +208,15 @@ export function MyExcuseCard({
  * may decide (the event's creator or an `events:update` holder); any other
  * reader gets the route's 403, and the section then draws nothing.
  */
-export function ExcuseReviewSection({ eventId }: { eventId: string }) {
+export function ExcuseReviewSection({
+  eventId,
+  viewerId,
+  canUpdateEvents,
+}: {
+  eventId: string;
+  viewerId: string | null;
+  canUpdateEvents: boolean;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const excuses = useEventExcuses(eventId);
@@ -229,19 +224,22 @@ export function ExcuseReviewSection({ eventId }: { eventId: string }) {
   const { writeBlockedReason } = useConnection();
   const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Two taps in one frame both see `deciding` unset; the ref doesn't.
+  const inFlight = useRef(false);
 
   const rows = excuses.data ?? [];
   if (rows.length === 0) return null;
 
   const ordered = sortExcusesForReview(rows);
-  const approved = rows.filter((row) => row.status === "APPROVED").length;
-  const summary = excuseSummaryLine(rows, approved);
+  const decider = { viewerId, canUpdateEvents };
+  const summary = excuseSummaryLine(rows, decider);
 
   const run = async (
     row: EventExcuseWithMember,
     decision: "APPROVED" | "DECLINED",
   ) => {
-    if (deciding) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setDeciding(row.user_id);
     setError(null);
     try {
@@ -253,6 +251,7 @@ export function ExcuseReviewSection({ eventId }: { eventId: string }) {
         }),
       );
     } finally {
+      inFlight.current = false;
       setDeciding(null);
     }
   };
@@ -265,25 +264,22 @@ export function ExcuseReviewSection({ eventId }: { eventId: string }) {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {ordered.map((row) => {
         const name = row.display_name.trim() || "A member";
-        const pending = row.status === "PENDING";
+        // The creator's own excuse goes to the officers: shown, not decided.
+        const decidable = canDecideExcuse(row, decider);
         const disabled = deciding !== null || writeBlockedReason !== null;
         return (
           <View key={row.id} style={styles.reviewRow}>
             <View style={styles.header}>
               <Text style={styles.title}>{name}</Text>
-              {pending ? null : (
+              {decidable ? null : (
                 <StatusChip
-                  label={row.status === "APPROVED" ? "Excused" : "Declined"}
-                  hue={
-                    row.status === "APPROVED"
-                      ? tokens.color.semantic.success
-                      : tokens.color.semantic.destructive
-                  }
+                  label={statusLabel("eventExcuse", row.status)}
+                  hue={excuseHue(tokens, row.status)}
                 />
               )}
             </View>
             <Text style={styles.reason}>“{row.reason}”</Text>
-            {pending ? (
+            {decidable ? (
               <View style={styles.decisionRow}>
                 <DecisionButton
                   label={deciding === row.user_id ? "Saving…" : "Approve"}
@@ -305,6 +301,20 @@ export function ExcuseReviewSection({ eventId }: { eventId: string }) {
       })}
     </View>
   );
+}
+
+/** An excuse status's semantic hue; a status a newer API adds reads muted. */
+function excuseHue(tokens: SignetTokens, status: string): string {
+  switch (status) {
+    case "APPROVED":
+      return tokens.color.semantic.success;
+    case "DECLINED":
+      return tokens.color.semantic.destructive;
+    case "PENDING":
+      return tokens.color.semantic.warning;
+    default:
+      return tokens.color.text.muted;
+  }
 }
 
 function TextAction({

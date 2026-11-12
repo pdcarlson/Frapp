@@ -137,8 +137,20 @@ describe("MyExcuse", () => {
 
 describe("ExcuseReview", () => {
   it("draws nothing until someone sends an excuse", () => {
-    const { container } = render(<ExcuseReview eventId="e1" />);
+    const { container } = render(
+      <ExcuseReview eventId="e1" viewerId="u-officer" canUpdateEvents />,
+    );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("shows the creator's own excuse without Approve or Decline", () => {
+    state.list = [excuse("PENDING", { display_name: "Me" })];
+    render(
+      <ExcuseReview eventId="e1" viewerId="u-me" canUpdateEvents={false} />,
+    );
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+    expect(screen.getByText("Excuses")).toBeInTheDocument();
   });
 
   it("lists pending excuses first and decides one", async () => {
@@ -147,7 +159,7 @@ describe("ExcuseReview", () => {
       excuse("APPROVED", { user_id: "u-ana", display_name: "Ana" }),
       excuse("PENDING", { user_id: "u-sam", display_name: "Sam" }),
     ];
-    render(<ExcuseReview eventId="e1" />);
+    render(<ExcuseReview eventId="e1" viewerId="u-officer" canUpdateEvents />);
     expect(
       screen.getByText("Excuses · 1 to decide · 1 excused"),
     ).toBeInTheDocument();

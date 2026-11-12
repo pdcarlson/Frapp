@@ -802,6 +802,26 @@ describe("Event details excuses (#3735)", () => {
     });
   });
 
+  it("shows an officer who didn't make the event the Excuses list", () => {
+    requiredOfViewer = false;
+    permissions = ["members:view", "events:update"];
+    excuseList = [
+      { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("1 to decide");
+    expect(pressable(tree, "Approve")).toBeTruthy();
+  });
+
+  it("shows the creator their own excuse without Approve or Decline", () => {
+    event = { ...TOMORROW, created_by: "user-me" };
+    excuseList = [{ ...excuse("PENDING"), display_name: "Me" }];
+    const tree = render();
+    expect(screenText(tree)).toContain("Pending");
+    expect(screenText(tree)).not.toContain("to decide");
+    expect(screenText(tree)).not.toContain("Approve");
+  });
+
   it("keeps the Excuses list from a member who didn't make the event", () => {
     excuseList = [
       { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
