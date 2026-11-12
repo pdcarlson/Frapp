@@ -15,7 +15,8 @@ import { RbacModule } from '../rbac/rbac.module';
  *
  * A feature that runs background AI work imports this module, registers its
  * handler with `AiRunRegistry` in its own `onModuleInit`, and enqueues
- * through `AiRunService`. The corpus index (#720) is the first.
+ * through `AiRunService`. The corpus index (#720) was the first; the minutes
+ * draft (#4312, `MeetingDraftModule`) is another.
  */
 @Module({
   // `RbacService`, for reading a run under a permission its kind names.

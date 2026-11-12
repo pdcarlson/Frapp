@@ -14518,6 +14518,207 @@
           "Integrations"
         ]
       }
+    },
+    "/v1/meetings/{id}/draft": {
+      "get": {
+        "operationId": "MeetingDraftController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingDraftController_request_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestMeetingDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingDraftController_discard_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "keep_notes",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/draft/use": {
+      "post": {
+        "operationId": "MeetingDraftController_use_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UseMeetingDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits",
+        "tags": [
+          "Meetings"
+        ]
+      }
     }
   },
   "info": {
@@ -23757,6 +23958,169 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "MeetingDraftSourceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "decision",
+              "action_item"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "The drafted text, as it went into the minutes."
+          },
+          "quote": {
+            "type": "string",
+            "description": "The line of the notes it came from, word for word."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "quote"
+        ]
+      },
+      "MeetingDraftReviewDto": {
+        "type": "object",
+        "properties": {
+          "gaps": {
+            "description": "What the notes leave unsaid, for the officer to fill in.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDraftSourceDto"
+            }
+          },
+          "left_out": {
+            "type": "number",
+            "description": "Drafted lines left out because the line they named is not in the notes."
+          }
+        },
+        "required": [
+          "gaps",
+          "sources",
+          "left_out"
+        ]
+      },
+      "MeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "drafting",
+              "ready",
+              "applied",
+              "failed"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "description": "The notes the draft was asked from, or \"\"."
+          },
+          "failure": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required",
+              "spend_limit",
+              "unavailable",
+              "refused",
+              "not_permitted",
+              "stopped",
+              "failed"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "nullable": true,
+            "description": "The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingContentPatchDto"
+              }
+            ]
+          },
+          "review": {
+            "$ref": "#/components/schemas/MeetingDraftReviewDto"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          }
+        },
+        "required": [
+          "status",
+          "notes",
+          "failure",
+          "failure_message",
+          "content",
+          "review",
+          "requested_at",
+          "blocked"
+        ]
+      },
+      "RequestMeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 40000,
+            "description": "The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft."
+          },
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version."
+          },
+          "meeting_date": {
+            "type": "string",
+            "example": "2026-11-09",
+            "description": "The meeting’s calendar day where the officer is, so \"by Friday\" in the notes becomes the right date."
+          }
+        },
+        "required": [
+          "notes",
+          "expected_updated_at"
+        ]
+      },
+      "UseMeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version."
+          }
+        },
+        "required": [
+          "expected_updated_at"
         ]
       }
     }

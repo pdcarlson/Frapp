@@ -4338,6 +4338,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against */
+        get: operations["MeetingDraftController_get_v1"];
+        put?: never;
+        /** Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
+        post: operations["MeetingDraftController_request_v1"];
+        /** Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
+        delete: operations["MeetingDraftController_discard_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
+        post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7638,6 +7674,61 @@ export interface components {
              * @enum {string}
              */
             status: "posted" | "duplicate";
+        };
+        MeetingDraftSourceDto: {
+            /** @enum {string} */
+            kind: "decision" | "action_item";
+            /** @description The drafted text, as it went into the minutes. */
+            text: string;
+            /** @description The line of the notes it came from, word for word. */
+            quote: string;
+        };
+        MeetingDraftReviewDto: {
+            /** @description What the notes leave unsaid, for the officer to fill in. */
+            gaps: string[];
+            sources: components["schemas"]["MeetingDraftSourceDto"][];
+            /** @description Drafted lines left out because the line they named is not in the notes. */
+            left_out: number;
+        };
+        MeetingDraftDto: {
+            /** @enum {string} */
+            status: "none" | "drafting" | "ready" | "applied" | "failed";
+            /** @description The notes the draft was asked from, or "". */
+            notes: string;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "refused" | "not_permitted" | "stopped" | "failed" | null;
+            failure_message: string | null;
+            /** @description The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it. */
+            content: components["schemas"]["MeetingContentPatchDto"] | null;
+            review: components["schemas"]["MeetingDraftReviewDto"];
+            /** Format: date-time */
+            requested_at: string | null;
+            /**
+             * @description Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+        };
+        RequestMeetingDraftDto: {
+            /** @description The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft. */
+            notes: string;
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version.
+             */
+            expected_updated_at: string;
+            /**
+             * @description The meeting’s calendar day where the officer is, so "by Friday" in the notes becomes the right date.
+             * @example 2026-11-09
+             */
+            meeting_date?: string;
+        };
+        UseMeetingDraftDto: {
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
+             */
+            expected_updated_at: string;
         };
     };
     responses: never;
@@ -17468,6 +17559,134 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestMeetingDraftDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_discard_v1: {
+        parameters: {
+            query?: {
+                keep_notes?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_use_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseMeetingDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
             };
             /** @description Error */
             default: {

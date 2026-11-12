@@ -92,6 +92,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // the other's newer version (#4312).
   "meeting.already_started",
   "meeting.stale",
+  // A draft from notes asked for on minutes that were posted meanwhile.
+  "meeting.draft_posted",
+  // "Use the draft" on a draft that is no longer waiting.
+  "meeting.draft_not_waiting",
 ] as const;
 
 export type ClientContractErrorCode =

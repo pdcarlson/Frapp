@@ -11,13 +11,27 @@
  *   `spec/behavior/meetings.md` § Suggested tasks, and the word-for-word
  *   check on every quote.
  *
- * The minutes prompts and schemas here are the bake-off's own, version
- * `bake-off-*@v1`, written to the spec before the features exist. When the
- * minutes draft (#4312) and suggested tasks (#4313) land with their own
- * prompts and schemas, this file should import those instead, so the
- * bake-off grades what ships.
+ * `minutes.draft` runs the prompt and schema the feature ships
+ * (`#domain/utils/minutes-draft`, `MeetingDraftOutputSchema`), so the
+ * bake-off grades what an officer would get. It grades the model's own
+ * reply, before Frapp's checks drop an ungrounded line or a guessed owner:
+ * the table should show which model needs those checks least.
+ *
+ * The suggested-tasks prompt and schema are still the bake-off's own,
+ * version `bake-off-suggest-tasks@v1`. When suggested tasks (#4313) land,
+ * this file should import theirs instead.
  */
 import { z } from 'zod';
+import {
+  DEFAULT_MEETING_SECTIONS,
+  MeetingDraftOutputSchema,
+  type MeetingDraftOutput,
+} from '@repo/validation';
+import {
+  buildMinutesDraftPrompt,
+  notesInPrompt,
+  type MinutesDraftRequest,
+} from '#domain/utils/minutes-draft';
 import type { ScriptedHandler } from '../../../src/infrastructure/ai/scripted-language-model';
 import { isQuoteGrounded } from '#domain/utils/quote-grounding';
 import type { AiGatewayService } from '../../../src/application/services/ai/ai-gateway.service';
@@ -28,6 +42,7 @@ import { scriptedAskModel } from '../harness/scripted-model';
 import type { EvalCase } from '../harness/types';
 import {
   MEETING_NOTES_CASES,
+  ROSTER,
   SYNTHETIC_ASK_CASES,
   SYNTHETIC_CHAPTER,
   member,
@@ -91,20 +106,6 @@ const DueDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .nullable();
 
-const MinutesDraft = z.object({
-  summary: z.string(),
-  decisions: z.array(z.object({ text: z.string(), quote: z.string() })),
-  actionItems: z.array(
-    z.object({
-      task: z.string(),
-      owner: z.string().nullable(),
-      due: DueDate,
-      quote: z.string(),
-    }),
-  ),
-});
-type MinutesDraft = z.infer<typeof MinutesDraft>;
-
 const SuggestedTasks = z.object({
   tasks: z.array(
     z.object({
@@ -126,8 +127,6 @@ const SHARED_RULES = [
   'Write a due date as YYYY-MM-DD, working out weekdays from the meeting date; null when none is said.',
 ].join(' ');
 
-const MINUTES_SYSTEM = `You draft minutes for a fraternity or sorority chapter meeting from an officer's rough notes. Record each decision with its vote count. ${SHARED_RULES}`;
-
 const TASKS_SYSTEM = `You propose tasks from a chapter meeting's notes for an officer to review. One task per thing someone agreed to do. ${SHARED_RULES}`;
 
 function notesMessage(notesCase: MeetingNotesCase): string {
@@ -140,6 +139,31 @@ function notesMessage(notesCase: MeetingNotesCase): string {
     'Notes:',
     notesCase.notes,
   ].join('\n');
+}
+
+/**
+ * A notes case as the feature would be asked to draft it: the chapter's
+ * default sections, and the roster of current members with their office.
+ */
+export function minutesRequestFor(
+  notesCase: MeetingNotesCase,
+): MinutesDraftRequest {
+  return {
+    meetingName: notesCase.meetingTitle,
+    meetingType: notesCase.meetingType,
+    otherLabel: null,
+    meetingDate: notesCase.date,
+    sections: DEFAULT_MEETING_SECTIONS,
+    roster: ROSTER.filter((person) => person.role !== 'Alumni').map(
+      (person) => ({
+        userId: person.id,
+        name: person.name,
+        roles: [person.role],
+        checkedIn: false,
+      }),
+    ),
+    notes: notesCase.notes,
+  };
 }
 
 function notesCaseFor(caseId: string): MeetingNotesCase {
@@ -264,7 +288,8 @@ const minutesTask: BakeOffTask = {
   name: 'minutes.draft',
   caseIds: MEETING_NOTES_CASES.map((c) => c.id),
   scripted: (request) => {
-    const notesCase = scriptedCaseFor(request.messages.at(-1)?.content ?? '');
+    const notes = notesInPrompt(request.messages.at(-1)?.content ?? '');
+    const notesCase = MEETING_NOTES_CASES.find((c) => c.notes === notes);
     const draft = notesCase ? compliantMinutes(notesCase) : null;
     return draft
       ? { text: JSON.stringify(draft), object: draft }
@@ -275,10 +300,8 @@ const minutesTask: BakeOffTask = {
     const result = await gateway.generateObject(
       'minutes.draft',
       {
-        promptVersion: 'bake-off-minutes@v1',
-        system: MINUTES_SYSTEM,
-        messages: [{ role: 'user', content: notesMessage(notesCase) }],
-        schema: MinutesDraft,
+        ...buildMinutesDraftPrompt(minutesRequestFor(notesCase)),
+        schema: MeetingDraftOutputSchema,
       },
       {
         chapterId: SYNTHETIC_CHAPTER,
@@ -287,10 +310,7 @@ const minutesTask: BakeOffTask = {
     );
     if (result.status !== 'ok') return notAnswered(caseId, result.status);
     const draft = result.value;
-    const items = [
-      ...draft.decisions.map((d) => ({ text: d.text, quote: d.quote })),
-      ...draft.actionItems,
-    ];
+    const items = [...draft.decisions, ...draft.action_items];
     return {
       caseId,
       violations: [
@@ -303,11 +323,7 @@ const minutesTask: BakeOffTask = {
         ...gradeItems(
           'action item',
           notesCase.actionItems,
-          draft.actionItems.map((a) => ({
-            text: a.task,
-            owner: a.owner,
-            quote: a.quote,
-          })),
+          draft.action_items,
           notesCase.notes,
         ),
         ...gradeForbidden(draft, notesCase.mustNotMention),
@@ -387,17 +403,28 @@ function lineFor(notesCase: MeetingNotesCase, item: ExpectedItem): string {
  * keywords are there, and the expected owner. Only the scripted candidate
  * uses this; it proves the path and the grader agree, nothing about a model.
  */
-function compliantMinutes(notesCase: MeetingNotesCase): MinutesDraft {
+function compliantMinutes(notesCase: MeetingNotesCase): MeetingDraftOutput {
   return {
     summary: `${notesCase.meetingTitle} on ${notesCase.date}.`,
+    announcements: '',
     decisions: notesCase.decisions.map((item) => {
       const line = lineFor(notesCase, item);
-      return { text: line, quote: line };
+      return { text: line, vote: null, quote: line };
     }),
-    actionItems: notesCase.actionItems.map((item) => {
+    action_items: notesCase.actionItems.map((item) => {
       const line = lineFor(notesCase, item);
-      return { task: line, owner: item.owner ?? null, due: null, quote: line };
+      return {
+        text: line,
+        owner: item.owner ?? null,
+        due_date: null,
+        quote: line,
+      };
     }),
+    officer_reports: '',
+    old_business: '',
+    new_business: '',
+    discussion_log: '',
+    open_questions: [],
   };
 }
 

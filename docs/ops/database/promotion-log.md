@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Minutes drafted from notes (#4312, on `ai-integration`)
+
+### 20261112180000_meeting_drafts.sql
+
+- **Purpose**: Adds `meeting_drafts`, one row per meeting at most: the notes an officer pasted to have minutes drafted, the AI run doing it (`run_id`, `request_id`), the minutes' version the draft was asked on (`base_updated_at`), where it stands (`status`: drafting, ready, applied, failed, with `failure_code`), and what it wrote (`result`). RLS on, no policies (API only, service role). Two trigger functions, both security invoker with EXECUTE revoked from `public`, `anon` and `authenticated`: `meeting_drafts_drop_on_post()` fired `after update of status` on `meetings` when minutes become posted, and `meeting_drafts_drop_for_deleted_user()` fired `after update of deleted_at` on `users` when an account is deleted; each deletes the matching rows, so the notes are kept only while the minutes are a draft. Indexes `idx_meeting_drafts_requested_at` and `idx_meeting_drafts_requested_by`. Writes no row on apply. The rule is [`meetings.md` § Drafting from notes](../../../spec/behavior/meetings.md#drafting-from-notes).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'meeting_drafts';` returns `true`, `select count(*) from pg_policies where tablename = 'meeting_drafts';` returns `0`, `select tgname from pg_trigger where tgname in ('meetings_drop_draft_on_post', 'users_drop_meeting_drafts');` returns 2 rows, and `select has_function_privilege('authenticated', 'public.meeting_drafts_drop_on_post()', 'execute');` returns `false`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Applies after `20261112120400_meetings.sql` and `20261112020000_ai_runs.sql`, whose tables it references. The older API never reads the table. The newer API with `AI_ENABLED` unset never touches it either: the three `/v1/meetings/{id}/draft` routes answer 404 `ai.not_available`, and the daily retention sweep is the only reader, deleting nothing from an empty table. The foreign keys and the two triggers take SHARE ROW EXCLUSIVE locks on `meetings`, `chapters`, `users` and `ai_runs` until commit; the table is new and empty, so that is milliseconds. `if not exists`, `create or replace` and `drop trigger if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-minutes-drafted-from-notes-20261112180000) § Rollback minutes drafted from notes.
+
 ## 2026-11-12: Chat in the AI index (#4314, on `ai-integration`)
 
 ### 20261112170000_ai_corpus_chat.sql

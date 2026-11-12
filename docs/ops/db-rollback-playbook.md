@@ -3908,3 +3908,21 @@ alter table public.corpus_sources drop constraint if exists corpus_sources_type_
 alter table public.corpus_sources add constraint corpus_sources_type_allowed
   check (source_type in ('chapter_document', 'meeting_minutes'));
 ```
+
+## Rollback minutes drafted from notes (20261112180000)
+
+* **Migration**: `20261112180000_meeting_drafts.sql`
+
+One new table, `meeting_drafts`, and two trigger functions: one fired when minutes are posted, one when an account is deleted. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every draft route answers 404 and nothing writes the table. Minutes already drafted are ordinary `meetings` rows and stay. Rows left in `meeting_drafts` hold officers' pasted notes: the daily sweep deletes each 30 days after it was asked for, with the switch on or off.
+
+To remove it all, in a later forward migration:
+
+```sql
+drop trigger if exists meetings_drop_draft_on_post on public.meetings;
+drop trigger if exists users_drop_meeting_drafts on public.users;
+drop function if exists public.meeting_drafts_drop_on_post();
+drop function if exists public.meeting_drafts_drop_for_deleted_user();
+drop table if exists public.meeting_drafts;
+```

@@ -78,6 +78,7 @@ import type {
   PledgeClass,
   EventType,
   Meeting,
+  MeetingDraft,
   MeetingTemplate,
   PledgeClassAssignment,
   RushCandidate,
@@ -181,6 +182,7 @@ export interface Database {
       event_types: TableDefinition<EventType>;
       meetings: TableDefinition<Meeting>;
       meeting_templates: TableDefinition<MeetingTemplate>;
+      meeting_drafts: TableDefinition<MeetingDraft>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;

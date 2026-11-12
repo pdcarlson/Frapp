@@ -165,6 +165,7 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
 
 - The diagnostics window exists for the beta only, and only on Ask. While it is on, Ask shows a line saying answers are being saved. It never covers meeting features, and it never keeps an answer that drew on chat. Ask comes after the beta's first features, so until it exists the window keeps nothing and a report is the only stored text.
 - Neither store holds meeting audio or Standards material.
+- An officer's notes for drafted minutes are the officer's own input to a feature, not a stored prompt: they are kept beside the unposted minutes so the officer can ask again, with what the officer checks the draft against (what the notes leave out, and each drafted decision and action item beside its line), and are deleted when the minutes are posted ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes)). Added 2026-11-12 (#4312, the drafting session's, Paul's to change).
 - A stored exchange is deleted when the member who asked or reported deletes their account. It is also deleted early when a member it quotes deletes their account or turns their choice off.
 - Both are named on the privacy page.
 - The usage ledger has no text column. It records counts, the model, the prompt version and the cost.

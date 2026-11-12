@@ -9,9 +9,11 @@ import {
   useChapterRoster,
   useDeleteMeeting,
   useMeeting,
+  useMeetingDraft,
   useMemberDisplayNames,
   usePostMeeting,
   useUpdateMeeting,
+  type MeetingDraftState,
   type MeetingMinutes,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -24,6 +26,8 @@ import {
   MEETING_TYPE_LABELS,
   MEETING_VOTE_MAX,
   STANDARDS_MEETING_NOTE,
+  isMeetingContentEmpty,
+  meetingDraftQuoteFor,
   meetingSectionHasContent,
   meetingTypeLabel,
   readMeetingContent,
@@ -59,6 +63,7 @@ import {
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -110,7 +115,14 @@ function sameDraft(a: Draft, b: Draft): boolean {
  */
 export function MinutesPage({ id }: { id: string }) {
   const query = useMeeting(id);
-  if (query.isPending) return <MinutesPageSkeleton />;
+  // Whether drafting from notes is here is known before the editor shows, so
+  // the notes box never arrives late and pushes the sections down.
+  const drafts =
+    !!query.data && query.data.status === "draft" && query.data.can_edit;
+  const draftQuery = useMeetingDraft(id, { enabled: drafts });
+  if (query.isPending || (drafts && draftQuery.isPending)) {
+    return <MinutesPageSkeleton />;
+  }
   if (!query.data) {
     const missing = statusOf(query.error) === 404;
     return (
@@ -138,6 +150,7 @@ export function MinutesPage({ id }: { id: string }) {
     <Minutes
       key={query.data.id}
       meeting={query.data}
+      draftState={drafts ? (draftQuery.data ?? null) : null}
       onReload={async () => (await query.refetch()).data}
     />
   );
@@ -145,9 +158,12 @@ export function MinutesPage({ id }: { id: string }) {
 
 function Minutes({
   meeting,
+  draftState,
   onReload,
 }: {
   meeting: MeetingMinutes;
+  /** Where drafting from notes stands; null when it isn't offered here. */
+  draftState: MeetingDraftState | null;
   onReload: () => Promise<MeetingMinutes | undefined>;
 }) {
   const ids = useId();
@@ -168,7 +184,17 @@ function Minutes({
   const [loadedAt, setLoadedAt] = useState(meeting.updated_at);
   const [stale, setStale] = useState(false);
   const dirty = !sameDraft(draft, base);
-  const busy = update.isPending || post.isPending;
+  // While a draft is being written the sections are about to be replaced, so
+  // they wait: typing into them now would be lost or would strand the draft.
+  const drafting = draftState?.status === "drafting";
+  const busy = update.isPending || post.isPending || drafting;
+  const showNotes =
+    !!draftState && isDraft && editing && draftState.blocked !== "chapter_off";
+  const review =
+    draftState &&
+    (draftState.status === "applied" || draftState.status === "ready")
+      ? draftState.review
+      : null;
 
   function adopt(next: MeetingMinutes) {
     const fresh = draftOf(next);
@@ -423,101 +449,138 @@ function Minutes({
         </div>
       ) : null}
 
-      {editing ? (
-        <section aria-labelledby={`${ids}-type`} className="space-y-2">
-          <h3 id={`${ids}-type`} className="text-sm font-semibold">
-            Type
-          </h3>
-          <SegmentedChoice
-            label="Meeting type"
-            value={draft.meeting_type}
-            onChange={(meeting_type) =>
-              setDraft((current) => ({ ...current, meeting_type }))
-            }
-            options={MEETING_TYPES.map((value) => ({
-              value,
-              label: MEETING_TYPE_LABELS[value],
-            }))}
-          />
-          {draft.meeting_type === "other" ? (
-            <div className="grid max-w-sm gap-1">
-              <Label htmlFor={`${ids}-other`}>
-                What kind of meeting (optional)
-              </Label>
-              <Input
-                id={`${ids}-other`}
-                value={draft.other_label}
-                maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
+      {showNotes && draftState ? (
+        <NotesDraftPanel
+          meetingId={meeting.id}
+          eventStart={meeting.event_start_time}
+          state={draftState}
+          hasContent={!isMeetingContentEmpty(cleanContent(draft.content))}
+          disabled={update.isPending || post.isPending || stale}
+          prepare={async () => {
+            if (dirty) return (await save())?.updated_at ?? null;
+            // Nothing typed: build on the newest version, not the one this
+            // page happened to load.
+            const fresh = await onReload();
+            if (!fresh) return loadedAt;
+            adopt(fresh);
+            return fresh.updated_at;
+          }}
+          onSettled={() => void onReload()}
+          onStale={() => setStale(true)}
+          confirm={confirm}
+        />
+      ) : null}
+
+      <fieldset
+        disabled={drafting}
+        aria-busy={drafting || undefined}
+        className="m-0 min-w-0 space-y-8 border-0 p-0"
+      >
+        {editing ? (
+          <section aria-labelledby={`${ids}-type`} className="space-y-2">
+            <h3 id={`${ids}-type`} className="text-sm font-semibold">
+              Type
+            </h3>
+            <SegmentedChoice
+              label="Meeting type"
+              value={draft.meeting_type}
+              onChange={(meeting_type) =>
+                setDraft((current) => ({ ...current, meeting_type }))
+              }
+              options={MEETING_TYPES.map((value) => ({
+                value,
+                label: MEETING_TYPE_LABELS[value],
+              }))}
+            />
+            {draft.meeting_type === "other" ? (
+              <div className="grid max-w-sm gap-1">
+                <Label htmlFor={`${ids}-other`}>
+                  What kind of meeting (optional)
+                </Label>
+                <Input
+                  id={`${ids}-other`}
+                  value={draft.other_label}
+                  maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      other_label: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+            <p className="text-caption text-muted-foreground">
+              {STANDARDS_MEETING_NOTE}
+            </p>
+          </section>
+        ) : null}
+
+        {!editing && shown.length === 0 ? (
+          <InlineNote>
+            Nothing has been written in these minutes yet.
+          </InlineNote>
+        ) : null}
+
+        {shown.map((key) => (
+          <section
+            key={key}
+            aria-labelledby={`${ids}-${key}`}
+            className="space-y-2"
+          >
+            <h3 id={`${ids}-${key}`} className="text-base font-semibold">
+              {sectionLabel(key)}
+            </h3>
+            {key === "attendees" ? (
+              <Attendees meeting={meeting} nameFor={names.nameFor} />
+            ) : key === "decisions" ? (
+              editing ? (
+                <DecisionsEditor
+                  decisions={draft.content.decisions}
+                  onChange={(decisions) => editContent({ decisions })}
+                  quoteFor={(text) =>
+                    meetingDraftQuoteFor(review, "decision", text)
+                  }
+                />
+              ) : (
+                <DecisionsView decisions={base.content.decisions} />
+              )
+            ) : key === "action_items" ? (
+              editing ? (
+                <ActionItemsEditor
+                  disabled={drafting}
+                  items={draft.content.action_items}
+                  onChange={(action_items) => editContent({ action_items })}
+                  quoteFor={(text) =>
+                    meetingDraftQuoteFor(review, "action_item", text)
+                  }
+                />
+              ) : (
+                <ActionItemsView
+                  items={base.content.action_items}
+                  nameFor={names.nameFor}
+                />
+              )
+            ) : editing ? (
+              <Textarea
+                aria-labelledby={`${ids}-${key}`}
+                value={draft.content[key as MeetingTextSection]}
+                maxLength={MEETING_TEXT_MAX_LENGTH}
+                rows={key === "summary" ? 6 : 4}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    other_label: event.target.value,
-                  }))
+                  editContent({
+                    [key]: event.target.value,
+                  } as Partial<MeetingContent>)
                 }
               />
-            </div>
-          ) : null}
-          <p className="text-caption text-muted-foreground">
-            {STANDARDS_MEETING_NOTE}
-          </p>
-        </section>
-      ) : null}
-
-      {!editing && shown.length === 0 ? (
-        <InlineNote>Nothing has been written in these minutes yet.</InlineNote>
-      ) : null}
-
-      {shown.map((key) => (
-        <section
-          key={key}
-          aria-labelledby={`${ids}-${key}`}
-          className="space-y-2"
-        >
-          <h3 id={`${ids}-${key}`} className="text-base font-semibold">
-            {sectionLabel(key)}
-          </h3>
-          {key === "attendees" ? (
-            <Attendees meeting={meeting} nameFor={names.nameFor} />
-          ) : key === "decisions" ? (
-            editing ? (
-              <DecisionsEditor
-                decisions={draft.content.decisions}
-                onChange={(decisions) => editContent({ decisions })}
-              />
             ) : (
-              <DecisionsView decisions={base.content.decisions} />
-            )
-          ) : key === "action_items" ? (
-            editing ? (
-              <ActionItemsEditor
-                items={draft.content.action_items}
-                onChange={(action_items) => editContent({ action_items })}
-              />
-            ) : (
-              <ActionItemsView
-                items={base.content.action_items}
-                nameFor={names.nameFor}
-              />
-            )
-          ) : editing ? (
-            <Textarea
-              aria-labelledby={`${ids}-${key}`}
-              value={draft.content[key as MeetingTextSection]}
-              maxLength={MEETING_TEXT_MAX_LENGTH}
-              rows={key === "summary" ? 6 : 4}
-              onChange={(event) =>
-                editContent({
-                  [key]: event.target.value,
-                } as Partial<MeetingContent>)
-              }
-            />
-          ) : (
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-              {base.content[key as MeetingTextSection]}
-            </p>
-          )}
-        </section>
-      ))}
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {base.content[key as MeetingTextSection]}
+              </p>
+            )}
+          </section>
+        ))}
+      </fieldset>
 
       {confirmDialog}
     </div>
@@ -621,6 +684,19 @@ function ActionItemsView({
   );
 }
 
+/**
+ * The line of the officer's notes a drafted item came from, shown while the
+ * item still reads as drafted, so each one can be checked at a glance.
+ */
+function NotesQuote({ quote }: { quote: string | null }) {
+  if (!quote) return null;
+  return (
+    <p className="break-words text-caption text-muted-foreground">
+      From your notes: “{quote}”
+    </p>
+  );
+}
+
 function clampVote(value: string): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
@@ -630,9 +706,11 @@ function clampVote(value: string): number {
 function DecisionsEditor({
   decisions,
   onChange,
+  quoteFor,
 }: {
   decisions: MeetingDecision[];
   onChange: (next: MeetingDecision[]) => void;
+  quoteFor: (text: string) => string | null;
 }) {
   const ids = useId();
   const set = (index: number, patch: Partial<MeetingDecision>) =>
@@ -665,6 +743,7 @@ function DecisionsEditor({
               <X className="h-4 w-4" aria-hidden="true" />
             </IconButton>
           </div>
+          <NotesQuote quote={quoteFor(decision.text)} />
           {decision.vote ? (
             <div className="flex flex-wrap items-end gap-3">
               {(["for", "against", "abstain"] as const).map((side) => (
@@ -732,9 +811,14 @@ function DecisionsEditor({
 function ActionItemsEditor({
   items,
   onChange,
+  quoteFor,
+  disabled,
 }: {
+  /** The owner menu isn't a form control, so a disabled fieldset misses it. */
+  disabled: boolean;
   items: MeetingActionItem[];
   onChange: (next: MeetingActionItem[]) => void;
+  quoteFor: (text: string) => string | null;
 }) {
   const ids = useId();
   const rosterQuery = useChapterRoster();
@@ -774,10 +858,12 @@ function ActionItemsEditor({
               <X className="h-4 w-4" aria-hidden="true" />
             </IconButton>
           </div>
+          <NotesQuote quote={quoteFor(item.text)} />
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid min-w-0 gap-1">
               <Label htmlFor={`${ids}-${index}-owner`}>Who</Label>
               <Select
+                disabled={disabled}
                 value={item.owner_user_id ?? NO_OWNER}
                 onValueChange={(value) =>
                   set(index, {
