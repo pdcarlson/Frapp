@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
@@ -107,7 +107,7 @@ export default function ActivityScreen() {
   const faceFor = useActivityFaces();
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
-  const reread = useActivityReread();
+  const reread = useActivityReread({ standing: true });
   // The chip picked on this visit wins; until then, the one the member
   // last left the screen on, on this phone (#4402).
   const stored = useStoredActivityFilter();
@@ -137,19 +137,9 @@ export default function ActivityScreen() {
   );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   // How the member is doing this semester, above what needs them. Its own
-  // read: a failure leaves the rest of the page as it is.
+  // read: a failure leaves the rest of the page as it is. `useActivityReread`
+  // reads it again with the list, on each return and after an action here.
   const standing = useActivityStanding();
-  // Read again on each return, as Activity is (`useActivityReread`): a
-  // check-in or approved hours elsewhere moves these numbers.
-  const refetchStanding = standing.refetch;
-  const standingShown = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (standingShown.current) void refetchStanding();
-      standingShown.current = true;
-      return undefined;
-    }, [refetchStanding]),
-  );
   const router = useRouter();
   const openStanding = (destination: StandingDestination) => {
     // Tasks and Events are tabs: go to them rather than stack a second copy.

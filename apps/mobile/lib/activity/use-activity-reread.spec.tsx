@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as expoRouter from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityKeys } from "@repo/hooks";
+import { activityKeys, activityStandingKeys } from "@repo/hooks";
 
 /**
  * The re-read More and the Activity screen share (#3897): a tab is never
@@ -28,6 +28,14 @@ const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 const hook = { reread: () => {} };
 function Probe() {
   const reread = useActivityReread();
+  React.useEffect(() => {
+    hook.reread = reread;
+  }, [reread]);
+  return null;
+}
+
+function StandingProbe() {
+  const reread = useActivityReread({ standing: true });
   React.useEffect(() => {
     hook.reread = reread;
   }, [reread]);
@@ -73,6 +81,21 @@ describe("useActivityReread (#3897)", () => {
   it("hands back the re-read for a screen's own actions", () => {
     act(() => hook.reread());
     expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the standing too when the screen draws it", () => {
+    act(() => {
+      tree.update(
+        <QueryClientProvider client={queryClient}>
+          <StandingProbe />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => hook.reread());
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityStandingKeys.chapter("chapter-1"),
+      exact: true,
+    });
   });
 
   it("reads nothing without a chapter", () => {

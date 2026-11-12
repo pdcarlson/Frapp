@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { checkInWindowBounds, isModuleEnabled } from '@repo/validation';
+import {
+  MAX_CHECK_IN_OPENS_MINUTES,
+  checkInWindowBounds,
+  isModuleEnabled,
+} from '@repo/validation';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -65,12 +69,6 @@ export interface StandingStudy {
 }
 
 export interface ActivityStanding {
-  /**
-   * Where "this semester" begins: the end of the latest archived semester's
-   * last day. `null` when the chapter has never rolled a semester over, and
-   * the semester is everything so far.
-   */
-  semester_since: string | null;
   /** `null` when the chapter has Points off, or the read failed. */
   points: StandingPoints | null;
   /** `null` when the chapter has Events off, or the read failed. */
@@ -181,35 +179,33 @@ export class ActivityStandingService {
       return result.value;
     };
 
-    const [points, requiredEvents, service, study, semester] =
-      await Promise.all([
-        on('points')
-          ? this.settle('points', chapterId, () =>
-              this.readPoints(chapterId, userId),
-            )
-          : OFF,
-        on('events')
-          ? this.settle('required_events', chapterId, async () =>
-              this.readRequiredEvents(
-                chapterId,
-                userId,
-                await sinceOrThrow(),
-                now,
-              ),
-            )
-          : OFF,
-        on('hours')
-          ? this.settle('service', chapterId, async () =>
-              this.readService(chapterId, userId, await sinceOrThrow()),
-            )
-          : OFF,
-        on('hours')
-          ? this.settle('study', chapterId, () =>
-              this.readStudy(chapterId, userId, weekStart),
-            )
-          : OFF,
-        since,
-      ]);
+    const [points, requiredEvents, service, study] = await Promise.all([
+      on('points')
+        ? this.settle('points', chapterId, () =>
+            this.readPoints(chapterId, userId),
+          )
+        : OFF,
+      on('events')
+        ? this.settle('required_events', chapterId, async () =>
+            this.readRequiredEvents(
+              chapterId,
+              userId,
+              await sinceOrThrow(),
+              now,
+            ),
+          )
+        : OFF,
+      on('hours')
+        ? this.settle('service', chapterId, async () =>
+            this.readService(chapterId, userId, await sinceOrThrow()),
+          )
+        : OFF,
+      on('hours')
+        ? this.settle('study', chapterId, () =>
+            this.readStudy(chapterId, userId, weekStart),
+          )
+        : OFF,
+    ]);
 
     const unavailable: StandingSection[] = [];
     const valueOf = <T>(
@@ -223,9 +219,6 @@ export class ActivityStandingService {
     };
 
     return {
-      semester_since: semester.ok
-        ? (semester.value?.toISOString() ?? null)
-        : null,
       points: valueOf('points', points),
       required_events: valueOf('required_events', requiredEvents),
       service: valueOf('service', service),
@@ -238,18 +231,20 @@ export class ActivityStandingService {
     chapterId: string,
     userId: string,
   ): Promise<StandingPoints> {
-    const [summary, board] = await Promise.all([
-      this.pointsService.getUserSummary(chapterId, userId, 'semester'),
-      this.pointsService.getLeaderboard(chapterId, 'semester'),
-    ]);
+    // The board already holds the member's semester total: every current
+    // member is on it (at 0 with no points), and so is anyone who scored in
+    // the window. Reading the total anywhere else would load their whole
+    // ledger and could land on a different semester mid-rollover.
+    const board = await this.pointsService.getLeaderboard(
+      chapterId,
+      'semester',
+    );
     const index = board.findIndex((row) => row.user_id === userId);
-    let rank: number | null = null;
-    if (index >= 0) {
-      // Equal totals share a place: the first row on this total is the rank.
-      const total = board[index].total;
-      rank = board.findIndex((row) => row.total === total) + 1;
-    }
-    return { total: summary.balance, rank, ranked: board.length };
+    if (index < 0) return { total: 0, rank: null, ranked: board.length };
+    // Equal totals share a place: the first row on this total is the rank.
+    const total = board[index].total;
+    const rank = board.findIndex((row) => row.total === total) + 1;
+    return { total, rank, ranked: board.length };
   }
 
   private async readRequiredEvents(
@@ -274,10 +269,14 @@ export class ActivityStandingService {
       );
 
     // With the viewer, as Activity's Coming up reads them, so an event that
-    // leaves the member out is never counted against them.
+    // leaves the member out is never counted against them. The window reaches
+    // as far ahead as check-in can open, so an event checked in to (or
+    // excused) before it starts counts at once.
     const events = await this.eventService.findByChapter(chapterId, userId, {
       endsAfter: (from ?? new Date(0)).toISOString(),
-      startsBefore: now.toISOString(),
+      startsBefore: new Date(
+        now.getTime() + MAX_CHECK_IN_OPENS_MINUTES * 60 * 1000,
+      ).toISOString(),
     });
     const required = events.filter(
       (event) =>
@@ -340,14 +339,13 @@ export class ActivityStandingService {
     userId: string,
     weekStart: Date,
   ): Promise<StandingStudy> {
-    const sessions = await this.studyService.listSessions(userId, chapterId);
-    const from = weekStart.getTime();
+    const sessions = await this.studyService.listSessionsStartedSince(
+      userId,
+      chapterId,
+      weekStart,
+    );
     const minutes = sessions
-      .filter(
-        (session) =>
-          ENDED_STUDY.has(session.status) &&
-          new Date(session.start_time).getTime() >= from,
-      )
+      .filter((session) => ENDED_STUDY.has(session.status))
       .reduce((sum, session) => sum + session.total_foreground_minutes, 0);
     return { minutes, week_start: weekStart.toISOString() };
   }

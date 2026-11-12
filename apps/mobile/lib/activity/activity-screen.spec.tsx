@@ -7,7 +7,7 @@ import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityKeys } from "@repo/hooks";
+import { activityKeys, activityStandingKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
@@ -234,6 +234,17 @@ const screen = () => (
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+
+/**
+ * Each re-read invalidates the list and the standing together, so a count of
+ * re-reads is a count of the list's invalidations.
+ */
+const listRereads = (invalidate: ReturnType<typeof vi.spyOn>) =>
+  invalidate.mock.calls.filter(
+    ([filters]: unknown[]) =>
+      JSON.stringify((filters as { queryKey?: unknown }).queryKey) ===
+      JSON.stringify(activityKeys.chapter("chapter-1")),
+  ).length;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -757,7 +768,6 @@ describe("Activity screen (#3897)", () => {
 
   describe("This semester (the standing)", () => {
     const standingRead = {
-      semester_since: "2026-09-01T23:59:59.999Z",
       points: { total: 42, rank: 5, ranked: 58 },
       required_events: { required: 8, attended: 6, excused: 0 },
       service: { approved_minutes: 270, pending_minutes: 0 },
@@ -810,11 +820,15 @@ describe("Activity screen (#3897)", () => {
       expect(rowLabels(tree)).toContain("Book the venue");
     });
 
-    it("reads again when the member comes back, not on the first visit", () => {
+    it("reads again with the list when the member comes back, not on the first visit", () => {
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
       render();
-      expect(standing.value.refetch).not.toHaveBeenCalled();
+      expect(invalidate).not.toHaveBeenCalled();
       act(() => refocus());
-      expect(standing.value.refetch).toHaveBeenCalledTimes(1);
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: activityStandingKeys.chapter("chapter-1"),
+        exact: true,
+      });
     });
   });
 
@@ -847,12 +861,12 @@ describe("Activity screen (#3897)", () => {
     act(() => {
       sheet.props!.onActed();
     });
-    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(listRereads(invalidate)).toBe(1);
     act(() => {
       sheet.props!.onClosed();
     });
-    expect(invalidate).toHaveBeenCalledTimes(2);
-    expect(invalidate).toHaveBeenLastCalledWith({
+    expect(listRereads(invalidate)).toBe(2);
+    expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter("chapter-1"),
       exact: true,
     });
@@ -1462,7 +1476,7 @@ describe("Activity screen (#3897)", () => {
       act(() => {
         sheet.props!.onClosed();
       });
-      expect(invalidate).toHaveBeenCalledTimes(1);
+      expect(listRereads(invalidate)).toBe(1);
     });
 
     it("opens a thread reply in its thread, and a channel message in its channel", () => {

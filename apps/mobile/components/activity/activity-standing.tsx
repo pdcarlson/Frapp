@@ -6,6 +6,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PressableRow, SectionHeader } from "@/components/list-section";
+import { meterStyles } from "@/components/meter";
 import { SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -34,9 +35,9 @@ const DESTINATION: Record<StandingRow["id"], StandingDestination> = {
  * A row opens the screen that owns its number. Only required events draw a
  * meter, because only they have a target; a chapter sets no goal for points
  * or hours yet (#1062), and a bar with an invented end would read as a rule.
- * The meter is the poll card's (`components/chat/poll-card.tsx`): accent on
- * a `--background` groove, inside a card so the groove recedes, and never
- * the only signal, since the row says "6 of 8" in words.
+ * The meter is the poll card's (`components/meter.ts`): accent on a
+ * `--background` groove, inside a card so the groove recedes, and never the
+ * only signal, since the row says "6 of 8" in words.
  */
 export function ActivityStanding({
   standing,
@@ -182,15 +183,7 @@ function createStyles(tokens: SignetTokens) {
       fontVariant: ["tabular-nums"],
       color: tokens.color.text.mutedForeground,
     },
-    meterTrack: {
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: tokens.color.surface.background,
-      overflow: "hidden",
-    },
-    meterFill: {
-      height: "100%",
-      borderRadius: 2,
-    },
+    meterTrack: meterStyles(tokens).track,
+    meterFill: meterStyles(tokens).fill,
   });
 }

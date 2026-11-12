@@ -7707,11 +7707,6 @@ export interface components {
             week_start: string;
         };
         ActivityStandingDto: {
-            /**
-             * Format: date-time
-             * @description Where this semester begins: the end of the latest archived semester. Null when the chapter has never rolled over, so the semester is everything so far.
-             */
-            semester_since: string | null;
             /** @description Null when Points is off or couldn’t be read. */
             points: components["schemas"]["StandingPointsDto"] | null;
             /** @description Null when Events is off or couldn’t be read. */

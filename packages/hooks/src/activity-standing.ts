@@ -14,8 +14,8 @@ export const activityStandingKeys = createChapterQueryKeys("activity-standing");
 
 /**
  * The start of the member's week on this device: last Sunday at local
- * midnight, the week the phone's Study screen counts (`startOfWeek` in
- * `apps/mobile/lib/study/format.ts`).
+ * midnight. The phone's Study screen and More row count this week too
+ * (`startOfWeek` in `apps/mobile/lib/study/format.ts` returns it).
  */
 export function localWeekStart(now: Date = new Date()): Date {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());

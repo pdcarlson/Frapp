@@ -97,7 +97,7 @@ export class ActivityController {
     const weekStart = query.week_start ? new Date(query.week_start) : undefined;
     if (weekStart && !acceptableWeekStart(weekStart, now)) {
       throw new BadRequestException(
-        'week_start must be within the last eight days',
+        'week_start must be between eight days ago and a day from now',
       );
     }
     return this.standingService.getStanding(chapterId, userId, enabledModules, {

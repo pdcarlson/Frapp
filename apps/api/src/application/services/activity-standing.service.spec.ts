@@ -24,6 +24,8 @@ const at = (offsetMs: number) =>
   new Date(NOW.getTime() + offsetMs).toISOString();
 // The latest archive ended 1 Sep, so the semester is everything after it.
 const SEMESTER_SINCE = new Date('2026-09-01T23:59:59.999Z');
+// The events read reaches as far ahead as check-in can open (two hours).
+const READ_UNTIL = at(2 * HOUR);
 
 const event = (overrides: Partial<Event>): Event =>
   ({
@@ -90,7 +92,6 @@ function build(
     roleIds?: string[];
     joinedAt?: string;
     board?: { user_id: string; total: number }[];
-    balance?: number;
     events?: Event[];
     rows?: EventAttendance[];
     entries?: ServiceEntry[];
@@ -104,16 +105,15 @@ function build(
       .mockResolvedValue(
         options.since === undefined ? SEMESTER_SINCE : options.since,
       ),
-    getUserSummary: jest
-      .fn()
-      .mockResolvedValue({ balance: options.balance ?? 0, transactions: [] }),
     getLeaderboard: jest.fn().mockResolvedValue(options.board ?? []),
   };
   const serviceEntryService = {
     findByChapterFiltered: jest.fn().mockResolvedValue(options.entries ?? []),
   };
   const studyService = {
-    listSessions: jest.fn().mockResolvedValue(options.sessions ?? []),
+    listSessionsStartedSince: jest
+      .fn()
+      .mockResolvedValue(options.sessions ?? []),
   };
   const eventService = {
     findByChapter: jest.fn().mockResolvedValue(options.events ?? []),
@@ -169,7 +169,6 @@ describe('ActivityStandingService', () => {
   describe('points', () => {
     it('serves the semester total and the place on the semester board', async () => {
       const { service, pointsService } = build({
-        balance: 42,
         board: [
           { user_id: OTHER, total: 60 },
           { user_id: ME, total: 42 },
@@ -178,11 +177,6 @@ describe('ActivityStandingService', () => {
       });
       const standing = await read(service);
       expect(standing.points).toEqual({ total: 42, rank: 2, ranked: 3 });
-      expect(pointsService.getUserSummary).toHaveBeenCalledWith(
-        CHAPTER,
-        ME,
-        'semester',
-      );
       expect(pointsService.getLeaderboard).toHaveBeenCalledWith(
         CHAPTER,
         'semester',
@@ -289,6 +283,50 @@ describe('ActivityStandingService', () => {
       });
     });
 
+    it('counts a check-in or an excusal made before the event starts', async () => {
+      // Check-in opens up to two hours early; the read reaches that far ahead.
+      const soon = {
+        start_time: at(HOUR),
+        end_time: at(2 * HOUR),
+        check_in_opens_minutes: 120,
+      };
+      const { service } = build({
+        events: [
+          event({ id: 'early-in', ...soon }),
+          event({ id: 'excused-ahead', ...soon }),
+          event({ id: 'not-yet', ...soon }),
+        ],
+        rows: [
+          attendance('early-in', 'PRESENT'),
+          attendance('excused-ahead', 'EXCUSED'),
+        ],
+      });
+      expect((await read(service)).required_events).toEqual({
+        required: 1,
+        attended: 1,
+        excused: 1,
+      });
+    });
+
+    it('reads from the semester start when the member joined before it', async () => {
+      const { service, eventService } = build({
+        joinedAt: '2026-01-15T00:00:00.000Z',
+        events: [
+          // Last spring's meeting: after they joined, before this semester.
+          event({
+            id: 'last-semester',
+            start_time: '2026-04-01T18:00:00.000Z',
+          }),
+          event({ id: 'this-semester' }),
+        ],
+      });
+      expect((await read(service)).required_events?.required).toBe(1);
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: SEMESTER_SINCE.toISOString(),
+        startsBefore: READ_UNTIL,
+      });
+    });
+
     it('reads from the semester start, and leaves out events before the member joined', async () => {
       const joinedAt = at(-10 * DAY);
       const { service, eventService } = build({
@@ -301,7 +339,7 @@ describe('ActivityStandingService', () => {
       expect((await read(service)).required_events?.required).toBe(1);
       expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
         endsAfter: joinedAt,
-        startsBefore: NOW.toISOString(),
+        startsBefore: READ_UNTIL,
       });
     });
 
@@ -310,11 +348,10 @@ describe('ActivityStandingService', () => {
         since: null,
         joinedAt: 'not a date',
       });
-      const standing = await read(service);
-      expect(standing.semester_since).toBeNull();
+      await read(service);
       expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
         endsAfter: new Date(0).toISOString(),
-        startsBefore: NOW.toISOString(),
+        startsBefore: READ_UNTIL,
       });
     });
   });
@@ -345,7 +382,7 @@ describe('ActivityStandingService', () => {
   describe('study', () => {
     it("sums ended sessions that started in the client's week", async () => {
       const weekStart = new Date('2026-11-08T05:00:00.000Z');
-      const { service } = build({
+      const { service, studyService } = build({
         sessions: [
           session({ id: 'in-week', total_foreground_minutes: 50 }),
           session({
@@ -358,17 +395,19 @@ describe('ActivityStandingService', () => {
             status: 'ACTIVE',
             total_foreground_minutes: 30,
           }),
-          session({
-            id: 'last-week',
-            start_time: '2026-11-08T04:00:00.000Z',
-            total_foreground_minutes: 100,
-          }),
         ],
       });
       expect((await read(service, null, weekStart)).study).toEqual({
         minutes: 70,
         week_start: weekStart.toISOString(),
       });
+      // The week bound is the query's, and the read is the one that settles
+      // nothing (so a hot read never writes).
+      expect(studyService.listSessionsStartedSince).toHaveBeenCalledWith(
+        ME,
+        CHAPTER,
+        weekStart,
+      );
     });
 
     it('defaults the week to last Sunday at midnight UTC', () => {
@@ -400,14 +439,18 @@ describe('ActivityStandingService', () => {
         study: null,
         unavailable: [],
       });
-      expect(pointsService.getUserSummary).not.toHaveBeenCalled();
+      expect(pointsService.getLeaderboard).not.toHaveBeenCalled();
       expect(eventService.findByChapter).not.toHaveBeenCalled();
-      expect(studyService.listSessions).not.toHaveBeenCalled();
+      expect(studyService.listSessionsStartedSince).not.toHaveBeenCalled();
     });
 
     it('names a part that fails and serves the others', async () => {
-      const { service, studyService } = build({ balance: 5 });
-      studyService.listSessions.mockRejectedValue(new Error('boom'));
+      const { service, studyService } = build({
+        board: [{ user_id: ME, total: 5 }],
+      });
+      studyService.listSessionsStartedSince.mockRejectedValue(
+        new Error('boom'),
+      );
       const standing = await read(service);
       expect(standing.study).toBeNull();
       expect(standing.unavailable).toEqual(['study']);

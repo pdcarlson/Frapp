@@ -24303,12 +24303,6 @@
       "ActivityStandingDto": {
         "type": "object",
         "properties": {
-          "semester_since": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "Where this semester begins: the end of the latest archived semester. Null when the chapter has never rolled over, so the semester is everything so far."
-          },
           "points": {
             "nullable": true,
             "description": "Null when Points is off or couldn’t be read.",
@@ -24364,7 +24358,6 @@
           }
         },
         "required": [
-          "semester_since",
           "points",
           "required_events",
           "service",

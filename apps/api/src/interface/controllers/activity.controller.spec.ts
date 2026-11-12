@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
@@ -21,6 +22,7 @@ describe('ActivityController', () => {
     markRead: jest.fn(),
     startUnread: jest.fn(),
   };
+  const standingService = { getStanding: jest.fn() };
   const linkService = {
     setState: jest.fn(),
     clearState: jest.fn(),
@@ -33,7 +35,7 @@ describe('ActivityController', () => {
       providers: [
         { provide: ActivityService, useValue: activityService },
         { provide: ActivityLinkService, useValue: linkService },
-        { provide: ActivityStandingService, useValue: {} },
+        { provide: ActivityStandingService, useValue: standingService },
       ],
     }).compile();
     controller = module.get(ActivityController);
@@ -75,6 +77,41 @@ describe('ActivityController', () => {
       enabledModules,
     );
     expect(result).toBe(view);
+  });
+
+  describe('standing', () => {
+    it('hands the service the chapter, the caller, the toggles and the week', async () => {
+      const standing = { unavailable: [] };
+      standingService.getStanding.mockResolvedValue(standing);
+      const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const enabledModules = { hours: false };
+
+      const result = await controller.getStanding(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        { week_start: weekStart.toISOString() },
+      );
+
+      expect(standingService.getStanding).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        { weekStart, now: expect.any(Date) },
+      );
+      expect(result).toBe(standing);
+    });
+
+    it('refuses a week start that would widen "this week"', async () => {
+      const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+      await expect(
+        controller.getStanding('chapter-1', 'user-1', null, {
+          week_start: yearAgo.toISOString(),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(standingService.getStanding).not.toHaveBeenCalled();
+    });
   });
 
   describe('links (#3897)', () => {

@@ -57,6 +57,7 @@ import {
   activityGroups,
   activityRowAction,
   activityKeys,
+  activityStandingKeys,
   activitySummary,
   useActiveChapterId,
   useActivity,
@@ -492,12 +493,19 @@ export function ActivityPage() {
     );
   }
 
+  // The standing too: a check-in or approval from a row here moves it.
   const reread = (): Promise<unknown> =>
     chapterId
-      ? queryClient.invalidateQueries({
-          queryKey: activityKeys.chapter(chapterId),
-          exact: true,
-        })
+      ? Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: activityKeys.chapter(chapterId),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: activityStandingKeys.chapter(chapterId),
+            exact: true,
+          }),
+        ])
       : Promise.resolve();
   const refresh = () => void reread();
   // Acting on an item from Activity reads it, as opening it does (#4402).

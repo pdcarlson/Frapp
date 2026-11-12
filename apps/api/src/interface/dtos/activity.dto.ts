@@ -600,15 +600,6 @@ export class StandingStudyDto implements StandingStudy {
 
 export class ActivityStandingDto implements ActivityStanding {
   @ApiProperty({
-    type: String,
-    format: 'date-time',
-    nullable: true,
-    description:
-      'Where this semester begins: the end of the latest archived semester. Null when the chapter has never rolled over, so the semester is everything so far.',
-  })
-  semester_since: string | null;
-
-  @ApiProperty({
     type: StandingPointsDto,
     nullable: true,
     description: 'Null when Points is off or couldn’t be read.',

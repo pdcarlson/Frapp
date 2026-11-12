@@ -217,7 +217,6 @@ describe("ActivityPage", () => {
     mockStanding.mockReturnValue({
       isPending: false,
       data: {
-        semester_since: null,
         points: { total: 42, rank: 5, ranked: 58 },
         required_events: { required: 8, attended: 6, excused: 1 },
         service: null,

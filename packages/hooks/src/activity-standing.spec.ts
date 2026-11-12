@@ -6,7 +6,6 @@ import {
 } from "./activity-standing";
 
 const standing = (overrides: Partial<ActivityStanding>): ActivityStanding => ({
-  semester_since: "2026-09-01T23:59:59.999Z",
   points: { total: 42, rank: 5, ranked: 58 },
   required_events: { required: 8, attended: 6, excused: 1 },
   service: { approved_minutes: 270, pending_minutes: 90 },

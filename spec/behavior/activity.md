@@ -4,7 +4,8 @@ The Activity page gathers, for one member, what is waiting on them and what they
 don't have to look through channels and module pages to find it (#3897). It is an inbox beside
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
-This file owns the read behind the page, `GET /v1/activity`. The page itself (where it sits, how
+This file owns the reads behind the page, `GET /v1/activity` and its
+[standing](#standing), `GET /v1/activity/standing`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
 the phone's screen, reached from the More hub, is in
@@ -104,11 +105,11 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 `GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block at the top of the page (Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
 
-- **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)). `semester_since` says which.
+- **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
 - **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).
-- **Required events:** events that hold the caller to them by the absence sweep's rule (`memberAttendance`: required for them by their roles, and never an alumnus by the event's default alone), read with the caller as viewer so an event that leaves them out never counts. Only events since the semester began and since the caller joined. An event counts once its check-in has closed, or as soon as they checked in. `attended` is marked present or late; an event they were excused from is counted as `excused` and left out of `required`, so "6 of 8" is out of the events that held them.
+- **Required events:** events that hold the caller to them by the absence sweep's rule (`memberAttendance`: required for them by their roles, and never an alumnus by the event's default alone), read with the caller as viewer so an event that leaves them out never counts. Only events since the semester began and since the caller joined. An event counts once its check-in has closed, or as soon as they checked in, even before it starts. `attended` is marked present or late; an event they were excused from is counted as `excused` and left out of `required`, so "6 of 8" is out of the events that held them.
 - **Service:** approved and pending minutes on the caller's entries dated from the day after the archived semester's last day (that day is the archive's).
-- **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
+- **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The read settles nothing: a paused session whose grace ran out counts once Study settles it. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
 - **No targets.** Nothing in the schema says how many points or hours a member owes, so only required events, whose target is the events themselves, draw a meter. Goals a chapter sets are [#1062](https://github.com/pdcarlson/Frapp/issues/1062).
 
