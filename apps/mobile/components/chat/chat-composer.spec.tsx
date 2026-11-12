@@ -648,13 +648,60 @@ describe("ChatComposer clears the box on send", () => {
     }
   });
 
-  it("turns away only the first change after the send", () => {
+  it("turns away the copy carrying the keystroke or correction that was in flight", () => {
     vi.useFakeTimers();
     try {
-      const { props, type } = sendFrom("ok");
-      type("o");
-      type("ok");
-      expect(props.onChangeText).toHaveBeenLastCalledWith("ok");
+      const first = sendFrom("hell");
+      first.type("hello");
+      expect(first.props.onChangeText).not.toHaveBeenCalled();
+
+      // Winston's: iOS fixed "submitproof" as the box held on to it.
+      const second = sendFrom("You should have to submitproof");
+      second.type("You should have to submit proof");
+      second.type("You should have to submit proof ");
+      expect(second.props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes every letter of the next message once it has started", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      type("h");
+      type("hel");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hel");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a short message sent twice in a row, a letter or an emoji", () => {
+    vi.useFakeTimers();
+    try {
+      const letter = sendFrom("k");
+      letter.type("k");
+      expect(letter.props.onChangeText).toHaveBeenLastCalledWith("k");
+
+      const emoji = sendFrom("👍🏽");
+      emoji.type("👍🏽");
+      expect(emoji.props.onChangeText).toHaveBeenLastCalledWith("👍🏽");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("after saving an edit over a draft, keeps the draft and turns away the edit's copy", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type, rerender } = sendFrom("see you there instead");
+      // The save hands the box back the member's draft, not an empty one.
+      rerender("see you at 7");
+      type("see you there instead");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+      type("see you at 7!");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("see you at 7!");
     } finally {
       vi.useRealTimers();
     }
@@ -672,12 +719,14 @@ describe("ChatComposer clears the box on send", () => {
     }
   });
 
-  it("clears the field again once the draft is empty, in case the first clear was dropped", () => {
+  it("clears the field again a frame later, and once more after a busy thread catches up", () => {
     vi.useFakeTimers();
     try {
       const { clear } = sendFrom("hello");
-      act(() => vi.advanceTimersByTime(400));
-      expect(clear).toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(20));
+      expect(clear).toHaveBeenCalledTimes(1);
+      act(() => vi.advanceTimersByTime(300));
+      expect(clear).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
