@@ -13,13 +13,14 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { Badge } from "@/components/ui/badge";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { studyZoneRulesLine } from "@repo/validation";
 import {
   geofenceStatusKind,
   geofenceStatusLabel,
-  studyZoneRulesLine,
 } from "@/components/geofences/geofence-status";
 import {
   anyReadUncached,
@@ -36,14 +37,13 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { GeofenceRowsSkeleton } from "@/components/geofences/geofences-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
 import {
   StudyZoneEditor,
   type StudyZone,
 } from "@/components/geofences/study-zone-editor";
-import { zoneShapeLine } from "@/components/geofences/zone-shape";
 
 /**
  * The chapter's study zones, inside Chapter settings' Study zones page.
@@ -227,62 +227,91 @@ export function StudyZonesManager() {
             </InlineNote>
           ) : (
             <ul aria-label="Study zones" className={denseListClassName}>
-              {zones.map((zone) => (
-                <li
-                  key={zone.id}
-                  className="flex min-h-11 flex-col gap-2 py-2.5 @md:flex-row @md:items-center @md:gap-3"
-                >
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <StudyZonesGlyph
-                      aria-hidden="true"
-                      className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {zone.name}
-                      </p>
-                      <p className="text-caption text-muted-foreground">
-                        {[zoneShapeLine(zone), studyZoneRulesLine(zone)]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </div>
-                    <Badge
-                      className="shrink-0"
-                      variant={geofenceStatusKind(zone.is_active)}
-                    >
-                      {geofenceStatusLabel(zone.is_active)}
-                    </Badge>
-                  </div>
-                  {/*
-                    PATCH and DELETE sit behind the same guard as create, so
-                    the row actions follow the same gate.
-                  */}
-                  <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 @md:pl-0">
-                    <IconButton
-                      label={`Edit ${zone.name}`}
-                      {...gate.controlProps()}
-                      onClick={() => openEditor(zone)}
-                    >
-                      <Pencil />
-                    </IconButton>
-                    <IconButton
-                      label={`${zone.is_active ? "Disable" : "Enable"} ${zone.name}`}
-                      {...gate.controlProps()}
-                      onClick={() => void toggleActive(zone)}
-                    >
-                      {zone.is_active ? <PowerOff /> : <Power />}
-                    </IconButton>
-                    <IconButton
-                      label={`Delete ${zone.name}`}
-                      {...gate.controlProps()}
-                      onClick={() => void handleDelete(zone)}
-                    >
-                      <Trash2 />
-                    </IconButton>
-                  </div>
-                </li>
-              ))}
+              {zones.map((zone) => {
+                const blocked = !gate.allowed;
+                const describedBy = gate.controlProps()["aria-describedby"];
+                const entries: RowMenuEntry[] = [
+                  {
+                    type: "item",
+                    key: "edit",
+                    label: "Edit",
+                    icon: Pencil,
+                    disabled: blocked,
+                    describedBy,
+                    onSelect: () => openEditor(zone),
+                  },
+                  {
+                    type: "item",
+                    key: "active",
+                    label: zone.is_active ? "Turn off" : "Turn on",
+                    icon: zone.is_active ? PowerOff : Power,
+                    disabled: blocked,
+                    describedBy,
+                    onSelect: () => void toggleActive(zone),
+                  },
+                  { type: "separator", key: "sep" },
+                  {
+                    type: "item",
+                    key: "delete",
+                    label: "Delete",
+                    icon: Trash2,
+                    destructive: true,
+                    disabled: blocked,
+                    describedBy,
+                    onSelect: () => void handleDelete(zone),
+                  },
+                ];
+                return (
+                  <RowMenu
+                    key={zone.id}
+                    entries={entries}
+                    label={`More for ${zone.name}`}
+                  >
+                    {(menuButton) => (
+                      // The row opens the zone, as a row in iOS Settings or
+                      // Discord's role list does; turning it off and deleting
+                      // it sit on the ⋯ menu and right-click, out of the way.
+                      // PATCH and DELETE sit behind the same guard as create,
+                      // so they follow the same gate.
+                      <li className="group flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditor(zone)}
+                          {...gate.controlProps()}
+                          className={cn(
+                            "flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-card-hover disabled:cursor-not-allowed",
+                            FOCUS_RING,
+                          )}
+                        >
+                          <StudyZonesGlyph
+                            aria-hidden="true"
+                            className="h-4 w-4 shrink-0 text-muted-foreground"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-foreground">
+                              {zone.name}
+                            </span>
+                            <span className="block truncate text-caption text-muted-foreground">
+                              {studyZoneRulesLine(zone)}
+                            </span>
+                          </span>
+                          {zone.is_active ? null : (
+                            // Only the exception is marked: a list where
+                            // every row says Active says nothing.
+                            <Badge
+                              className="shrink-0"
+                              variant={geofenceStatusKind(false)}
+                            >
+                              {geofenceStatusLabel(false)}
+                            </Badge>
+                          )}
+                        </button>
+                        {menuButton}
+                      </li>
+                    )}
+                  </RowMenu>
+                );
+              })}
             </ul>
           )}
 
