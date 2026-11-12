@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { type useUpdateChapter } from "@repo/hooks";
-import { AA_NORMAL, normalizeHex } from "@repo/color";
+import { normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
 import {
@@ -77,8 +77,7 @@ export function useAccentDraft(
 ) {
   const [value, setValue] = useState("");
   // The server's own §8 disclosure from the last successful save — distinct
-  // from `previewInkFailsAA` in the tab, which is a client-side check of the
-  // unsaved draft. Cleared on the next edit so a stale warning never survives
+  // from the tab's client-side checks of the unsaved draft. Cleared on the next edit so a stale warning never survives
   // past the accent it was measured against (#1183).
   const [contrastWarning, setContrastWarning] = useState<
     FailedContrastCheck[] | null
@@ -156,33 +155,19 @@ export function SettingsAccentTab({
   const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
 
   /*
-    The on-accent tone for the *draft* colour, and whether it is legible.
+    The label tone the "Preview" swatch draws on the draft colour: the better
+    of the two (`previewInkFor`), never `--primary-foreground`, for the reason
+    the swatch below gives.
 
-    See the swatch below for why `--primary-foreground` cannot answer this.
-    What matters here is the `?? ` this used to end with: `pickAccessibleColor`
-    returns `null` when *neither* candidate clears AA, and falling back to
-    `gold.onHouse` reasserted a tone it had just rejected. The review typed an
-    ordinary blue — nothing exotic — and got "Preview" at a sub-AA ratio with
-    no warning, which is the same defect one layer down from the one this
-    swatch was being fixed for. (`#0086FE` on the 2026-11-05 ladder: kept by
-    the resolver on `--card`, ink under AA. Since the 2026-11-12 ladder's
-    lighter `--card` (#3826) no kept colour's ink misses AA, so this branch
-    is a guard no real input reaches; `settings-contrast.spec.ts` sweeps it.)
-
-    The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
-    reject that accent. It asks whether the accent is legible **as text on the
-    card**, which is a different question from whether text is legible **on
-    the accent**, and it answers `reason: "ok"`.
-
-    So: always the better of the two rather than the first that passes, which
-    is defined for every input; and when the better one still misses, the
-    screen says so instead of drawing an illegible label and calling it a
-    preview. `writing.md` §7 carries the string.
+    A warning used to sit under the swatch for a kept colour whose best label
+    still missed 4.5:1 (`#0086FE` on the 2026-11-05 ladder). Since the
+    2026-11-12 ladder's lighter `--card` (#3826) no colour the resolver keeps
+    reaches that band, so it was deleted in #4388 rather than kept as a branch
+    no member can see. `settings-contrast.spec.ts` sweeps the band and fails if
+    a ladder change reopens it; bring a warning back then.
   */
   const preview = previewInkFor(accent.resolvedAccent);
   const previewInk = preview?.ink ?? signetDarkTokens.color.gold.onHouse;
-  const previewInkRatio = preview?.ratio ?? 0;
-  const previewInkFailsAA = preview !== null && previewInkRatio < AA_NORMAL;
 
   async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -311,9 +296,9 @@ export function SettingsAccentTab({
               background*, and no on-accent tone at all.
 
               So it is computed here, from the draft, against §4's own
-              two ends of the text ladder — and where neither clears
-              AA, the caption below says so rather than the swatch
-              drawing an illegible word and calling it a preview.
+              two ends of the text ladder, taking the better one. No
+              kept colour's best tone misses AA on today's ladder
+              (#4388, `settings-contrast.spec.ts`).
             */}
             <div
               className="flex h-10 w-36 items-center justify-center rounded-md text-sm font-semibold pointer-coarse:h-11"
@@ -345,31 +330,9 @@ export function SettingsAccentTab({
             </p>
           ) : null}
           {/*
-            A second, different question from the one above. That
-            warning fires when the accent is illegible *as text on the
-            card*; this one when text is illegible *on the accent* —
-            which is what a primary button actually is, and what this
-            card's own description promises the accent will be used
-            for. `#0086FE` passed the first and failed this one on the
-            2026-11-05 ladder; on the 2026-11-12 ladder nothing does
-            (`settings-contrast.spec.ts`). Both check the draft
-            preview only, and each says
-            what a save does instead, because saving differs from the
-            preview: the entered colour is stored, not the substitute,
-            and the saved label (`on-primary`) always clears 4.5:1
-            (accent-engine.md §8, #2543).
-          */}
-          {previewInkFailsAA ? (
-            <p className="text-xs text-warning">
-              Label text on this preview reads at{" "}
-              {formatFailingRatio(previewInkRatio)}:1, under the 4.5:1 minimum.
-              Saving picks a label color that clears it.
-            </p>
-          ) : null}
-          {/*
             Independent of the draft checks above, which run client-side
-            on the unsaved draft (the two contrast ones against a single
-            fixed backdrop each). This is the server's own §8
+            on the unsaved draft (the contrast one against a single
+            fixed backdrop). This is the server's own §8
             verdict on the colour actually saved, generated through
             the real design-system pipeline. §8 forbids a runtime
             substitution here, so a failing save still succeeds — this

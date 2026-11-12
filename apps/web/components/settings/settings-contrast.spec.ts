@@ -175,8 +175,8 @@ describe("the accent preview's label tone, computed from the draft", () => {
      * The claim the first fix made and could not keep. A two-tone ladder
      * cannot clear 4.5:1 against every fill — a mid-tone is far enough from
      * both ends to fail each. So the contract is not "always legible", it is
-     * "always the best available, and say so when that is not enough", which
-     * is what `previewInkFailsAA` drives.
+     * "always the best available". Saying so when that is not enough was the
+     * label warning #4388 deleted, once no kept colour could reach it (below).
      *
      * `#767676` is the mid-grey `pickAccessibleColor`'s own docstring names as
      * the case where "a ladder anchored at the extremes can still run dry".
@@ -199,8 +199,9 @@ describe("the accent preview's label tone, computed from the draft", () => {
     // the card, ink 4.45:1). The 2026-11-12 ladder (#3826) lightened `--card`
     // to `#262626`, and keeping an accent there takes enough luminance that
     // `onHouse` ink always clears: the closest a kept colour comes is 4.75:1.
-    // So the label warning is a guard no real input reaches today; the screen
-    // test drives it with a stubbed ink, and #4388 asks whether to keep it.
+    // So the label warning was a guard no real input reached, and #4388
+    // deleted it. If this fails, a ladder change reopened the band: bring a
+    // warning back to the Accent card, with its writing.md row.
     const onCard = (accent: string) =>
       resolveChapterAccentColor(accent, {
         background: SURFACE.card,
@@ -218,7 +219,10 @@ describe("the accent preview's label tone, computed from the draft", () => {
         }
       }
     }
-    expect(closest).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(
+      closest,
+      "a kept accent's best label misses AA again: the Accent card needs its label warning back (#4388)",
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("prints a failing ratio below the minimum it is compared with", () => {

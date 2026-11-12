@@ -159,7 +159,6 @@ const warning = (condition: string) => {
     block[1]
       .replace(/\{" "\}/g, " ")
       .replace(/\{accent\.resolvedAccent\}/g, "<hex>")
-      .replace(/\{formatFailingRatio\(previewInkRatio\)\}/g, "<n>")
       .replace(/&apos;/g, "'"),
   );
 };
@@ -168,12 +167,6 @@ describe("the preview warnings say what the preview does", () => {
   it("renders the fallback warning its writing.md row states", () => {
     expect(warning("accentPreviewFallsBack")).toBe(
       writingRow("Accent preview fallback"),
-    );
-  });
-
-  it("renders the label-ink warning its writing.md row states", () => {
-    expect(warning("previewInkFailsAA")).toBe(
-      writingRow("Accent label illegible"),
     );
   });
 
@@ -195,10 +188,18 @@ describe("the preview warnings say what the preview does", () => {
     ).toMatch(/^\s*accent\.reason === "insufficient_contrast"\s*$/);
   });
 
-  it("neither contrast warning reads as a rejection, which no save makes", () => {
-    for (const condition of ["accentPreviewFallsBack", "previewInkFailsAA"]) {
-      expect(warning(condition)).not.toMatch(/contrast requirements|rejected/);
-    }
+  it("the contrast warning doesn't read as a rejection, which no save makes", () => {
+    expect(warning("accentPreviewFallsBack")).not.toMatch(
+      /contrast requirements|rejected/,
+    );
+  });
+
+  it("has no label-ink warning: #4388 deleted the branch no input reached", () => {
+    // `settings-contrast.spec.ts` sweeps the band and fails if a ladder change
+    // reopens it; bring a warning back then, with its writing.md row.
+    expect(settingsPage).not.toMatch(
+      /previewInkFailsAA|Label text on this preview/,
+    );
   });
 
   it("the saved toast lists no surface it could drift from", () => {
