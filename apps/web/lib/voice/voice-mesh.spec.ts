@@ -83,3 +83,17 @@ describe("VoiceMesh.syncPeers", () => {
     expect(onPeerClosed).toHaveBeenCalledWith("z");
   });
 });
+
+describe("aloneStage", async () => {
+  const { aloneStage, ALONE_WARN_MS, ALONE_LEAVE_MS } = await import("./alone-timer");
+  it("asks at 5 minutes alone and leaves at 10", () => {
+    expect(aloneStage(null, 1e9)).toBe("none");
+    expect(aloneStage(0, ALONE_WARN_MS - 1)).toBe("none");
+    expect(aloneStage(0, ALONE_WARN_MS)).toBe("ask");
+    expect(aloneStage(0, ALONE_LEAVE_MS - 1)).toBe("ask");
+    expect(aloneStage(0, ALONE_LEAVE_MS)).toBe("leave");
+  });
+  it("scales for development", () => {
+    expect(aloneStage(0, ALONE_WARN_MS * 0.01, 0.01)).toBe("ask");
+  });
+});

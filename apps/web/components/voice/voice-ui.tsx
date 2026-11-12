@@ -167,6 +167,24 @@ export function VoiceRowParticipants({ channelId }: { channelId: string }) {
 export function VoiceBar({ collapsed }: { collapsed: boolean }) {
   const voice = useVoice();
   if (!voice.enabled) return null;
+  if (!voice.joined && voice.autoLeftFrom) {
+    return (
+      <div
+        role="status"
+        className={cn(
+          "mx-2 mb-2 flex items-start gap-2 rounded-md border border-border bg-card p-2 text-caption text-muted-foreground",
+          collapsed && "hidden",
+        )}
+      >
+        <span className="flex-1">
+          You left voice in #{voice.autoLeftFrom} after 10 minutes on your own.
+        </span>
+        <Button variant="ghost" size="sm" onClick={voice.dismissAutoLeft}>
+          OK
+        </Button>
+      </div>
+    );
+  }
   if (!voice.joined) {
     return voice.error ? (
       <p
@@ -236,6 +254,28 @@ export function VoiceBar({ collapsed }: { collapsed: boolean }) {
           <PhoneOff className="h-5 w-5 text-destructive-text" aria-hidden />
         </IconButton>
       </div>
+      {voice.aloneAsk ? (
+        <div
+          role="alert"
+          data-voice-alone=""
+          className="mt-2 flex flex-col gap-2 rounded-sm bg-surface-1 p-2"
+        >
+          <span className="text-label font-semibold text-foreground">
+            You&apos;re the only one here
+          </span>
+          <span className="text-caption text-muted-foreground">
+            You&apos;ll leave automatically after 10 minutes alone.
+          </span>
+          <span className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={voice.stayInCall}>
+              Stay
+            </Button>
+            <Button size="sm" variant="ghost" onClick={voice.leave}>
+              Leave
+            </Button>
+          </span>
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {roster.map((p) => (
           <VoiceAvatar

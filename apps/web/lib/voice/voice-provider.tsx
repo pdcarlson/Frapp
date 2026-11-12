@@ -38,6 +38,7 @@ import {
   VoiceMesh,
   type VoiceSignal,
 } from "@/lib/voice/voice-mesh";
+import { aloneScale, aloneStage } from "@/lib/voice/alone-timer";
 
 export type VoiceParticipant = {
   peerId: string;
@@ -64,6 +65,12 @@ export type VoiceState = {
   speaking: ReadonlySet<string>;
   /** Peers whose audio is actually arriving. */
   connectedPeers: ReadonlySet<string>;
+  /** Alone for 5 minutes: the bar asks whether to stay. */
+  aloneAsk: boolean;
+  /** The channel you were taken out of after 10 minutes alone, to say why. */
+  autoLeftFrom: string | null;
+  stayInCall: () => void;
+  dismissAutoLeft: () => void;
   setViewedChannel: (channelId: string | null) => void;
   join: (channelId: string, channelName: string) => Promise<void>;
   leave: () => void;
@@ -83,6 +90,10 @@ const DISABLED: VoiceState = {
   participants: [],
   speaking: EMPTY,
   connectedPeers: EMPTY,
+  aloneAsk: false,
+  autoLeftFrom: null,
+  stayInCall: noop,
+  dismissAutoLeft: noop,
   setViewedChannel: noop,
   join: async () => {},
   leave: noop,
@@ -146,6 +157,10 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(
     () => new Map(),
   );
+
+  const [aloneAsk, setAloneAsk] = useState(false);
+  const [autoLeftFrom, setAutoLeftFrom] = useState<string | null>(null);
+  const aloneSinceRef = useRef<number | null>(null);
 
   const observedChannelId = joined?.channelId ?? viewedChannelId;
 
@@ -226,6 +241,8 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     setStatus("idle");
     setLocalMuted(false);
     mutedRef.current = false;
+    aloneSinceRef.current = null;
+    setAloneAsk(false);
   }, [teardown]);
 
   const join = useCallback(
@@ -233,6 +250,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       if (!userId) return;
       if (joinedRef.current) leave();
       setError(null);
+      setAutoLeftFrom(null);
       setStatus("connecting");
       let stream: MediaStream;
       try {
@@ -311,6 +329,39 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     };
   }, [teardown]);
 
+  // Alone in the room: ask at 5 minutes, leave at 10 (alone-timer.ts). The
+  // clock starts when no one else is in and stops the moment someone is.
+  const othersInRoom = participants.filter(
+    (p) => p.peerId !== selfPeerId,
+  ).length;
+  useEffect(() => {
+    if (!joined || othersInRoom > 0) {
+      aloneSinceRef.current = null;
+      return;
+    }
+    aloneSinceRef.current ??= Date.now();
+    const scale = aloneScale();
+    const timer = window.setInterval(() => {
+      const stage = aloneStage(aloneSinceRef.current, Date.now(), scale);
+      if (stage === "leave") {
+        setAutoLeftFrom(joinedRef.current?.channelName ?? null);
+        leave();
+        return;
+      }
+      setAloneAsk(stage === "ask");
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+      setAloneAsk(false);
+    };
+  }, [joined, othersInRoom, leave]);
+
+  const stayInCall = useCallback(() => {
+    aloneSinceRef.current = Date.now();
+    setAloneAsk(false);
+  }, []);
+  const dismissAutoLeft = useCallback(() => setAutoLeftFrom(null), []);
+
   // Who is talking: sample every stream's loudness a few times a second.
   useEffect(() => {
     if (!joined) return;
@@ -362,6 +413,10 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       participants,
       speaking,
       connectedPeers,
+      aloneAsk,
+      autoLeftFrom,
+      stayInCall,
+      dismissAutoLeft,
       setViewedChannel: setViewedChannelId,
       join,
       leave,
@@ -377,6 +432,10 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       participants,
       speaking,
       connectedPeers,
+      aloneAsk,
+      autoLeftFrom,
+      stayInCall,
+      dismissAutoLeft,
       join,
       leave,
       toggleMute,
