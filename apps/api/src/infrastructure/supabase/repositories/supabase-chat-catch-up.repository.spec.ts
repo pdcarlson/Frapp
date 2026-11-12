@@ -86,6 +86,15 @@ const seed = () => ({
       created_at: '2026-11-10T22:00:00.000Z',
       thread_root_id: 'a-card',
     }),
+    // A recruitment candidate's card and the talk under it, weeks earlier.
+    message('a-rush', CHANNEL_A, CHAPTER_A, {
+      created_at: '2026-10-01T10:00:00.000Z',
+      kind: 'rush',
+    }),
+    message('a-rush-reply', CHANNEL_A, CHAPTER_A, {
+      created_at: '2026-10-01T11:00:00.000Z',
+      thread_root_id: 'a-rush',
+    }),
     message('dm-1', DM_A, CHAPTER_A, {
       created_at: '2026-11-10T19:00:00.000Z',
       chat_channels: { chapter_id: CHAPTER_A, type: 'DM', is_audit_log: false },
@@ -245,6 +254,27 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
         limit: 50,
       }),
     ).resolves.toBeNull();
+  });
+
+  it("never reads the thread under a recruitment candidate's card", async () => {
+    await expect(
+      repo.readThread({
+        chapterId: CHAPTER_A,
+        channelId: CHANNEL_A,
+        rootId: 'a-rush',
+        limit: 50,
+      }),
+    ).resolves.toBeNull();
+    const stretch = await repo.readChannelSince({
+      chapterId: CHAPTER_A,
+      channelId: CHANNEL_A,
+      since: '2026-09-30T00:00:00.000Z',
+      limit: 50,
+    });
+    const ids = stretch.messages.map((m) => m.id);
+    expect(ids).toContain('a-old');
+    expect(ids).not.toContain('a-rush-reply');
+    expect(stretch.total).toBe(ids.length);
   });
 
   it("unreadStart finds where the member's unread stretch began", async () => {

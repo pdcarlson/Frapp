@@ -5,6 +5,7 @@ import { Check, Minus } from "lucide-react";
 import { groupPermissionsByModule } from "@repo/validation";
 import { useUpdateRole } from "@repo/hooks";
 import { SegmentedChoice } from "@/components/ui/segmented";
+import { useIsPermissionHidden } from "@/components/roles/hidden-permissions";
 import { permissionRows } from "@/components/roles/permission-switch-list";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -55,16 +56,20 @@ export function RoleOverrideList({
   mayGrant: (permission: string) => boolean;
 }) {
   const { overrideOf, set, pending } = useRoleOverrideToggle(role);
+  const isHidden = useIsPermissionHidden();
   const groups = useMemo(
     () =>
       groupPermissionsByModule(
-        permissionRows([
-          ...tier.permissions,
-          ...role.permissions,
-          ...Object.keys(role.permission_overrides),
-        ]),
+        permissionRows(
+          [
+            ...tier.permissions,
+            ...role.permissions,
+            ...Object.keys(role.permission_overrides),
+          ],
+          isHidden,
+        ),
       ),
-    [tier.permissions, role.permissions, role.permission_overrides],
+    [tier.permissions, role.permissions, role.permission_overrides, isHidden],
   );
   const sameAs = `Same as ${tierWord}`;
 

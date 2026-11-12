@@ -66,6 +66,24 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
       .neq('content', '');
   }
 
+  /**
+   * Which of these thread roots are a recruitment candidate's card. The
+   * replies under one are talk about a prospect, and no rush data reaches a
+   * model (`spec/behavior/ai.md`), so a stretch leaves them out.
+   */
+  private async rushRootIds(
+    rootIds: readonly string[],
+  ): Promise<ReadonlySet<string>> {
+    if (rootIds.length === 0) return new Set();
+    const { data, error } = await this.supabase
+      .from('chat_messages')
+      .select('id')
+      .in('id', [...rootIds])
+      .eq('kind', 'rush');
+    if (error) throw new SupabaseQueryError(error);
+    return new Set((data ?? []).map((row) => row.id));
+  }
+
   async unreadStart(input: {
     chapterId: string;
     channelId: string;
@@ -109,10 +127,21 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
       .order('created_at', { ascending: false })
       .limit(input.limit);
     if (error) throw new SupabaseQueryError(error);
-    const rows = (data ?? []) as Row[];
+    const fetched = (data ?? []) as Row[];
+    const rush = await this.rushRootIds([
+      ...new Set(
+        fetched
+          .map((row) => row.thread_root_id)
+          .filter((id): id is string => id !== null),
+      ),
+    ]);
+    const rows = fetched.filter(
+      (row) => row.thread_root_id === null || !rush.has(row.thread_root_id),
+    );
     return {
       messages: oldestFirst(rows.map(toMessage)),
-      total: count ?? rows.length,
+      // The count is of the whole stretch; what was withheld here comes off.
+      total: (count ?? fetched.length) - (fetched.length - rows.length),
     };
   }
 
@@ -138,6 +167,8 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     if (root.error) throw new SupabaseQueryError(root.error);
     if (!root.data) return null;
     const first = root.data as Row & { kind: string; is_deleted: boolean };
+    // A thread under a recruitment candidate's card is never summarized.
+    if (first.kind === 'rush') return null;
     // Read only when it is conversation, by the rule `written` applies.
     const firstRead =
       !first.is_deleted &&

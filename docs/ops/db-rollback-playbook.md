@@ -3829,7 +3829,7 @@ Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_use
 
 **Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API makes every AI route answer 404 `ai.not_available` and stops every model call. Switches and answers stay as they were, and hold again when it is on. Do not roll back to an API whose consent seam allows every call while `AI_ENABLED` is on: that build sends member data to a model without the chapter's switch or the member's Yes.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261111235900_chat_important_seen.sql` body, plus the `ai_suggestions` quote update if that table stays), or account deletion fails once the table is gone:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261112150000_users_phone.sql` body, which keeps the `phone = null` line, plus the `ai_suggestions` quote update if that table stays; corrected 2026-11-12, it named the older `20261111235900` body, which would stop clearing phone numbers), or account deletion fails once the table is gone:
 
 ```sql
 drop table if exists public.user_ai_consents;
@@ -4003,8 +4003,9 @@ drop trigger if exists users_drop_meeting_recordings on public.users;
 drop function if exists public.meeting_recordings_drop_on_post();
 drop function if exists public.meeting_recordings_drop_for_deleted_user();
 drop table if exists public.meeting_recordings;
-delete from storage.buckets where id = 'meeting-audio';
 ```
+
+Then remove the `meeting-audio` bucket through the Storage API or the dashboard, not in SQL: a raw `delete from storage.buckets` is refused by `protect_buckets_delete` (42501) and would abort the migration with it (corrected 2026-11-12; the block used to end with that delete).
 
 Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112165020_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
 
@@ -4154,10 +4155,11 @@ One nullable column on `users` (`phone`) with its length check, and `anonymize_u
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never reads or writes `phone`, so the stored numbers sit unused. That is safe to leave.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the column is gone:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line, or account deletion fails once the column is gone. Start from the newest body, not `20261111235900_chat_important_seen.sql`: once `20261112165040_ai_consent.sql` is applied the function also deletes `user_ai_consents` rows and clears `ai_suggestions` quotes, and those two statements must stay (corrected 2026-11-12):
 
 ```sql
--- Re-create anonymize_user from 20261111235900_chat_important_seen.sql, verbatim.
+-- Re-create anonymize_user from its newest body (20261112165040_ai_consent.sql once
+-- that is applied, else 20261111235900_chat_important_seen.sql), minus `phone = null`.
 alter table public.users
   drop constraint if exists users_phone_length,
   drop column if exists phone;

@@ -550,6 +550,9 @@ as $$
       from timeline t
       join public.chat_messages r on r.thread_root_id = t.id
      where r.channel_id = t.channel_id
+       -- A thread under a recruitment candidate's card is talk about a
+       -- prospect: no rush data reaches a model (spec/behavior/ai.md).
+       and t.kind <> 'rush'
   ),
   msgs as (
     select t.id, t.sender_id, t.content, t.created_at, t.thread_root_id,

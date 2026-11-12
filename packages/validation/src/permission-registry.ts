@@ -98,7 +98,9 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Close the current semester and start the next one.",
   ),
   // AI (ADR-28). The API leaves these two out of the catalog it serves while
-  // its AI switch is off, so no role editor offers them on such a server.
+  // its AI switch is off, and the web role and tier pages, which draw from
+  // this registry, leave them out the same way
+  // (`apps/web/components/roles/hidden-permissions.ts`).
   chapterPermission(
     "ai:use",
     "chapter",

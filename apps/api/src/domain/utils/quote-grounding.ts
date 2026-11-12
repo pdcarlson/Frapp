@@ -12,6 +12,14 @@ export function isQuoteGrounded(quote: string, sourceText: string): boolean {
   return quote.length > 0 && sourceText.includes(quote);
 }
 
+/**
+ * The shortest quote a citation may stand on. A model that writes its own
+ * quotes (the Google adapter's JSON citations) could cite "a" or "the", which
+ * is in every source, and so pass an ungrounded answer. Catch me up has held
+ * its lines to the same length since it was built.
+ */
+export const CITATION_QUOTE_MIN_CHARS = 10;
+
 export interface QuotedCitation {
   sourceId: string;
   quote: string;
@@ -34,7 +42,7 @@ export interface CitationVerification<C extends QuotedCitation> {
 
 /**
  * Keep a citation only when its quote appears word for word in the source it
- * names. `sources` is exactly what the model was given: a citation of anything
+ * names and is long enough to mean something (`CITATION_QUOTE_MIN_CHARS`). `sources` is exactly what the model was given: a citation of anything
  * else (another chapter's document, an id the model made up) is dropped.
  */
 export function verifyCitations<C extends QuotedCitation>(
@@ -44,7 +52,11 @@ export function verifyCitations<C extends QuotedCitation>(
   const textById = new Map(sources.map((source) => [source.id, source.text]));
   const kept = citations.filter((citation) => {
     const text = textById.get(citation.sourceId);
-    return text !== undefined && isQuoteGrounded(citation.quote, text);
+    return (
+      text !== undefined &&
+      citation.quote.trim().length >= CITATION_QUOTE_MIN_CHARS &&
+      isQuoteGrounded(citation.quote, text)
+    );
   });
   return { kept, dropped: citations.length - kept.length };
 }

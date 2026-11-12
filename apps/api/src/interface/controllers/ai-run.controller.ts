@@ -10,6 +10,7 @@ import {
   AiRunService,
   type AiRunView,
 } from '../../application/services/ai-run.service';
+import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -37,7 +38,7 @@ import {
  */
 @ApiTags('AI')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('ai/runs')
 export class AiRunController {

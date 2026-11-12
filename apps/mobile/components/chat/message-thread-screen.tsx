@@ -488,16 +488,11 @@ export function MessageThreadScreen({
         listRef.current?.scrollToEnd({ animated: true });
         return;
       }
-      const index = inverted.findIndex((row) => row.message.id === messageId);
-      if (index >= 0) {
-        listRef.current?.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.5,
-        });
-      }
+      // Through the hook, so a reply outside the rendered window is reached
+      // by its one retry, and an earlier jump's target can't be replayed.
+      jumpToMessage(messageId);
     },
-    [rootId, inverted, listRef],
+    [rootId, listRef, jumpToMessage],
   );
 
   // Members a block attempt proved are not in this chapter, as the channel

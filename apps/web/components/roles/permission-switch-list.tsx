@@ -8,6 +8,7 @@ import {
 } from "@repo/validation";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useIsPermissionHidden } from "./hidden-permissions";
 
 export type PermissionRow = {
   permission: string;
@@ -26,10 +27,14 @@ const DESCRIPTIONS = new Map(
  * something a role actually holds. The wildcard is never a row: nobody
  * switches it, it moves only through Transfer presidency.
  */
-export function permissionRows(extra: readonly string[]): Row[] {
+export function permissionRows(
+  extra: readonly string[],
+  /** Leaves out switches for features this server does not offer. */
+  isHidden: (permission: string) => boolean = () => false,
+): Row[] {
   const known = new Set(PERMISSION_REGISTRY.map((entry) => entry.permission));
   const rows: Row[] = PERMISSION_REGISTRY.filter(
-    (entry) => entry.permission !== "*",
+    (entry) => entry.permission !== "*" && !isHidden(entry.permission),
   ).map((entry) => ({
     permission: entry.permission,
     label: entry.label,
@@ -85,9 +90,10 @@ export function PermissionSwitchList({
   /** The permission whose write is in flight, if any. */
   pendingPermission?: string | null;
 }) {
+  const isHidden = useIsPermissionHidden();
   const groups = useMemo(
-    () => groupPermissionsByModule(permissionRows(extraPermissions)),
-    [extraPermissions],
+    () => groupPermissionsByModule(permissionRows(extraPermissions, isHidden)),
+    [extraPermissions, isHidden],
   );
 
   return (

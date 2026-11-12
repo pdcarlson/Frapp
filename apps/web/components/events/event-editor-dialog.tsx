@@ -481,6 +481,11 @@ export function EventEditorDialog({
       setDescription(text(template.description));
       setLocation(text(template.location));
       setStartAt(initialStartAt ?? "");
+      // As the other two branches do: without it a start move here would be
+      // measured from whatever the dialog last held (#4473).
+      lastWholeStart.current = parseInstant(
+        localInputToIso(initialStartAt ?? ""),
+      );
       setEndAt(initialEndAt ?? "");
       setPointValue(
         String(
