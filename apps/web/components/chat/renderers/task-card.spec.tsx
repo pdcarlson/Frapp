@@ -17,6 +17,7 @@ const mockCurrentChapter = vi.fn();
 const updateStatus = vi.fn();
 const confirmTask = vi.fn();
 const rejectTask = vi.fn();
+const updateTask = vi.fn();
 
 const { mockOffline } = vi.hoisted(() => ({
   mockOffline: { value: false },
@@ -37,6 +38,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateTaskStatus: () => ({ mutate: updateStatus, isPending: false }),
   useConfirmTask: () => ({ mutate: confirmTask, isPending: false }),
   useRejectTask: () => ({ mutate: rejectTask, isPending: false }),
+  // The edit form's writes and roster (#4512).
+  useUpdateTask: () => ({ mutateAsync: updateTask, isPending: false }),
+  useSetSubtaskDone: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddSubtask: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteSubtask: () => ({ mutate: vi.fn(), isPending: false }),
+  useMembers: () => ({
+    data: [
+      { user_id: "assignee-1", display_name: "Bob" },
+      { user_id: "admin-1", display_name: "Alice" },
+    ],
+  }),
   // The card's task routes are paid-ops, so it now reads the chapter's
   // subscription (#841). Default every existing case to an active chapter so
   // they assert the same behaviour they always did.
@@ -539,5 +551,78 @@ describe("TaskCard status colour and due line", () => {
   it("gives a viewer who can't read the task the plain date", () => {
     render(<TaskCard message={makeMessage()} viewerId="someone" isConfirmed />);
     expect(screen.getByText("Due Jun 15")).toBeInTheDocument();
+  });
+});
+
+describe("TaskCard Edit (#4512)", () => {
+  /** The live task as the edit form needs it. */
+  const editable = (overrides: Record<string, unknown> = {}) =>
+    liveTask({
+      title: "Clean the house",
+      description: null,
+      assignee_id: ASSIGNEE,
+      due_date: "2026-06-15",
+      due_at: null,
+      point_reward: 10,
+      subtasks: [],
+      ...overrides,
+    });
+  const edit = () =>
+    screen.queryByRole("button", { name: "Edit Clean the house" });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    canManage = true;
+    mockUseTask.mockReturnValue(editable());
+    chapter.active();
+  });
+
+  it("opens the board's edit form in the card's place, and Cancel puts it back", () => {
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    expect(
+      screen.getByRole("group", { name: "Editing Clean the house" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Clean the house");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Clean the house")).toBeInTheDocument();
+    expect(edit()).toBeInTheDocument();
+  });
+
+  it("saves only what changed", async () => {
+    updateTask.mockResolvedValue({});
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Clean the kitchen" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith({
+        id: "task-1",
+        body: { title: "Clean the kitchen" },
+      }),
+    );
+  });
+
+  it("isn't offered to a member without tasks:manage", () => {
+    canManage = false;
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(edit()).toBeNull();
+  });
+
+  it("isn't offered on a confirmed task", () => {
+    mockUseTask.mockReturnValue(
+      editable({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        points_awarded: true,
+      }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    expect(edit()).toBeNull();
   });
 });

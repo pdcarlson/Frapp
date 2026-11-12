@@ -67,6 +67,21 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+// The edit sheet is the board's (#4296), covered by its own spec; here only
+// what it was opened on matters.
+const editSheet = vi.hoisted(() => ({ editing: null as unknown }));
+vi.mock("@/components/tasks/new-task-sheet", async () => {
+  const React = await import("react");
+  return {
+    NewTaskSheet: React.forwardRef(function NewTaskSheet(props: {
+      editing: unknown;
+    }) {
+      editSheet.editing = props.editing;
+      return null;
+    }),
+  };
+});
+
 import { TaskCard } from "./task-card";
 import { CardMeta } from "./chat-card";
 
@@ -421,5 +436,59 @@ describe("TaskCard — actions", () => {
   it("offers nothing once Tasks is known to be off", () => {
     state.enabledModules = { tasks: false };
     expect(actions(render(ASSIGNEE))).toEqual([]);
+  });
+});
+
+describe("TaskCard — Edit (#4512)", () => {
+  const editable = (overrides: Record<string, unknown> = {}) =>
+    liveTask({
+      title: "Fix the laundry room door",
+      description: null,
+      assignee_id: ASSIGNEE,
+      due_date: "2026-11-06",
+      due_at: "2026-11-06T22:00:00.000Z",
+      point_reward: 15,
+      subtasks: [],
+      ...overrides,
+    });
+  const hasEdit = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Edit",
+    ).length > 0;
+
+  beforeEach(() => {
+    editSheet.editing = null;
+    state.live = editable();
+  });
+
+  it("opens the board's edit sheet on the task for a tasks:manage holder", async () => {
+    state.permissions = ["tasks:manage"];
+    const tree = render("admin-1");
+    await press(tree, "Edit");
+    expect(editSheet.editing).toEqual({
+      id: "task-1",
+      title: "Fix the laundry room door",
+      assigneeId: ASSIGNEE,
+      dueDay: "2026-11-06",
+      dueAt: "2026-11-06T22:00:00.000Z",
+      pointReward: 15,
+      storedStatus: "TODO",
+    });
+  });
+
+  it("isn't offered to anyone else", () => {
+    expect(hasEdit(render(ASSIGNEE))).toBe(false);
+  });
+
+  it("isn't offered on a confirmed task", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = editable({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      points_awarded: true,
+    });
+    expect(hasEdit(render("admin-1"))).toBe(false);
   });
 });
