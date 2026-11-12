@@ -256,6 +256,74 @@ describe("Panel docked focus on close", () => {
   });
 });
 
+/** A page whose ⋯ menu opens the panel, closing the menu as it does. */
+function MenuOpenerHarness({
+  menuOpen,
+  open,
+  onChoose,
+}: {
+  menuOpen: boolean;
+  open: boolean;
+  onChoose: () => void;
+}) {
+  return (
+    <div data-tool-column="">
+      <div data-tool-page="">
+        <button type="button" id="page-more" aria-haspopup="menu">
+          More
+        </button>
+        {menuOpen ? (
+          <div role="menu" aria-labelledby="page-more">
+            <div role="menuitem" tabIndex={-1} onClick={onChoose}>
+              Clean up
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <Panel
+        open={open}
+        onOpenChange={() => undefined}
+        docked
+        backLabel="Back to backwork"
+      >
+        <PanelContent>
+          <PanelHeader>Clean up</PanelHeader>
+        </PanelContent>
+      </Panel>
+    </div>
+  );
+}
+
+describe("Panel docked, opened from a menu", () => {
+  it.each([
+    ["a press", (item: HTMLElement) => fireEvent.pointerDown(item)],
+    [
+      "Enter",
+      (item: HTMLElement) => {
+        item.focus();
+        fireEvent.keyDown(item, { key: "Enter" });
+      },
+    ],
+  ])(
+    "hands focus back to the menu's button after %s on an item, which is gone by then",
+    (_how, choose) => {
+      const noop = () => undefined;
+      const { rerender } = render(
+        <MenuOpenerHarness menuOpen open={false} onChoose={noop} />,
+      );
+      choose(screen.getByRole("menuitem", { name: "Clean up" }));
+      // Choosing closes the menu and opens the panel in one render.
+      rerender(<MenuOpenerHarness menuOpen={false} open onChoose={noop} />);
+      expect(screen.getByRole("region", { name: "Clean up" })).toHaveFocus();
+
+      rerender(
+        <MenuOpenerHarness menuOpen={false} open={false} onChoose={noop} />,
+      );
+      expect(screen.getByRole("button", { name: "More" })).toHaveFocus();
+    },
+  );
+});
+
 describe("Panel with the title in its body", () => {
   it("names the docked region from PanelTitle and draws no header title", () => {
     render(<HeadlessRecord docked />);
