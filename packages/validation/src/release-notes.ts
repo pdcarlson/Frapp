@@ -218,6 +218,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A message you send no longer sometimes stays in the box afterward, ready to be sent twice.",
       "The Directory now shows each member's status and custom status line, and its search has a search icon.",
       "Your profile, status and settings now live together on a You tab with your photo, and the notifications bell is back beside Messages.",
+      "Coming back to the app after a while no longer fills your screens with sign-in errors: what was already loaded stays put while the app quietly refreshes your sign-in.",
     ],
   },
   {
