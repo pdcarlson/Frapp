@@ -34,6 +34,7 @@ export {
   formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
+  isDueOverdue,
 } from "./display";
 export {
   type DateLean,

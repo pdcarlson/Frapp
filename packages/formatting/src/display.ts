@@ -273,6 +273,16 @@ export function formatDueLabel(
   return `Due ${monthDay(due, now)}`;
 }
 
+/**
+ * Whether a due date has passed: a bare day once that day is over, a task
+ * due at a time (#4003) from that minute. The one rule both apps draw a due
+ * date in red by (Shawn's pick, #4133, 2026-11-12): due today or tomorrow
+ * stays plain. `false` for a missing or unreadable date.
+ */
+export function isDueOverdue(value: unknown, now: Date = new Date()): boolean {
+  return formatDueLabel(value, now)?.startsWith("Overdue") ?? false;
+}
+
 /** A full timestamp rather than a bare `YYYY-MM-DD` day. */
 function isInstant(value: unknown): boolean {
   return typeof value === "string" && value.length > 10;

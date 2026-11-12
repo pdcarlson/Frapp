@@ -88,13 +88,14 @@ describe("formatDueDate", () => {
 });
 
 describe("isDueUrgent", () => {
-  it("covers today, tomorrow and anything past", () => {
-    expect(isDueUrgent("2026-08-17", NOW)).toBe(true);
-    expect(isDueUrgent("2026-08-18", NOW)).toBe(true);
+  it("is red only past the due day (#4133)", () => {
     expect(isDueUrgent("2026-08-10", NOW)).toBe(true);
+    expect(isDueUrgent("2026-08-16", NOW)).toBe(true);
   });
 
-  it("leaves anything further out calm", () => {
+  it("leaves today, tomorrow and anything further out calm", () => {
+    expect(isDueUrgent("2026-08-17", NOW)).toBe(false);
+    expect(isDueUrgent("2026-08-18", NOW)).toBe(false);
     expect(isDueUrgent("2026-08-19", NOW)).toBe(false);
   });
 

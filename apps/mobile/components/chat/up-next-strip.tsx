@@ -7,6 +7,7 @@ import {
   formatDayHeading,
   parseInstant,
   parseInstantOrBareLocalNoon,
+  isDueOverdue,
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -218,11 +219,13 @@ export function formatDueDate(dueDate: string, now: Date): string {
   return `Due ${formatDayWord(due, now)}`;
 }
 
-/** Due today, tomorrow, or already past — the states drawn in red. */
+/**
+ * Past due — the one state drawn in red. Due today or tomorrow stays plain,
+ * as on web (Shawn's pick, #4133, 2026-11-12; until then today and tomorrow
+ * were red too). The rule is `@repo/formatting`'s `isDueOverdue`.
+ */
 export function isDueUrgent(dueDate: string, now: Date): boolean {
-  const due = parseDueInstant(dueDate);
-  if (!due) return false;
-  return dayDelta(now, due) <= 1;
+  return isDueOverdue(dueDate, now);
 }
 
 export function UpNextStrip({

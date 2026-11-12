@@ -15,6 +15,7 @@ import {
   formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
+  isDueOverdue,
 } from "./display";
 
 // Wed Nov 4, 2026, 9:00 AM Pacific.
@@ -276,5 +277,20 @@ describe("points wording (#4135)", () => {
     expect(formatPoints(10)).toBe("10 points");
     expect(formatPoints(0)).toBe("0 points");
     expect(formatPointsChip(5)).toBe("+5 pts");
+  });
+});
+
+describe("isDueOverdue (#4133)", () => {
+  it("is true once a bare day is over, or a due time has passed", () => {
+    expect(isDueOverdue("2026-11-03", NOW)).toBe(true);
+    expect(isDueOverdue("2026-11-04T16:00:00.000Z", NOW)).toBe(true);
+  });
+
+  it("stays false today, tomorrow and later, and on a bad date", () => {
+    expect(isDueOverdue("2026-11-04", NOW)).toBe(false);
+    expect(isDueOverdue("2026-11-05", NOW)).toBe(false);
+    expect(isDueOverdue(FRI_5PM, NOW)).toBe(false);
+    expect(isDueOverdue("banana", NOW)).toBe(false);
+    expect(isDueOverdue(null, NOW)).toBe(false);
   });
 });

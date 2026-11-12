@@ -1,4 +1,4 @@
-import { formatDueLabel, formatDueOn } from "@repo/formatting";
+import { formatDueLabel, formatDueOn, isDueOverdue } from "@repo/formatting";
 import type { TaskStatus } from "@repo/hooks";
 
 /**
@@ -26,7 +26,7 @@ export function taskDueClause(
   const due = task.due_at ?? task.due_date;
   const label = formatDueLabel(due, now);
   if (!label) return null;
-  const pastDue = label.startsWith("Overdue");
+  const pastDue = isDueOverdue(due, now);
   if (task.status === "COMPLETED") {
     if (!pastDue) return { text: label, overdue: false };
     const on = formatDueOn(due, now);
