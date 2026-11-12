@@ -66,4 +66,4 @@ create index if not exists event_check_in_screens_reported_by
 alter table public.event_check_in_screens enable row level security;
 
 comment on table public.event_check_in_screens is
-  'Where an event''s check-in QR screen is (#4532): one row per officer showing it, kept only until check-in closes. API only. See 20261112293700_event_check_in_screens.sql.';
+  'Where an event''s check-in QR screen is (#4532): one row per officer showing it, kept only until check-in closes. API only. See 20261113040002_event_check_in_screens.sql.';

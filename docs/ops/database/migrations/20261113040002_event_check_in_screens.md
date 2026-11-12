@@ -1,4 +1,4 @@
-# 20261112293700_event_check_in_screens.sql
+# 20261113040002_event_check_in_screens.sql
 
 Adds `event_check_in_screens`, where each officer's screen showing an event's check-in QR is, so members check in only near it (#4532).
 
