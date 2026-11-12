@@ -31,6 +31,17 @@
 // is polled like the first try, inside the same deadline. RETRY_ANY_ERROR
 // (`mobile-retry-upload.yml`, dispatched by hand) retries whatever the error.
 //
+// ── Showing why an upload failed (2026-11-12) ────────────────────────────────
+// EAS's error for a store failure is a code and a stock sentence (App Store
+// Connect's `SERVER_ERROR` says only "unexpected server error"). The
+// submission's own log, which expo.dev shows on its page, names the step that
+// failed and the store's response. When a submission ends ERRORED or CANCELED
+// this prints the last LOG_TAIL_LINES lines of that log into the job log, so
+// the cause can be read from the Actions run without signing in to expo.dev.
+// The log is EAS's (`logFiles`, signed links it serves for a while, read the
+// way eas-cli 24.8.0's `displayLogsAsync` reads them), fetched once per failed
+// submission; a log that can't be read is noted, never fatal.
+//
 // FINISHED means the binary reached App Store Connect or Google Play, not that
 // it passed their processing. App Store Connect can still reject an iOS
 // binary afterwards by email (ITMS-90683 rejected iOS 0.9.1 (8) that way), and
@@ -68,6 +79,7 @@ const QUERY = `query ConfirmSubmission($id: ID!) {
       id
       status
       canRetry
+      logFiles
       error { errorCode message }
     }
   }
@@ -100,6 +112,8 @@ export const TERMINAL = new Set(["FINISHED", "ERRORED", "CANCELED"]);
  */
 export const MAX_FAILED_READS = 10;
 const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
+/** How much of a failed submission's log reaches the job log. */
+export const LOG_TAIL_LINES = 60;
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const READ_TIMEOUT_MS = 30_000;
@@ -144,7 +158,43 @@ export async function readSubmission({ id, token, fetchImpl = fetch, sleep = del
   }
   const submission = body?.data?.submissions?.byId;
   if (!submission || typeof submission.status !== "string") return { readError: "the response named no submission" };
-  return { status: oneLine(submission.status), error: submission.error ?? null, canRetry: submission.canRetry === true };
+  const read = { status: oneLine(submission.status), error: submission.error ?? null, canRetry: submission.canRetry === true };
+  const logFiles = Array.isArray(submission.logFiles) ? submission.logFiles.filter((f) => typeof f === "string" && f.startsWith("https://")) : [];
+  if (logFiles.length > 0) read.logFiles = logFiles;
+  return read;
+}
+
+/**
+ * The last `maxLines` lines of a submission's log files, in order, as plain
+ * text: EAS writes one JSON object per line (bunyan, the message in `msg`),
+ * and a line that isn't JSON is kept as it is. Each comes back on one line,
+ * prefixed, so text from the store can't start a workflow command. Returns
+ * `{ lines }`, or `{ logError }` when a file couldn't be read.
+ */
+export async function readSubmissionLog({ urls, fetchImpl = fetch, sleep = delay, maxLines = LOG_TAIL_LINES }) {
+  let text = "";
+  for (const url of urls) {
+    try {
+      const res = await fetchWithRetry(url, { method: "GET" }, { fetchImpl, sleep, timeoutMs: READ_TIMEOUT_MS });
+      if (!res.ok) return { logError: `HTTP ${res.status}` };
+      text += `${await res.text()}\n`;
+    } catch (error) {
+      return { logError: `request failed: ${oneLine(error.message)}` };
+    }
+  }
+  const lines = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.trim() === "") continue;
+    let line = raw;
+    try {
+      const entry = JSON.parse(raw);
+      if (entry && typeof entry === "object" && "msg" in entry) line = String(entry.msg);
+    } catch {
+      // Not JSON: keep the raw line.
+    }
+    for (const part of line.split(/\r?\n/)) if (part.trim() !== "") lines.push(`  | ${oneLine(part)}`);
+  }
+  return { lines: lines.slice(-maxLines) };
 }
 
 /**
@@ -200,7 +250,15 @@ const settled = (row) => TERMINAL.has(row.status) || row.failedReads >= MAX_FAIL
  * with `status` the last one read (or `unread`).
  */
 export async function pollSubmissions({ submissions, token, fetchImpl = fetch, deadlineMs, pollMs, now = Date.now, sleep = delay, log = console.log, retryAnyError = false }) {
-  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0, canRetry: false, retriedFrom: [], retryError: null }));
+  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0, canRetry: false, retriedFrom: [], retryError: null, logShown: [] }));
+  const showLog = async (row, urls) => {
+    const name = `${DISPLAY[row.store]} submission ${row.id}`;
+    if (!urls?.length) return log(`${name}: EAS gave no log for it; read it at ${SUBMISSIONS_URL}/${row.id}.`);
+    const got = await readSubmissionLog({ urls, fetchImpl, sleep });
+    if (got.logError) return log(`${name}: couldn't read its log (${got.logError}); read it at ${SUBMISSIONS_URL}/${row.id}.`);
+    log(`${name}: the last ${got.lines.length} lines of its log on EAS:`);
+    for (const line of got.lines) log(line);
+  };
   const readRound = async () => {
     for (const row of rows) {
       if (settled(row)) continue;
@@ -218,6 +276,10 @@ export async function pollSubmissions({ submissions, token, fetchImpl = fetch, d
       row.status = read.status;
       row.error = read.error;
       row.canRetry = read.canRetry === true;
+      if ((read.status === "ERRORED" || read.status === "CANCELED") && !row.logShown.includes(row.id)) {
+        row.logShown.push(row.id);
+        await showLog(row, read.logFiles);
+      }
       if (shouldRetry(row, { retryAnyError })) {
         const retried = await retrySubmission({ id: row.id, token, fetchImpl, sleep });
         if (retried.retryError) {

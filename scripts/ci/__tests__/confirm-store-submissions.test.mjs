@@ -5,10 +5,12 @@ import {
   GRAPHQL_URL,
   MAX_FAILED_READS,
   MAX_RETRIES,
+  LOG_TAIL_LINES,
   confirmStoreSubmissions,
   nextStep,
   pollSubmissions,
   readSubmission,
+  readSubmissionLog,
   summary,
 } from "../confirm-store-submissions.mjs";
 
@@ -21,11 +23,18 @@ const BUILD = "0b1c2d3e-3333-4c4d-8e5f-0123456789ab";
  * replies, in order. `retries` maps a failed submission's id to the id its
  * retry gets (or to a reply: an Error, a status number or `{ errors }`).
  */
-function fakeEas(replies, retries = {}) {
+function fakeEas(replies, retries = {}, files = {}) {
   const calls = [];
   const retried = [];
+  const fetched = [];
   const left = Object.fromEntries(Object.entries(replies).map(([id, list]) => [id, [...list]]));
   const fetchImpl = async (url, init) => {
+    if (init.method === "GET") {
+      fetched.push(url);
+      const file = files[url];
+      if (typeof file === "number") return { ok: false, status: file, text: async () => "" };
+      return { ok: true, status: 200, text: async () => file };
+    }
     const { variables } = JSON.parse(init.body);
     if (variables.parentSubmissionId) {
       retried.push(variables.parentSubmissionId);
@@ -44,10 +53,10 @@ function fakeEas(replies, retries = {}) {
     return {
       ok: true,
       status: 200,
-      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, canRetry: next.canRetry ?? false, error: next.error ?? null } } } }),
+      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, canRetry: next.canRetry ?? false, error: next.error ?? null, logFiles: next.logFiles ?? [] } } } }),
     };
   };
-  return { fetchImpl, calls, retried };
+  return { fetchImpl, calls, retried, fetched };
 }
 
 /** A clock that only moves when the poll sleeps. */
@@ -334,5 +343,61 @@ describe("confirmStoreSubmissions", () => {
       assert.equal(calls.length, 0);
       assert.match(written, /^## Store uploads/);
     }
+  });
+});
+
+describe("a failed submission's log", () => {
+  const LOG = "https://storage.example/logs/submission.txt";
+  const bunyan = (msg, level = 30) => JSON.stringify({ level, msg });
+
+  it("reads EAS's JSON-per-line log as plain lines, prefixed so none can start a workflow command", async () => {
+    const text = [bunyan("Uploading build to App Store Connect"), "", "not json", bunyan("::error::Apple said\nno", 50)].join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text });
+    assert.deepEqual(await readSubmissionLog({ urls: [LOG], fetchImpl: eas.fetchImpl, sleep: async () => {} }), {
+      lines: ["  | Uploading build to App Store Connect", "  | not json", "  | ::error::Apple said", "  | no"],
+    });
+  });
+
+  it("keeps only the last LOG_TAIL_LINES lines, and reports a log it couldn't read", async () => {
+    const text = Array.from({ length: LOG_TAIL_LINES + 5 }, (_, i) => bunyan(`line ${i}`)).join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text, [`${LOG}?gone`]: 403 });
+    const { lines } = await readSubmissionLog({ urls: [LOG], fetchImpl: eas.fetchImpl, sleep: async () => {} });
+    assert.equal(lines.length, LOG_TAIL_LINES);
+    assert.equal(lines.at(-1), `  | line ${LOG_TAIL_LINES + 4}`);
+    assert.deepEqual(await readSubmissionLog({ urls: [`${LOG}?gone`], fetchImpl: eas.fetchImpl, sleep: async () => {} }), { logError: "HTTP 403" });
+  });
+
+  it("prints each failed try's log once into the job log, and still retries", async () => {
+    const RETRY = "4a5b6c7d-4444-4d5e-9f60-0123456789ab";
+    const RETRY_LOG = `${LOG}?retry`;
+    const failed = (logFiles) => ({ status: "ERRORED", canRetry: true, error: { errorCode: "SERVER_ERROR", message: "unexpected" }, logFiles });
+    const eas = fakeEas(
+      { [IOS]: [failed([LOG])], [RETRY]: [{ status: "IN_QUEUE" }, failed([RETRY_LOG])] },
+      { [IOS]: RETRY },
+      { [LOG]: bunyan("ASC: 500 UNEXPECTED_ERROR", 50), [RETRY_LOG]: 404 },
+    );
+    const logged = [];
+    const c = clock();
+    const rows = await pollSubmissions({
+      submissions: [{ store: "ios", id: IOS }],
+      token: "t",
+      fetchImpl: eas.fetchImpl,
+      deadlineMs: 10 * 60_000,
+      pollMs: 60_000,
+      now: c.now,
+      sleep: c.sleep,
+      log: (line) => logged.push(line),
+    });
+    assert.equal(rows[0].status, "ERRORED");
+    assert.deepEqual(eas.fetched, [LOG, RETRY_LOG]);
+    assert.ok(logged.includes("  | ASC: 500 UNEXPECTED_ERROR"), logged.join("\n"));
+    assert.ok(logged.some((l) => l.includes(`submission ${RETRY}: couldn't read its log (HTTP 404)`)), logged.join("\n"));
+  });
+
+  it("says where to read it when EAS gives no log", async () => {
+    const eas = fakeEas({ [ANDROID]: [{ status: "CANCELED" }] });
+    const logged = [];
+    await pollSubmissions({ submissions: [{ store: "android", id: ANDROID }], token: "t", fetchImpl: eas.fetchImpl, deadlineMs: 60_000, pollMs: 60_000, sleep: async () => {}, log: (line) => logged.push(line) });
+    assert.ok(logged.some((l) => l.includes("EAS gave no log for it") && l.includes(ANDROID)), logged.join("\n"));
   });
 });
