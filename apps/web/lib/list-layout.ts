@@ -14,7 +14,7 @@ import { useViewerUserId } from "@repo/hooks";
  *
  * Best-effort: a private window, blocked site data or a full quota throws or
  * reads empty. The page then opens as a list, and a pick made in it holds in
- * memory for the tab's life.
+ * memory for the tab's life; so does one made before the viewer's id is known.
  */
 export type ListLayout = "list" | "grid";
 
@@ -32,22 +32,34 @@ export function parseListLayout(raw: unknown): ListLayout | null {
   return raw === "list" || raw === "grid" ? raw : null;
 }
 
-/** Picks a failed write could not store, so they still hold this tab's life. */
+/**
+ * Picks that could not be stored, so they still hold for the tab's life: a
+ * write the browser refused, or one made before the viewer's id was known.
+ */
 const unsaved = new Map<string, ListLayout>();
+
+function earlyKey(screen: ListLayoutScreen): string {
+  return `frapp.${screen}.layout`;
+}
 const listeners = new Set<() => void>();
 
 export function readListLayout(
   screen: ListLayoutScreen,
   userId: string | null | undefined,
 ): ListLayout | null {
-  if (!userId || typeof window === "undefined") return null;
+  if (typeof window === "undefined") return null;
+  // A pick made before the viewer resolved (offline with no cached user, or
+  // the read still in flight) holds in memory under the screen alone, and
+  // stands until this person's own stored pick says otherwise.
+  const early = unsaved.get(earlyKey(screen)) ?? null;
+  if (!userId) return early;
   const key = listLayoutStorageKey(screen, userId);
   const held = unsaved.get(key);
   if (held) return held;
   try {
-    return parseListLayout(window.localStorage.getItem(key));
+    return parseListLayout(window.localStorage.getItem(key)) ?? early;
   } catch {
-    return null;
+    return early;
   }
 }
 
@@ -56,13 +68,19 @@ export function writeListLayout(
   userId: string | null | undefined,
   layout: ListLayout,
 ): void {
-  if (!userId || typeof window === "undefined") return;
-  const key = listLayoutStorageKey(screen, userId);
-  try {
-    window.localStorage.setItem(key, layout);
-    unsaved.delete(key);
-  } catch {
-    unsaved.set(key, layout);
+  if (typeof window === "undefined") return;
+  if (!userId) {
+    // No one to store it under yet: hold it so the switch still switches.
+    unsaved.set(earlyKey(screen), layout);
+  } else {
+    const key = listLayoutStorageKey(screen, userId);
+    unsaved.delete(earlyKey(screen));
+    try {
+      window.localStorage.setItem(key, layout);
+      unsaved.delete(key);
+    } catch {
+      unsaved.set(key, layout);
+    }
   }
   for (const listener of listeners) listener();
 }

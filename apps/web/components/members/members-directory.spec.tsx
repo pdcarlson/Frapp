@@ -676,6 +676,18 @@ describe("Directory as a grid (#4175)", () => {
     );
   });
 
+  // #2146 deleted the old grid for showing less than the row: the tile must
+  // show the facts on screen, not only in its accessible name.
+  it("shows the row's facts on the tile itself", () => {
+    render(<MembersDirectory />);
+    const tile = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(tile).toHaveTextContent("Ada Lovelace");
+    expect(tile).toHaveTextContent("Treasurer");
+    expect(tile).toHaveTextContent("ada@example.test");
+    expect(tile).toHaveTextContent("42 pts");
+    expect(tile).toHaveTextContent(/joined/);
+  });
+
   it("keeps every tile selectable, and select-all with it", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);

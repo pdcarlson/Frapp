@@ -41,6 +41,20 @@ describe("list-layout (#4175)", () => {
     expect(readListLayout("directory", "viewer-1")).toBeNull();
   });
 
+  it("still switches before the viewer is known, and stores it once they are", () => {
+    writeListLayout("directory", null, "grid");
+    expect(readListLayout("directory", null)).toBe("grid");
+    // Nothing stored for them yet, so the early pick stands.
+    expect(readListLayout("directory", "viewer-1")).toBe("grid");
+    writeListLayout("directory", "viewer-1", "list");
+    expect(readListLayout("directory", "viewer-1")).toBe("list");
+    expect(
+      window.localStorage.getItem(
+        listLayoutStorageKey("directory", "viewer-1"),
+      ),
+    ).toBe("list");
+  });
+
   it("holds a pick in memory when storage refuses it", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
@@ -65,6 +79,14 @@ describe("ListLayoutToggle", () => {
     unmount();
 
     render(<ListLayoutToggle screen="directory" />);
+    expect(screen.getByRole("radio", { name: "Grid" })).toBeChecked();
+  });
+
+  it("switches while the viewer's id hasn't loaded", async () => {
+    viewer.id = null;
+    const user = userEvent.setup();
+    render(<ListLayoutToggle screen="directory" />);
+    await user.click(screen.getByRole("radio", { name: "Grid" }));
     expect(screen.getByRole("radio", { name: "Grid" })).toBeChecked();
   });
 

@@ -146,6 +146,8 @@ describe("AlumniDirectory as a grid (#4175)", () => {
     const tile = screen.getByRole("button", {
       name: "Charles Whitmore III, Class of 2019 · Acme · Boston, Still reads the minutes.",
     });
+    // Every fact the row shows, on screen and not only in the name.
+    expect(tile).toHaveTextContent("Class of 2019 · Acme · Boston");
     expect(tile).toHaveTextContent("Still reads the minutes.");
 
     await user.click(tile);

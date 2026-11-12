@@ -21,7 +21,10 @@ import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardToolbarHeightClassName,
+  denseGridClassName,
   denseListClassName,
+  gridTileButtonClassName,
+  gridTileFrameClassName,
 } from "@/components/shared/table-controls";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -288,9 +291,7 @@ export function AlumniDirectory() {
         <ul
           role="list"
           className={
-            layout === "grid"
-              ? "grid grid-cols-2 gap-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5"
-              : denseListClassName
+            layout === "grid" ? denseGridClassName : denseListClassName
           }
         >
           {alumni.map((alum) => {
@@ -328,13 +329,13 @@ export function AlumniDirectory() {
                 here, where the row gives it one.
               */
               return (
-                <li key={id} className="rounded-md border border-border">
+                <li key={id} className={gridTileFrameClassName}>
                   <button
                     type="button"
                     onClick={open}
                     aria-label={label}
                     className={cn(
-                      "flex h-full w-full min-w-0 flex-col items-center gap-2 rounded-md px-3 pb-3 pt-4 text-center transition-colors",
+                      gridTileButtonClassName,
                       "hover:bg-card-hover hover:text-foreground",
                       FOCUS_RING_OFFSET,
                     )}

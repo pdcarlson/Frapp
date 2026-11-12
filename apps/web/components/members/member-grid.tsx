@@ -11,6 +11,9 @@ import {
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
+  denseGridClassName,
+  gridTileButtonClassName,
+  gridTileFrameClassName,
 } from "@/components/shared/table-controls";
 import { cn, initials } from "@/lib/utils";
 
@@ -64,10 +67,7 @@ export function MemberGrid({
   avatarTintFor: (userId: string) => MemberAvatarTint | null;
 }) {
   return (
-    <ul
-      role="list"
-      className="grid grid-cols-2 gap-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5"
-    >
+    <ul role="list" className={denseGridClassName}>
       {members.map((member) => {
         const id = idOf(member);
         const facts = factsOf(member);
@@ -81,7 +81,8 @@ export function MemberGrid({
           <li
             key={id}
             className={cn(
-              "relative rounded-md border border-border",
+              "relative",
+              gridTileFrameClassName,
               // The row's selected fill, on the tile.
               selected && "bg-popover",
             )}
@@ -91,7 +92,7 @@ export function MemberGrid({
               onClick={() => onOpen(member)}
               aria-label={facts.label}
               className={cn(
-                "flex h-full w-full min-w-0 flex-col items-center gap-2 rounded-md px-3 pb-3 pt-4 text-center transition-colors",
+                gridTileButtonClassName,
                 !selected && "hover:bg-card-hover hover:text-foreground",
                 FOCUS_RING_OFFSET,
               )}

@@ -273,6 +273,10 @@ export default function DirectoryScreen() {
       }),
     [listData, classNames, inFraternalOrder, pledgeClasses],
   );
+  const gridLines = useMemo(
+    () => (layout === "grid" ? toGridLines(rows) : []),
+    [layout, rows],
+  );
   // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
   // read a `.length` would run a full `localeCompare` sort over both lists on
   // every keystroke. `null` until the query succeeds, so a populated tab never
@@ -497,15 +501,15 @@ export default function DirectoryScreen() {
         <View style={styles.listFrame}>
           <PinnedBackRow back={BACK_TO_MORE} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
-          <FlatList
-            // `numColumns` can't change on a mounted list, so the layout keys it.
-            key={layout}
-            numColumns={layout === "grid" ? GRID_COLUMNS : 1}
-            columnWrapperStyle={
-              layout === "grid" ? styles.gridColumns : undefined
+          <FlatList<DirectoryRow | GridLine>
+            // Grid hands the list lines of tiles rather than setting
+            // `numColumns`: a mounted list can't change its column count, and
+            // remounting it would tear down the header under the toggle the
+            // member just pressed (and the search field's focus with it).
+            data={layout === "grid" ? gridLines : rows}
+            keyExtractor={(item) =>
+              isGridLine(item) ? `line:${item.key}` : item.userId
             }
-            data={rows}
-            keyExtractor={(row) => row.userId}
             ListHeaderComponent={header}
             ListEmptyComponent={
               // The skeleton stands in for the rows themselves, so it takes no
@@ -527,21 +531,24 @@ export default function DirectoryScreen() {
               )
             }
             renderItem={({ item }) => {
-              const open = () => {
-                setSelected(item);
+              const open = (row: DirectoryRow) => {
+                setSelected(row);
                 detailSheetRef.current?.present();
               };
-              return layout === "grid" ? (
-                <MemberTile
-                  row={item}
-                  avatarTint={avatarTintFor(item.userId)}
-                  onPress={open}
-                />
-              ) : (
+              if (isGridLine(item)) {
+                return (
+                  <GridLineView
+                    line={item}
+                    avatarTintFor={avatarTintFor}
+                    onOpen={open}
+                  />
+                );
+              }
+              return (
                 <MemberRow
                   row={item}
                   avatarTint={avatarTintFor(item.userId)}
-                  onPress={open}
+                  onPress={() => open(item)}
                 />
               );
             }}
@@ -588,6 +595,62 @@ export default function DirectoryScreen() {
   );
 }
 
+/** A row's and a tile's accessible name, one wording for both layouts. */
+export function memberPressLabel(row: DirectoryRow): string {
+  return `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`;
+}
+
+/** One line of the Grid layout (#4175): up to {@link GRID_COLUMNS} members. */
+export interface GridLine {
+  key: string;
+  rows: DirectoryRow[];
+}
+
+export function isGridLine(item: DirectoryRow | GridLine): item is GridLine {
+  return "rows" in item;
+}
+
+export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
+  const lines: GridLine[] = [];
+  for (let i = 0; i < rows.length; i += GRID_COLUMNS) {
+    const chunk = rows.slice(i, i + GRID_COLUMNS);
+    lines.push({ key: chunk[0]!.userId, rows: chunk });
+  }
+  return lines;
+}
+
+/**
+ * A line of tiles. A short last line is padded with empty cells, so its tiles
+ * keep the width of every other tile instead of stretching across the row.
+ */
+export function GridLineView({
+  line,
+  avatarTintFor,
+  onOpen,
+}: {
+  line: GridLine;
+  avatarTintFor: (userId: string) => MemberAvatarTint | null;
+  onOpen: (row: DirectoryRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.gridLine}>
+      {line.rows.map((row) => (
+        <MemberTile
+          key={row.userId}
+          row={row}
+          avatarTint={avatarTintFor(row.userId)}
+          onPress={() => onOpen(row)}
+        />
+      ))}
+      {Array.from({ length: GRID_COLUMNS - line.rows.length }, (_, i) => (
+        <View key={`pad-${i}`} style={styles.gridPad} />
+      ))}
+    </View>
+  );
+}
+
 /**
  * Exported so a spec can assert on a row directly: `vitest.setup.ts` renders
  * `FlatList` as a string stand-in that never invokes `renderItem`.
@@ -614,11 +677,7 @@ export function MemberRow({
       // label has to carry it explicitly rather than relying on the nested
       // `Text` nodes.
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={
-        onPress
-          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
-          : undefined
-      }
+      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -664,11 +723,7 @@ export function MemberTile({
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={
-        onPress
-          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
-          : undefined
-      }
+      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -831,8 +886,12 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "space-between",
       gap: tokens.spacing.md,
     },
-    gridColumns: {
+    gridLine: {
+      flexDirection: "row",
       gap: tokens.spacing.sm,
+    },
+    gridPad: {
+      flex: 1,
     },
     // A tile is the row's grid twin: hairline-bordered, on the page surface,
     // not a card, so the grid reads as the same list laid out wider.

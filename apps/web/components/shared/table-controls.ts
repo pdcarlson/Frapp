@@ -155,3 +155,22 @@ export const compactControlClassName =
  */
 export const denseListClassName =
   "divide-y divide-border border-t border-border";
+
+/**
+ * The Grid layout of a list (#4175): the List/Grid toggle's other answer,
+ * shared by the Directory's two tabs so one pick lays both out alike. Columns
+ * follow the page's container, two at the 375px floor.
+ */
+export const denseGridClassName =
+  "grid grid-cols-2 gap-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5";
+
+/** A grid tile's frame: hairline-bordered on the page surface, not a card. */
+export const gridTileFrameClassName = "rounded-md border border-border";
+
+/**
+ * The tile's own control, filling its frame: the face over the name and the
+ * facts, centered. Callers add the hover (`hover:bg-card-hover`) when the
+ * tile isn't selected, and the focus recipe.
+ */
+export const gridTileButtonClassName =
+  "flex h-full w-full min-w-0 flex-col items-center gap-2 rounded-md px-3 pb-3 pt-4 text-center transition-colors";
