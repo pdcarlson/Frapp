@@ -340,26 +340,25 @@ export class PollService {
    * Manual early close (`spec/behavior/polls.md`: "Once expired (or manually
    * closed), the poll is locked"). Its creator may close it whatever their
    * permissions now, and so may a member who holds `channels:manage`
-   * (`canModerate`, resolved by the controller), so a poll with no deadline
-   * whose creator lost `polls:create` or left the chapter can still end with
-   * its tally kept (#4046). Channel access is authorized as a `vote`
-   * (like `vote`/`removeVote`, exempt from the Alumni post restriction) even
-   * though `close` isn't a vote, because gating it as a `post` would strand
-   * an open-ended (no `expires_at`) poll forever the moment its creator loses
-   * post rights in the channel (e.g. transitions to Alumni): `isPollExpired`
-   * never trips without a deadline, and nothing else may close it.
+   * (`canModerate`, asked only when the caller isn't the creator), so a poll
+   * with no deadline whose creator lost `polls:create` or left the chapter can
+   * still end with its tally kept (#4046). Channel access is authorized as a
+   * `close`: read access, with archive and the audit log refusing it, but not
+   * who can post nor the Alumni rule, which would strand an open-ended poll
+   * the moment its creator lost post rights there. `isPollExpired` never trips
+   * without a deadline.
    */
   async close(
     messageId: string,
     userId: string,
     chapterId: string,
-    canModerate = false,
+    canModerate: () => Promise<boolean> = () => Promise.resolve(false),
   ): Promise<ChatMessage> {
     const message = await this.loadPollForOperation(
       messageId,
       chapterId,
       userId,
-      'vote',
+      'close',
       { allowCard: true },
     );
 
@@ -372,7 +371,7 @@ export class PollService {
       throw new BadRequestException('Cannot close a deleted poll');
     }
 
-    if (message.sender_id !== userId && !canModerate) {
+    if (message.sender_id !== userId && !(await canModerate())) {
       throw new ForbiddenException(
         'Only the poll creator or a member who manages channels can close it',
       );

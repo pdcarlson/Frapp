@@ -130,9 +130,11 @@ describe('PollController', () => {
         messageId,
         userId,
         chapterId,
-        false,
+        expect.any(Function),
       );
       expect(result).toEqual(expectedMessage);
+      // Lazy: nothing is looked up unless the service asks.
+      expect(rbacService.memberHasAnyPermission).not.toHaveBeenCalled();
     });
 
     it('tells the service whether the caller holds channels:manage (#4046)', async () => {
@@ -140,17 +142,13 @@ describe('PollController', () => {
       pollService.close.mockResolvedValue({ id: 'msg-123' } as any);
 
       await controller.close('msg-123', 'chapter-123', 'user-123');
+      const canModerate = pollService.close.mock.calls.at(0)?.[3];
 
+      await expect(canModerate?.()).resolves.toBe(true);
       expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
         'chapter-123',
         'user-123',
         [SystemPermissions.CHANNELS_MANAGE],
-      );
-      expect(pollService.close).toHaveBeenCalledWith(
-        'msg-123',
-        'user-123',
-        'chapter-123',
-        true,
       );
     });
 

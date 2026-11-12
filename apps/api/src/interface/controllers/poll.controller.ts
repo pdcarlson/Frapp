@@ -126,13 +126,13 @@ export class PollController {
     @CurrentUser('id') userId: string,
   ) {
     // Resolved here rather than by `@RequirePermissions`, as chat's
-    // `setChannelDisplayLock` does: the creator needs no permission.
-    const canModerate = await this.rbacService.memberHasAnyPermission(
-      chapterId,
-      userId,
-      [SystemPermissions.CHANNELS_MANAGE],
+    // `setChannelDisplayLock` does, since the creator needs no permission.
+    // Lazy: the service asks only when the caller isn't the poll's creator.
+    return this.pollService.close(messageId, userId, chapterId, () =>
+      this.rbacService.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.CHANNELS_MANAGE,
+      ]),
     );
-    return this.pollService.close(messageId, userId, chapterId, canModerate);
   }
 
   @Get('polls')

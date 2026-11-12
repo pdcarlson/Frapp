@@ -20290,7 +20290,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Set when its creator closed it early."
+            "description": "Set when it was closed early, by its creator or a channels:manage holder."
           },
           "is_closed": {
             "type": "boolean"

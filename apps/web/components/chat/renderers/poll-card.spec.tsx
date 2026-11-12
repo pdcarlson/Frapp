@@ -17,8 +17,8 @@ import {
  * these also pin that it is the member view and not the officer-only config.
  */
 
-// The viewer's permissions, for the Close poll gate (#3794): the seeded Member
-// role's `polls:create` unless a case says otherwise.
+// The viewer's permissions, for the Close poll gate (#3794, #4046): the seeded
+// Member role's, which hold no `channels:manage`, unless a case says otherwise.
 const myPermissions = vi.hoisted(() => ({
   current: ["members:view", "polls:create"] as string[],
 }));

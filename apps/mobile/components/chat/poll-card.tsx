@@ -76,7 +76,8 @@ export interface PollCardProps extends ChatCardFrameProps {
     payload: Record<string, unknown>,
   ) => void;
   /**
-   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * Close poll on an open poll the viewer started, or on anyone's for a
+   * `channels:manage` holder (#3794, #4046). The caller confirms
    * first (`confirmClosePoll`); the card only offers it (`canClosePoll`).
    */
   onClosePoll?: (messageId: string) => void;

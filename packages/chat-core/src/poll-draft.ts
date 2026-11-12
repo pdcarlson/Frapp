@@ -12,8 +12,8 @@ import { tokenizeQuotedArgs } from "./integrations/parsers";
 
 /**
  * When voting stops, as the form offers it. `never` is a poll with no
- * deadline (#3896): it stays open until its creator closes it from the card
- * (Close poll, #3794).
+ * deadline (#3896): it stays open until it is closed from the card (Close
+ * poll, #3794), by its creator or a `channels:manage` holder (#4046).
  */
 export type PollCloseChoice = "1h" | "1d" | "3d" | "1w" | "never";
 

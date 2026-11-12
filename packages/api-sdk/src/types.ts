@@ -6539,7 +6539,7 @@ export interface components {
             closes_at: string | null;
             /**
              * Format: date-time
-             * @description Set when its creator closed it early.
+             * @description Set when it was closed early, by its creator or a channels:manage holder.
              */
             closed_at: string | null;
             is_closed: boolean;

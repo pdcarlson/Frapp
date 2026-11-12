@@ -14,8 +14,8 @@ import { UNCONFIRMED_NOTE, RECORDED_NOTE } from "@/lib/chat/delivery-status";
 
 // The member view the Polls gate reads (#3012). Polls is on unless a case
 // says otherwise.
-// The viewer's permissions, for the Close poll gate (#3794): the seeded Member
-// role's `polls:create` unless a case says otherwise.
+// The viewer's permissions, for the Close poll gate (#3794, #4046): the seeded
+// Member role's, which hold no `channels:manage`, unless a case says otherwise.
 const myPermissions = vi.hoisted(() => ({
   current: ["members:view", "polls:create"] as string[],
 }));
@@ -400,10 +400,13 @@ describe("PollCard closed early by its creator (#3794)", () => {
 
   it("offers it on anyone's poll to a member who manages channels (#4046)", () => {
     myPermissions.current = ["members:view", "channels:manage"];
-    const { tree } = renderWithClose(
+    const { tree, onClosePoll } = renderWithClose(
       poll({ sender_id: OTHER, payload: { ...card, closes_at: null } }),
     );
-    expect(closeButton(tree)).toHaveLength(1);
+    const [button] = closeButton(tree);
+    expect(button).toBeDefined();
+    act(() => button.props.onPress());
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
   });
 
   it("offers it to a creator without polls:create (#4046)", () => {
