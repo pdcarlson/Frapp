@@ -1,0 +1,44 @@
+# The device pass's automated half: builds the app for an Android emulator and
+# an iOS simulator against staging, then runs the Maestro flows in .maestro/
+# on both. Manual only, because each run spends two EAS builds:
+#
+#   npm run eas -- workflow:run .eas/workflows/device-smoke.yml
+#
+# What it checks and what it needs (the smoke account's two MAESTRO_ variables
+# in the EAS "preview" environment): docs/mobile/testing.md § Automated flows.
+name: Device smoke flows
+
+jobs:
+  build_android:
+    name: Build for the Android emulator
+    type: build
+    params:
+      platform: android
+      profile: e2e
+
+  build_ios:
+    name: Build for the iOS simulator
+    type: build
+    params:
+      platform: ios
+      profile: e2e
+
+  test_android:
+    name: Flows on Android
+    needs: [build_android]
+    type: maestro
+    environment: preview
+    params:
+      build_id: ${{ needs.build_android.outputs.build_id }}
+      flow_path: ./.maestro
+      record_screen: false
+
+  test_ios:
+    name: Flows on iOS
+    needs: [build_ios]
+    type: maestro
+    environment: preview
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      flow_path: ./.maestro
+      record_screen: false

@@ -6,7 +6,7 @@ import type {
   AiConsentState,
 } from '../../application/services/ai/ai-consent.service';
 
-export class AiConsentSheetProviderDto {
+class AiConsentSheetProviderDto {
   @ApiProperty({ enum: ['anthropic', 'google', 'assemblyai'] })
   key: 'anthropic' | 'google' | 'assemblyai';
 
@@ -17,7 +17,7 @@ export class AiConsentSheetProviderDto {
   name: string;
 }
 
-export class AiConsentSheetDataKindDto {
+class AiConsentSheetDataKindDto {
   @ApiProperty({
     enum: [
       'questions',
@@ -41,7 +41,7 @@ export class AiConsentSheetDataKindDto {
   label: string;
 }
 
-export class AiConsentSheetDto {
+class AiConsentSheetDto {
   @ApiProperty({
     description:
       'The sheet version. Send it back with the answer; a new version asks everyone again.',

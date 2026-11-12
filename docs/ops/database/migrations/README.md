@@ -31,8 +31,8 @@ still count for older migrations and for a PR opened before this page existed.
 on `main`. When another PR merges a newer one first, run:
 
 ```bash
-git merge origin/main
-npm run migration:renumber
+npm run merge:main          # merges origin/main, then runs the renumber below
+npm run migration:renumber  # on its own, after a merge you made by hand
 ```
 
 It moves the branch's own migrations and their pages to fresh versions (keeping

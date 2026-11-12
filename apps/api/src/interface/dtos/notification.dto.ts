@@ -66,7 +66,7 @@ function normalizeBlankToNull(value: unknown): unknown {
  * server's, so clients must never treat their own verdict as final.
  */
 @ValidatorConstraint({ name: 'supportedTimeZone', async: false })
-export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
+class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     // `null` clears the field, and the @Transform below has already turned blank
     // input into `null` — so any string reaching here is a real candidate zone.
@@ -183,7 +183,7 @@ export class UpdateNotificationPreferenceDto {
  * character and the Unicode line and paragraph separators, not only CR and LF.
  */
 @ValidatorConstraint({ name: 'customStatusLine', async: false })
-export class CustomStatusLineConstraint implements ValidatorConstraintInterface {
+class CustomStatusLineConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     return (
       typeof value === 'string' &&

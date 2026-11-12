@@ -41,19 +41,19 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Proposals one batch may carry (`ai_suggestions.ordinal` is 0 to 199). */
-export const AI_SUGGESTION_BATCH_MAX = 200;
+const AI_SUGGESTION_BATCH_MAX = 200;
 /** Rows the Suggested list returns. Waiting rows expire, so it stays small. */
 export const AI_SUGGESTION_LIST_LIMIT = 200;
 /** Decisions one batch request may carry (the review screen's Confirm). */
 export const AI_SUGGESTION_DECIDE_MAX = 50;
 /** The longest quote kept, in characters (`ai_suggestions.quote`). */
-export const AI_SUGGESTION_QUOTE_MAX_LENGTH = 1000;
+const AI_SUGGESTION_QUOTE_MAX_LENGTH = 1000;
 /**
  * The largest proposal kept, in bytes of JSON. Under the table's 16000-byte
  * check, which measures Postgres's own rendering (a little longer), so a
  * proposal that passes here never fails the insert and takes the batch with it.
  */
-export const AI_SUGGESTION_PAYLOAD_MAX_BYTES = 15000;
+const AI_SUGGESTION_PAYLOAD_MAX_BYTES = 15000;
 /** Pages of waiting rows the list reads looking for ones the caller may see. */
 const LIST_MAX_PAGES = 5;
 /** An accept still `accepting` after this long died mid-way and is put back. */

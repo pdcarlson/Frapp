@@ -1,4 +1,4 @@
-// The rows `tiers/chat-read-enforcement.mjs` seeds, and the scenarios it and
+// The rows `chat-read-enforcement.mjs` seeds, and the scenarios it and
 // `tiers/chat-black-box.mjs` read them back with.
 
 export const F = {

@@ -1,4 +1,4 @@
-export const BOOLEAN_STRING_QUERY_VALUES = ['true', 'false', '1', '0'] as const;
+const BOOLEAN_STRING_QUERY_VALUES = ['true', 'false', '1', '0'] as const;
 
 /** String literals accepted for optional boolean query params (DTO + OpenAPI). */
 export type BooleanStringQueryValue =

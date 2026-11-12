@@ -34,15 +34,15 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-## 2026-11-12: Sign-up headcounts and closing (#3926, step 2)
+## 2026-11-12: Removing a reaction works, and clients write no other chat action (#724, #4513)
 
-### 20261112280000_signup_headcount_close.sql
+### 20261112280000_chat_message_actions_client_writes.sql
 
-- **Purpose**: Replaces `claim_signup_slots(uuid, uuid, text[])` with `claim_signup_slots(uuid, uuid, text[], text default null)`. The new argument is the note a member may add to a headcount answer, stored as the claim's `payload.note`. The function now refuses every claim on a card that is closed (`signup_closed`): `payload.closed_at` is set, or `payload.closes_at` has passed. Both are read under the card's row lock. Still security definer, with EXECUTE for `service_role` only. Changes no table and writes no row on apply.
-- **Checks**: After `db push`, `select count(*) from pg_proc where proname = 'claim_signup_slots';` returns `1`. `select has_function_privilege('authenticated', 'public.claim_signup_slots(uuid, uuid, text[], text)', 'execute');` returns `false`, and the same check for `service_role` returns `true`.
-- **Promoter notes**: Apply it after `20261112250000_signup_card_claims.sql`, whose function it replaces. The step 1 API's three-argument call still resolves, because `p_note` has a default, so the migration can land before or with the API. Hosted projects are not applied from a cloud-agent session.
+- **Purpose**: Adds `chat_action_is_callers(uuid)` (security definer, EXECUTE for `authenticated` and `service_role` only), which answers whether an app user id is the caller's own. Re-creates `chat_message_actions_delete` `to authenticated` as `starts_with(action_type, 'reaction:') and chat_action_is_callers(user_id)`, drops `chat_message_actions_insert`, and revokes INSERT and UPDATE on `chat_message_actions` from `anon` and `authenticated`. The old policies found the caller through a `users` subselect that `users`' default-deny RLS empties, so a member's direct delete of their own reaction (both apps' unreact) removed nothing. No rows are read or written.
+- **Checks**: After `db push`, `select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'chat_message_actions_delete';` mentions `chat_action_is_callers(user_id)`, `select count(*) from pg_policy where polname = 'chat_message_actions_insert';` is 0, `select has_table_privilege('authenticated', 'public.chat_message_actions', 'insert');` is `false`, and `select has_function_privilege('anon', 'public.chat_action_is_callers(uuid)', 'execute');` is `false`. Proven in PGlite by the client-writes tier of `scripts/pglite/tiers/chat-black-box.mjs`. On staging, remove a reaction on web, reload, and it stays gone.
+- **Promoter notes**: No API change depends on it, and shipped phone builds already send the delete it allows, so the fix reaches them with the migration and no app update. `create or replace` and `drop policy if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-sign-up-headcounts-and-closing-20261112280000) § Rollback sign-up headcounts and closing.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-reaction-removal-policy-20261112280000) § Rollback reaction removal policy.
 
 ## 2026-11-12: Study zones drawn on a map (#2239)
 

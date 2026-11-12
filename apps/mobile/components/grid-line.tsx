@@ -4,9 +4,9 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
- * Tiles to a line in every screen's Grid layout (#4175): the Directory's and
- * Documents' alike, so the two screens the List/Grid toggle switches lay out
- * the same way. One place to change it.
+ * Tiles to a line in every screen's Grid layout (#4175): the Directory's,
+ * Documents' and Tasks' alike, so every screen the List/Grid toggle switches
+ * lays out the same way. One place to change it.
  */
 export const GRID_COLUMNS = 2;
 

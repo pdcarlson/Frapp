@@ -7,7 +7,7 @@ import type {
 } from '#domain/adapters/transcription.interface';
 
 /** How long the scripted transcriber takes, so the waiting state can be seen. */
-export const SCRIPTED_TRANSCRIPTION_DELAY_MS = 4_000;
+const SCRIPTED_TRANSCRIPTION_DELAY_MS = 4_000;
 
 /**
  * The transcriber that needs no network and no key (`AI_PROVIDER=scripted`).

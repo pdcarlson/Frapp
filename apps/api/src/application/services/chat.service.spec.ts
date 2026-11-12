@@ -565,13 +565,58 @@ describe('ChatService', () => {
       it('keeps its lists when it moves to another category', async () => {
         mockChannelRepo.findById.mockResolvedValue(roleGated);
         mockChannelRepo.update.mockResolvedValue(roleGated);
+        mockCategoryRepo.findById.mockResolvedValue({
+          id: 'cat-2',
+          chapter_id: 'ch-1',
+          name: 'Chapter',
+          display_order: 0,
+          created_at: '',
+          who_can_see: [`tier:${EXEC_TIER}`],
+          who_can_post: null,
+        });
 
         await service.updateChannel('chan-1', 'ch-1', { category_id: 'cat-2' });
 
+        // Looked up only to check it is this chapter's; its lists aren't copied.
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith('cat-2', 'ch-1');
         expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
           category_id: 'cat-2',
         });
-        expect(mockCategoryRepo.findById).not.toHaveBeenCalled();
+      });
+
+      it("refuses a move into another chapter's category, writing nothing", async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+        // Scoped to this chapter, so another chapter's category isn't found.
+        mockCategoryRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            category_id: 'cat-other-chapter',
+          }),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith(
+          'cat-other-chapter',
+          'ch-1',
+        );
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it("refuses a new channel in another chapter's category, writing nothing", async () => {
+        mockCategoryRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'budget',
+              type: 'PUBLIC',
+              category_id: 'cat-other-chapter',
+            },
+            'u-creator',
+          ),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
       });
 
       it('refuses matching with no category, or with lists sent too', async () => {

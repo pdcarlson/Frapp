@@ -6,7 +6,7 @@
  * omits `commit` rather than guessing. Sentry `release` and source-map upload
  * use the same helper so classic map matching agrees with the event envelope.
  */
-export const RENDER_GIT_COMMIT_ENV = 'RENDER_GIT_COMMIT';
+const RENDER_GIT_COMMIT_ENV = 'RENDER_GIT_COMMIT';
 
 const GIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 

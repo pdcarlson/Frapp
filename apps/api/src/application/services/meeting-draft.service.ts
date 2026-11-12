@@ -59,11 +59,11 @@ import { AiConsentService } from './ai/ai-consent.service';
 import { aiConsentRefusal } from './ai/ai-consent-refusal';
 
 /** The catalog task, and the AI run kind, for a draft from notes. */
-export const MINUTES_DRAFT_TASK = 'minutes.draft';
-export const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
+const MINUTES_DRAFT_TASK = 'minutes.draft';
+const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
 
 /** Notes and drafts older than this are deleted, posted or not. */
-export const MEETING_DRAFT_RETENTION_DAYS = 30;
+const MEETING_DRAFT_RETENTION_DAYS = 30;
 
 /** What the editor reads about a meeting's draft from notes. */
 export interface MeetingDraftState {

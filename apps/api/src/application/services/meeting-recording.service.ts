@@ -60,16 +60,16 @@ import { AiConsentService } from './ai/ai-consent.service';
 import { aiConsentRefusal } from './ai/ai-consent-refusal';
 
 /** The catalog task, and the AI run kind, for a recording's transcript. */
-export const MEETING_TRANSCRIPTION_TASK = 'meetings.transcribe';
-export const MEETING_TRANSCRIPTION_RUN_KIND = 'meeting_transcription';
+const MEETING_TRANSCRIPTION_TASK = 'meetings.transcribe';
+const MEETING_TRANSCRIPTION_RUN_KIND = 'meeting_transcription';
 /** Stamped on the usage ledger where a prompt's version goes. */
-export const MEETING_TRANSCRIPTION_VERSION = 'meetings.transcribe@v1';
+const MEETING_TRANSCRIPTION_VERSION = 'meetings.transcribe@v1';
 
 /** The private bucket a recording waits in (`20261112210000_meeting_recordings.sql`). */
 export const MEETING_AUDIO_BUCKET = 'meeting-audio';
 
 /** A recording and its transcript older than this are deleted, like notes. */
-export const MEETING_RECORDING_RETENTION_DAYS = 30;
+const MEETING_RECORDING_RETENTION_DAYS = 30;
 
 /**
  * How long an upload may stay unfinished before it reads as failed. Two

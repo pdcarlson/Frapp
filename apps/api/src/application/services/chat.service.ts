@@ -452,6 +452,11 @@ export class ChatService {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
 
+    await this.accessLists.assertCategoryInChapter(
+      input.chapter_id,
+      input.category_id,
+    );
+
     // Who can see and post (#3722): the lists sent, else the category's.
     // Writes `type` and `is_read_only` to match, which the database checks.
     const access = await this.accessLists.forNewChannel(
@@ -553,6 +558,8 @@ export class ChatService {
     ) {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
+
+    await this.accessLists.assertCategoryInChapter(chapterId, data.category_id);
 
     // Who can see and post (#3722). Moving a channel to another category
     // keeps its lists; `match_category_access` copies the category's.
