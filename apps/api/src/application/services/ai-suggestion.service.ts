@@ -667,11 +667,16 @@ export class AiSuggestionService {
     };
   }
 
-  /** Dismisses a suggestion. Dismissing one already dismissed changes nothing. */
+  /**
+   * Dismisses a suggestion. Dismissing one already dismissed changes nothing.
+   * `reason` says why when the member said (`already_doing`: the chapter is
+   * already on it, #3930); it goes to the analytics event and is not stored.
+   */
   async dismiss(
     chapterId: string,
     userId: string,
     id: string,
+    reason?: 'already_doing',
   ): Promise<AiSuggestionDecisionResult> {
     const { row } = await this.loadForDecision(chapterId, userId, id);
     if (!this.isWaiting(row)) {
@@ -693,7 +698,7 @@ export class AiSuggestionService {
     this.emit(
       this.analytics.track('ai-suggestion-dismissed', userId, {
         chapterId,
-        properties: { kind: row.kind },
+        properties: { kind: row.kind, ...(reason ? { reason } : {}) },
       }),
     );
     return { suggestion: claimed, result: null };

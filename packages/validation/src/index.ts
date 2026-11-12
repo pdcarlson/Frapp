@@ -1061,6 +1061,7 @@ export * from "./meeting-recording";
 
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+export * from "./last-year";
 
 export {
   AI_CONSENT_COPY,

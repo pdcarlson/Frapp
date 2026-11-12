@@ -10057,7 +10057,8 @@
               "enum": [
                 "meeting",
                 "event",
-                "channel"
+                "channel",
+                "task"
               ]
             }
           },
@@ -10173,6 +10174,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissAiSuggestionDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -10434,6 +10445,124 @@
           }
         ],
         "summary": "Turn the chapter’s AI features on or off",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs": {
+      "get": {
+        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
+        "operationId": "AiRunController_list_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only runs of this kind (`minutes_draft`).",
+            "schema": {
+              "example": "minutes_draft",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiRunDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's AI runs",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}": {
+      "get": {
+        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
+        "operationId": "AiRunController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get one AI run",
         "tags": [
           "AI"
         ]
@@ -13127,124 +13256,6 @@
         "summary": "Undo an officer’s remove, so a link shows on Activity again (channels:manage)",
         "tags": [
           "Activity"
-        ]
-      }
-    },
-    "/v1/ai/runs": {
-      "get": {
-        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
-        "operationId": "AiRunController_list_v1",
-        "parameters": [
-          {
-            "name": "kind",
-            "required": false,
-            "in": "query",
-            "description": "Only runs of this kind (`minutes_draft`).",
-            "schema": {
-              "example": "minutes_draft",
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 20,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AiRunDto"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List the caller's AI runs",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/ai/runs/{id}": {
-      "get": {
-        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
-        "operationId": "AiRunController_get_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiRunDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get one AI run",
-        "tags": [
-          "AI"
         ]
       }
     },
@@ -21181,7 +21192,8 @@
             "enum": [
               "meeting",
               "event",
-              "channel"
+              "channel",
+              "task"
             ]
           },
           "id": {
@@ -21225,6 +21237,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "last_year_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Present on a \"this time last year\" suggestion: the day last year's task, its source, was due."
           }
         },
         "required": [
@@ -21234,6 +21251,29 @@
           "due_date",
           "due_at",
           "subtasks"
+        ]
+      },
+      "EventSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "last_year_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the source event started, last year."
+          },
+          "times": {
+            "type": "number",
+            "description": "How many times it was held around then (a weekly series)."
+          }
+        },
+        "required": [
+          "name",
+          "last_year_at",
+          "times"
         ]
       },
       "AiSuggestionDto": {
@@ -21246,7 +21286,8 @@
           "kind": {
             "type": "string",
             "enum": [
-              "task"
+              "task",
+              "event"
             ]
           },
           "status": {
@@ -21274,6 +21315,16 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionDto"
+              }
+            ]
+          },
+          "event": {
+            "nullable": true,
+            "description": "The suggested event, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionDto"
               }
             ]
           },
@@ -21372,6 +21423,19 @@
           }
         }
       },
+      "EventSuggestionAcceptDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event the caller added from this suggestion. It must be in the chapter and made by the caller."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
       "AcceptAiSuggestionDto": {
         "type": "object",
         "properties": {
@@ -21380,6 +21444,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
               }
             ]
           }
@@ -21391,7 +21463,8 @@
           "kind": {
             "type": "string",
             "enum": [
-              "task"
+              "task",
+              "event"
             ]
           },
           "id": {
@@ -21426,6 +21499,18 @@
           "result"
         ]
       },
+      "DismissAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "already_doing"
+            ],
+            "description": "`already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal."
+          }
+        }
+      },
       "AiSuggestionDecideItemDto": {
         "type": "object",
         "properties": {
@@ -21434,6 +21519,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
               }
             ]
           },
@@ -21688,6 +21781,98 @@
             "type": "boolean"
           }
         }
+      },
+      "AiRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The run kind, `snake_case`.",
+            "example": "minutes_draft"
+          },
+          "label": {
+            "type": "string",
+            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
+            "example": "Drafting minutes"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempt_count": {
+            "type": "number",
+            "description": "Tries so far, the one in progress included.",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "unknown_kind",
+              "ai_unavailable",
+              "not_permitted",
+              "source_gone",
+              "spend_limit",
+              "invalid_result",
+              "handler_failed",
+              "attempts_exhausted"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
+          },
+          "result_ref": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "status",
+          "attempt_count",
+          "max_attempts",
+          "failure_reason",
+          "failure_message",
+          "result_ref",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ]
       },
       "PledgeClassDto": {
         "type": "object",
@@ -23229,98 +23414,6 @@
         },
         "required": [
           "state"
-        ]
-      },
-      "AiRunDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "description": "The run kind, `snake_case`.",
-            "example": "minutes_draft"
-          },
-          "label": {
-            "type": "string",
-            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
-            "example": "Drafting minutes"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "succeeded",
-              "failed",
-              "cancelled"
-            ]
-          },
-          "attempt_count": {
-            "type": "number",
-            "description": "Tries so far, the one in progress included.",
-            "minimum": 0
-          },
-          "max_attempts": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 10
-          },
-          "failure_reason": {
-            "type": "string",
-            "enum": [
-              "unknown_kind",
-              "ai_unavailable",
-              "not_permitted",
-              "source_gone",
-              "spend_limit",
-              "invalid_result",
-              "handler_failed",
-              "attempts_exhausted"
-            ],
-            "nullable": true
-          },
-          "failure_message": {
-            "type": "string",
-            "nullable": true,
-            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
-          },
-          "result_ref": {
-            "type": "object",
-            "additionalProperties": true,
-            "nullable": true,
-            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "finished_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "label",
-          "status",
-          "attempt_count",
-          "max_attempts",
-          "failure_reason",
-          "failure_message",
-          "result_ref",
-          "created_at",
-          "started_at",
-          "finished_at"
         ]
       },
       "CreateDiscordImportDto": {

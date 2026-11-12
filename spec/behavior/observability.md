@@ -502,11 +502,11 @@ AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed
 | --- | --- | --- | --- |
 | `ai-suggestions-proposed` | A run saves a batch | Chapter (`trackForChapter`) | `kind`, `count` |
 | `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
-| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
+| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind`, and `reason` (`already_doing`) when they said the chapter is already on it (#3930) |
 | `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
 | `ai-suggestions-withdrawn` | A source that changed takes back waiting ones (#4313): the action item was removed, or its owner or day changed and it is proposed again | Chapter | `kind`, `count` |
 
-`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
+`kind` is a closed set (`task`, `event`). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
 
 ## Member Onboarding Funnel
 

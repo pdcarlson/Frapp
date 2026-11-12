@@ -639,6 +639,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 3,
     entries: [MEMBER_TEXT],
   },
+  // The week's one "this time last year" push to the president (#3930).
+  // Names last year's event or task as an officer titled it.
+  'application/services/last-year-suggestions.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   // The hand-off to `MeetingService.notifyRecordingUploaded` (#712).
   'application/services/meeting-recording.service.ts': {
     calls: 1,

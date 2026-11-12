@@ -98,7 +98,9 @@ describe("SuggestedTasks (#4313)", () => {
 
   it("accepts a suggestion that says who and when in one press, sending no changes", async () => {
     mocks.items.current = [suggestion("1")];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     expect(screen.getByText("Task 1")).toBeTruthy();
     // The quote is the title's own line here, so it isn't drawn twice.
     expect(screen.queryByText("“Task 1”")).toBeNull();
@@ -118,7 +120,9 @@ describe("SuggestedTasks (#4313)", () => {
     mocks.items.current = [
       suggestion("1", { assignee_id: null, due_date: null }),
     ];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     // Not flagged before the officer asks for anything.
     expect(screen.queryByText("Pick who this is for.")).toBeNull();
 
@@ -131,7 +135,9 @@ describe("SuggestedTasks (#4313)", () => {
 
   it("sends the day the officer typed in place", async () => {
     mocks.items.current = [suggestion("1", { due_date: null })];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     fireEvent.change(screen.getByLabelText("Due date for Task 1"), {
       target: { value: "12/25/2030" },
     });
@@ -149,15 +155,24 @@ describe("SuggestedTasks (#4313)", () => {
     mocks.items.current = [
       suggestion("1", { assignee_id: null, due_date: null }),
     ];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /^Dismiss / }));
-    await waitFor(() => expect(mocks.dismiss).toHaveBeenCalledWith("1"));
+    await waitFor(() =>
+      expect(mocks.dismiss).toHaveBeenCalledWith({
+        id: "1",
+        reason: undefined,
+      }),
+    );
     expect(mocks.accept).not.toHaveBeenCalled();
   });
 
   it("opens the task form on the suggestion, with no points to set, and accepts what it holds", async () => {
     mocks.items.current = [suggestion("1")];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "Change Task 1 before accepting" }),
     );
@@ -189,7 +204,9 @@ describe("SuggestedTasks (#4313)", () => {
   it("says in plain words when another officer got there first", async () => {
     mocks.items.current = [suggestion("1")];
     mocks.accept.mockRejectedValue({ code: "ai.suggestion.decided" });
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     fireEvent.click(acceptButtons()[0]!);
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
@@ -210,7 +227,9 @@ describe("SuggestedTasks (#4313)", () => {
       { id: "1", ok: true },
       { id: "2", ok: false, code: "ai.suggestion.decided" },
     ]);
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     const all = screen.getByRole("button", {
       name: "Accept the 2 with an assignee and a due date",
     });
@@ -238,7 +257,9 @@ describe("SuggestedTasks (#4313)", () => {
 
   it("offers no Accept all for a single suggestion", () => {
     mocks.items.current = [suggestion("1")];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     expect(screen.queryByRole("button", { name: /accept all/i })).toBeNull();
   });
 
@@ -253,8 +274,51 @@ describe("SuggestedTasks (#4313)", () => {
   });
 
   it("shows the line of the minutes when the title had to be cut from it", () => {
-    mocks.items.current = [{ ...suggestion("1"), quote: "The whole long line" }];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    mocks.items.current = [
+      { ...suggestion("1"), quote: "The whole long line" },
+    ];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     expect(screen.getByText("“The whole long line”")).toBeTruthy();
+  });
+
+  it("says where a suggestion from last year's board came from, and takes Already planned in one press (#3930)", async () => {
+    mocks.items.current = [
+      {
+        ...suggestion("1", {
+          assignee_id: null,
+          due_date: "2027-04-12",
+          last_year_on: "2026-04-13",
+        }),
+        source: { type: "task", id: "t-old" },
+      },
+    ];
+    render(<SuggestedTasks headingId="s" />);
+    // What happened, that it isn't seen this year, and the invitation to
+    // correct it; the date written out with its year.
+    expect(
+      screen.getByText(
+        "This time last year: done by April 13, 2026. I don’t see it on this year’s board. Correct me if it’s already handled.",
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Already planned" }));
+
+    await waitFor(() =>
+      expect(mocks.dismiss).toHaveBeenCalledWith({
+        id: "1",
+        reason: "already_doing",
+      }),
+    );
+    expect(mocks.accept).not.toHaveBeenCalled();
+  });
+
+  it("offers Already planned only on a suggestion from last year", () => {
+    mocks.items.current = [suggestion("1")];
+    render(<SuggestedTasks headingId="s" />);
+    expect(
+      screen.queryByRole("button", { name: "Already planned" }),
+    ).toBeNull();
   });
 });

@@ -31,10 +31,16 @@ import type {
   AiSuggestionDecideOutcome,
   AiSuggestionDecisionResult,
 } from '../../application/services/ai-suggestion.service';
+import { readEventPayload } from '../../application/services/ai-suggestion-event-kind';
 import {
   readTaskPayload,
   TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH,
 } from '../../application/services/ai-suggestion-task-kind';
+
+function eventOf(row: AiSuggestion): EventSuggestionDto {
+  const { name, last_year_at, times } = readEventPayload(row.payload);
+  return { name, last_year_at, times };
+}
 
 export class ListAiSuggestionsQueryDto {
   @ApiPropertyOptional({
@@ -115,6 +121,37 @@ export class TaskSuggestionEditsDto {
   subtasks?: string[];
 }
 
+/**
+ * How a suggested event is accepted (#3930): the officer adds the event
+ * through the ordinary event form and route, then names it here. The accept
+ * records it; it never makes an event.
+ */
+export class EventSuggestionAcceptDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The event the caller added from this suggestion. It must be in the chapter and made by the caller.',
+  })
+  @IsUUID()
+  event_id: string;
+}
+
+/** Why a suggestion was dismissed, for the analytics event only. Never stored. */
+export const AI_SUGGESTION_DISMISS_REASONS = ['already_doing'] as const;
+export type AiSuggestionDismissReason =
+  (typeof AI_SUGGESTION_DISMISS_REASONS)[number];
+
+export class DismissAiSuggestionDto {
+  @ApiPropertyOptional({
+    enum: AI_SUGGESTION_DISMISS_REASONS,
+    description:
+      '`already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.',
+  })
+  @IsOptional()
+  @IsIn(AI_SUGGESTION_DISMISS_REASONS)
+  reason?: AiSuggestionDismissReason;
+}
+
 export class AcceptAiSuggestionDto {
   @ApiPropertyOptional({
     type: TaskSuggestionEditsDto,
@@ -124,6 +161,15 @@ export class AcceptAiSuggestionDto {
   @ValidateNested()
   @Type(() => TaskSuggestionEditsDto)
   task?: TaskSuggestionEditsDto;
+
+  @ApiPropertyOptional({
+    type: EventSuggestionAcceptDto,
+    description: 'Required to accept a suggested event.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventSuggestionAcceptDto)
+  event?: EventSuggestionAcceptDto;
 }
 
 export class AiSuggestionDecideItemDto extends AcceptAiSuggestionDto {
@@ -173,6 +219,32 @@ export class TaskSuggestionDto {
 
   @ApiProperty({ type: [String] })
   subtasks: string[];
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    description:
+      'Present on a "this time last year" suggestion: the day last year\'s task, its source, was due.',
+  })
+  last_year_on?: string;
+}
+
+export class EventSuggestionDto {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description: 'When the source event started, last year.',
+  })
+  last_year_at: string | null;
+
+  @ApiProperty({
+    description: 'How many times it was held around then (a weekly series).',
+  })
+  times: number;
 }
 
 export class AiSuggestionSourceDto {
@@ -210,6 +282,14 @@ export class AiSuggestionDto {
   })
   task: TaskSuggestionDto | null;
 
+  @ApiPropertyOptional({
+    type: EventSuggestionDto,
+    nullable: true,
+    description:
+      'The suggested event, while it waits. Null for another kind, and once decided or expired.',
+  })
+  event?: EventSuggestionDto | null;
+
   @ApiProperty({
     type: String,
     nullable: true,
@@ -245,6 +325,7 @@ export class AiSuggestionDto {
       batch_id: row.batch_id,
       task:
         waiting && row.kind === 'task' ? readTaskPayload(row.payload) : null,
+      event: waiting && row.kind === 'event' ? eventOf(row) : null,
       quote: waiting ? row.quote : null,
       edited: row.edited,
       result_id: row.result_id,

@@ -30,6 +30,11 @@ export interface TaskSuggestionPayload {
   /** The moment it is due, when a time of day was named. */
   due_at: string | null;
   subtasks: string[];
+  /**
+   * Set only on a "this time last year" suggestion (#3930): the day last
+   * year's task, its source, was due. The screen words the row from it.
+   */
+  last_year_on?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,7 +90,14 @@ export function readTaskPayload(
     due_date: dateOrNull(payload.due_date),
     due_at: instantOrNull(payload.due_at),
     subtasks: subtaskList(payload.subtasks),
+    ...lastYearOn(payload.last_year_on),
   };
+}
+
+/** The key only when it holds a day, so other suggestions' payloads don't change. */
+function lastYearOn(value: unknown): { last_year_on?: string } {
+  const day = dateOrNull(value);
+  return day ? { last_year_on: day } : {};
 }
 
 function toPayload(task: TaskSuggestionPayload): AiSuggestionPayload {
@@ -131,6 +143,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
       // A time needs its day; the task service checks they agree on accept.
       due_at: dueDate ? instantOrNull(input.due_at) : null,
       subtasks: subtaskList(input.subtasks),
+      ...lastYearOn(input.last_year_on),
     });
   }
 
