@@ -563,7 +563,7 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.viewerId).toBe("me");
   });
 
-  it("dots an unread row, says so, and records the open (#4402)", () => {
+  it("dots an unread row, says so, and records the open (#4405)", () => {
     const data = read();
     activity.value = {
       ...activity.value,

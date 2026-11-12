@@ -331,7 +331,7 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
-  it("dots an unread row and records the open when it is opened (#4402)", () => {
+  it("dots an unread row and records the open when it is opened (#4405)", () => {
     mockActivity.mockReturnValue(
       loaded({
         needs_you: {

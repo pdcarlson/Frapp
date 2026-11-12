@@ -312,7 +312,7 @@ export function ActivityPage() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [opened, setOpened] = useState<ActivityRow | null>(null);
-  // Dots (#4402): opening a row from here is what reads it; scrolling past
+  // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
   const openFromList = (row: ActivityRow) => {

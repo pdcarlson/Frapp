@@ -38,6 +38,7 @@ import {
 } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
+import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Sheet,
@@ -394,14 +395,7 @@ function NotificationRow({
         "focus-visible:ring-inset",
       )}
     >
-      <span
-        aria-hidden="true"
-        data-unread-dot={isRead ? undefined : ""}
-        className={cn(
-          "mt-[14px] size-2 rounded-full",
-          isRead ? "bg-transparent" : "bg-foreground",
-        )}
-      />
+      <UnreadDot unread={!isRead} className="mt-[14px]" />
       <NotificationPicture
         kind={look.kind}
         personId={look.personId}

@@ -110,7 +110,7 @@ const unreadKeys = (data: Activity) =>
     .filter((row) => row.unread)
     .map((row) => row.key);
 
-describe("Activity rows' unread (#4402)", () => {
+describe("Activity rows' unread (#4405)", () => {
   it("dots the rows the read serves unread, never one under Made by you", () => {
     expect(unreadKeys(read()).sort()).toEqual(
       [
@@ -176,13 +176,28 @@ describe("markActivityItemsRead", () => {
   });
 });
 
-function setup(data: Activity) {
+/** A promise the test settles by hand. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function setup(
+  data: Activity,
+  calls: {
+    PUT?: () => Promise<unknown>;
+    POST?: () => Promise<unknown>;
+  } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   queryClient.setQueryData(KEY, data);
-  const PUT = vi.fn(async () => ({}));
-  const POST = vi.fn(async () => ({}));
+  const PUT = vi.fn(calls.PUT ?? (async () => ({})));
+  const POST = vi.fn(calls.POST ?? (async () => ({})));
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={
@@ -217,9 +232,51 @@ describe("useActivityUnread", () => {
     expect(PUT).not.toHaveBeenCalled();
   });
 
-  it("clears an opened row's dot at once and records the open", async () => {
+  it("tries again on the next read when starting them never reached the server", async () => {
+    const first = read({ unread_since: null });
+    const { PUT, wrapper } = setup(first, {
+      PUT: () => Promise.reject(new TypeError("Network request failed")),
+    });
+    const { rerender } = renderHook(
+      ({ data }: { data: Activity }) => useActivityUnread(data),
+      { wrapper, initialProps: { data: first } },
+    );
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(1));
+    // Let the rejection settle, then a fresh read that still serves none.
+    await act(async () => {});
+    rerender({ data: read({ unread_since: null }) });
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(2));
+  });
+
+  it("clears an opened row's dot before the server answers, then records the open", async () => {
     const data = read();
-    const { queryClient, POST, wrapper } = setup(data);
+    const post = deferred<unknown>();
+    const { queryClient, POST, wrapper } = setup(data, {
+      POST: () => post.promise,
+    });
+    const { result } = renderHook(() => useActivityUnread(data), { wrapper });
+    act(() => result.current.markRead([{ kind: "link", item_id: "l1" }]));
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith("/v1/activity/reads", {
+        body: { items: [{ kind: "link", item_id: "l1" }] },
+      }),
+    );
+    // The POST hasn't answered: the clear is the optimistic one.
+    expect(queryClient.getQueryData<Activity>(KEY)?.links[0]!.unread).toBe(
+      false,
+    );
+    await act(async () => post.resolve({}));
+  });
+
+  it("drops a read already in flight, which would bring the dot back, and reads again behind it", async () => {
+    const data = read();
+    const post = deferred<unknown>();
+    const { queryClient, wrapper } = setup(data, { POST: () => post.promise });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const stale = deferred<Activity>();
+    void queryClient
+      .fetchQuery({ queryKey: KEY, queryFn: () => stale.promise })
+      .catch(() => {});
     const { result } = renderHook(() => useActivityUnread(data), { wrapper });
     act(() => result.current.markRead([{ kind: "link", item_id: "l1" }]));
     await waitFor(() =>
@@ -227,22 +284,12 @@ describe("useActivityUnread", () => {
         false,
       ),
     );
-    await waitFor(() =>
-      expect(POST).toHaveBeenCalledWith("/v1/activity/reads", {
-        body: { items: [{ kind: "link", item_id: "l1" }] },
-      }),
+    // The read served before the open lands now, still saying unread.
+    await act(async () => stale.resolve(read()));
+    expect(queryClient.getQueryData<Activity>(KEY)?.links[0]!.unread).toBe(
+      false,
     );
-  });
-
-  it("reads again behind a read it cancelled, so an action's re-read still lands", async () => {
-    const data = read();
-    const { queryClient, wrapper } = setup(data);
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    void queryClient
-      .fetchQuery({ queryKey: KEY, queryFn: () => new Promise(() => {}) })
-      .catch(() => {});
-    const { result } = renderHook(() => useActivityUnread(data), { wrapper });
-    act(() => result.current.markRead([{ kind: "link", item_id: "l1" }]));
+    await act(async () => post.resolve({}));
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY, exact: true }),
     );

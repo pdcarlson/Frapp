@@ -52,7 +52,7 @@ export function markActivityItemsRead(
 }
 
 /**
- * Unread dots on Activity (`spec/behavior/activity.md` § Unread, #4402).
+ * Unread dots on Activity (`spec/behavior/activity.md` § Unread, #4405).
  *
  * Starts the member's dots: when the read serves `unread_since: null`, it
  * calls `PUT /v1/activity/unread-since` once for the chapter, so a row that
@@ -73,15 +73,22 @@ export function useActivityUnread(activity: Activity | undefined): {
   const chapterId = useActiveChapterId();
   const started = useRef<string | null>(null);
 
-  const needsStart = !!activity && activity.unread_since === null;
+  // Checked on every read (the read is the dependency), so one that failed
+  // to start them is tried again on the next read.
   useEffect(() => {
+    const needsStart = !!activity && activity.unread_since === null;
     if (!needsStart || !chapterId || started.current === chapterId) return;
     started.current = chapterId;
+    // Try again on a later read if it fails, whether the server refused it
+    // or it never got there (a dropped connection rejects); nothing else
+    // waits on it.
+    const retryLater = () => {
+      if (started.current === chapterId) started.current = null;
+    };
     void client.PUT("/v1/activity/unread-since").then(({ error }) => {
-      // Try again on a later read; nothing else waits on it.
-      if (error && started.current === chapterId) started.current = null;
-    });
-  }, [needsStart, chapterId, client]);
+      if (error) retryLater();
+    }, retryLater);
+  }, [activity, chapterId, client]);
 
   const mutation = useMutation({
     mutationKey: ["activity-mark-read"],

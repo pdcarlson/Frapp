@@ -14,6 +14,7 @@ import {
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { StatusChip } from "@/components/status-chip";
+import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -40,13 +41,14 @@ export function ActivityListRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
+  const dotStyles = createUnreadDotStyles(tokens);
   const rowStyle = [styles.row, isFirst ? null : styles.divider];
   const content = (
     <>
-      {/* The unread mark (#4402): a neutral dot in a slot of its own, as the
-          notification list draws it, kept when read so rows don't shift. */}
+      {/* The unread mark (#4405): the notification list's dot, in a slot of
+          its own that stays when read so rows don't shift. */}
       <View
-        style={row.unread ? styles.dot : styles.dotSpacer}
+        style={row.unread ? dotStyles.dot : dotStyles.spacer}
         testID={row.unread ? "activity-unread-dot" : undefined}
       />
       <ActivityRowLead row={row} />
@@ -172,7 +174,7 @@ export function ActivityRowSkeleton({
   const { label, caption } = tokens.typography.role;
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
-      <View style={styles.dotSpacer} />
+      <View style={createUnreadDotStyles(tokens).spacer} />
       <SkeletonBlock
         width={LEAD_SIZE}
         height={LEAD_SIZE}
@@ -195,8 +197,6 @@ const LEAD_SIZE = 40;
 const ASK_HEIGHT = 28;
 
 function createActivityRowStyles(tokens: SignetTokens) {
-  // The notification list's dot (`app/(app)/notifications.tsx`).
-  const DOT_SIZE = tokens.spacing.sm;
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -207,19 +207,6 @@ function createActivityRowStyles(tokens: SignetTokens) {
       // Square and hairline-split, as the Events list's flat rows bleed:
       // content on the gutter line, press feedback clear of it.
       ...gutterBleed(tokens, { rounded: false }),
-    },
-    dot: {
-      width: DOT_SIZE,
-      height: DOT_SIZE,
-      flexShrink: 0,
-      borderRadius: DOT_SIZE / 2,
-      // Neutral, as the notification list's and chat's unread are: the
-      // accent belongs to the ask, never to a state (foundations.md §5).
-      backgroundColor: tokens.color.text.foreground,
-    },
-    dotSpacer: {
-      width: DOT_SIZE,
-      flexShrink: 0,
     },
     divider: {
       borderTopWidth: StyleSheet.hairlineWidth,
