@@ -20,7 +20,7 @@ import {
   lastYearDay,
   nameForThisYear,
   sameWeekdayThisYear,
-} from "@/components/ai/last-year-dates";
+} from "@repo/formatting";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { suggestionRefusalLine } from "@/components/ai/suggested-tasks";
 import { useToast } from "@/lib/hooks/use-toast";

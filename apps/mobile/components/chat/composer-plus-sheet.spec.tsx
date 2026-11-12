@@ -194,15 +194,15 @@ describe("presentEventOutcome", () => {
   it("says where the card went when it isn't in the thread", () => {
     const alert = vi.fn();
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: true, cardLost: false },
+      { id: "e1", name: "Formal", cardKeptOut: true, cardLost: false },
       alert,
     );
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: false, cardLost: true },
+      { id: "e1", name: "Formal", cardKeptOut: false, cardLost: true },
       alert,
     );
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: false, cardLost: false },
+      { id: "e1", name: "Formal", cardKeptOut: false, cardLost: false },
       alert,
     );
     expect(alert).toHaveBeenCalledTimes(2);

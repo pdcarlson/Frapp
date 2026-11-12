@@ -7,7 +7,10 @@ import * as expoRouter from "expo-router";
 import {
   AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
+  LAST_YEAR_COPY,
   aiSuggestionRefusalLine,
+  lastYearEventLine,
+  lastYearTaskLine,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -27,6 +30,19 @@ const state = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   seed: undefined as unknown,
+  canCreateEvents: true,
+  readEvent: vi.fn(),
+  eventForm: undefined as
+    | { template?: unknown; onCreated?: (outcome: unknown) => void }
+    | undefined,
+}));
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
+  // The one read the screen makes itself: last year's event, for the form.
+  useQueryClient: () => ({
+    fetchQuery: (options: { queryKey: unknown }) =>
+      state.readEvent(options.queryKey),
+  }),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -46,6 +62,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({
     nameFor: (id: string) => (id === "u1" ? "Ana Ruiz" : null),
   }),
+  useActiveChapterId: () => "chapter-1",
+  useFrappClient: () => ({ GET: vi.fn() }),
   useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
   useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
 }));
@@ -70,6 +88,27 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
     }),
   };
 });
+vi.mock("@/components/events/new-event-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    useCanCreateEvents: () => state.canCreateEvents,
+    NewEventSheet: forwardRef(function NewEventSheet(props: {
+      template?: unknown;
+      onCreated?: (outcome: unknown) => void;
+    }) {
+      state.eventForm = props;
+      return null;
+    }),
+  };
+});
+// The template itself is `last-year-template.spec.ts`'s; here it is only
+// carried from the read to the form.
+vi.mock("@/lib/events/select", () => ({
+  selectEventDetail: (raw: unknown) => raw,
+}));
+vi.mock("@/lib/events/last-year-template", () => ({
+  lastYearTemplate: (event: { name: string }) => ({ name: event.name }),
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
 }));
@@ -88,9 +127,8 @@ vi.mock("@/components/ai/report-ai-sheet", () => ({
   }),
 }));
 
-import SuggestedTasksScreen, {
-  suggestionEdits,
-} from "@/app/(app)/suggested-tasks";
+import SuggestedTasksScreen from "@/app/(app)/suggested-tasks";
+import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 
 const READY = {
   id: "s1",
@@ -110,6 +148,28 @@ const UNFINISHED = {
   id: "s2",
   quote: "Order shirts",
   task: { ...READY.task, title: "Order shirts", assignee_id: null },
+};
+
+/** An event the chapter held on April 13, 2025, and not yet this year. */
+const FORMAL = {
+  id: "s3",
+  kind: "event",
+  quote: null,
+  source: { type: "event", id: "e-last" },
+  task: null,
+  event: { name: "Spring formal", last_year_at: "2025-04-13T12:00:00Z", times: 1 },
+};
+/** A task finished around now last year. */
+const LAST_YEAR_TASK = {
+  ...READY,
+  id: "s4",
+  quote: null,
+  source: { type: "task", id: "t-last" },
+  task: {
+    ...READY.task,
+    title: "Order composites",
+    last_year_on: "2025-11-18",
+  },
 };
 
 function render(): ReactTestRenderer {
@@ -136,6 +196,9 @@ beforeEach(() => {
   state.isPending = false;
   state.isError = false;
   state.seed = undefined;
+  state.canCreateEvents = true;
+  state.eventForm = undefined;
+  state.readEvent.mockResolvedValue({ name: "Spring formal" });
   state.accept.mockResolvedValue({});
   state.dismiss.mockResolvedValue({});
   reporting.offered = true;
@@ -205,7 +268,7 @@ describe("Suggested tasks", () => {
     await act(async () =>
       byLabel(tree, `${AI_SUGGESTION_COPY.dismiss}: Book the hall`).props.onPress(),
     );
-    expect(state.dismiss).toHaveBeenCalledWith("s1");
+    expect(state.dismiss).toHaveBeenCalledWith({ id: "s1", reason: undefined });
   });
 
   it("reports a suggestion by its id, and offers that only to a member who can send it", () => {
@@ -263,6 +326,111 @@ describe("Suggested tasks", () => {
     state.items = [READY];
     // A failed refresh keeps what was read.
     expect(screenText(render())).toContain("Book the hall");
+  });
+});
+
+describe("This time last year", () => {
+  beforeEach(() => {
+    state.items = [READY, FORMAL, LAST_YEAR_TASK];
+  });
+
+  it("says what happened last year under its own heading, dates written out", () => {
+    const text = screenText(render());
+    expect(text).toContain(LAST_YEAR_COPY.heading);
+    expect(text).toContain(LAST_YEAR_COPY.intro);
+    expect(text).toContain("Spring formal");
+    expect(text).toContain(lastYearEventLine("April 13, 2025", 1));
+    expect(text).toContain(lastYearTaskLine("November 18, 2025"));
+    // The minutes' tasks keep their own group above it.
+    expect(text).toContain(AI_SUGGESTION_COPY.fromMinutesOf);
+  });
+
+  it("opens the event form on last year's event, and adds nothing until it is created", async () => {
+    const tree = render();
+    await act(async () =>
+      byLabel(tree, `${LAST_YEAR_COPY.addEvent}: Spring formal`).props.onPress(),
+    );
+    expect(state.readEvent).toHaveBeenCalledWith([
+      "events",
+      "chapter-1",
+      "e-last",
+    ]);
+    expect(state.eventForm?.template).toEqual({ name: "Spring formal" });
+    expect(state.accept).not.toHaveBeenCalled();
+
+    // Create in the form: the suggestion records the event it became.
+    await act(async () =>
+      state.eventForm!.onCreated!({ id: "e-new", name: "Spring formal" }),
+    );
+    expect(state.accept).toHaveBeenCalledWith({ id: "s3", eventId: "e-new" });
+    expect(screenText(tree)).toContain(LAST_YEAR_COPY.eventAdded);
+  });
+
+  it("says so under the row when last year's event can't be read", async () => {
+    state.readEvent.mockRejectedValue(new Error("gone"));
+    const tree = render();
+    await act(async () =>
+      byLabel(tree, `${LAST_YEAR_COPY.addEvent}: Spring formal`).props.onPress(),
+    );
+    expect(state.eventForm).toBeUndefined();
+    expect(screenText(tree)).toContain(LAST_YEAR_COPY.openFailed);
+  });
+
+  it("takes Already planned in one tap, for an event and for a task", async () => {
+    const tree = render();
+    await act(async () =>
+      byLabel(
+        tree,
+        `${LAST_YEAR_COPY.alreadyDoing}: Spring formal`,
+      ).props.onPress(),
+    );
+    expect(state.dismiss).toHaveBeenLastCalledWith({
+      id: "s3",
+      reason: "already_doing",
+    });
+    await act(async () =>
+      byLabel(
+        tree,
+        `${LAST_YEAR_COPY.alreadyDoing}: Order composites`,
+      ).props.onPress(),
+    );
+    expect(state.dismiss).toHaveBeenLastCalledWith({
+      id: "s4",
+      reason: "already_doing",
+    });
+  });
+
+  it("dismisses with Not this year, and gives no reason", async () => {
+    const tree = render();
+    await act(async () =>
+      byLabel(tree, `${LAST_YEAR_COPY.dismiss}: Spring formal`).props.onPress(),
+    );
+    expect(state.dismiss).toHaveBeenCalledWith({ id: "s3", reason: undefined });
+  });
+
+  it("offers no Add to calendar to an officer who can't create events", () => {
+    state.canCreateEvents = false;
+    const tree = render();
+    expect(
+      byLabel(tree, `${LAST_YEAR_COPY.addEvent}: Spring formal`),
+    ).toBeUndefined();
+    expect(
+      byLabel(tree, `${LAST_YEAR_COPY.alreadyDoing}: Spring formal`),
+    ).toBeDefined();
+  });
+
+  it("lists no events when opened from one meeting's minutes", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      meetingId: "m1",
+    });
+    expect(screenText(render())).not.toContain("Spring formal");
+  });
+
+  it("is the whole list when nothing from the minutes is waiting", () => {
+    state.items = [FORMAL];
+    const text = screenText(render());
+    expect(text).toContain("Spring formal");
+    expect(text).not.toContain(AI_SUGGESTION_COPY.empty);
   });
 });
 

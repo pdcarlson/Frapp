@@ -23,6 +23,8 @@ import {
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  ACT_COPY,
+  ACT_REQUEST_MAX_LENGTH,
   ASK_COPY,
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
@@ -35,6 +37,12 @@ import {
   useAiReport,
   type AiReportTarget,
 } from "@/components/ai/report-ai-sheet";
+import {
+  ActBody,
+  AskModeSwitch,
+  useActSession,
+  type ActLink,
+} from "@/components/ask/act-pane";
 import { AskExchangeCard } from "@/components/ask/answer-card";
 import {
   SheetGrabber,
@@ -44,6 +52,7 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { useActActions } from "@/lib/ai/availability";
 import { askSourceOpening } from "@/lib/ask/source-route";
 import { asRoute, openHref } from "@/lib/href";
 import { selectDownloadUrl } from "@/lib/more/documents";
@@ -86,8 +95,17 @@ import {
  * is a screen: the sheet closes and the screen opens, and the answer is back
  * when the sheet is reopened.
  *
+ * **Do, beside Ask** (#718). An officer the server lists actions for
+ * (`useActActions`: Ask itself, `ai:act`, and a permission to do at least
+ * one of them) gets a two-way switch beside the title, and the Do side
+ * (`act-pane.tsx`) takes the same body and the same field. The switch sits
+ * in the title's row, so its arrival once the server has answered moves
+ * nothing, and everyone else never sees it. Each side keeps what it was
+ * showing while the other is up.
+ *
  * **Fixed gold, never the chapter accent** (`components.md` §11): nothing in
- * this file or in `answer-card.tsx` reaches `useChapterBranding()`.
+ * this file, `answer-card.tsx` or `act-pane.tsx` reaches
+ * `useChapterBranding()`.
  *
  * ## Why fixed snap points rather than dynamic sizing
  *
@@ -165,6 +183,13 @@ export const AskSheet = forwardRef<
   const reporting = useAiReport();
   const openDocument = useDocumentDownloadUrl();
 
+  // The Do side (#718): shown only to a member the server lists actions for.
+  const actions = useActActions({ enabled: shownOpen });
+  const canDo = actions.length > 0;
+  const [picked, setPicked] = useState<"ask" | "do">("ask");
+  const mode = canDo ? picked : "ask";
+  const act = useActSession(ensureConsent);
+
   const [draft, setDraft] = useState("");
   // A question that never reached the server: the member has not said yes,
   // or their answer couldn't be read.
@@ -176,14 +201,15 @@ export const AskSheet = forwardRef<
 
   const savedUntil = status.data?.saved_until ?? null;
   const shown = held ?? exchange;
-  const working = shown?.phase === "working";
+  const asking = shown?.phase === "working";
+  const working = mode === "do" ? act.working : asking;
 
   // A question still being answered is dropped with the sheet; a finished
   // answer is there when it reopens.
-  const workingRef = useRef(working);
+  const workingRef = useRef(asking);
   useEffect(() => {
-    workingRef.current = working;
-  }, [working]);
+    workingRef.current = asking;
+  }, [asking]);
   const onDismiss = useCallback(() => {
     setShownOpen(false);
     if (workingRef.current) reset();
@@ -260,6 +286,25 @@ export const AskSheet = forwardRef<
 
   const canSend = draft.trim().length > 0 && !working;
 
+  /** Sends the field to whichever side is up. */
+  const send = (text: string) => {
+    if (mode === "do") {
+      if (act.submit(text)) setDraft("");
+      return;
+    }
+    void submit(text);
+  };
+
+  const openActLink = useCallback(
+    (link: ActLink) => {
+      // The screen is about to be on top: the host must not navigate over it.
+      leftForSource.current = true;
+      closeSheet();
+      openHref(router, asRoute(link.href));
+    },
+    [closeSheet, router],
+  );
+
   return (
     <>
       <BottomSheetModal
@@ -286,11 +331,21 @@ export const AskSheet = forwardRef<
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <Text accessibilityRole="header" style={styles.headerTitle}>
-            {ASK_COPY.name}
-          </Text>
+          <View style={styles.headerRow}>
+            <Text accessibilityRole="header" style={styles.headerTitle}>
+              {ASK_COPY.name}
+            </Text>
+            {canDo ? <AskModeSwitch mode={mode} onChange={setPicked} /> : null}
+          </View>
 
-          {shown ? (
+          {mode === "do" ? (
+            <ActBody
+              session={act}
+              actions={actions}
+              report={reporting}
+              onOpen={openActLink}
+            />
+          ) : shown ? (
             <>
               <View style={styles.echo}>
                 <Text style={styles.echoText}>{shown.question}</Text>
@@ -341,22 +396,28 @@ export const AskSheet = forwardRef<
             <BottomSheetTextInput
               value={draft}
               onChangeText={setDraft}
-              onSubmitEditing={() => void submit(draft)}
-              maxLength={ASK_QUESTION_MAX_LENGTH}
-              placeholder={ASK_COPY.placeholder}
+              onSubmitEditing={() => send(draft)}
+              maxLength={
+                mode === "do" ? ACT_REQUEST_MAX_LENGTH : ASK_QUESTION_MAX_LENGTH
+              }
+              placeholder={
+                mode === "do" ? ACT_COPY.placeholder : ASK_COPY.placeholder
+              }
               placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel={ASK_COPY.placeholder}
+              accessibilityLabel={
+                mode === "do" ? ACT_COPY.placeholder : ASK_COPY.placeholder
+              }
               returnKeyType="send"
               style={styles.composerField}
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={ASK_COPY.send}
+              accessibilityLabel={mode === "do" ? ACT_COPY.send : ASK_COPY.send}
               accessibilityState={{ disabled: !canSend }}
               disabled={!canSend}
               // 40pt drawn against the 44pt minimum.
               hitSlop={2}
-              onPress={() => void submit(draft)}
+              onPress={() => send(draft)}
               style={({ pressed }) => [
                 styles.send,
                 !canSend ? styles.sendDisabled : null,
@@ -367,9 +428,11 @@ export const AskSheet = forwardRef<
             </Pressable>
           </View>
           <Text style={[styles.caption, styles.underField]}>
-            {savedUntil !== null
-              ? askSavedLine(formatAiAnswerDate(savedUntil))
-              : ASK_COPY.single_shot}
+            {mode === "do"
+              ? ACT_COPY.footnote
+              : savedUntil !== null
+                ? askSavedLine(formatAiAnswerDate(savedUntil))
+                : ASK_COPY.single_shot}
           </Text>
         </View>
       </BottomSheetModal>
@@ -430,6 +493,15 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.md,
       gap: tokens.spacing.md,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      // The switch's height, with or without it, so the title never moves
+      // when the server says this member can ask for things to be done.
+      minHeight: 36,
     },
     headerTitle: {
       // 16/700: `body` is the only 16px role, and the weight rides the

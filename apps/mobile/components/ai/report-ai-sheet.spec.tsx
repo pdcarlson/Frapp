@@ -209,6 +209,51 @@ describe("Report this", () => {
     expect(screenText(tree)).toContain("not reported");
   });
 
+  describe("a chat summary (#3946)", () => {
+    const SUMMARY: AiReportTarget = {
+      subject: "chat_summary",
+      subjectId: "22222222-2222-4222-8222-222222222222",
+      receipt: "sealed-summary",
+    };
+
+    it("says the summary goes with the report, and sends its receipt as it came", async () => {
+      const tree = render(SUMMARY);
+      await press(tree, "open");
+      const text = screenText(tree);
+      expect(text).toContain(AI_REPORT_COPY.titles.chat_summary);
+      expect(text).toContain(aiReportAttachedLine("chat_summary", true));
+      await press(tree, AI_REPORT_COPY.reasons.wrong);
+      await press(tree, AI_REPORT_COPY.send);
+      expect(mutateAsync).toHaveBeenCalledWith({
+        subject: "chat_summary",
+        subjectId: SUMMARY.subjectId,
+        reason: "wrong",
+        note: "",
+        receipt: "sealed-summary",
+      });
+    });
+
+    it("says only the reason and note are sent for a summary with no receipt", async () => {
+      const tree = render({ ...SUMMARY, receipt: null });
+      await press(tree, "open");
+      expect(screenText(tree)).toContain(
+        aiReportAttachedLine("chat_summary", false),
+      );
+    });
+
+    it.each([
+      ["ai.report.too_old", AI_REPORT_COPY.summary_too_old],
+      ["ai.report.receipt_invalid", AI_REPORT_COPY.summary_receipt_invalid],
+    ])("says a summary's own words when %s refuses it", async (code, line) => {
+      mutateAsync.mockRejectedValue({ code });
+      const tree = render(SUMMARY);
+      await press(tree, "open");
+      await press(tree, AI_REPORT_COPY.reasons.wrong);
+      await press(tree, AI_REPORT_COPY.send);
+      expect(screenText(tree)).toContain(line);
+    });
+  });
+
   it("tells one draft from the next under the same meeting", async () => {
     const first: AiReportTarget = {
       subject: "meeting_draft",

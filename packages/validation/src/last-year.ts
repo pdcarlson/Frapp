@@ -19,6 +19,14 @@ export const LAST_YEAR_COPY = {
   /** Not happening, or not useful. Dismisses the suggestion. */
   dismiss: "Not this year",
   eventAdded: "Added to the calendar",
+  /** Last year's event could not be read to fill the form in. */
+  openFailed:
+    "Couldn’t open last year’s event. It may have been deleted. Try again in a moment.",
+  /** The phone's one row on Events, leading to the list. */
+  waiting: (count: number) =>
+    count === 1
+      ? "1 event from this time last year"
+      : `${count} events from this time last year`,
 } as const;
 
 /**

@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import type { AskExchange } from "@repo/hooks";
 import {
+  ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
   askSavedLine,
@@ -29,6 +30,15 @@ const hooks = vi.hoisted(() => ({
   statusEnabled: [] as boolean[],
   savedUntil: null as string | null,
   download: vi.fn(),
+  actions: [] as string[],
+  actEnabled: [] as boolean[],
+  actRequest: vi.fn(),
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useActActions: (options: { enabled: boolean }) => {
+    hooks.actEnabled.push(options.enabled);
+    return hooks.actions;
+  },
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -44,6 +54,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useActRequest: () => ({ mutateAsync: hooks.actRequest }),
+  useActEventAudience: () => ({ mutateAsync: vi.fn() }),
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -155,6 +167,18 @@ beforeEach(() => {
   hooks.exchange = null;
   hooks.statusEnabled = [];
   hooks.savedUntil = null;
+  hooks.actions = [];
+  hooks.actEnabled = [];
+  hooks.actRequest.mockResolvedValue({
+    status: "refused",
+    action: null,
+    suggestion: null,
+    notes: [],
+    event_choice: null,
+    missing: null,
+    reason: null,
+    available_actions: [],
+  });
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -320,5 +344,56 @@ describe("AskSheet", () => {
     )[0];
     act(() => field.props.onChangeText("Another?"));
     expect(byLabel(working, ASK_COPY.send)[0].props.disabled).toBe(true);
+  });
+
+  describe("the Do side (#718)", () => {
+    const field = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "BottomSheetTextInput",
+      )[0]!;
+
+    it("is not offered to a member the server lists no actions for", () => {
+      const tree = render();
+      expect(byLabel(tree, ACT_COPY.mode_do)).toHaveLength(0);
+      expect(field(tree).props.placeholder).not.toBe(ACT_COPY.placeholder);
+    });
+
+    it("asks what the member can do only once the sheet is open", () => {
+      const tree = render();
+      expect(hooks.actEnabled.every((enabled) => !enabled)).toBe(true);
+      open(tree);
+      expect(hooks.actEnabled.at(-1)).toBe(true);
+    });
+
+    it("switches the field to a request, and sends it as one, never as a question", async () => {
+      hooks.actions = ["give_points"];
+      const tree = render();
+      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
+      const text = screenText(tree);
+      expect(text).toContain(ACT_COPY.empty_title);
+      expect(text).toContain(ACT_COPY.footnote);
+      expect(text).not.toContain(ASK_COPY.empty_body);
+      expect(field(tree).props.placeholder).toBe(ACT_COPY.placeholder);
+
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      await act(async () => byLabel(tree, ACT_COPY.send)[0]!.props.onPress());
+      expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
+      expect(hooks.actRequest).toHaveBeenCalledWith("Give Ana 5 points");
+      expect(hooks.ask).not.toHaveBeenCalled();
+      expect(field(tree).props.value).toBe("");
+      expect(screenText(tree)).toContain(ACT_COPY.refused);
+    });
+
+    it("keeps what the Do side showed through a look at the Ask side", async () => {
+      hooks.actions = ["give_points"];
+      const tree = render();
+      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      await act(async () => byLabel(tree, ACT_COPY.send)[0]!.props.onPress());
+      act(() => byLabel(tree, ACT_COPY.mode_ask)[0]!.props.onPress());
+      expect(screenText(tree)).toContain(ASK_COPY.empty_body);
+      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
+      expect(screenText(tree)).toContain(ACT_COPY.refused);
+    });
   });
 });

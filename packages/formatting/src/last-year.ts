@@ -1,4 +1,5 @@
-import { parseBareDateLocalNoon, parseInstant } from "@repo/formatting";
+import { parseBareDateLocalNoon } from "./bare-date";
+import { parseInstant } from "./instant";
 
 /** 52 weeks: last year's Saturday lands on a Saturday (#3930). */
 const SHIFT_DAYS = 364;

@@ -78,6 +78,28 @@ describe("useChatCatchUp", () => {
     });
   });
 
+  it("never names more unread messages than a request may", async () => {
+    const client = { POST: vi.fn().mockResolvedValue(ok(SUMMARY)) };
+    const { result } = renderHook(() => useChatCatchUp(), harness(client));
+
+    // A channel never opened, after an import: every message counts as new.
+    await act(() =>
+      result.current.run("channel-1", {
+        unread: { count: 48_000, as_of: TARGET.unread.as_of },
+      }),
+    );
+
+    expect(client.POST).toHaveBeenCalledWith(
+      "/v1/ai/catch-up",
+      expect.objectContaining({
+        body: {
+          channel_id: "channel-1",
+          unread: { count: 5000, as_of: TARGET.unread.as_of },
+        },
+      }),
+    );
+  });
+
   it("shows working until the answer lands, and reset abandons the request", async () => {
     let signal: AbortSignal | undefined;
     const client = {

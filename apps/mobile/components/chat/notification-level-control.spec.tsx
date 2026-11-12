@@ -26,6 +26,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import {
+  CHANNEL_MENU_LABEL,
   NotificationLevelControl,
   NotificationLevelMenu,
   NOTIFICATION_LEVEL_OPTIONS,
@@ -52,6 +53,7 @@ type ControlProps = {
   isSaving?: boolean;
   writeBlockedReason?: string | null;
   fromChapterLevel?: boolean;
+  actions?: readonly { label: string; onPress: () => void }[];
 };
 
 const ANCHOR = { top: 57, right: 16 };
@@ -79,12 +81,14 @@ function Thread({
   isSaving,
   writeBlockedReason,
   fromChapterLevel,
+  actions,
 }: ControlProps) {
   const menu = useNotificationLevelMenu({
     level,
     fromChapterLevel,
     disabled,
     writeBlockedReason,
+    hasActions: (actions?.length ?? 0) > 0,
   });
   return (
     <>
@@ -96,6 +100,7 @@ function Thread({
         onChange={onChange}
         isSaving={isSaving}
         anchor={ANCHOR}
+        actions={actions}
       />
     </>
   );
@@ -683,5 +688,63 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     press(byLabel(tree, MUTE));
     expect(onChange).toHaveBeenCalledWith("off");
     expect(menu(tree)).toHaveLength(0);
+  });
+});
+
+describe("the channel's own actions in the menu (#3946)", () => {
+  const TRIGGER = "Notifications: every message. Change notification level";
+
+  it("draws none unless the screen hands some in", () => {
+    const tree = renderControl({ level: "all" });
+    press(byLabel(tree, TRIGGER));
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "menuitem",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("lists an action above the levels, runs it, and closes on the pick", () => {
+    const onPress = vi.fn();
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: "all",
+      onChange,
+      actions: [{ label: "Catch me up", onPress }],
+    });
+    press(byLabel(tree, TRIGGER));
+    const row = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+    expect(row).toHaveLength(1);
+    expect(row[0]!.props.accessibilityLabel).toBe("Catch me up");
+    press(row[0]!);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    // An action is not a level: nothing is written.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(menu(tree)).toHaveLength(0);
+  });
+
+  it("still opens for its actions when the level can't be read, and says what it is", () => {
+    const onPress = vi.fn();
+    const tree = renderControl({
+      level: null,
+      actions: [{ label: "Catch me up", onPress }],
+    });
+    const trigger = byLabel(tree, CHANNEL_MENU_LABEL);
+    expect(trigger.props.disabled).toBe(false);
+    press(trigger);
+    expect(menu(tree)).toHaveLength(1);
+  });
+
+  it("stays shut with no level and no actions, as before", () => {
+    const tree = renderControl({ level: null });
+    expect(byLabel(tree, "Notification level unavailable").props.disabled).toBe(
+      true,
+    );
   });
 });

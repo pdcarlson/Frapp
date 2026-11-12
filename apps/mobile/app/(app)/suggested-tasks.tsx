@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
+import { lastYearBareDay, lastYearDay } from "@repo/formatting";
 import {
   useAcceptAiSuggestion,
+  useActiveChapterId,
   useAiSuggestions,
   useDismissAiSuggestion,
+  useFrappClient,
   useMeetings,
   useMemberDisplayNames,
   type AiSuggestion,
-  type TaskSuggestionEdits,
+  type AiSuggestionDismissReason,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -18,7 +22,10 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
+  LAST_YEAR_COPY,
   aiSuggestionRefusalLine,
+  lastYearEventLine,
+  lastYearTaskLine,
   meetingDueLabel,
 } from "@repo/validation";
 import {
@@ -26,7 +33,12 @@ import {
   type AiReportTarget,
 } from "@/components/ai/report-ai-sheet";
 import type { BackTarget } from "@/components/back-row";
+import {
+  NewEventSheet,
+  useCanCreateEvents,
+} from "@/components/events/new-event-sheet";
 import { InlineNote } from "@/components/inline-note";
+import { SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import {
@@ -40,7 +52,10 @@ import {
 } from "@/components/tasks/new-task-sheet";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import type { ValidatedNewTask } from "@/lib/tasks/create-task";
+import type { NewEventDraft } from "@/lib/events/create-event";
+import { lastYearTemplate } from "@/lib/events/last-year-template";
+import { selectEventDetail } from "@/lib/events/select";
+import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -64,8 +79,26 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * The server lists a suggestion only for someone who could accept it. A
  * decided row leaves the list; a refusal (another officer got there first)
  * says so under its row.
+ *
+ * ## This time last year (#3930, `spec/behavior/ai.md` § This time last year)
+ *
+ * The same list holds what the chapter did around now a year ago that this
+ * year's record doesn't show: events, and finished tasks. A new president
+ * meets these on the phone first, from the "This time last year" push, so
+ * they are one section here rather than a screen of their own. Each says
+ * what happened and asks to be corrected (`LAST_YEAR_COPY`), with three
+ * answers, as Calendar's "Add to calendar" on an event found in Mail:
+ *
+ * - **Add to calendar** opens the ordinary New event form, filled in from
+ *   last year's event on the same weekday this year. Nothing is added until
+ *   the officer presses Create.
+ * - **Already planned**, one tap.
+ * - **Not this year**. Either of the last two and it does not come back.
  */
 const BACK_TO_TASKS: BackTarget = { label: "Tasks", href: "/tasks" };
+
+/** Which of a row's answers is being sent. */
+type Doing = "accept" | "dismiss" | "already";
 
 type SuggestedTask = NonNullable<AiSuggestion["task"]>;
 type Waiting = AiSuggestion & { task: SuggestedTask };
@@ -74,29 +107,16 @@ function isWaitingTask(item: AiSuggestion): item is Waiting {
   return item.kind === "task" && item.task !== null;
 }
 
-/** Only what the officer changed in the form, as the accept route takes it. */
-export function suggestionEdits(
-  task: SuggestedTask,
-  form: ValidatedNewTask,
-): TaskSuggestionEdits | undefined {
-  const edits: TaskSuggestionEdits = {};
-  if (form.title !== task.title) edits.title = form.title;
-  if (form.assignee_id !== task.assignee_id) {
-    edits.assignee_id = form.assignee_id;
-  }
-  const dueAt = form.due_at ?? null;
-  if (form.due_date !== task.due_date || dueAt !== task.due_at) {
-    edits.due_date = form.due_date;
-    edits.due_at = dueAt;
-  }
-  const steps = form.subtasks ?? [];
-  if (
-    steps.length !== task.subtasks.length ||
-    steps.some((step, index) => step !== task.subtasks[index])
-  ) {
-    edits.subtasks = steps;
-  }
-  return Object.keys(edits).length > 0 ? edits : undefined;
+type SuggestedEvent = NonNullable<AiSuggestion["event"]>;
+type WaitingEvent = AiSuggestion & { event: SuggestedEvent };
+
+function isWaitingEvent(item: AiSuggestion): item is WaitingEvent {
+  return item.kind === "event" && item.event != null;
+}
+
+/** A task drawn from last year's board, not from a meeting's minutes. */
+function isFromLastYear(item: Waiting): boolean {
+  return !!item.task.last_year_on;
 }
 
 export default function SuggestedTasksScreen() {
@@ -119,10 +139,28 @@ function SuggestedTasks() {
   const suggestionsQuery = useAiSuggestions(
     meetingId ? { source: { type: "meeting", id: meetingId } } : undefined,
   );
-  const items = useMemo(
+  const tasks = useMemo(
     () => (suggestionsQuery.data?.items ?? []).filter(isWaitingTask),
     [suggestionsQuery.data],
   );
+  // From the minutes, in groups; from last year, in their own section.
+  const items = useMemo(
+    () => tasks.filter((item) => !isFromLastYear(item)),
+    [tasks],
+  );
+  const lastYearTasks = useMemo(() => tasks.filter(isFromLastYear), [tasks]);
+  // Events are never listed for one meeting's minutes.
+  const events = useMemo(
+    () =>
+      meetingId
+        ? []
+        : (suggestionsQuery.data?.items ?? []).filter(isWaitingEvent),
+    [suggestionsQuery.data, meetingId],
+  );
+  const canCreateEvents = useCanCreateEvents();
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const queryClient = useQueryClient();
   // The names of the minutes each group came from. Only read when there is
   // a group to name.
   const meetingsQuery = useMeetings({
@@ -134,9 +172,7 @@ function SuggestedTasks() {
   const refresh = useRefetchAll([suggestionsQuery]);
   const reporting = useAiReport();
 
-  const [busy, setBusy] = useState<{ id: string; doing: "accept" | "dismiss" } | null>(
-    null,
-  );
+  const [busy, setBusy] = useState<{ id: string; doing: Doing } | null>(null);
   // Why a row's last press didn't go through, shown under that row.
   const [problems, setProblems] = useState<Record<string, string>>({});
   // A refusal that means the row is gone (someone else decided it, it
@@ -149,6 +185,17 @@ function SuggestedTasks() {
   useEffect(() => {
     if (formFor) formRef.current?.present();
   }, [formFor]);
+  // The event form, open on one suggestion's template.
+  const [planFor, setPlanFor] = useState<{
+    suggestionId: string;
+    template: NewEventDraft;
+  } | null>(null);
+  const eventFormRef = useRef<BottomSheetModal>(null);
+  useEffect(() => {
+    if (planFor) eventFormRef.current?.present();
+  }, [planFor]);
+  // Said once an event was added from a suggestion, where the row was.
+  const [added, setAdded] = useState(false);
 
   const groups = useMemo(() => {
     const bySource = new Map<string, Waiting[]>();
@@ -166,10 +213,11 @@ function SuggestedTasks() {
     );
   }
 
-  function fail(item: Waiting, error: unknown) {
+  function fail(item: Waiting | WaitingEvent, error: unknown) {
     const refusal = aiSuggestionRefusalLine(codeOf(error));
     if (refusal) {
-      setGone(`“${item.task.title}”: ${refusal}`);
+      const name = item.task ? item.task.title : item.event?.name;
+      setGone(`“${name ?? ""}”: ${refusal}`);
       return;
     }
     setProblems((previous) => ({
@@ -195,13 +243,53 @@ function SuggestedTasks() {
     }
   }
 
-  async function dismissRow(item: Waiting) {
+  async function dismissRow(
+    item: Waiting | WaitingEvent,
+    reason?: AiSuggestionDismissReason,
+  ) {
     setGone(null);
-    setBusy({ id: item.id, doing: "dismiss" });
+    setAdded(false);
+    setBusy({ id: item.id, doing: reason ? "already" : "dismiss" });
     try {
-      await dismiss.mutateAsync(item.id);
+      await dismiss.mutateAsync({ id: item.id, reason });
     } catch (error) {
       fail(item, error);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function plan(item: WaitingEvent) {
+    setGone(null);
+    setAdded(false);
+    setProblems((previous) => {
+      const rest = { ...previous };
+      delete rest[item.id];
+      return rest;
+    });
+    setBusy({ id: item.id, doing: "accept" });
+    try {
+      // Last year's event, read as this officer: the same read the event's
+      // own screen makes, so the form copies only what they may see.
+      const source = await queryClient.fetchQuery({
+        queryKey: ["events", chapterId, item.source.id],
+        queryFn: async () => {
+          const { data, error } = await client.GET("/v1/events/{id}", {
+            params: { path: { id: item.source.id } },
+          });
+          if (error) throw error;
+          return data;
+        },
+        staleTime: 30_000,
+      });
+      const detail = selectEventDetail(source);
+      if (!detail) throw new Error("Last year's event could not be read.");
+      setPlanFor({ suggestionId: item.id, template: lastYearTemplate(detail) });
+    } catch {
+      setProblems((previous) => ({
+        ...previous,
+        [item.id]: LAST_YEAR_COPY.openFailed,
+      }));
     } finally {
       setBusy(null);
     }
@@ -241,19 +329,27 @@ function SuggestedTasks() {
       onOpen={() => setFormFor(item)}
       onAccept={() => void acceptRow(item)}
       onDismiss={() => void dismissRow(item)}
+      onAlreadyDoing={
+        isFromLastYear(item)
+          ? () => void dismissRow(item, "already_doing")
+          : undefined
+      }
       report={reportFor(item, reporting)}
       styles={styles}
     />
   );
 
+  const waiting = items.length + lastYearTasks.length + events.length;
+
   return (
     <>
       <ScreenShell
         back={BACK_TO_TASKS}
-        title={AI_SUGGESTION_COPY.heading}
+        title={AI_SUGGESTION_COPY.listHeading}
         refresh={refresh}
       >
         {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
+        {added ? <InlineNote>{LAST_YEAR_COPY.eventAdded}</InlineNote> : null}
         {suggestionsQuery.isPending ? (
           <SuggestionsSkeleton />
         ) : suggestionsQuery.isError && !suggestionsQuery.data ? (
@@ -263,7 +359,7 @@ function SuggestedTasks() {
             onRetry={() => void suggestionsQuery.refetch()}
             isRetrying={suggestionsQuery.isFetching}
           />
-        ) : items.length === 0 ? (
+        ) : waiting === 0 ? (
           <InlineNote>{AI_SUGGESTION_COPY.empty}</InlineNote>
         ) : (
           groups.map((group) => {
@@ -294,6 +390,30 @@ function SuggestedTasks() {
             );
           })
         )}
+        {events.length + lastYearTasks.length > 0 ? (
+          <View style={styles.group}>
+            <SectionHeader count={events.length + lastYearTasks.length}>
+              {LAST_YEAR_COPY.heading}
+            </SectionHeader>
+            <InlineNote>{LAST_YEAR_COPY.intro}</InlineNote>
+            {events.map((item) => (
+              <LastYearEventRow
+                key={item.id}
+                item={item}
+                busy={busy?.id === item.id ? busy.doing : null}
+                disabled={busy !== null}
+                canAdd={canCreateEvents}
+                problem={problems[item.id] ?? null}
+                onAdd={() => void plan(item)}
+                onAlreadyDoing={() => void dismissRow(item, "already_doing")}
+                onDismiss={() => void dismissRow(item)}
+                report={reportFor(item, reporting)}
+                styles={styles}
+              />
+            ))}
+            {lastYearTasks.map(row)}
+          </View>
+        ) : null}
       </ScreenShell>
       {formFor && seed ? (
         <NewTaskSheet
@@ -303,13 +423,36 @@ function SuggestedTasks() {
           onClosed={() => setFormFor(null)}
         />
       ) : null}
+      {planFor ? (
+        <NewEventSheet
+          key={planFor.suggestionId}
+          ref={eventFormRef}
+          template={planFor.template}
+          onCreated={({ id }) => {
+            const { suggestionId } = planFor;
+            setPlanFor(null);
+            setAdded(true);
+            // The event is on the calendar whatever this does: if it doesn't
+            // land, the weekly check sees the event and takes the suggestion
+            // back, so a failure here is not the officer's to fix.
+            if (id) {
+              void accept
+                .mutateAsync({ id: suggestionId, eventId: id })
+                .catch(() => undefined);
+            }
+          }}
+        />
+      ) : null}
       {reporting.reportSheet}
     </>
   );
 }
 
 /** A suggestion's "Report this", for a member who may report (#4315). */
-function reportFor(item: Waiting, reporting: ReturnType<typeof useAiReport>) {
+function reportFor(
+  item: Waiting | WaitingEvent,
+  reporting: ReturnType<typeof useAiReport>,
+) {
   if (!reporting.offered) return null;
   const target: AiReportTarget = {
     subject: "ai_suggestion",
@@ -323,6 +466,121 @@ function reportFor(item: Waiting, reporting: ReturnType<typeof useAiReport>) {
 
 type Styles = ReturnType<typeof createStyles>;
 
+type RowReport = { reported: boolean; onPress: () => void } | null;
+
+/**
+ * A row's answers. The two decisions sit on the right as buttons. From the
+ * minutes the quiet "Report this" shares their line; a last-year row has a
+ * third answer, so "Report this" and "Not this year" take a quiet line of
+ * their own under the buttons rather than crowding four controls into one.
+ * Every label keeps its words while it saves, so nothing changes width.
+ */
+function RowActions({
+  name,
+  busy,
+  disabled,
+  report,
+  primary,
+  secondary,
+  quiet,
+  styles,
+}: {
+  name: string;
+  busy: Doing | null;
+  disabled: boolean;
+  report: RowReport;
+  primary: { label: string; doing: Doing; onPress: () => void } | null;
+  secondary: { label: string; doing: Doing; onPress: () => void };
+  quiet?: { label: string; doing: Doing; onPress: () => void };
+  styles: Styles;
+}) {
+  const { accent, accentOnPrimary } = useChapterBranding();
+  const reportLink = report ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        report.reported
+          ? AI_REPORT_COPY.reported
+          : `${AI_REPORT_COPY.action}: ${name}`
+      }
+      accessibilityState={report.reported ? { disabled: true } : undefined}
+      disabled={report.reported}
+      hitSlop={4}
+      onPress={report.onPress}
+      style={({ pressed }) => [styles.report, pressed ? styles.pressed : null]}
+    >
+      <Text style={styles.meta}>
+        {report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
+      </Text>
+    </Pressable>
+  ) : null;
+
+  return (
+    <>
+      <View style={styles.actions}>
+        {quiet ? null : reportLink}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${secondary.label}: ${name}`}
+          accessibilityState={{ disabled, busy: busy === secondary.doing }}
+          disabled={disabled}
+          // 36pt drawn against the 44pt minimum.
+          hitSlop={4}
+          onPress={secondary.onPress}
+          style={({ pressed }) => [
+            styles.button,
+            styles.dismiss,
+            pressed ? styles.pressed : null,
+            disabled && busy !== secondary.doing ? styles.dimmed : null,
+          ]}
+        >
+          <Text style={styles.dismissText}>{secondary.label}</Text>
+        </Pressable>
+        {primary ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${primary.label}: ${name}`}
+            accessibilityState={{ disabled, busy: busy === primary.doing }}
+            disabled={disabled}
+            hitSlop={4}
+            onPress={primary.onPress}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: accent },
+              pressed ? styles.pressed : null,
+              disabled && busy !== primary.doing ? styles.dimmed : null,
+            ]}
+          >
+            <Text style={[styles.acceptText, { color: accentOnPrimary }]}>
+              {primary.label}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {quiet ? (
+        <View style={styles.quietRow}>
+          {reportLink}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${quiet.label}: ${name}`}
+            accessibilityState={{ disabled, busy: busy === quiet.doing }}
+            disabled={disabled}
+            hitSlop={4}
+            onPress={quiet.onPress}
+            style={({ pressed }) => [
+              styles.quiet,
+              pressed ? styles.pressed : null,
+              disabled && busy !== quiet.doing ? styles.dimmed : null,
+            ]}
+          >
+            <Text style={styles.meta}>{quiet.label}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 function SuggestionRow({
   item,
   who,
@@ -332,21 +590,23 @@ function SuggestionRow({
   onOpen,
   onAccept,
   onDismiss,
+  onAlreadyDoing,
   report,
   styles,
 }: {
   item: Waiting;
   who: string | null;
-  busy: "accept" | "dismiss" | null;
+  busy: Doing | null;
   disabled: boolean;
   problem: string | null;
   onOpen: () => void;
   onAccept: () => void;
   onDismiss: () => void;
-  report: { reported: boolean; onPress: () => void } | null;
+  /** Set for a task drawn from last year's board, which has a third answer. */
+  onAlreadyDoing?: () => void;
+  report: RowReport;
   styles: Styles;
 }) {
-  const { accent, accentOnPrimary } = useChapterBranding();
   const { task } = item;
   const meta = [
     who ?? AI_SUGGESTION_COPY.who,
@@ -354,12 +614,27 @@ function SuggestionRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const lastYear = task.last_year_on
+    ? lastYearTaskLine(lastYearBareDay(task.last_year_on))
+    : null;
+  const accept = {
+    label: AI_SUGGESTION_COPY.accept,
+    doing: "accept" as const,
+    onPress: onAccept,
+  };
+  const dismiss = {
+    // "Dismiss" on a last-year task too, as web's row says it; "Not this
+    // year" is an event's.
+    label: AI_SUGGESTION_COPY.dismiss,
+    doing: "dismiss" as const,
+    onPress: onDismiss,
+  };
 
   return (
     <View style={styles.card}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${task.title}. ${meta}`}
+        accessibilityLabel={`${task.title}. ${lastYear ?? meta}`}
         accessibilityHint={AI_SUGGESTION_COPY.change}
         disabled={disabled}
         onPress={onOpen}
@@ -372,72 +647,103 @@ function SuggestionRow({
             {`“${item.quote}”`}
           </Text>
         ) : null}
+        {lastYear ? <Text style={styles.meta}>{lastYear}</Text> : null}
         <Text style={styles.meta}>{meta}</Text>
       </Pressable>
-      <View style={styles.actions}>
-        {/* Quiet and to the left, away from the two decisions. The words
-            change in place, so the row keeps its height. */}
-        {report ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              report.reported
-                ? AI_REPORT_COPY.reported
-                : `${AI_REPORT_COPY.action}: ${task.title}`
-            }
-            accessibilityState={report.reported ? { disabled: true } : undefined}
-            disabled={report.reported}
-            hitSlop={4}
-            onPress={report.onPress}
-            style={({ pressed }) => [
-              styles.report,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.meta}>
-              {report.reported
-                ? AI_REPORT_COPY.reported
-                : AI_REPORT_COPY.action}
-            </Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${AI_SUGGESTION_COPY.dismiss}: ${task.title}`}
-          accessibilityState={{ disabled, busy: busy === "dismiss" }}
+      {onAlreadyDoing ? (
+        <RowActions
+          name={task.title}
+          busy={busy}
           disabled={disabled}
-          // 36pt drawn against the 44pt minimum.
-          hitSlop={4}
-          onPress={onDismiss}
-          style={({ pressed }) => [
-            styles.button,
-            styles.dismiss,
-            pressed ? styles.pressed : null,
-            disabled && busy !== "dismiss" ? styles.dimmed : null,
-          ]}
-        >
-          <Text style={styles.dismissText}>{AI_SUGGESTION_COPY.dismiss}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${AI_SUGGESTION_COPY.accept}: ${task.title}`}
-          accessibilityState={{ disabled, busy: busy === "accept" }}
+          report={report}
+          primary={accept}
+          secondary={{
+            label: LAST_YEAR_COPY.alreadyDoing,
+            doing: "already",
+            onPress: onAlreadyDoing,
+          }}
+          quiet={dismiss}
+          styles={styles}
+        />
+      ) : (
+        <RowActions
+          name={task.title}
+          busy={busy}
           disabled={disabled}
-          hitSlop={4}
-          onPress={onAccept}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: accent },
-            pressed ? styles.pressed : null,
-            disabled && busy !== "accept" ? styles.dimmed : null,
-          ]}
-        >
-          {/* The same words while it saves, so the button keeps its width. */}
-          <Text style={[styles.acceptText, { color: accentOnPrimary }]}>
-            {AI_SUGGESTION_COPY.accept}
-          </Text>
-        </Pressable>
+          report={report}
+          primary={accept}
+          secondary={dismiss}
+          styles={styles}
+        />
+      )}
+      {problem ? (
+        <Text accessibilityLiveRegion="polite" style={styles.problem}>
+          {problem}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * An event the chapter held around now last year. Nothing here opens on a
+ * tap of the row: last year's event is not this year's, and "Add to
+ * calendar" is the one way to look at it, in the form it would become.
+ */
+function LastYearEventRow({
+  item,
+  busy,
+  disabled,
+  canAdd,
+  problem,
+  onAdd,
+  onAlreadyDoing,
+  onDismiss,
+  report,
+  styles,
+}: {
+  item: WaitingEvent;
+  busy: Doing | null;
+  disabled: boolean;
+  /** Whether this officer may create events at all. */
+  canAdd: boolean;
+  problem: string | null;
+  onAdd: () => void;
+  onAlreadyDoing: () => void;
+  onDismiss: () => void;
+  report: RowReport;
+  styles: Styles;
+}) {
+  const { event } = item;
+  const line = lastYearEventLine(lastYearDay(event.last_year_at), event.times);
+  return (
+    <View style={styles.card}>
+      <View accessible accessibilityLabel={`${event.name}. ${line}`} style={styles.cardText}>
+        <Text style={styles.title}>{event.name}</Text>
+        <Text style={styles.meta}>{line}</Text>
       </View>
+      <RowActions
+        name={event.name}
+        busy={busy}
+        disabled={disabled}
+        report={report}
+        primary={
+          canAdd
+            ? { label: LAST_YEAR_COPY.addEvent, doing: "accept", onPress: onAdd }
+            : null
+        }
+        secondary={{
+          label: LAST_YEAR_COPY.alreadyDoing,
+          doing: "already",
+          onPress: onAlreadyDoing,
+        }}
+        quiet={{
+          label: LAST_YEAR_COPY.dismiss,
+          doing: "dismiss",
+          onPress: onDismiss,
+        }}
+        styles={styles}
+      />
       {problem ? (
         <Text accessibilityLiveRegion="polite" style={styles.problem}>
           {problem}
@@ -499,6 +805,16 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       // Takes the room left of Dismiss and Accept, which stay on the right.
       marginRight: "auto",
+    },
+    quietRow: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      // The two quiet answers read as one line, closer than the buttons.
+      marginTop: -tokens.spacing.xs,
+    },
+    quiet: {
+      height: 36,
+      justifyContent: "center",
     },
     skeletonActions: {
       height: 36,
