@@ -55,6 +55,7 @@ import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { editTargetOf } from "@/components/events/edit-target";
 import {
   EventMinutes,
   useMeetingsModuleOn,
@@ -270,24 +271,9 @@ export function EventDetailSheet({
     // A repeating event asks which it means, as the editor and the phone do
     // (`deleteOffersSeriesChoice`); a series delete never removes a meeting
     // that already happened.
-    const seriesEvent = {
-      parent_event_id:
-        typeof resolvedEvent?.parent_event_id === "string" &&
-        resolvedEvent.parent_event_id
-          ? resolvedEvent.parent_event_id
-          : null,
-      recurrence_rule:
-        typeof resolvedEvent?.recurrence_rule === "string"
-          ? resolvedEvent.recurrence_rule
-          : null,
-      start_time:
-        typeof resolvedEvent?.start_time === "string"
-          ? resolvedEvent.start_time
-          : "",
-    };
+    const seriesEvent = editTargetOf(resolvedEvent, null)?.event;
     const asksScope =
-      seriesEvent.start_time !== "" &&
-      deleteOffersSeriesChoice(seriesEvent, new Date());
+      !!seriesEvent && deleteOffersSeriesChoice(seriesEvent, new Date());
     const confirmed = await confirm(
       asksScope
         ? {

@@ -22,6 +22,7 @@ import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   checkSeriesLength,
+  isRepeatRule,
   eventLimitsAudience,
   eventOthersInvited,
 } from '@repo/validation';
@@ -421,7 +422,10 @@ export class EventService {
       input.recurrence_rule !== undefined
         ? input.recurrence_rule
         : (row?.recurrence_rule ?? null);
-    if (rule && row && (ruleChanged || startMoved)) {
+    // A stored rule this build can't read is left alone, as the series path
+    // does: a row written before the format was checked must not refuse every
+    // move of its start. (A rule in the request has passed the DTO already.)
+    if (rule && isRepeatRule(rule) && row && (ruleChanged || startMoved)) {
       const problem = checkSeriesLength(
         rule,
         input.start_time ?? row.start_time,

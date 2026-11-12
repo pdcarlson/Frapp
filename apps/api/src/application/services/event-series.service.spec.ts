@@ -629,8 +629,8 @@ describe('EventSeriesService', () => {
         expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
       });
 
-      // The web editor PATCHes the whole event back on every save, so an
-      // unchanged rule arrives on the wire constantly. Regenerating on presence
+      // A client that PATCHes the whole event back (web did until #3667) sends
+      // an unchanged rule on every save. Regenerating on presence
       // rather than on change would delete and rebuild future rows each time —
       // and `event_attendance` is `on delete cascade`.
       it('does not regenerate when an unchanged rule is resent', async () => {
@@ -1416,9 +1416,9 @@ describe('EventSeriesService', () => {
       });
 
       it('ignores the times on a series edit issued from a child', async () => {
-        // Clients round-trip the whole event object, so a rename saved from a
-        // later occurrence arrived carrying that occurrence's start_time. That
-        // is not a request to move the series.
+        // A client that round-trips the whole event object sends a rename
+        // saved from a later occurrence carrying that occurrence's start_time.
+        // That is not a request to move the series.
         mockEventRepo.findById.mockImplementation(async (id: string) =>
           id === 'parent-1' ? parent : futureChild1,
         );
@@ -1815,8 +1815,8 @@ describe('EventSeriesService', () => {
       });
 
       it('lets a save that sends the stored rule back through', async () => {
-        // The web editor sends `recurrence_rule` on every save; a rename must
-        // not be judged on a rule nobody changed.
+        // A client that sends `recurrence_rule` back on every save must not
+        // have a rename judged on a rule nobody changed.
         const dated: Event = {
           ...parent,
           recurrence_rule:
@@ -1851,6 +1851,19 @@ describe('EventSeriesService', () => {
             }),
           ).rejects.toBeInstanceOf(BadRequestException);
           expect(mockEventRepo.update).not.toHaveBeenCalled();
+        });
+
+        it('leaves a stored rule it cannot read alone', async () => {
+          const legacy: Event = { ...parent, recurrence_rule: 'daily' };
+          mockEventRepo.findById.mockResolvedValue(legacy);
+          mockEventRepo.update.mockResolvedValue(legacy);
+
+          await expect(
+            service.update('parent-1', 'ch-1', {
+              start_time: '2026-03-22T18:00:00.000Z',
+              end_time: '2026-03-22T19:00:00.000Z',
+            }),
+          ).resolves.toBeDefined();
         });
 
         it('lets a move that leaves room for the series through', async () => {

@@ -430,6 +430,93 @@ describe("EventEditorDialog form shape and attendance by role", () => {
         });
       });
 
+      it("leaves the meeting after a series move rebuilds it", async () => {
+        withParent();
+        const onLeftEvent = vi.fn();
+        updateMutate.mockResolvedValueOnce({ id: "h1" });
+        render(
+          <EventEditorDialog
+            open
+            mode="edit"
+            event={occurrence}
+            usingPreviewData={false}
+            onOpenChange={() => {}}
+            onSaved={async () => {}}
+            onLeftEvent={onLeftEvent}
+          />,
+        );
+        fireEvent.change(screen.getByLabelText("Starts, day"), {
+          target: { value: "2027-07-13" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() => expect(onLeftEvent).toHaveBeenCalledTimes(1));
+      });
+
+      it("stays on the meeting after a rename of just this one", async () => {
+        withParent();
+        const onLeftEvent = vi.fn();
+        const onOpenChange = vi.fn();
+        updateMutate.mockResolvedValueOnce({ id: "o1" });
+        render(
+          <EventEditorDialog
+            open
+            mode="edit"
+            event={occurrence}
+            usingPreviewData={false}
+            onOpenChange={onOpenChange}
+            onSaved={async () => {}}
+            onLeftEvent={onLeftEvent}
+          />,
+        );
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "This event only" }),
+        );
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+        expect(onLeftEvent).not.toHaveBeenCalled();
+      });
+
+      it("says what to do when an All upcoming save is refused", async () => {
+        withParent();
+        updateMutate.mockRejectedValueOnce({ statusCode: 400, message: "x" });
+        renderEdit(occurrence);
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() =>
+          expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+              description: expect.stringMatching(
+                /^That change can't be made to the whole series/,
+              ),
+            }),
+          ),
+        );
+      });
+
+      it("holds Save until the first meeting has loaded", () => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: true,
+          isError: false,
+        }));
+        renderEdit(occurrence);
+        expect(screen.getByText("Loading the series…")).toBeTruthy();
+        expect(
+          screen.getByRole("button", { name: "Save changes" }),
+        ).toBeDisabled();
+      });
+
       it("locks Repeat when the first meeting can't be read", async () => {
         useEventMock.mockImplementation(() => ({
           data: undefined,

@@ -53,16 +53,15 @@ import {
   repeatSummary,
   saveRequestFor,
   saveScopeFor,
-  seriesRuleOf,
   SERIES_SCOPE_COPY,
   type EventAttendanceDraft,
   type EventEditScope,
-  type EventEditTarget,
   type RepeatDraft,
   type RepeatEditSeries,
 } from "@repo/validation";
 import { MemberFacingError } from "@repo/hooks/error-copy";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { pointsLabel } from "@/components/events/event-labels";
@@ -100,42 +99,6 @@ type EventRecord = Record<string, unknown>;
 
 const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
-
-/**
- * What the shared edit logic (`event-edit.ts` in `@repo/validation`) needs to
- * know about the event and its series, or `null` while it can't be built.
- */
-export function editTargetOf(
-  event: EventRecord | null,
-  parent: EventRecord | null,
-): EventEditTarget | null {
-  const id = textOf(event?.id);
-  const start = textOf(event?.start_time);
-  const end = textOf(event?.end_time);
-  if (!event || !id || !start || !end) return null;
-  const fields = {
-    id,
-    start_time: start,
-    end_time: end,
-    parent_event_id: textOf(event.parent_event_id) || null,
-    recurrence_rule: textOf(event.recurrence_rule),
-  };
-  const parentId = textOf(parent?.id);
-  const parentStart = textOf(parent?.start_time);
-  const parentEnd = textOf(parent?.end_time);
-  const parentFits =
-    fields.parent_event_id !== null &&
-    parentId === fields.parent_event_id &&
-    parentStart !== null &&
-    parentEnd !== null;
-  return {
-    event: fields,
-    seriesRule: seriesRuleOf(fields, parentFits ? parent : null),
-    parent: parentFits
-      ? { id: parentId, start_time: parentStart, end_time: parentEnd }
-      : null,
-  };
-}
 
 export function isoToLocalInput(value: unknown): string {
   const date = parseInstant(value);
@@ -503,6 +466,11 @@ export function EventEditorDialog({
         : null,
     [mode, event, parentQuery.data],
   );
+  // A generated meeting waits for its parent before it saves, as the phone's
+  // Edit does (`event-details.tsx`): until then "All upcoming events" can't be
+  // offered, and a save would go to this meeting alone without asking.
+  const parentLoading =
+    !usingPreviewData && parentId !== "" && parentQuery.isPending;
   // Repeat waits for the parent: without it the series' rule is unknown.
   const repeatLocked =
     !!editTarget?.event.parent_event_id && editTarget.parent === null;
@@ -548,16 +516,9 @@ export function EventEditorDialog({
         String(typeof event.point_value === "number" ? event.point_value : 10),
       );
       setAttendance(attendanceFromEvent(attendanceFieldsOf(event)));
+      // A generated meeting's rule arrives with its parent (below).
       setRepeat(
-        repeatDraftFromRule(
-          seriesRuleOf(
-            {
-              parent_event_id: textOf(event.parent_event_id) || null,
-              recurrence_rule: textOf(event.recurrence_rule),
-            },
-            null,
-          ),
-        ),
+        repeatDraftFromRule(editTargetOf(event, null)?.seriesRule ?? null),
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
       setEventTypeId(
@@ -899,7 +860,7 @@ export function EventEditorDialog({
           }
         }
       } else {
-        if (!event || !editTarget) return;
+        if (!event || !editTarget || parentLoading) return;
         // Only what changed is sent (`eventEditPatch`): a time or location in
         // the patch pushes "Event Updated" to the chapter, so a renamed
         // meeting must not carry them.
@@ -965,7 +926,14 @@ export function EventEditorDialog({
             body: { ...request.body, scope: request.scope },
           });
         } catch (error) {
-          if (request.scope === "series" && statusOf(error) === 400) {
+          // Only when the officer picked "All upcoming events": a Repeat
+          // change is always the series, so "this event only" isn't an
+          // option to point them to.
+          if (
+            asked === "ask" &&
+            request.scope === "series" &&
+            statusOf(error) === 400
+          ) {
             // Sending it again can't win, so say what to do instead.
             throw new MemberFacingError(SERIES_SCOPE_COPY.seriesRefused);
           }
@@ -1173,9 +1141,9 @@ export function EventEditorDialog({
                       Repeat
                     </span>
                     <p className="text-caption text-muted-foreground">
-                      {parentQuery.isError
-                        ? "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."
-                        : "Loading the series…"}
+                      {parentLoading
+                        ? "Loading the series…"
+                        : "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."}
                     </p>
                   </section>
                 ) : (
@@ -1400,7 +1368,9 @@ export function EventEditorDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            {...gate.controlProps(usingPreviewData || isSubmitting)}
+            {...gate.controlProps(
+              usingPreviewData || isSubmitting || parentLoading,
+            )}
           >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />

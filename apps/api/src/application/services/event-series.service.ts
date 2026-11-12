@@ -28,10 +28,9 @@ import type { UpdateEventInput } from './event-input';
  * patched, because they determine *when* the generated occurrences fall.
  *
  * Compared by value, not by presence: a client that PATCHes the whole event
- * object back (which the web editor does — its save payload in
- * `event-editor-dialog.tsx` carries `recurrence_rule` whenever the event has
- * one) would otherwise trigger a destructive regenerate on
- * every save. Regeneration deletes rows, and `event_attendance` is
+ * object back (as the web editor did until #3667, and an older build or
+ * another API caller still may) would otherwise trigger a destructive
+ * regenerate on every save. Regeneration deletes rows, and `event_attendance` is
  * `on delete cascade`, so a needless regenerate is a data-loss bug.
  */
 const RECURRENCE_DEFINING_FIELDS = [
@@ -281,8 +280,9 @@ export class EventSeriesService {
     const parent = await this.resolveSeriesParent(target, chapterId);
 
     // A series edit issued against a *child* carries that child's times, not the
-    // series anchor's. Clients round-trip the whole event object, so a rename
-    // saved from a later occurrence arrived carrying that occurrence's
+    // series anchor's. A client that round-trips the whole event object (both
+    // apps did before they sent only what changed, #3667) sends a rename
+    // saved from a later occurrence carrying that occurrence's
     // `start_time` — which is not a request to move the series, it is whichever
     // row the client happened to have open. Honouring it dragged the anchor onto
     // the child's date and rebuilt every future occurrence with fresh ids.

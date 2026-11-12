@@ -15,11 +15,10 @@ import type { RepeatEditSeries } from "./repeat-draft";
  *
  * ## Only what changed is sent
  *
- * The server pushes "Event Updated" to the chapter whenever a patch carries a
- * time or a location, whether or not it differs. Round-tripping the whole
- * event would page everyone for a typo fix in the name. So the patch holds
- * only the fields the officer actually changed, and an untouched form saves
- * nothing.
+ * The patch holds only the fields the officer actually changed, and an
+ * untouched form saves nothing. On "All upcoming events" every field sent is
+ * written onto each upcoming meeting, so sending the whole event back would
+ * undo a meeting someone had changed on its own (a different room one week).
  *
  * ## Repeating events
  *

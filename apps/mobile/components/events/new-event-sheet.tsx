@@ -397,6 +397,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       }
       Keyboard.dismiss();
       let scope = saveScopeFor(target, result.patch, new Date());
+      // Whether the officer picked the series: a Repeat change is always the
+      // series, so a refusal of one can't point them to "this event only".
+      const askedScope = scope === "ask";
       if (scope === "ask") {
         sending.current = true;
         const picked = await askSeriesScope({
@@ -435,7 +438,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             else if (isBadRequest(error)) {
               // Sending it again can't win, so say what to do instead.
               setRejected(
-                request.scope === "series"
+                askedScope && request.scope === "series"
                   ? SERIES_SCOPE_COPY.seriesRefused
                   : "That change can't be saved. Check the times and try something else.",
               );
