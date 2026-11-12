@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   GRAPHQL_URL,
   MAX_FAILED_READS,
+  MAX_RETRIES,
   confirmStoreSubmissions,
   nextStep,
   pollSubmissions,
@@ -15,12 +16,25 @@ const IOS = "3f1c2b4a-1111-4a2b-9c3d-0123456789ab";
 const ANDROID = "9e8d7c6b-2222-4b3c-8d4e-abcdefabcdef";
 const BUILD = "0b1c2d3e-3333-4c4d-8e5f-0123456789ab";
 
-/** A fetch stand-in that answers each submission id from its own script of replies, in order. */
-function fakeEas(replies) {
+/**
+ * A fetch stand-in that answers each submission id from its own script of
+ * replies, in order. `retries` maps a failed submission's id to the id its
+ * retry gets (or to a reply: an Error, a status number or `{ errors }`).
+ */
+function fakeEas(replies, retries = {}) {
   const calls = [];
+  const retried = [];
   const left = Object.fromEntries(Object.entries(replies).map(([id, list]) => [id, [...list]]));
   const fetchImpl = async (url, init) => {
     const { variables } = JSON.parse(init.body);
+    if (variables.parentSubmissionId) {
+      retried.push(variables.parentSubmissionId);
+      const next = retries[variables.parentSubmissionId];
+      if (next instanceof Error) throw next;
+      if (typeof next === "number") return { ok: false, status: next, json: async () => ({}) };
+      if (next?.errors) return { ok: true, status: 200, json: async () => ({ errors: next.errors }) };
+      return { ok: true, status: 200, json: async () => ({ data: { submission: { retrySubmission: { submission: { id: next, status: "IN_QUEUE" } } } } }) };
+    }
     calls.push({ url, id: variables.id, auth: init.headers.authorization });
     const list = left[variables.id];
     const next = list.length > 1 ? list.shift() : list[0];
@@ -30,10 +44,10 @@ function fakeEas(replies) {
     return {
       ok: true,
       status: 200,
-      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, error: next.error ?? null } } } }),
+      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, canRetry: next.canRetry ?? false, error: next.error ?? null } } } }),
     };
   };
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, retried };
 }
 
 /** A clock that only moves when the poll sleeps. */
@@ -45,7 +59,7 @@ function clock() {
 describe("readSubmission", () => {
   it("asks EAS's GraphQL API for the one submission, with the token as a bearer", async () => {
     const eas = fakeEas({ [IOS]: [{ status: "IN_QUEUE" }] });
-    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl, sleep: async () => {} }), { status: "IN_QUEUE", error: null });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl, sleep: async () => {} }), { status: "IN_QUEUE", error: null, canRetry: false });
     assert.deepEqual(eas.calls, [{ url: GRAPHQL_URL, id: IOS, auth: "Bearer t0k" }]);
   });
 
@@ -60,7 +74,7 @@ describe("readSubmission", () => {
 
   it("asks again within the read after a dropped connection or a 5xx, but not after a 4xx", async () => {
     const blip = fakeEas({ [IOS]: [503, { status: "IN_PROGRESS" }] });
-    assert.deepEqual(await readSubmission({ id: IOS, token: "t", fetchImpl: blip.fetchImpl, sleep: async () => {} }), { status: "IN_PROGRESS", error: null });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t", fetchImpl: blip.fetchImpl, sleep: async () => {} }), { status: "IN_PROGRESS", error: null, canRetry: false });
     assert.equal(blip.calls.length, 2);
     const refused = fakeEas({ [IOS]: [403] });
     await readSubmission({ id: IOS, token: "t", fetchImpl: refused.fetchImpl, sleep: async () => {} });
@@ -199,8 +213,8 @@ describe("nextStep and summary", () => {
 });
 
 describe("confirmStoreSubmissions", () => {
-  const run = async (env, replies) => {
-    const eas = fakeEas(replies);
+  const run = async (env, replies, retries = {}) => {
+    const eas = fakeEas(replies, retries);
     const c = clock();
     const logs = [];
     let written = "";
@@ -212,8 +226,70 @@ describe("confirmStoreSubmissions", () => {
       writeSummary: (text) => (written += text),
       log: (line) => logs.push(line),
     });
-    return { code, written, logs, calls: eas.calls };
+    return { code, written, logs, calls: eas.calls, retried: eas.retried };
   };
+
+  // Paul, 2026-11-12: iOS 0.12.0 (21) failed at App Store Connect with
+  // SERVER_ERROR after an hour of building. A passing store error is sent
+  // again through EAS's retry, without rebuilding or anyone's hands.
+  const RETRY_1 = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa";
+  const RETRY_2 = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb";
+  const SERVER_ERROR = { status: "ERRORED", canRetry: true, error: { errorCode: "SERVER_ERROR", message: "App Store Connect returned an unexpected server error." } };
+
+  it("retries an upload App Store Connect failed with a server error, and passes when the retry finishes", async () => {
+    const { code, written, logs, retried } = await run(
+      { IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, IOS_BUILD: BUILD },
+      { [IOS]: [{ status: "IN_PROGRESS" }, SERVER_ERROR], [RETRY_1]: [{ status: "IN_QUEUE" }, { status: "FINISHED" }] },
+      { [IOS]: RETRY_1 },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(retried, [IOS]);
+    assert.ok(logs.some((l) => l === `iOS submission ${IOS} failed (SERVER_ERROR); retried it as ${RETRY_1}.`));
+    assert.match(written, new RegExp(`\\| iOS \\| \`${RETRY_1}\` \\(retry of \`${IOS}\`\\) \\| \`FINISHED\` \\|`));
+  });
+
+  it(`stops after ${MAX_RETRIES} retries and fails, saying it already tried`, async () => {
+    const { code, retried, logs } = await run(
+      { IOS_SUBMISSION: IOS, IOS_BUILD: BUILD },
+      { [IOS]: [SERVER_ERROR], [RETRY_1]: [SERVER_ERROR], [RETRY_2]: [SERVER_ERROR] },
+      { [IOS]: RETRY_1, [RETRY_1]: RETRY_2 },
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(retried, [IOS, RETRY_1]);
+    assert.ok(logs.some((l) => /^::error::iOS's upload to TestFlight failed: .*\(`SERVER_ERROR`\)\. It was already retried 2 times \(first try 3f1c2b4a/.test(l)));
+  });
+
+  it("doesn't retry an error a second try would repeat, or one EAS no longer lets it retry", async () => {
+    const rejected = { status: "ERRORED", canRetry: true, error: { errorCode: "BUILD_NUMBER_ALREADY_USED", message: "taken" } };
+    const notRetried = await run({ IOS_SUBMISSION: IOS, IOS_BUILD: BUILD }, { [IOS]: [rejected] }, { [IOS]: RETRY_1 });
+    assert.equal(notRetried.code, 1);
+    assert.deepEqual(notRetried.retried, []);
+    // Still retryable on EAS: the summary names the hand retry, not a rebuild.
+    assert.ok(notRetried.logs.some((l) => l.includes(`**Retry a store upload** workflow (platform \`ios\`, submission \`${IOS}\`)`)));
+    const expired = await run({ IOS_SUBMISSION: IOS, IOS_BUILD: BUILD }, { [IOS]: [{ ...SERVER_ERROR, canRetry: false }] }, { [IOS]: RETRY_1 });
+    assert.equal(expired.code, 1);
+    assert.deepEqual(expired.retried, []);
+    assert.ok(expired.logs.some((l) => l.includes(`--id ${BUILD} --non-interactive --no-auto-testflight-setup`)));
+  });
+
+  it("retries any error EAS allows when dispatched by hand", async () => {
+    const rejected = { status: "ERRORED", canRetry: true, error: { errorCode: "SOMETHING_ELSE", message: "x" } };
+    const { code, retried } = await run(
+      { ANDROID_UPLOAD: "success", ANDROID_SUBMISSION: ANDROID, RETRY_ANY_ERROR: "true" },
+      { [ANDROID]: [rejected], [RETRY_1]: [{ status: "FINISHED" }] },
+      { [ANDROID]: RETRY_1 },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(retried, [ANDROID]);
+  });
+
+  it("asks for a retry once, and reports a refused one without failing differently", async () => {
+    const { code, retried, logs } = await run({ IOS_SUBMISSION: IOS }, { [IOS]: [SERVER_ERROR] }, { [IOS]: 502 });
+    assert.equal(code, 1);
+    assert.deepEqual(retried, [IOS], "a mutation whose answer was lost is never sent twice");
+    assert.ok(logs.some((l) => l === `iOS submission ${IOS}: couldn't retry it (HTTP 502).`));
+    assert.ok(logs.some((l) => /Retrying it failed: HTTP 502\./.test(l)));
+  });
 
   it("passes when every given submission finished, and checks only the ones it was given", async () => {
     const { code, written, calls } = await run({ IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, ANDROID_UPLOAD: "skipped", ANDROID_SUBMISSION: "" }, { [IOS]: [{ status: "FINISHED" }] });

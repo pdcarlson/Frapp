@@ -1371,3 +1371,35 @@ describe("the record job", () => {
     });
   });
 });
+
+// "Retry a store upload" (mobile-retry-upload.yml, Paul 2026-11-12): the
+// hand-run retry of one failed submission. It shares `confirm`'s script and
+// trust: the trusted ref, nothing installed, EXPO_TOKEN and nothing else.
+describe("the Retry a store upload workflow", () => {
+  const RETRY = join(REPO_ROOT, ".github", "workflows", "mobile-retry-upload.yml");
+  const STEP = "Retry the submission and wait for it on EAS";
+
+  it("runs the confirm script from the trusted ref with nothing installed", () => {
+    const steps = stepsOf(RETRY, "retry");
+    const checkout = steps.find((s) => /uses:\s*actions\/checkout@/.test(s.body));
+    assert.doesNotMatch(checkout.body, /^\s+ref:/m);
+    assert.match(checkout.body, /persist-credentials: false/);
+    const setup = steps.find((s) => /uses:\s*\.\/\.github\/actions\/node-setup/.test(s.body));
+    assert.match(setup.body, /^\s+install: none\s*$/m);
+    for (const step of steps) {
+      if (/^\s+run:/m.test(step.body)) assert.ok(!scriptOf(step).split("\n").some((l) => runsInstall(l)), step.name);
+    }
+    assert.match(scriptOf(stepNamed(RETRY, "retry", STEP)), /node scripts\/ci\/confirm-store-submissions\.mjs/);
+  });
+
+  it("retries any error, holds only EXPO_TOKEN, and stops polling before its step and job are killed", () => {
+    const poll = stepNamed(RETRY, "retry", STEP);
+    assert.equal(poll.stepEnv.get("RETRY_ANY_ERROR"), "true");
+    assert.equal(poll.stepEnv.get("EXPO_TOKEN"), "${{ secrets.EXPO_TOKEN }}");
+    assert.doesNotMatch(readFileSync(RETRY, "utf8"), /secrets\.(?!EXPO_TOKEN\b)/);
+    const step = Number(poll.body.match(/^\s+timeout-minutes:\s*(\d+)/m)[1]);
+    const job = Number(jobOf(RETRY, "retry").keys.get("timeout-minutes"));
+    assert.ok(Number(poll.stepEnv.get("DEADLINE_MINUTES")) < step);
+    assert.ok(step + 5 <= job && job <= 360);
+  });
+});

@@ -19,6 +19,18 @@
 // its entry, before merging or in a PR of its own, or to upload it again by
 // hand and keep it.
 //
+// ── Retrying a failed upload (Paul, 2026-11-12) ─────────────────────────────
+// An upload that fails on the store's side for a passing reason (App Store
+// Connect's `SERVER_ERROR`, which ended iOS 0.12.0 (21)'s upload after an hour
+// of building on 2026-11-12) is retried here, up to MAX_RETRIES times, through
+// EAS's own `retrySubmission` mutation: the shape of eas-cli 24.8.0's
+// `SubmissionMutation.retrySubmissionAsync`, which `eas submit:retry` runs. It
+// re-sends the same build with the same submit config, so nothing is rebuilt
+// and no credential passes through here. EAS allows it only while the failed
+// submission's `canRetry` holds (a limited window after it fails). The retry
+// is polled like the first try, inside the same deadline. RETRY_ANY_ERROR
+// (`mobile-retry-upload.yml`, dispatched by hand) retries whatever the error.
+//
 // FINISHED means the binary reached App Store Connect or Google Play, not that
 // it passed their processing. App Store Connect can still reject an iOS
 // binary afterwards by email (ITMS-90683 rejected iOS 0.9.1 (8) that way), and
@@ -37,6 +49,8 @@
 //   IOS_SUBMISSION      — that step's submission id, empty when none
 //   IOS_BUILD           — the iOS EAS build id, for the summary's re-upload command
 //   ANDROID_UPLOAD, ANDROID_SUBMISSION, ANDROID_BUILD — the same for Android
+//   RETRY_ANY_ERROR     — `true` retries any failed submission EAS allows, not
+//                         only a store server error (the hand-dispatched retry)
 //   DEADLINE_MINUTES    — stop polling after this long (default 280)
 //   POLL_SECONDS        — wait between rounds (default 60)
 //   GITHUB_STEP_SUMMARY — where the summary goes
@@ -53,10 +67,28 @@ const QUERY = `query ConfirmSubmission($id: ID!) {
     byId(submissionId: $id) {
       id
       status
+      canRetry
       error { errorCode message }
     }
   }
 }`;
+// eas-cli 24.8.0's `SubmissionMutation.retrySubmissionAsync`, asking back only
+// what this script reads.
+const RETRY = `mutation RetrySubmission($parentSubmissionId: ID!) {
+  submission {
+    retrySubmission(parentSubmissionId: $parentSubmissionId) {
+      submission { id status }
+    }
+  }
+}`;
+/**
+ * Store errors that say nothing about the build, so the same upload may well
+ * go through a little later. Anything else (a rejected binary, a bad
+ * credential, a duplicate build number) would fail the same way again.
+ */
+export const RETRYABLE_ERROR_CODES = new Set(["SERVER_ERROR"]);
+/** Retries of one platform's upload in one run. Each waits out Expo's queue again. */
+export const MAX_RETRIES = 2;
 
 /** EAS's terminal submission states. Anything else is still on its way. */
 export const TERMINAL = new Set(["FINISHED", "ERRORED", "CANCELED"]);
@@ -112,7 +144,50 @@ export async function readSubmission({ id, token, fetchImpl = fetch, sleep = del
   }
   const submission = body?.data?.submissions?.byId;
   if (!submission || typeof submission.status !== "string") return { readError: "the response named no submission" };
-  return { status: oneLine(submission.status), error: submission.error ?? null };
+  return { status: oneLine(submission.status), error: submission.error ?? null, canRetry: submission.canRetry === true };
+}
+
+/**
+ * Ask EAS to send a failed submission again. One attempt: a mutation whose
+ * answer was lost may have created the retry already, and a second would
+ * upload the build twice. Returns `{ id }` of the new submission, or
+ * `{ retryError }`.
+ */
+export async function retrySubmission({ id, token, fetchImpl = fetch, sleep = delay }) {
+  let res;
+  try {
+    res = await fetchWithRetry(
+      GRAPHQL_URL,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query: RETRY, variables: { parentSubmissionId: id } }),
+      },
+      { fetchImpl, sleep, timeoutMs: READ_TIMEOUT_MS, retryMethods: new Set() },
+    );
+  } catch (error) {
+    return { retryError: `request failed: ${oneLine(error.message)}` };
+  }
+  if (!res.ok) return { retryError: `HTTP ${res.status}` };
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    return { retryError: "the response was not JSON" };
+  }
+  if (Array.isArray(body?.errors) && body.errors.length > 0) {
+    return { retryError: oneLine(body.errors.map((e) => e?.message ?? "unknown error").join("; ")) };
+  }
+  const next = body?.data?.submission?.retrySubmission?.submission?.id;
+  if (typeof next !== "string" || !ID.test(next)) return { retryError: "the response named no new submission" };
+  return { id: next };
+}
+
+/** Whether a row's failed upload is one to send again. */
+export function shouldRetry(row, { retryAnyError = false } = {}) {
+  if (row.status !== "ERRORED" || !row.canRetry) return false;
+  if ((row.retriedFrom?.length ?? 0) >= MAX_RETRIES) return false;
+  return retryAnyError || RETRYABLE_ERROR_CODES.has(row.error?.errorCode ?? "");
 }
 
 /** A row this job has stopped asking about. */
@@ -124,8 +199,8 @@ const settled = (row) => TERMINAL.has(row.status) || row.failedReads >= MAX_FAIL
  * submission: `{ store, id, build, status, error, readError, failedReads }`,
  * with `status` the last one read (or `unread`).
  */
-export async function pollSubmissions({ submissions, token, fetchImpl = fetch, deadlineMs, pollMs, now = Date.now, sleep = delay, log = console.log }) {
-  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0 }));
+export async function pollSubmissions({ submissions, token, fetchImpl = fetch, deadlineMs, pollMs, now = Date.now, sleep = delay, log = console.log, retryAnyError = false }) {
+  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0, canRetry: false, retriedFrom: [], retryError: null }));
   const readRound = async () => {
     for (const row of rows) {
       if (settled(row)) continue;
@@ -142,6 +217,21 @@ export async function pollSubmissions({ submissions, token, fetchImpl = fetch, d
       if (read.status !== row.status) log(`${DISPLAY[row.store]} submission ${row.id}: ${read.status}.`);
       row.status = read.status;
       row.error = read.error;
+      row.canRetry = read.canRetry === true;
+      if (shouldRetry(row, { retryAnyError })) {
+        const retried = await retrySubmission({ id: row.id, token, fetchImpl, sleep });
+        if (retried.retryError) {
+          row.retryError = retried.retryError;
+          log(`${DISPLAY[row.store]} submission ${row.id}: couldn't retry it (${retried.retryError}).`);
+          continue;
+        }
+        log(`${DISPLAY[row.store]} submission ${row.id} failed (${oneLine(row.error?.errorCode ?? "no error code")}); retried it as ${retried.id}.`);
+        row.retriedFrom.push(row.id);
+        row.id = retried.id;
+        row.status = "retried";
+        row.error = null;
+        row.canRetry = false;
+      }
     }
     return rows;
   };
@@ -176,8 +266,14 @@ export function nextStep(row) {
   const url = `${SUBMISSIONS_URL}/${row.id}`;
   if (row.status === "ERRORED" || row.status === "CANCELED") {
     const why = row.error?.message ? `: ${oneLine(row.error.message)}${row.error.errorCode ? ` (\`${oneLine(row.error.errorCode)}\`)` : ""}` : "";
-    const again = ID.test(row.build ?? "") ? `with ${submitCommand(row.store, row.build)}` : "by hand";
-    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}. The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
+    const again = row.canRetry
+      ? `with the **Retry a store upload** workflow (platform \`${row.store}\`, submission \`${row.id}\`), which sends the same build again without rebuilding`
+      : ID.test(row.build ?? "")
+        ? `with ${submitCommand(row.store, row.build)}`
+        : "by hand";
+    const tried = row.retriedFrom?.length ? ` It was already retried ${row.retriedFrom.length === 1 ? "once" : `${row.retriedFrom.length} times`} (first try ${row.retriedFrom[0]}).` : "";
+    const retryFailed = row.retryError ? ` Retrying it failed: ${row.retryError}.` : "";
+    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}.${tried}${retryFailed} The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
   }
   if (row.failedReads >= MAX_FAILED_READS || row.status === "unread") {
     return `${name}'s submission couldn't be read${row.readError ? ` (${row.readError})` : ""}, so this job doesn't know how it ended. Check ${url}. If it finished, the record PR is right as it is; if it failed, ${DROP}.`;
@@ -188,7 +284,10 @@ export function nextStep(row) {
 /** The run summary. */
 export function summary(rows) {
   const lines = ["## Store uploads", "", "| Platform | Submission | Status |", "| --- | --- | --- |"];
-  for (const r of rows) lines.push(`| ${DISPLAY[r.store]} | ${ID.test(r.id) ? `\`${r.id}\`` : "none"} | \`${r.status}\` |`);
+  for (const r of rows) {
+    const retried = r.retriedFrom?.length ? ` (retry of ${r.retriedFrom.map((id) => `\`${id}\``).join(", ")})` : "";
+    lines.push(`| ${DISPLAY[r.store]} | ${ID.test(r.id) ? `\`${r.id}\`` : "none"}${retried} | \`${r.status}\` |`);
+  }
   lines.push("");
   const steps = rows.map(nextStep).filter(Boolean);
   if (steps.length === 0) {
@@ -245,6 +344,7 @@ export async function confirmStoreSubmissions({ env, fetchImpl = fetch, now = Da
           now,
           sleep,
           log,
+          retryAnyError: env.RETRY_ANY_ERROR === "true",
         });
   const rows = [...polled, ...unchecked.map((r) => ({ error: null, readError: null, failedReads: 0, ...r }))];
   rows.sort((a, b) => (a.store === b.store ? 0 : a.store === "ios" ? -1 : 1));

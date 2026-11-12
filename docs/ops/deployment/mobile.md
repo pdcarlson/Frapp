@@ -397,7 +397,12 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    shows the same thing, but would put eas-cli's unlocked dependencies (#3118) in a job holding
    the token. It goes green when every successful upload has `FINISHED`, and red, with what to
    do, when one errors, is cancelled, is still queued at its 280-minute deadline, can't be read,
-   or came back with no submission id. `FINISHED` means the binary reached the store, not that it
+   or came back with no submission id. A submission that errors with App Store Connect's or
+   Google Play's `SERVER_ERROR` (their side failed, as iOS 0.12.0 (21) did on run 43297725458) is
+   retried through EAS's `retrySubmission` mutation, the one `eas submit:retry` sends: the same
+   build and submit config, no rebuild, at most twice, while EAS still allows it (`canRetry`).
+   The summary names each retry. Any other error is reported, not retried (Paul, 2026-11-12).
+   `FINISHED` means the binary reached the store, not that it
    passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
    did iOS 0.9.1 (8) with ITMS-90683.
 4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
@@ -424,8 +429,13 @@ nothing is still building.
   build by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
-  the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
-  summary gives, and keep the entry, or drop the entry: delete it from the record PR before
+  the cause and upload it again, and keep the entry, or drop the entry. To upload it again, run
+  the **Retry a store upload** workflow (`mobile-retry-upload.yml`) with the platform and the
+  submission id the `confirm` summary names: it retries that submission on EAS, any error
+  included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Once EAS
+  no longer allows a retry, the summary gives the `npm run eas -- submit … --id <build id>` to
+  run from the repo root instead. Merge the record PR by hand once the upload finished. To drop
+  the entry, delete it from the record PR before
   merging, or, if that has merged, move it to the registry's `dropped` list with the run as its
   reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that never
   reached a store can be dropped at once
