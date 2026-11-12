@@ -14628,6 +14628,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "keep_notes",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -14650,7 +14658,63 @@
             "bearer": []
           }
         ],
-        "summary": "Clear the notes and the draft, and stop a draft still being written. The minutes themselves are not changed",
+        "summary": "Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/draft/use": {
+      "post": {
+        "operationId": "MeetingDraftController_use_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UseMeetingDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits",
         "tags": [
           "Meetings"
         ]
@@ -23969,6 +24033,7 @@
               "unavailable",
               "refused",
               "not_permitted",
+              "stopped",
               "failed"
             ],
             "nullable": true
@@ -24037,6 +24102,19 @@
         },
         "required": [
           "notes",
+          "expected_updated_at"
+        ]
+      },
+      "UseMeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version."
+          }
+        },
+        "required": [
           "expected_updated_at"
         ]
       }

@@ -456,11 +456,16 @@ function Minutes({
           state={draftState}
           hasContent={!isMeetingContentEmpty(cleanContent(draft.content))}
           disabled={update.isPending || post.isPending || stale}
-          prepare={async () =>
-            dirty ? ((await save())?.updated_at ?? null) : loadedAt
-          }
-          onApplied={() => void onReload()}
-          onUse={(content) => editContent(content)}
+          prepare={async () => {
+            if (dirty) return (await save())?.updated_at ?? null;
+            // Nothing typed: build on the newest version, not the one this
+            // page happened to load.
+            const fresh = await onReload();
+            if (!fresh) return loadedAt;
+            adopt(fresh);
+            return fresh.updated_at;
+          }}
+          onSettled={() => void onReload()}
           onStale={() => setStale(true)}
           confirm={confirm}
         />
@@ -543,6 +548,7 @@ function Minutes({
             ) : key === "action_items" ? (
               editing ? (
                 <ActionItemsEditor
+                  disabled={drafting}
                   items={draft.content.action_items}
                   onChange={(action_items) => editContent({ action_items })}
                   quoteFor={(text) =>
@@ -806,7 +812,10 @@ function ActionItemsEditor({
   items,
   onChange,
   quoteFor,
+  disabled,
 }: {
+  /** The owner menu isn't a form control, so a disabled fieldset misses it. */
+  disabled: boolean;
   items: MeetingActionItem[];
   onChange: (next: MeetingActionItem[]) => void;
   quoteFor: (text: string) => string | null;
@@ -854,6 +863,7 @@ function ActionItemsEditor({
             <div className="grid min-w-0 gap-1">
               <Label htmlFor={`${ids}-${index}-owner`}>Who</Label>
               <Select
+                disabled={disabled}
                 value={item.owner_user_id ?? NO_OWNER}
                 onValueChange={(value) =>
                   set(index, {

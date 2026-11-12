@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   draft: { current: null as unknown },
   requestDraft: vi.fn(),
   discardDraft: vi.fn(),
+  useDraft: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -26,6 +27,7 @@ vi.mock("@repo/hooks", () => ({
     mutateAsync: mocks.requestDraft,
     isPending: false,
   }),
+  useUseMeetingDraft: () => ({ mutateAsync: mocks.useDraft, isPending: false }),
   useDiscardMeetingDraft: () => ({
     mutateAsync: mocks.discardDraft,
     isPending: false,
@@ -150,6 +152,7 @@ beforeEach(() => {
     mocks.confirm,
     mocks.requestDraft,
     mocks.discardDraft,
+    mocks.useDraft,
   ]) {
     fn.mockReset();
   }
@@ -398,6 +401,7 @@ describe("MinutesPage", () => {
     it("asks for a draft against the version on screen, with the meeting's day", async () => {
       mocks.draft.current = NO_DRAFT;
       loaded(ownDraft());
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
       mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
       render(<MinutesPage id="m-1" />);
       // Empty notes are caught on the ask, not while typing.
@@ -466,7 +470,14 @@ describe("MinutesPage", () => {
         screen.getByRole("button", { name: "Post minutes" }),
       ).toHaveProperty("disabled", true);
       fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-      expect(mocks.discardDraft).toHaveBeenCalledWith("m-1");
+      // Stopping keeps the notes, stored and in the box.
+      expect(mocks.discardDraft).toHaveBeenCalledWith({
+        id: "m-1",
+        keepNotes: true,
+      });
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
     });
 
     it("shows what to fill in and the line each drafted item came from", () => {
@@ -519,23 +530,86 @@ describe("MinutesPage", () => {
       expect(screen.getByRole("button", { name: "Draft again" })).toBeTruthy();
     });
 
-    it("puts a draft that waited into the editor only when asked", () => {
+    it("puts a draft that waited into the minutes only when asked, on the newest version", async () => {
       mocks.draft.current = {
         ...NO_DRAFT,
         status: "ready",
         notes: "notes",
         content: { ...EMPTY, summary: "Drafted summary." },
       };
-      loaded(ownDraft({ content: { ...EMPTY, summary: "Mine." } }));
+      const mine = ownDraft({ content: { ...EMPTY, summary: "Mine." } });
+      loaded(mine);
+      // Someone saved while the draft was written, which is why it waited.
+      mocks.refetch.mockResolvedValue({
+        data: { ...mine, updated_at: "2026-11-10T03:00:00.000Z" },
+      });
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      mocks.useDraft.mockResolvedValue({ ...NO_DRAFT, status: "applied" });
       render(<MinutesPage id="m-1" />);
-      const summary = screen.getByRole("textbox", { name: "Summary" });
-      expect(summary).toHaveProperty("value", "Mine.");
-      fireEvent.click(screen.getByRole("button", { name: "Use the draft" }));
-      expect(summary).toHaveProperty("value", "Drafted summary.");
-      expect(screen.getByRole("button", { name: "Save" })).toHaveProperty(
-        "disabled",
-        false,
+      expect(screen.getByRole("textbox", { name: "Summary" })).toHaveProperty(
+        "value",
+        "Mine.",
       );
+      expect(mocks.useDraft).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Use the draft" }));
+      await waitFor(() => expect(mocks.useDraft).toHaveBeenCalledTimes(1));
+      // It replaces what is written, so it asks first.
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Replace what's written?",
+      );
+      expect(mocks.useDraft).toHaveBeenCalledWith({
+        id: "m-1",
+        expectedUpdatedAt: "2026-11-10T03:00:00.000Z",
+      });
+    });
+
+    it("loads the minutes when a draft lands in them", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "drafting", notes: "notes" };
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.refetch.mockResolvedValue({ data: draft });
+      const view = render(<MinutesPage id="m-1" />);
+      expect(mocks.refetch).not.toHaveBeenCalled();
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      view.rerender(<MinutesPage id="m-1" />);
+      await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    });
+
+    it("clears stored notes only after asking", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(ownDraft());
+      mocks.confirm.mockResolvedValueOnce(null);
+      render(<MinutesPage id="m-1" />);
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      expect(mocks.discardDraft).not.toHaveBeenCalled();
+      mocks.confirm.mockResolvedValueOnce({ comment: "" });
+      mocks.discardDraft.mockResolvedValue("m-1");
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() =>
+        expect(mocks.discardDraft).toHaveBeenCalledWith({ id: "m-1" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "Your notes" }),
+        ).toHaveProperty("value", ""),
+      );
+    });
+
+    it("tells the officer when someone saved before the draft could start", async () => {
+      mocks.draft.current = NO_DRAFT;
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.refetch.mockResolvedValue({ data: draft });
+      mocks.requestDraft.mockRejectedValue({ code: "meeting.stale" });
+      render(<MinutesPage id="m-1" />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      expect(
+        await screen.findByText(/Someone else saved these minutes/),
+      ).toBeTruthy();
     });
 
     it("says plainly when the member hasn't agreed to AI, and when a draft failed", () => {

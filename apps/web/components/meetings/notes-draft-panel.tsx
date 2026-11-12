@@ -5,13 +5,13 @@ import { codeOf } from "@repo/api-sdk";
 import {
   useDiscardMeetingDraft,
   useRequestMeetingDraft,
+  useUseMeetingDraft,
   type MeetingDraftState,
 } from "@repo/hooks";
 import {
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_MAX_LENGTH,
   STANDARDS_MEETING_NOTE,
-  type MeetingContent,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,8 +51,7 @@ export function NotesDraftPanel({
   hasContent,
   disabled,
   prepare,
-  onApplied,
-  onUse,
+  onSettled,
   onStale,
   confirm,
 }: {
@@ -67,34 +66,39 @@ export function NotesDraftPanel({
    * on, or null when the save didn't land.
    */
   prepare: () => Promise<string | null>;
-  /** The draft went into the minutes: load them. */
-  onApplied: () => void;
-  /** Put a draft that waited (`ready`) into the editor. */
-  onUse: (content: Partial<MeetingContent>) => void;
+  /**
+   * A draft stopped being written, however it ended: load the minutes, which
+   * it may have filled in.
+   */
+  onSettled: () => void;
   onStale: () => void;
   confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
 }) {
   const ids = useId();
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
+  const use = useUseMeetingDraft();
   const [notes, setNotes] = useState(state.notes);
   const [problem, setProblem] = useState<string | null>(null);
-  const [used, setUsed] = useState(false);
 
-  const drafting = state.status === "drafting" || request.isPending;
+  const drafting =
+    state.status === "drafting" || request.isPending || use.isPending;
   const needsConsent = state.blocked === "consent_required";
   const unsent = notes.trim() !== state.notes.trim() && notes.trim() !== "";
 
   // The draft landing is the server's doing, so the page learns of it here.
+  // Whenever one stops being written (put in, waiting, stopped, failed, or
+  // cleared from another tab), the minutes on screen may be behind.
   const lastStatus = useRef(state.status);
-  const applied = useRef(onApplied);
+  const settled = useRef(onSettled);
   useEffect(() => {
-    applied.current = onApplied;
+    settled.current = onSettled;
   });
   useEffect(() => {
     if (lastStatus.current === state.status) return;
+    const was = lastStatus.current;
     lastStatus.current = state.status;
-    if (state.status === "applied") applied.current();
+    if (was === "drafting" || state.status === "applied") settled.current();
   }, [state.status]);
 
   // Notes are stored when a draft is asked for, so until then leaving asks.
@@ -131,7 +135,6 @@ export function NotesDraftPanel({
     const expected = await prepare();
     if (!expected) return;
     try {
-      setUsed(false);
       await request.mutateAsync({
         id: meetingId,
         body: {
@@ -160,9 +163,9 @@ export function NotesDraftPanel({
   }
 
   async function handleStop() {
-    // The box keeps the notes, so stopping loses nothing typed.
+    // Only the writing stops: the notes stay, stored and in the box.
     try {
-      await discard.mutateAsync(meetingId);
+      await discard.mutateAsync({ id: meetingId, keepNotes: true });
     } catch (error) {
       setProblem(getErrorMessage(error, "Couldn't stop the draft. Try again."));
     }
@@ -178,7 +181,7 @@ export function NotesDraftPanel({
     });
     if (!answer) return;
     try {
-      if (state.status !== "none") await discard.mutateAsync(meetingId);
+      if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
       setNotes("");
       setProblem(null);
     } catch (error) {
@@ -188,7 +191,33 @@ export function NotesDraftPanel({
     }
   }
 
-  const waiting = state.status === "ready" && !used;
+  async function handleUse() {
+    if (hasContent) {
+      const answer = await confirm({
+        title: "Replace what's written?",
+        description:
+          "The draft replaces the sections below with what it found in your notes. Who checked in stays as it is.",
+        confirmLabel: "Use the draft",
+        tone: "default",
+      });
+      if (!answer) return;
+    }
+    // The minutes moved while the draft was written, so the version on
+    // screen is read again before the draft goes onto it.
+    const expected = await prepare();
+    if (!expected) return;
+    try {
+      await use.mutateAsync({ id: meetingId, expectedUpdatedAt: expected });
+    } catch (error) {
+      if (codeOf(error) === "meeting.stale") onStale();
+      else
+        setProblem(
+          getErrorMessage(error, "Couldn't use the draft. Try again."),
+        );
+    }
+  }
+
+  const waiting = state.status === "ready";
   const status = problem
     ? { tone: "problem" as const, text: problem }
     : drafting
@@ -200,7 +229,10 @@ export function NotesDraftPanel({
           }
         : state.status === "failed"
           ? {
-              tone: "problem" as const,
+              tone:
+                state.failure === "stopped"
+                  ? ("quiet" as const)
+                  : ("problem" as const),
               text: state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
             }
           : waiting
@@ -208,7 +240,7 @@ export function NotesDraftPanel({
                 tone: "quiet" as const,
                 text: "The minutes changed while the draft was being written, so it wasn't put in.",
               }
-            : state.status === "applied" || used
+            : state.status === "applied"
               ? {
                   tone: "quiet" as const,
                   text: "Drafted from your notes. Read it through before you post.",
@@ -266,13 +298,10 @@ export function NotesDraftPanel({
             {reviewed ? "Draft again" : "Draft minutes"}
           </Button>
         )}
-        {waiting && state.content ? (
+        {waiting ? (
           <Button
-            disabled={disabled}
-            onClick={() => {
-              onUse(state.content as Partial<MeetingContent>);
-              setUsed(true);
-            }}
+            disabled={disabled || use.isPending}
+            onClick={() => void handleUse()}
           >
             Use the draft
           </Button>

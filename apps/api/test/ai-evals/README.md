@@ -84,8 +84,8 @@ How it works: `bake-off/candidate-registry.ts` puts the candidate's adapter behi
 for every provider and rewrites the model id, so the prompt, the catalog's output ceiling and effort,
 and Frapp's checks are the product's; only the model changes. The winner then moves to the catalog
 (`src/domain/constants/ai-model-catalog.ts`) in one edit. `minutes.draft` runs the product's own
-prompt, schema and checks (`src/domain/utils/minutes-draft.ts`, #4312), so the bake-off grades what
-ships. The `minutes.suggest-tasks` prompt and schema in `bake-off/tasks.ts` are still the
+prompt and schema (`src/domain/utils/minutes-draft.ts`, #4312), and grades the model's reply
+before Frapp's checks drop anything, so a model that invents a line is marked down for it. The `minutes.suggest-tasks` prompt and schema in `bake-off/tasks.ts` are still the
 bake-off's own, written to `spec/behavior/meetings.md` before the feature exists; when #4313
 lands, the task should import its prompt.
 

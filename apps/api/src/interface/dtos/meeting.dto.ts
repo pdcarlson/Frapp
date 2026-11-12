@@ -391,6 +391,16 @@ export class RequestMeetingDraftDto {
   meeting_date?: string;
 }
 
+export class UseMeetingDraftDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.',
+  })
+  @IsDateString()
+  expected_updated_at: string;
+}
+
 export class MeetingDraftSourceDto {
   @ApiProperty({ enum: ['decision', 'action_item'] })
   kind: 'decision' | 'action_item';

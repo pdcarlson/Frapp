@@ -86,6 +86,8 @@ export const MEETING_DRAFT_FAILURES = [
   "refused",
   /** The officer can no longer edit these minutes. */
   "not_permitted",
+  /** The officer stopped it. Not an error: the notes wait for another ask. */
+  "stopped",
   /** Anything else: a provider outage, an answer that didn't fit. */
   "failed",
 ] as const;
@@ -109,6 +111,7 @@ export const MEETING_DRAFT_FAILURE_COPY: Readonly<
   refused:
     "The AI provider wouldn't draft from these notes. You can write the minutes yourself below.",
   not_permitted: "You can no longer edit these minutes.",
+  stopped: "Stopped. Your notes are saved.",
   failed:
     "The draft didn't come through. Your notes are saved, so you can try again.",
 };

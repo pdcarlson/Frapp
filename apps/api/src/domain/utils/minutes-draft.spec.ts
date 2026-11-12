@@ -1,5 +1,8 @@
 import {
   DEFAULT_MEETING_SECTIONS,
+  MEETING_ITEM_TEXT_MAX_LENGTH,
+  MEETING_LIST_MAX_ITEMS,
+  MEETING_TEXT_MAX_LENGTH,
   type MeetingDraftOutput,
 } from '@repo/validation';
 import {
@@ -312,6 +315,122 @@ describe('verifyMinutesDraft', () => {
     expect(content.action_items).toEqual([]);
     // A rule, not a line that failed to match.
     expect(review.left_out).toBe(0);
+  });
+
+  it('keeps an action item that only uses the word point', () => {
+    const notes = 'Caleb Osei to be point of contact for the venue';
+    const { content } = verifyMinutesDraft(
+      output({
+        action_items: [
+          item('Be the point of contact for the venue.', 'Caleb Osei', notes),
+        ],
+      }),
+      request({ notes }),
+    );
+    expect(content.action_items).toHaveLength(1);
+  });
+
+  it('names nobody when the line names two members', () => {
+    const notes = 'Priya and Marcus to book the venue by Friday';
+    const { content, ownersCleared } = verifyMinutesDraft(
+      output({
+        action_items: [item('Book the venue.', 'Priya Natarajan', notes)],
+      }),
+      request({ notes }),
+    );
+    expect(content.action_items?.[0]?.owner_user_id).toBeNull();
+    expect(ownersCleared).toBe(1);
+  });
+
+  it('does not find a name inside another word', () => {
+    const notes = 'deliver the bibs to the house on friday';
+    const { content } = verifyMinutesDraft(
+      output({
+        action_items: [item('Deliver the bibs.', 'Eli Sorensen', notes)],
+      }),
+      request({ notes }),
+    );
+    expect(content.action_items?.[0]?.owner_user_id).toBeNull();
+  });
+
+  it('wants a quote to be a line of the notes, not a word of them', () => {
+    const { content, review } = verifyMinutesDraft(
+      output({
+        decisions: [
+          { text: 'Raise dues by ten dollars.', vote: null, quote: 'the' },
+          {
+            text: 'Hold formal in March.',
+            vote: null,
+            // Two lines joined: neither line says it.
+            quote:
+              'Priya will email the 6 by Wednesday\nJordan will pick up the bibs friday',
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(content.decisions).toEqual([]);
+    expect(review.left_out).toBe(2);
+  });
+
+  it('keeps a due date only when the line says when', () => {
+    const { content } = verifyMinutesDraft(
+      output({
+        action_items: [
+          item(
+            'Send the thank-you email.',
+            null,
+            'someone needs to send the thank-you email',
+            '2026-12-25',
+          ),
+          item(
+            'Email the six.',
+            null,
+            'Priya will email the 6 by Wednesday',
+            '2026-10-21',
+          ),
+        ],
+      }),
+      request(),
+    );
+    expect(content.action_items?.map((kept) => kept.due_date)).toEqual([
+      null,
+      '2026-10-21',
+    ]);
+  });
+
+  it('keeps lists and text inside what the minutes accept', () => {
+    const line = 'Priya will email the 6 by Wednesday';
+    const { content } = verifyMinutesDraft(
+      output({
+        summary: 'x'.repeat(MEETING_TEXT_MAX_LENGTH + 50),
+        action_items: Array.from(
+          { length: MEETING_LIST_MAX_ITEMS + 5 },
+          (_, n) =>
+            item(
+              `Task ${n} ${'y'.repeat(MEETING_ITEM_TEXT_MAX_LENGTH)}`,
+              null,
+              line,
+            ),
+        ),
+        decisions: [
+          {
+            text: 'Spend on a DJ.',
+            vote: { for: 0, against: 0, abstain: 0 },
+            quote: 'formal: motion to spend up to $1,200 on a DJ. passed 22-5',
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(content.summary).toHaveLength(MEETING_TEXT_MAX_LENGTH);
+    expect(content.action_items!.length).toBeLessThanOrEqual(
+      MEETING_LIST_MAX_ITEMS,
+    );
+    expect(content.action_items![0].text.length).toBeLessThanOrEqual(
+      MEETING_ITEM_TEXT_MAX_LENGTH,
+    );
+    expect(content.decisions?.[0]?.vote).toBeNull();
   });
 
   it('drops a due date that is not a day on the calendar', () => {

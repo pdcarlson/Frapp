@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,6 +17,7 @@ import {
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { MeetingDraftService } from '../../application/services/meeting-draft.service';
@@ -31,7 +33,11 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { MeetingDraftDto, RequestMeetingDraftDto } from '../dtos/meeting.dto';
+import {
+  MeetingDraftDto,
+  RequestMeetingDraftDto,
+  UseMeetingDraftDto,
+} from '../dtos/meeting.dto';
 
 /**
  * Minutes drafted from an officer's notes (`spec/behavior/meetings.md`
@@ -45,7 +51,10 @@ import { MeetingDraftDto, RequestMeetingDraftDto } from '../dtos/meeting.dto';
 @ApiTags('Meetings')
 @ApiBearerAuth()
 @UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+// Drafting is part of starting minutes (`meetings.md` § Permissions), so the
+// whole surface asks for `meetings:record`: someone who may only edit minutes
+// is never shown a notes box they can't use.
+@RequirePermissions(SystemPermissions.MEETINGS_RECORD)
 @RequireModule('meetings')
 @Controller('meetings/:id/draft')
 export class MeetingDraftController {
@@ -67,7 +76,6 @@ export class MeetingDraftController {
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
-  @RequirePermissions(SystemPermissions.MEETINGS_RECORD)
   @ApiOperation({
     summary:
       'Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent',
@@ -83,18 +91,38 @@ export class MeetingDraftController {
     return this.drafts.request(chapterId, id, userId, dto);
   }
 
+  @Post('use')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits',
+  })
+  @ApiOkResponse({ type: MeetingDraftDto })
+  async use(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UseMeetingDraftDto,
+  ): Promise<MeetingDraftDto> {
+    return this.drafts.use(chapterId, id, userId, dto.expected_updated_at);
+  }
+
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Clear the notes and the draft, and stop a draft still being written. The minutes themselves are not changed',
+      'Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed',
   })
+  @ApiQuery({ name: 'keep_notes', required: false, type: Boolean })
   @ApiNoContentResponse()
   async discard(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('keep_notes') keepNotes?: string,
   ): Promise<void> {
-    await this.drafts.discard(chapterId, id, userId);
+    await this.drafts.discard(chapterId, id, userId, {
+      keepNotes: keepNotes === 'true',
+    });
   }
 }

@@ -197,7 +197,7 @@ export function verifyMinutesDraft(
     for (const drafted of output.decisions) {
       const text = clamp(drafted.text, MEETING_ITEM_TEXT_MAX_LENGTH);
       if (!text || decisions.some((kept) => kept.text === text)) continue;
-      if (!isQuoteGrounded(drafted.quote, request.notes)) {
+      if (!isLineOfNotes(drafted.quote, request.notes)) {
         leftOut += 1;
         continue;
       }
@@ -215,8 +215,12 @@ export function verifyMinutesDraft(
       const text = clamp(drafted.text, MEETING_ITEM_TEXT_MAX_LENGTH);
       if (!text || actionItems.some((kept) => kept.text === text)) continue;
       // Points are an officer's to give (`meetings.md` § Suggested tasks).
-      if (/\bpoints?\b/i.test(text)) continue;
-      if (!isQuoteGrounded(drafted.quote, request.notes)) {
+      // An award of points, not the word: "point of contact" is kept.
+      // A rule, not a line that failed to match, so it isn't counted as one.
+      if (AWARDS_POINTS.test(text) || AWARDS_POINTS.test(drafted.quote)) {
+        continue;
+      }
+      if (!isLineOfNotes(drafted.quote, request.notes)) {
         leftOut += 1;
         continue;
       }
@@ -226,7 +230,9 @@ export function verifyMinutesDraft(
       actionItems.push({
         text,
         owner_user_id: owner,
-        due_date: realDate(drafted.due_date),
+        due_date: NAMES_A_DAY.test(drafted.quote)
+          ? realDate(drafted.due_date)
+          : null,
       });
       sources.push({ kind: 'action_item', text, quote: drafted.quote });
     }
@@ -253,6 +259,37 @@ export function verifyMinutesDraft(
     ownersCleared,
     votesCleared,
   };
+}
+
+/** "50 points", "5 pts", "give Jake points", "points for the cleanup". */
+const AWARDS_POINTS =
+  /\b\d+\s*(?:points?|pts?)\b|\b(?:give|gives|gave|award|awards|awarded|dock|docked|deduct|earn|earns|earned|gets?|got)\b[^.\n]*\bpoints?\b/i;
+
+/**
+ * A due date is kept only when the quoted line says when: a number, a
+ * weekday, a month, or a word like "tomorrow". Which day it works out to is
+ * the model's reading and the officer's to check; a date for a line that
+ * names no day at all is a guess.
+ */
+const NAMES_A_DAY =
+  /\d|\b(?:mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)(?:day)?\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|\b(?:today|tonight|tomorrow|tmrw|weekend|week|month|eod|eow)\b/i;
+
+/** The shortest piece of a line that counts as quoting it. */
+const QUOTE_MIN_LENGTH = 12;
+
+/**
+ * Whether the quote is a line of the notes: word for word (`isQuoteGrounded`),
+ * inside one line and never across two, and either the whole line or enough
+ * of it to be that line and no other. So "the" or "22" backs nothing, and a
+ * quote can't borrow a name or a count from the line beside it.
+ */
+function isLineOfNotes(quote: string, notes: string): boolean {
+  if (!isQuoteGrounded(quote, notes) || /[\r\n]/.test(quote.trim())) {
+    return false;
+  }
+  const wanted = quote.trim();
+  if (wanted.length >= QUOTE_MIN_LENGTH) return true;
+  return notes.split(/\r?\n/).some((line) => line.trim() === wanted);
 }
 
 /**
@@ -310,7 +347,19 @@ function ownerNamedIn(
         handlesOf(other).some((theirs) => sameHandle(theirs, handle)),
       ).length === 1,
   );
-  return named ? member.userId : null;
+  if (!named) return null;
+  // "Jake and Marcus to book the venue": a line that names a second member
+  // names no one owner, so the officer picks.
+  const alsoNamed = roster.some(
+    (other) =>
+      other.userId !== member.userId &&
+      handlesOf(other).some(
+        (theirs) =>
+          mentions(quote, theirs) &&
+          !handlesOf(member).some((own) => sameHandle(own, theirs)),
+      ),
+  );
+  return alsoNamed ? null : member.userId;
 }
 
 interface Handle {

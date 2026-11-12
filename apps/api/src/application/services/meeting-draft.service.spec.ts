@@ -482,6 +482,81 @@ describe('MeetingDraftService', () => {
       expect(meetings.update).not.toHaveBeenCalled();
     });
 
+    it('asks the minutes to take the draft at the version it was asked on, whatever they are at now', async () => {
+      const { ask, work, meetings } = setup();
+      await ask();
+      // Someone saved while the draft was written: the stored minutes moved.
+      meetings.editableBy.mockResolvedValue(
+        meeting({ updated_at: '2026-11-10T03:00:00.000Z' }),
+      );
+      await work();
+      expect(meetings.update.mock.calls[0][3].expected_updated_at).toBe(V1);
+    });
+
+    it('writes nothing when the officer stops or asks again while the model is answering', async () => {
+      const { ask, work, service, meetings, drafts } = setup();
+      await ask();
+      // The model call is the last thing before the minutes are touched.
+      meetings.getTemplate.mockImplementation(async () => {
+        await service.discard(CHAPTER, MEETING, SECRETARY, { keepNotes: true });
+        return [...DEFAULT_MEETING_SECTIONS];
+      });
+      await expect(work()).resolves.toBeUndefined();
+      expect(meetings.update).not.toHaveBeenCalled();
+      expect(drafts.row).toMatchObject({
+        status: 'failed',
+        failure_code: 'stopped',
+        notes: NOTES,
+      });
+    });
+
+    it('never reads as waiting while the draft is being put in', async () => {
+      const { ask, work, meetings, drafts } = setup();
+      await ask();
+      let during: string | undefined;
+      meetings.update.mockImplementation(() => {
+        during = drafts.row?.status;
+        return Promise.resolve({});
+      });
+      await work();
+      expect(during).toBe('drafting');
+      // In the minutes now, so the sections aren't kept a second time.
+      expect(drafts.row?.result).not.toHaveProperty('content');
+    });
+
+    it('puts a draft that waited into the minutes at the version on screen, once', async () => {
+      const { ask, work, meetings, service, drafts } = setup();
+      await ask();
+      meetings.update.mockRejectedValueOnce(
+        new ConflictException({ code: 'meeting.stale' }),
+      );
+      await work();
+      const V2 = '2026-11-10T03:00:00.000Z';
+      const state = await service.use(CHAPTER, MEETING, SECRETARY, V2);
+      expect(state.status).toBe('applied');
+      const [, , , save] = meetings.update.mock.calls[1];
+      expect(save.expected_updated_at).toBe(V2);
+      expect(save.content.decisions).toHaveLength(1);
+      expect(drafts.row?.result).not.toHaveProperty('content');
+      await expect(
+        service.use(CHAPTER, MEETING, SECRETARY, V2),
+      ).rejects.toMatchObject({
+        response: { code: 'meeting.draft_not_waiting' },
+      });
+    });
+
+    it('stops reading as drafting when no run was ever queued', async () => {
+      const { ask, service, drafts } = setup();
+      await ask();
+      drafts.row!.run_id = null;
+      drafts.row!.requested_at = new Date(
+        Date.now() - 6 * 60_000,
+      ).toISOString();
+      const state = await service.state(CHAPTER, MEETING, SECRETARY);
+      expect(state.status).toBe('failed');
+      expect(state.notes).toBe(NOTES);
+    });
+
     it('checks the officer’s access when it runs, not when they asked', async () => {
       const { ask, work, meetings, drafts, seen } = setup();
       await ask();

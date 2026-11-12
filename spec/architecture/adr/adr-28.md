@@ -107,6 +107,10 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    proposed the window kept it off meeting and chat-derived features, so it has nothing to keep
    until Ask exists, and Ask comes after the beta (decision 6). Until then the report is the only
    stored text. Nothing else stores prompt or answer text, and no external sink ever receives it.
+   Overridden in #4312 by pdcarlson's drafting session, 2026-11-12; pending Paul: an officer's
+   notes for drafted minutes, and what the draft is checked against, are kept beside the unposted
+   minutes and deleted when they post, at most 30 days
+   ([`meetings.md` § Drafting from notes](../../behavior/meetings.md#drafting-from-notes)).
 9. **Google Cloud holds model calls only** (Paul: "no set date" for anything more). The calls run
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing

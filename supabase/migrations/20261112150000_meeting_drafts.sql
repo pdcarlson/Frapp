@@ -23,9 +23,12 @@
 --   status           drafting, ready (written, but the minutes moved on, so
 --                    the officer chooses to use it), applied, or failed.
 --   failure_code     why, as a `MeetingDraftFailure` (`@repo/validation`).
---   result           `{ content, review }`: the drafted sections, and the
---                    line of the notes each decision and action item came
---                    from.
+--   result           `{ content, review }`. `review` is what the officer
+--                    checks the draft against: what the notes leave out, and
+--                    the line each decision and action item came from.
+--                    `content`, the drafted sections, is kept only while the
+--                    draft waits (`ready`); once it is in the minutes the row
+--                    holds `review` alone.
 --
 -- HOW LONG THE TEXT IS KEPT (`spec/behavior/meetings.md` § Drafting from
 -- notes, `spec/behavior/ai.md` § Stored AI text)

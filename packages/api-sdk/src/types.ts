@@ -4350,8 +4350,25 @@ export interface paths {
         put?: never;
         /** Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
         post: operations["MeetingDraftController_request_v1"];
-        /** Clear the notes and the draft, and stop a draft still being written. The minutes themselves are not changed */
+        /** Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
         delete: operations["MeetingDraftController_discard_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
+        post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7677,7 +7694,7 @@ export interface components {
             /** @description The notes the draft was asked from, or "". */
             notes: string;
             /** @enum {string|null} */
-            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "refused" | "not_permitted" | "failed" | null;
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "refused" | "not_permitted" | "stopped" | "failed" | null;
             failure_message: string | null;
             /** @description The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it. */
             content: components["schemas"]["MeetingContentPatchDto"] | null;
@@ -7703,6 +7720,13 @@ export interface components {
              * @example 2026-11-09
              */
             meeting_date?: string;
+        };
+        UseMeetingDraftDto: {
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
+             */
+            expected_updated_at: string;
         };
     };
     responses: never;
@@ -17611,7 +17635,9 @@ export interface operations {
     };
     MeetingDraftController_discard_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                keep_notes?: boolean;
+            };
             header?: never;
             path: {
                 id: string;
@@ -17625,6 +17651,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_use_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseMeetingDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
             };
             /** @description Error */
             default: {

@@ -95,6 +95,9 @@ export interface RequestMeetingDraftInput {
   meeting_date?: string;
 }
 
+/** How long a request with no run may read as `drafting`. */
+const ORPHANED_REQUEST_MS = 5 * 60 * 1000;
+
 const NO_DRAFT: MeetingDraftState = {
   status: 'none',
   notes: '',
@@ -140,10 +143,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   readonly label = 'Drafting minutes';
   readonly actsForMember = true;
   /** Still an officer who may write minutes when the run runs. */
-  readonly runPermissions = [
-    SystemPermissions.MEETINGS_RECORD,
-    SystemPermissions.MEETINGS_EDIT,
-  ];
+  readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
   /** An officer is waiting on the page: two tries, two minutes each. */
   readonly maxAttempts = 2;
   readonly timeoutMs = 120_000;
@@ -266,11 +266,16 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     }
   }
 
-  /** Clears the notes and the draft, and stops a run still writing one. */
+  /**
+   * Clears the notes and the draft, and stops a run still writing one. With
+   * `keepNotes`, only stops: the request ends as `stopped` and the notes stay
+   * for the officer to ask again.
+   */
   async discard(
     chapterId: string,
     meetingId: string,
     userId: string,
+    options: { keepNotes?: boolean } = {},
   ): Promise<void> {
     await this.meetings.editableBy(chapterId, meetingId, userId);
     const draft = await this.drafts.find(chapterId, meetingId);
@@ -278,7 +283,71 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     if (draft.status === 'drafting' && draft.run_id) {
       await this.runs.cancel(chapterId, draft.run_id);
     }
+    if (options.keepNotes) {
+      // Only a draft still being written is stopped; one that has landed
+      // stays as it is.
+      await this.drafts.finish(
+        chapterId,
+        meetingId,
+        draft.request_id,
+        ['drafting'],
+        { status: 'failed', failure_code: 'stopped' },
+      );
+      return;
+    }
     await this.drafts.delete(chapterId, meetingId);
+  }
+
+  /**
+   * Puts a draft that waited (`ready`) into the minutes, at the version the
+   * officer now has on screen. The same compare-and-set as a save, so it
+   * can't overwrite one either: 409 `meeting.stale` when the minutes moved
+   * again. 409 `meeting.draft_not_waiting` when there is no such draft.
+   */
+  async use(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    expectedUpdatedAt: string,
+  ): Promise<MeetingDraftState> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    this.assertDraftable(meeting);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    const stored = draft?.result ?? {};
+    const drafted =
+      stored.content && typeof stored.content === 'object'
+        ? draftedSections(stored.content as Record<string, unknown>)
+        : null;
+    if (!draft || draft.status !== 'ready' || !drafted) {
+      throw new ConflictException({
+        code: 'meeting.draft_not_waiting',
+        message: 'There is no draft waiting to be used. Ask for one again.',
+      });
+    }
+    await this.meetings.update(chapterId, meetingId, userId, {
+      expected_updated_at: expectedUpdatedAt,
+      content: drafted,
+    });
+    const used = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      draft.request_id,
+      ['ready'],
+      { status: 'applied', result: { review: stored.review ?? null } },
+    );
+    const consent = await this.consentFor(chapterId, userId);
+    return {
+      ...this.stateOf(used ?? { ...draft, status: 'applied' }),
+      blocked: consent.allowed
+        ? null
+        : consent.reason === 'chapter_off'
+          ? 'chapter_off'
+          : 'consent_required',
+    };
   }
 
   /** The retention sweep: every request older than the limit, everywhere. */
@@ -369,18 +438,19 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     }
 
     const verified = verifyMinutesDraft(result.value, request);
-    const written = await this.drafts.finish(
-      chapterId,
-      meetingId,
-      requestId,
-      ['drafting'],
-      {
-        status: 'ready',
-        result: { content: verified.content, review: verified.review },
-      },
-    );
-    // The officer asked again or cleared their notes while this was written.
-    if (!written) return;
+    // The officer asked again, stopped or cleared their notes while this was
+    // written: nothing of it goes anywhere. Read again here, as late as it
+    // can be, because the row stays `drafting` until the minutes are settled
+    // (a page that polls must never see a draft "waiting" that is about to
+    // be put in).
+    const current = await this.drafts.find(chapterId, meetingId);
+    if (
+      !current ||
+      current.request_id !== requestId ||
+      current.status !== 'drafting'
+    ) {
+      return;
+    }
 
     const counts = {
       decision_count: verified.content.decisions?.length ?? 0,
@@ -395,17 +465,38 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         content: verified.content,
       });
     } catch (error) {
+      if (error instanceof ConflictException) {
+        // Someone saved since: the draft waits, sections and all, for the
+        // officer to use.
+        await this.drafts.finish(
+          chapterId,
+          meetingId,
+          requestId,
+          ['drafting'],
+          {
+            status: 'ready',
+            result: { content: verified.content, review: verified.review },
+          },
+        );
+        return { meeting_id: meetingId, applied: false, ...counts };
+      }
       if (
-        error instanceof ConflictException ||
         error instanceof NotFoundException ||
         error instanceof ForbiddenException
       ) {
-        return { meeting_id: meetingId, applied: false, ...counts };
+        return fail('not_permitted', 'not_permitted');
+      }
+      // The minutes refused what was drafted (an owner who has since left).
+      if (error instanceof BadRequestException) {
+        return fail('failed', 'handler_failed');
       }
       throw error;
     }
-    await this.drafts.finish(chapterId, meetingId, requestId, ['ready'], {
+    // In the minutes now, so the drafted sections are not kept a second
+    // time: only what the officer checks them against.
+    await this.drafts.finish(chapterId, meetingId, requestId, ['drafting'], {
       status: 'applied',
+      result: { review: verified.review },
     });
     return { meeting_id: meetingId, applied: true, ...counts };
   }
@@ -493,25 +584,31 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
    * left) is recorded as failed here, so the page stops waiting.
    */
   private async settled(draft: MeetingDraft): Promise<MeetingDraft> {
-    if (draft.status !== 'drafting' || !draft.run_id || !draft.requested_by) {
-      return draft;
-    }
+    if (draft.status !== 'drafting') return draft;
     let failure: MeetingDraftFailure | null = null;
-    try {
-      const run = await this.runs.getForMember(
-        draft.chapter_id,
-        draft.requested_by,
-        draft.run_id,
-      );
-      if (run.status === 'failed' || run.status === 'cancelled') {
-        failure =
-          (run.failure_reason && RUN_FAILURES[run.failure_reason]) || 'failed';
+    if (!draft.run_id || !draft.requested_by) {
+      // No run was ever queued for it (the server stopped between storing
+      // the notes and queueing the work), or its member is gone. Past the
+      // time a draft takes, nothing is coming.
+      const waited = Date.now() - Date.parse(draft.requested_at);
+      if (waited > ORPHANED_REQUEST_MS) failure = 'failed';
+    } else
+      try {
+        const run = await this.runs.getForMember(
+          draft.chapter_id,
+          draft.requested_by,
+          draft.run_id,
+        );
+        if (run.status === 'failed' || run.status === 'cancelled') {
+          failure =
+            (run.failure_reason && RUN_FAILURES[run.failure_reason]) ||
+            'failed';
+        }
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+        // The run is gone, or AI was switched off since.
+        failure = 'unavailable';
       }
-    } catch (error) {
-      if (!(error instanceof NotFoundException)) throw error;
-      // The run is gone, or AI was switched off since.
-      failure = 'unavailable';
-    }
     if (!failure) return draft;
     const ended = await this.drafts.finish(
       draft.chapter_id,
@@ -574,9 +671,14 @@ function draftedSections(
 function meetingDateOf(meeting: Meeting, fromClient?: string): string {
   const utcDay = meeting.event_start_time.slice(0, 10);
   if (!fromClient || !/^\d{4}-\d{2}-\d{2}$/.test(fromClient)) return utcDay;
-  const apart = Math.abs(
-    Date.parse(`${fromClient}T12:00:00.000Z`) -
-      Date.parse(meeting.event_start_time),
-  );
+  const noon = new Date(`${fromClient}T12:00:00.000Z`);
+  // A real calendar day: "2026-02-30" parses, as 2 March.
+  if (
+    Number.isNaN(noon.getTime()) ||
+    noon.toISOString().slice(0, 10) !== fromClient
+  ) {
+    return utcDay;
+  }
+  const apart = Math.abs(noon.getTime() - Date.parse(meeting.event_start_time));
   return apart <= 36 * 60 * 60 * 1000 ? fromClient : utcDay;
 }

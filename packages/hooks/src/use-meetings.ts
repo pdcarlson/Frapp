@@ -299,16 +299,56 @@ export function useRequestMeetingDraft() {
   });
 }
 
-/** Clear the notes and the draft, and stop one still being written. */
+/**
+ * Put a draft that waited into the minutes, at the version the editor has.
+ * Refused with `meeting.stale` when the minutes moved again.
+ */
+export function useUseMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "use"],
+    retry: false,
+    mutationFn: async ({
+      id,
+      expectedUpdatedAt,
+    }: {
+      id: string;
+      expectedUpdatedAt: string;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/draft/use", {
+        params: { path: { id } },
+        body: { expected_updated_at: expectedUpdatedAt },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingDraftKey(chapterId, id), data);
+    },
+  });
+}
+
+/**
+ * Clear the notes and the draft, and stop one still being written. With
+ * `keepNotes`, only stop it: the notes stay stored for another ask.
+ */
 export function useDiscardMeetingDraft() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["meetings", "draft", "discard"],
-    mutationFn: async (id: string) => {
+    mutationFn: async ({
+      id,
+      keepNotes = false,
+    }: {
+      id: string;
+      keepNotes?: boolean;
+    }) => {
       const { error } = await client.DELETE("/v1/meetings/{id}/draft", {
-        params: { path: { id } },
+        params: { path: { id }, query: { keep_notes: keepNotes } },
       });
       if (error) throw error;
       return id;
