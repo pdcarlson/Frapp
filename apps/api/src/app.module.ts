@@ -34,6 +34,7 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { AiRunsModule } from './modules/ai-runs/ai-runs.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
@@ -92,6 +93,7 @@ import { validateEnv } from './config/env.validation';
     SearchModule,
     ActivityFeedModule,
     ActivityModule,
+    AiRunsModule,
     ChapterConfigModule,
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,

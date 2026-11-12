@@ -218,6 +218,7 @@ await import("./tiers/event-types.mjs");
 await import("./tiers/activity-item-reads.mjs");
 await import("./tiers/chat-channel-access-lists.mjs");
 await import("./tiers/role-tier-reorder.mjs");
+await import("./tiers/ai-runs.mjs");
 await import("./tiers/ai-suggestions.mjs");
 
 const tableCount = await db.query(

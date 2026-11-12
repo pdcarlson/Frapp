@@ -3748,9 +3748,25 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback AI suggestions (20261112020000)
+## Rollback the AI run queue (20261112020000)
 
-* **Migration**: `20261112020000_ai_suggestions.sql`
+* **Migration**: `20261112020000_ai_runs.sql`
+
+One new table, `ai_runs`, with four indexes, and three functions: `ai_run_ref_is_ids_only` (the table's ids-only check), `enqueue_ai_run` and `claim_ai_run`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops the worker from claiming and makes `/v1/ai/runs` answer 404 `ai.not_available`; runs left queued wait, untouched, until it is on again. Reverting the API code removes the worker and the routes the same way.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every run's status and outcome, which features read by reference, so remove the features that enqueue runs first:
+
+```sql
+drop function if exists public.claim_ai_run(text, timestamptz, integer, text[]);
+drop function if exists public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer);
+drop table if exists public.ai_runs;
+drop function if exists public.ai_run_ref_is_ids_only(jsonb);
+
+## Rollback AI suggestions (20261112021000)
+
+* **Migration**: `20261112021000_ai_suggestions.sql`
 
 One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with `AI_ENABLED=true`.
 

@@ -17,8 +17,8 @@
 --      suggestion when its source is deleted.
 --    - `batch_id` + `ordinal` make writing a batch idempotent: a run that
 --      retries writes nothing twice. One batch sends one push.
---    - `run_id` is the AI run that produced it (#4310). Its foreign key is
---      added by a later migration once that table exists.
+--    - `run_id` is the AI run that produced it (`ai_runs`, #4310). Pruning
+--      a run keeps its suggestions and clears the link.
 --    - A waiting suggestion holds the AI's text (`payload`, `quote`) because
 --      a person has to read it to decide. Once decided or expired it keeps
 --      none: who decided, when, and what it became (`result_id`) stay, the
@@ -38,10 +38,11 @@
 --    holds no text and is kept as the record of the decision. The trigger for
 --    minutes (`source_type = 'meeting'`) is added with the meetings table.
 --
--- Locks. The foreign keys add triggers to `chapters` and `users`, and the
--- delete triggers are created on `events` and `chat_channels`, each taking a
--- SHARE ROW EXCLUSIVE lock until commit: writes to those four tables wait for
--- the file to commit. The table is new and empty, so that is milliseconds.
+-- Locks. The foreign keys add triggers to `chapters`, `users` and `ai_runs`,
+-- and the delete triggers are created on `events` and `chat_channels`, each
+-- taking a SHARE ROW EXCLUSIVE lock until commit: writes to those five tables
+-- wait for the file to commit. The table is new and empty, so that is
+-- milliseconds.
 
 -- 1. ------------------------------------------------------------------------
 
@@ -50,7 +51,7 @@ create table if not exists public.ai_suggestions (
   chapter_id uuid not null references chapters(id) on delete cascade,
   batch_id uuid not null,
   ordinal smallint not null check (ordinal between 0 and 199),
-  run_id uuid,
+  run_id uuid references ai_runs(id) on delete set null,
   -- The member the run acted for (spec/behavior/ai.md § Whose access an AI
   -- run uses). Users are tombstoned in place, so `set null` rarely fires.
   requested_for uuid references users(id) on delete set null,

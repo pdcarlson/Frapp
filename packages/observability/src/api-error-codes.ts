@@ -59,6 +59,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
   "chat.since_not_found",
+  // An AI route while `AI_ENABLED` is off on the server (#4310). A client
+  // that still shows an AI entry point meets it in normal use.
+  "ai.not_available",
   "legal.acceptance_required",
   "service_entry.receipt_required",
   // AI is off on this server (AI_ENABLED unset). Members of a chapter can
