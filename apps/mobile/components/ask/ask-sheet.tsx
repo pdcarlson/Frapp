@@ -419,7 +419,7 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.touch.button,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       // TODO-DESIGN: Canvas draws padding-x 14 and the placeholder at 15.5px;
       // `spacing.md` (12) and the 16px `body` role are the nearest steps.

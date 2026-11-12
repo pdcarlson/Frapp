@@ -449,15 +449,13 @@ describe("the channel rail", () => {
   });
 
   it("keeps the neutral unread badge AA on the rail", () => {
-    // The secondary badge's `bg-neutral-fill` is `rgba(255,255,255,.14)` — an
-    // alpha fill, so it has to be composited before it can be measured at all.
-    // It was `bg-input` until #4389 raised the edge token to .42, which would
-    // have put foreground on this fill at 4.06:1.
+    // `bg-input` is `rgba(255,255,255,.14)` — an alpha fill, so it has to be
+    // composited before it can be measured at all.
     const fill = applyAlpha(
       "#FFFFFF",
       Number(
         /rgba\([^)]*,\s*([\d.]+)\)/.exec(
-          signetDarkTokens.color.fill.neutral,
+          signetDarkTokens.color.border.input,
         )?.[1] ?? "0.14",
       ),
       SURFACE.surface1,

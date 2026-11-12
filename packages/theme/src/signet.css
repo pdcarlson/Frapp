@@ -55,15 +55,14 @@
      * Low-opacity white only, so a hairline tracks whatever surface
      * it sits on. Fixed-hex border colors are banned. */
     --border: rgba(255,255,255,0.08);
-    /* The edge of a field, a Secondary button, a switch track and the other
-     * controls that draw `border-input`: 0.42 since 2026-11-12 (#4389), the
-     * lowest alpha at which a field's edge clears WCAG 1.4.11's 3:1 on every
-     * seat (3.03:1 in a dialog, its worst; it was 1.14:1 there at 0.14). */
-    --input: rgba(255,255,255,0.42);
-    /* A neutral white wash used as a FILL (the secondary badge, the
-     * chat-density bars). The old `--input` value, split off so the edge
-     * could strengthen without lifting these fills (foundations §3). */
-    --neutral-fill: rgba(255,255,255,0.14);
+    --input: rgba(255,255,255,0.14);
+    /* The edge that identifies a control (a field, a select, a Secondary
+     * button, a switch's track, a segmented control): 0.42 since 2026-11-12
+     * (#4389), the lowest alpha at which a field's edge clears WCAG 1.4.11's
+     * 3:1 on every seat (3.03:1 in a dialog, its worst; `--input` there is
+     * 1.14:1). `--input` stays the quiet edge for frames, wells and boxes
+     * meant to recede (foundations §3). */
+    --control-edge: rgba(255,255,255,0.42);
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'

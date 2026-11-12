@@ -234,9 +234,9 @@ describe("Signet colors match foundations.md", () => {
     expectColor(color.border.hairline, pin(t, "--border", "Borders & Hairlines"), "--border");
     expectColor(color.border.input, pin(t, "--input", "Borders & Hairlines"), "--input");
     expectColor(
-      color.fill.neutral,
-      pin(t, "--neutral-fill", "Borders & Hairlines"),
-      "--neutral-fill",
+      color.border.control,
+      pin(t, "--control-edge", "Borders & Hairlines"),
+      "--control-edge",
     );
 
     // The spec does not merely pin these two values, it bans the alternative:

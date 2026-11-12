@@ -56,10 +56,9 @@ describe("Toggle (components.md § Toggle)", () => {
       ),
     );
 
-    // A 14% white wash is the off track, so it stays visible on a card; the
-    // elevated surface is iOS's fill behind it. It is `fill.neutral`, not the
-    // control edge, which rose to 42% for 3:1 (#4389).
-    expect(props.trackColor.false).toBe(tokens.color.fill.neutral);
+    // The border's 14% white is the off track, so it stays visible on a
+    // card; the elevated surface is iOS's fill behind it.
+    expect(props.trackColor.false).toBe(tokens.color.border.input);
     expect(props.ios_backgroundColor).toBe(tokens.color.surface.popover);
     expect(props.thumbColor).toBe(tokens.color.text.muted);
   });

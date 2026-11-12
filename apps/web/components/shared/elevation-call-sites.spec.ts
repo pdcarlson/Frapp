@@ -424,7 +424,7 @@ describe("global-error's hand copy of the Secondary button", () => {
     join(WEB, "app", "global-error.tsx"),
     "utf8",
   );
-  const copy = /className="([^"]*\bborder-input\b[^"]*)"/
+  const copy = /className="([^"]*\bborder-control-edge\b[^"]*)"/
     .exec(globalError)?.[1]
     ?.split(/\s+/);
   const rendered = cn(buttonVariants({ variant: "secondary", size: "sm" }))

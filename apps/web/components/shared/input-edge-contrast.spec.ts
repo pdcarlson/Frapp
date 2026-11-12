@@ -7,18 +7,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   AA_NON_TEXT,
-  AA_TEXT,
   ratio,
   signetDarkTokens,
   SURFACE,
-  TEXT,
 } from "@/tests/signet-contrast";
 
 /**
- * A control's edge identifies it (WCAG 2.2 SC 1.4.11: 3:1), so `--input` has to
- * clear 3:1 on every seat a control sits on and against the control's own fill
- * (foundations.md §3, #4389). It was 0.14 until 2026-11-12, which drew a
- * field's edge at 1.14:1 inside a dialog.
+ * A control's edge identifies it (WCAG 2.2 SC 1.4.11: 3:1), so
+ * `--control-edge` has to clear 3:1 on every seat a control sits on and
+ * against the control's own fill (foundations.md §3, #4389). Controls drew the
+ * quiet `--input` (0.14) until 2026-11-12: 1.14:1 for a field in a dialog.
  *
  * The alpha composites over the control's OWN fill, not the seat: the
  * background paints under the border (`background-clip: border-box`). Sampled
@@ -26,11 +24,23 @@ import {
  * card and in a dialog. So each control is measured by its fill.
  */
 
-const alphaOf = (token: string, fallback: string) =>
-  Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(token)?.[1] ?? fallback);
+/** The alpha of an `rgba(255,255,255,a)` token. Throws rather than guess. */
+function whiteAlpha(token: string, name: string): number {
+  const match = /^rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*([\d.]+)\s*\)$/.exec(
+    token,
+  );
+  if (!match) {
+    throw new Error(
+      `${name} is "${token}", not rgba(255,255,255,a); this guard can't measure it`,
+    );
+  }
+  return Number(match[1]);
+}
 
-const INPUT_ALPHA = alphaOf(signetDarkTokens.color.border.input, "0.42");
-const NEUTRAL_FILL_ALPHA = alphaOf(signetDarkTokens.color.fill.neutral, "0.14");
+const CONTROL_ALPHA = whiteAlpha(
+  signetDarkTokens.color.border.control,
+  "border.control",
+);
 
 const SEATS = {
   background: SURFACE.background,
@@ -40,34 +50,30 @@ const SEATS = {
 };
 
 /**
- * Every primitive that draws `border-input`, with the fill it draws it on.
- * The source check below keeps this list honest: if a primitive's fill
- * changes, the measurement here would be of a control that no longer ships.
+ * Every web site that draws a control's identifying edge, with the fill the
+ * edge composites over. The source check below keeps it honest: each site
+ * must still draw `border-control-edge` on that fill, and the primitives must
+ * not fall back to the quiet `border-input`.
  */
 const CONTROLS = [
-  { file: "ui/input.tsx", fillClass: "bg-surface-1", fill: SURFACE.surface1 },
-  {
-    file: "ui/textarea.tsx",
-    fillClass: "bg-surface-1",
-    fill: SURFACE.surface1,
-  },
-  { file: "ui/select.tsx", fillClass: "bg-surface-1", fill: SURFACE.surface1 },
-  {
-    file: "ui/segmented.tsx",
-    fillClass: "bg-surface-1",
-    fill: SURFACE.surface1,
-  },
-  {
-    file: "ui/button.tsx",
-    fillClass: "border-input bg-card",
-    fill: SURFACE.card,
-  },
-  {
-    file: "ui/switch.tsx",
-    fillClass: "data-[state=unchecked]:bg-popover",
-    fill: SURFACE.popover,
-  },
+  { file: "ui/input.tsx", fill: "bg-surface-1" },
+  { file: "ui/textarea.tsx", fill: "bg-surface-1" },
+  { file: "ui/select.tsx", fill: "bg-surface-1" },
+  { file: "ui/segmented.tsx", fill: "bg-surface-1" },
+  { file: "ui/button.tsx", fill: "bg-card" },
+  { file: "ui/switch.tsx", fill: "bg-popover" },
+  { file: "chat/composer.tsx", fill: "bg-surface-1" },
+  { file: "chat/inline-message-editor.tsx", fill: "bg-surface-1" },
+  { file: "chat/emoji-picker-panel.tsx", fill: "bg-surface-1" },
+  { file: "layout/find-bar.tsx", fill: "bg-surface-1" },
+  { file: "members/email-chips-input.tsx", fill: "bg-surface-1" },
 ] as const;
+
+const FILL_HEX = {
+  "bg-surface-1": SURFACE.surface1,
+  "bg-card": SURFACE.card,
+  "bg-popover": SURFACE.popover,
+} as const;
 
 const source = (file: string) =>
   readFileSync(
@@ -75,23 +81,29 @@ const source = (file: string) =>
     "utf8",
   );
 
-describe("a control's edge (--input) clears 3:1", () => {
-  for (const { file, fillClass } of CONTROLS) {
-    it(`${file} draws border-input on ${fillClass}`, () => {
+describe("a control's edge (--control-edge) clears 3:1", () => {
+  for (const { file, fill } of CONTROLS) {
+    it(`${file} draws border-control-edge with ${fill}`, () => {
       const code = source(file);
-      expect(code).toContain("border-input");
-      expect(code).toContain(fillClass);
+      expect(code).toMatch(
+        new RegExp(`border-control-edge[^"\`]*${fill.replace("-", "\\-")}`),
+      );
+      if (file.startsWith("ui/")) {
+        expect(code, `${file} fell back to the quiet --input edge`).not.toMatch(
+          /\bborder-input\b/,
+        );
+      }
     });
   }
 
-  for (const { file, fill } of CONTROLS) {
-    const edge = applyAlpha("#FFFFFF", INPUT_ALPHA, fill);
+  for (const [fillClass, fill] of Object.entries(FILL_HEX)) {
+    const edge = applyAlpha("#FFFFFF", CONTROL_ALPHA, fill);
 
-    it(`${file}: against its own fill`, () => {
+    it(`on ${fillClass}: against its own fill`, () => {
       expect(ratio(edge, fill)).toBeGreaterThanOrEqual(AA_NON_TEXT);
     });
 
-    it.each(Object.entries(SEATS))(`${file}: on %s`, (_seat, seat) => {
+    it.each(Object.entries(SEATS))(`on ${fillClass}: on %s`, (_seat, seat) => {
       expect(ratio(edge, seat)).toBeGreaterThanOrEqual(AA_NON_TEXT);
     });
   }
@@ -105,23 +117,19 @@ describe("a control's edge (--input) clears 3:1", () => {
           ratio(applyAlpha("#FFFFFF", alpha, SURFACE.surface1), seat),
         ),
       );
-    expect(worst(INPUT_ALPHA)).toBeGreaterThanOrEqual(AA_NON_TEXT);
-    expect(worst(INPUT_ALPHA - 0.01)).toBeLessThan(AA_NON_TEXT);
-  });
-});
-
-describe("the neutral wash fill (--neutral-fill) keeps its text", () => {
-  it("would have failed on the raised edge token: why the fill was split off", () => {
-    // The secondary badge drew `bg-input`; at 0.42 its text drops under AA.
-    const onRaised = applyAlpha("#FFFFFF", INPUT_ALPHA, SURFACE.surface1);
-    expect(ratio(TEXT.foreground, onRaised)).toBeLessThan(AA_TEXT);
+    expect(worst(CONTROL_ALPHA)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    expect(worst(CONTROL_ALPHA - 0.01)).toBeLessThan(AA_NON_TEXT);
   });
 
-  it.each(Object.entries(SEATS))(
-    "foreground reads at AA on it over %s",
-    (_seat, seat) => {
-      const fill = applyAlpha("#FFFFFF", NEUTRAL_FILL_ALPHA, seat);
-      expect(ratio(TEXT.foreground, fill)).toBeGreaterThanOrEqual(AA_TEXT);
-    },
-  );
+  it("is a step above the quiet --input edge, which stays for what recedes", () => {
+    const quiet = whiteAlpha(
+      signetDarkTokens.color.border.input,
+      "border.input",
+    );
+    expect(quiet).toBeLessThan(CONTROL_ALPHA);
+    // What the 0.14 edge measured for a field in a dialog: the defect.
+    expect(
+      ratio(applyAlpha("#FFFFFF", quiet, SURFACE.surface1), SURFACE.popover),
+    ).toBeLessThan(AA_NON_TEXT);
+  });
 });

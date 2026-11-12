@@ -1429,7 +1429,7 @@ describe("chapter setup — identity fields", () => {
         ).filter(Boolean),
       ).borderColor;
 
-    expect(borderOf()).toBe(signetDarkTokens.color.border.input);
+    expect(borderOf()).toBe(signetDarkTokens.color.border.control);
     act(() => {
       field(root, "Organization").props.onFocus();
     });

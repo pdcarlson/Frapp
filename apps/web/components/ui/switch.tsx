@@ -44,7 +44,7 @@ const Switch = React.forwardRef<
     className={cn(
       "group peer inline-flex h-[22px] w-9 shrink-0 pointer-coarse:h-[30px] pointer-coarse:w-[50px] cursor-pointer items-center rounded-full border transition-colors",
       "enabled:data-[state=checked]:border-transparent enabled:data-[state=checked]:bg-primary",
-      "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-popover",
+      "enabled:data-[state=unchecked]:border-control-edge enabled:data-[state=unchecked]:bg-popover",
       FOCUS_RING_OFFSET,
       "disabled:cursor-not-allowed disabled:border-border disabled:bg-card",
       /*

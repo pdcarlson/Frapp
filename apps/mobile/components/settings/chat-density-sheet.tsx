@@ -232,7 +232,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     timeBar: { width: 12, backgroundColor: tokens.color.border.hairline },
     nameBar: { backgroundColor: tokens.color.text.muted },
     compactName: { width: 24 },
-    textBar: { backgroundColor: tokens.color.fill.neutral },
+    textBar: { backgroundColor: tokens.color.border.input },
     label: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,

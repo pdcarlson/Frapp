@@ -39,7 +39,7 @@ export function Toggle({
   const brand = useChapterBranding();
   const onTrack = house ? tokens.color.gold.house : brand.accentPrimary;
   const onThumb = house ? tokens.color.gold.onHouse : brand.accentOnPrimary;
-  const offTrack = tokens.color.fill.neutral;
+  const offTrack = tokens.color.border.input;
   const offFill = tokens.color.surface.popover;
   const offThumb = tokens.color.text.muted;
   const webOnly = { activeThumbColor: onThumb } as object;

@@ -128,9 +128,7 @@ function DensityPreview({ density }: { density: ChatDensity }) {
             <span className="h-4 w-4 shrink-0 rounded-full bg-popover" />
             <span className="flex flex-1 flex-col gap-1">
               <span className={cn("h-1.5 rounded-full bg-muted", name)} />
-              <span
-                className={cn("h-1.5 rounded-full bg-neutral-fill", text)}
-              />
+              <span className={cn("h-1.5 rounded-full bg-input", text)} />
             </span>
           </span>
         ) : (
@@ -139,7 +137,7 @@ function DensityPreview({ density }: { density: ChatDensity }) {
             <span
               className={cn("h-1.5 shrink-0 rounded-full bg-muted", name)}
             />
-            <span className={cn("h-1.5 rounded-full bg-neutral-fill", text)} />
+            <span className={cn("h-1.5 rounded-full bg-input", text)} />
           </span>
         ),
       )}
