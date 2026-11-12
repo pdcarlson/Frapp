@@ -43,18 +43,13 @@ permissions for free rather than reimplementing them at the index layer.
 It also follows directly from the non-goal below: structured data already *is* canon, so the AI
 should query canon rather than keep a stale copy of it.
 
-> **The mobile s17 mock flattens this split, deliberately and mock-only.**
-> `apps/mobile/lib/ask/corpus.ts` answers from a single keyword table that mixes events
-> and dues amounts in with the indexed prose, because there is no tool registry in
-> the API to route a tool call through (corrected 2026-11-12: an `ai` module now exists, the
-> gateway of #4306, with no tools). It exists so the *screen* — citation chips, the
-> refusal path, the in-flight state — is real and reviewable against the drawing, and it
-> is off unless a build sets `EXPO_PUBLIC_ASK_ENABLED`: nothing in the repo sets it, and an
-> EAS `production` build refuses to evaluate its config when it is on
-> (`apps/mobile/app.config.js`; [`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17). **A real
-> implementation MUST NOT copy that shape.** The two access paths above are the contract;
-> the flattened table is scaffolding to be deleted, not extended, the moment Ask can be
-> turned on for a real chapter.
+> **The mobile s17 mock that flattened this split is gone** (2026-11-12, #4415). Until then
+> `apps/mobile/lib/ask/corpus.ts` answered from one keyword table that mixed events and dues
+> amounts in with indexed prose, behind a build flag (`EXPO_PUBLIC_ASK_ENABLED`), so the
+> screen could be reviewed before any API existed. This note said a real implementation MUST
+> NOT copy that shape and that the table was to be deleted, not extended. It was deleted: the
+> phone's Ask calls the same route web's does, and the two access paths above are the only
+> ones.
 
 ## Chat as a source
 
@@ -142,7 +137,7 @@ The model is also prompted to surface conflicts ("I see two different answers �
 
 ## Ask Frapp
 
-A member asks a question in their own words and gets an answer from what they could open themselves, with each claim tied to its source. Built 2026-11-12 on web (#450, #451); mobile follows as its own change. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned Ask on, and it needs the member's yes on the AI sheet.
+A member asks a question in their own words and gets an answer from what they could open themselves, with each claim tied to its source. Built 2026-11-12 on web (#450, #451) and on the phone (#4415; the sheet is [`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17, with the same words and the same answer cutting as web). On the phone a channel-message source opens its channel at the newest message, since the channel screen has no jump-to-message yet. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned Ask on, and it needs the member's yes on the AI sheet.
 
 - **Where it is.** The Ask pill in the web top bar opens a panel on the right edge that leaves the page usable beside it ([`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar). With Ask off for the chapter, or for a member without `ai:use`, there is no pill.
 - **One question, one answer.** Each question is answered on its own. Ask keeps no conversation, and the panel says so under the field. Follow-up questions that build on the last answer are not built.

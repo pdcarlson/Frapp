@@ -46,8 +46,8 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
  *   modal to say "not yet" is the heavy chrome `components.md` § Chrome
  *   weight rules out.
  *
- * **House gold, never the chapter accent.** Like mobile's pill
- * (`apps/mobile/components/chat/ask-pill.tsx`), the entry paints in the fixed
+ * **House gold, never the chapter accent.** Like mobile's Ask Frapp bar
+ * (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`), the entry paints in the fixed
  * `gold-ask-*` family because "the Ask/AI surface speaks in Signet's voice,
  * not the tenant's" (`spec/ui/design-system/components.md` §11). The
  * framework board draws the pill in the same values as the chapter accent

@@ -6,7 +6,9 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
+import { codeOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
+import { AI_SUGGESTION_COPY, aiSuggestionRefusalLine } from "@repo/validation";
 import {
   memberFallbackLabel,
   useChapterRoster,
@@ -59,6 +61,7 @@ import {
   suggestedDueTime,
   validateNewTask,
   type DueChoice,
+  type ValidatedNewTask,
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
@@ -153,8 +156,31 @@ export interface NewTaskSheetProps {
   editing?: TaskEditTarget;
   /** Fired after an edit saves. */
   onSaved?: () => void;
+  /**
+   * Accept a suggested task through the form (#4313): the fields open on what
+   * the minutes suggested, titled "Change before accepting", and the button
+   * accepts. Who it is for starts empty when the meeting named nobody, never
+   * on the viewer: a wrong owner is worse than none. Points are left out (a
+   * suggestion carries none). The host mounts one sheet per suggestion
+   * (`key` on its id).
+   */
+  suggestion?: TaskSuggestionSeed;
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
+}
+
+export interface TaskSuggestionSeed {
+  title: string;
+  assigneeId: string | null;
+  /** `YYYY-MM-DD`, or null when the meeting gave no day. */
+  dueDay: string | null;
+  dueAt: string | null;
+  subtasks: readonly string[];
+  /**
+   * Accepts the suggestion as the form stands. Rejects with the server's
+   * error, whose refusal codes the sheet puts into words.
+   */
+  accept: (task: ValidatedNewTask) => Promise<void>;
 }
 
 interface RosterMember {
@@ -185,7 +211,16 @@ function selectRoster(
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
   function NewTaskSheet(
-    { now, onCreated, postToChannel, onPosted, editing, onSaved, onClosed },
+    {
+      now,
+      onCreated,
+      postToChannel,
+      onPosted,
+      editing,
+      onSaved,
+      onClosed,
+      suggestion,
+    },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -209,6 +244,22 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       () => (editing ? editDraftOf(editing) : null),
       [editing],
     );
+    // What the minutes suggested, as the fields start (a suggestion only).
+    const suggested = useMemo(
+      () =>
+        suggestion?.dueDay
+          ? editDraftOf({
+              id: "",
+              title: suggestion.title,
+              assigneeId: suggestion.assigneeId ?? "",
+              dueDay: suggestion.dueDay,
+              dueAt: suggestion.dueAt,
+              pointReward: null,
+              storedStatus: null,
+            })
+          : null,
+      [suggestion],
+    );
     // `postToChannel` isn't a mutation, so its flight is held here.
     const [posting, setPosting] = useState(false);
 
@@ -217,22 +268,30 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    const [title, setTitle] = useState(original?.title ?? "");
+    const [title, setTitle] = useState(
+      original?.title ?? suggestion?.title ?? "",
+    );
     const [pointsInput, setPointsInput] = useState(original?.pointsInput ?? "");
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
-      original ? { kind: "date", date: original.dueDate } : DEFAULT_DUE_CHOICE,
+      original
+        ? { kind: "date", date: original.dueDate }
+        : suggested
+          ? { kind: "date", date: suggested.dueDate }
+          : DEFAULT_DUE_CHOICE,
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
-      original?.dueTime ?? null,
+      original?.dueTime ?? suggested?.dueTime ?? null,
     );
     // The steps (#4003), and the one being typed, which sends as the last.
-    const [subtasks, setSubtasks] = useState<string[]>([]);
+    const [subtasks, setSubtasks] = useState<string[]>(() => [
+      ...(suggestion?.subtasks ?? []),
+    ]);
     const [subtaskText, setSubtaskText] = useState("");
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(
-      original?.assigneeId ?? null,
+      original?.assigneeId ?? suggestion?.assigneeId ?? null,
     );
     const [titleFocused, setTitleFocused] = useState(false);
     const [search, setSearch] = useState("");
@@ -259,7 +318,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       [rosterQuery.data],
     );
 
-    const effectiveAssigneeId = assigneeId ?? viewerUserId;
+    // A suggestion the meeting named nobody for stays unassigned until the
+    // officer picks: defaulting it to them would be a guess.
+    const effectiveAssigneeId =
+      assigneeId ?? (suggestion ? null : viewerUserId);
     const assignee = roster.find((row) => row.userId === effectiveAssigneeId);
     const assigneeName = assignee?.name ?? null;
     const assigneeIsViewer =
@@ -278,7 +340,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       : (assigneeName ??
         (effectiveAssigneeId
           ? memberFallbackLabel(effectiveAssigneeId)
-          : "Member"));
+          : suggestion
+            ? AI_SUGGESTION_COPY.who
+            : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
     //
@@ -429,6 +493,28 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         );
         return;
       }
+      if (suggestion) {
+        setPosting(true);
+        void suggestion.accept(body).then(
+          () => {
+            setPosting(false);
+            handlers.onSuccess();
+          },
+          (error: unknown) => {
+            setPosting(false);
+            // Decided by someone else, expired, or its minutes changed:
+            // asking again can't work, so the reason takes the button.
+            const line = aiSuggestionRefusalLine(codeOf(error));
+            if (line && isSameVisit(sentFrom)) {
+              sending.current = false;
+              setRefusal(line);
+              return;
+            }
+            handlers.onError(error);
+          },
+        );
+        return;
+      }
       if (!postToChannel) {
         createTask.mutate(body, {
           onSuccess: () => handlers.onSuccess(),
@@ -467,6 +553,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       editing,
       updateTask,
       onSaved,
+      suggestion,
     ]);
 
     const filteredRoster = useMemo(() => {
@@ -496,7 +583,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             style={styles.body}
           >
             <SheetHeader
-              title={editing ? "Edit task" : "New task"}
+              title={
+                editing
+                  ? "Edit task"
+                  : suggestion
+                    ? AI_SUGGESTION_COPY.change
+                    : "New task"
+              }
               onCancel={cancel}
               cancelDisabled={pending}
             />
@@ -536,19 +629,21 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 />
               </View>
 
-              <View style={[styles.field, styles.splitField]}>
-                <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
-                <BottomSheetTextInput
-                  value={pointsInput}
-                  onChangeText={setPointsInput}
-                  editable={!pending}
-                  placeholder="pts"
-                  placeholderTextColor={tokens.color.text.muted}
-                  accessibilityLabel="Point reward"
-                  keyboardType="number-pad"
-                  style={styles.pointsInput}
-                />
-              </View>
+              {suggestion ? null : (
+                <View style={[styles.field, styles.splitField]}>
+                  <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
+                  <BottomSheetTextInput
+                    value={pointsInput}
+                    onChangeText={setPointsInput}
+                    editable={!pending}
+                    placeholder="pts"
+                    placeholderTextColor={tokens.color.text.muted}
+                    accessibilityLabel="Point reward"
+                    keyboardType="number-pad"
+                    style={styles.pointsInput}
+                  />
+                </View>
+              )}
             </View>
 
             <FilterChips
@@ -642,9 +737,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                   ? updateTask.isPending
                     ? "Saving…"
                     : "Save"
-                  : createTask.isPending
-                    ? "Creating…"
-                    : "Create task"
+                  : suggestion
+                    ? posting
+                      ? AI_SUGGESTION_COPY.accepting
+                      : AI_SUGGESTION_COPY.accept
+                    : createTask.isPending
+                      ? "Creating…"
+                      : "Create task"
               }
               onPress={submit}
               disabled={!canSubmit}
