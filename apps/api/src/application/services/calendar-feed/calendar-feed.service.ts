@@ -43,6 +43,15 @@ const PAST_DAYS = 60;
 /** How far ahead: a full year, so a recurring series' months ahead show. */
 const FUTURE_DAYS = 366;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Open tasks a feed carries at most; far more than a member has open. */
+const TASK_LIMIT = 500;
+/**
+ * How long a rendered calendar is reused. Calendar apps ask at most hourly
+ * (`REFRESH-INTERVAL` in `ics.ts`), so a member never sees the difference.
+ */
+const RENDER_TTL_MS = 5 * 60 * 1000;
+/** Links whose render is kept at once, per API instance. */
+const RENDER_CACHE_MAX = 2000;
 
 /**
  * Calendar subscription links (#3322, step 1;
@@ -59,6 +68,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export class CalendarFeedService {
   private readonly apiBase: string | null;
   private readonly appOrigin: string;
+  private readonly rendered = new Map<string, { ics: string; until: number }>();
 
   constructor(
     @Inject(CALENDAR_FEED_REPOSITORY)
@@ -98,8 +108,19 @@ export class CalendarFeedService {
    */
   async reset(chapterId: string, userId: string): Promise<CalendarFeedLink> {
     const base = this.requireApiBase();
+    const old = await this.feeds.findLive(chapterId, userId);
     await this.feeds.revokeLive(chapterId, userId);
-    return this.linkFor(base, await this.mint(chapterId, userId));
+    if (old) this.rendered.delete(old.token);
+    try {
+      return this.linkFor(base, await this.mint(chapterId, userId));
+    } catch (error) {
+      // A second reset, or an `ensure`, landed between the revoke and the
+      // insert and made the new link first: the old one is revoked either
+      // way, so hand back the one that won rather than report a failure.
+      const winner = await this.feeds.findLive(chapterId, userId);
+      if (winner) return this.linkFor(base, winner);
+      throw error;
+    }
   }
 
   /**
@@ -112,17 +133,34 @@ export class CalendarFeedService {
    * it does when a fetch fails.
    */
   async fetch(token: string, now: Date = new Date()): Promise<string> {
+    const cached = this.rendered.get(token);
+    if (cached && cached.until > now.getTime()) return cached.ics;
+
     const feed = await this.feeds.findByToken(token);
     if (!feed) throw new NotFoundException('Calendar link not found');
 
     const chapter = await this.chapters.findById(feed.chapter_id);
     const name = chapter ? `${chapter.name} (Frapp)` : 'Frapp';
     const items = chapter ? await this.itemsFor(feed, chapter, now) : [];
-    return buildIcsCalendar({
-      name,
-      items,
-      now,
-    });
+    const ics = buildIcsCalendar({ name, items, now });
+    this.remember(token, ics, now);
+    return ics;
+  }
+
+  /**
+   * Keeps a rendered calendar for {@link RENDER_TTL_MS}. The route is open to
+   * anyone holding a link and unthrottled (calendar servers share addresses),
+   * so a link fetched in a loop, by a misbehaving client or whoever it leaked
+   * to, costs one render per window instead of a round of queries per
+   * request. Oldest first out once {@link RENDER_CACHE_MAX} links are held.
+   */
+  private remember(token: string, ics: string, now: Date): void {
+    this.rendered.delete(token);
+    if (this.rendered.size >= RENDER_CACHE_MAX) {
+      const oldest = this.rendered.keys().next().value;
+      if (oldest !== undefined) this.rendered.delete(oldest);
+    }
+    this.rendered.set(token, { ics, until: now.getTime() + RENDER_TTL_MS });
   }
 
   private async itemsFor(
@@ -143,14 +181,21 @@ export class CalendarFeedService {
     const [events, tasks, alumniRoleId] = await Promise.all([
       isModuleEnabled(modules, 'events')
         ? this.events.findByChapter(chapterId, userId, {
-            endsAfter: new Date(now.getTime() - PAST_DAYS * DAY_MS).toISOString(),
+            endsAfter: new Date(
+              now.getTime() - PAST_DAYS * DAY_MS,
+            ).toISOString(),
             startsBefore: new Date(
               now.getTime() + FUTURE_DAYS * DAY_MS,
             ).toISOString(),
           })
         : Promise.resolve([]),
       isModuleEnabled(modules, 'tasks')
-        ? this.tasks.list(chapterId, userId, false)
+        ? // Unconfirmed only: a confirmed task is done, and leaving them out
+          // in SQL keeps a long-time member's history out of every fetch.
+          this.tasks.list(chapterId, userId, false, {
+            confirmed: false,
+            limit: TASK_LIMIT,
+          })
         : Promise.resolve([]),
       this.rbac.getAlumniRoleId(chapterId),
     ]);
@@ -159,8 +204,7 @@ export class CalendarFeedService {
       ...events.map((event) =>
         this.eventItem(
           event,
-          memberAttendance(event, member.role_ids, alumniRoleId) ===
-            'required',
+          memberAttendance(event, member.role_ids, alumniRoleId) === 'required',
         ),
       ),
       ...tasks
@@ -170,6 +214,8 @@ export class CalendarFeedService {
   }
 
   private eventItem(event: Event, required: boolean): IcsItem {
+    // The web deep-link contract, `eventDeepLink` in
+    // apps/web/lib/events/event-links.ts: the Events page opens the event.
     const url = `${this.appOrigin}/events?${new URLSearchParams({
       event: event.id,
     }).toString()}`;

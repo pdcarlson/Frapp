@@ -119,9 +119,7 @@ describe('SupabaseCalendarFeedRepository — tenant scope', () => {
       .filter((row) => row.revoked_at !== null)
       .map((row) => row.id)
       .sort();
-    expect(revoked).toEqual(
-      [FEED_A, FEED_A_REVOKED, FEED_B_REVOKED].sort(),
-    );
+    expect(revoked).toEqual([FEED_A, FEED_A_REVOKED, FEED_B_REVOKED].sort());
     const earlier = harness
       .rows('calendar_feeds')
       .find((row) => row.id === FEED_A_REVOKED);

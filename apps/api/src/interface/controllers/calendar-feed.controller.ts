@@ -10,7 +10,10 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { FreeTier } from '../decorators/subscription.decorator';
+import {
+  FreeTier,
+  SubscriptionExempt,
+} from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -24,9 +27,13 @@ import { CalendarFeedLinkDto } from '../dtos/calendar-feed.dto';
  *
  * `members:view` is the gate because it is what every read of events and
  * tasks needs, and the link serves nothing a member couldn't read in the app.
- * `@FreeTier()`: the link is the member's own state, not a paid feature, so a
- * lapsed chapter's members can still get it. The calendar app's fetch is
- * `CalendarFeedFetchController`, which has no guard.
+ * `@FreeTier()`: the link is the member's own state, not a paid feature, so
+ * it follows the free wedge (an `incomplete` chapter, and `past_due` within
+ * grace); a locked chapter is read-only, and a new link is a write. Reset is
+ * `@SubscriptionExempt()` as member safety: the fetch has no subscription
+ * check, so a member whose link got out must be able to cut it off while the
+ * chapter is locked. The calendar app's fetch is `CalendarFeedFetchController`,
+ * which has no guard.
  */
 @ApiTags('Calendar feed')
 @ApiBearerAuth()
@@ -52,10 +59,11 @@ export class CalendarFeedController {
   }
 
   @Post('reset')
+  @SubscriptionExempt()
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'Replace the caller\'s calendar link. Calendars subscribed to the old link show nothing from their next check.',
+      "Replace the caller's calendar link. Calendars subscribed to the old link show nothing from their next check.",
   })
   @ApiOkResponse({ type: CalendarFeedLinkDto })
   reset(

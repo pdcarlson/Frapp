@@ -121,10 +121,13 @@ function itemLines(item: IcsItem, stamp: string): string[] {
       'TRANSP:TRANSPARENT',
     );
   } else {
-    lines.push(
-      `DTSTART:${icsInstant(item.when.start)}`,
-      `DTEND:${icsInstant(item.when.end)}`,
-    );
+    const start = icsInstant(item.when.start);
+    const end = icsInstant(item.when.end);
+    lines.push(`DTSTART:${start}`);
+    // DTEND must be later than DTSTART (RFC 5545 § 3.8.2.2). A moment with no
+    // length, such as a task due at a time, leaves it out, which § 3.6.1
+    // reads as an event that takes up no time.
+    if (end > start) lines.push(`DTEND:${end}`);
   }
   lines.push(`SUMMARY:${escapeIcsText(item.summary)}`);
   if (item.location) lines.push(`LOCATION:${escapeIcsText(item.location)}`);

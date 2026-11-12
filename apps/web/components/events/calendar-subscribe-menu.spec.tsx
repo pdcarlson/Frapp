@@ -64,7 +64,8 @@ describe("CalendarSubscribeMenu", () => {
     ).toEqual([
       "Apple Calendar",
       "Google Calendar",
-      "Outlook",
+      "Outlook.com",
+      "Outlook for school or work",
       "Copy link",
       "Reset link",
     ]);
@@ -76,10 +77,14 @@ describe("CalendarSubscribeMenu", () => {
       LINK.webcal_url,
     );
     expect(google).toHaveAttribute("target", "_blank");
-    const outlook = screen.getByRole("menuitem", { name: "Outlook" });
+    const outlook = screen.getByRole("menuitem", { name: "Outlook.com" });
     expect(new URL(outlook.getAttribute("href")!).searchParams.get("url")).toBe(
       LINK.url,
     );
+    const work = screen.getByRole("menuitem", {
+      name: "Outlook for school or work",
+    });
+    expect(new URL(work.getAttribute("href")!).host).toBe("outlook.office.com");
   });
 
   it("keeps the rows drawn but disabled until the link arrives", async () => {
@@ -88,7 +93,7 @@ describe("CalendarSubscribeMenu", () => {
     await openMenu();
 
     const rows = await screen.findAllByRole("menuitem");
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
     for (const row of rows) {
       expect(row).toHaveAttribute("data-disabled");
     }

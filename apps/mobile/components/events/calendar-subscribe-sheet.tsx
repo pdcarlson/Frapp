@@ -3,6 +3,7 @@ import {
   Alert,
   Platform,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -43,6 +44,12 @@ const COPIED_HOLD_MS = 1500;
  * opening a `webcal://` link asks "Subscribe to …?" in one tap; Android has
  * no calendar app that subscribes to one, so it gets Google Calendar.
  *
+ * Google Calendar adds a calendar by link only on a computer, never in its
+ * phone app ("You can only add a calendar using a link on a computer, not the
+ * Google Calendar app", Google's own help), so its row says so and offers to
+ * share the link, the step TeamSnap and Canvas also send phone users through:
+ * send it to yourself, then add it from a computer.
+ *
  * The link is asked for only while the sheet is open (`open`), so a member
  * who never opens it never has one made. Until it arrives the rows are drawn
  * dimmed, so the sheet never changes height.
@@ -77,6 +84,22 @@ export const CalendarSubscribeSheet = forwardRef<
       ),
     );
     closeSheet();
+  }
+
+  function explainGoogle() {
+    const url = link.data?.url;
+    if (!url) return;
+    Alert.alert(
+      "Add it from a computer",
+      "Google Calendar adds a calendar by link only on a computer. Send yourself the link, then in Google Calendar on a computer choose Other calendars, From URL, and paste it.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Share link",
+          onPress: () => void Share.share({ message: url }).catch(() => {}),
+        },
+      ],
+    );
   }
 
   function copyLink() {
@@ -125,7 +148,7 @@ export const CalendarSubscribeSheet = forwardRef<
     {
       key: "google",
       label: "Google Calendar",
-      onPress: () => openApp(apps?.google),
+      onPress: explainGoogle,
     },
     {
       key: "copy",

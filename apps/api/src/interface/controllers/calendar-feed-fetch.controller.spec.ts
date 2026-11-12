@@ -1,5 +1,7 @@
 import { INestApplication, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
 import { configureApp } from '../../bootstrap';
 import { CalendarFeedService } from '../../application/services/calendar-feed/calendar-feed.service';
@@ -24,8 +26,19 @@ describe('GET /v1/calendar-feed/feed.ics', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
+      // The app's two named buckets, with a limit of two, so a route the
+      // throttler did not skip would 429 by the third request.
+      imports: [
+        ThrottlerModule.forRoot([
+          { name: 'read', ttl: 60_000, limit: 2 },
+          { name: 'write', ttl: 60_000, limit: 2 },
+        ]),
+      ],
       controllers: [CalendarFeedFetchController],
-      providers: [{ provide: CalendarFeedService, useValue: { fetch } }],
+      providers: [
+        { provide: CalendarFeedService, useValue: { fetch } },
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
+      ],
     }).compile();
     app = moduleRef.createNestApplication();
     configureApp(app);
@@ -58,6 +71,15 @@ describe('GET /v1/calendar-feed/feed.ics', () => {
       .get(`/v1/calendar-feed/feed.ics${query}`)
       .expect(400);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('skips both throttle buckets, since calendar servers share addresses', async () => {
+    fetch.mockResolvedValue(ICS);
+    for (let i = 0; i < 5; i += 1) {
+      await request(app.getHttpServer())
+        .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+        .expect(200);
+    }
   });
 
   it('404s a token no link has', async () => {

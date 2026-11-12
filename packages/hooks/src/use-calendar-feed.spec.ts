@@ -28,5 +28,10 @@ describe("calendarAppLinks", () => {
     );
     expect(outlook.searchParams.get("url")).toBe(LINK.url);
     expect(outlook.searchParams.get("name")).toBe("Frapp");
+    const work = new URL(calendarAppLinks(LINK).outlookWork);
+    expect(work.origin + work.pathname).toBe(
+      "https://outlook.office.com/calendar/0/addfromweb",
+    );
+    expect(work.searchParams.get("url")).toBe(LINK.url);
   });
 });

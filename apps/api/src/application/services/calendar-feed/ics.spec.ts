@@ -50,9 +50,7 @@ describe('foldIcsLine', () => {
       expect(part.startsWith(' ')).toBe(true);
       expect(Buffer.byteLength(part)).toBeLessThanOrEqual(75);
     }
-    expect(parts.map((p, i) => (i === 0 ? p : p.slice(1))).join('')).toBe(
-      line,
-    );
+    expect(parts.map((p, i) => (i === 0 ? p : p.slice(1))).join('')).toBe(line);
   });
 
   it('never splits a multi-byte character', () => {
@@ -62,9 +60,7 @@ describe('foldIcsLine', () => {
       expect(Buffer.byteLength(part)).toBeLessThanOrEqual(75);
       expect(part).not.toContain('�');
     }
-    expect(parts.map((p, i) => (i === 0 ? p : p.slice(1))).join('')).toBe(
-      line,
-    );
+    expect(parts.map((p, i) => (i === 0 ? p : p.slice(1))).join('')).toBe(line);
   });
 });
 

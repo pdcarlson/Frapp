@@ -65,13 +65,21 @@ export function useResetCalendarFeedLink() {
  * Where each calendar app takes the link. Apple Calendar opens `webcal://`
  * itself. Google Calendar and Outlook on the web each have an add-by-URL page
  * that takes the link as a parameter, the same doors Canvas and TeamSnap
- * hand their members.
+ * hand their members. Outlook has two: outlook.live.com for personal
+ * Microsoft accounts and outlook.office.com for school and work (Microsoft
+ * 365) ones, which is the Outlook most college members have; add-to-calendar
+ * menus list the two apart for that reason.
  */
 export function calendarAppLinks(link: CalendarFeedLink): {
   apple: string;
   google: string;
   outlook: string;
+  outlookWork: string;
 } {
+  const outlookQuery = new URLSearchParams({
+    url: link.url,
+    name: "Frapp",
+  }).toString();
   return {
     apple: link.webcal_url,
     // Google reads `cid` as a calendar to add; a webcal:// address makes it a
@@ -79,8 +87,7 @@ export function calendarAppLinks(link: CalendarFeedLink): {
     google: `https://calendar.google.com/calendar/r?${new URLSearchParams(
       { cid: link.webcal_url },
     ).toString()}`,
-    outlook: `https://outlook.live.com/calendar/0/addfromweb?${new URLSearchParams(
-      { url: link.url, name: "Frapp" },
-    ).toString()}`,
+    outlook: `https://outlook.live.com/calendar/0/addfromweb?${outlookQuery}`,
+    outlookWork: `https://outlook.office.com/calendar/0/addfromweb?${outlookQuery}`,
   };
 }

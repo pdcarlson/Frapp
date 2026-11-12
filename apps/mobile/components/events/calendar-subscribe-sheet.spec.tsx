@@ -1,6 +1,6 @@
 import React from "react";
 import { act } from "react";
-import { Alert, Platform } from "react-native";
+import { Alert, Platform, Share } from "react-native";
 import * as Linking from "expo-linking";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -98,13 +98,31 @@ describe("CalendarSubscribeSheet", () => {
 
   it("leaves Apple Calendar off Android and offers Google Calendar", () => {
     Object.defineProperty(Platform, "OS", { value: "android" });
-    const open = vi.mocked(Linking.openURL);
-    open.mockClear();
     const tree = render();
     expect(screenText(tree)).not.toContain("Apple Calendar");
+    expect(screenText(tree)).toContain("Google Calendar");
+    act(() => tree.unmount());
+  });
+
+  // Google Calendar adds a calendar by link only on a computer, so the phone
+  // never opens its add page: it says so and offers the link to send on.
+  it("sends Google Calendar users to a computer, with the link to share", () => {
+    const open = vi.mocked(Linking.openURL);
+    open.mockClear();
+    const alert = vi.mocked(Alert.alert);
+    alert.mockClear();
+    const share = vi.mocked(Share.share);
+    share.mockClear();
+    const tree = render();
     act(() => row(tree, "Google Calendar").props.onPress());
-    const google = new URL(open.mock.calls[0][0]);
-    expect(google.searchParams.get("cid")).toBe(LINK.webcal_url);
+    expect(open).not.toHaveBeenCalled();
+    expect(alert.mock.calls[0][1]).toMatch(/on a computer/);
+    const buttons = alert.mock.calls[0][2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    act(() => buttons.find((b) => b.text === "Share link")?.onPress?.());
+    expect(share).toHaveBeenCalledWith({ message: LINK.url });
     act(() => tree.unmount());
   });
 

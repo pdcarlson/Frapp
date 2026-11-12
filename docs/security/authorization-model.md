@@ -111,7 +111,7 @@ composed with **B** or **C** for per-row reads.
 | `service-entries` | `GET`, `GET /leaderboard`, `GET /:id`, `POST /proof-upload-url`, `GET /:id/proof-url`, `POST`, `PATCH /:id/review`, `DELETE /:id` | A+C, +P per route: `members:view`, `service:log`, `service:approve` | B — `serviceEntryRepo.findById(id, chapterId)` (`service-entry.service.ts`, every `findById` call) |
 | `geofences` / `study-sessions` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id`; `POST /start|heartbeat|pause|resume|stop`, `GET /` | A+C+P `members:view`, `geofences:manage` | B — `geofenceRepo.findById(id, chapterId)` at every call site |
 | `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` additionally narrows to **assignee or `tasks:manage`** (`TaskController.getOne`) — a per-row ACL on top of chapter scoping |
-| `calendar-feed` | `POST`, `POST /reset` | A+C+P `members:view`, `@FreeTier()` | D — the caller's own link in the request chapter (`calendar_feeds` filtered on `chapter_id` and `user_id`). The calendar app's fetch is `GET /v1/calendar-feed/feed.ics`, below |
+| `calendar-feed` | `POST`, `POST /reset` | A+C+P `members:view`, `@FreeTier()`; `POST /reset` `@SubscriptionExempt` | A, and self — the caller's own link in the request chapter (`calendar_feeds` filtered on `chapter_id` and `user_id`). The calendar app's fetch is `GET /v1/calendar-feed/feed.ics`, below |
 
 ### Controllers without `ChapterGuard`
 

@@ -113,7 +113,16 @@ export function CalendarSubscribeMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem asChild disabled={!apps}>
             <a href={apps?.outlook} target="_blank" rel="noopener noreferrer">
-              Outlook
+              Outlook.com
+            </a>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild disabled={!apps}>
+            <a
+              href={apps?.outlookWork}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Outlook for school or work
             </a>
           </DropdownMenuItem>
           <DropdownMenuItem

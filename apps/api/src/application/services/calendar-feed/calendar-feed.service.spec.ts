@@ -51,7 +51,7 @@ function event(overrides: Partial<Event> = {}): Event {
     created_by: USER,
     created_at: '2026-11-01T00:00:00.000Z',
     ...overrides,
-  } as Event;
+  };
 }
 
 function task(overrides: Partial<TaskView> = {}): TaskView {
@@ -76,15 +76,25 @@ function task(overrides: Partial<TaskView> = {}): TaskView {
   };
 }
 
+interface SetupOptions {
+  apiUrl?: string;
+  feed?: CalendarFeed | null;
+  member?: { role_ids: string[] } | null;
+  canRead?: boolean;
+  enabledModules?: Record<string, boolean> | null;
+  events?: Event[];
+  tasks?: TaskView[];
+}
+
 function setup({
   apiUrl = 'https://api.frapp.live',
-  feed = feedRow() as CalendarFeed | null,
-  member = { role_ids: ['brothers'] } as { role_ids: string[] } | null,
+  feed = feedRow(),
+  member = { role_ids: ['brothers'] },
   canRead = true,
-  enabledModules = null as Record<string, boolean> | null,
+  enabledModules = null,
   events = [event()],
   tasks = [task()],
-} = {}) {
+}: SetupOptions = {}) {
   const feeds: jest.Mocked<ICalendarFeedRepository> = {
     findByToken: jest.fn().mockResolvedValue(feed),
     findLive: jest.fn().mockResolvedValue(null),
@@ -166,9 +176,9 @@ describe('CalendarFeedService.ensure / reset', () => {
   it('drops a stray /v1 from API_URL', async () => {
     const { service } = setup({ apiUrl: 'https://api.frapp.live/v1/' });
     const link = await service.ensure(CHAPTER, USER);
-    expect(link.url.startsWith('https://api.frapp.live/v1/calendar-feed/')).toBe(
-      true,
-    );
+    expect(
+      link.url.startsWith('https://api.frapp.live/v1/calendar-feed/'),
+    ).toBe(true);
   });
 
   it('refuses without API_URL rather than hand out a dead link', async () => {
@@ -177,6 +187,16 @@ describe('CalendarFeedService.ensure / reset', () => {
       ServiceUnavailableException,
     );
     expect(feeds.create).not.toHaveBeenCalled();
+  });
+
+  it('reset hands back the link a racing request made', async () => {
+    const { service, feeds } = setup();
+    feeds.create.mockRejectedValue(new Error('duplicate key'));
+    feeds.findLive
+      .mockResolvedValueOnce(feedRow())
+      .mockResolvedValueOnce(feedRow({ token: 'b'.repeat(43) }));
+    const link = await service.reset(CHAPTER, USER);
+    expect(link.url).toContain(`token=${'b'.repeat(43)}`);
   });
 
   it('reset revokes the live link before making a new one', async () => {
@@ -216,7 +236,10 @@ describe('CalendarFeedService.fetch', () => {
       endsAfter: '2026-09-13T19:00:00.000Z',
       startsBefore: '2027-11-13T19:00:00.000Z',
     });
-    expect(taskService.list).toHaveBeenCalledWith(CHAPTER, USER, false);
+    expect(taskService.list).toHaveBeenCalledWith(CHAPTER, USER, false, {
+      confirmed: false,
+      limit: 500,
+    });
 
     expect(ics).toContain('X-WR-CALNAME:Phi Gamma Delta (Frapp)');
     expect(ics).toContain('UID:event-event-1@frapp.live');
@@ -228,6 +251,8 @@ describe('CalendarFeedService.fetch', () => {
     expect(ics).toContain('SUMMARY:Due: Clean the kitchen');
     expect(ics).toContain('DTSTART;VALUE=DATE:20261130');
     expect(ics).toContain('DTSTART:20261120T220000Z');
+    // A moment with no length has no DTEND, which must follow DTSTART.
+    expect(ics).not.toContain('DTEND:20261120T220000Z');
     expect(ics).not.toContain('Done one');
   });
 
@@ -245,7 +270,10 @@ describe('CalendarFeedService.fetch', () => {
   });
 
   it.each([
-    ['the link was reset', { feed: feedRow({ revoked_at: NOW.toISOString() }) }],
+    [
+      'the link was reset',
+      { feed: feedRow({ revoked_at: NOW.toISOString() }) },
+    ],
     ['the member left the chapter', { member: null }],
     ['the member lost members:view', { canRead: false }],
   ])('serves an empty calendar when %s', async (_why, options) => {
@@ -255,6 +283,37 @@ describe('CalendarFeedService.fetch', () => {
     expect(ics).not.toContain('BEGIN:VEVENT');
     expect(eventService.findByChapter).not.toHaveBeenCalled();
     expect(taskService.list).not.toHaveBeenCalled();
+  });
+
+  it('leaves out events when the chapter switched them off', async () => {
+    const { service, eventService, taskService } = setup({
+      enabledModules: { events: false },
+    });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(eventService.findByChapter).not.toHaveBeenCalled();
+    expect(taskService.list).toHaveBeenCalled();
+    expect(ics).not.toContain('UID:event-');
+  });
+
+  it('renders a link once per window, however often it is fetched', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    await service.fetch(TOKEN, new Date(NOW.getTime() + 60_000));
+    expect(feeds.findByToken).toHaveBeenCalledTimes(1);
+    await service.fetch(TOKEN, new Date(NOW.getTime() + 6 * 60_000));
+    expect(feeds.findByToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops serving the old render once the link is reset', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    feeds.findLive.mockResolvedValue(feedRow());
+    await service.reset(CHAPTER, USER);
+    feeds.findByToken.mockResolvedValue(
+      feedRow({ revoked_at: NOW.toISOString() }),
+    );
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).not.toContain('BEGIN:VEVENT');
   });
 
   it('leaves out a module the chapter switched off', async () => {
