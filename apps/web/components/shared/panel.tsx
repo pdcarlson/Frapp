@@ -3,7 +3,12 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft } from "lucide-react";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
@@ -450,6 +455,29 @@ export function PanelTitle({
     );
   }
   return <SheetTitle className={className}>{children}</SheetTitle>;
+}
+
+/**
+ * A line under the title that says what the panel is for. As a sheet it is
+ * the dialog's description; docked there is no dialog, so it is a plain
+ * paragraph in the same style.
+ */
+export function PanelDescription({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const dock = React.useContext(PanelDockContext);
+  if (dock) {
+    return (
+      <p className={cn("text-sm text-muted-foreground", className)}>
+        {children}
+      </p>
+    );
+  }
+  return <SheetDescription className={className}>{children}</SheetDescription>;
 }
 
 /**
