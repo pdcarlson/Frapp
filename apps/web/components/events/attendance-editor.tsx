@@ -1,42 +1,44 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
 import {
+  ALUMNI_FOLLOWING_NOTE,
+  ATTENDANCE_SEARCH_FROM,
   EVENT_ATTENDANCE_LABELS,
-  EVENT_ATTENDANCE_STATUSES,
-  roleChoicesFor,
-  rolesToAdd,
-  statusForAddedRole,
+  alumniRoleIdOf,
+  attendanceChoices,
+  attendanceOfRole,
+  attendanceRows,
+  describeAttendance,
   withEveryone,
   withRole,
   type EventAttendanceDraft,
   type EventAttendanceStatus,
 } from "@repo/validation";
+import { useRoles } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import {
-  Command,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { SegmentedChoice } from "@/components/ui/segmented";
+import { cn } from "@/lib/utils";
 import type { RoleOption } from "@/lib/roles";
 
 /**
  * Who's coming, by role (`spec/behavior/events.md` § Attendance by role): the
- * web editor's half of the mobile Who's coming sheet, built on the same moves
- * from `@repo/validation`, so the two set a rule the same way.
+ * web editor's half of the mobile Who's coming sheet, on the same moves from
+ * `@repo/validation`, so the two set a rule the same way (#3706).
  *
- * A default for everyone, the roles that differ from it, and a search to add
- * one. A chapter with a hundred roles sees a short block: only roles the
- * officer has set are rows; the rest wait in the search.
+ * One line says the whole rule; then "Everyone else" and one row per role,
+ * each with the same three answers. A role that only follows Everyone else
+ * holds its answer in neutral ink, a role set apart is lit in the accent.
+ * Comparable: Discord's channel permission overrides, a row per role with the
+ * same three-way switch and @everyone first.
+ *
+ * At real scale (an imported chapter brings a hundred roles) the rows flow
+ * with the panel's body (nothing scrolls inside a panel, `components.md`
+ * § Surface size): the roles set apart lead, then the first few others, with
+ * "Show all" for the rest and a search past {@link ATTENDANCE_SEARCH_FROM}.
+ * The order is taken when the editor opens, or when the form loads another
+ * event's rule, so a row never jumps out from under the pointer.
  */
 export function AttendanceEditor({
   value,
@@ -44,141 +46,185 @@ export function AttendanceEditor({
   roles,
   rolesState,
   disabled = false,
+  allowRequired = true,
 }: {
   value: EventAttendanceDraft;
   onChange: (next: EventAttendanceDraft) => void;
   roles: readonly RoleOption[];
   rolesState: "loading" | "error" | "ready";
   disabled?: boolean;
+  /**
+   * False drops Required from the answers, for a member who may make events
+   * but not require attendance; a row already Required keeps it so its answer
+   * stays visible (`attendanceChoices`).
+   */
+  allowRequired?: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const [pinned, setPinned] = useState(() => Object.keys(value.roles));
+  // A draft this editor didn't produce (the form loading another event, a
+  // type picked) is a new rule: its roles lead. Its own edits keep the order.
+  const [seen, setSeen] = useState(value);
+  const [emitted, setEmitted] = useState<EventAttendanceDraft | null>(null);
+  if (value !== seen) {
+    setSeen(value);
+    if (value !== emitted) setPinned(Object.keys(value.roles));
+  }
+  const emit = (next: EventAttendanceDraft) => {
+    setEmitted(next);
+    onChange(next);
+  };
+
+  const alumniId = alumniRoleIdOf(useRoles().data);
+  const missingName = rolesState === "ready" ? "Removed role" : "Role";
   const nameOf = useMemo(() => {
     const byId = new Map(roles.map((role) => [role.id, role.name]));
-    return (id: string) =>
-      byId.get(id) ?? (rolesState === "ready" ? "Removed role" : "Role");
-  }, [roles, rolesState]);
-  const addable = rolesToAdd(roles, value, search);
-  const differing = Object.entries(value.roles);
-  const added = statusForAddedRole(value.everyone);
+    return (id: string) => byId.get(id) ?? missingName;
+  }, [roles, missingName]);
+  const rows = useMemo(
+    () => attendanceRows(roles, pinned, search, missingName),
+    [roles, pinned, search, missingName],
+  );
+  const searching = search.trim() !== "";
+  const collapsedCount = Math.max(ATTENDANCE_SEARCH_FROM, pinned.length);
+  const shown = showAll || searching ? rows : rows.slice(0, collapsedCount);
+  const options = (current: EventAttendanceStatus) =>
+    attendanceChoices(current, allowRequired).map((status) => ({
+      value: status,
+      label: EVENT_ATTENDANCE_LABELS[status],
+    }));
 
   return (
     <div className="grid gap-2">
-      <SegmentedChoice
-        label="Attendance for everyone"
-        options={attendanceOptions(EVENT_ATTENDANCE_STATUSES)}
-        value={value.everyone}
-        onChange={(everyone) => onChange(withEveryone(value, everyone))}
-        disabled={disabled}
-        fill
-      />
-      <p className="text-caption text-muted-foreground">
-        {value.everyone === "required"
-          ? "Anyone who doesn't check in is marked absent. Alumni are left out unless you add their role."
-          : value.everyone === "optional"
-            ? "Everyone can see it and check in for points. Nobody is marked absent."
-            : differing.length > 0
-              ? "Only the roles below can see it."
-              : "Add the roles this event is for."}
+      {/* Two lines held, so a longer rule never pushes the rows down. */}
+      <p
+        className="line-clamp-2 min-h-[2lh] text-sm text-muted-foreground"
+        aria-live="polite"
+      >
+        {describeAttendance(value, nameOf)}
       </p>
-
-      {differing.length > 0 ? (
-        <ul
-          aria-label="Roles that differ"
-          className="divide-y divide-border rounded-md border border-border"
-        >
-          {differing.map(([roleId, status]) => (
-            <li key={roleId} className="flex items-center gap-3 px-3 py-1.5">
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                {nameOf(roleId)}
-              </span>
-              <SegmentedChoice
-                label={`Attendance for ${nameOf(roleId)}`}
-                options={attendanceOptions(roleChoicesFor(value.everyone))}
-                value={status}
-                onChange={(next) => onChange(withRole(value, roleId, next))}
-                disabled={disabled}
-              />
-              <IconButton
-                label={`Remove ${nameOf(roleId)}`}
-                disabled={disabled}
-                onClick={() => onChange(withRole(value, roleId, null))}
-              >
-                <X className="h-4 w-4" />
-              </IconButton>
-            </li>
-          ))}
-        </ul>
+      {rolesState === "error" ? (
+        <p className="text-caption text-warning">
+          Couldn&apos;t load your chapter&apos;s roles, so role names may be
+          missing.
+        </p>
       ) : null}
 
-      <Popover
-        open={adding}
-        onOpenChange={(open) => {
-          setAdding(open);
-          if (!open) setSearch("");
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="secondary"
-            className="justify-self-start"
-            disabled={disabled || rolesState !== "ready" || roles.length === 0}
-          >
-            <Plus className="h-4 w-4" />
-            Set a role differently
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 p-0">
-          <Command shouldFilter={false}>
-            <CommandInput
+      <div className="rounded-md border border-border">
+        <AttendanceRow name="Everyone else" strong>
+          <SegmentedChoice
+            dense
+            label="Attendance for everyone else"
+            options={options(value.everyone)}
+            value={value.everyone}
+            onChange={(everyone) => emit(withEveryone(value, everyone))}
+            disabled={disabled}
+          />
+        </AttendanceRow>
+
+        {roles.length > ATTENDANCE_SEARCH_FROM ? (
+          <div className="border-t border-border px-3 py-2">
+            <Input
               value={search}
-              onValueChange={setSearch}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search roles"
               aria-label="Search roles"
             />
-            <CommandList className="max-h-72">
-              {addable.length === 0 ? (
-                <p className="px-3 py-4 text-caption text-muted-foreground">
-                  {search.trim()
-                    ? "No roles match that search."
-                    : "Every role is set already."}
-                </p>
-              ) : (
-                addable.map((role) => (
-                  <CommandItem
-                    key={role.id}
-                    value={role.id}
-                    onSelect={() => {
-                      onChange(withRole(value, role.id, added));
-                      setAdding(false);
-                      setSearch("");
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{role.name}</span>
-                    <span className="text-caption text-muted-foreground">
-                      {EVENT_ATTENDANCE_LABELS[added]}
-                    </span>
-                  </CommandItem>
-                ))
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      {rolesState === "error" ? (
-        <p className="text-caption text-warning">
-          Couldn&apos;t load your chapter&apos;s roles, so a role can&apos;t be
-          added right now.
-        </p>
-      ) : null}
+          </div>
+        ) : null}
+
+        <ul aria-label="Roles">
+          {shown.map((role) => {
+            const setApart = role.id in value.roles;
+            const current = attendanceOfRole(value, role.id);
+            return (
+              <li key={role.id} className="border-t border-border">
+                <AttendanceRow
+                  name={role.name}
+                  muted={!setApart}
+                  note={
+                    role.id === alumniId &&
+                    !setApart &&
+                    value.everyone !== "not_invited"
+                      ? ALUMNI_FOLLOWING_NOTE
+                      : undefined
+                  }
+                >
+                  <SegmentedChoice
+                    dense
+                    label={`Attendance for ${role.name}`}
+                    options={options(current)}
+                    value={current}
+                    onChange={(next) => emit(withRole(value, role.id, next))}
+                    disabled={disabled}
+                    quiet={!setApart}
+                  />
+                </AttendanceRow>
+              </li>
+            );
+          })}
+        </ul>
+        {shown.length < rows.length ? (
+          <div className="border-t border-border px-3 py-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAll(true)}
+            >
+              Show all {rows.length} roles
+            </Button>
+          </div>
+        ) : null}
+        {rows.length === 0 ? (
+          <p className="border-t border-border px-3 py-3 text-caption text-muted-foreground">
+            {rolesState === "loading"
+              ? "Loading roles…"
+              : rolesState === "error"
+                ? "Couldn't load your chapter's roles."
+                : roles.length === 0
+                  ? "Your chapter has no roles yet."
+                  : "No roles match that search."}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function attendanceOptions(statuses: readonly EventAttendanceStatus[]) {
-  return statuses.map((status) => ({
-    value: status,
-    label: EVENT_ATTENDANCE_LABELS[status],
-  }));
+/** A name and its answers; the answers wrap under the name in a narrow panel. */
+function AttendanceRow({
+  name,
+  note,
+  strong = false,
+  muted = false,
+  children,
+}: {
+  name: string;
+  /** One short line under the name, for a fact the answer can't show. */
+  note?: string;
+  strong?: boolean;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+      <span className="grid min-w-[6rem] flex-1">
+        <span
+          className={cn(
+            "truncate text-sm",
+            strong && "font-semibold",
+            muted ? "text-muted-foreground" : "text-foreground",
+          )}
+        >
+          {name}
+        </span>
+        {note ? (
+          <span className="text-caption text-muted-foreground">{note}</span>
+        ) : null}
+      </span>
+      {children}
+    </div>
+  );
 }

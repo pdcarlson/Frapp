@@ -247,7 +247,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
 | My account | Account | `account` | Replay the tutorial, sign out, delete account |
-| In _chapter name_ | Chapter alerts | `alerts` | The active chapter's notification categories |
+| In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |
 | In _chapter name_ | Discord history | `discord` | The member's Discord link for the chapter's import; the API's link handshake returns here |
 

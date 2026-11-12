@@ -15,7 +15,9 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
  * reads membership through `findByUserAndChapter`, `RbacService` reads roles
  * through `findByIds`). In one GET each of those rows is read once. If any of
  * them stops going through the shared read, or its key drifts from the
- * others', a count here goes up.
+ * others', a count here goes up. With a chapter named, the prefetch reads all
+ * four in one call (`get_request_context`, #3583), so nothing else reads at
+ * all.
  */
 describe('one GET reads membership and roles once (#3728)', () => {
   const CHAPTER = '44444444-4444-4444-8444-444444444444';
@@ -60,7 +62,32 @@ describe('one GET reads membership and roles once (#3728)', () => {
       ) => answer().then(resolve, reject);
       return chain;
     });
-    supabase = { from } as unknown as FrappSupabaseClient;
+    // The prefetch's one call (#3583), answering the same rows.
+    const rpc = jest.fn((name: string) => {
+      reads.push(`rpc:${name}`);
+      return Promise.resolve({
+        data: {
+          user: { id: 'user-s' },
+          chapter: { subscription_status: 'active', enabled_modules: null },
+          member: {
+            id: 'member-s',
+            user_id: 'user-s',
+            chapter_id: CHAPTER,
+            role_ids: ['role-b', 'role-a'],
+          },
+          roles: [
+            {
+              id: 'role-a',
+              chapter_id: CHAPTER,
+              permissions: ['members:view'],
+            },
+            { id: 'role-b', chapter_id: CHAPTER, permissions: [] },
+          ],
+        },
+        error: null,
+      });
+    });
+    supabase = { from, rpc } as unknown as FrappSupabaseClient;
   });
 
   class ChatLikeController {}
@@ -88,9 +115,7 @@ describe('one GET reads membership and roles once (#3728)', () => {
     };
 
     await runWithRequestReads('GET', async () => {
-      prefetchChapterContext(supabase, 'auth-s', undefined, request.headers, {
-        roles: true,
-      });
+      prefetchChapterContext(supabase, 'auth-s', undefined, request.headers);
       await settle();
 
       await expect(chapterGuard.canActivate(context(request))).resolves.toBe(
@@ -108,7 +133,7 @@ describe('one GET reads membership and roles once (#3728)', () => {
       }
     });
 
-    expect(reads.sort()).toEqual(['chapters', 'members', 'roles', 'users']);
+    expect(reads).toEqual(['rpc:get_request_context']);
   });
 
   it('without the store, the same steps read each row every time', async () => {

@@ -3823,6 +3823,20 @@ If a split must be restored, there is no point-in-time recovery ([§ Backup real
 
 Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
+## Rollback request context lookup (20261112151000)
+
+* **Migration**: `20261112151000_request_context_lookup.sql`
+
+One function, `get_request_context(uuid, uuid)`, which the chapter guards' prefetch calls. It writes nothing on apply and changes no table.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function. Without reverting anything, the function can also be removed: the API answers a failed call by reading the rows separately as before #3583, so chapter requests get slower by one failed call each, and Sentry shows a `get_request_context` warning until the API is reverted.
+
+To remove the function, do it in a later forward migration:
+
+```sql
+drop function if exists public.get_request_context(uuid, uuid);
+```
+
 ## Rollback a member's phone number (20261112150000)
 
 * **Migration**: `20261112150000_users_phone.sql`

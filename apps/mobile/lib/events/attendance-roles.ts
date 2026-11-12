@@ -3,9 +3,8 @@
  * attendance-sheet.tsx`), read off `GET /v1/roles`.
  *
  * Built for a chapter at real scale: an imported Discord server brings a
- * hundred roles or more, so the picker never lists them all as controls. It
- * shows the default, the few roles that differ from it, and a searchable list
- * to add one from.
+ * hundred roles or more, so the picker's list is virtualized and searchable
+ * (`attendanceRows` in `@repo/validation` orders and filters it).
  */
 export interface RoleOption {
   id: string;

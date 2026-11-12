@@ -7,6 +7,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import type {
   JwtPayload,
   PostgrestMaybeSingleResponse,
@@ -33,12 +34,21 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { InFlightLookups, lookupUnavailable } from './guard-lookup';
-import { readMemberByUserAndChapter } from '../../infrastructure/supabase/repositories/supabase-member.repository';
-import { readRolesByIds } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import {
+  memberReadKey,
+  readMemberByUserAndChapter,
+} from '../../infrastructure/supabase/repositories/supabase-member.repository';
+import {
+  readRolesByIds,
+  rolesReadKey,
+} from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import {
+  keepForRequest,
   readOncePerRequest,
   requestReadsActive,
 } from '../../infrastructure/supabase/request-reads';
+import type { Member } from '#domain/entities/member.entity';
+import type { Role } from '#domain/entities/role.entity';
 
 /**
  * Every lookup here tells "no row" (`.maybeSingle()`'s `null`, the 4xx it
@@ -68,7 +78,9 @@ type ChapterRow = {
  * the requests a mobile resume fires together (#3728) hit several modules'
  * routes. Only two reads are shared: the user's own row id, and the chapter's
  * subscription state and module toggles, for which no spec promises
- * same-instant freshness. A joiner's answer can predate its request by up to
+ * same-instant freshness. Only the guard's own reads join them: with a
+ * chapter named, the prefetch gets both rows from `get_request_context`
+ * per request instead (#3583), so on that path nothing is shared. A joiner's answer can predate its request by up to
  * `IN_FLIGHT_JOIN_WINDOW_MS`. Membership is still read per request, because
  * spec/behavior/multi-tenancy.md promises that a revoked membership refuses
  * every later request.
@@ -113,39 +125,156 @@ async function keepAnswerForRequest<T extends { error: unknown }>(
 function lookupAppUser(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
+  viaContext?: Promise<RequestContextAnswer | null>,
 ): Promise<PostgrestMaybeSingleResponse<{ id: string }>> {
-  return keepAnswerForRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
+  const read = () =>
     appUserLookups.run(supabaseAuthId, () =>
       supabase
         .from('users')
         .select('id')
         .eq('supabase_auth_id', supabaseAuthId)
         .maybeSingle<{ id: string }>(),
-    ),
+    );
+  return keepAnswerForRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
+    viaContext
+      ? viaContext.then((answer) => (answer ? foundRow(answer.user) : read()))
+      : read(),
   );
 }
 
 function lookupChapter(
   supabase: FrappSupabaseClient,
   chapterId: string,
+  viaContext?: Promise<RequestContextAnswer | null>,
 ): Promise<PostgrestMaybeSingleResponse<ChapterRow>> {
-  return keepAnswerForRequest(`chapter-guard:chapter:${chapterId}`, () =>
+  const read = () =>
     chapterLookups.run(chapterId, () =>
       supabase
         .from('chapters')
         .select('subscription_status, past_due_since, enabled_modules')
         .eq('id', chapterId)
         .maybeSingle<ChapterRow>(),
-    ),
+    );
+  return keepAnswerForRequest(`chapter-guard:chapter:${chapterId}`, () =>
+    viaContext
+      ? viaContext.then((answer) =>
+          answer ? foundRow(answer.chapter) : read(),
+        )
+      : read(),
   );
+}
+
+/** A row `get_request_context` returned, in the shape `.maybeSingle()` gives. */
+function foundRow<T>(row: T | null): PostgrestMaybeSingleResponse<T> {
+  return {
+    data: row,
+    error: null,
+    count: null,
+    status: 200,
+    statusText: 'OK',
+    success: true,
+  };
+}
+
+/**
+ * `get_request_context`'s answer (migration `20261112151000`): the rows this
+ * guard, `PermissionsGuard` and the handler's access checks would otherwise
+ * read one after another, from one call.
+ */
+interface RequestContextAnswer {
+  user: { id: string } | null;
+  chapter: ChapterRow | null;
+  member: Member | null;
+  roles: Role[];
+}
+
+/**
+ * One call for the user, chapter, membership and roles (#3583). Before it the
+ * prefetch read them as a chain (user, then membership, then roles), about
+ * 320 ms at production's p50 on 2026-11-12, while the session check it
+ * overlaps took 134 ms. Resolves `null` when the call fails or answers
+ * something unexpected (`reportRequestContextFailure`), and the prefetch then
+ * reads the rows as it did before #3583, one failed call later.
+ *
+ * Before resolving it records the membership and roles in the request's store
+ * under the keys `readMemberByUserAndChapter` and `readRolesByIds` read, so
+ * the guards and the handler find them there. The user and chapter rows are
+ * resolved through `lookupAppUser` and `lookupChapter`, which wait on this.
+ * The membership is recorded under the user id this call found, and only
+ * that, so a session whose user differs from the token's `sub` reuses none of
+ * it.
+ */
+function readRequestContext(
+  supabase: FrappSupabaseClient,
+  supabaseAuthId: string,
+  chapterId: string,
+): Promise<RequestContextAnswer | null> {
+  // An executor, so a client that throws instead of answering an error
+  // still lands in the `catch` below rather than in the caller.
+  return new Promise<Awaited<ReturnType<typeof supabase.rpc>>>((resolve) =>
+    resolve(
+      supabase.rpc('get_request_context', {
+        p_auth_id: supabaseAuthId,
+        p_chapter_id: chapterId,
+      }),
+    ),
+  )
+    .then(({ data, error }) => {
+      if (error) throw new SupabaseQueryError(error);
+      const answer = asRequestContext(data);
+      if (!answer) throw new Error('get_request_context: unexpected answer');
+      if (answer.user) {
+        keepForRequest(memberReadKey(answer.user.id, chapterId), answer.member);
+        const roleIds = answer.member?.role_ids ?? [];
+        if (roleIds.length) {
+          keepForRequest(rolesReadKey(roleIds, chapterId), answer.roles);
+        }
+      }
+      return answer;
+    })
+    .catch((failure: unknown) => {
+      reportRequestContextFailure(failure);
+      return null;
+    });
+}
+
+const FAILURE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
+let lastFailureReportAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A failed `get_request_context` costs no request anything but time, because
+ * the rows are read separately (`prefetchChapterContext`), so nothing else
+ * would ever report it: a dropped function, a lost grant or a `role_ids`
+ * entry that is not a uuid would only show up as latency. One Sentry warning
+ * per process every ten minutes, grouped as one issue, says so without
+ * spending the error quota on every request.
+ */
+function reportRequestContextFailure(failure: unknown): void {
+  const now = Date.now();
+  if (now - lastFailureReportAt < FAILURE_REPORT_INTERVAL_MS) return;
+  lastFailureReportAt = now;
+  Sentry.captureException(failure, {
+    level: 'warning',
+    fingerprint: ['get_request_context-failed'],
+    tags: { guard: 'chapter-prefetch' },
+  });
+}
+
+function asRequestContext(data: unknown): RequestContextAnswer | null {
+  if (!data || typeof data !== 'object') return null;
+  const answer = data as Partial<RequestContextAnswer>;
+  if (!('user' in answer) || !('chapter' in answer) || !('member' in answer)) {
+    return null;
+  }
+  if (!Array.isArray(answer.roles)) return null;
+  return answer as RequestContextAnswer;
 }
 
 /**
  * Starts this guard's reads while `SupabaseAuthGuard` is still waiting on
  * `auth.getUser` (#3728), so the user, chapter, membership and role lookups
- * overlap the session check instead of queueing behind it. On a resume burst
- * that check is the slowest call a request makes, and the three lookups after
- * it were three more round trips in a row.
+ * overlap the session check instead of queueing behind it. With a chapter
+ * named, they are one call (`readRequestContext`, #3583).
  *
  * Nothing here decides anything. The reads land in the request's own store
  * (`request-reads.ts`), and `ChapterGuard` and `PermissionsGuard` pick them up
@@ -154,39 +283,52 @@ function lookupChapter(
  * somehow not the user `getUser` answers with would find nothing to reuse.
  * Every request still reads its own membership and roles; this changes when
  * the reads start, not whether they happen (#3752). A failed read is not
- * kept (`keepAnswerForRequest`, and the member and role reads throw), so the
- * guard that needs it reads again.
+ * kept (`keepAnswerForRequest`), so the guard that needs it reads again. If
+ * the one call fails, the user and chapter are read separately and the
+ * membership and roles chained after the user, as before #3583.
  *
- * It reads only what the route's guards will ask for: the caller decides
- * whether `PermissionsGuard` will read roles (`options.roles`). Without a
- * store (no request, or past the guards of a write) it does nothing.
+ * Without a store (no request, or past the guards of a write) it does
+ * nothing.
  */
 export function prefetchChapterContext(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
   claims: JwtPayload | undefined,
   headers: RequestContext['headers'],
-  options: { roles: boolean },
 ): void {
   if (!requestReadsActive()) return;
 
-  const appUser = lookupAppUser(supabase, supabaseAuthId);
   const requested = readRequestedChapter(claims, headers);
   if (requested.kind !== 'explicit') {
-    appUser.catch(ignorePrefetchFailure);
+    lookupAppUser(supabase, supabaseAuthId).catch(ignorePrefetchFailure);
     return;
   }
 
+  const context = readRequestContext(
+    supabase,
+    supabaseAuthId,
+    requested.chapterId,
+  );
+  const appUser = lookupAppUser(supabase, supabaseAuthId, context);
+  lookupChapter(supabase, requested.chapterId, context).catch(
+    ignorePrefetchFailure,
+  );
   const { chapterId } = requested;
-  lookupChapter(supabase, chapterId).catch(ignorePrefetchFailure);
-  appUser
-    .then(({ data }) =>
-      data ? readMemberByUserAndChapter(supabase, data.id, chapterId) : null,
-    )
-    .then((member) =>
-      options.roles && member?.role_ids?.length
-        ? readRolesByIds(supabase, member.role_ids, chapterId)
-        : null,
+  context
+    .then((answer) =>
+      answer
+        ? null
+        : appUser
+            .then(({ data }) =>
+              data
+                ? readMemberByUserAndChapter(supabase, data.id, chapterId)
+                : null,
+            )
+            .then((member) =>
+              member?.role_ids?.length
+                ? readRolesByIds(supabase, member.role_ids, chapterId)
+                : null,
+            ),
     )
     .catch(ignorePrefetchFailure);
 }
