@@ -196,6 +196,8 @@ Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) an
 
 *(Added 2026-11-06, for attendance by role.)* Two or three answers side by side, the held one lit, so the current answer never hides behind a menu: a 1px `border-input` track on `surface-1`, padding 2, each segment 32px to a mouse and 44 on touch, the held one in the accent's subtle tint with accent text, the rest muted. It is a radio group to assistive tech (`radiogroup` / `radio`, checked on the held one). Use it for a short closed set the member switches between often; a longer set is a list or a menu. Mobile: `apps/mobile/components/segmented.tsx`; web: `SegmentedChoice` in `apps/web/components/ui/segmented.tsx`. First users: the Who's coming default and each role row; on web the Events page's List/Calendar view toggle and its Filter popover's Time, Attendance and Cadence also use it (2026-11-09, #3822).
 
+*(2026-11-12, #4072.)* On web an answer can be disabled on its own (with a reason the row states), and a **quiet** answer holds in neutral (`card-hover` fill, foreground text) instead of the accent: the default a row starts on, so that down a long list the rows set apart from it are the lit ones. First user: a role's Off / Same as tier / On on the Roles page, where Same as tier is the quiet answer.
+
 ## 5. Badges and chips
 
 The Chip step ([foundations.md](foundations.md) §9): height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
