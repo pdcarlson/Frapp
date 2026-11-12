@@ -6,10 +6,11 @@ import {
   useCheckIn,
   useCurrentChapter,
   useEvent,
+  useMyAttendance,
   useNowDate,
   usePermissionList,
 } from "@repo/hooks";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled, statusLabel } from "@repo/validation";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { EventsGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
@@ -21,7 +22,7 @@ import {
   type CheckInOutcome,
 } from "@/lib/events/check-in-outcome";
 import { formatEventWindow, resolveCheckInWindow } from "@/lib/events/format";
-import { selectEventDetail } from "@/lib/events/select";
+import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { useFrappTheme } from "@/lib/theme";
@@ -59,6 +60,14 @@ import { LocationGlyph } from "./location-glyph";
  * (`lib/events/check-in-outcome.ts`). A 409 is the member already on the list,
  * which is a success. Check-in has no outbox, so the button is disabled while
  * a write would be lost (`useConnection().writeBlockedReason`).
+ *
+ * **Already on the list.** While the window is open the card reads the
+ * member's own row (`useMyAttendance`), as Event details does (#3703), so a
+ * member who scanned in at the door, checked in from another device, or
+ * checked in from this card before it scrolled away and remounted sees
+ * "Checked in", not a Check in button the server would only refuse. An
+ * officer's mark (excused, absent) shows as that mark, with no button, since
+ * the server won't let a check-in replace it.
  *
  * **The checked-in count** is the attendance roster, which only an
  * `events:update` holder can read, so nobody else asks for it or sees a count.
@@ -98,6 +107,14 @@ export function EventCard({
     chapterQuery.data !== undefined &&
     !isModuleEnabled(chapterQuery.data?.enabled_modules, "events");
 
+  // The member's own row, while it can change what the card offers. A
+  // check-in from anywhere invalidates `["attendance", eventId]`, which this
+  // key sits under.
+  const mine = useMyAttendance(open ? payload.event_id : "");
+  const own = selectMyAttendance(mine.data);
+  // A row without a check-in is an officer's mark.
+  const marked = own && !own.checkedInAt ? own.status : null;
+
   const { writeBlockedReason } = useConnection();
   const checkIn = useCheckIn();
   const [outcome, setOutcome] = useState<CheckInOutcome | null>(null);
@@ -132,7 +149,10 @@ export function EventCard({
     }
   };
 
-  const checkedInNow = outcome?.kind === "success" || outcome?.kind === "already";
+  const checkedInNow =
+    outcome?.kind === "success" ||
+    outcome?.kind === "already" ||
+    own?.checkedInAt != null;
   const blockedReason =
     writeBlockedReason ??
     (outcome?.kind === "blocked" ? outcome.message : null);
@@ -186,7 +206,12 @@ export function EventCard({
       }
     >
       {open && eventsOff ? <CardNote text={MODULE_REFUSAL_COPY.checkIn} /> : null}
-      {open && !eventsOff ? (
+      {open && !eventsOff && marked && !checkedInNow ? (
+        <CardNote
+          text={`Marked ${statusLabel("attendance", marked).toLowerCase()}`}
+        />
+      ) : null}
+      {open && !eventsOff && !(marked && !checkedInNow) ? (
         <>
           <CardActions>
             {checkedInNow ? (
