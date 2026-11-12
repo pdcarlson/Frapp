@@ -227,7 +227,6 @@ until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
-| Activity (#3897) | `activity`, `tray` | `ActivityGlyph` |
 | Study hours | `study`, `graduation-cap` | `StudyGlyph` |
 | Service hours | `service`, `hand-heart` | `ServiceGlyph` |
 | Dues | `billing`, `credit-card` | `BillingGlyph` |
@@ -257,8 +256,8 @@ except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
-| Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Event card | `EventsGlyph` (the Calendar tab's) | `components/tab-glyphs.tsx` |
+| Task card | `TasksGlyph` (the task board's; a tab until #4610) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
 | Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |

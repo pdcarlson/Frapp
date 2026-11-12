@@ -62,23 +62,47 @@ export function useActivityReread(
 }
 
 /**
- * Reads Activity again each time `tabKey` changes: the tab bar's hold on the
- * count. The bar is drawn once and never refocuses, so it can't use a focus
- * effect; a change of tab is the moment the member may have done something
- * on the tab they left (a vote in chat). The first value is skipped, since
- * the query reads on mount by itself.
+ * The tab bar's hold on the count it draws on Activity's tab (#4610). The bar
+ * is drawn once and never remounts, so it reads Activity again when the
+ * member may have changed what it counts: on each change of tab (`tabKey`,
+ * a vote in chat, then over to Calendar), and each time the tabs come back
+ * into focus from a screen pushed over them (a task finished on the board,
+ * then back to Chat). The first draw is skipped, since the query reads on
+ * mount by itself.
+ *
+ * While Activity is the tab in front (`activityInFront`) the screen's own
+ * `useActivityReread` reads on both of those, so this one stays out of it
+ * rather than send the same read twice.
  */
-export function useActivityRereadOnTab(tabKey: string): void {
+export function useActivityRereadOnTab(
+  tabKey: string,
+  activityInFront: boolean,
+): void {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  const seen = useRef(tabKey);
-  useEffect(() => {
-    if (seen.current === tabKey) return;
-    seen.current = tabKey;
-    if (!chapterId) return;
+  const skip = useRef(activityInFront);
+  skip.current = activityInFront;
+  const reread = useCallback(() => {
+    if (!chapterId || skip.current) return;
     void queryClient.invalidateQueries({
       queryKey: activityKeys.chapter(chapterId),
       exact: true,
     });
-  }, [chapterId, queryClient, tabKey]);
+  }, [chapterId, queryClient]);
+
+  const seen = useRef(tabKey);
+  useEffect(() => {
+    if (seen.current === tabKey) return;
+    seen.current = tabKey;
+    reread();
+  }, [reread, tabKey]);
+
+  const mounted = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (mounted.current) reread();
+      mounted.current = true;
+      return undefined;
+    }, [reread]),
+  );
 }

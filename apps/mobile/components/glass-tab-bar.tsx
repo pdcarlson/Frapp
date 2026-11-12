@@ -73,7 +73,8 @@ export function GlassTabBar({
   // Activity's tab carries the count of things waiting on the member
   // (`needs_you_count`), which More's Activity row carried before the screen
   // became a tab (#4610). It is read again on every change of tab, on every
-  // visit to Activity, and on every return to the app.
+  // return to the tabs from a pushed screen, on every visit to Activity, and
+  // on every return to the app.
   const needsYou = activityCountChip(useActivity().data);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
@@ -85,7 +86,7 @@ export function GlassTabBar({
   });
 
   const focusedRoute = state.routes[state.index];
-  useActivityRereadOnTab(focusedRoute.key);
+  useActivityRereadOnTab(focusedRoute.key, focusedRoute.name === "activity");
 
   // Open on the tab it was opened from: moving to another tab closes it. The
   // close is kept, so coming back to the tab doesn't open it again (state

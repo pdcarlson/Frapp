@@ -300,7 +300,7 @@ export default function ActivityScreen() {
       <ScreenShell
         title="Activity"
         refresh={refresh}
-        headerAction={<TaskBoardLink />}
+        headerAction={moduleOn("tasks") ? <TaskBoardLink /> : undefined}
       >
         {renderBody()}
         <ActivitySheet
@@ -323,16 +323,10 @@ export default function ActivityScreen() {
 }
 
 /**
- * The sign-up link writes (`spec/behavior/activity.md` § Links), owned by the
- * screen: each takes the row off the list at once, which closes its sheet,
- * and the "Undo" bar that follows (the tasks board's, for the same few
- * seconds) has to outlive the sheet. Remove is `channels:manage`'s, as in
- * chat. A write that fails puts the row back and says so.
- */
-/**
  * The task board's door (#4610): the board (List and Grid, the points card)
  * is a pushed screen now that Activity and Calendar hold a member's tasks.
- * A plain neutral control on the title row, never the accent, which marks
+ * Drawn only while the chapter has Tasks on, since the whole board is behind
+ * that module. A plain neutral control on the title row, never the accent, which marks
  * only the one primary action (foundations.md § Where the accent goes).
  */
 function TaskBoardLink() {
@@ -353,6 +347,13 @@ function TaskBoardLink() {
   );
 }
 
+/**
+ * The sign-up link writes (`spec/behavior/activity.md` § Links), owned by the
+ * screen: each takes the row off the list at once, which closes its sheet,
+ * and the "Undo" bar that follows (the tasks board's, for the same few
+ * seconds) has to outlive the sheet. Remove is `channels:manage`'s, as in
+ * chat. A write that fails puts the row back and says so.
+ */
 function useLinkActions() {
   const router = useRouter();
   const permissions = useMyPermissions();

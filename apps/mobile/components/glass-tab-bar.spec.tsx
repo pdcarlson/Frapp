@@ -26,8 +26,9 @@ const activity = vi.hoisted(() => ({
     | { needs_you_count: number; unavailable: string[] }
     | undefined,
 }));
+const rereadOnTab = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/activity/use-activity-reread", () => ({
-  useActivityRereadOnTab: vi.fn(),
+  useActivityRereadOnTab: rereadOnTab,
 }));
 vi.mock("@repo/hooks", () => ({
   useActivity: () => ({ data: activity.data }),
@@ -236,6 +237,15 @@ describe("the bar (#3344)", () => {
     expect(
       byLabel(render().root, "Activity, at least 2 waiting on you"),
     ).toBeDefined();
+  });
+
+  it("holds the badge's count fresh, leaving Activity's own re-read to it", () => {
+    // The hook itself is pinned in `use-activity-reread.spec.tsx`.
+    rereadOnTab.mockClear();
+    render("events");
+    expect(rereadOnTab).toHaveBeenLastCalledWith("events-1", false);
+    render("activity");
+    expect(rereadOnTab).toHaveBeenLastCalledWith("activity-1", true);
   });
 
   it("goes to a tab on press, unless the press was taken", () => {

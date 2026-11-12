@@ -320,3 +320,17 @@ export function taskEditBody(
   if (points !== (task.pointReward || null)) body.point_reward = points;
   return body;
 }
+
+/**
+ * What a create from this sheet says it did. Someone else's task is on no
+ * board the creator sees, so it names where it went. The quick actions' +
+ * and the task board's own + both say it.
+ */
+export function taskCreatedLine(
+  assigneeName: string | null,
+  wasSelf: boolean,
+): string {
+  return wasSelf
+    ? "Added to your tasks."
+    : `Assigned to ${assigneeName ?? "your chapter member"}.`;
+}

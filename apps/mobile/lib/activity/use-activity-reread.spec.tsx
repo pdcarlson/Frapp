@@ -114,24 +114,33 @@ describe("useActivityReread (#3897)", () => {
 });
 
 describe("useActivityRereadOnTab (#4610)", () => {
-  function TabProbe({ tab }: { tab: string }) {
-    useActivityRereadOnTab(tab);
+  function TabProbe({ tab, front }: { tab: string; front: boolean }) {
+    useActivityRereadOnTab(tab, front);
     return null;
   }
+  let queryClient: QueryClient;
+  let invalidate: ReturnType<typeof vi.spyOn>;
+  let tree: ReactTestRenderer;
+  const draw = (tab: string, front = false) => (
+    <QueryClientProvider client={queryClient}>
+      <TabProbe tab={tab} front={front} />
+    </QueryClientProvider>
+  );
 
-  it("reads again on each change of tab, not on the first draw", () => {
+  beforeEach(() => {
     chapterId = "chapter-1";
-    const queryClient = new QueryClient();
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    const draw = (tab: string) => (
-      <QueryClientProvider client={queryClient}>
-        <TabProbe tab={tab} />
-      </QueryClientProvider>
-    );
-    let tree!: ReactTestRenderer;
+    queryClient = new QueryClient();
+    invalidate = vi.spyOn(queryClient, "invalidateQueries");
     act(() => {
       tree = create(draw("index-1"));
     });
+  });
+
+  afterEach(() => {
+    act(() => tree.unmount());
+  });
+
+  it("reads again on each change of tab, not on the first draw", () => {
     expect(invalidate).not.toHaveBeenCalled();
     act(() => tree.update(draw("index-1")));
     expect(invalidate).not.toHaveBeenCalled();
@@ -142,6 +151,18 @@ describe("useActivityRereadOnTab (#4610)", () => {
       queryKey: activityKeys.chapter("chapter-1"),
       exact: true,
     });
-    act(() => tree.unmount());
+  });
+
+  it("reads again when the tabs come back from a pushed screen", () => {
+    act(() => refocus());
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves both to the Activity screen while Activity is in front", () => {
+    act(() => tree.update(draw("activity-1", true)));
+    act(() => refocus());
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => tree.update(draw("index-1")));
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 });

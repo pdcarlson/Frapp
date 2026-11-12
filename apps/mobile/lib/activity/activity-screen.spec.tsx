@@ -355,6 +355,16 @@ describe("Activity screen (#3897)", () => {
     expect(push).toHaveBeenCalledWith("/tasks");
   });
 
+  it("draws no Task board while the chapter has Tasks off", () => {
+    chapter.data = { enabled_modules: { tasks: false } };
+    const links = render().root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Task board",
+    );
+    expect(links).toHaveLength(0);
+  });
+
   it("lists what needs the member first, then what they made, each group with its count", () => {
     const tree = render();
     // The approval is for now and the task, due in 2099, is for later.
@@ -823,6 +833,11 @@ describe("Activity screen (#3897)", () => {
       expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
         "/service-hours",
       );
+      // The board left the tab bar (#4610), so Points pushes it.
+      vi.mocked(useRouter().navigate).mockClear();
+      act(() => standingRow(tree, "points").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
+      expect(vi.mocked(useRouter)().navigate).not.toHaveBeenCalled();
     });
 
     it("holds its place while it loads, and draws nothing when its read fails", () => {

@@ -154,12 +154,13 @@ The row names the screen it pops to, so these are the rows a member sees arrivin
 
 | Screen | Usual way in | Row |
 | ------ | ------------ | --- |
-| s07 Event detail | Events | `‹ Events` |
-| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours, Activity | More | `‹ More` |
+| s07 Event detail | Calendar | `‹ Calendar` (`‹ Events` until #4610) |
+| s08 Task board | Activity's Task board control | `‹ Activity` (#4610) |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | More | `‹ More` |
 | s14 Notifications | The avatar menu on Chat home | `‹ Chat` |
 | Messages | The Messages door on Chat home | `‹ Chat` |
 
-- **It pops the stack, as the swipe does, and names what it pops to** (2026-11-06, [§ Going back](#going-back)). The label is the title of the screen under it (`useScreenBelow` in `apps/mobile/lib/back-target.ts`, from `SCREEN_TITLES`), or the tab the tabs are showing. Each screen still passes a fixed label and destination (`BACK_TO_MORE`, `BACK_TO_EVENTS`, `BACK_TO_CHAT`), which the row uses only with nothing under it. Until 2026-11-06 the row always went to that fixed destination, because the screens were hidden tabs and `router.back()` could land somewhere the label didn't say; on the stack, going back always lands on what the label names.
+- **It pops the stack, as the swipe does, and names what it pops to** (2026-11-06, [§ Going back](#going-back)). The label is the title of the screen under it (`useScreenBelow` in `apps/mobile/lib/back-target.ts`, from `SCREEN_TITLES`), or the tab the tabs are showing. Each screen still passes a fixed label and destination (`BACK_TO_MORE`, `BACK_TO_EVENTS`, `BACK_TO_ACTIVITY`, `BACK_TO_CHAT`), which the row uses only with nothing under it. Until 2026-11-06 the row always went to that fixed destination, because the screens were hidden tabs and `router.back()` could land somewhere the label didn't say; on the stack, going back always lands on what the label names.
 - **s15 draws Edit at the row's far end**, as the board does (`‹ More` … `Edit`), through `ScreenShell`'s `backAction` ([#3387](https://github.com/pdcarlson/Frapp/issues/3387)). It appears only over a loaded profile.
 - **s12's upload moved off the row** (2026-11-05). It is s12's floating create button, bottom right above the tab bar, for a viewer holding `chapter_docs:upload` only, opening s21 ([#3399](https://github.com/pdcarlson/Frapp/issues/3399), [`patterns.md` § Create actions](patterns.md#create-actions)).
 - **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.

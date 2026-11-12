@@ -67,7 +67,7 @@ in the S2 nav restructure (#957) — see
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Event details | `‹ Events` above the title, opened from Events | Slides back to the Events tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
+| Event details | `‹ Calendar` above the title, opened from Calendar | Slides back to the Calendar tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
 | Study hours, Service hours, Dues, Documents, Directory, Profile, Settings | `‹ More` above the title | Slides back to the More tab |
 | Every screen past the four tabs (a channel, event details, each More page, Notifications, Check in, Host check-in) | iOS: swipe right from the left edge. Android: back button, or the back gesture | Goes back to the screen that opened it (a channel to the channel list), the same place its drawn `‹`, back capsule or ✕ goes. No screen ignores the swipe |
 | Chat thread | Open a photo, zoom in, drag it from near the left edge; then close the viewer and swipe from the edge | The drag pans the photo and the thread stays; once the viewer is closed the swipe goes back to the channel list. Android back with the viewer open closes the viewer only |

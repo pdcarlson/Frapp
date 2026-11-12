@@ -152,6 +152,16 @@ vi.mock("@/components/tasks/suggested-tasks-entry", () => ({
   SuggestedTasksEntry: () => null,
 }));
 
+// The sheet reads the roster and posts through the API client; the board's
+// side of it (mount on +, say where the task went) is what is pinned here.
+vi.mock("@/components/tasks/new-task-sheet", async () => {
+  const { forwardRef, createElement } = await import("react");
+  return {
+    NewTaskSheet: forwardRef(function NewTaskSheet(props: object) {
+      return createElement("NewTaskSheet", props);
+    }),
+  };
+});
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
@@ -513,6 +523,7 @@ describe("Tasks board pull-to-refresh", () => {
 describe("Tasks as a pushed screen (#4610)", () => {
   afterEach(() => {
     permissions = [];
+    enabledModules = undefined;
   });
 
   it("goes back to Activity", () => {
@@ -526,6 +537,28 @@ describe("Tasks as a pushed screen (#4610)", () => {
     const tree = render();
     const [plus] = tree.root.findAllByType(FloatingCreateButton);
     expect(plus!.props.label).toBe("New task");
+    act(() => tree.unmount());
+  });
+
+  it("opens New task from its +, and says where the task went", () => {
+    permissions = ["tasks:manage", "members:view"];
+    const tree = render();
+    const [plus] = tree.root.findAllByType(FloatingCreateButton);
+    act(() => plus!.props.onPress());
+    const [sheet] = tree.root.findAll(
+      (node) => (node.type as unknown) === "NewTaskSheet",
+    );
+    expect(sheet).toBeDefined();
+    act(() => sheet!.props.onCreated("Sam Lee", false));
+    expect(screenText(tree)).toContain("Assigned to Sam Lee.");
+    act(() => tree.unmount());
+  });
+
+  it("draws no + while the chapter has Tasks off", () => {
+    permissions = ["tasks:manage", "members:view"];
+    enabledModules = { tasks: false };
+    const tree = render();
+    expect(tree.root.findAllByType(FloatingCreateButton)).toHaveLength(0);
     act(() => tree.unmount());
   });
 

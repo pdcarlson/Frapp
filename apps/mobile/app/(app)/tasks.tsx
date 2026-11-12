@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { AppState, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  AppState,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -45,6 +51,8 @@ import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import { taskCreatedLine } from "@/lib/tasks/create-task";
+import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
@@ -173,6 +181,10 @@ export default function TasksScreen() {
   )?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
+  const canCreate =
+    chapterId !== null &&
+    canManageTasks &&
+    isModuleEnabled(enabledModules, "tasks");
   const plateIsClear =
     tasksQuery.isSuccess && viewerUserId !== null && board.total === 0;
   const eventsQuery = useEvents({ enabled: plateIsClear && eventsOn });
@@ -395,11 +407,12 @@ export default function TasksScreen() {
     return memberLabel(match?.display_name, createdBy);
   }, [createdBy, rosterQuery.data, viewerUserId]);
 
-  // An officer's edit (#4296): the New task sheet, opened on the task. One
-  // sheet per task edited, mounted for the edit and gone once it closes, so
-  // its fields always start from the task as it stands.
-  // New task (#4610): the board is pushed, so the tab bar's + isn't under it.
-  // Mounted on first use and kept, so a closed sheet keeps its draft.
+  // New task (#4610): the board is pushed, so the tab bar's + isn't under it
+  // and the board draws its own, as Service hours draws Log hours. Mounted on
+  // first use and kept while the board is open, so a closed sheet keeps its
+  // draft until the member leaves; like Service hours' sheet, it is not the
+  // quick actions' one. Offered only while the chapter has Tasks on, as the
+  // quick action is (`availableQuickActions`).
   const createRef = useRef<BottomSheetModal>(null);
   const [createMounted, setCreateMounted] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
@@ -417,6 +430,9 @@ export default function TasksScreen() {
       return undefined;
     }, []),
   );
+  // An officer's edit (#4296): the New task sheet, opened on the task. One
+  // sheet per task edited, mounted for the edit and gone once it closes, so
+  // its fields always start from the task as it stands.
   const editRef = useRef<BottomSheetModal>(null);
   const [editing, setEditing] = useState<TaskEditTarget | null>(null);
   useEffect(() => {
@@ -583,7 +599,7 @@ export default function TasksScreen() {
         title="Tasks"
         refresh={refresh}
         createAction={
-          chapterId && canManageTasks
+          canCreate
             ? { label: "New task", onPress: openCreate }
             : undefined
         }
@@ -610,6 +626,7 @@ export default function TasksScreen() {
           key={undo.key}
           message={undo.message}
           onUndo={() => void takeBack(undo.id)}
+          aboveCreate={canCreate}
         />
       ) : null}
 
@@ -631,21 +648,24 @@ export default function TasksScreen() {
       />
 
       {createMounted ? (
-        <NewTaskSheet
-          // A new sheet per chapter: a kept draft belongs to the chapter it
-          // was started in, as the quick actions' sheets are keyed.
+        // A new sheet per chapter: a kept draft belongs to the chapter it was
+        // started in, as the quick actions' sheets are keyed. A sheet that
+        // throws is dropped, not the board with it.
+        <SheetBoundary
           key={`create-${chapterId ?? "none"}`}
-          ref={createRef}
-          now={now}
-          onCreated={(assigneeName, wasSelf) => {
-            // Someone else's task is on no board here, so say where it went.
-            setCreated(
-              wasSelf
-                ? "Added to your tasks."
-                : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-            );
-          }}
-        />
+          onError={() => setCreateMounted(false)}
+        >
+          <NewTaskSheet
+            ref={createRef}
+            now={now}
+            onCreated={(assigneeName, wasSelf) => {
+              // Someone else's task is on no board here, so say where it went.
+              const text = taskCreatedLine(assigneeName, wasSelf);
+              setCreated(text);
+              AccessibilityInfo.announceForAccessibility(text);
+            }}
+          />
+        </SheetBoundary>
       ) : null}
 
       {editing ? (
