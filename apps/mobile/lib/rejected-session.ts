@@ -33,8 +33,8 @@ export function isSessionOver(result: {
   );
 }
 
-export const SESSION_ENDED_TITLE = "You've been signed out";
-export const SESSION_ENDED_BODY =
+const SESSION_ENDED_TITLE = "You've been signed out";
+const SESSION_ENDED_BODY =
   "This account no longer exists or its session ended. Sign in to continue.";
 
 /**

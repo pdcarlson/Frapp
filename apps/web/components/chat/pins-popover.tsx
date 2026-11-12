@@ -47,7 +47,7 @@ const NO_HIDDEN_PINS: HiddenPins = { blocked: 0, held: 0 };
  * the list, and held ones are waiting on it — the same words the timeline's
  * jump notice uses for a held message, so one state never reads two ways.
  */
-export function hiddenPinsText(
+function hiddenPinsText(
   count: number,
   reason: keyof HiddenPins,
 ): string {

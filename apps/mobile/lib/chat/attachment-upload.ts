@@ -254,7 +254,7 @@ async function encodeJpeg(asset: {
 }
 
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
-export async function byteSizeOf(
+async function byteSizeOf(
   uri: string,
   hinted?: number,
 ): Promise<number> {
@@ -328,7 +328,7 @@ export type ImageUploadResult =
   | { status: "uploaded"; image: UploadedImage }
   | { status: "refused"; reason: string };
 
-export const UPLOAD_FAILED =
+const UPLOAD_FAILED =
   "Couldn't upload that photo. Try again in a moment.";
 
 /** A pick that threw: an unguarded native call, read as a sentence. */
@@ -580,7 +580,7 @@ async function putFile(
  * `preparePickedAsset` and {@link uploadPickedImage}, so a fix to a step there
  * reaches every caller.
  */
-export async function pickAndUploadImage(
+async function pickAndUploadImage(
   options: ImageUploadOptions,
 ): Promise<ImageUploadResult> {
   const picked = await pickImage(options);

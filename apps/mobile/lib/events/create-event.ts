@@ -39,11 +39,11 @@ import { parsePointReward } from "@/lib/tasks/create-task";
 /** `@MaxLength(255)` on `CreateEventDto.name`. */
 export const EVENT_NAME_MAX_LENGTH = 255;
 /** The hour most chapter events start: 7:00 PM. */
-export const DEFAULT_START_HOUR = 19;
+const DEFAULT_START_HOUR = 19;
 /** A new event lasts an hour until the officer says otherwise. */
-export const DEFAULT_LENGTH_MS = 60 * 60_000;
+const DEFAULT_LENGTH_MS = 60 * 60_000;
 /** `spec/behavior/events.md`: "point value (configurable, default 10)". */
-export const DEFAULT_POINTS = "10";
+const DEFAULT_POINTS = "10";
 /**
  * The iOS time wheel's minute step: every minute, as Calendar allows. A
  * 5-minute step couldn't set a 6:48 start (Paul, 2026-11-06).

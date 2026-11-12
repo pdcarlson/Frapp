@@ -19,7 +19,7 @@ export type ListLayout = "list" | "grid";
 /** The screens that offer the toggle. A new one joins here. */
 export type ListLayoutScreen = "directory" | "documents";
 
-export function listLayoutStorageKey(screen: ListLayoutScreen): string {
+function listLayoutStorageKey(screen: ListLayoutScreen): string {
   return `frapp.${screen}.layout`;
 }
 

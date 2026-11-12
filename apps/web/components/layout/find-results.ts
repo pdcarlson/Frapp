@@ -87,7 +87,7 @@ export const ALL_GROUP_LIMIT = 5;
  * (`SEARCH_LIMIT` in `search.service.ts`), so this shows all of them; channels
  * are matched here and are capped the same way.
  */
-export const SINGLE_GROUP_LIMIT = 10;
+const SINGLE_GROUP_LIMIT = 10;
 
 const MESSAGE_PREVIEW_CHARS = 120;
 

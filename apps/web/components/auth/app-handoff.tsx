@@ -7,7 +7,7 @@ import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
 
-export const APP_HANDOFF_TITLE = "Join in the Frapp app";
+const APP_HANDOFF_TITLE = "Join in the Frapp app";
 
 const STORE_LABEL: Record<NativePlatform, string> = {
   ios: "Get Frapp on the App Store",

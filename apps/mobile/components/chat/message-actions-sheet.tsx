@@ -890,7 +890,7 @@ export const MessageActionsSheet = forwardRef<
  * divider names it, then the time. The only place a phone shows a follow-on
  * row's time.
  */
-export function sentAtLabel(sentAt: string): string {
+function sentAtLabel(sentAt: string): string {
   const day = dayDividerLabel(sentAt);
   const time = formatTimeOfDay(sentAt);
   return day && time ? `${day} at ${time}` : time;

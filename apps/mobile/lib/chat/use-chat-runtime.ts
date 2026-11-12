@@ -65,8 +65,8 @@ import { getOutboxStore } from "./outbox-store";
  * sent it (`chat:heavy:v1:<userId>:<channelId>`), so another member on the
  * same phone never reads it (`spec/ui/mobile/patterns.md` § Chat).
  */
-export const chatKeyValueStore = createAsyncStorageKeyValueStore();
-export const chatNetworkState = createMonitorNetworkState(connectionMonitor);
+const chatKeyValueStore = createAsyncStorageKeyValueStore();
+const chatNetworkState = createMonitorNetworkState(connectionMonitor);
 
 let bootPromise: Promise<void> | null = null;
 

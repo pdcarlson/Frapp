@@ -52,7 +52,7 @@ export interface HoursDraft {
   proofFile: File | null;
 }
 
-export function emptyHoursDraft(): HoursDraft {
+function emptyHoursDraft(): HoursDraft {
   return {
     date: localIsoDate(new Date()),
     hours: "1",

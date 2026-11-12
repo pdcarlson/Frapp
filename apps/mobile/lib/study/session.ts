@@ -149,7 +149,7 @@ export function creditedSeconds(
 }
 
 /** `spec/behavior/study-sessions.md`: no heartbeat for 10 minutes voids a session. */
-export const HEARTBEAT_STALE_SECONDS = 10 * 60;
+const HEARTBEAT_STALE_SECONDS = 10 * 60;
 
 /**
  * True once the server has heard nothing for long enough to be at risk of

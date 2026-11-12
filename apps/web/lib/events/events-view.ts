@@ -15,7 +15,7 @@ export type EventsView = "list" | "calendar";
  * quota throws or reads empty, and the page then opens by its first-load rule
  * (the calendar for a chapter with no events, else the list).
  */
-export function eventsViewStorageKey(userId: string): string {
+function eventsViewStorageKey(userId: string): string {
   return `frapp.events.view.${userId}`;
 }
 

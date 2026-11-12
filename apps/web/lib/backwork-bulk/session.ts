@@ -301,7 +301,7 @@ export function endBulkSessions({ except }: { except?: string | null } = {}): vo
 }
 
 /** Documents in this tab's batches that aren't uploaded yet. */
-export function unsavedBulkUploads(): number {
+function unsavedBulkUploads(): number {
   let count = 0;
   for (const session of sessions.values()) count += session.queue.unsaved();
   return count;

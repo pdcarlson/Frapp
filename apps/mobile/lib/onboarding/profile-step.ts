@@ -13,7 +13,7 @@
  */
 
 /** The API's stand-in when sign-in carried no name (`auth.service.ts`). */
-export const PLACEHOLDER_DISPLAY_NAME = "Member";
+const PLACEHOLDER_DISPLAY_NAME = "Member";
 
 export const PROFILE_STEP_TITLE = "How the chapter sees you";
 export const PROFILE_STEP_SUBTITLE =

@@ -4,7 +4,6 @@ import { UNAVAILABLE_QUOTE } from "@repo/chat-core/reply-preview";
 import { cn } from "@/lib/utils";
 
 export {
-  DELETED_MESSAGE_PLACEHOLDER,
   UNAVAILABLE_QUOTE,
   replyPreviewText,
   type MessagePreviewSource,
