@@ -134,12 +134,17 @@ export function ChatGlyph(props: TabGlyphProps) {
   return <TabGlyph name="chat" {...props} />;
 }
 
-/** Events: the calendar with day dots. */
+/** Activity: the nav set's tray, the More row's and web's Activity glyph. */
+export function ActivityTabGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="activity" {...props} />;
+}
+
+/** Calendar (the `events` route): the calendar with day dots. */
 export function EventsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="events" {...props} />;
 }
 
-/** Tasks: the seal with a check. */
+/** Tasks: the seal with a check. Off the tab bar since #4610; chat's task card and Up next still draw it. */
 export function TasksGlyph(props: TabGlyphProps) {
   return <TabGlyph name="tasks" {...props} />;
 }

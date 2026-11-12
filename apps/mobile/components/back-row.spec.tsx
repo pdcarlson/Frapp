@@ -16,6 +16,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   BACK_TO_CHAT,
+  BACK_TO_ACTIVITY,
   BACK_TO_EVENTS,
   BACK_TO_MORE,
   BackRow,
@@ -49,7 +50,8 @@ const arrowColor = (tree: ReactTestRenderer) =>
 describe("BackRow (#3022)", () => {
   it.each([
     ["More", BACK_TO_MORE, "/more"],
-    ["Events", BACK_TO_EVENTS, "/events"],
+    ["Calendar", BACK_TO_EVENTS, "/events"],
+    ["Activity", BACK_TO_ACTIVITY, "/activity"],
     ["Chat", BACK_TO_CHAT, "/"],
   ])("‹ %s goes to its tab with nothing under the screen", (label, target, href) => {
     const tree = render(<BackRow {...target} />);
@@ -58,7 +60,7 @@ describe("BackRow (#3022)", () => {
   });
 
   it.each([
-    ["Events", { name: "(tabs)", state: { index: 1, routes: [{ name: "index" }, { name: "events" }] } }],
+    ["Calendar", { name: "(tabs)", state: { index: 2, routes: [{ name: "index" }, { name: "activity" }, { name: "events" }] } }],
     ["Chat", { name: "(tabs)", state: { index: 0, routes: [{ name: "index" }] } }],
     ["Chat", { name: "(tabs)" }],
     ["More", { name: "(tabs)", params: { screen: "more" } }],

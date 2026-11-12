@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { AppState, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  AppState,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -24,6 +30,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { SuggestedTasksEntry } from "@/components/tasks/suggested-tasks-entry";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_ACTIVITY } from "@/components/back-row";
 import {
   SectionHeader,
   SectionHeaderSkeleton,
@@ -44,6 +51,8 @@ import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import { taskCreatedLine } from "@/lib/tasks/create-task";
+import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
@@ -61,6 +70,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s08 — the task board, with the points balance and house rank folded in
  * (`canvas-screens.dc.html`, `id="s08"`).
+ *
+ * A pushed screen since 2026-11-12 (#4610): it was the third tab until
+ * Activity and Calendar took the bar, since a member's tasks are Activity's
+ * first rows and dots on the calendar. It opens from Activity's Task board
+ * control, its points row, a task on the calendar and Up next. Pushed, it has
+ * no tab bar and so no +, so it draws New task itself for an officer who can
+ * assign (`createAction`), as Service hours draws Log hours.
  *
  * This screen is the landing site for the routes S2 deleted: `points.tsx` and
  * `points-details.tsx` are gone, and `spec/ui/mobile/screens.md` records their
@@ -165,6 +181,10 @@ export default function TasksScreen() {
   )?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
+  const canCreate =
+    chapterId !== null &&
+    canManageTasks &&
+    isModuleEnabled(enabledModules, "tasks");
   const plateIsClear =
     tasksQuery.isSuccess && viewerUserId !== null && board.total === 0;
   const eventsQuery = useEvents({ enabled: plateIsClear && eventsOn });
@@ -387,6 +407,29 @@ export default function TasksScreen() {
     return memberLabel(match?.display_name, createdBy);
   }, [createdBy, rosterQuery.data, viewerUserId]);
 
+  // New task (#4610): the board is pushed, so the tab bar's + isn't under it
+  // and the board draws its own, as Service hours draws Log hours. Mounted on
+  // first use and kept while the board is open, so a closed sheet keeps its
+  // draft until the member leaves; like Service hours' sheet, it is not the
+  // quick actions' one. Offered only while the chapter has Tasks on, as the
+  // quick action is (`availableQuickActions`).
+  const createRef = useRef<BottomSheetModal>(null);
+  const [createMounted, setCreateMounted] = useState(false);
+  const [created, setCreated] = useState<string | null>(null);
+  useEffect(() => {
+    if (createMounted) createRef.current?.present();
+  }, [createMounted]);
+  const openCreate = useCallback(() => {
+    setCreated(null);
+    if (createMounted) createRef.current?.present();
+    else setCreateMounted(true);
+  }, [createMounted]);
+  useFocusEffect(
+    useCallback(() => {
+      setCreated(null);
+      return undefined;
+    }, []),
+  );
   // An officer's edit (#4296): the New task sheet, opened on the task. One
   // sheet per task edited, mounted for the edit and gone once it closes, so
   // its fields always start from the task as it stands.
@@ -522,7 +565,7 @@ export default function TasksScreen() {
         // § 4, rule 7): the plate is clear, then what comes next, so the line
         // says more than what isn't there. Web's Tasks board writes the same
         // line (`nextUpLine`). An officer also hears where assigning lives,
-        // the tab bar's + (New task).
+        // this screen's own + (New task, #4610).
         <InlineNote>
           {nextUpLine(eventsOn ? eventsQuery.data : undefined, now.getTime())}
           {canManageTasks ? " Tap + to assign a task." : null}
@@ -552,13 +595,21 @@ export default function TasksScreen() {
   return (
     <View style={styles.frame}>
       <ScreenShell
+        back={BACK_TO_ACTIVITY}
         title="Tasks"
         refresh={refresh}
+        createAction={
+          canCreate
+            ? { label: "New task", onPress: openCreate }
+            : undefined
+        }
         headerAction={
           chapterId ? <ListLayoutToggle screen="tasks" /> : undefined
         }
       >
         <PointsSummaryCard summary={summary} rank={rank} />
+
+        {created ? <InlineNote>{created}</InlineNote> : null}
 
         {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
         {notice && !refusal ? (
@@ -575,6 +626,7 @@ export default function TasksScreen() {
           key={undo.key}
           message={undo.message}
           onUndo={() => void takeBack(undo.id)}
+          aboveCreate={canCreate}
         />
       ) : null}
 
@@ -594,6 +646,27 @@ export default function TasksScreen() {
         onEdit={startEdit}
         onDismiss={() => setOpenId(null)}
       />
+
+      {createMounted ? (
+        // A new sheet per chapter: a kept draft belongs to the chapter it was
+        // started in, as the quick actions' sheets are keyed. A sheet that
+        // throws is dropped, not the board with it.
+        <SheetBoundary
+          key={`create-${chapterId ?? "none"}`}
+          onError={() => setCreateMounted(false)}
+        >
+          <NewTaskSheet
+            ref={createRef}
+            now={now}
+            onCreated={(assigneeName, wasSelf) => {
+              // Someone else's task is on no board here, so say where it went.
+              const text = taskCreatedLine(assigneeName, wasSelf);
+              setCreated(text);
+              AccessibilityInfo.announceForAccessibility(text);
+            }}
+          />
+        </SheetBoundary>
+      ) : null}
 
       {editing ? (
         <NewTaskSheet
