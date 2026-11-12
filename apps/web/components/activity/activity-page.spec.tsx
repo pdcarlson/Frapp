@@ -20,6 +20,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     ACTIVITY_FILTERS: actual.ACTIVITY_FILTERS,
     ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
+    activityFilterAvailable: actual.activityFilterAvailable,
     activityGroups: actual.activityGroups,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
@@ -40,8 +41,12 @@ vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
 }));
+const mockUser = vi.fn(() => ({
+  userId: "me" as string | null,
+  isLoading: false,
+}));
 vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: "me", isLoading: false }),
+  useFrappUser: () => mockUser(),
 }));
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => mockNetwork(),
@@ -177,6 +182,9 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The remembered chip (#4402) must not carry from one test to the next.
+  window.localStorage.clear();
+  mockUser.mockReturnValue({ userId: "me", isLoading: false });
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
   mockGate.mockReturnValue({
@@ -222,6 +230,139 @@ describe("ActivityPage", () => {
     expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Coming up" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Made by you" })).toBeNull();
+  });
+
+  describe("the Needs you chip and the remembered chip (#4402)", () => {
+    const chipGroup = () => screen.getByRole("group", { name: "Show" });
+
+    it("narrows to what is waiting on the member, every kind of it, and leaves the other groups out", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          made_by_you: {
+            polls: [{ ...poll, message_id: "p9" }],
+            tasks: [],
+            events: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      fireEvent.click(
+        within(chipGroup()).getByRole("button", { name: "Needs you" }),
+      );
+
+      expect(screen.getByText("Book the venue")).toBeInTheDocument();
+      expect(screen.getByText("Formal venue?")).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Made by you" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Coming up" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
+    });
+
+    it("says nothing is waiting, in Needs you's own words, under its chip", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      fireEvent.click(
+        within(chipGroup()).getByRole("button", { name: "Needs you" }),
+      );
+      expect(
+        screen.getByText("Nothing is waiting on you."),
+      ).toBeInTheDocument();
+    });
+
+    it("opens on the chip this person last left it on, and remembers a new pick", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "poll");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "Polls" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
+
+      fireEvent.click(within(chipGroup()).getByRole("button", { name: "All" }));
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "all",
+      );
+    });
+
+    it("doesn't remember the To confirm tile's narrowing, only chips", () => {
+      mockPermissions.mockReturnValue({
+        data: { permissions: ["tasks:manage"] },
+      });
+      window.localStorage.setItem("frapp.activity.filter.me", "event");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "event",
+      );
+    });
+
+    it("waits for the viewer before drawing, so it opens on their chip rather than jumping to it", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "poll");
+      mockActivity.mockReturnValue(loaded());
+      mockUser.mockReturnValue({ userId: null, isLoading: true });
+      const { rerender } = render(<ActivityPage />);
+      expect(screen.queryByRole("group", { name: "Show" })).toBeNull();
+
+      mockUser.mockReturnValue({ userId: "me", isLoading: false });
+      rerender(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "Polls" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("leaves out a chip whose module is off, and a stored chip for it opens on All", () => {
+      mockModuleGate.mockReturnValue((module: string) => module !== "hours");
+      window.localStorage.setItem("frapp.activity.filter.me", "hours");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).queryByRole("button", { name: "Hours" }),
+      ).toBeNull();
+      expect(
+        within(chipGroup()).getByRole("button", { name: "All" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      mockModuleGate.mockReturnValue(undefined);
+    });
+
+    it("keeps the stored chip when the To confirm tile is cleared", () => {
+      mockPermissions.mockReturnValue({
+        data: { permissions: ["tasks:manage"] },
+      });
+      window.localStorage.setItem("frapp.activity.filter.me", "event");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      fireEvent.click(
+        within(tiles).getByRole("button", { name: /To confirm/ }),
+      );
+      expect(window.localStorage.getItem("frapp.activity.filter.me")).toBe(
+        "event",
+      );
+    });
+
+    it("ignores a stored value that isn't a chip", () => {
+      window.localStorage.setItem("frapp.activity.filter.me", "confirm");
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+      expect(
+        within(chipGroup()).getByRole("button", { name: "All" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
   });
 
   it("lists open polls only, and keeps closed ones behind Archived polls (#4258)", () => {
