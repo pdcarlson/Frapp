@@ -7,6 +7,7 @@ import {
   useCreateRole,
   useDeleteRole,
   useUpdateRole,
+  useMentionRoles,
 } from "./use-roles";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -111,6 +112,33 @@ describe("useRoles", () => {
 
     expect(result.current.isPending).toBe(true);
     expect(mockGet).not.toHaveBeenCalled();
+  });
+});
+
+describe("useMentionRoles", () => {
+  it("adds @here after @everyone, on its switch", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [
+        { role_id: "r1", name: "Officers", color: null, mentionable: true },
+        { role_id: "r2", name: "everyone", color: null, mentionable: false },
+      ],
+      error: undefined,
+    });
+    const { result } = renderHook(() => useMentionRoles(), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/mention-roles");
+    expect(
+      result.current.data?.map(({ name, mentionable }) => [name, mentionable]),
+    ).toEqual([
+      ["Officers", true],
+      ["everyone", false],
+      ["here", false],
+    ]);
   });
 });
 

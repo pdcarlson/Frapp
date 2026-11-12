@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
@@ -24,6 +24,10 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
+import {
+  useCheckInScreenReport,
+  type ScreenPresence,
+} from "@/lib/events/check-in-screen-report";
 import { formatCountdown } from "@/lib/events/format";
 import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -107,7 +111,48 @@ import {
  * after the computed rotation, on purpose: it asks half a second later,
  * because the computed rotation is early by the request's trip to the server
  * and asking exactly then could get the old window's code back.
+ *
+ * ## This phone is the check-in zone
+ *
+ * While a code is drawn, the screen tells the server where it is, once a
+ * minute (`useCheckInScreenReport`, #4532), and members check in only within
+ * 100 yards of it. One line under the count says which is happening: that
+ * members are checked against this phone, or that distance isn't checked
+ * because this phone can't tell where it is (location off for Frapp, with a
+ * way to Settings, or no fix within 100 m). It sits in a row that is always
+ * there, so the code doesn't move when the line arrives. An event with a
+ * drawn zone, or a screen opened before check-in opens, says nothing.
  */
+
+/** The officer's line about the distance check (see the header note). */
+function presenceLine(
+  presence: ScreenPresence,
+): { text: string; settings: boolean } | null {
+  switch (presence.kind) {
+    case "screen":
+      return {
+        text: "Members check in within about 100 yards of this phone.",
+        settings: false,
+      };
+    case "elsewhere":
+      return {
+        text: "Members check in near another officer's screen. This phone can't tell where it is.",
+        settings: false,
+      };
+    case "off":
+      return presence.reason === "permission"
+        ? {
+            text: "Distance isn't checked. Allow location for Frapp to check it.",
+            settings: !presence.canAskAgain,
+          }
+        : {
+            text: "Distance isn't checked. This phone can't tell where it is.",
+            settings: false,
+          };
+    case "none":
+      return null;
+  }
+}
 
 /** Until the body has measured itself: the size the screen always drew. */
 const QR_FALLBACK_SIZE = 260;
@@ -115,6 +160,8 @@ const QR_FALLBACK_SIZE = 260;
 const QR_MAX_SIZE = 340;
 /** On a phone narrow enough to go below this, the code still scans. */
 const QR_MIN_SIZE = 180;
+/** The distance line's leading; its row holds two of them (see header). */
+const PRESENCE_LINE_HEIGHT = 20;
 /** The live dot beside the countdown, as drawn. */
 const LIVE_DOT_SIZE = 8;
 
@@ -229,6 +276,11 @@ export default function HostCheckInScreen() {
   const rotated = minted !== null && remaining <= 0;
   const nextFailed = tokenQuery.isError && !tokenQuery.isFetching;
   const checkedIn = countCheckedIn(attendance);
+  const presence = useCheckInScreenReport(
+    eventId,
+    canHost && focused && minted !== null,
+  );
+  const line = presenceLine(presence);
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
   const qrSize =
@@ -239,9 +291,7 @@ export default function HostCheckInScreen() {
           Math.min(
             QR_MAX_SIZE,
             Math.floor(
-              bodyWidth -
-                2 * tokens.spacing["2xl"] -
-                2 * tokens.spacing.lg,
+              bodyWidth - 2 * tokens.spacing["2xl"] - 2 * tokens.spacing.lg,
             ),
           ),
         );
@@ -283,7 +333,9 @@ export default function HostCheckInScreen() {
         </View>
       ) : !canHost ? (
         <View style={styles.stateWrap}>
-          <InlineNote>Hosting check-in is for officers who manage events.</InlineNote>
+          <InlineNote>
+            Hosting check-in is for officers who manage events.
+          </InlineNote>
         </View>
       ) : !minted &&
         (tokenQuery.isError || (!tokenQuery.isPending && !cached)) ? (
@@ -316,9 +368,7 @@ export default function HostCheckInScreen() {
         <>
           <View
             style={styles.body}
-            onLayout={(layout) =>
-              setBodyWidth(layout.nativeEvent.layout.width)
-            }
+            onLayout={(layout) => setBodyWidth(layout.nativeEvent.layout.width)}
           >
             {minted ? (
               <>
@@ -365,6 +415,28 @@ export default function HostCheckInScreen() {
                     <Text style={styles.countLabel}> checked in</Text>
                   </Text>
                 ) : null}
+
+                <View style={styles.presenceRow}>
+                  {line ? (
+                    <Text testID="check-in-presence" style={styles.presence}>
+                      {line.text}
+                      {line.settings ? (
+                        <>
+                          {" "}
+                          <Text
+                            accessibilityRole="link"
+                            onPress={() =>
+                              void Linking.openSettings().catch(() => undefined)
+                            }
+                            style={styles.presenceLink}
+                          >
+                            Open Settings
+                          </Text>
+                        </>
+                      ) : null}
+                    </Text>
+                  ) : null}
+                </View>
               </>
             ) : (
               // Loading: a block the size of the code's white card, so the
@@ -463,6 +535,22 @@ function createStyles(tokens: SignetTokens) {
     countLabel: {
       color: tokens.color.text.muted,
       ...typeRole(tokens.typography.role.title),
+    },
+    // Always laid out, two lines tall, so the code above doesn't move when
+    // the line arrives or changes.
+    presenceRow: {
+      minHeight: 2 * PRESENCE_LINE_HEIGHT,
+      justifyContent: "flex-start",
+    },
+    presence: {
+      textAlign: "center",
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
+      lineHeight: PRESENCE_LINE_HEIGHT,
+    },
+    presenceLink: {
+      color: tokens.color.text.foreground,
+      textDecorationLine: "underline",
     },
     footer: {
       flexDirection: "row",

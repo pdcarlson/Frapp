@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { isEveryoneRoleName, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { reservedMentionName, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
@@ -225,9 +225,10 @@ export class DiscordImportRoleMappingService {
             `The new role for ${entry.discord_role_name} needs a name of at most ${ROLE_NAME_MAX_LENGTH} characters.`,
           );
         }
-        if (isEveryoneRoleName(name)) {
+        const reserved = reservedMentionName(name);
+        if (reserved !== null) {
           throw new BadRequestException(
-            `"${name}" is what @everyone reads as. Give the new role for ${entry.discord_role_name} another name.`,
+            `"${name}" is what @${reserved} reads as. Give the new role for ${entry.discord_role_name} another name.`,
           );
         }
         const clash = byName.get(roleNameKey(name));

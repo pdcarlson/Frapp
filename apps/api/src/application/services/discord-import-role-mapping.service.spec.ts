@@ -242,6 +242,26 @@ describe('DiscordImportRoleMappingService — Discord roles gate private channel
       ).rejects.toThrow(/is what @everyone reads as/);
     });
 
+    it('refuses a new role whose name reads as @here', async () => {
+      await build(job({ source: 'bot' }));
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      await expect(
+        roleMapping.setRoleMapping(
+          IMPORT_ID,
+          CHAPTER,
+          [
+            {
+              discord_role_id: D_EXEC,
+              discord_role_name: 'here',
+              action: 'new',
+              new_role_name: 'Here',
+            },
+          ],
+          true,
+        ),
+      ).rejects.toThrow(/is what @here reads as/);
+    });
+
     it('gives each Frapp role one read permission of its own, and never takes one from the caller', async () => {
       await build(job({ source: 'bot' }));
       rbac.findByChapter.mockResolvedValue([

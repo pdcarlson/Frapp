@@ -294,6 +294,7 @@ vi.mock("react-native-gesture-handler", () => {
       handlers: Record<string, (...args: unknown[]) => void>;
     } = { kind, handlers: {} };
     for (const method of [
+      "onBegin",
       "onStart",
       "onChange",
       "onUpdate",

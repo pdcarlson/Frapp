@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Link2, Mail, RotateCw, Trash2 } from "lucide-react";
 import {
   useActiveChapterId,
@@ -74,7 +74,6 @@ type InviteMemberDialogProps = {
  */
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLElement>(null);
   const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
@@ -233,12 +232,6 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       refetchLiveData();
     } else {
       setHasPickedRole(false);
-      // Back to Invite member, as the sheet's trigger did. The docked panel
-      // returns focus to whatever had it on open, which is `<body>` after a
-      // click in Safari, where a click doesn't focus a button.
-      requestAnimationFrame(() =>
-        triggerRef.current?.focus({ preventScroll: true }),
-      );
     }
     setOpen(next);
   }
@@ -377,9 +370,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
   return (
     <>
-      <Slot ref={triggerRef} onClick={() => handleOpenChange(true)}>
-        {trigger}
-      </Slot>
+      <Slot onClick={() => handleOpenChange(true)}>{trigger}</Slot>
       {/*
         A panel, not a dialog (`components.md` § Surface size): the composer
         and the list of everyone invited grow with the chapter. No footer:
