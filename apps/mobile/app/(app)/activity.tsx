@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
@@ -9,6 +9,7 @@ import {
   activityGroups,
   activitySummary,
   useActivity,
+  useActivityStanding,
   useActivityUnread,
   useNowDate,
   useCurrentChapter,
@@ -40,6 +41,11 @@ import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
+import {
+  ActivityStanding,
+  ActivityStandingSkeleton,
+  type StandingDestination,
+} from "@/components/activity/activity-standing";
 import {
   ActivitySummary,
   ActivitySummarySkeleton,
@@ -130,7 +136,30 @@ export default function ActivityScreen() {
     [moduleOn],
   );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  const refresh = useRefetchAll([activity]);
+  // How the member is doing this semester, above what needs them. Its own
+  // read: a failure leaves the rest of the page as it is.
+  const standing = useActivityStanding();
+  // Read again on each return, as Activity is (`useActivityReread`): a
+  // check-in or approved hours elsewhere moves these numbers.
+  const refetchStanding = standing.refetch;
+  const standingShown = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (standingShown.current) void refetchStanding();
+      standingShown.current = true;
+      return undefined;
+    }, [refetchStanding]),
+  );
+  const router = useRouter();
+  const openStanding = (destination: StandingDestination) => {
+    // Tasks and Events are tabs: go to them rather than stack a second copy.
+    if (destination === "/tasks" || destination === "/events") {
+      router.navigate(destination);
+    } else {
+      router.push(destination);
+    }
+  };
+  const refresh = useRefetchAll([activity, standing]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
@@ -199,6 +228,7 @@ export default function ActivityScreen() {
       return (
         <SkeletonRegion label="Loading activity">
           <View style={styles.body}>
+            <ActivityStandingSkeleton />
             <ActivitySummarySkeleton />
             <View>
               <SectionHeader>Needs you</SectionHeader>
@@ -228,6 +258,11 @@ export default function ActivityScreen() {
     }
     return (
       <View style={styles.body}>
+        {standing.isPending ? (
+          <ActivityStandingSkeleton />
+        ) : standing.data ? (
+          <ActivityStanding standing={standing.data} onOpen={openStanding} />
+        ) : null}
         {summary ? (
           <ActivitySummary
             summary={summary}

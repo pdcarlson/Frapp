@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
+const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
+  () => ({ isPending: false, data: undefined }),
+);
 const mockInvalidate = vi.fn();
 const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
@@ -30,6 +33,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useActivityStanding: () => mockStanding(),
+    activityStandingRows: actual.activityStandingRows,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
@@ -197,6 +202,7 @@ beforeEach(() => {
   mockUser.mockReturnValue({ userId: "me", isLoading: false });
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockStanding.mockReturnValue({ isPending: false, data: undefined });
   mockGate.mockReturnValue({
     allowed: true,
     isOffline: false,
@@ -206,6 +212,42 @@ beforeEach(() => {
 });
 
 describe("ActivityPage", () => {
+  it("draws This semester on top, each tile linking to the page that owns it", () => {
+    mockActivity.mockReturnValue(loaded());
+    mockStanding.mockReturnValue({
+      isPending: false,
+      data: {
+        semester_since: null,
+        points: { total: 42, rank: 5, ranked: 58 },
+        required_events: { required: 8, attended: 6, excused: 1 },
+        service: null,
+        study: null,
+        unavailable: ["service"],
+      },
+    });
+    render(<ActivityPage />);
+
+    const standing = screen.getByRole("region", { name: "This semester" });
+    const events = within(standing).getByRole("link", {
+      name: "Attended 6 of 8 required events this semester, 1 excused",
+    });
+    expect(events).toHaveAttribute("href", "/events");
+    expect(
+      within(standing).getByRole("link", {
+        name: "42 points this semester, ranked 5 of 58",
+      }),
+    ).toHaveAttribute("href", "/points");
+    // A part that couldn't load says so, and never reads as zero.
+    expect(
+      within(standing).getByRole("link", {
+        name: "Service hours: couldn't load",
+      }),
+    ).toHaveTextContent("Couldn't load");
+    expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent(
+      "This semester",
+    );
+  });
+
   it("draws Needs you first, with each row's badge, and no Files chip (#4291)", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
@@ -536,7 +578,9 @@ describe("ActivityPage", () => {
 
     const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
     const taskRow = screen.getByRole("button", { name: /Book the venue/ });
-    expect(pollRow).toHaveAccessibleName(/^Unread:\s?From Olive Officer\.\s?Formal venue\?/);
+    expect(pollRow).toHaveAccessibleName(
+      /^Unread:\s?From Olive Officer\.\s?Formal venue\?/,
+    );
     expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
     expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
 

@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from '../../application/services/activity.service';
+import { ActivityStandingService } from '../../application/services/activity-standing.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -32,6 +33,7 @@ describe('ActivityController', () => {
       providers: [
         { provide: ActivityService, useValue: activityService },
         { provide: ActivityLinkService, useValue: linkService },
+        { provide: ActivityStandingService, useValue: {} },
       ],
     }).compile();
     controller = module.get(ActivityController);

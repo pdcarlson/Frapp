@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,6 +9,7 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -15,11 +17,17 @@ import {
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiBadRequestResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import type { ActivityView } from '../../application/services/activity.service';
+import {
+  ActivityStandingService,
+  acceptableWeekStart,
+} from '../../application/services/activity-standing.service';
+import type { ActivityStanding } from '../../application/services/activity-standing.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -32,6 +40,8 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
+  ActivityStandingDto,
+  ActivityStandingQueryDto,
   MarkActivityReadDto,
   SetActivityLinkStateDto,
 } from '../dtos/activity.dto';
@@ -49,6 +59,7 @@ export class ActivityController {
   constructor(
     private readonly activityService: ActivityService,
     private readonly linkService: ActivityLinkService,
+    private readonly standingService: ActivityStandingService,
   ) {}
 
   @Get()
@@ -64,6 +75,35 @@ export class ActivityController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
   ): Promise<ActivityView> {
     return this.activityService.getActivity(chapterId, userId, enabledModules);
+  }
+
+  @Get('standing')
+  @ApiOperation({
+    summary: 'Get how the caller is doing this semester',
+    description:
+      'The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.',
+  })
+  @ApiOkResponse({ type: ActivityStandingDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getStanding(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityStandingQueryDto,
+  ): Promise<ActivityStanding> {
+    const now = new Date();
+    const weekStart = query.week_start ? new Date(query.week_start) : undefined;
+    if (weekStart && !acceptableWeekStart(weekStart, now)) {
+      throw new BadRequestException(
+        'week_start must be within the last eight days',
+      );
+    }
+    return this.standingService.getStanding(chapterId, userId, enabledModules, {
+      weekStart,
+      now,
+    });
   }
 
   @Put('unread-since')

@@ -13140,6 +13140,58 @@
         ]
       }
     },
+    "/v1/activity/standing": {
+      "get": {
+        "description": "The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.",
+        "operationId": "ActivityController_getStanding_v1",
+        "parameters": [
+          {
+            "name": "week_start",
+            "required": false,
+            "in": "query",
+            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityStandingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`week_start` is more than eight days back or a day ahead."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get how the caller is doing this semester",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/unread-since": {
       "put": {
         "description": "A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.",
@@ -24167,6 +24219,157 @@
           "needs_you_count",
           "unavailable",
           "unread_since"
+        ]
+      },
+      "StandingPointsDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Points earned this semester."
+          },
+          "rank": {
+            "type": "number",
+            "nullable": true,
+            "description": "Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board."
+          },
+          "ranked": {
+            "type": "number",
+            "description": "How many members the board ranks."
+          }
+        },
+        "required": [
+          "total",
+          "rank",
+          "ranked"
+        ]
+      },
+      "StandingRequiredEventsDto": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "number",
+            "description": "Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in."
+          },
+          "attended": {
+            "type": "number",
+            "description": "Of `required`, those marked present or late."
+          },
+          "excused": {
+            "type": "number",
+            "description": "Required events the caller was excused from."
+          }
+        },
+        "required": [
+          "required",
+          "attended",
+          "excused"
+        ]
+      },
+      "StandingServiceDto": {
+        "type": "object",
+        "properties": {
+          "approved_minutes": {
+            "type": "number",
+            "description": "Approved service minutes this semester."
+          },
+          "pending_minutes": {
+            "type": "number",
+            "description": "Service minutes waiting for approval."
+          }
+        },
+        "required": [
+          "approved_minutes",
+          "pending_minutes"
+        ]
+      },
+      "StandingStudyDto": {
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "type": "number",
+            "description": "Minutes from study sessions that started this week and have ended."
+          },
+          "week_start": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "minutes",
+          "week_start"
+        ]
+      },
+      "ActivityStandingDto": {
+        "type": "object",
+        "properties": {
+          "semester_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Where this semester begins: the end of the latest archived semester. Null when the chapter has never rolled over, so the semester is everything so far."
+          },
+          "points": {
+            "nullable": true,
+            "description": "Null when Points is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingPointsDto"
+              }
+            ]
+          },
+          "required_events": {
+            "nullable": true,
+            "description": "Null when Events is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingRequiredEventsDto"
+              }
+            ]
+          },
+          "service": {
+            "nullable": true,
+            "description": "Null when Hours is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingServiceDto"
+              }
+            ]
+          },
+          "study": {
+            "nullable": true,
+            "description": "Null when Hours is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingStudyDto"
+              }
+            ]
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Parts that could not be read this time. Each is served null; the others are unaffected.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "points",
+                "required_events",
+                "service",
+                "study"
+              ]
+            }
+          }
+        },
+        "required": [
+          "semester_since",
+          "points",
+          "required_events",
+          "service",
+          "study",
+          "unavailable"
         ]
       },
       "ActivityItemRefDto": {

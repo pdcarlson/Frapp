@@ -5,6 +5,8 @@ import {
   ArrayMinSize,
   IsArray,
   IsIn,
+  IsISO8601,
+  IsOptional,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
@@ -18,6 +20,15 @@ import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { ChannelType } from '#domain/entities/chat.entity';
 import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
+import { STANDING_SECTIONS } from '../../application/services/activity-standing.service';
+import type {
+  ActivityStanding,
+  StandingPoints,
+  StandingRequiredEvents,
+  StandingSection,
+  StandingService,
+  StandingStudy,
+} from '../../application/services/activity-standing.service';
 import type {
   ActivityEvent,
   ActivityHoursEntry,
@@ -524,4 +535,112 @@ export class ActivityDto implements ActivityView {
       'When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.',
   })
   unread_since: string | null;
+}
+
+export class ActivityStandingQueryDto {
+  @ApiProperty({
+    required: false,
+    format: 'date-time',
+    description:
+      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  week_start?: string;
+}
+
+export class StandingPointsDto implements StandingPoints {
+  @ApiProperty({ description: 'Points earned this semester.' })
+  total: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board.',
+  })
+  rank: number | null;
+
+  @ApiProperty({ description: 'How many members the board ranks.' })
+  ranked: number;
+}
+
+export class StandingRequiredEventsDto implements StandingRequiredEvents {
+  @ApiProperty({
+    description:
+      'Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in.',
+  })
+  required: number;
+
+  @ApiProperty({ description: 'Of `required`, those marked present or late.' })
+  attended: number;
+
+  @ApiProperty({ description: 'Required events the caller was excused from.' })
+  excused: number;
+}
+
+export class StandingServiceDto implements StandingService {
+  @ApiProperty({ description: 'Approved service minutes this semester.' })
+  approved_minutes: number;
+
+  @ApiProperty({ description: 'Service minutes waiting for approval.' })
+  pending_minutes: number;
+}
+
+export class StandingStudyDto implements StandingStudy {
+  @ApiProperty({
+    description:
+      'Minutes from study sessions that started this week and have ended.',
+  })
+  minutes: number;
+
+  @ApiProperty({ format: 'date-time' })
+  week_start: string;
+}
+
+export class ActivityStandingDto implements ActivityStanding {
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Where this semester begins: the end of the latest archived semester. Null when the chapter has never rolled over, so the semester is everything so far.',
+  })
+  semester_since: string | null;
+
+  @ApiProperty({
+    type: StandingPointsDto,
+    nullable: true,
+    description: 'Null when Points is off or couldn’t be read.',
+  })
+  points: StandingPointsDto | null;
+
+  @ApiProperty({
+    type: StandingRequiredEventsDto,
+    nullable: true,
+    description: 'Null when Events is off or couldn’t be read.',
+  })
+  required_events: StandingRequiredEventsDto | null;
+
+  @ApiProperty({
+    type: StandingServiceDto,
+    nullable: true,
+    description: 'Null when Hours is off or couldn’t be read.',
+  })
+  service: StandingServiceDto | null;
+
+  @ApiProperty({
+    type: StandingStudyDto,
+    nullable: true,
+    description: 'Null when Hours is off or couldn’t be read.',
+  })
+  study: StandingStudyDto | null;
+
+  @ApiProperty({
+    enum: STANDING_SECTIONS,
+    isArray: true,
+    description:
+      'Parts that could not be read this time. Each is served null; the others are unaffected.',
+  })
+  unavailable: StandingSection[];
 }
