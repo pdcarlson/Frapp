@@ -303,9 +303,11 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
-`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
-the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+Dispatch **Deploy production** as usual. **`mobile_build`** defaults to `auto` (Paul, 2026-11-12;
+it was `none` from 2026-10-01), so every ship reaches phones: an OTA update where it can, a store
+build where it can't. `ios`, `android` and `all` force a store build. `none` does nothing for the
+app, and the run is exactly what it was without the input; pick it for a ship that must not
+publish, such as the next one after a rollback. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
 the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
 the input says.
 
@@ -372,7 +374,7 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
-   is the point. **Merge it before any tester installs the build.** A build EAS reports from any
+   is the point. It merges itself (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so the next `auto` ship sees the build: once `confirm` (step 3) sees every upload finish, the **`merge-record`** job turns on its squash auto-merge with the same App token, and its required checks still hold it. Not before, because a record PR that merged ahead of a failed upload would tag and plan around a build no store has. If an upload failed or never finished, or GitHub refuses auto-merge, that job comments on the PR instead: **drop any failed build's entry and merge it by hand before any tester installs the build.** A build EAS reports from any
    other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
    version, upload result, and whether it was recorded.
    If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new
@@ -395,7 +397,12 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    shows the same thing, but would put eas-cli's unlocked dependencies (#3118) in a job holding
    the token. It goes green when every successful upload has `FINISHED`, and red, with what to
    do, when one errors, is cancelled, is still queued at its 280-minute deadline, can't be read,
-   or came back with no submission id. `FINISHED` means the binary reached the store, not that it
+   or came back with no submission id. A submission that errors with App Store Connect's or
+   Google Play's `SERVER_ERROR` (their side failed, as iOS 0.12.0 (21) did on run 43297725458) is
+   retried through EAS's `retrySubmission` mutation, the one `eas submit:retry` sends: the same
+   build and submit config, no rebuild, at most twice, while EAS still allows it (`canRetry`).
+   The summary names each retry. Any other error is reported, not retried (Paul, 2026-11-12).
+   `FINISHED` means the binary reached the store, not that it
    passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
    did iOS 0.9.1 (8) with ITMS-90683.
 4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
@@ -422,8 +429,13 @@ nothing is still building.
   build by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
-  the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
-  summary gives, and keep the entry, or drop the entry: delete it from the record PR before
+  the cause and upload it again, and keep the entry, or drop the entry. To upload it again, run
+  the **Retry a store upload** workflow (`mobile-retry-upload.yml`) with the platform and the
+  submission id the `confirm` summary names: it retries that submission on EAS, any error
+  included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Once EAS
+  no longer allows a retry, the summary gives the `npm run eas -- submit … --id <build id>` to
+  run from the repo root instead. Merge the record PR by hand once the upload finished. To drop
+  the entry, delete it from the record PR before
   merging, or, if that has merged, move it to the registry's `dropped` list with the run as its
   reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that never
   reached a store can be dropped at once
@@ -585,7 +597,7 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 ### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-Deploy production publishes one when asked (`mobile_build: auto`, below), and a person can still
+Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
 publish from a laptop. Both go through the same guard. #2511 still owns a staging app variant,
 promotion and staged rollout.
 
@@ -744,7 +756,8 @@ Run **Roll back the app update** in GitHub Actions
 It publishes no new bundle, so it skips the guard, and it needs no laptop. It runs eas-cli from
 the release production serves (the newest `vX.Y.Z` tag), and refuses a tag whose commit isn't on
 `main`. Phones pick it up the way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
-before shipping again, or ship with `mobile_build: none`.
+before shipping again, or ship with `mobile_build: none`. `auto` is the default, so pick `none`
+on purpose.
 
 From a laptop, the same two commands are `npm run eas -- update:roll-back-to-embedded --channel
 production --runtime-version <version>` and `npm run eas -- update:republish --group <id>` (eas-cli

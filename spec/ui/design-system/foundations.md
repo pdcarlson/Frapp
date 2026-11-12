@@ -171,7 +171,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
-- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's More hub and Up next strip), `--foreground` on hover.
+- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's You tab rows and Up next strip), `--foreground` on hover.
 - Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
 - Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.

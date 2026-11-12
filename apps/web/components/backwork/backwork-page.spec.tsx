@@ -433,6 +433,61 @@ describe("BackworkPage subscription gating", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
   });
 
+  it("opens Upload docked in place of the page beside chat, and hands focus back to Upload (#4593)", async () => {
+    chapter.active();
+    const { container } = render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <BackworkPage />
+        </div>
+      </div>,
+    );
+    const page = within(
+      container.querySelector("[data-tool-page]") as HTMLElement,
+    );
+    const trigger = page.getByRole("button", { name: /^upload$/i });
+    // A pointer press that leaves the button unfocused, as Safari's does.
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const region = screen.getByRole("region", { name: "Upload backwork" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to backwork" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Upload backwork" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("sends focus to the notice, not Upload, when a lapse closes the docked form", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <BackworkPage />
+        </div>
+      </div>
+    );
+    const { rerender } = render(tree());
+    await userEvent.click(uploadTrigger());
+    expect(
+      screen.getByRole("region", { name: "Upload backwork" }),
+    ).toBeInTheDocument();
+
+    chapter.pastDue();
+    rerender(tree());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Upload backwork" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("status")).toHaveFocus();
+  });
+
   it("leaves Upload enabled with no file and answers the press inline", async () => {
     /*
       This case reverses deliberately. It used to assert Upload was DISABLED

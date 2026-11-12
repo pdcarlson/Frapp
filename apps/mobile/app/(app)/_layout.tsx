@@ -98,7 +98,6 @@ export default function AppLayout() {
         name="preferences"
         options={{ title: SCREEN_TITLES.preferences }}
       />
-      <Stack.Screen name="profile" options={{ title: SCREEN_TITLES.profile }} />
       <Stack.Screen
         name="service-hours"
         options={{ title: SCREEN_TITLES["service-hours"] }}
@@ -142,7 +141,7 @@ export default function AppLayout() {
         name="arrange-channels"
         options={{ title: SCREEN_TITLES["arrange-channels"] }}
       />
-      {/* Chapter settings and its Roles screens (#4074), from More → Admin. */}
+      {/* Chapter settings and its Roles screens (#4074), from You → Admin. */}
       <Stack.Screen
         name="chapter-settings"
         options={{ title: SCREEN_TITLES["chapter-settings"] }}

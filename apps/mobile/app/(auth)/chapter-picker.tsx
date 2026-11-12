@@ -30,7 +30,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * one surface, no card, with each chapter as a row like s02's two answers
  * (#3349, #3350).
  *
- * Reached deliberately, from the More hub — **not** forced on members whose
+ * Reached deliberately, from the You tab — **not** forced on members whose
  * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why
  * that distinction is load-bearing rather than a preference: a missing claim
  * is still normal (no membership yet, or a playbook that disables the hook),
@@ -53,21 +53,21 @@ export default function ChapterPicker() {
   // which was this account's, not the next one's.
   const { signOut: signOutToSignIn } = useOnboardingSignOut();
   const selectChapter = useSelectChapter();
-  // More's Switch chapter row says it opened the picker (`from: "more"`), and
-  // only then is the More tab underneath to go back to, so only then does the
-  // picker draw `‹ More` and start its column at the top. A deep link keeps
+  // The You tab's Switch chapter row says it opened the picker (`from:
+  // "you"`), and only then is the You tab underneath to go back to, so only
+  // then does the picker draw `‹ You` and start its column at the top. A deep link keeps
   // the centred layout and no row. `router.canGoBack()` can't tell the two
   // apart: `(auth)/_layout.tsx` anchors sign-in under a linked screen, so it
   // is true there too, and a row that went back would land on sign-in under a
-  // label that says More.
+  // label that says You.
   const { from } = useLocalSearchParams<{ from?: string | string[] }>();
-  const openedFromMore = from === "more";
+  const openedFromYou = from === "you";
 
   // Whether the picker is still the screen in front. A switch can settle
   // after the member has gone back (Android back, or the edge swipe, which
   // nothing here holds), and `leave()` then would move whatever screen is
-  // showing by then: from More, a second `back()` would take the member off
-  // the More tab they had just gone back to.
+  // showing by then: from You, a second `back()` would take the member off
+  // the You tab they had just gone back to.
   const inFront = useRef(true);
   useFocusEffect(
     useCallback(() => {
@@ -80,7 +80,7 @@ export default function ChapterPicker() {
 
   /** Back to the tabs this was opened over, or into them from a link. */
   function leave() {
-    // Back, not a navigate: arriving from More means `(tabs)` is already on
+    // Back, not a navigate: arriving from You means `(tabs)` is already on
     // the stack underneath, and opening it again would leave a second copy
     // on top of the first. A link opened at launch has sign-in under it (the
     // `(auth)` anchor), and going back there hands the member to the layout,
@@ -186,7 +186,7 @@ export default function ChapterPicker() {
       }
 
       // Leave under our own steam rather than waiting to be redirected. The
-      // gate exempts this route so a member can open it deliberately from More,
+      // gate exempts this route so a member can open it deliberately from You,
       // which also means it will not push them back out when the switch lands.
       // An earlier version waited for that redirect and spun forever.
       // Unless the picker has gone already, backed out of or covered: leaving
@@ -214,21 +214,21 @@ export default function ChapterPicker() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.container,
-          openedFromMore ? styles.containerTop : null,
+          openedFromYou ? styles.containerTop : null,
         ]}
         keyboardShouldPersistTaps="handled"
       >
         {/*
-          `‹ More`, as every screen opened from a More row draws
+          `‹ You`, as every screen opened from a You row draws
           (navigation.md § Back rows), in house gold like the rest of this
-          group. It goes back rather than navigating to More, for the reason
+          group. It goes back rather than navigating to You, for the reason
           `leave` gives, and holds while a switch is in flight, as the chapter
           rows do and the other `(auth)` back rows do while they wait.
         */}
-        {openedFromMore ? (
+        {openedFromYou ? (
           <BackRow
             house
-            label="More"
+            label="You"
             disabled={pendingId !== null}
             onPress={() => router.back()}
           />
@@ -374,7 +374,7 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.background,
     },
     // Under a back row the column starts at the top, where every screen
-    // opened from More puts its row and title.
+    // opened from You puts its row and title.
     containerTop: {
       justifyContent: "flex-start",
       paddingTop: tokens.spacing.sm,

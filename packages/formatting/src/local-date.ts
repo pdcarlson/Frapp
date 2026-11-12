@@ -13,3 +13,14 @@ export function localIsoDate(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * A `Date`'s time of day as `HH:MM` on the 24-hour clock, in the runtime's
+ * own zone: the value a time field holds (a browser `<input type="time">`, the
+ * phone's time picker fields), not a display string (`formatClockShort`).
+ */
+export function localClock(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}

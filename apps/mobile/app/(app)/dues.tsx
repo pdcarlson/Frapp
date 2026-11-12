@@ -17,7 +17,7 @@ import { isBetaOffModule } from "@repo/validation";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { useDuesMemory } from "@/lib/dues/visit-memory";
 import { ScreenShell } from "@/components/screen-shell";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
@@ -268,7 +268,7 @@ export default function DuesScreen() {
   // doesn't close the screen, so a member can still pay an invoice the
   // chapter already sent.
   if (isBetaOffModule("dues")) {
-    return <Redirect href="/more" />;
+    return <Redirect href="/you" />;
   }
   return <ChapterDues key={chapterId ?? "no-chapter"} />;
 }
@@ -509,7 +509,7 @@ function ChapterDues() {
 
   // What Pay settles: the held invoice while there is one (`confirming`, the
   // row whose payment is awaiting confirmation), otherwise the earliest-due
-  // open invoice, by the same rule the More hub's chip uses. The two still
+  // open invoice, by the same rule the You tab's Dues chip uses. The two still
   // name the same invoice during a hold, since the held one was the earliest
   // open when the member tapped Pay, except if an earlier-due invoice is
   // issued during the hold: the chip names that one, and the card stays on the
@@ -785,7 +785,7 @@ function ChapterDues() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Dues" refresh={refresh}>
+    <ScreenShell back={BACK_TO_YOU} title="Dues" refresh={refresh}>
       {renderBody()}
     </ScreenShell>
   );

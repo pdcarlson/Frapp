@@ -13,7 +13,7 @@ const TAB_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/activity",
   "/events",
-  "/more",
+  "/you",
 ]);
 
 /** Whether `href` opens one of the four tabs rather than a pushed screen. */

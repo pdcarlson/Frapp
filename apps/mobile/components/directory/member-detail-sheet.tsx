@@ -696,7 +696,7 @@ export const MemberDetailSheet = forwardRef<
 
 /** The identity block's avatar diameter. */
 const DETAIL_AVATAR_SIZE = 80;
-/** The dot on the 80pt avatar: the ME button's proportion, scaled. */
+/** The status dot on the 80pt avatar. */
 const PRESENCE_DOT_SIZE = 16;
 
 function createStyles(tokens: SignetTokens) {

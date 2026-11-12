@@ -45,7 +45,7 @@ came with #2302 (PR #2611).
 | Create chapter (`/(auth)/create-chapter`) | Pick your chat display: a card / Continue | The phone's current display is checked on arrival; a tap checks and saves that card; Continue keeps it and moves on (#4056) |
 | Create chapter (`/(auth)/create-chapter`) | Primer, only when the build can push: Turn on / Not now | OS prompt on Turn on; either answer opens the invite step, or chat when the new chapter couldn't be made active |
 | Create chapter (`/(auth)/create-chapter`) | Share invite (the gold primary), Skip for now / Go to chat (the quiet line under it) | Each Share invite press mints a link (`POST /v1/invites`) and opens the share sheet with it; once sent it lists under Shared as Link n. On iOS a sheet closed without sending keeps its link for the next press and lists nothing; Android's chooser can't report that, so a backed-out chooser lists its link too (expected). The quiet line replaces into `/` |
-| Invite members (`/invite`) | As a President: More › Invite members, Directory's +, the tab bar's + › Invite, Chat home's Invite members line | Each opens Invite members (back capsule reads More, Directory, the tab the + was opened over, Chat; the edge swipe and Android back pop to the same screen). Invite by email: typing an address and pressing Send invite (chapter accent) emails it web's invite and lists it under Invited as Pending. Share invite opens the share sheet with "Join <chapter> on Frapp" and a fresh link (a Mail target gets that line as its subject); the link lists under Invited as Invite link and turns Joined after it is redeemed. Tapping a pending row offers Share link, Send again (emailed only) and Revoke invite. As a Member none of the four doors is drawn |
+| Invite members (`/invite`) | As a President: You › Invite members, Directory's +, the tab bar's + › Invite, Chat home's Invite members line | Each opens Invite members (back capsule reads You, Directory, the tab the + was opened over, Chat; the edge swipe and Android back pop to the same screen). Invite by email: typing an address and pressing Send invite (chapter accent) emails it web's invite and lists it under Invited as Pending. Share invite opens the share sheet with "Join <chapter> on Frapp" and a fresh link (a Mail target gets that line as its subject); the link lists under Invited as Invite link and turns Joined after it is redeemed. Tapping a pending row offers Share link, Send again (emailed only) and Revoke invite. As a Member none of the four doors is drawn |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
@@ -59,24 +59,26 @@ in the S2 nav restructure (#957) — see
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Chat (`/`) | Open #general thread preview | Opens `chat-thread` route |
+| Chat (`/`) | The bell beside Messages | Opens Notifications, with `‹ Chat`; its count is house gold and leaves out chat |
 | Events (`/(app)/(tabs)/events`) | Open event details | Opens `event-details` route |
 | Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. Events draws no + of its own. Press and hold the panel to edit it |
-| More (`/(app)/(tabs)/more`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event" and is disabled |
+| You (`/(app)/(tabs)/you`) | Your name, a Details row that is yours to set, and Status | The name and the row open the edit sheet; Status opens the status sheet |
+| You (`/(app)/(tabs)/you`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event" and is disabled |
 
 ## 3) Detail routes with action controls
 
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Event details | `‹ Calendar` above the title, opened from Calendar | Slides back to the Calendar tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
-| Study hours, Service hours, Dues, Documents, Directory, Profile, Settings | `‹ More` above the title | Slides back to the More tab |
-| Every screen past the four tabs (a channel, event details, each More page, Notifications, Check in, Host check-in) | iOS: swipe right from the left edge. Android: back button, or the back gesture | Goes back to the screen that opened it (a channel to the channel list), the same place its drawn `‹`, back capsule or ✕ goes. No screen ignores the swipe |
+| Study hours, Service hours, Dues, Documents, Directory, Settings | `‹ You` above the title | Slides back to the You tab |
+| Every screen past the four tabs (a channel, event details, each You page, Notifications, Check in, Host check-in) | iOS: swipe right from the left edge. Android: back button, or the back gesture | Goes back to the screen that opened it (a channel to the channel list), the same place its drawn `‹`, back capsule or ✕ goes. No screen ignores the swipe |
 | Chat thread | Open a photo, zoom in, drag it from near the left edge; then close the viewer and swipe from the edge | The drag pans the photo and the thread stays; once the viewer is closed the swipe goes back to the channel list. Android back with the viewer open closes the viewer only |
 | Dues | Pay, finish the Stripe sheet, swipe back at once, open Dues again | The invoice still reads Pending with "Payment received, confirmation pending", and Pay doesn't offer to pay it as new |
 | Notifications | Tap a task notification | Opens the task board over the screen you were on (a pushed screen since #4610), and back returns to that screen |
-| Profile (`/(app)/profile`) | Edit, change a field, Save | The sheet opens on your current details; Save stays off until something changes; saving closes the sheet onto the new value; a changed name also shows in Directory and on your chat messages, and a changed city or company in Directory, without a restart |
-| Profile (`/(app)/profile`) | Edit, clear the name, or enter a graduation year like 1850 | Refused inline under the field, Save stays off, nothing is sent |
-| Profile (`/(app)/profile`) | Edit, Save with no connection | "That didn't save" under the fields; what you typed is still there |
-| Documents (`/(app)/documents`) | Open as the President, then as a plain member | The President sees an upload arrow at the right end of `‹ More`; a member sees none |
+| Profile (the top of the You tab) | Tap your name or a Details row, change a field, Save | The sheet opens on your current details; Save stays off until something changes; saving closes the sheet onto the new value; a changed name also shows in Directory and on your chat messages, and a changed city or company in Directory, without a restart |
+| Profile (the top of the You tab) | Tap your name, clear it, or enter a graduation year like 1850 | Refused inline under the field, Save stays off, nothing is sent |
+| Profile (the top of the You tab) | Tap your name, Save with no connection | "That didn't save" under the fields; what you typed is still there |
+| Documents (`/(app)/documents`) | Open as the President, then as a plain member | The President sees an upload arrow at the right end of `‹ You`; a member sees none |
 | Documents (`/(app)/documents`) | Upload arrow, choose a photo, type a title, tap a folder, Upload | The sheet shows the photo's name and size; nothing uploads until Upload; Upload closes the sheet at once, a row with the title and a gray "Uploading…" heads the list, and within a few seconds the document takes that row's place and opens. With the network off, the row reads "Didn't upload. Tap to try again." and a tap reopens the sheet on the draft |
 | Documents (`/(app)/documents`) | Upload with no connection | The sheet closes and the pending row reads "Didn't upload. Tap to try again."; tapping it reopens the sheet with "Couldn't upload that photo" and the photo, title and folder still there; if the photo had already gone up, the title and folder stop taking edits; Upload works once you're back online and files one document |
 | Documents (`/(app)/documents`) | After a failed upload, swipe the sheet down, reopen it from the row, Upload | The reason, photo, title and folder are still there, and one document is filed; Cancel instead removes the row |
@@ -84,7 +86,7 @@ in the S2 nav restructure (#957) — see
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
 | Chapter picker | Chapter row, the one marked Current included (multi-chapter account only) | Activates, refreshes the session, lands in the tabs. When it fails, whether it stays with the error or still lands in the tabs is the rule in [`screens.md`'s supporting-routes paragraph](../../spec/ui/mobile/screens.md) |
-| Chapter picker (More → Switch chapter) | `‹ More` above the title, and again while a switch is running | Lands on the More tab; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
+| Chapter picker (You → Switch chapter) | `‹ You` above the title, and again while a switch is running | Lands on the You tab; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
 | Study hours | Study zone row (2+ zones) | Opens the zone picker sheet; picking one closes it and updates the card |
 | Study hours | Start session (location not yet granted) | Opens the **primer sheet first**, never the OS prompt — "Not now" dismisses quietly |
 | Study hours | Start session (location granted) | Session card replaces the start card; the timer ticks |
@@ -94,7 +96,7 @@ in the S2 nav restructure (#957) — see
 | Dues | Pay now (Expo Go) | CTA is **disabled with the reason stated**; balance and history still render |
 | Dues | Pay now (installed build, key configured) | Stripe PaymentSheet opens; dismissing it says nothing |
 | Dues | Complete a payment | Shows "payment received, confirmation pending", then flips to Paid only once the webhook lands |
-| Any tab | Tab bar **+**, on a server with AI off (`AI_ENABLED` unset, the default) or for a member without Ask | The panel shows the member's actions and **no Ask Frapp bar**. Chat home's header holds only Messages and the account avatar; Events shows nothing beside its title. No ✦ pill anywhere (removed 2026-11-12) |
+| Any tab | Tab bar **+**, on a server with AI off (`AI_ENABLED` unset, the default) or for a member without Ask | The panel shows the member's actions and **no Ask Frapp bar**. Chat home's header holds only Messages and the bell; Events shows nothing beside its title. No ✦ pill anywhere (removed 2026-11-12) |
 | Chat home (`/`) | Notifications bell, with unread notifications | Shows a house-gold badge counting unread notifications that are not chat messages (those are badged on the channel rows); tapping opens Notifications. With none unread, the bell shows no badge |
 | `frapp://ask` | Open the link, without Ask | Lands on Chat home. No "Ask" screen, no sheet |
 | Any tab | Tab bar **+**, then **Ask Frapp** (server AI on, Ask on for the chapter, a role with `ai:use`) | The gold bar sits above the actions and is gone while the panel is being edited. Tapping it closes the panel and presents the s17 Ask sheet over the screen, with the scrim behind it; the grabber or a tap on the scrim dismisses it (there is **no** Cancel control, by design) |

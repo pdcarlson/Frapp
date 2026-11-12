@@ -92,6 +92,8 @@ export interface ThreadMessageRowProps {
   ) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll: (messageId: string) => void;
+  /** A sign-up card's Close sign-ups, its creator's or a moderator's (#3926). */
+  onCloseSignup: (messageId: string) => void;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -147,6 +149,7 @@ function ThreadMessageRowBody({
   blockState,
   onVote,
   onClosePoll,
+  onCloseSignup,
   onRetry,
   onDiscard,
   onReact,
@@ -255,7 +258,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote, onClosePoll, nameFor },
+        { onVote, onClosePoll, onCloseSignup, nameFor },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -356,6 +359,7 @@ function cardFor(
   row: {
     onVote: ThreadMessageRowProps["onVote"];
     onClosePoll: ThreadMessageRowProps["onClosePoll"];
+    onCloseSignup: ThreadMessageRowProps["onCloseSignup"];
     nameFor: ThreadMessageRowProps["nameFor"];
   },
 ): ReactNode | null {
@@ -372,7 +376,12 @@ function cardFor(
     case "signup":
       // A sign-up claim is a card action, the same path a poll vote takes.
       return (
-        <SignupCard {...frame} nameFor={row.nameFor} onClaim={row.onVote} />
+        <SignupCard
+          {...frame}
+          nameFor={row.nameFor}
+          onClaim={row.onVote}
+          onCloseSignup={row.onCloseSignup}
+        />
       );
     case "event": {
       const payload = readEventPayload(message);

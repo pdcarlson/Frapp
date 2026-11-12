@@ -60,8 +60,9 @@ export interface StandingRow {
   detail: string | null;
   /**
    * How full its meter is, 0 to 1, when the number has a target to measure
-   * against; `null` draws no meter. Only required events have one today: a
-   * chapter sets no goal for points or hours (#1062).
+   * against; `null` draws no meter. Required events always have one (the
+   * events themselves); points and hours have one when the chapter sets the
+   * member a goal (#1062).
    */
   progress: number | null;
   /** For a screen reader: the row in one sentence. */
@@ -89,17 +90,21 @@ export function activityStandingRows(
     });
 
   if (standing.points) {
+    // `?? null`: an API from before goals (#1062) sends no goal at all.
     const { total, rank, ranked } = standing.points;
+    const goal = standing.points.goal ?? null;
     const place = rank === null ? null : `#${rank} of ${ranked}`;
+    const ranking = rank === null ? "" : `, ranked ${rank} of ${ranked}`;
     rows.push({
       id: "points",
       label: "Points",
-      value: String(total),
+      value: goal === null ? String(total) : `${total} of ${goal}`,
       detail: place,
-      progress: null,
-      spokenLabel: `${total} ${total === 1 ? "point" : "points"} this semester${
-        rank === null ? "" : `, ranked ${rank} of ${ranked}`
-      }`,
+      progress: towards(total, goal),
+      spokenLabel:
+        goal === null
+          ? `${total} ${total === 1 ? "point" : "points"} this semester${ranking}`
+          : `${total} of ${goal} points this semester${ranking}`,
     });
   } else if (failed.has("points")) unreadable("points", "Points");
 
@@ -125,7 +130,10 @@ export function activityStandingRows(
 
   if (standing.service) {
     const { approved_minutes, pending_minutes } = standing.service;
+    const goal_minutes = standing.service.goal_minutes ?? null;
     const approved = formatMinutesRounded(approved_minutes);
+    const goal =
+      goal_minutes === null ? null : formatMinutesRounded(goal_minutes);
     const pending =
       pending_minutes > 0
         ? `${formatMinutesRounded(pending_minutes)} pending`
@@ -133,26 +141,35 @@ export function activityStandingRows(
     rows.push({
       id: "service",
       label: "Service hours",
-      value: approved,
+      value: goal === null ? approved : `${approved} of ${goal}`,
       detail: pending,
-      progress: null,
-      spokenLabel: `${approved} of service approved this semester${
+      progress: towards(approved_minutes, goal_minutes),
+      spokenLabel: `${approved}${goal === null ? "" : ` of ${goal}`} of service approved this semester${
         pending ? `, ${pending}` : ""
       }`,
     });
   } else if (failed.has("service")) unreadable("service", "Service hours");
 
   if (standing.study) {
+    const goal_minutes = standing.study.goal_minutes ?? null;
     const minutes = formatMinutesRounded(standing.study.minutes);
+    const goal =
+      goal_minutes === null ? null : formatMinutesRounded(goal_minutes);
     rows.push({
       id: "study",
       label: "Study hours",
-      value: minutes,
+      value: goal === null ? minutes : `${minutes} of ${goal}`,
       detail: "This week",
-      progress: null,
-      spokenLabel: `${minutes} of study this week`,
+      progress: towards(standing.study.minutes, goal_minutes),
+      spokenLabel: `${minutes}${goal === null ? "" : ` of ${goal}`} of study this week`,
     });
   } else if (failed.has("study")) unreadable("study", "Study hours");
 
   return rows;
+}
+
+/** How far `done` is toward `goal`, 0 to 1, or `null` when there is no goal. */
+function towards(done: number, goal: number | null | undefined): number | null {
+  if (goal == null || !(goal > 0)) return null;
+  return Math.min(1, Math.max(0, done / goal));
 }

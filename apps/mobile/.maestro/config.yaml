@@ -6,7 +6,7 @@ executionOrder:
   continueOnFailure: true
   flowsOrder:
     - "Sign in with a password"
-    - "Every tab and More row opens and comes back"
+    - "Every tab and You row opens and comes back"
     - "Send a message and open its menu"
     - "Quick actions open and close"
     - "Offline pill and a queued message"

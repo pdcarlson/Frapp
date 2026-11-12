@@ -29,6 +29,7 @@ import { ChapterDocumentController } from '../controllers/chapter-document.contr
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { ChapterController } from '../controllers/chapter.controller';
+import { TaskController } from '../controllers/task.controller';
 import { ServiceEntryController } from '../controllers/service-entry.controller';
 import { UserController } from '../controllers/user.controller';
 
@@ -755,6 +756,12 @@ describe('CustomThrottlerGuard', () => {
         'POST /service-entries/proof-upload-url',
         ServiceEntryController,
         SE.requestProofUploadUrl,
+        10,
+      ),
+      route(
+        'POST /tasks/photo-upload-url',
+        TaskController,
+        TaskController.prototype.requestPhotoUploadUrl,
         10,
       ),
       route(

@@ -220,6 +220,23 @@ describe('formatDevLogPost', () => {
     expect(text).toContain("What's new (2026-11-10): Threads");
   });
 
+  it('lists the Web and Mobile lines of a split entry under their subheadings', () => {
+    const text = formatDevLogPost(
+      { event: 'update_pushed', run_id: '1' },
+      { ...NOTE, web: ['Only on the web.'], phone: ['Only on the phone.'] },
+      new Date('2026-11-11T15:00:00Z'),
+    );
+    expect(text).toContain(
+      [
+        '• Set your status.',
+        'Web',
+        '• Only on the web.',
+        'Mobile',
+        '• Only on the phone.',
+      ].join('\n'),
+    );
+  });
+
   it('never exceeds the chat length cap', () => {
     const items = Array.from({ length: 60 }, (_, i) => ({
       number: i + 1,

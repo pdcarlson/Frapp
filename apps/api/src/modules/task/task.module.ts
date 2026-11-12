@@ -9,6 +9,8 @@ import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChatModule } from '../chat/chat.module';
 import { AuthModule } from '../auth/auth.module';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 
 @Module({
   // ChatModule → ChatService (posts the /task card); AuthModule → USER_REPOSITORY
@@ -19,6 +21,8 @@ import { AuthModule } from '../auth/auth.module';
     TaskService,
     { provide: TASK_REPOSITORY, useClass: SupabaseTaskRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    // Task photos (#4565).
+    { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
   // ActivityModule reads tasks through the service (#3897).
   exports: [TaskService],

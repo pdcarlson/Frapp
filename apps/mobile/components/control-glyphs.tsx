@@ -188,7 +188,7 @@ const BACK_STROKE_WIDTH = 2.2;
 
 /**
  * Back: a left chevron. The chat thread header draws it at 20, and every
- * `BackRow` capsule (`‹ More`, `‹ Events`, `‹ Chat`) at 18, so the two
+ * `BackRow` capsule (`‹ You`, `‹ Calendar`, `‹ Chat`) at 18, so the two
  * kinds of back control show one arrow. Drawn, never typed: a `‹` character
  * sits on the text's x-height, so in a centered row its ink lands below the
  * title's middle (foundations.md §7, Aligning a row).

@@ -265,7 +265,7 @@ A line shows only to an officer who can do it, and only while the module the ser
 
 ## Not-set-up features
 
-Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
+Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile You tab and the web Ask popover leave them out until the first item exists:
 
 - **Study hours** with no active study zone hides from everyone. Zones are made on the web app's Chapter settings Study zones page (`/settings?tab=geofences`; `/geofences` redirects there), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to that page instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
 - **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.

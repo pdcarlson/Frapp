@@ -4478,6 +4478,52 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/close": {
+      "post": {
+        "operationId": "ChatController_closeSignup_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/pins": {
       "get": {
         "operationId": "ChatController_getPinnedMessages_v1",
@@ -10168,6 +10214,113 @@
         ]
       }
     },
+    "/v1/tasks/photo-upload-url": {
+      "post": {
+        "description": "PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
+        "operationId": "TaskController_requestPhotoUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestTaskPhotoUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUploadUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/photo-url": {
+      "get": {
+        "operationId": "TaskController_getPhotoUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "photo",
+            "required": true,
+            "in": "query",
+            "description": "Which photo: the reference photo or the proof photo.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reference",
+                "proof"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/status": {
       "patch": {
         "operationId": "TaskController_updateStatus_v1",
@@ -13736,6 +13889,144 @@
         "summary": "Undo an officer’s remove, so a link shows on Activity again (channels:manage)",
         "tags": [
           "Activity"
+        ]
+      }
+    },
+    "/v1/goals": {
+      "get": {
+        "operationId": "GoalsController_getGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter's goals for points, service hours and study hours",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/mine": {
+      "get": {
+        "operationId": "GoalsController_getMyGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own goal on each measure (points, service and study minutes), null where none",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/{metric}": {
+      "put": {
+        "operationId": "GoalsController_setGoals_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "points",
+                "service",
+                "study"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalSetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A target out of range, a role named twice, or a role not in this chapter."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace one measure's goals",
+        "tags": [
+          "Goals"
         ]
       }
     },
@@ -22381,6 +22672,56 @@
           "status"
         ]
       },
+      "RequestTaskPhotoUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (a JPEG, PNG, GIF or WebP)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/jpeg)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected against the upload size ceiling when present."
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "TaskPhotoUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
+      "TaskPhotoUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Short-lived signed URL to view the photo."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "CreateTaskDto": {
         "type": "object",
         "properties": {
@@ -22414,6 +22755,14 @@
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "description": "A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, the task can only be marked done with a proof photo (#4565). Default false."
           },
           "channel_id": {
             "type": "string",
@@ -22497,6 +22846,20 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
           },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`."
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, Mark done is refused without a proof photo."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -22521,6 +22884,9 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
+          "reference_photo_path",
+          "proof_photo_path",
+          "photo_required",
           "created_at"
         ]
       },
@@ -22552,6 +22918,15 @@
           "point_reward": {
             "type": "number",
             "nullable": true
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "Turn \"Photo required\" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer."
           }
         }
       },
@@ -22566,6 +22941,10 @@
               "COMPLETED",
               "OVERDUE"
             ]
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "description": "With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`."
           }
         },
         "required": [
@@ -25054,12 +25433,18 @@
           "ranked": {
             "type": "number",
             "description": "How many members the board ranks."
+          },
+          "goal": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s points goal this semester (#1062), or null when the chapter sets none for them."
           }
         },
         "required": [
           "total",
           "rank",
-          "ranked"
+          "ranked",
+          "goal"
         ]
       },
       "StandingRequiredEventsDto": {
@@ -25094,11 +25479,17 @@
           "pending_minutes": {
             "type": "number",
             "description": "Service minutes waiting for approval."
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s service goal this semester in minutes (#1062), or null for none."
           }
         },
         "required": [
           "approved_minutes",
-          "pending_minutes"
+          "pending_minutes",
+          "goal_minutes"
         ]
       },
       "StandingStudyDto": {
@@ -25111,11 +25502,17 @@
           "week_start": {
             "type": "string",
             "format": "date-time"
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s study goal for the week in minutes (#1062), or null for none."
           }
         },
         "required": [
           "minutes",
-          "week_start"
+          "week_start",
+          "goal_minutes"
         ]
       },
       "ActivityStandingDto": {
@@ -25238,6 +25635,104 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "RoleGoalDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "type": "number",
+            "nullable": true,
+            "description": "Points for a points goal; minutes for a service or study goal. Null holds the role to no goal."
+          }
+        },
+        "required": [
+          "role_id",
+          "target"
+        ]
+      },
+      "GoalSetDto": {
+        "type": "object",
+        "properties": {
+          "everyone": {
+            "type": "number",
+            "nullable": true,
+            "description": "Every member's goal (points, or minutes for hours), or null for none."
+          },
+          "roles": {
+            "description": "Roles held to a different goal. A member with several is held to the one on their highest-ranked role.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleGoalDto"
+            }
+          }
+        },
+        "required": [
+          "everyone",
+          "roles"
+        ]
+      },
+      "ChapterGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "description": "Points this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "service": {
+            "description": "Approved service minutes this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "study": {
+            "description": "Study minutes this week (Sunday to Saturday).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
+        ]
+      },
+      "MyGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's points goal this semester, or null."
+          },
+          "service": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's approved service minutes goal this semester, or null."
+          },
+          "study": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's study minutes goal this week, or null."
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
         ]
       },
       "CreateDiscordImportDto": {

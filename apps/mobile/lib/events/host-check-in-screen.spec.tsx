@@ -590,7 +590,7 @@ describe("Host check-in while the room fills", () => {
     // Nothing is under the screen in this spec (no stack), so it falls back
     // to More; on a device it pops to where the officer started.
     expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
-      "/more",
+      "/you",
     );
     act(() => tree.unmount());
   });

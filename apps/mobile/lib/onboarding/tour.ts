@@ -16,7 +16,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type TourStopKey = "channels" | "quickActions" | "more";
+export type TourStopKey = "channels" | "quickActions" | "you";
 
 export interface TourStop {
   key: TourStopKey;
@@ -40,8 +40,8 @@ export const TOUR_STOPS: readonly TourStop[] = [
     text: "Shortcuts live under the +. Hold it to pick your own.",
   },
   {
-    key: "more",
-    text: "The directory, your hours and settings are in More.",
+    key: "you",
+    text: "Your profile, the directory and settings are under You.",
   },
 ];
 

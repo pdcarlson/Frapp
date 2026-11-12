@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useCurrentChapter,
   useCurrentUser,
@@ -8,15 +9,14 @@ import {
   useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
+  useMyGoals,
   useMyPermissions,
-  useMyPoints,
   useNowDate,
   usePermissionList,
   useStudySessions,
   useViewerUserId,
-  useOwnAvatarTint,
-  selectPointsBalance,
 } from "@repo/hooks";
+import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
@@ -33,42 +33,75 @@ import {
   SettingsGlyph,
   StudyGlyph,
 } from "@/components/more/more-glyphs";
-import { ProfileCard } from "@/components/more/profile-card";
 import { StatusChip } from "@/components/status-chip";
+import { StatusDot } from "@/components/account/status-dot";
+import { StatusSheet } from "@/components/account/status-sheet";
+import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
+import { ErrorState } from "@/components/state-block";
+import {
+  ProfileDetails,
+  ProfileHead,
+  ProfileSkeleton,
+} from "@/components/you/profile-sections";
+import { useOwnStatus } from "@/lib/account/own-status";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
-import { formatPointsLabel } from "@/lib/more/hub";
 import { selectViewerProfile } from "@/lib/more/profile";
 import {
   dueChip,
   selectInvoiceRows,
   selectNextDueInvoice,
 } from "@/lib/dues/invoices";
-import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
+import {
+  formatHoursLabel,
+  formatHoursValue,
+  startOfWeek,
+} from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s09 — More hub (`canvas-screens.dc.html:326`).
+ * The You tab (#3839): the member's own profile and everything that is
+ * theirs, on one screen, behind their avatar in the tab bar. It took in s09
+ * (the More hub, `canvas-screens.dc.html:326`) and s15 (Profile, `:497`),
+ * which were two doors to one person: a profile card on More that pushed
+ * Profile, and Profile again from Chat home's avatar menu. Instagram, Slack,
+ * Discord and WhatsApp each draw the member as their last tab and open one
+ * screen there, the profile on top and the member's own settings and tools
+ * under it.
  *
- * The drawn anatomy (#1048): a profile card, then grouped lists of rows with a
- * leading duotone glyph, a trailing status where there is one, and a chevron.
- * Rows carry no description line; the board draws none, and the label names
- * the destination.
+ * ## Order
+ *
+ * The profile's head (photo, name, points and service hours,
+ * `components/you/profile-sections.tsx`), then Status, then the rows the More
+ * hub held, then the Admin group, then Details and Bio. The rows come before
+ * Details because they are what a member opens the tab for most days; the
+ * details are set once and read rarely, so they close the screen.
+ *
+ * Status (#3845) moved here from the avatar's menu on Chat home, as Discord
+ * and Slack keep it on the profile they open from their last tab.
+ *
+ * ## Editing
+ *
+ * Tap what you want to change (#3711, Paul 2026-11-07: "The pencil button
+ * isn't obvious; drop it"): the name, the bio and the rows that are the
+ * member's to set open `EditProfileSheet`, and the photo edits in place. The
+ * editable parts are drawn only once the profile has loaded, because a sheet
+ * opened on the loading or error state would prefill blanks over fields
+ * already set. The rows below the head never wait on the profile.
  *
  * ## Grouping
  *
  * The board draws one group (Study hours through Settings) and an Admin group.
  * The app splits the first in two, chapter tools and then your own Settings
  * and chapter switcher, so the two reachability rows the board never drew
- * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § More hub) sit
- * with their kind instead of trailing the list. The owner approved this
+ * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § You)
+ * sit with their kind instead of trailing the list. The owner approved this
  * layout on 2026-11-04.
  *
- * The board's Notifications row is not here: the inbox moved to a bell on
- * Chat home, beside the unread counts it belongs with (#3362, owner decision
- * 2026-11-04; `components/chat/notifications-bell.tsx`).
+ * Notifications are not here: the inbox is the bell on Chat home, beside the
+ * unread counts it belongs with (#3362, #3839).
  *
  * **Switch chapter** is the only entry to the chapter picker (#764). When
  * `GET /v1/chapters` is empty the same slot becomes **Create a chapter**
@@ -92,13 +125,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Canvas labels the section "ADMIN · PRESIDENT", the viewer's role name. No
  * role string is readable on mobile (`/v1/users/me/permissions` returns
- * permissions only), so it reads "Admin", and the profile card shows no role
- * chip for the same reason.
- *
- * ## Activity
- *
- * Activity was this hub's first row until it became tab 2 on 2026-11-12
- * (#4610). Its count now rides on the tab (`GlassTabBar`).
+ * permissions only), so it reads "Admin".
  *
  * ## Rows nobody has set up
  *
@@ -113,18 +140,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Trailing statuses
  *
- * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
- * anywhere, so the row shows the week's real total with no denominator (see
- * `components/study/week-summary.tsx`). Neither Study nor Dues renders a
+ * Canvas draws "4.0 / 6.0" on Study: the week's real total over the member's
+ * weekly study goal, which officers set in Chapter settings (#1062,
+ * `useMyGoals`). With no goal the row shows the total with no denominator
+ * (see `components/study/week-summary.tsx`). Neither Study nor Dues renders a
  * placeholder while its query is in flight: a row that says "0.0 hrs" for a
  * beat at a member who studied all week is worse than one that says nothing
  * yet.
  */
-export default function MoreScreen() {
+export default function YouScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  // Your initials wear the color the chapter sees on them (#3860).
-  const ownTint = useOwnAvatarTint();
   const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
   // Every row's leading glyph is neutral, member and Admin rows alike: an icon
@@ -132,13 +158,26 @@ export default function MoreScreen() {
   // "Where the accent goes", 2026-11-05).
   const glyphColor = tokens.color.text.muted;
 
-  // Both reads are shared with s15 (Profile), so opening More warms them.
   const userQuery = useCurrentUser();
   const profile = useMemo(
     () => selectViewerProfile(userQuery.data),
     [userQuery.data],
   );
-  const pointsBalance = selectPointsBalance(useMyPoints().data);
+  // Only an error with nothing cached: TanStack keeps `data` through a failed
+  // background refetch, and swapping the head out then would drop what was
+  // typed into the Edit sheet. The web panel has the same guard.
+  const profileFailed = userQuery.isError && userQuery.data === undefined;
+  const profileLoaded = !userQuery.isPending && !profileFailed;
+  const editSheetRef = useRef<BottomSheetModal>(null);
+  const openEditor = () => editSheetRef.current?.present();
+  // Both sheets are hosted here, by the screen whose rows open them
+  // (`spec/ui/mobile/patterns.md` § Bottom sheets).
+  const statusSheetRef = useRef<BottomSheetModal>(null);
+  const own = useOwnStatus();
+  const status = own?.status ?? "online";
+  const statusSub = own?.statusEndsAt
+    ? untilLabel(own.statusEndsAt, new Date())
+    : (own?.line ?? null);
 
   const chaptersQuery = useListChapters();
   const hasNoChapters =
@@ -187,7 +226,7 @@ export default function MoreScreen() {
   }, [canHost, eventsQuery.data, now]);
 
   // The two drawn trailing statuses. Both reads are already cached by the
-  // screens they belong to (30s stale windows), so opening More warms them
+  // screens they belong to (30s stale windows), so opening You warms them
   // rather than duplicating work.
   const viewerUserId = useViewerUserId();
   const sessionsQuery = useStudySessions();
@@ -206,13 +245,20 @@ export default function MoreScreen() {
   // narrows and sorts the whole session list, and the answer only changes once a
   // week.
   const weekStart = startOfWeek(now).getTime();
+  // With a weekly goal (#1062) the row reads "4.0 / 6.0 hrs", as the board
+  // draws it. The goal is its own small read (`GET /v1/goals/mine`, fresh for
+  // five minutes), not the whole Activity standing.
+  const studyGoal =
+    useMyGoals({ enabled: !hiddenFeatures.has("study") }).data?.study ?? null;
   const studyThisWeek = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const minutes = selectSessionHistory(sessionsQuery.data)
       .filter((row) => Date.parse(row.startTime) >= weekStart)
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
-    return formatHoursLabel(minutes);
-  }, [sessionsQuery.data, weekStart]);
+    return studyGoal
+      ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
+      : formatHoursLabel(minutes);
+  }, [sessionsQuery.data, weekStart, studyGoal]);
 
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
@@ -223,15 +269,32 @@ export default function MoreScreen() {
   }, [invoicesQuery.data, viewerUserId, now]);
 
   return (
-    <ScreenShell title="More">
-      <ProfileCard
-        displayName={profile?.displayName ?? null}
-        initials={profile?.initials ?? "?"}
-        photoUrl={profile?.photoUrl ?? null}
-        fetchedAt={userQuery.dataUpdatedAt}
-        pointsLabel={formatPointsLabel(pointsBalance)}
-        tint={ownTint}
-      />
+    <ScreenShell title="You">
+      {userQuery.isPending ? (
+        <ProfileSkeleton />
+      ) : profileFailed ? (
+        <ErrorState
+          title="Couldn't load your profile"
+          body="You're signed in, but we couldn't reach the server."
+          onRetry={() => void userQuery.refetch()}
+          isRetrying={userQuery.isFetching}
+        />
+      ) : (
+        <ProfileHead profile={profile} onEdit={openEditor} />
+      )}
+
+      <ListSection>
+        {/* Status first under the head, as Discord and Slack put it at the
+            top of the member's own screen: it opens the status sheet. */}
+        <ListRow
+          label="Status"
+          leading={<StatusDot status={status} />}
+          value={MEMBER_STATUS_LABEL[status]}
+          description={statusSub ?? undefined}
+          accessibilityHint="Opens your status and custom status."
+          onPress={() => statusSheetRef.current?.present()}
+        />
+      </ListSection>
 
       <ListSection>
         {hiddenFeatures.has("study") ? null : (
@@ -319,13 +382,13 @@ export default function MoreScreen() {
             value={chapterName}
             accessibilityHint="Opens the list of chapters you belong to."
             onPress={() =>
-              // `from` is how the picker knows More is under it, and so
-              // draws `‹ More`: a link that opens it has sign-in under it
+              // `from` is how the picker knows You is under it, and so
+              // draws `‹ You`: a link that opens it has sign-in under it
               // instead (`app/(auth)/chapter-picker.tsx`). Object form, the
               // shape `lib/routes.spec.ts` matches when a param is involved.
               router.push({
                 pathname: "/(auth)/chapter-picker",
-                params: { from: "more" },
+                params: { from: "you" },
               })
             }
           />
@@ -386,6 +449,15 @@ export default function MoreScreen() {
           </ListSection>
         </>
       ) : null}
+
+      {profileLoaded ? (
+        <ProfileDetails profile={profile} onEdit={openEditor} />
+      ) : null}
+
+      {profileLoaded ? (
+        <EditProfileSheet ref={editSheetRef} profile={profile} />
+      ) : null}
+      <StatusSheet ref={statusSheetRef} />
     </ScreenShell>
   );
 }

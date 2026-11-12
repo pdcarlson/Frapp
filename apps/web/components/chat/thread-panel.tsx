@@ -74,6 +74,10 @@ export interface ThreadRowWrites {
   /** Settles once the member has answered the confirm and the write is done. */
   delete: (messageId: string, threadRootId: string | null) => Promise<void>;
   closePoll: (messageId: string, threadRootId: string | null) => Promise<void>;
+  closeSignup: (
+    messageId: string,
+    threadRootId: string | null,
+  ) => Promise<void>;
   act: (
     messageId: string,
     actionType: string,
@@ -384,6 +388,15 @@ export function ThreadPanel({
     },
     [writes, targetOf, settle],
   );
+  const onCloseSignup = useCallback(
+    (messageId: string) => {
+      void settle(
+        messageId,
+        writes.closeSignup(messageId, targetOf(messageId)),
+      );
+    },
+    [writes, targetOf, settle],
+  );
   const onAct = useCallback(
     (
       messageId: string,
@@ -454,6 +467,7 @@ export function ThreadPanel({
                 onEdit={canPost ? editRow : undefined}
                 onDelete={onDelete}
                 onClosePoll={onClosePoll}
+                onCloseSignup={onCloseSignup}
                 isBookmarked={bookmarkedMessageIds?.has(root.id)}
                 onToggleBookmark={onToggleBookmark}
                 canManageChannel={canManageChannel}
@@ -596,6 +610,7 @@ export function ThreadPanel({
           onEdit={canReply ? editRow : undefined}
           onDelete={onDelete}
           onClosePoll={onClosePoll}
+          onCloseSignup={onCloseSignup}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={onToggleBookmark}
           canManageChannel={canManageChannel}

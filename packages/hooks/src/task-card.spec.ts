@@ -24,6 +24,9 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     assignee_id: undefined,
     subtasks: [],
     due: undefined,
+    reference_photo_path: null,
+    proof_photo_path: null,
+    photo_required: false,
     ...overrides,
   };
 }
@@ -371,6 +374,21 @@ describe("readEditableCardTask", () => {
       status: "TODO",
       stored_status: "TODO",
       subtasks: [],
+      reference_photo_path: null,
+      photo_required: false,
+    });
+  });
+
+  it("carries the task's photo and its Photo required switch (#4565)", () => {
+    expect(
+      readEditableCardTask({
+        ...raw,
+        reference_photo_path: "chapters/c/tasks/p/mess.jpg",
+        photo_required: true,
+      }),
+    ).toMatchObject({
+      reference_photo_path: "chapters/c/tasks/p/mess.jpg",
+      photo_required: true,
     });
   });
 

@@ -13,15 +13,15 @@ import {
   CHIP_HIT_AREA,
 } from "./chip";
 import { ReactionGlyph } from "./chat-glyphs";
-import { EmojiPicker } from "./emoji-picker";
+import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
 import { cn } from "@/lib/utils";
 import {
   actionTypeFromEmoji,
   emojiFromActionType,
   type ReactionState,
 } from "@repo/chat-core/types";
-
-const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"] as const;
+import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
+import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
 
 interface ReactionBarProps {
   reactions: ReactionState;
@@ -146,7 +146,11 @@ export function ReactionQuickPick({
             aria-pressed={mine}
             aria-label={`React with ${emoji}`}
             title={`React with ${emoji}`}
-            onClick={() => (mine ? onUnreact(emoji) : onReact(emoji))}
+            onClick={() => {
+              if (mine) return onUnreact(emoji);
+              onReact(emoji);
+              recordRecentEmoji(emoji);
+            }}
           >
             <span aria-hidden="true">{emoji}</span>
           </button>
@@ -159,6 +163,8 @@ export function ReactionQuickPick({
             className={ACTION_BAR_BUTTON}
             aria-label="Open emoji picker"
             title="More reactions"
+            onPointerEnter={preloadEmojiPicker}
+            onFocus={preloadEmojiPicker}
           >
             <ReactionGlyph className="h-4 w-4" />
           </button>
@@ -189,7 +195,17 @@ export function ReactionQuickPick({
           <EmojiPicker
             onPick={(emoji) => {
               setOpen(false);
-              onReact(emoji);
+              // The spelling already on the message or in the quick row, so
+              // a pick joins that chip rather than starting a twin: the
+              // catalog writes thumbs up as `👍️` (U+FE0F), the row as `👍`.
+              const spelled = canonicalEmoji(emoji, [
+                ...Object.keys(reactions).flatMap((type) => {
+                  const e = emojiFromActionType(type);
+                  return e ? [e] : [];
+                }),
+                ...QUICK_REACTIONS,
+              ]);
+              onReact(spelled);
             }}
           />
         </PopoverContent>

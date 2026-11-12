@@ -32,6 +32,7 @@ export * from "./beta-off-modules";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
+export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 export * from "./chat-backgrounds";
@@ -156,6 +157,8 @@ export {
   RELEASE_NOTE_VERSION_PATTERN,
   RELEASE_NOTES,
   type ReleaseNote,
+  releaseNoteGroups,
+  releaseNoteStoreText,
   releaseNoteText,
   releaseNoteVersion,
   type ReleaseNoteVersion,
@@ -175,6 +178,8 @@ export * from "./study-zone-shape";
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export * from "./subscription";
+// "Photo required" on a task refused without proof (#4565).
+export * from "./task-proof";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";

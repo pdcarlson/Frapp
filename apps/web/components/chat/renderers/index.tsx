@@ -60,6 +60,8 @@ export interface MessageRendererProps {
   ) => void;
   /** A poll card's Close poll: the creator's, or a `channels:manage` holder's (#3794, #4046). */
   onClosePoll?: (messageId: string) => void;
+  /** A sign-up card's Close sign-ups: the creator's, or a `channels:manage` holder's (#3926). */
+  onCloseSignup?: (messageId: string) => void;
 }
 
 /**
@@ -79,6 +81,7 @@ export function MessageRenderer({
   isConfirmed,
   onAct,
   onClosePoll,
+  onCloseSignup,
   trailing,
   muted,
 }: MessageRendererProps) {
@@ -87,7 +90,9 @@ export function MessageRenderer({
   }
   switch (message.kind) {
     case "text":
-      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
+      return (
+        <TextRenderer message={message} trailing={trailing} muted={muted} />
+      );
     case "poll":
       return (
         <PollCard
@@ -106,6 +111,7 @@ export function MessageRenderer({
           nameFor={nameFor}
           isConfirmed={isConfirmed}
           onClaim={onAct}
+          onCloseSignup={onCloseSignup}
         />
       );
     case "announcement":
@@ -133,6 +139,8 @@ export function MessageRenderer({
     case "dues":
       return <ComingSoonCard message={message} />;
     default:
-      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
+      return (
+        <TextRenderer message={message} trailing={trailing} muted={muted} />
+      );
   }
 }

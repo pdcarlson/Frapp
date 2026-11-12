@@ -12,6 +12,7 @@ export * from './chapter-custom-field.entity';
 export * from './chapter-directory.entity';
 export * from './chapter-document.entity';
 export * from './chapter-dues-config.entity';
+export * from './chapter-goal.entity';
 export * from './chapter-points-config.entity';
 export * from './chapter-service-config.entity';
 export * from './chapter-workflow.entity';

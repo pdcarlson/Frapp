@@ -363,6 +363,7 @@ function channelState(
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     closePoll: vi.fn(async () => {}),
+    closeSignup: vi.fn(async () => {}),
     flag: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
