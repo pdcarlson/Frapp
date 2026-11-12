@@ -94,6 +94,20 @@ export {
   UNKEYED_ROOT,
 } from "./query-errors";
 export { createReportOnce } from "./report-once";
+export {
+  AUTH_FAILURE_REPORT_INTERVAL_MS,
+  EXPECTED_AUTH_ERROR_CODES,
+  buildAuthFailureReport,
+  createAuthFailureReporter,
+} from "./auth-failures";
+export type {
+  AuthFailureFlow,
+  AuthFailureInput,
+  AuthFailureKind,
+  AuthFailureReport,
+  AuthFailureReporter,
+  AuthFailureReporterOptions,
+} from "./auth-failures";
 export type {
   QueryErrorKind,
   QueryErrorReport,
