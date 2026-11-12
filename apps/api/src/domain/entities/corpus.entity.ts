@@ -3,13 +3,17 @@
  * later AI features retrieve from.
  *
  * The list of source types is closed, and the database holds the same list
- * (`corpus_sources_type_allowed` in `20261112140000_ai_corpus.sql`). Channel
- * messages join with #4314. Vault, rush and backwork content have no type, so
- * they cannot be indexed.
+ * (`corpus_sources_type_allowed`, widened in `20261112150000_ai_corpus_chat.sql`).
+ * Vault, rush and backwork content have no type, so they cannot be indexed.
+ *
+ * A `chat_message` source is a conversation window of a chapter channel (one
+ * channel, one day, thread replies under their root), not one message: its
+ * `source_id` is a `corpus_chat_windows` id (#4314).
  */
 export const CORPUS_SOURCE_TYPES = [
   'chapter_document',
   'meeting_minutes',
+  'chat_message',
 ] as const;
 export type CorpusSourceType = (typeof CORPUS_SOURCE_TYPES)[number];
 
@@ -55,6 +59,13 @@ export interface CorpusSource {
   source_at: string | null;
   decays: boolean;
   chunk_count: number;
+  /**
+   * Chat only (#4314): how many of the window's messages were left out
+   * because their author had not said yes, and who they were. The ids stay
+   * in the API: they bring a window back when one of those members says yes.
+   */
+  left_out_count: number;
+  left_out_author_ids: string[] | null;
   indexed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -68,6 +79,12 @@ export interface CorpusChunkWrite {
   page_start: number | null;
   page_end: number | null;
   embedding: number[];
+  /** Chat only: the members whose messages the passage holds. */
+  author_ids?: string[] | null;
+  /** Chat only: the passage's first message, the one a citation opens. */
+  anchor_id?: string | null;
+  anchor_at?: string | null;
+  message_count?: number | null;
 }
 
 /**
@@ -92,4 +109,13 @@ export interface CorpusCandidate {
   sparse_rank: number | null;
   /** Cosine distance to the question, when it is among the nearest. */
   distance: number | null;
+  /** Chat only (#4314): see {@link CorpusChunkWrite}. Null elsewhere. */
+  author_ids: string[] | null;
+  anchor_id: string | null;
+  anchor_at: string | null;
+  message_count: number | null;
+  /** The source's {@link CorpusSource.left_out_count}. */
+  left_out_count: number;
+  /** Chat only: the window's channel. */
+  channel_id: string | null;
 }

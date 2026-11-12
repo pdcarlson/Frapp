@@ -51,6 +51,32 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
         write_corpus_chunks: { data: true },
         finish_corpus_source: { data: false },
         match_corpus_chunks: { data: [] },
+        read_chat_corpus_window: {
+          data: [
+            {
+              channel_id: 'channel-general',
+              channel_name: 'general',
+              day: '2026-11-09',
+              message_id: 'msg-1',
+              sender_id: USER_A,
+              sender_name: 'Sam Ortiz',
+              content: 'Who has the van keys?',
+              created_at: '2026-11-09T22:00:00.000Z',
+              thread_root_id: null,
+              conversation_at: '2026-11-09T22:00:00.000Z',
+            },
+          ],
+        },
+        chat_corpus_window_channels: {
+          data: [{ window_id: 'window-1', channel_id: 'channel-general' }],
+        },
+        requeue_chat_corpus_by_authors: { data: 2 },
+        chat_corpus_authors: {
+          data: [
+            { user_id: 'sam', indexed: true },
+            { user_id: 'quiet', indexed: false },
+          ],
+        },
       },
     });
     repo = new SupabaseCorpusRepository(harness.client);
@@ -212,6 +238,8 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
         p_decays: false,
         p_chunk_count: 4,
         p_skip_reason: null,
+        p_left_out_count: 0,
+        p_left_out_author_ids: null,
       },
     });
   });
@@ -230,5 +258,70 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
         },
       },
     ]);
+  });
+
+  describe('chat (#4314)', () => {
+    it('readChatWindow passes the chapter to the query and maps its rows', async () => {
+      await expect(repo.readChatWindow(CHAPTER_A, 'window-1')).resolves.toEqual(
+        {
+          channelId: 'channel-general',
+          channelName: 'general',
+          day: '2026-11-09',
+          messages: [
+            {
+              id: 'msg-1',
+              senderId: USER_A,
+              senderName: 'Sam Ortiz',
+              content: 'Who has the van keys?',
+              createdAt: '2026-11-09T22:00:00.000Z',
+              threadRootId: null,
+              conversationAt: '2026-11-09T22:00:00.000Z',
+            },
+          ],
+        },
+      );
+      expect(harness.rpcCalls[0]).toEqual({
+        fn: 'read_chat_corpus_window',
+        args: { p_chapter_id: CHAPTER_A, p_window_id: 'window-1' },
+      });
+    });
+
+    it('chatWindowChannels passes the chapter and maps each window to its channel', async () => {
+      const channels = await repo.chatWindowChannels(CHAPTER_B, ['window-1']);
+      expect([...channels]).toEqual([['window-1', 'channel-general']]);
+      expect(harness.rpcCalls[0]).toEqual({
+        fn: 'chat_corpus_window_channels',
+        args: { p_chapter_id: CHAPTER_B, p_window_ids: ['window-1'] },
+      });
+      await expect(repo.chatWindowChannels(CHAPTER_B, [])).resolves.toEqual(
+        new Map(),
+      );
+      expect(harness.rpcCalls).toHaveLength(1);
+    });
+
+    it('requeueChatByAuthors sends the members and the chapter, or no chapter for every chapter', async () => {
+      await expect(repo.requeueChatByAuthors(['sam'], CHAPTER_A)).resolves.toBe(
+        2,
+      );
+      await repo.requeueChatByAuthors(['sam'], null);
+      await expect(repo.requeueChatByAuthors([], null)).resolves.toBe(0);
+      expect(harness.rpcCalls).toEqual([
+        {
+          fn: 'requeue_chat_corpus_by_authors',
+          args: { p_user_ids: ['sam'], p_chapter_id: CHAPTER_A },
+        },
+        {
+          fn: 'requeue_chat_corpus_by_authors',
+          args: { p_user_ids: ['sam'], p_chapter_id: null },
+        },
+      ]);
+    });
+
+    it('chatCorpusAuthors splits who is indexed from who was left out', async () => {
+      await expect(repo.chatCorpusAuthors(CHAPTER_A)).resolves.toEqual({
+        indexed: ['sam'],
+        leftOut: ['quiet'],
+      });
+    });
   });
 });

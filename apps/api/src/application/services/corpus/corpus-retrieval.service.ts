@@ -10,14 +10,25 @@ import {
   recencyWeight,
 } from '#domain/utils/corpus-ranking';
 import { AiGatewayService, type AiUnavailable } from '../ai/ai-gateway.service';
+import { CHAT_SOURCE_TYPE } from './chat-message-corpus-source';
 import {
   CORPUS_SOURCE_ADAPTERS,
   corpusAdapterFor,
   type CorpusSourceAdapter,
 } from './corpus-source';
 
+function byScore(a: CorpusPassage, b: CorpusPassage): number {
+  return b.score - a.score || a.id.localeCompare(b.id);
+}
+
 /** Stamped on the ledger row of every question's embed call. */
 export const CORPUS_QUERY_PROMPT_VERSION = 'corpus.query@v1';
+/**
+ * What a chat passage's score is multiplied by: chat ranks below official
+ * sources (`ai.md` § Chat as a source), so a chat passage has to match much
+ * better than a document or minutes to take its place.
+ */
+export const CHAT_RANK_WEIGHT = 0.5;
 /** How many candidates each half (nearest, best words) contributes. */
 const CANDIDATES_PER_HALF = 40;
 const DEFAULT_LIMIT = 8;
@@ -61,10 +72,33 @@ export interface CorpusPassage {
   score: number;
   /** Which halves found it: `semantic` (nearest), `words` (exact terms), or both. */
   matchedBy: Array<'semantic' | 'words'>;
+  /**
+   * Chat (#4314): the channel and the passage's first message, which a
+   * citation names and opens. Null on documents and minutes. A chat
+   * passage's `sourceId` is its conversation window, not a message.
+   */
+  channelId: string | null;
+  messageId: string | null;
+  /** Chat: whose messages it holds, for the last consent check. Empty elsewhere. */
+  authorIds: string[];
+  /** Chat: how many messages it holds. Null elsewhere. */
+  messageCount: number | null;
 }
 
 export type CorpusRetrievalResult =
-  { status: 'ok'; passages: CorpusPassage[] } | AiUnavailable;
+  | {
+      status: 'ok';
+      /** Official sources first, then chat; each by score. */
+      passages: CorpusPassage[];
+      /**
+       * How many messages were left out of the conversations the chat
+       * passages came from because their authors had not said yes (or have
+       * since said No). Never whose, and nothing from a channel the asker
+       * cannot open. 0 when none.
+       */
+      leftOutMessages: number;
+    }
+  | AiUnavailable;
 
 /**
  * Hybrid retrieval over the AI corpus (#720, ADR-28 decision 3,
@@ -83,8 +117,13 @@ export type CorpusRetrievalResult =
  *    source's own rule (`CorpusSourceAdapter.readableBy`): minutes by
  *    `MeetingService.canRead`, documents by who may open the library. A
  *    source type this build has no adapter for is dropped whole.
- * 4. What is left is merged by reciprocal rank fusion, with no reranker, and
- *    a source that dates (minutes) is weighted by its age.
+ * 4. A source whose passages hold more than one person's words checks each
+ *    passage (`CorpusSourceAdapter.admit`): chat drops a passage by an author
+ *    who no longer says yes, or by someone the asker blocked (#4314).
+ * 5. What is left is merged by reciprocal rank fusion, with no reranker; a
+ *    source that dates (minutes, chat) is weighted by its age, and chat by
+ *    {@link CHAT_RANK_WEIGHT}. The passages come back official first, then
+ *    chat, with how many messages the chat they came from left out.
  *
  * This is a service, not a route: Ask (#450) and the features after it call
  * it and hand the passages to the gateway as sources.
@@ -105,7 +144,7 @@ export class CorpusRetrievalService {
     const query = stripLoneSurrogates(
       request.query.trim().slice(0, MAX_QUERY_CHARS),
     );
-    if (!query) return { status: 'ok', passages: [] };
+    if (!query) return { status: 'ok', passages: [], leftOutMessages: 0 };
     const limit = Math.min(
       Math.max(Math.trunc(request.limit ?? DEFAULT_LIMIT), 1),
       MAX_LIMIT,
@@ -142,12 +181,92 @@ export class CorpusRetrievalService {
       request.actingUserId,
       candidates,
     );
+    const { admitted, withheldBySource } = await this.admitted(
+      request.chapterId,
+      request.actingUserId,
+      readable,
+    );
 
-    const passages = readable
+    const top = admitted
       .map((candidate) => this.passage(candidate, now))
-      .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+      .sort(byScore)
       .slice(0, limit);
-    return { status: 'ok', passages };
+    // Official sources reach a model first, then chat (C8).
+    const passages = [
+      ...top.filter((passage) => passage.sourceType !== CHAT_SOURCE_TYPE),
+      ...top.filter((passage) => passage.sourceType === CHAT_SOURCE_TYPE),
+    ];
+    return {
+      status: 'ok',
+      passages,
+      leftOutMessages: this.leftOut(passages, admitted, withheldBySource),
+    };
+  }
+
+  /**
+   * Each source's passage-level check (`CorpusSourceAdapter.admit`), for the
+   * sources that have one: chat drops a passage whose author no longer says
+   * yes, or whom the asker blocked.
+   */
+  private async admitted(
+    chapterId: string,
+    userId: string,
+    candidates: readonly CorpusCandidate[],
+  ): Promise<{
+    admitted: CorpusCandidate[];
+    withheldBySource: Map<string, number>;
+  }> {
+    const byType = new Map<string, CorpusCandidate[]>();
+    for (const candidate of candidates) {
+      const list = byType.get(candidate.source_type) ?? [];
+      list.push(candidate);
+      byType.set(candidate.source_type, list);
+    }
+    const kept = new Set<string>();
+    const withheldBySource = new Map<string, number>();
+    await Promise.all(
+      [...byType].map(async ([type, list]) => {
+        const adapter = corpusAdapterFor(this.adapters, type);
+        if (!adapter?.admit) {
+          for (const candidate of list) kept.add(candidate.chunk_id);
+          return;
+        }
+        const admission = await adapter.admit(chapterId, userId, list);
+        for (const id of admission.admitted) kept.add(id);
+        for (const [sourceId, count] of admission.withheldBySource) {
+          withheldBySource.set(sourceId, count);
+        }
+      }),
+    );
+    return {
+      admitted: candidates.filter((candidate) => kept.has(candidate.chunk_id)),
+      withheldBySource,
+    };
+  }
+
+  /**
+   * Messages left out of the conversations the answer draws on: for each
+   * chat window a returned passage came from, what indexing left out of it
+   * plus what was withheld from it just now because an author said No.
+   */
+  private leftOut(
+    passages: readonly CorpusPassage[],
+    admitted: readonly CorpusCandidate[],
+    withheldBySource: ReadonlyMap<string, number>,
+  ): number {
+    const windows = new Set(
+      passages
+        .filter((passage) => passage.sourceType === CHAT_SOURCE_TYPE)
+        .map((passage) => passage.sourceId),
+    );
+    let total = 0;
+    for (const window of windows) {
+      const indexedLeftOut =
+        admitted.find((candidate) => candidate.source_id === window)
+          ?.left_out_count ?? 0;
+      total += indexedLeftOut + (withheldBySource.get(window) ?? 0);
+    }
+    return total;
   }
 
   /** The candidates whose source the member could open, by each source's rule. */
@@ -191,6 +310,7 @@ export class CorpusRetrievalService {
     const matchedBy: CorpusPassage['matchedBy'] = [];
     if (candidate.dense_rank !== null) matchedBy.push('semantic');
     if (candidate.sparse_rank !== null) matchedBy.push('words');
+    const chat = candidate.source_type === CHAT_SOURCE_TYPE;
     return {
       id: candidate.chunk_id,
       sourceType: candidate.source_type,
@@ -200,9 +320,16 @@ export class CorpusRetrievalService {
       text: candidate.content,
       pageStart: candidate.page_start,
       pageEnd: candidate.page_end,
-      sourceAt: candidate.source_at,
-      score: fused * recencyWeight(ageDays),
+      // A chat passage is from when its first message was sent.
+      sourceAt: chat
+        ? (candidate.anchor_at ?? candidate.source_at)
+        : candidate.source_at,
+      score: fused * recencyWeight(ageDays) * (chat ? CHAT_RANK_WEIGHT : 1),
       matchedBy,
+      channelId: chat ? candidate.channel_id : null,
+      messageId: chat ? candidate.anchor_id : null,
+      authorIds: chat ? (candidate.author_ids ?? []) : [],
+      messageCount: chat ? candidate.message_count : null,
     };
   }
 }
