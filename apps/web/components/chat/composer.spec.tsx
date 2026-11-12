@@ -561,6 +561,38 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
     expect(editor.getText()).toBe(POLL);
   });
 
+  // The server refuses an announcement from anyone who can't post in the
+  // announcements channel (#3414); the composer says so before the trip.
+  it("refuses /announce for a member who can't post announcements, and keeps the text", async () => {
+    const ANNOUNCE = "/announce Chapter meeting is cancelled";
+    const { onSlashDispatch, onSend } = typeAndSend(ANNOUNCE, {
+      isModuleEnabled: () => true,
+      canAnnounce: false,
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "You can't post announcements",
+        variant: "destructive",
+      }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(ANNOUNCE);
+  });
+
+  it("dispatches /announce for a member who can post announcements", async () => {
+    const { onSlashDispatch } = typeAndSend(
+      "/announce Chapter meeting is cancelled",
+      {
+        isModuleEnabled: () => true,
+        canAnnounce: true,
+      },
+    );
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
+  });
+
   it("dispatches /poll while Polls is on", async () => {
     const { onSlashDispatch } = typeAndSend(POLL, {
       isModuleEnabled: () => true,
@@ -2479,9 +2511,7 @@ describe("Composer in the audit log", () => {
         })}
       />,
     );
-    expect(
-      screen.getByText(AUDIT_LOG_COMPOSER_NOTE),
-    ).toBeInTheDocument();
+    expect(screen.getByText(AUDIT_LOG_COMPOSER_NOTE)).toBeInTheDocument();
     expect(
       screen.queryByText("This channel is read-only for your role."),
     ).not.toBeInTheDocument();

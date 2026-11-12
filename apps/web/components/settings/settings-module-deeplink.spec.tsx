@@ -14,6 +14,12 @@ vi.mock("@repo/validation/beta-off-modules", () => ({
 }));
 afterEach(() => {
   betaOff.keys = [];
+  aiRead.current = {
+    data: null,
+    isPending: false,
+    fetchStatus: "idle",
+    failureCount: 0,
+  };
 });
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
@@ -22,10 +28,22 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 
 let searchParams = new URLSearchParams();
 
+// The AI read. By default a server with AI off: no AI row (#4308).
+const aiRead = vi.hoisted(() => ({
+  current: {
+    data: null as object | null | undefined,
+    isPending: false,
+    fetchStatus: "idle" as "fetching" | "paused" | "idle",
+    failureCount: 0,
+  },
+}));
+
 vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
+  useAiConsent: () => aiRead.current,
   aiAvailableFrom: () => false,
+  // The shared rule, whose own spec pins it in `@repo/hooks`.
+  isFirstAiReadInFlight: (q: typeof aiRead.current) =>
+    q.isPending && q.fetchStatus === "fetching" && q.failureCount === 0,
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: ["chapter-config:view", "chapter-config:manage"] },
@@ -186,5 +204,49 @@ describe("settings ?module= on a cold load", () => {
     rerender(<SettingsPage />);
 
     expect(eventsSwitch()).toHaveFocus();
+  });
+});
+
+/**
+ * The page holds its skeleton while the AI read's first attempt is out, so the
+ * AI row doesn't push the rows down when it lands (#4308). A first attempt
+ * that failed stops the hold: the read's retries take about seven seconds
+ * against a 5xx, and the officer shouldn't sit through them (#4504).
+ */
+describe("settings while the AI read is out", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams = new URLSearchParams("tab=events&module=events");
+    activeChapterId = "chap-1";
+    mockCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", name: "Test", subscription_status: "active" },
+      isPending: false,
+      isError: false,
+    });
+  });
+
+  it("holds the skeleton while the first attempt is in flight", () => {
+    aiRead.current = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+      failureCount: 0,
+    };
+    render(<SettingsPage />);
+    expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /^events on$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws the page once the first attempt has failed, while it retries", () => {
+    aiRead.current = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+      failureCount: 1,
+    };
+    render(<SettingsPage />);
+    expect(eventsSwitch()).toBeInTheDocument();
   });
 });

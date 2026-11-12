@@ -245,7 +245,7 @@ export function useTallSheetProps() {
  * `components.md`
  * § Surface size: a big surface closes with an X).
  */
-export function SheetCloseButton({
+function SheetCloseButton({
   onPress,
   accessibilityLabel = "Close",
 }: {

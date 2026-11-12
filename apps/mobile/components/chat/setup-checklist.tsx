@@ -51,7 +51,7 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 export const MOBILE_SETUP_CHECKLIST_OMIT = ["dues"] as const;
 
 /** Lines the phone does itself, and the route that does it. */
-export const SETUP_CHECKLIST_APP_ROUTE: Partial<
+const SETUP_CHECKLIST_APP_ROUTE: Partial<
   Record<SetupChecklistKey, string>
 > = {
   // `from=chat` gives the screen `‹ Chat`, the way back to this list.
@@ -64,7 +64,7 @@ export const SETUP_CHECKLIST_APP_ROUTE: Partial<
 export const SETUP_CHECKLIST_WEB_NOTE = "Web";
 
 export const SETUP_CHECKLIST_OPEN_FAILED_TITLE = "Couldn't open the web app";
-export const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
+const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
 
 /** Names the host the line would have opened, which a build can change. */
 export function setupChecklistOpenFailedBody(

@@ -16,8 +16,8 @@
 import { fireEvent } from "@testing-library/react";
 import { expect } from "vitest";
 
-export const REFUSED_ENTRIES = ["-3", "1.5"] as const;
-export const CLEARING_ENTRIES = ["", "abc", "1e999"] as const;
+const REFUSED_ENTRIES = ["-3", "1.5"] as const;
+const CLEARING_ENTRIES = ["", "abc", "1e999"] as const;
 
 /** Types each refused entry after `kept`, and expects the field to keep `kept`. */
 export function expectRefusedEntriesKeep(input: HTMLElement, kept: string) {

@@ -166,7 +166,7 @@ export class SupabaseAiRunRepository implements IAiRunRepository {
   async listForMember(
     chapterId: string,
     userId: string,
-    options: { kind?: string; limit: number },
+    options: { kind?: string; limit: number; upkeepKinds?: readonly string[] },
   ): Promise<AiRun[]> {
     let query = this.supabase
       .from('ai_runs')
@@ -175,6 +175,14 @@ export class SupabaseAiRunRepository implements IAiRunRepository {
       // Both ids are uuids the API resolved from the request, never
       // client-chosen text, so the filter string carries no member input.
       .or(`requested_by.eq.${userId},acting_user_id.eq.${userId}`);
+    const upkeep = options.upkeepKinds ?? [];
+    if (upkeep.length > 0) {
+      // ANDed with the group above: started by the member, or not upkeep.
+      // Kinds are the registry's snake_case names, never member input.
+      query = query.or(
+        `requested_by.eq.${userId},kind.not.in.(${upkeep.join(',')})`,
+      );
+    }
     if (options.kind) query = query.eq('kind', options.kind);
     const { data, error } = await query
       .order('created_at', { ascending: false })

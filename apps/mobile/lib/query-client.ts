@@ -75,7 +75,7 @@ export const queryClient = new QueryClient({
  * connection, a 5xx), never for a definitive refusal
  * (`spec/ui/resilience/api-retry.md` § Writes).
  */
-export function retryOnceIfRetryable(
+function retryOnceIfRetryable(
   failureCount: number,
   error: unknown,
 ): boolean {

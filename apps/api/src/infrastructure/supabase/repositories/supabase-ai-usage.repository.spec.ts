@@ -125,6 +125,29 @@ describe('SupabaseAiUsageRepository — tenant scope', () => {
     ]);
   });
 
+  it('charges the chapter’s upkeep to no member, so it skips and never fills a member’s day (#4504)', async () => {
+    const indexing: AiCallDescriptor = {
+      ...call(CHAPTER_A),
+      task: 'corpus.embed',
+      family: 'corpus',
+      provider: 'google',
+      model: 'gemini-embedding-001',
+      promptVersion: 'corpus.index@v1',
+      runId: HOLD,
+      chapterUpkeep: true,
+    };
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.reserve(indexing, 10, CAPS, NOW),
+    );
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.settle({ ...record(CHAPTER_A), ...indexing }, false, NOW),
+    );
+    expect(harness.rpcCalls.map((rpc) => rpc.args.p_user_id)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
   it('reserve reads a refusal as the cap it names', async () => {
     harness = createTenantHarness({
       tables: {},

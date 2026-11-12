@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   // `null` is a server with AI off (`useAiConsent`), the default.
   aiConsent: null as Record<string, unknown> | null | undefined,
   aiFetching: false,
+  // Failed attempts so far on the AI read, which the default retry repeats.
+  aiFailures: 0,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -14,12 +16,16 @@ vi.mock("next/navigation", () => ({
     get: (key: string) => (key === "section" ? mocks.section : null),
   }),
 }));
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  isFirstAiReadInFlight: (
+    await importOriginal<typeof import("@repo/hooks")>()
+  ).isFirstAiReadInFlight,
   useCurrentChapter: () => ({ data: mocks.chapter }),
   useAiConsent: () => ({
     data: mocks.aiConsent,
     isPending: mocks.aiConsent === undefined,
     fetchStatus: mocks.aiFetching ? "fetching" : "idle",
+    failureCount: mocks.aiFailures,
   }),
   aiAvailableFrom: (query: { data: unknown }) =>
     query.data === undefined ? undefined : query.data !== null,
@@ -60,6 +66,7 @@ describe("PersonalSettingsPage (#3856)", () => {
     mocks.chapter = { name: "Beta Theta Omega" };
     mocks.aiConsent = null;
     mocks.aiFetching = false;
+    mocks.aiFailures = 0;
   });
 
   it("holds the rail until the AI read answers, so no row is inserted after it draws", () => {
@@ -69,6 +76,15 @@ describe("PersonalSettingsPage (#3856)", () => {
     expect(
       screen.queryByRole("navigation", { name: "Settings" }),
     ).toBeNull();
+  });
+
+  it("stops holding once the AI read has failed once, rather than wait out its retries (#4504)", () => {
+    mocks.aiConsent = undefined;
+    mocks.aiFetching = true;
+    mocks.aiFailures = 1;
+    render(<PersonalSettingsPage />);
+    expect(rail()).toBeInTheDocument();
+    expect(within(rail()).queryByText("AI")).toBeNull();
   });
 
   it("groups the rail by what a setting belongs to, the chapter group by name", () => {

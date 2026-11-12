@@ -27,10 +27,13 @@ const {
   chapterScopeRef,
   tasksPending,
   suggestionsPending,
+  suggestionsFailures,
   updateTaskMutate,
 } = vi.hoisted(() => ({
   // The suggested-tasks read still in flight (#4313).
   suggestionsPending: { current: false },
+  // Failed tries on that read so far (#4504).
+  suggestionsFailures: { current: 0 },
   updateTaskMutate: vi.fn(),
   mockCurrentChapter: vi.fn(),
   createTaskMutate: vi.fn(),
@@ -132,6 +135,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       suggestionsPending.current && (options?.enabled ?? true)
         ? "fetching"
         : "idle",
+    // Failed tries so far; the default retry repeats a failed read.
+    failureCount: suggestionsFailures.current,
   }),
   useMyPermissions: () => ({
     data:
@@ -261,6 +266,21 @@ describe("TasksBoard suggested tasks (#4313)", () => {
       ).toBeNull();
     } finally {
       suggestionsPending.current = false;
+    }
+  });
+
+  it("stops waiting once the suggestions read has failed, rather than sit out its retries (#4504)", () => {
+    chapter.active();
+    suggestionsPending.current = true;
+    suggestionsFailures.current = 1;
+    try {
+      render(<TasksBoard />);
+      expect(
+        screen.getByRole("button", { name: /^add a task$/i }),
+      ).toBeInTheDocument();
+    } finally {
+      suggestionsPending.current = false;
+      suggestionsFailures.current = 0;
     }
   });
 

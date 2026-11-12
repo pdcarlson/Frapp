@@ -1045,10 +1045,14 @@ export class ChatPushWorkerService
    * mismatch once let URGENT pushes escape the member's Chat switch, #1041).
    *
    * **The channel decides, never the message's `kind`.** `kind` comes from the
-   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
-   * `announcement` from any member in any channel it may post in, so trusting
-   * it let a member who couldn't post in #announcements send an URGENT push that skips
-   * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
+   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` used to
+   * accept `announcement` from any member in any channel it may post in, so
+   * trusting it let a member who couldn't post in #announcements send an
+   * URGENT push that skips quiet hours to everyone at `all` in #general, or in
+   * any DM (#2771 review). The send now refuses that kind outside this same
+   * predicate (#3414), but the push still decides by the channel: a row
+   * written before that, or by a writer that skips `sendMessage`, keeps its
+   * kind.
    * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
    * so only its who-can-post list writes there, #3722) makes one.
    *

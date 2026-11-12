@@ -16,7 +16,7 @@ export const GET_THE_APP_DISMISSED_STORAGE_KEY =
  * browser, whose user agent is a phone's, and someone in it has the app.
  * Session-long because the mark is only on the first page they land on.
  */
-export const OPENED_FROM_APP_SESSION_KEY = "frapp.web.opened-from-app";
+const OPENED_FROM_APP_SESSION_KEY = "frapp.web.opened-from-app";
 
 function openedFromApp(): boolean {
   try {

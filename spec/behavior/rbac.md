@@ -21,7 +21,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, close anyone's poll (#4046), manage permissions |
 | `announcements:post`  | No longer decides who posts (#3722): a channel's who-can-post list does ([chat](chat/README.md#who-can-see-and-post)). Still read once, when the Discord importer creates a read-only channel (its posters start as this permission's holders), until [#4286](https://github.com/pdcarlson/Frapp/issues/4286) removes it |
-| `alumni:post`         | No longer read (#3722): a channel is alumni-writable when its posting list names the Alumni role ([alumni.md](alumni.md)). Kept until [#4286](https://github.com/pdcarlson/Frapp/issues/4286) |
+| `alumni:post`         | No longer decides who posts (#3722): a channel is alumni-writable when its posting list names the Alumni role ([alumni.md](alumni.md)). Still read by the phone's "Support the Chapter" button, which shows to its holders ([alumni.md § Donation Link](alumni.md#donation-link)). Kept until [#4286](https://github.com/pdcarlson/Frapp/issues/4286) |
 | `billing:view`        | View subscription and invoice status                   |
 | `billing:manage`      | Manage subscription, create member invoices            |
 | `backwork:upload`     | Upload resources to Backwork                           |

@@ -90,9 +90,26 @@ describe("SignupCard on the phone (#3926)", () => {
   it("names who holds each slot and holds back a full one", () => {
     const tree = render(card([{ user: "u1", slots: ["fri"] }]));
     expect(text(tree)).toContain("Devin Okafor");
-    expect(text(tree)).toContain("1/1");
+    // Full and not the viewer's: the row says so in place of its count.
+    expect(text(tree)).toContain("Full");
+    expect(text(tree)).not.toContain("1/1");
     expect(button(tree, "Full: Friday").props.disabled).toBe(true);
-    expect(text(tree)).toContain("No limit · no one yet");
+    // An empty slot's count is the whole story; no "no one yet" line.
+    expect(text(tree)).not.toContain("no one yet");
+  });
+
+  it("puts You first among a slot's holders and takes a tap to give it up", () => {
+    const onClaim = vi.fn();
+    const tree = render(
+      card([
+        { user: "u1", slots: ["sat"] },
+        { user: "me", slots: ["sat"] },
+      ]),
+      onClaim,
+    );
+    expect(text(tree)).toContain("You and Devin Okafor");
+    act(() => button(tree, "Signed up: Saturday").props.onPress());
+    expect(onClaim).toHaveBeenCalledWith("m1", "signup", { slot_ids: [] });
   });
 
   it("sends the viewer's whole list on a tap, as web's card does", () => {

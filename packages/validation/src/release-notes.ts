@@ -114,6 +114,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, a message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
       "Taking back a reaction now sticks, so it no longer comes back after you reload.",
       "Tasks can now show as a list or as a grid of cards, on the web and on your phone, and it remembers which one you picked.",
+      "You can now put your chapter's events and your tasks on Apple Calendar, Google Calendar or Outlook from the Events page, and they stay up to date.",
+      "On the web, a member's profile and Invite members now open right inside the Directory instead of sliding over the whole screen.",
+      "On the web, when you start minutes for a meeting that isn't on the calendar, you can type the day it met in words, like yesterday or Nov 4.",
+      "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
+      "On the web, study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
+      "On the web, changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
     ],
   },
   {

@@ -107,6 +107,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
@@ -1115,7 +1116,7 @@ export function ChatShell({
   // The same predicate the push worker uses (#2771). An exact-name match could
   // pick a group DM a member named "announcements" once the real channel is
   // renamed, and send the officer's /announce there.
-  const announcementsChannelId = useMemo(
+  const announcementsChannel = useMemo(
     () =>
       channels.find((ch) =>
         isAnnouncementChannel({
@@ -1123,9 +1124,16 @@ export function ChatShell({
           type: ch.type,
           is_read_only: ch.is_read_only ?? null,
         }),
-      )?.id ?? null,
+      ) ?? null,
     [channels],
   );
+  const announcementsChannelId = announcementsChannel?.id ?? null;
+  // `/announce` is withheld from a member the server would refuse there: that
+  // channel's `can_post`, from the same gate the send goes through (#3414).
+  // Only an explicit `false` withholds it. With no announcements channel the
+  // command stays, so dispatch can say the channel is missing rather than
+  // the member being told they lack permission.
+  const canAnnounce = announcementsChannel?.can_post !== false;
 
   // Backs `@member` resolution for member-targeted slash commands (/points).
   // Reads the roster projection rather than the full member list: `matchMember`
@@ -2425,10 +2433,14 @@ export function ChatShell({
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
-  // summary may read: never a DM, a group DM or the audit log.
+  // summary may read: never a DM, a group DM or the audit log. Not while an
+  // officer views the chapter as a role: a summary is a POST, which the
+  // preview refuses (#4504).
   const catchUpAvailable = useChatCatchUpAvailable();
+  const previewingRole = useIsRolePreviewActive();
   const canCatchUpHere =
     catchUpAvailable &&
+    !previewingRole &&
     !!activeChannel &&
     activeChannel.type !== "DM" &&
     activeChannel.type !== "GROUP_DM" &&
@@ -3575,11 +3587,17 @@ export function ChatShell({
             <CatchUpOffer
               line={catchUpOfferLine}
               onStart={() => {
-                setArrival((previous) => ({ ...previous, offerDismissed: true }));
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }));
                 startChannelCatchUp();
               }}
               onDismiss={() =>
-                setArrival((previous) => ({ ...previous, offerDismissed: true }))
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }))
               }
             />
             {/*
@@ -3790,6 +3808,7 @@ export function ChatShell({
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
+            canAnnounce={canAnnounce}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the

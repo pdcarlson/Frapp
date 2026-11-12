@@ -229,7 +229,26 @@ export function ledgerPageEntries(pages) {
   return { covered, malformed };
 }
 
-function readLedgerPages() {
+/**
+ * Folds ledger pages into the shared docs' entries: a page stands in for an
+ * entry in BOTH. Only for a migration on disk, though: a page is a promotion
+ * record, so like the promotion log it may outlive its file (a revert, or a
+ * hand rename), and must not be reported as an orphan in a playbook that
+ * never held it. Mutates and returns `entriesByDoc`.
+ *
+ * @param {Map<string, Set<string>>} entriesByDoc
+ * @param {string[]} migrations the `.sql` files on disk
+ * @param {Set<string>} covered `ledgerPageEntries(...).covered`
+ */
+export function withLedgerPages(entriesByDoc, migrations, covered) {
+  const onDisk = new Set(migrations);
+  for (const entries of entriesByDoc.values()) {
+    for (const migration of covered) if (onDisk.has(migration)) entries.add(migration);
+  }
+  return entriesByDoc;
+}
+
+export function readLedgerPages() {
   const dir = join(REPO_ROOT, MIGRATION_LEDGER_DIR);
   let names;
   try {
@@ -672,15 +691,8 @@ function validateLedgerCoverage(migrations) {
     }),
   );
 
-  // A ledger page stands in for an entry in BOTH shared docs. Only for a
-  // migration on disk, though: a page is a promotion record, so like the
-  // promotion log it may outlive its file (a revert, or a hand rename), and
-  // must not be reported as an orphan in a playbook that never held it.
   const pages = ledgerPageEntries(readLedgerPages());
-  const onDisk = new Set(migrations);
-  for (const entries of entriesByDoc.values()) {
-    for (const migration of pages.covered) if (onDisk.has(migration)) entries.add(migration);
-  }
+  withLedgerPages(entriesByDoc, migrations, pages.covered);
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
   if (problems.length === 0 && pages.malformed.length === 0) return;

@@ -7,6 +7,7 @@
  * `geofences: false` while still enabling `hours` — a chapter that never
  * administers zones from the app still has members who study in them.
  */
+import { studyZoneRulesLine } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
 
 export interface StudyZoneModel {
@@ -78,9 +79,11 @@ export function graceWindowCopy(zone: StudyZoneModel | null): string {
   return `Leaving the zone pauses with a ${minutes}-min grace window.`;
 }
 
-/** e.g. `1 pt per 30 min · 15 min minimum` — what a zone actually pays. */
+/** What a zone pays, "1 point every 30 min · 15 min minimum", as web says it. */
 export function zoneRewardCopy(zone: StudyZoneModel): string {
-  const points =
-    zone.pointsPerInterval === 1 ? "1 pt" : `${zone.pointsPerInterval} pts`;
-  return `${points} per ${zone.minutesPerPoint} min · ${zone.minSessionMinutes} min minimum`;
+  return studyZoneRulesLine({
+    points_per_interval: zone.pointsPerInterval,
+    minutes_per_point: zone.minutesPerPoint,
+    min_session_minutes: zone.minSessionMinutes,
+  });
 }

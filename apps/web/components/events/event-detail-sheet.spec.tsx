@@ -10,7 +10,9 @@ const {
   mockOffline,
   permissionsState,
   realtimeCalls,
+  deleteMutate,
 } = vi.hoisted(() => ({
+  deleteMutate: vi.fn(),
   eventQueryState: {
     isLoading: false,
     isError: false,
@@ -45,7 +47,7 @@ vi.mock("@repo/hooks", () => ({
     isError: eventQueryState.isError,
     error: eventQueryState.error,
   }),
-  useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteEvent: () => ({ mutateAsync: deleteMutate, isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   // Edit and Delete both hit paid-ops event routes, so the sheet reads the
   // chapter's subscription now (#841). Existing cases default to active.
@@ -648,10 +650,7 @@ describe("EventDetailSheet preview", () => {
 });
 
 describe("EventDetailSheet for a live event, by role (#3855)", () => {
-  function renderLive(
-    event: Record<string, unknown> = baseEvent,
-    open = true,
-  ) {
+  function renderLive(event: Record<string, unknown> = baseEvent, open = true) {
     return render(
       <EventDetailSheet
         open={open}
@@ -725,7 +724,9 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     permissionsState.fetchStatus = "idle";
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
   });
 
   it("drops the subscription while the sheet is closed", () => {
@@ -786,23 +787,23 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     permissionsState.fetchStatus = "paused";
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
   });
 
   it("gives an officer the roster and the header actions, as well as their own check-in", () => {
-    permissionsState.value = [
-      "members:view",
-      "events:update",
-      "events:delete",
-    ];
+    permissionsState.value = ["members:view", "events:update", "events:delete"];
     renderLive();
 
     expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
     expect(screen.getByTestId("my-check-in")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
@@ -812,7 +813,9 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     permissionsState.value = ["members:view", "events:update"];
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
     // The roster is `events:update`'s, not `events:delete`'s.
     expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
@@ -835,7 +838,10 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
       { lat: 5, lng: 6 },
     ];
     const { unmount } = renderLive({ ...baseEvent, check_in_zone: zone });
-    expect(screen.getByTestId("my-check-in")).toHaveAttribute("data-zone", "zone");
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-zone",
+      "zone",
+    );
     unmount();
 
     renderLive({ ...baseEvent, check_in_zone: zone.slice(0, 2) });
@@ -843,5 +849,61 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
       "data-zone",
       "malformed",
     );
+  });
+});
+
+describe("EventDetailSheet delete (#3667)", () => {
+  // Still ahead, so a series delete would reach it.
+  const upcoming = {
+    ...baseEvent,
+    start_time: "2099-07-01T18:00:00.000Z",
+    end_time: "2099-07-01T19:00:00.000Z",
+  };
+  function renderLive(event: Record<string, unknown>) {
+    permissionsState.value = ["events:delete", "members:view"];
+    deleteMutate.mockReset();
+    deleteMutate.mockResolvedValue(undefined);
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+  }
+
+  it("asks which events to delete from a repeating series", async () => {
+    const user = userEvent.setup();
+    renderLive({ ...upcoming, parent_event_id: "h1" });
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    expect(screen.getByText("Delete a repeating event")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "All upcoming events" }),
+    );
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "series" });
+  });
+
+  it("deletes only this one when asked", async () => {
+    const user = userEvent.setup();
+    renderLive({ ...upcoming, recurrence_rule: "WEEKLY" });
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    await user.click(screen.getByRole("button", { name: "This event only" }));
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "instance" });
+  });
+
+  it("doesn't ask for a one-time event", async () => {
+    const user = userEvent.setup();
+    renderLive(upcoming);
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    expect(screen.queryByText("Delete a repeating event")).toBeNull();
+    await user.click(
+      within(
+        screen.getByRole("dialog", { name: "Delete Exec Sync?" }),
+      ).getByRole("button", { name: "Delete event" }),
+    );
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "instance" });
   });
 });

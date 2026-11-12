@@ -145,7 +145,7 @@ function tabRoutePath(route: string): string {
  * is: on iOS a member there would otherwise have only the swipe and a Retry
  * that keeps failing. A tab draws none; the tab bar is its way out.
  */
-export function ScreenErrorScreen({
+function ScreenErrorScreen({
   showBack,
   retry,
 }: {

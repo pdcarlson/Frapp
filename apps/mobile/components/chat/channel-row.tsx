@@ -124,7 +124,7 @@ export interface ChannelRowProps {
 }
 
 /** The menu action's `name`; its spoken label is "Channel actions". */
-export const ACTIONS_ACTION = "actions";
+const ACTIONS_ACTION = "actions";
 
 /** The accessibility action's `name`; its spoken label is `HIDE_CONVERSATION_LABEL`. */
 export const HIDE_ACTION = "hide";

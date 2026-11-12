@@ -19,6 +19,14 @@ export const EVERYONE_ROLE_SYSTEM_KEY = "MEMBER";
 /** The Everyone role's name. Fixed: the API refuses to rename it. */
 export const EVERYONE_ROLE_NAME = "Everyone";
 
+/**
+ * The heading chat's member list files a reader under when Everyone is the
+ * highest role they hold: the rest of the chapter, as Discord's member list
+ * puts everyone without a role shown apart under one plain group. "Everyone"
+ * there would read as a role, and no list offers that role.
+ */
+export const EVERYONE_MEMBER_LIST_HEADING = "Members";
+
 /** How the mention picker writes it: `@everyone`, as Discord does. */
 export const EVERYONE_MENTION_NAME = "everyone";
 

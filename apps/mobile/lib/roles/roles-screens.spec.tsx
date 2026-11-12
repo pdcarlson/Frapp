@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   updateTier: vi.fn<(input: unknown) => Promise<object>>(async () => ({})),
   accentPresent: vi.fn(),
   backgroundPresent: vi.fn(),
+  // `null` is a server without AI; an object is one that has it.
+  aiConsent: null as object | null,
 }));
 
 vi.mock("react-native", async () => {
@@ -43,24 +45,30 @@ const ok = (data: unknown) => ({
   refetch: vi.fn(),
 });
 
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  // A server without AI: the AI switches stay off the lists.
-  useAiConsent: () => ({ data: null }),
-  usePermissionList: () => h.permissions,
-  useMyPermissions: () => ok({ permissions: h.permissions }),
-  useRoles: () => ok(h.roles),
-  useRoleTiers: () => ok(h.tiers),
-  useMembers: () => ok(h.members),
-  useViewerUserId: () => "me",
-  useCurrentChapter: () =>
-    ok({ enabled_modules: { geofences: true }, vocabulary: h.vocabulary }),
-  useGeofences: () => ok([{ id: "z1" }, { id: "z2" }]),
-  useChapterChatBackground: () =>
-    ok({ background: "midnight", photo_url: null }),
-  useUpdateRole: () => ({ mutateAsync: h.updateRole, isPending: false }),
-  useUpdateRoleTier: () => ({ mutateAsync: h.updateTier, isPending: false }),
-}));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    ...real,
+    // A server without AI unless a test says so: the AI switches stay off.
+    // The real rule (#4504), fed whether this server has AI from `h`.
+    useAiConsent: () => ({ data: h.aiConsent }),
+    useIsPermissionHidden: () => (permission: string) =>
+      real.isPermissionHidden(permission, h.aiConsent !== null),
+    usePermissionList: () => h.permissions,
+    useMyPermissions: () => ok({ permissions: h.permissions }),
+    useRoles: () => ok(h.roles),
+    useRoleTiers: () => ok(h.tiers),
+    useMembers: () => ok(h.members),
+    useViewerUserId: () => "me",
+    useCurrentChapter: () =>
+      ok({ enabled_modules: { geofences: true }, vocabulary: h.vocabulary }),
+    useGeofences: () => ok([{ id: "z1" }, { id: "z2" }]),
+    useChapterChatBackground: () =>
+      ok({ background: "midnight", photo_url: null }),
+    useUpdateRole: () => ({ mutateAsync: h.updateRole, isPending: false }),
+    useUpdateRoleTier: () => ({ mutateAsync: h.updateTier, isPending: false }),
+  };
+});
 
 vi.mock("@/components/settings/accent-sheet", async () => {
   const React = await import("react");
@@ -159,6 +167,7 @@ beforeEach(() => {
   ];
   h.updateRole.mockClear().mockResolvedValue({});
   h.updateTier.mockClear().mockResolvedValue({});
+  h.aiConsent = null;
   vi.mocked(useLocalSearchParams).mockReturnValue({});
 });
 
@@ -174,7 +183,9 @@ describe("Chapter settings (#4074)", () => {
     expect(text).toContain("Chapter accent");
     expect(text).toContain("Chat background");
     expect(text).toContain("Midnight");
-    expect(text).toContain("Study zones\nManaged on the web dashboard.\n2 zones");
+    expect(text).toContain(
+      "Study zones\nManaged on the web dashboard.\n2 zones",
+    );
     expect(text).toContain("Roles");
     expect(text).not.toContain("Set by an officer");
   });
@@ -220,13 +231,31 @@ describe("Roles (#4074)", () => {
   it("lists the tiers in rank order with their roles, then the roles outside", () => {
     const text = screenText(render(<ChapterRolesScreen />));
     expect(text).toContain("4 roles in 2 tiers");
-    const order = ["Officers", "Treasurer", "Brothers", "Brother", "Outside the tiers", "President", "Rush Chair"];
+    const order = [
+      "Officers",
+      "Treasurer",
+      "Brothers",
+      "Brother",
+      "Outside the tiers",
+      "President",
+      "Rush Chair",
+    ];
     let last = -1;
     for (const word of order) {
       const at = text.indexOf(word, last + 1);
       expect(at, word).toBeGreaterThan(last);
       last = at;
     }
+  });
+
+  it("notes the President's and Everyone's roles as web's list does", () => {
+    h.roles = [
+      ...h.roles,
+      role({ id: "r-all", name: "Everyone", tier_id: "t-bro", permissions: ["members:view"], is_system: true, system_key: "MEMBER" }),
+    ];
+    const text = screenText(render(<ChapterRolesScreen />));
+    expect(text).toContain("Can do everything");
+    expect(text).toContain("Pinged as @everyone");
   });
 
   it("names tiers in the chapter's own word", () => {
@@ -262,7 +291,11 @@ describe("Roles (#4074)", () => {
     h.roles = [
       ...h.roles,
       ...Array.from({ length: 10 }, (_, index) =>
-        role({ id: `r-x${index}`, name: `Committee ${index}`, tier_id: "t-bro" }),
+        role({
+          id: `r-x${index}`,
+          name: `Committee ${index}`,
+          tier_id: "t-bro",
+        }),
       ),
     ];
     const tree = render(<ChapterRolesScreen />);
@@ -378,4 +411,34 @@ describe("A role's permissions (#4074)", () => {
     expect(switchFor(tree, "Invite members").props.disabled).toBe(true);
     expect(switchFor(tree, "Invite members").props.value).toBe(true);
   });
+});
+
+/**
+ * The switches for features this server doesn't offer stay off both screens
+ * (#4504). Both screens draw through `useIsPermissionHidden`; the rule itself
+ * (AI until the server has AI, Meetings while held off for the beta) is
+ * pinned once, in `@repo/hooks`' own spec.
+ */
+describe("Switches for features not offered here (#4504)", () => {
+  const AI_LABELS = ["Use AI", "Let AI take actions"];
+
+  for (const [screen, params, Screen] of [
+    ["tier", { tierId: "t-bro" }, RoleTierScreen],
+    ["role", { roleId: "r-bro" }, RoleScreen],
+  ] as const) {
+    it(`leaves the AI switches off the ${screen} screen while the server has AI off`, () => {
+      vi.mocked(useLocalSearchParams).mockReturnValue(params);
+      const text = screenText(render(<Screen />));
+      // A switch this screen always draws, so an empty screen can't pass.
+      expect(text).toContain("Create events");
+      for (const label of AI_LABELS) expect(text).not.toContain(label);
+    });
+
+    it(`offers the AI switches on the ${screen} screen once the server has AI`, () => {
+      h.aiConsent = {};
+      vi.mocked(useLocalSearchParams).mockReturnValue(params);
+      const text = screenText(render(<Screen />));
+      for (const label of AI_LABELS) expect(text).toContain(label);
+    });
+  }
 });

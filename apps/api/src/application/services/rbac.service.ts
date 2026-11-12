@@ -18,6 +18,7 @@ import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
   EVERYONE_ROLE_NAME,
+  isEveryoneRole,
   reservedMentionName,
   permissionDefinition,
   permissionModuleLabel,
@@ -138,9 +139,10 @@ export interface ChapterMemberAccess {
   /**
    * The held live role that `top_role_order` belongs to (ties broken by name,
    * then id, so the pick is stable), or `null` when none. Chat's member list
-   * groups readers under it.
+   * groups readers under it; `everyone` marks the chapter's Everyone role
+   * (#4191), which that list never names.
    */
-  top_role: { id: string; name: string } | null;
+  top_role: { id: string; name: string; everyone?: true } | null;
   /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
   channel_access: ChannelAccessHolder;
 }
@@ -1138,7 +1140,13 @@ export class RbacService {
           liveRoles.map((role) => role.permissions),
         ),
         top_role_order: top?.display_order ?? null,
-        top_role: top ? { id: top.id, name: top.name } : null,
+        top_role: top
+          ? {
+              id: top.id,
+              name: top.name,
+              ...(isEveryoneRole(top) ? { everyone: true } : {}),
+            }
+          : null,
         channel_access: accessHolderFromRoles(liveRoles),
       };
     });

@@ -21,6 +21,7 @@ import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
 import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
+  useEvent,
   useMyPermissions,
   useRoles,
   useUpdateEvent,
@@ -38,19 +39,29 @@ import {
   emptyAttendanceDraft,
   eventLimitsAudience,
   eventRequiresAnyone,
-  isRepeatRule,
+  eventEditPatch,
+  isEmptyEventPatch,
+  leavesAfterSave,
   noRepeatDraft,
   REPEAT_PRESET_LABELS,
   repeatDraftFromRule,
   repeatEditAnchor,
   repeatEditDraft,
+  repeatEditSeriesOf,
   repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
+  saveRequestFor,
+  saveScopeFor,
+  SERIES_SCOPE_COPY,
   type EventAttendanceDraft,
+  type EventEditScope,
   type RepeatDraft,
   type RepeatEditSeries,
 } from "@repo/validation";
+import { MemberFacingError } from "@repo/hooks/error-copy";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { pointsLabel } from "@/components/events/event-labels";
@@ -78,13 +89,16 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
-import { randomClientId } from "@repo/api-sdk";
+import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   eventCardOutcomeCopy,
   type EventCardTrack,
 } from "@repo/chat-core/dispatch";
 
 type EventRecord = Record<string, unknown>;
+
+const textOf = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
 
 export function isoToLocalInput(value: unknown): string {
   const date = parseInstant(value);
@@ -257,7 +271,7 @@ function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
  * create that couldn't post one says why rather than leaving the member to
  * wonder where it went. Neither case is a failure: the event exists.
  */
-export function createdToast(
+function createdToast(
   name: string,
   card: { cardKeptOut: boolean; cardLost: boolean },
 ): { title: string; description: string } {
@@ -284,6 +298,12 @@ type EventEditorDialogProps = {
   event: EventRecord | null;
   usingPreviewData: boolean;
   onSaved: () => Promise<void> | void;
+  /**
+   * Told, before the panel closes, that a series save rebuilt or moved the
+   * event it was opened on (`leavesAfterSave`), so the caller doesn't go back
+   * to that event's view: its id may be gone.
+   */
+  onLeftEvent?: () => void;
   /**
    * Open inside the Events page instead of over the app (`shared/panel.tsx`
    * § Docked). `/event` in chat has no page to open in and keeps the sheet.
@@ -340,6 +360,7 @@ export function EventEditorDialog({
   event,
   usingPreviewData,
   onSaved,
+  onLeftEvent,
   docked = false,
   backLabel = "Back to events",
   initialStartAt,
@@ -358,6 +379,7 @@ export function EventEditorDialog({
   // are paid-ops and this dialog has to mirror the subscription gate (#841).
   const gate = useSubscriptionGate();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -424,39 +446,40 @@ export function EventEditorDialog({
   // (`EventService.create`). Editing takes `events:update` anyway.
   const canSetRequirements = canManageTypes;
 
-  const eventId = typeof event?.id === "string" ? event.id : "";
-
-  // The series an edit's Repeat change applies to. Web edits a series only
-  // from its first meeting: a generated occurrence's own rule is empty, and
-  // a series edit from one has to go to its parent as a shift, which waits
-  // for web's "this event or all upcoming" question (#3667). The phone does
-  // both today.
-  const editSeries = useMemo(() => {
-    if (mode !== "edit" || !event) return null;
-    const headStart = parseInstant(event.start_time);
-    if (!headStart) return null;
-    return {
-      headStart,
-      headRule: isRepeatRule(event.recurrence_rule)
-        ? event.recurrence_rule
+  // A generated meeting carries no rule of its own: its series' rule and
+  // first start live on its parent, read here as the phone does
+  // (`event-details.tsx`). A series time change goes to it as a shift.
+  const parentId =
+    mode === "edit" && typeof event?.parent_event_id === "string"
+      ? event.parent_event_id
+      : "";
+  const parentQuery = useEvent(usingPreviewData ? "" : parentId);
+  const editTarget = useMemo(
+    () =>
+      mode === "edit"
+        ? editTargetOf(
+            event,
+            parentQuery.data && typeof parentQuery.data === "object"
+              ? (parentQuery.data as EventRecord)
+              : null,
+          )
         : null,
-      occurrence:
-        typeof event.parent_event_id === "string" &&
-        event.parent_event_id.length > 0,
-    };
-  }, [mode, event]);
-  const repeatLocked = editSeries?.occurrence ?? false;
+    [mode, event, parentQuery.data],
+  );
+  // A generated meeting waits for its parent before it saves, as the phone's
+  // Edit does (`event-details.tsx`): until then "All upcoming events" can't be
+  // offered, and a save would go to this meeting alone without asking.
+  const parentLoading =
+    !usingPreviewData && parentId !== "" && parentQuery.isPending;
+  // Repeat waits for the parent: without it the series' rule is unknown.
+  const repeatLocked =
+    !!editTarget?.event.parent_event_id && editTarget.parent === null;
   const repeatSeriesAt = (
     start: Date,
     now: Date,
   ): RepeatEditSeries | undefined =>
-    editSeries && !editSeries.occurrence
-      ? {
-          headStart: editSeries.headStart,
-          headRule: editSeries.headRule,
-          shiftMs: start.getTime() - editSeries.headStart.getTime(),
-          now,
-        }
+    editTarget && !repeatLocked
+      ? repeatEditSeriesOf(editTarget, start, now)
       : undefined;
   const isSubmitting =
     createEventMutation.isPending || updateEventMutation.isPending;
@@ -493,12 +516,9 @@ export function EventEditorDialog({
         String(typeof event.point_value === "number" ? event.point_value : 10),
       );
       setAttendance(attendanceFromEvent(attendanceFieldsOf(event)));
+      // A generated meeting's rule arrives with its parent (below).
       setRepeat(
-        repeatDraftFromRule(
-          typeof event.recurrence_rule === "string"
-            ? event.recurrence_rule
-            : null,
-        ),
+        repeatDraftFromRule(editTargetOf(event, null)?.seriesRule ?? null),
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
       setEventTypeId(
@@ -580,6 +600,16 @@ export function EventEditorDialog({
     initialLocation,
     initialPointValue,
   ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // A generated meeting's rule arrives with its parent, after the form has
+  // opened. Repeat is locked until then, so nothing typed is overwritten.
+  const parentRule = editTarget?.parent ? editTarget.seriesRule : null;
+  /* eslint-disable react-hooks/set-state-in-effect -- the parent's rule lands after the form hydrates */
+  useEffect(() => {
+    if (!open || parentRule === null) return;
+    setRepeat(repeatDraftFromRule(parentRule));
+  }, [open, parentRule]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
@@ -758,16 +788,6 @@ export function EventEditorDialog({
       is_mandatory: wire.is_mandatory,
       notes: notes.trim() || undefined,
     };
-    // Sent on create only when one is picked, so a plain event still creates
-    // against an API that predates types; always sent on an edit, so letting
-    // the type go clears it.
-    const typeField =
-      mode === "create"
-        ? eventTypeId
-          ? { event_type_id: eventTypeId }
-          : {}
-        : { event_type_id: eventTypeId };
-
     try {
       if (mode === "create") {
         // Role lists are omitted when empty on create; on update (below)
@@ -796,7 +816,9 @@ export function EventEditorDialog({
             ...(repeatResult.rule
               ? { recurrence_rule: repeatResult.rule }
               : {}),
-            ...(typeField as { event_type_id?: string }),
+            // Only when one is picked, so a plain event still creates
+            // against an API that predates types.
+            ...(eventTypeId ? { event_type_id: eventTypeId } : {}),
             ...(card
               ? {
                   channel_id: postToChannelId,
@@ -838,42 +860,96 @@ export function EventEditorDialog({
           }
         }
       } else {
-        if (!eventId) return;
-        // A Repeat change is about the series: sent with `series` scope, so
-        // the API rebuilds the upcoming meetings (and the rest of this save
-        // reaches them too), and "Doesn't repeat" as `null`, which ends it.
-        // An unchanged rule is sent back as stored with the instance edit,
-        // as it always was: the API checks a moved head's start against it
-        // (an UNTIL the head would pass), and writes nothing new.
-        const storedRule = editSeries?.headRule ?? null;
-        const repeatChanged = !repeatLocked && repeatResult.rule !== storedRule;
-        await updateEventMutation.mutateAsync({
-          id: eventId,
-          body: {
-            ...payload,
-            ...(repeatChanged
-              ? { recurrence_rule: repeatResult.rule, scope: "series" as const }
-              : storedRule && !repeatLocked
-                ? { recurrence_rule: storedRule }
-                : {}),
-            ...typeField,
-            required_role_ids: wire.required_role_ids,
-            optional_role_ids: wire.optional_role_ids,
-            excluded_role_ids: wire.excluded_role_ids,
-            // Always sent on an update: the stored row may hold an explicit
-            // value that a derived one wouldn't replace.
-            others_invited: wire.others_invited,
-            // Always sent, so emptying the editor clears the stored zone:
-            // UpdateEventDto omits @ArrayMinSize and normalizeCheckInZone maps
-            // [] to null. The name is cleared alongside it — a leftover name on
-            // a zone-less event is inert but misleading in the editor.
+        if (!event || !editTarget || parentLoading) return;
+        // Only what changed is sent (`eventEditPatch`): a time or location in
+        // the patch pushes "Event Updated" to the chapter, so a renamed
+        // meeting must not carry them.
+        const patch = eventEditPatch(
+          {
+            name: textOf(event.name) ?? "",
+            start_time: editTarget.event.start_time,
+            end_time: editTarget.event.end_time,
+            location: textOf(event.location),
+            description: textOf(event.description),
+            notes: textOf(event.notes),
+            point_value:
+              typeof event.point_value === "number" ? event.point_value : null,
+            attendance: attendanceFieldsOf(event),
+            event_type_id: textOf(event.event_type_id),
+            check_in_zone: event.check_in_zone,
+            check_in_zone_name: textOf(event.check_in_zone_name),
+          },
+          editTarget.seriesRule,
+          {
+            name: payload.name,
+            start: new Date(startIso),
+            end: new Date(endIso),
+            location: location,
+            description: description,
+            notes: notes,
+            point_value: payload.point_value,
+            attendance: wire,
+            event_type_id: eventTypeId,
+            // Locked while a generated meeting's parent is unread, and then
+            // not sent: the series' rule isn't known.
+            ...(repeatLocked ? {} : { recurrence_rule: repeatResult.rule }),
             check_in_zone: zone,
+            // A leftover name on a zone-less event is inert but misleading.
             check_in_zone_name: zone.length > 0 ? zoneName : "",
           },
-        });
+        );
+        // Nothing changed: nothing to send, and nobody to notify.
+        if (isEmptyEventPatch(patch)) {
+          onOpenChange(false);
+          return;
+        }
+        // A Repeat change is about the series, so it isn't asked
+        // (`saveScopeFor`); anything else on a repeating event is.
+        const asked = saveScopeFor(editTarget, patch, new Date());
+        let scope: EventEditScope = asked === "ask" ? "instance" : asked;
+        if (asked === "ask") {
+          const picked = await confirm({
+            title: SERIES_SCOPE_COPY.saveTitle,
+            description: SERIES_SCOPE_COPY.saveMessage,
+            confirmLabel: SERIES_SCOPE_COPY.allUpcoming,
+            alternativeLabel: SERIES_SCOPE_COPY.thisEvent,
+            tone: "default",
+          });
+          if (!picked) return;
+          scope = picked.alternative ? "instance" : "series";
+        }
+        const request = saveRequestFor(editTarget, patch, scope);
+        let saved: unknown;
+        try {
+          saved = await updateEventMutation.mutateAsync({
+            id: request.id,
+            body: { ...request.body, scope: request.scope },
+          });
+        } catch (error) {
+          // Only when the officer picked "All upcoming events": a Repeat
+          // change is always the series, so "this event only" isn't an
+          // option to point them to.
+          if (
+            asked === "ask" &&
+            request.scope === "series" &&
+            statusOf(error) === 400
+          ) {
+            // Sending it again can't win, so say what to do instead.
+            throw new MemberFacingError(SERIES_SCOPE_COPY.seriesRefused);
+          }
+          throw error;
+        }
+        const savedId =
+          saved && typeof saved === "object" && "id" in saved
+            ? String((saved as { id: unknown }).id)
+            : null;
+        if (leavesAfterSave(request, editTarget, savedId)) onLeftEvent?.();
         toast({
           title: "Event updated",
-          description: `${payload.name} was updated successfully.`,
+          description:
+            request.scope === "series"
+              ? `${payload.name} was updated for every upcoming event.`
+              : `${payload.name} was updated successfully.`,
         });
       }
     } catch (error) {
@@ -1065,8 +1141,9 @@ export function EventEditorDialog({
                       Repeat
                     </span>
                     <p className="text-caption text-muted-foreground">
-                      Part of a repeating series. Change how it repeats from its
-                      first meeting, or in the Frapp app.
+                      {parentLoading
+                        ? "Loading the series…"
+                        : "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."}
                     </p>
                   </section>
                 ) : (
@@ -1291,7 +1368,9 @@ export function EventEditorDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            {...gate.controlProps(usingPreviewData || isSubmitting)}
+            {...gate.controlProps(
+              usingPreviewData || isSubmitting || parentLoading,
+            )}
           >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1301,6 +1380,7 @@ export function EventEditorDialog({
             {submitLabel}
           </Button>
         </PanelFooter>
+        {confirmDialog}
       </PanelContent>
     </Panel>
   );

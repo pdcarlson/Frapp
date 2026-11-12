@@ -62,7 +62,7 @@ export const NOTIFICATION_LEVEL_OPTIONS: {
 /** The trigger, when its menu holds channel actions and no level is known. */
 export const CHANNEL_MENU_LABEL = "Channel menu";
 /** Said after the level, so the actions in the menu can be found by ear. */
-export const CHANNEL_MENU_HINT = "Also holds this channel's actions.";
+const CHANNEL_MENU_HINT = "Also holds this channel's actions.";
 
 export function triggerAccessibilityLabel(
   level: ChatNotificationLevel | null,

@@ -212,7 +212,7 @@ function standingLine(consent: AiConsentState): string | null {
 }
 
 /** The sheet's body: who it goes to, what goes, and what No means. */
-export function AiConsentDetails({
+function AiConsentDetails({
   sheet,
 }: {
   sheet: AiConsentState["sheet"];

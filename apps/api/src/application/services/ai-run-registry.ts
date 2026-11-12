@@ -102,6 +102,14 @@ export interface AiRunHandler {
    * kind's own check against the run's sources, made when it is read.
    */
   canView?(run: AiRunHandlerRun, userId: string): Promise<boolean>;
+  /**
+   * The run is the chapter's own upkeep (indexing its sources for Ask, #720),
+   * not something the member it acts for asked for: that member is only whose
+   * access it reads with. Such a run is not listed for, or readable by, that
+   * member as theirs (#4504); the one who started it, if anyone did, and
+   * `canView` still apply.
+   */
+  chapterUpkeep?: true;
   /** Tries before the run fails. Default 3, at most 10. */
   maxAttempts?: number;
   /**
@@ -178,5 +186,12 @@ export class AiRunRegistry {
 
   kinds(): string[] {
     return [...this.handlers.keys()].sort();
+  }
+
+  /** The kinds that are the chapter's upkeep (`chapterUpkeep`). */
+  upkeepKinds(): string[] {
+    return this.kinds().filter(
+      (kind) => this.handlers.get(kind)?.chapterUpkeep,
+    );
   }
 }
