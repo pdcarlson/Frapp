@@ -235,6 +235,7 @@ await import("./tiers/merge-backwork-department-case-variants.mjs");
 await import("./tiers/notifications-forget-deleted-message.mjs");
 await import("./tiers/service-awarded-points.mjs");
 await import("./tiers/signup-card-claims.mjs");
+await import("./tiers/study-session-finish.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
