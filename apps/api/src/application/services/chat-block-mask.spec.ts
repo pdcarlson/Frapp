@@ -307,7 +307,7 @@ describe('maskBlockedMessages over a deleted message', () => {
     },
   );
 
-  it('keeps an imported tombstone\'s import id, which its import purge selects on', () => {
+  it("keeps an imported tombstone's import id, which its import purge selects on", () => {
     const [served] = maskBlockedMessages(
       [
         deletedRow({

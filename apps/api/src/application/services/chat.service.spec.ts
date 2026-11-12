@@ -3309,7 +3309,7 @@ describe('ChatService', () => {
     });
 
     it.each(['event', 'poll', 'task', 'points', 'hours', 'rush'] as const)(
-      'clears a %s card\'s payload, so a delete removes the card and not only its words (#1575)',
+      "clears a %s card's payload, so a delete removes the card and not only its words (#1575)",
       async (kind) => {
         mockMessageRepo.findById.mockResolvedValue({
           ...baseMessage,
