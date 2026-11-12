@@ -113,6 +113,14 @@ on:
 permissions:
   contents: read
 
+# The record PR merges itself (Paul, 2026-11-12), as the What's new bot PR
+# does: the next `auto` ship can't see a build until its entry is on `main`.
+# `merge-record` turns auto-merge on only once `confirm` saw every upload
+# finish, so a failed upload never lands on `main`. "false" goes back to
+# merging it by hand.
+env:
+  AUTO_MERGE: "true"
+
 jobs:
   # Beside `build`, not before it: a publish takes under a minute, and a
   # failed one shouldn't hold up the store build. It reds its own row.
@@ -716,6 +724,9 @@ jobs:
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The record PR's number, empty when none opened, for `merge-record`.
+    outputs:
+      pr: ${{ steps.record.outputs.pr }}
     environment:
       name: automation
       deployment: false
@@ -755,6 +766,7 @@ jobs:
       # Runs on a failed mint too, so the summary lists the entries to add by
       # hand.
       - name: Record the uploaded builds and summarise the run
+        id: record
         if: ${{ !cancelled() }}
         env:
           EAS_BUILDS: ${{ needs.build.outputs.builds }}
@@ -819,3 +831,61 @@ jobs:
           DEADLINE_MINUTES: "280"
           POLL_SECONDS: "60"
         run: node scripts/ci/confirm-store-submissions.mjs
+
+  # The record PR merges itself only once every upload finished (Paul,
+  # 2026-11-12): `confirm` can wait hours in Expo's queue, and a PR that
+  # merged first would put an upload that then failed on `main` (a
+  # `mobile-v*` tag for a build in no store, and an `auto` plan that sends
+  # that version an update no binary can take). A failed or unfinished upload
+  # leaves auto-merge off and says so on the PR. Its own job, so the App token
+  # never shares a runner with `confirm`'s EXPO_TOKEN. The App token, as in
+  # `record`: a merge the GITHUB_TOKEN enabled would start no push workflows,
+  # `mobile-release-tags.yml` among them.
+  merge-record:
+    name: Let the record PR merge itself once every upload finished
+    needs: [record, confirm]
+    # AUTO_MERGE is read in the step: a job's `if` can't see `env`.
+    if: ${{ !cancelled() && needs.record.outputs.pr != '' && needs.confirm.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Mint the base-sync App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Turn on auto-merge, or say why not
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ needs.record.outputs.pr }}
+          CONFIRMED: ${{ needs.confirm.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$AUTO_MERGE" != "true" ]; then
+            echo "AUTO_MERGE is off: merge #${PR} by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$CONFIRMED" = "success" ]; then
+            # Expo's queue usually outlasts the PR's CI, so the PR may already
+            # be green: GitHub refuses auto-merge on a PR it could merge now,
+            # and the plain merge (branch protection still applies) takes over.
+            if gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash \
+              || gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash; then
+              echo "Every upload finished; #${PR} merges itself once its required checks pass." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::warning::Auto-merge could not be turned on for #${PR}. Merge it by hand."
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Every upload finished, but auto-merge could not be turned on ([the run](${RUN_URL})). Merge this by hand once its checks pass."
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Not every upload finished ([the run](${RUN_URL})'s \`confirm\` job says which), so auto-merge stays off. Drop the entry of any build that failed, then merge this by hand."
+          fi

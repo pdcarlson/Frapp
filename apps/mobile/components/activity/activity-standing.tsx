@@ -32,9 +32,10 @@ const DESTINATION: Record<StandingRow["id"], StandingDestination> = {
  * time, one row each in one card, from `GET /v1/activity/standing`. Web's
  * `ActivityStanding` on the phone.
  *
- * A row opens the screen that owns its number. Only required events draw a
- * meter, because only they have a target; a chapter sets no goal for points
- * or hours yet (#1062), and a bar with an invented end would read as a rule.
+ * A row opens the screen that owns its number. A row draws a meter only when
+ * it has a target: required events always (the events themselves), and
+ * points or hours when the chapter sets the member a goal in Chapter settings
+ * (#1062). A bar with an invented end would read as a rule.
  * The meter is the poll card's (`components/meter.ts`): accent on a
  * `--background` groove, inside a card so the groove recedes, and never the
  * only signal, since the row says "6 of 8" in words.

@@ -24,6 +24,7 @@ import type {
   ChapterDocumentFolder,
   ChapterDocumentStar,
   ChapterDuesConfig,
+  ChapterGoalRow,
   ChapterPointsConfig,
   ChapterServiceConfig,
   ChapterWorkflow,
@@ -157,6 +158,7 @@ export interface Database {
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
+      chapter_goals: TableDefinition<ChapterGoalRow>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       chapter_points_config: TableDefinition<ChapterPointsConfig>;
       chapter_service_config: TableDefinition<ChapterServiceConfig>;

@@ -25,6 +25,7 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
 import { EventModule } from '../event/event.module';
+import { GoalsModule } from '../goals/goals.module';
 import { PointsModule } from '../points/points.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ServiceEntryModule } from '../service-entry/service-entry.module';
@@ -51,6 +52,8 @@ import { TaskModule } from '../task/task.module';
     // board, and the member's own study sessions.
     PointsModule,
     StudyModule,
+    // Each member's goal on points, service and study (#1062).
+    GoalsModule,
   ],
   controllers: [ActivityController],
   providers: [
