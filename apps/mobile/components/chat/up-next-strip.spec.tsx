@@ -6,7 +6,7 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // A purple chapter's accent, deliberately not house gold, so a glyph or time
 // that slipped back to the accent or a `gold.*` token would show up in an
@@ -354,6 +354,14 @@ describe("isDueUrgent", () => {
 
 describe("UpNextStrip rows", () => {
   const VIEWER = "viewer-1";
+  // Each strip subscribes to the shared clock; unmounting stops its interval
+  // so the next describe's fake timers own the clock.
+  const mounted: ReactTestRenderer[] = [];
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
 
   function renderStrip(): ReactTestRenderer {
     let tree!: ReactTestRenderer;
@@ -384,6 +392,7 @@ describe("UpNextStrip rows", () => {
         </FrappThemeProvider>,
       );
     });
+    mounted.push(tree);
     return tree;
   }
 
@@ -461,5 +470,42 @@ describe("formatDayWord", () => {
     expect(formatDayWord(new Date(at(2027, 0, 5)), NOW)).toBe(
       "January 5, 2027",
     );
+  });
+});
+
+describe("UpNextStrip clock", () => {
+  // Chat home never unmounts, so the strip has to move with the clock on its
+  // own. Before, it memoised one `new Date()` at mount: a meeting that had
+  // already started stayed UP NEXT until the app was killed.
+  it("drops an event once it starts, without a remount", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      const events = [
+        {
+          id: "e1",
+          name: "Chapter meeting",
+          location: null,
+          start_time: new Date(NOW.getTime() + 60_000).toISOString(),
+        },
+      ];
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <UpNextStrip events={events} tasks={[]} viewerUserId="viewer-1" />
+          </FrappThemeProvider>,
+        );
+      });
+      expect(JSON.stringify(tree.toJSON())).toContain("Chapter meeting");
+
+      act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      expect(tree.toJSON()).toBeNull();
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

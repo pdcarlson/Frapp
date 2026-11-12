@@ -4,7 +4,7 @@ import {
   DASHBOARD_DEV_ORIGIN,
   STAGING_APP_ORIGIN,
 } from './cors.options';
-import { requestApp } from './request-app';
+import { requestApp, requestAppVersion } from './request-app';
 
 function req(headers: Record<string, string | string[]>) {
   return { headers };
@@ -55,5 +55,28 @@ describe('requestApp (#593)', () => {
     ['no headers at all', {}],
   ])('labels %s with no app', (_label, headers) => {
     expect(requestApp(req(headers))).toBeUndefined();
+  });
+});
+
+describe('requestAppVersion', () => {
+  it('reads the store version and build PostHog names them', () => {
+    expect(
+      requestAppVersion(req({ 'x-client-version': 'ios/0.11.0+19' })),
+    ).toEqual({ version: '0.11.0', build: '19' });
+  });
+
+  it('keeps a short version as the client wrote it, as the SDK does, and a missing build null', () => {
+    expect(
+      requestAppVersion(req({ 'x-client-version': 'android/0.11' })),
+    ).toEqual({ version: '0.11', build: null });
+  });
+
+  it.each([
+    ['no header', {}],
+    ['a malformed header', { 'x-client-version': 'ios/latest' }],
+    ['an unknown platform', { 'x-client-version': 'web/0.11.0+19' }],
+    ['the dashboard', { origin: PRODUCTION_APP_ORIGIN }],
+  ])('is undefined for %s', (_label, headers) => {
+    expect(requestAppVersion(req(headers))).toBeUndefined();
   });
 });

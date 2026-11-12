@@ -1,0 +1,1 @@
+Your points total and the leaderboard now update right after you check in, have service hours approved, or finish a study session, and on your phone the chat event card shows when you are already checked in.
