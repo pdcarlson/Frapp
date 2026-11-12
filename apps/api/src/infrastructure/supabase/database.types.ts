@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
   AiRun,
+  ChapterAiSettings,
+  UserAiConsent,
   ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
@@ -193,6 +195,8 @@ export interface Database {
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
       ai_runs: TableDefinition<AiRun>;
+      chapter_ai_settings: TableDefinition<ChapterAiSettings>;
+      user_ai_consents: TableDefinition<UserAiConsent>;
     };
     Views: Record<string, never>;
     Functions: {

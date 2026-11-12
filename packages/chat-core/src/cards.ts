@@ -255,6 +255,7 @@ const AUDIT_ACTION_PHRASES: Record<string, string> = {
   presidency_transferred: "handed over the presidency",
   presidency_claimed: "claimed the presidency",
   president_orphaned: "left the chapter without a president",
+  ai_settings_updated: "changed the AI settings",
 };
 
 /** `accent_color` → `accent color`: a key as words, never as a key. */

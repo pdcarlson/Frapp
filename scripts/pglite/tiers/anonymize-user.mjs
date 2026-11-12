@@ -160,6 +160,10 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       -- #4186: an Important message the member has seen.
       insert into chat_message_important_seen (user_id, message_id, chapter_id)
       values ('${U}', '${EVCARD}', '${C}');
+      -- #4308: the member's answers on the AI sheet, a Yes on an older
+      -- version and a No on the current one, and someone else's Yes.
+      insert into user_ai_consents (user_id, sheet_version, accepted)
+      values ('${U}', 1, true), ('${U}', 2, false), ('${OTHER}', 1, true);
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -250,6 +254,15 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         name: "current-state purged: Important messages seen",
         sql: `select count(*)::int as leftovers from chat_message_important_seen where user_id = '${U}'`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        // #4308. Its line in the delete block (20261112031000): deleting an
+        // account counts as turning AI off, and only the member's rows go.
+        name: "current-state purged: AI sheet answers, and only the member's",
+        sql: `select (select count(*)::int from user_ai_consents where user_id = '${U}') as leftovers,
+                     (select count(*)::int from user_ai_consents where user_id = '${OTHER}') as others`,
+        ok: (rows) =>
+          rows.length === 1 && rows[0].leftovers === 0 && rows[0].others === 1,
       },
       {
         // Exact counts, not `>= 0`: an over-purge gives 0 and a spurious

@@ -110,6 +110,15 @@ What No means for that member:
 | Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
 | A recorded meeting | Their answer on the sheet does not stop a recording. The [recording notice](meetings.md#recording-notice) does: anyone present can object, whatever they answered, and the officer then doesn't record. |
 
+How the first two gates are kept (#4308):
+
+- **The server checks both before every model call.** The AI gateway asks before it sends anything: the call's family must be switched on in the chapter the call is made in, and the member it acts for must have said yes on the current sheet. Nothing is cached, so a switch turned off or an answer changed to No stops the very next call. Indexing and searching the chapter's sources sit behind the Ask switch, since they exist for Ask. Chat as a source is not a call's switch: it decides which messages the corpus reads, and with it off no member's messages are read.
+- **Only the president turns the switches on or off.** That is the member holding the chapter's President role. Each change is recorded in the audit log and shows in `#chapter-audit`. Every member can see which switches are on.
+- **The sheet is one answer per person, not per chapter.** It names the same providers and the same kinds of data wherever the person is a member, so one Yes covers every chapter they are in, and one No turns AI off for them in all of them. The chapter switches stay each chapter's own.
+- **The sheet is versioned on the server.** The API serves the current sheet, with its version, the providers and the kinds of data, so an app built before a change still shows the current one. An answer names the version the member was shown, and an answer to a version that is no longer current is refused, so a Yes never covers a provider or a kind of data the member did not see. Each version's answer is kept, so a member asked again can be told the sheet changed.
+- **A refused call says why.** A route answers `ai.consent.required` when the member has not said yes, so the app shows the sheet, and `ai.chapter_off` when the president has not turned the feature on, so the app hides it.
+- **Who may use AI at all is also a permission.** `ai:use` is in every starting tier of a chapter created from #4308 on, so every active member holds it and Alumni do not ([`rbac.md`](rbac.md)). Chapters created before that grant it from the Roles page.
+
 A No is therefore not a promise that nothing about the member reaches a model. It keeps their own messages out and their own use off. The sheet and the privacy page must say it that way.
 
 The sheet is asked up front because Apple requires an explicit yes before personal data goes to a third-party AI (App Review Guideline 5.1.2(i)). The sheet, the privacy page's list of providers and the store answers ship in the same release that first sends member data to a model ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
