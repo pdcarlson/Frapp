@@ -40,5 +40,6 @@ export * from './discord-connection.entity';
 export * from './discord-import.entity';
 export * from './activity-item-read.entity';
 export * from './ai-run.entity';
+export * from './corpus.entity';
 export * from './ai-consent.entity';
 export * from './ai-suggestion.entity';

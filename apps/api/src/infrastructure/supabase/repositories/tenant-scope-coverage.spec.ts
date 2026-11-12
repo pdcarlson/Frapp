@@ -119,7 +119,7 @@ describe('API repository tenant-scope coverage', () => {
     // unless it lands with a `TENANT_SCOPE_BACKLOG` reason instead, which
     // moves only the first.
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 57,
+      covered: 58,
       total: EXPECTED_REPOSITORY_COUNT,
     });
   });

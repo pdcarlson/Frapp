@@ -19,6 +19,8 @@ import type {
   ChapterDocument,
   ChapterDocumentFolder,
   ChapterDocumentStar,
+  CorpusCandidate,
+  CorpusSource,
   ChapterDuesConfig,
   ChapterServiceConfig,
   ChapterPointsConfig,
@@ -158,6 +160,7 @@ export interface Database {
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       activity_item_reads: TableDefinition<ActivityItemRead>;
       ai_suggestions: TableDefinition<AiSuggestion>;
+      corpus_sources: TableDefinition<CorpusSource>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
@@ -221,6 +224,58 @@ export interface Database {
           p_max_attempts: number;
         };
         Returns: AiRun[];
+      };
+      /**
+       * `20261112140000` (#720) — sources that need indexing, each with its
+       * next attempt pushed out; `returns setof corpus_sources`.
+       */
+      claim_corpus_sources: {
+        Args: { p_fingerprint: string; p_now: string; p_limit: number };
+        Returns: CorpusSource[];
+      };
+      /**
+       * `20261112140000` (#720) — one batch of a source's passages, written
+       * only while the source is at `p_revision`. Each chunk's `embedding` is
+       * the vector as text (`[0.1,0.2]`).
+       */
+      write_corpus_chunks: {
+        Args: {
+          p_source_id: string;
+          p_revision: number;
+          p_first: boolean;
+          p_embedding_model: string;
+          p_chunks: Json;
+        };
+        Returns: boolean;
+      };
+      /** `20261112140000` (#720) — marks a source indexed or skipped. */
+      finish_corpus_source: {
+        Args: {
+          p_source_id: string;
+          p_revision: number;
+          p_fingerprint: string;
+          p_title: string | null;
+          p_source_at: string | null;
+          p_decays: boolean;
+          p_chunk_count: number;
+          p_skip_reason: string | null;
+        };
+        Returns: boolean;
+      };
+      /**
+       * `20261112140000` (#720) — retrieval candidates for one chapter, for a
+       * member of it only.
+       */
+      match_corpus_chunks: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_query: string;
+          p_embedding: string;
+          p_embedding_model: string;
+          p_limit: number;
+        };
+        Returns: CorpusCandidate[];
       };
       /**
        * `20261112020000` (#4310) — leases the oldest claimable run, or returns

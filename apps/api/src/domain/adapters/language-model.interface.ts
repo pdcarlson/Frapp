@@ -112,11 +112,20 @@ export type LanguageModelStreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'done'; result: LanguageModelResult };
 
+/**
+ * What is being embedded. Retrieval models embed a passage and a question
+ * about it differently (Gemini's `RETRIEVAL_DOCUMENT` and `RETRIEVAL_QUERY`
+ * task types), so the corpus says which (#720). An adapter whose model makes
+ * no difference ignores it.
+ */
+export type EmbeddingPurpose = 'document' | 'query';
+
 export interface EmbeddingRequest {
   task: string;
   model: string;
   texts: string[];
   dimensions: number;
+  purpose?: EmbeddingPurpose;
   signal?: AbortSignal;
 }
 

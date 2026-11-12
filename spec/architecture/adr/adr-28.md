@@ -30,6 +30,14 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 > **Updated 2026-11-12 ([#4308](https://github.com/pdcarlson/Frapp/issues/4308)).** Consent is built:
 > the gateway refuses every call unless the chapter has switched the call's family on and the member
 > it acts for said yes on the current AI sheet ([`ai.md` § Consent](../../behavior/ai.md#consent)).
+>
+> **Updated 2026-11-12 ([#720](https://github.com/pdcarlson/Frapp/issues/720)).** The index and the
+> retrieval of decision 3 are built for chapter documents and posted minutes
+> ([`../README.md` §13](../README.md#what-is-built-2026-11-12-720)). Two of the points under "What
+> this record does not decide" were settled with it and are marked there: how retrieval is isolated,
+> and the index type. Both wait on Paul's read of the pull request. Indexing a chapter's own records
+> needs the chapter's switch and no member's yes; embedding a member's question needs that member's
+> yes. Chat is not indexed yet (#4314), and nothing calls retrieval until Ask (#450).
 
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
@@ -244,10 +252,24 @@ The catalog names the models. This table is a dated observation, not a pin.
   The API reads with the service role today, which bypasses row-level security, and a background
   job has no caller. It is settled with the corpus schema
   ([#720](https://github.com/pdcarlson/Frapp/issues/720)).
+  - **Settled 2026-11-12 in #720, pending Paul.** Retrieval does not run under a member's database
+    token. The API has no client that carries one (the anon key is deliberately not loaded), and a
+    background run has no token at all, so a rule that lived in row-level security would not cover
+    the runs that most need it. What the research wanted from it is kept another way: the one
+    function that reads passages takes the chapter and the acting member, and returns nothing unless
+    that member belongs to that chapter. If it is ever called with a member's token, the token must
+    be the acting member's. Row-level security stays on with no policies, only the service role may
+    run the function, and the migration gate proves the isolation cases against the real SQL.
 - **The eval gate's thresholds and how often live models run** (#2534's decision 5). #3282 owns
   both. The research recommended manual runs plus runs on pull requests that touch prompts,
   retrieval or the catalog during the beta, and nightly from about ten chapters.
 - **The vector index type and the database plan it needs.** Settled with the corpus schema (#720).
+  - **Settled 2026-11-12 in #720, pending Paul.** No approximate index in the first version, so no
+    change of database plan. One chapter holds a few thousand passages, and an exact scan of one
+    chapter's rows is fast and always right. An approximate index spans every chapter and is
+    filtered by chapter afterwards, so it returns mostly other chapters' neighbours and loses recall
+    as chapters are added. HNSW with pgvector's iterative scan is the later, additive step once one
+    chapter passes about 20,000 passages. The word half has a GIN index.
 - **AI over vault content, rush data and backwork.** All three stay out.
   [`ai.md`](../../behavior/ai.md)'s list of sources is closed.
 

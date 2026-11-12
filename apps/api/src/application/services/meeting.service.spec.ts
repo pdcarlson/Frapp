@@ -434,6 +434,42 @@ describe('MeetingService', () => {
       );
     });
 
+    it('answers for a list of minutes by the same rule as one at a time', async () => {
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set('mtg-1', meeting(posted));
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          event_name: EXEC_EVENT.name,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set('mtg-draft', meeting({ id: 'mtg-draft' }));
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const ids = ['mtg-1', 'mtg-exec', 'mtg-draft', 'mtg-orphan', 'missing'];
+      for (const viewer of [JAKE, VP, SECRETARY, PRESIDENT]) {
+        const one = new Set<string>();
+        for (const id of ids) {
+          if (await service.canRead(CHAPTER, id, viewer)) one.add(id);
+        }
+        await expect(
+          service.readableAmong(CHAPTER, viewer, ids),
+        ).resolves.toEqual(one);
+      }
+      await expect(service.readableAmong(CHAPTER, JAKE, ids)).resolves.toEqual(
+        new Set(['mtg-1']),
+      );
+    });
+
     it('follows the event when its audience changes', async () => {
       rows.set(
         'mtg-1',
