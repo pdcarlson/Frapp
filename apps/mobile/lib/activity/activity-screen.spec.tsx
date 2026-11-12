@@ -115,6 +115,7 @@ const links = vi.hoisted(() => ({
   clear: vi.fn(),
   remove: vi.fn(),
   restore: vi.fn(),
+  markRead: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -122,6 +123,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActivity: () => activity.value,
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
+  useActivityUnread: () => ({ markRead: links.markRead }),
   // Read by the back row and the chips for the chapter's accent.
   useCurrentChapter: () => ({ data: chapter.data }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
@@ -559,6 +561,39 @@ describe("Activity screen (#3897)", () => {
     });
     expect(sheet.props?.row?.key).toBe("needs:task:task-1");
     expect(sheet.props?.viewerId).toBe("me");
+  });
+
+  it("dots an unread row, says so, and records the open (#4402)", () => {
+    const data = read();
+    activity.value = {
+      ...activity.value,
+      data: {
+        ...data,
+        needs_you: {
+          ...data.needs_you,
+          tasks: data.needs_you.tasks.map((task, index) => ({
+            ...task,
+            unread: index === 0,
+          })),
+        },
+      },
+    };
+    links.markRead.mockClear();
+    const tree = render();
+    const unread = row(tree, "Book the venue");
+    expect(
+      unread.findAllByProps({ testID: "activity-unread-dot" }),
+    ).toHaveLength(1);
+    const pressable = unread.find(
+      (node) => typeof node.props.accessibilityLabel === "string",
+    );
+    expect(pressable.props.accessibilityLabel).toBe("Unread: Book the venue");
+    act(() => {
+      unread.props.onPress();
+    });
+    expect(links.markRead).toHaveBeenCalledWith([
+      { kind: "task", item_id: "task-1" },
+    ]);
   });
 
   it("keeps the sheet on the row it opened after that row leaves the list", () => {

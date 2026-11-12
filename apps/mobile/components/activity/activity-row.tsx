@@ -43,6 +43,12 @@ export function ActivityListRow({
   const rowStyle = [styles.row, isFirst ? null : styles.divider];
   const content = (
     <>
+      {/* The unread mark (#4402): a neutral dot in a slot of its own, as the
+          notification list draws it, kept when read so rows don't shift. */}
+      <View
+        style={row.unread ? styles.dot : styles.dotSpacer}
+        testID={row.unread ? "activity-unread-dot" : undefined}
+      />
       <ActivityRowLead row={row} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
@@ -73,7 +79,7 @@ export function ActivityListRow({
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      accessibilityLabel={row.unread ? `Unread: ${row.title}` : row.title}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
       accessibilityHint={listRowHint(row.detail || null, undefined)}
@@ -166,6 +172,7 @@ export function ActivityRowSkeleton({
   const { label, caption } = tokens.typography.role;
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
+      <View style={styles.dotSpacer} />
       <SkeletonBlock
         width={LEAD_SIZE}
         height={LEAD_SIZE}
@@ -188,6 +195,8 @@ const LEAD_SIZE = 40;
 const ASK_HEIGHT = 28;
 
 function createActivityRowStyles(tokens: SignetTokens) {
+  // The notification list's dot (`app/(app)/notifications.tsx`).
+  const DOT_SIZE = tokens.spacing.sm;
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -198,6 +207,19 @@ function createActivityRowStyles(tokens: SignetTokens) {
       // Square and hairline-split, as the Events list's flat rows bleed:
       // content on the gutter line, press feedback clear of it.
       ...gutterBleed(tokens, { rounded: false }),
+    },
+    dot: {
+      width: DOT_SIZE,
+      height: DOT_SIZE,
+      flexShrink: 0,
+      borderRadius: DOT_SIZE / 2,
+      // Neutral, as the notification list's and chat's unread are: the
+      // accent belongs to the ask, never to a state (foundations.md §5).
+      backgroundColor: tokens.color.text.foreground,
+    },
+    dotSpacer: {
+      width: DOT_SIZE,
+      flexShrink: 0,
     },
     divider: {
       borderTopWidth: StyleSheet.hairlineWidth,
