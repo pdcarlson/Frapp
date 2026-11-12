@@ -32,6 +32,11 @@ vi.mock("@/components/ai/suggested-tasks", () => ({
   suggestionRefusalLine: () => "Another officer already decided this one.",
 }));
 
+// Report this has its own spec (#4315).
+vi.mock("@/components/ai/report-ai", () => ({
+  ReportAiButton: () => null,
+}));
+
 vi.mock("@/components/events/event-editor-dialog", () => ({
   isoToLocalInput: (value: string) => `local:${value}`,
 }));

@@ -21,6 +21,7 @@ import {
   nameForThisYear,
   sameWeekdayThisYear,
 } from "@/components/ai/last-year-dates";
+import { ReportAiButton } from "@/components/ai/report-ai";
 import { suggestionRefusalLine } from "@/components/ai/suggested-tasks";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -191,6 +192,11 @@ export function SuggestedEvents({
               </p>
             </div>
             <div className="ml-auto flex items-center gap-1">
+              <ReportAiButton
+                iconOnly
+                name={item.event.name}
+                target={{ subject: "ai_suggestion", subjectId: item.id }}
+              />
               <Button
                 size="icon"
                 variant="ghost"
