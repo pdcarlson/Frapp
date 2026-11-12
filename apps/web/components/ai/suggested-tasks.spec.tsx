@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useCurrentChapter: () => mocks.currentChapter(),
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),
   useAcceptAiSuggestion: () => ({ mutateAsync: mocks.accept }),
@@ -143,6 +144,12 @@ describe("SuggestedTasks (#4313)", () => {
         task: { due_date: "2030-12-25", due_at: null },
       }),
     );
+  });
+
+  it("offers Report this on each suggestion (#4315)", () => {
+    mocks.items.current = [suggestion("1")];
+    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    expect(screen.getByRole("button", { name: "Report Task 1" })).toBeTruthy();
   });
 
   it("dismisses without asking for anything", async () => {

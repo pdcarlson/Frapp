@@ -2,8 +2,14 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
-import { ASK_COPY, type AskAnswer } from "@repo/validation";
-import { AskExchangeView } from "./ask-answer";
+import { AI_REPORT_COPY, ASK_COPY, type AskAnswer } from "@repo/validation";
+
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
+}));
+
+const { AskExchangeView } = await import("./ask-answer");
 import { askSourceHref } from "./ask-source-link";
 
 /**
@@ -103,6 +109,23 @@ describe("askSourceHref", () => {
 });
 
 describe("AskExchangeView", () => {
+  it("offers Report this under an answer, and nothing under one never attempted (#4315)", () => {
+    const { unmount } = show(exchange({ askId: "a-1" }));
+    expect(
+      screen.getByRole("button", { name: AI_REPORT_COPY.action }),
+    ).toBeInTheDocument();
+    unmount();
+    show(
+      exchange({
+        askId: "a-2",
+        answer: { ...ANSWER, status: "unavailable", reason: "not_available" },
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: AI_REPORT_COPY.action }),
+    ).toBeNull();
+  });
+
   it("marks each cited sentence with a link to its source", () => {
     show(exchange());
     expect(screen.getByRole("link", { name: "Source 1: Bylaws" })).toHaveAttribute(

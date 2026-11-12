@@ -19,6 +19,7 @@ import {
   STANDARDS_MEETING_REFUSAL,
   STANDARDS_MEETING_TYPE,
   isMeetingDraftFailure,
+  isModuleEnabled,
   readMeetingContent,
   type MeetingContent,
   type MeetingDraftFailure,
@@ -45,6 +46,7 @@ import {
 } from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
 import { RbacService } from './rbac.service';
+import type { EnabledModules } from './module-gate';
 import { AiRunService } from './ai-run.service';
 import {
   AiRunFailure,
@@ -347,6 +349,67 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         : consent.reason === 'chapter_off'
           ? 'chapter_off'
           : 'consent_required',
+    };
+  }
+
+  /**
+   * What "Report this" keeps of a draft (#4315): the notes it was written
+   * from and what it wrote, for whoever may see that draft (an editor of the
+   * minutes). Once the draft is in the minutes the row keeps only the review,
+   * so the minutes as they are now stand in for what it wrote. Null when
+   * there is no draft. Never a Standards meeting: none is ever drafted, and
+   * a report must not hold Standards material either.
+   */
+  async forReport(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    enabledModules: EnabledModules | null,
+  ): Promise<{
+    /** One per request: a draft asked for again is a new thing to report. */
+    requestId: string;
+    notes: string;
+    meetingDate: string;
+    status: string;
+    result: Record<string, unknown> | null;
+    minutesNow: unknown;
+    /** The officer whose notes they are. */
+    requestedBy: string | null;
+  } | null> {
+    // The draft routes' own gates (`@RequireModule('meetings')` and
+    // `meetings:record` on the controller): a report reads no draft its
+    // reporter could not open there.
+    if (
+      enabledModules !== null &&
+      !isModuleEnabled(enabledModules, 'meetings')
+    ) {
+      return null;
+    }
+    const held = await this.rbac.getEffectivePermissions(chapterId, userId);
+    if (
+      !held.includes('*') &&
+      !held.includes(SystemPermissions.MEETINGS_RECORD)
+    ) {
+      return null;
+    }
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
+      return null;
+    }
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (!draft || draft.status === 'drafting') return null;
+    return {
+      requestId: draft.request_id,
+      notes: draft.notes,
+      meetingDate: draft.meeting_date,
+      status: draft.status,
+      result: draft.result,
+      minutesNow: draft.status === 'applied' ? meeting.content : null,
+      requestedBy: draft.requested_by,
     };
   }
 

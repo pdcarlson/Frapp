@@ -17,6 +17,7 @@ export * from "./use-meetings";
 export * from "./use-ai";
 export * from "./use-ai-suggestions";
 export * from "./use-ask";
+export * from "./use-ai-report";
 export * from "./use-activity";
 export * from "./use-activity-links";
 export * from "./activity-rows";

@@ -720,6 +720,35 @@ describe('AiSuggestionService (#4309)', () => {
     });
   });
 
+  describe('findVisible (#4315)', () => {
+    it('finds a pending suggestion the caller could see, and nothing else', async () => {
+      const { service, repo, openable } = build();
+      await proposeTen(service);
+      const [first, second] = repo.rows;
+      await expect(
+        service.findVisible(CHAPTER, first.id, OFFICER, enabledModules),
+      ).resolves.toEqual(expect.objectContaining({ id: first.id }));
+      // Not the member without the kind's permission.
+      await expect(
+        service.findVisible(CHAPTER, first.id, MEMBER, enabledModules),
+      ).resolves.toBeNull();
+      // Not one already decided, nor one run out.
+      first.status = 'dismissed';
+      await expect(
+        service.findVisible(CHAPTER, first.id, OFFICER, enabledModules),
+      ).resolves.toBeNull();
+      second.expires_at = NOW.toISOString();
+      await expect(
+        service.findVisible(CHAPTER, second.id, OFFICER, enabledModules),
+      ).resolves.toBeNull();
+      // Not one whose minutes the caller can no longer open.
+      openable.delete(MEETING);
+      await expect(
+        service.findVisible(CHAPTER, repo.rows[2].id, OFFICER, enabledModules),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('accept', () => {
     it('creates the task through the task service, as the accepter, with no points and no chat card', async () => {
       const { service, tasks, repo } = build();

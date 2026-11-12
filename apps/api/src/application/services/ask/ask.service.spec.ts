@@ -6,6 +6,8 @@ import type {
   AiCitedStreamEvent,
 } from '../ai/ai-gateway.service';
 import type { CorpusPassage } from '../corpus/corpus-retrieval.service';
+import { openAskReportReceipt } from '#domain/utils/ai-report-receipt';
+import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { AskService, type AskInput } from './ask.service';
 import type { AskTool } from './ask-tool';
 
@@ -191,6 +193,7 @@ describe('AskService', () => {
         unverified_citations: 0,
         truncated: false,
         saved: false,
+        report_receipt: null,
       });
     });
 
@@ -692,6 +695,94 @@ describe('AskService', () => {
       await expect(service.assertMayAsk(CHAPTER, USER)).rejects.toMatchObject({
         response: expect.objectContaining({ code }),
       });
+    });
+  });
+
+  describe('the report receipt (#4315)', () => {
+    const KEY = `k1:${Buffer.alloc(32, 7).toString('base64')}`;
+    const ring = parseAiTextKeyRing(KEY);
+    const saved = process.env.AI_STORED_TEXT_KEY;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.AI_STORED_TEXT_KEY;
+      else process.env.AI_STORED_TEXT_KEY = saved;
+    });
+
+    it('is null when the server holds no key, so nothing could be kept', async () => {
+      delete process.env.AI_STORED_TEXT_KEY;
+      const { service } = build({ passages: [passage()] });
+      const { answer } = await run(service);
+      expect(answer.report_receipt).toBeNull();
+    });
+
+    it('seals the exchange as the model saw it and the member was shown it, for this asker only', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const chat = passage({
+        id: 'p2',
+        sourceType: 'chat_message',
+        sourceId: 'window-1',
+        title: 'general',
+        text: 'Dana: quorum is two thirds',
+        channelId: 'channel-1',
+        messageId: 'message-1',
+        authorIds: ['dana', USER],
+        messageCount: 1,
+      });
+      const { service } = build({ passages: [passage(), chat] });
+      const { events, answer } = await run(service);
+      const start = events[0];
+      if (start.type !== 'start') throw new Error('no start');
+      expect(answer.report_receipt).toEqual(expect.any(String));
+      // The text is not readable in the envelope.
+      expect(answer.report_receipt).not.toContain('Quorum');
+
+      const receipt = openAskReportReceipt(
+        ring,
+        answer.report_receipt!,
+        { chapterId: CHAPTER, userId: USER },
+        NOW,
+      );
+      expect(receipt).toEqual(
+        expect.objectContaining({
+          ask_id: start.ask_id,
+          question: 'What is quorum?',
+          written: 'Quorum is two thirds of active members.',
+          tools: [],
+          // The chat author is quoted; the asker is not.
+          quoted_user_ids: ['dana'],
+        }),
+      );
+      expect(receipt.shown.text).toBe(answer.text);
+      expect(receipt.given.map((given) => given.text)).toEqual([
+        'Quorum is two thirds of active members.',
+        'Dana: quorum is two thirds',
+      ]);
+      // Another member, or another chapter, cannot open it.
+      expect(() =>
+        openAskReportReceipt(
+          ring,
+          answer.report_receipt!,
+          { chapterId: CHAPTER, userId: 'someone-else' },
+          NOW,
+        ),
+      ).toThrow('invalid');
+      expect(() =>
+        openAskReportReceipt(
+          ring,
+          answer.report_receipt!,
+          { chapterId: 'chapter-b', userId: USER },
+          NOW,
+        ),
+      ).toThrow('invalid');
+    });
+
+    it('carries no receipt when no answer was attempted', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const { service } = build({
+        retrieved: { status: 'unavailable', reason: 'consent', detail: null },
+      });
+      const { answer } = await run(service);
+      expect(answer.status).toBe('unavailable');
+      expect(answer.report_receipt).toBeNull();
     });
   });
 });
