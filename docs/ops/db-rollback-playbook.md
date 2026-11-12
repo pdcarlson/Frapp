@@ -3748,6 +3748,23 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback deleted chat messages take their notifications (20261112140000)
+
+* **Migration**: `20261112140000_notifications_chat_message_id.sql`
+
+One new column with its index, and two triggers. It writes no row on apply. Notification rows the delete trigger has removed since are gone; a rollback does not bring them back.
+
+**Revert the API first**, because the API from the same PR writes `chat_message_id` on every single-message chat notification and rewrites rows by it on an edit: redeploy the earlier API, which never touches the column. Then, to stop deletes removing notifications, **revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop trigger if exists chat_messages_forget_notifications on public.chat_messages;
+drop trigger if exists notifications_skip_deleted_message on public.notifications;
+drop function if exists public.chat_messages_forget_notifications();
+drop function if exists public.notifications_skip_deleted_message();
+drop index if exists public.idx_notifications_chat_message;
+alter table public.notifications drop column if exists chat_message_id;
+```
+
 ## Rollback chat search with a filter and no text (20261112131300)
 
 * **Migration**: `20261112131300_chat_search_filter_only.sql`

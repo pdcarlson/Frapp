@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseDateEntry } from "@repo/formatting";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { DispatchResult, HoursInput } from "@repo/chat-core/dispatch";
 
@@ -51,7 +52,9 @@ function renderInCard(
       onCancel={vi.fn()}
     />,
   );
-  fireEvent.change(screen.getByLabelText("Hours"), { target: { value: "1.5" } });
+  fireEvent.change(screen.getByLabelText("Hours"), {
+    target: { value: "1.5" },
+  });
   fireEvent.change(screen.getByLabelText("What did you do?"), {
     target: { value: "Food bank" },
   });
@@ -74,6 +77,39 @@ describe("LogHoursForm in the + card (#3865, #3983)", () => {
       }),
     );
     expect(mockCreateEntry).not.toHaveBeenCalled();
+  });
+
+  it("reads a day without a year as one already worked (#3937)", async () => {
+    const submitToChannel = vi.fn().mockResolvedValue({ ok: true });
+    render(
+      <LogHoursForm
+        layout="card"
+        gate={OPEN_GATE}
+        submitToChannel={submitToChannel}
+        onDone={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    // Last Friday, never next Friday: service is logged after it happens.
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "fri" },
+    });
+    fireEvent.change(screen.getByLabelText("Hours"), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByLabelText("What did you do?"), {
+      target: { value: "Food bank" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit for approval" }),
+    );
+    await waitFor(() =>
+      expect(submitToChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          date: parseDateEntry("fri", new Date(), "back"),
+        }),
+      ),
+    );
   });
 
   it("stays open with the draft when chat refuses it", async () => {
@@ -101,8 +137,12 @@ describe("LogHoursForm in the + card (#3865, #3983)", () => {
         onCancel={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Hours"), { target: { value: "0" } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit for approval" }));
+    fireEvent.change(screen.getByLabelText("Hours"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit for approval" }),
+    );
     expect(
       await screen.findByText("Enter at least one minute of time."),
     ).toBeInTheDocument();

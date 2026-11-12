@@ -662,7 +662,9 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     // `sticky` inside the section's own box, so the next section's header
     // pushes it off; the surface keeps the rows under it from showing through.
     for (const name of ["Channels", "Direct messages"]) {
-      const header = screen.getByRole("button", { name });
+      // The heading's row is what sticks, so its New channel + stays with
+      // the fold button (#3838).
+      const header = screen.getByRole("button", { name }).parentElement!;
       expect(header).toHaveClass("sticky", "top-0", "bg-surface-1");
       expect(header.parentElement).toContainElement(
         screen.getByRole("list", { name }),
@@ -1019,9 +1021,9 @@ describe("ChannelList as the Direct messages list (#3774)", () => {
       />,
     );
     expect(
-      screen.getByRole("list", { name: "Direct messages" }).querySelectorAll(
-        "li",
-      ),
+      screen
+        .getByRole("list", { name: "Direct messages" })
+        .querySelectorAll("li"),
     ).toHaveLength(2);
   });
 
@@ -1157,10 +1159,70 @@ describe("ChannelList as the Direct messages list (#3774)", () => {
     const rows = Array.from(main.querySelectorAll("li"));
     // The open hidden DM has no latest row (the server keeps none) and leads.
     expect(rows[0]?.textContent).toContain("Rush planning");
-    fireEvent.click(screen.getByRole("button", { name: /Hidden conversations/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Hidden conversations/ }),
+    );
     const hidden = screen.getByRole("list", { name: "Hidden conversations" });
     const hiddenButton = hidden.querySelector("button")!;
     expect(hiddenButton).toHaveClass("h-8");
     expect(hiddenButton.querySelector("[data-preview]")).toBeNull();
+  });
+});
+
+describe("ChannelList New channel + (#3838)", () => {
+  const CATS: ChannelCategory[] = [{ id: "cat-exec", name: "Executive" }];
+  const execRow: ChatChannel = {
+    id: "c-exec",
+    name: "exec-board",
+    type: "PUBLIC",
+    category_id: "cat-exec",
+  };
+  const quiet: ChannelCategory = { id: "cat-empty", name: "Committees" };
+
+  function renderWith(onCreateChannel?: (id: string | null) => void) {
+    return render(
+      <ChannelList
+        channels={[general, execRow, dm]}
+        categories={[...CATS, quiet]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={new Map()}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+        reorder={
+          onCreateChannel
+            ? { onReorderChannels: vi.fn(), onReorderCategories: vi.fn() }
+            : undefined
+        }
+        onCreateChannel={onCreateChannel}
+      />,
+    );
+  }
+
+  it("offers a + beside Channels and each category, starting it there", () => {
+    const onCreate = vi.fn();
+    renderWith(onCreate);
+
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    expect(onCreate).toHaveBeenLastCalledWith(null);
+    fireEvent.click(
+      screen.getByRole("button", { name: "New channel in Executive" }),
+    );
+    expect(onCreate).toHaveBeenLastCalledWith("cat-exec");
+    // An empty category an officer sees as a drop target takes one too.
+    fireEvent.click(
+      screen.getByRole("button", { name: "New channel in Committees" }),
+    );
+    expect(onCreate).toHaveBeenLastCalledWith("cat-empty");
+    // Direct messages is the member's own, never the chapter's to fill.
+    expect(
+      screen.queryByRole("button", { name: /New channel in Direct/ }),
+    ).toBeNull();
+  });
+
+  it("draws no + for a member who can't manage channels", () => {
+    renderWith(undefined);
+    expect(screen.queryByRole("button", { name: /^New channel/ })).toBeNull();
   });
 });

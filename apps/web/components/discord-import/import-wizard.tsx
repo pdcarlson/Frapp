@@ -546,11 +546,10 @@ export function ImportWizard({
         : { at: null, problem: null };
     }
     const at = parseBareDateLocalMidnight(messagesSince);
+    // The date field only ever hands over "" or a whole YYYY-MM-DD
+    // (`DateField`), so this only narrows the type.
     if (!at) {
-      return {
-        at: null,
-        problem: "Enter a whole date, or choose Everything.",
-      };
+      return { at: null, problem: "Pick a date, or choose Everything." };
     }
     if (at.getTime() > Date.now()) {
       return {

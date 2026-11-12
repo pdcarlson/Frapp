@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -76,6 +77,12 @@ export type ConfirmRequest = {
   tone?: ConfirmTone;
   /** Present for the two flows that replace `window.prompt`. */
   comment?: { label: string; placeholder?: string };
+  /**
+   * The exact text the person must type before the confirm button enables,
+   * for a step that destroys history (Delete channel, #3838: "deleting a
+   * channel should be harder"). GitHub and Discord ask the same way.
+   */
+  typeToConfirm?: { label: string; text: string };
 };
 
 export type ConfirmResult = { comment: string };
@@ -90,6 +97,7 @@ export function useConfirmDialog(): {
 } {
   const [pending, setPending] = React.useState<PendingRequest | null>(null);
   const [comment, setComment] = React.useState("");
+  const [typed, setTyped] = React.useState("");
   const openerRef = React.useRef<Element | null>(null);
   /*
    * The last request, kept after `pending` clears. Radix keeps `DialogContent`
@@ -110,6 +118,7 @@ export function useConfirmDialog(): {
   const confirm = React.useCallback((request: ConfirmRequest) => {
     openerRef.current = document.activeElement;
     setComment("");
+    setTyped("");
     setShown(request);
     return new Promise<ConfirmResult | null>((resolve) => {
       setPending((current) => {
@@ -170,6 +179,11 @@ export function useConfirmDialog(): {
     }
   }
 
+  // Exact match, the way GitHub's repository delete asks: a near miss is a
+  // sign the person is not reading what they are about to remove.
+  const typedMatches =
+    !shown?.typeToConfirm || typed === shown.typeToConfirm.text;
+
   const confirmDialog = (
     <ConfirmDialogHost open={pending !== null} onSettle={settle}>
       <DialogContent onCloseAutoFocus={handleCloseAutoFocus}>
@@ -190,12 +204,35 @@ export function useConfirmDialog(): {
             />
           </div>
         ) : null}
+        {shown?.typeToConfirm ? (
+          <form
+            className="space-y-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (typedMatches) settle({ comment });
+            }}
+          >
+            <Label htmlFor="confirm-dialog-typed">
+              {shown.typeToConfirm.label}
+            </Label>
+            <Input
+              id="confirm-dialog-typed"
+              value={typed}
+              autoComplete="off"
+              autoCapitalize="off"
+              // No placeholder: one showing the name reads as already typed.
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          </form>
+        ) : null}
         <DialogFooter>
           <Button variant="secondary" onClick={() => settle(null)}>
             {shown?.cancelLabel ?? "Cancel"}
           </Button>
           <Button
             variant={shown?.tone === "default" ? "default" : "destructive"}
+            disabled={!typedMatches}
             onClick={() => settle({ comment })}
           >
             {shown?.confirmLabel}

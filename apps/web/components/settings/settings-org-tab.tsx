@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   ARCHETYPES,
+  DEFAULT_TIER_WORD,
   VOCABULARY_DEFAULTS,
   getArchetype,
   orgHidingGreekLettersIn,
@@ -114,6 +115,7 @@ export function SettingsOrgTab({
   const [pledge, setPledge] = useState(vocabulary.pledge ?? "");
   const [cohort, setCohort] = useState(vocabulary.class ?? "");
   const [order, setOrder] = useState(vocabulary.order ?? "");
+  const [tier, setTier] = useState(vocabulary.tier ?? "");
   const [pendingArchetype, setPendingArchetype] = useState<ArchetypeKey | null>(
     null,
   );
@@ -163,11 +165,13 @@ export function SettingsOrgTab({
     setPledge(vocabulary.pledge ?? "");
     setCohort(vocabulary.class ?? "");
     setOrder(vocabulary.order ?? "");
+    setTier(vocabulary.tier ?? "");
   }, [
     vocabulary.recruitment,
     vocabulary.pledge,
     vocabulary.class,
     vocabulary.order,
+    vocabulary.tier,
   ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -237,6 +241,7 @@ export function SettingsOrgTab({
       pledge: pledge.trim(),
       class: cohort.trim(),
       order: order.trim(),
+      tier: tier.trim(),
     };
     void onPatchConfig({ vocabulary: vocab });
   }
@@ -548,6 +553,19 @@ export function SettingsOrgTab({
                 value={order}
                 onChange={(event) => setOrder(event.target.value)}
                 placeholder={current.orderLanguage}
+              />
+            </div>
+            <div className="grid gap-1">
+              {/*
+                What the chapter calls a tier of roles (#4068 decision 5):
+                Roles reads it in its headings and buttons.
+              */}
+              <Label htmlFor="vocab-tier">Role tier</Label>
+              <Input
+                id="vocab-tier"
+                value={tier}
+                onChange={(event) => setTier(event.target.value)}
+                placeholder={DEFAULT_TIER_WORD}
               />
             </div>
           </div>

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
+import { ChevronDown, ChevronRight, ListFilter, Plus } from "lucide-react";
 import {
   arrangeChannelSidebar,
   canHideConversation,
@@ -316,6 +316,13 @@ export interface ChannelListProps {
    * row or heading drags.
    */
   reorder?: ChannelReorderControls;
+  /**
+   * New channel from the rail (#3838, Shawn 2026-11-11), for a member with
+   * `channels:manage`: a + beside the Channels heading and each category's,
+   * as Discord and Slack draw it. `categoryId` is the heading's category,
+   * null for the default Channels group. Absent, no heading offers it.
+   */
+  onCreateChannel?: (categoryId: string | null) => void;
 }
 
 /**
@@ -330,6 +337,11 @@ export interface ChannelReorderControls {
 
 /** Copy for the reorder (#4178), rostered in writing.md § Arrange the channel list. */
 export const EMPTY_CATEGORY_HINT = "Drag channels here";
+
+/** The heading +'s name: "New channel", or "New channel in Exec" under a category. */
+export function newChannelLabel(categoryName: string | null): string {
+  return categoryName ? `New channel in ${categoryName}` : "New channel";
+}
 export const REORDER_SAVE_FAILED_TITLE = "Couldn't save the channel order";
 export const REORDER_SAVE_FAILED_BODY =
   "Nothing changed. Check your connection and try again.";
@@ -429,6 +441,7 @@ export function ChannelList({
   rowActions,
   sidebar,
   reorder,
+  onCreateChannel,
 }: ChannelListProps) {
   const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
   const mutedChannelIds = sidebar?.mutedChannelIds;
@@ -531,7 +544,9 @@ export function ChannelList({
       // not hide the whole list with no control to unfold it.
       collapsed:
         kind === "direct" && preferences.collapsed.has("direct")
-          ? new Set([...preferences.collapsed].filter((key) => key !== "direct"))
+          ? new Set(
+              [...preferences.collapsed].filter((key) => key !== "direct"),
+            )
           : preferences.collapsed,
       filters: preferences.filters,
       activeChannelId,
@@ -995,6 +1010,37 @@ export function ChannelList({
     return kept;
   };
 
+  /**
+   * The heading's + (#3838): shown while the pointer is over the heading or
+   * the + has focus, as Discord and Slack show theirs, so a rail full of
+   * headings doesn't carry a column of + signs. Never on Pinned, Direct
+   * messages, System or Hidden, which the chapter doesn't fill.
+   */
+  const createButtonFor = (key: string, label: string) => {
+    if (!onCreateChannel || kind !== "channels") return null;
+    // Gone while anything is held, so the heading under the pointer is the
+    // whole drop target it was.
+    if (!isOrderableSection(key) || dragging) return null;
+    const categoryId = categoryIdOf(key);
+    const name = newChannelLabel(categoryId ? label : null);
+    return (
+      <button
+        type="button"
+        aria-label={name}
+        title={name}
+        onClick={() => onCreateChannel(categoryId)}
+        className={cn(
+          // `mb-1` matches the heading's own bottom padding, so the + sits
+          // on the label's line.
+          "mb-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-foreground",
+          "opacity-0 focus-visible:opacity-100 group-hover/head:opacity-100",
+        )}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    );
+  };
+
   /** A section block's drag attributes. */
   const blockProps = (key: string) => {
     if (!reorder) return {};
@@ -1018,24 +1064,27 @@ export function ChannelList({
     const slotHere = slot?.kind === "channel" && slot.section === key;
     return (
       <div key={key} {...blockProps(key)}>
-        <p
-          data-flip={`head:${key}`}
-          data-reorder-header={key}
-          tabIndex={0}
-          onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
-          onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={cn(
-            "flex items-center gap-1 pb-1 text-muted-foreground",
-            sidebar ? "px-2" : "px-3",
-            EYEBROW,
-          )}
-        >
-          {sidebar ? (
-            <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          ) : null}
-          <span className="truncate">{label}</span>
-        </p>
+        <div className="group/head flex items-center gap-1 pr-2">
+          <p
+            data-flip={`head:${key}`}
+            data-reorder-header={key}
+            tabIndex={0}
+            onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
+            onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
+            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-1 pb-1 text-muted-foreground",
+              sidebar ? "px-2" : "px-3",
+              EYEBROW,
+            )}
+          >
+            {sidebar ? (
+              <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            ) : null}
+            <span className="truncate">{label}</span>
+          </p>
+          {createButtonFor(key, label)}
+        </div>
         {slotHere ? (
           <ul aria-hidden="true">{channelSlot}</ul>
         ) : draggingCategory ? null : (
@@ -1180,58 +1229,66 @@ export function ChannelList({
               never hides a mention.
             */}
             {kind === "direct" && section.key === "direct" ? null : sidebar ? (
-              <button
-                type="button"
-                id={headerId}
-                data-flip={`head:${section.key}`}
-                {...headerProps}
-                aria-expanded={!section.collapsed}
-                onClick={() =>
-                  sidebar.onSetCollapsed(section.key, !section.collapsed)
-                }
+              <div
                 className={cn(
-                  "flex w-full items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                  "group/head flex items-center gap-1 pr-2",
                   // Pinned to the top of the rail while its rows scroll under
                   // it, until the next heading pushes it off (owner
                   // 2026-11-07). The rail's own surface, so no row shows
                   // through; the 4px pulled up and padded back keeps the
-                  // resting layout and gives the pinned label room.
+                  // resting layout and gives the pinned label room. On the
+                  // row, not the fold button, so the heading's + stays with it.
                   "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
-                  EYEBROW,
-                  // Folded with something unread inside, it reads as an
-                  // unread row does, since only a mention carries a number:
-                  // `--foreground` bold (foundations.md §5), as mobile draws it.
-                  section.collapsed &&
-                    section.unreadCount > 0 &&
-                    "font-bold text-foreground",
                 )}
               >
-                {section.collapsed ? (
-                  <ChevronRight
-                    className="h-3.5 w-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <ChevronDown
-                    className="h-3.5 w-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="truncate">{section.label}</span>
-                {section.collapsed && section.addressed ? (
-                  <Badge
-                    variant="mention"
-                    className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
-                    aria-label={foldedSectionAnnouncement(section)}
-                  >
-                    {badgeLabel(section.addressedCount, section.mentionCount)}
-                  </Badge>
-                ) : section.collapsed && section.unreadCount > 0 ? (
-                  <span className="sr-only">
-                    {foldedSectionAnnouncement(section)}
-                  </span>
-                ) : null}
-              </button>
+                <button
+                  type="button"
+                  id={headerId}
+                  data-flip={`head:${section.key}`}
+                  {...headerProps}
+                  aria-expanded={!section.collapsed}
+                  onClick={() =>
+                    sidebar.onSetCollapsed(section.key, !section.collapsed)
+                  }
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                    EYEBROW,
+                    // Folded with something unread inside, it reads as an
+                    // unread row does, since only a mention carries a number:
+                    // `--foreground` bold (foundations.md §5), as mobile draws it.
+                    section.collapsed &&
+                      section.unreadCount > 0 &&
+                      "font-bold text-foreground",
+                  )}
+                >
+                  {section.collapsed ? (
+                    <ChevronRight
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <ChevronDown
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="truncate">{section.label}</span>
+                  {section.collapsed && section.addressed ? (
+                    <Badge
+                      variant="mention"
+                      className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
+                      aria-label={foldedSectionAnnouncement(section)}
+                    >
+                      {badgeLabel(section.addressedCount, section.mentionCount)}
+                    </Badge>
+                  ) : section.collapsed && section.unreadCount > 0 ? (
+                    <span className="sr-only">
+                      {foldedSectionAnnouncement(section)}
+                    </span>
+                  ) : null}
+                </button>
+                {createButtonFor(section.key, section.label)}
+              </div>
             ) : (
               <p
                 id={headerId}

@@ -1,6 +1,5 @@
 "use client";
 
-import { ALWAYS_FORMAL_LABEL_WITH_HINT } from "@repo/chat-core/density";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMemo, useState } from "react";
@@ -21,7 +20,6 @@ import {
   useChannelAccessOptions,
   useChannels,
   useCreateCategory,
-  useCreateChannel,
   useDeleteCategory,
   useMemberDisplayNames,
   usePinnedMessages,
@@ -53,13 +51,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
-import {
-  PanelBody,
-  PanelContent,
-  PanelFooter,
-  PanelHeader,
-} from "@/components/shared/panel";
 import {
   anyReadUncached,
   readIsOffline,
@@ -87,6 +78,7 @@ import {
   ChatAdminBodySkeleton,
 } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CreateChannelSheet } from "./create-channel-sheet";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -285,7 +277,6 @@ function ChatAdminBody({
   const categoriesQuery = useCategories();
   const accessOptionsQuery = useChannelAccessOptions();
 
-  const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const deleteChannelFlow = useDeleteChannelFlow(confirm);
   const router = useRouter();
@@ -630,88 +621,8 @@ function ChatAdminBody({
     });
   }
 
-  // ── Create-channel panel ────────────────────────────────────────────────
+  // ── Create-channel panel (`create-channel-sheet.tsx`, shared with the rail)
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createDescription, setCreateDescription] = useState("");
-  // Discord's create dialog asks one question about access, "Private
-  // channel", and Frapp keeps it: a private channel's members are added by
-  // hand, everyone else's access is the two lists below it.
-  const [createPrivate, setCreatePrivate] = useState(false);
-  const [createCategoryId, setCreateCategoryId] = useState(NO_CATEGORY);
-  const [createSee, setCreateSee] = useState<string[] | null>(null);
-  const [createPost, setCreatePost] = useState<string[] | null>(null);
-  // Until the officer edits a list, the channel takes its category's (the
-  // server copies them when the lists are left out), and the form shows them.
-  const [createAccessTouched, setCreateAccessTouched] = useState(false);
-  const [createAlwaysFormal, setCreateAlwaysFormal] = useState(false);
-
-  function resetCreateDraft() {
-    setCreateName("");
-    setCreateDescription("");
-    setCreatePrivate(false);
-    setCreateCategoryId(NO_CATEGORY);
-    setCreateSee(null);
-    setCreatePost(null);
-    setCreateAccessTouched(false);
-    setCreateAlwaysFormal(false);
-  }
-
-  function handleCreateCategoryChange(categoryId: string) {
-    setCreateCategoryId(categoryId);
-    if (createAccessTouched) return;
-    const category = categories.find((c) => c.id === categoryId);
-    setCreateSee(category?.who_can_see ?? null);
-    setCreatePost(category?.who_can_post ?? null);
-  }
-
-  const createAccessIncomplete =
-    !createPrivate && (isEmptyChoice(createSee) || isEmptyChoice(createPost));
-
-  /** Every way the create panel closes (X, Escape, scrim, Cancel) drops the draft. */
-  function handleCreateOpenChange(open: boolean) {
-    setCreateDialogOpen(open);
-    if (!open) resetCreateDraft();
-  }
-
-  async function handleCreateChannel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = createName.trim();
-    if (!name) return;
-    if (createAccessIncomplete) {
-      toast({
-        variant: "destructive",
-        description:
-          "Add a tier or role to each chosen list, or pick Everyone.",
-      });
-      return;
-    }
-    try {
-      await createChannel.mutateAsync({
-        name,
-        description: createDescription.trim() || undefined,
-        type: createPrivate
-          ? "PRIVATE"
-          : createSee === null
-            ? "PUBLIC"
-            : "ROLE_GATED",
-        category_id:
-          createCategoryId === NO_CATEGORY ? undefined : createCategoryId,
-        display_locked: createAlwaysFormal,
-        ...(!createPrivate && createAccessTouched
-          ? { who_can_see: createSee, who_can_post: createPost }
-          : {}),
-      });
-      toast({ description: `#${name} created.` });
-      resetCreateDraft();
-      setCreateDialogOpen(false);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description: getErrorMessage(error, "Couldn't create the channel."),
-      });
-    }
-  }
 
   // ── Pinned messages for the selected channel ────────────────────────────
   const pinsQuery = usePinnedMessages(selectedChannelId ?? "");
@@ -1159,156 +1070,16 @@ function ChatAdminBody({
                     </SelectContent>
                   </Select>
                 ) : null}
-                <Sheet
+                <CreateChannelSheet
                   open={createDialogOpen}
-                  onOpenChange={handleCreateOpenChange}
-                >
-                  <SheetTrigger asChild>
+                  onOpenChange={setCreateDialogOpen}
+                  trigger={
                     <Button className="gap-2">
                       <Plus className="h-4 w-4" />
                       New channel
                     </Button>
-                  </SheetTrigger>
-                  {/*
-              A panel, not a dialog (`components.md` § Surface size): a
-              channel's two access lists and their Add menus would scroll
-              inside a 512px dialog capped at 80vh.
-            */}
-                  <PanelContent>
-                    <PanelHeader>Create a channel</PanelHeader>
-                    <PanelBody
-                      as="form"
-                      id="channel-create-form"
-                      onSubmit={handleCreateChannel}
-                    >
-                      <SheetDescription>
-                        Choose who can see the channel and who can post in it.
-                        In a category, it starts with the category&apos;s
-                        answers and follows them until you change it.
-                      </SheetDescription>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-name">Name</Label>
-                        <Input
-                          id="ca-create-name"
-                          value={createName}
-                          onChange={(event) =>
-                            setCreateName(event.target.value)
-                          }
-                          placeholder="announcements"
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-description">
-                          Description
-                        </Label>
-                        <Textarea
-                          id="ca-create-description"
-                          value={createDescription}
-                          onChange={(event) =>
-                            setCreateDescription(event.target.value)
-                          }
-                          rows={2}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-category">Category</Label>
-                        <Select
-                          value={createCategoryId}
-                          onValueChange={handleCreateCategoryChange}
-                        >
-                          <SelectTrigger id="ca-create-category">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NO_CATEGORY}>
-                              Uncategorized
-                            </SelectItem>
-                            {categories.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <label className="flex items-center gap-3">
-                          <Switch
-                            checked={createPrivate}
-                            onCheckedChange={setCreatePrivate}
-                          />
-                          <span className="text-sm">Private channel</span>
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Only people you add can see it, starting with you. Its
-                          type can&apos;t be changed after it&apos;s created.
-                        </p>
-                      </div>
-                      {createPrivate ? null : (
-                        <div className="grid gap-4 rounded-md border border-border p-3">
-                          <ChannelAccessField
-                            id="ca-create-see"
-                            question="see"
-                            value={createSee}
-                            onChange={(next) => {
-                              setCreateSee(next);
-                              setCreateAccessTouched(true);
-                            }}
-                            options={accessOptions}
-                            optionsState={accessOptionsState}
-                          />
-                          <ChannelAccessField
-                            id="ca-create-post"
-                            question="post"
-                            value={createPost}
-                            onChange={(next) => {
-                              setCreatePost(next);
-                              setCreateAccessTouched(true);
-                            }}
-                            options={accessOptions}
-                            optionsState={accessOptionsState}
-                          />
-                        </div>
-                      )}
-                      <label className="flex items-center gap-3">
-                        <Switch
-                          checked={createAlwaysFormal}
-                          onCheckedChange={setCreateAlwaysFormal}
-                        />
-                        <span className="text-sm">
-                          {ALWAYS_FORMAL_LABEL_WITH_HINT}
-                        </span>
-                      </label>
-                    </PanelBody>
-                    <PanelFooter>
-                      <Button
-                        variant="secondary"
-                        // Through the same handler as the X and Escape: Radix fires no
-                        // `onOpenChange` for a close made by setting state, so a bare
-                        // `setCreateDialogOpen(false)` would keep the draft.
-                        onClick={() => handleCreateOpenChange(false)}
-                        disabled={createChannel.isPending}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        form="channel-create-form"
-                        type="submit"
-                        disabled={
-                          createChannel.isPending ||
-                          !createName.trim() ||
-                          createAccessIncomplete
-                        }
-                      >
-                        {createChannel.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : null}
-                        Create channel
-                      </Button>
-                    </PanelFooter>
-                  </PanelContent>
-                </Sheet>
+                  }
+                />
               </div>
             </div>
             {channels.length === 0 ? (

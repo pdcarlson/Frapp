@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExportMenu } from "@/components/shared/export-menu";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -65,12 +66,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
-import {
-  asArray,
-  cn,
-  getErrorMessage,
-  labelled,
-} from "@/lib/utils";
+import { asArray, cn, getErrorMessage, labelled } from "@/lib/utils";
 import { InvoiceRowsSkeleton } from "@/components/billing/billing-skeleton";
 
 /**
@@ -329,6 +325,16 @@ export function InvoiceList({ id }: { id?: string }) {
       toast({
         title: "Enter a valid amount",
         description: "Amount must be greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // The due field holds "" while its text is not a date (`DateField`), and
+    // a required text input lets any text through.
+    if (!draft.due_date) {
+      toast({
+        title: "Pick a due date",
+        description: "Try a date like December 1.",
         variant: "destructive",
       });
       return;
@@ -592,15 +598,13 @@ export function InvoiceList({ id }: { id?: string }) {
                     </div>
                     <div className="grid gap-1">
                       <Label htmlFor="invoice-due">Due date</Label>
-                      <Input
+                      <DateField
                         id="invoice-due"
-                        type="date"
+                        lean="ahead"
+                        placeholder="e.g. December 1"
                         value={draft.due_date}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            due_date: event.target.value,
-                          }))
+                        onChange={(due_date) =>
+                          setDraft((prev) => ({ ...prev, due_date }))
                         }
                         required
                       />
