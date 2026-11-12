@@ -403,8 +403,9 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    build and submit config, no rebuild, at most twice, while EAS still allows it (`canRetry`).
    The summary names each retry. Any other error is reported, not retried (Paul, 2026-11-12).
    EAS's error for a store failure is only a code and a stock sentence, so for each submission
-   that errors or is cancelled the job also prints the last 60 lines of that submission's own
-   log on EAS (the log expo.dev shows on its page), which name the store step that failed.
+   that errors or is cancelled the job also prints the end of that submission's own log on EAS
+   (the log expo.dev shows on its page; `LOG_TAIL_LINES` lines), which names the store step that
+   failed. The job log is public, so links and email addresses in it are removed first.
    `FINISHED` means the binary reached the store, not that it
    passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
    did iOS 0.9.1 (8) with ITMS-90683.
