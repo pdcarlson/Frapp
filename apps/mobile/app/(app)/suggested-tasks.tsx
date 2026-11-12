@@ -623,7 +623,9 @@ function SuggestionRow({
     onPress: onAccept,
   };
   const dismiss = {
-    label: onAlreadyDoing ? LAST_YEAR_COPY.dismiss : AI_SUGGESTION_COPY.dismiss,
+    // "Dismiss" on a last-year task too, as web's row says it; "Not this
+    // year" is an event's.
+    label: AI_SUGGESTION_COPY.dismiss,
     doing: "dismiss" as const,
     onPress: onDismiss,
   };
