@@ -703,7 +703,10 @@ function validateLedgerCoverage(migrations) {
   for (const { page, missing } of pages.malformed) {
     console.error(`- ${MIGRATION_LEDGER_DIR}/${page} is not an entry yet: it needs ${missing.join(" and ")}.`);
   }
-  const unpaged = [...new Set(problems.filter((p) => p.kind === "missing").map((p) => p.migration))];
+  const drafted = new Set(pages.malformed.map(({ page }) => page.replace(/\.md$/, ".sql")));
+  const unpaged = [
+    ...new Set(problems.filter((p) => p.kind === "missing").map((p) => p.migration)),
+  ].filter((migration) => !drafted.has(migration));
   for (const migration of unpaged) {
     console.error(
       `- ${migration} has no ledger page: write ${MIGRATION_LEDGER_DIR}/${migration.replace(/\.sql$/, ".md")} ` +
