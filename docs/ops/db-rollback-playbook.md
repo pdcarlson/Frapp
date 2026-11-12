@@ -1,9 +1,16 @@
 # DB Rollback Playbook
 
+**A migration created since 2026-11-12 has its rollback recipe on its own page** in
+[`database/migrations/`](database/migrations/README.md), named after the migration. The recipes
+below are for older migrations, and the procedure sections (decision matrix, backups, undo one
+migration) apply to all of them.
+
 ## Every migration owes a recipe here
 
-`check:migration-safety` asserts **per-migration** coverage in this file *and*
-in [`database/promotion-log.md`](database/promotion-log.md) — both, not either. It
+For a migration created before 2026-11-12, `check:migration-safety` asserts
+**per-migration** coverage in this file *and* in
+[`database/promotion-log.md`](database/promotion-log.md) (both, not either), unless
+the migration has a ledger page. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
 Any of these counts, anywhere in the file:
 
@@ -61,7 +68,7 @@ Use when:
 - service can stay online.
 
 Action:
-1. Create new migration: `npm run supabase -- migration new <hotfix_name>`
+1. Create new migration: `npm run migration:new -- <hotfix_name>` (the SQL file and its ledger page)
 2. Apply to staging first.
 3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
@@ -157,10 +164,9 @@ migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npm run supabase -- migration new rollback_<what>`),
-and give it its own entries here and in
-[`database/promotion-log.md`](database/promotion-log.md) (`check:migration-safety`
-requires both). Make every statement idempotent, so the migration also applies
+recipe's SQL as a new migration (`npm run migration:new -- rollback_<what>`),
+and fill in its own [ledger page](database/migrations/README.md)
+(`check:migration-safety` requires it). Make every statement idempotent, so the migration also applies
 where someone already ran it by hand (below): `if exists` where Postgres has it,
 and a guarded `do` block where it doesn't. `alter publication … drop table` has
 no `if exists`, so check `pg_publication_tables` first, as the original
@@ -2459,7 +2465,7 @@ A function body (#2521). It re-creates `get_channel_unread_counts` with one more
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
 
-The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
+The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2479,7 +2485,7 @@ drop function if exists public.remove_private_channel_member(uuid, uuid, uuid);
 drop function if exists public.remove_user_from_private_channels(uuid, uuid);
 ```
 
-The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail without the functions.
+The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs`, which would fail without the functions.
 
 **Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.
 
@@ -4286,3 +4292,22 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
+## Rollback reaction removal policy (20261112280000)
+
+- **Migration**: `20261112280000_chat_message_actions_client_writes.sql`
+
+Drops `chat_message_actions_insert`, re-creates `chat_message_actions_delete` on `reaction:*` rows through the new `chat_action_is_callers(uuid)` helper, and revokes INSERT and UPDATE on `chat_message_actions` from `anon` and `authenticated`. No rows change, and the API writes as `service_role`, so no API version depends on it.
+
+Rolling it back brings back the bug it fixes (a removed reaction stays in the database), so prefer a forward fix. If it must go, put the 20260523150000 policies back and drop the helper:
+
+```sql
+drop policy if exists "chat_message_actions_delete" on public.chat_message_actions;
+create policy "chat_message_actions_delete" on public.chat_message_actions for delete
+  using (user_id in (select id from public.users where supabase_auth_id = auth.uid()));
+create policy "chat_message_actions_insert" on public.chat_message_actions for insert
+  with check (user_id in (select id from public.users where supabase_auth_id = auth.uid()));
+grant insert, update on public.chat_message_actions to authenticated;
+drop function if exists public.chat_action_is_callers(uuid);
+```
+
+Keep the migration file ([§ 3) Undo one migration](#3-undo-one-migration)).

@@ -20,14 +20,12 @@ describe("notificationScreensForPath", () => {
     expect(notificationScreensForPath("/meetings/abc")).toEqual([
       "ai_suggestions",
     ]);
-    expect(notificationScreensForPath("/chat-admin")).toEqual(["chat_reports"]);
-    expect(notificationScreensForPath("/discord-import")).toEqual([
-      "discord_import",
-    ]);
   });
 
   it("leaves chat to the channel read, and matches whole segments only", () => {
     expect(notificationScreensForPath("/chat")).toEqual([]);
+    // The tools inside Chapter settings mark their own rows (#3837).
+    expect(notificationScreensForPath("/settings")).toEqual([]);
     expect(notificationScreensForPath("/chat/abc")).toEqual([]);
     expect(notificationScreensForPath("/eventsfoo")).toEqual([]);
     expect(notificationScreensForPath("/")).toEqual([]);

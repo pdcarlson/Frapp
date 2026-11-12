@@ -15,7 +15,7 @@ import { describeRepeatPattern, ordinal } from '@repo/validation';
 export const DEFAULT_PUSH_TIME_ZONE = 'America/New_York';
 
 /** Separates the facts in a push body: "Required · Mon, Nov 9, 8–9 PM". */
-export const PUSH_SEPARATOR = ' · ';
+const PUSH_SEPARATOR = ' · ';
 
 interface ZonedParts {
   weekday: string;

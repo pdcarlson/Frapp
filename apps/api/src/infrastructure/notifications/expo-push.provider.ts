@@ -87,7 +87,7 @@ const FALLBACK_BODY = 'Open Frapp to see what happened';
  * its own title and body, and `blank` names the halves it had to fill so the
  * provider can report the sender that did not.
  */
-export function completePushCopy(payload: PushPayload): {
+function completePushCopy(payload: PushPayload): {
   title: string;
   body: string;
   blank: 'title' | 'body' | 'title-and-body' | null;

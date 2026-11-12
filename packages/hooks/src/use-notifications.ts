@@ -547,7 +547,7 @@ export function useMarkNotificationRead({
 }
 
 /** Identifies {@link useMarkNotificationsRead}, for Sentry grouping (#3393). */
-export const markNotificationsReadMutationKey = [
+const markNotificationsReadMutationKey = [
   "notifications",
   "read-many",
 ] as const;

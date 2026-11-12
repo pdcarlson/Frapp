@@ -3,8 +3,8 @@
  * frame, in Frapp's charcoal and gold, composed around the raw app captures.
  *
  * `capture-mobile.mjs --store` captures each screen once, at the App Store's
- * 440x956 viewport at 3x, then hands the folder here. Each store's frame is
- * its own shape (App Store 1320x2868, Google Play 1242x2208), but the screen
+ * 402x874 viewport at 3x, then hands the folder here. Each store's frame is
+ * its own shape (App Store 1206x2622, Google Play 1242x2208), but the screen
  * inside it is the same capture, so both sets carry identical screens and
  * captions. Kept apart from `capture-mobile.mjs`, which launches a browser
  * the moment it is imported, so `scripts/ci/__tests__/store-frames.test.mjs`
@@ -79,7 +79,7 @@ export const STORE_FRAMES = [
     eyebrow: "Channels",
     title: "The group chat,<br><em>sorted</em>",
     sub: "Channels for announcements, exec and every committee.",
-    callout: { x: 0.015, y: 0.394, w: 0.97, h: 0.112 },
+    callout: { x: 0.015, y: 0.445, w: 0.97, h: 0.092 },
   },
   {
     slug: "05-tasks",
@@ -93,7 +93,7 @@ export const STORE_FRAMES = [
     eyebrow: "Study hours",
     title: "Study hours<br><em>that count</em>",
     sub: "Start a session inside your chapter's study zones.",
-    callout: { x: 0.035, y: 0.093, w: 0.93, h: 0.2 },
+    callout: { x: 0.035, y: 0.112, w: 0.93, h: 0.224 },
   },
   {
     slug: "07-directory",
@@ -165,7 +165,8 @@ const ANDROID_STATUS = `<span>12:30</span><span class="icons">
 export const FRAME_LAYOUTS = [
   {
     preset: APP_STORE_PRESET,
-    phoneWidth: 336,
+    // 336 of 440 before the preset moved to 402 wide (#2454); same share.
+    phoneWidth: 307,
     phoneTop: 0.315,
     status: IOS_STATUS,
   },

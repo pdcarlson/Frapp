@@ -953,7 +953,7 @@ export class ClearedKindNotificationPreferenceDto {
 }
 
 /** Bounds one request to roughly one page of distinct message authors (#1231). */
-export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
+const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
 
 export class ResolveAuthorAvatarsDto {
   @ApiProperty({

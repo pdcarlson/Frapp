@@ -5,7 +5,7 @@ import { taskKeys } from "./use-tasks";
  * The dashboard query prefix each chat-written record's page reads, the same
  * prefix the page's own create hook invalidates: `useCreateTask`
  * (`taskKeys.all`), `useCreateServiceEntry` (`["service-entries"]`) and
- * `useAdjustPoints` (`["points", chapterId]`). Unscoped by chapter on purpose:
+ * `useAdjustPoints` (`invalidatePointReads`, `["points"]`). Unscoped by chapter on purpose:
  * chat-core's result doesn't carry one, and a chapter switch clears the cache
  * anyway.
  *

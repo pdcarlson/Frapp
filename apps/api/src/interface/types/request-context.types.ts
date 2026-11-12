@@ -61,7 +61,7 @@ export type WebhookRequest = RequestContext & {
  * Name of the top-level access-token claim written by
  * `public.custom_access_token_hook` (see the migration of the same name).
  */
-export const ACTIVE_CHAPTER_CLAIM = 'active_chapter_id';
+const ACTIVE_CHAPTER_CLAIM = 'active_chapter_id';
 
 /**
  * Reads the active-chapter claim, tolerating tokens issued before the hook was

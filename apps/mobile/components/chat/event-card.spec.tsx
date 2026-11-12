@@ -30,6 +30,8 @@ const state = vi.hoisted(() => ({
   writeBlockedReason: null as string | null,
   attendanceIds: [] as string[],
   eventIds: [] as string[],
+  mine: undefined as unknown,
+  mineIds: [] as string[],
 }));
 const checkIn = vi.hoisted(() => vi.fn());
 const requireForegroundFix = vi.hoisted(() => vi.fn());
@@ -52,6 +54,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           refetch: () => refetchEvent(),
         }
       : { data: undefined, isError: false, refetch: () => refetchEvent() };
+  },
+  useMyAttendance: (id: string) => {
+    state.mineIds.push(id);
+    return { data: id ? state.mine : undefined };
   },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   useCurrentChapter: () => ({
@@ -163,6 +169,24 @@ function render(
   return tree;
 }
 
+/** The same card element `render()` mounts, for `tree.update` after state changes. */
+function rerenderCard() {
+  return (
+    <FrappThemeProvider>
+      <EventCard
+        message={message()}
+        payload={PAYLOAD}
+        viewerId="viewer-1"
+        isConfirmed
+        onRetry={vi.fn()}
+        onDiscard={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />
+    </FrappThemeProvider>
+  );
+}
+
 function button(tree: ReactTestRenderer, label: string) {
   return tree.root.find(
     (node) =>
@@ -198,6 +222,8 @@ beforeEach(() => {
   state.writeBlockedReason = null;
   state.attendanceIds = [];
   state.eventIds = [];
+  state.mine = { attendance: null };
+  state.mineIds = [];
   checkIn.mockReset().mockResolvedValue({});
   requireForegroundFix.mockReset();
   refetchEvent.mockReset().mockResolvedValue({ data: undefined });
@@ -452,5 +478,62 @@ describe("EventCard — Check in", () => {
     const tree = render();
     await press(tree, "Check in");
     expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.checkIn);
+  });
+});
+
+describe("EventCard — already on the list", () => {
+  it("says Checked in for a member who checked in somewhere else", () => {
+    // Scanned at the door, another device, or this card before it scrolled
+    // away and remounted: the local outcome is gone, the server's row isn't.
+    state.mine = {
+      attendance: { status: "PRESENT", check_in_time: "2026-11-05T23:10:00.000Z" },
+    };
+    const tree = render();
+    expect(button(tree, "Checked in").props.disabled).toBe(true);
+    expect(hasButton(tree, "Check in")).toBe(false);
+  });
+
+  it("shows an officer's mark instead of offering a check-in it can't replace", () => {
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    const tree = render();
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(hasButton(tree, "Check in")).toBe(false);
+  });
+
+  it("shows an officer's mark, not Checked in, when the tap's 409 was the mark", async () => {
+    // The row read before the officer marked the member; the server refuses
+    // the check-in for any existing row, and the re-read row says which.
+    checkIn.mockRejectedValue({ statusCode: 409, message: "Already checked in" });
+    const tree = render();
+    await press(tree, "Check in");
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    act(() => tree.update(rerenderCard()));
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(hasButton(tree, "Checked in")).toBe(false);
+  });
+
+  it("drops an earlier failure once the member's row says checked in", async () => {
+    checkIn.mockRejectedValue(new Error("network down"));
+    const tree = render();
+    await press(tree, "Check in");
+    const failure = screenText(tree);
+    state.mine = {
+      attendance: { status: "PRESENT", check_in_time: "2026-11-05T23:10:00.000Z" },
+    };
+    act(() => tree.update(rerenderCard()));
+    expect(button(tree, "Checked in").props.disabled).toBe(true);
+    expect(failure).toContain("check you in");
+    expect(screenText(tree)).not.toContain("check you in");
+  });
+
+  it("offers Check in while the member has no row", () => {
+    const tree = render();
+    expect(hasButton(tree, "Check in")).toBe(true);
+  });
+
+  it("doesn't read the member's row outside the window", () => {
+    state.now = new Date("2026-11-04T12:00:00.000Z");
+    render();
+    expect(state.mineIds.every((id) => id === "")).toBe(true);
   });
 });

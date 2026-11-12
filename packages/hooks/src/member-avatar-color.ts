@@ -33,7 +33,7 @@ export const MEMBER_HASH_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filt
  * nearly the fill the old recipe did (Orange `#43362B`, was `#443426`) and
  * keeps every hue's initials at 4.69:1 or better.
  */
-export const MEMBER_AVATAR_TINT_ALPHA = 0.14;
+const MEMBER_AVATAR_TINT_ALPHA = 0.14;
 
 /**
  * 32-bit FNV-1a over the string's UTF-16 code units, as an unsigned integer.

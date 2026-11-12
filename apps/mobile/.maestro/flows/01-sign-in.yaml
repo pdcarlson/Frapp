@@ -1,0 +1,21 @@
+# Device pass: sign-in reaches Chat home (smoke checklist § 1).
+appId: live.frapp.mobile
+name: "Sign in with a password"
+tags:
+  - smoke
+---
+# clearState leaves the iOS Keychain, where the session lives, so a signed-in
+# session would survive it.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - clearKeychain
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+- runFlow: ../subflows/sign-in.yaml
+- assertVisible:
+    id: "tab-index"
+- takeScreenshot: chat-home

@@ -213,10 +213,7 @@ export function stripSourceMapFiles(distDir: string): string[] {
  * which the caller must treat as fatal, because a half-restored dist must
  * not ship.
  */
-export function restoreDistFromSnapshot(
-  snapshotDir: string,
-  distDir: string,
-): void {
+function restoreDistFromSnapshot(snapshotDir: string, distDir: string): void {
   try {
     for (const entry of readdirSync(distDir)) {
       rmSync(join(distDir, entry), { recursive: true, force: true });

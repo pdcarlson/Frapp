@@ -26,8 +26,9 @@ type Props = {
   /** The tools this viewer holds that live on this page. */
   tools: readonly SettingsTool[];
   /**
-   * The embedded tool's own body (Study zones' zone list), drawn where its
-   * link row would be. Embedded tools get no link row.
+   * The embedded tool's own body (Study zones' zone list, Chat admin, the
+   * Reports form), drawn where its link row would be. Embedded tools get no
+   * link row.
    */
   toolBody?: ReactNode;
   /** The module's stored rules, or nothing when it has none to set. */

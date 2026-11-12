@@ -12,7 +12,7 @@ import {
 import type { ActNote, ActToolContext } from './act-tool';
 
 /** Names one request may carry; the rest are dropped. */
-export const ACT_PEOPLE_MAX = 60;
+const ACT_PEOPLE_MAX = 60;
 /** A typed name longer than this is not a name. */
 const NAME_MAX_LENGTH = 80;
 /** Names sent to the matching call at once. */

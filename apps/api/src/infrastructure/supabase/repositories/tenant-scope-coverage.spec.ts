@@ -1,6 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
-  EXPECTED_REPOSITORY_COUNT,
+  MIN_REPOSITORY_COUNT,
+  REPOSITORY_SRC_ROOT,
   collectRepositories,
 } from '#test/helpers/repository-corpus';
 
@@ -13,7 +16,7 @@ import {
  * now fails here, and deferring one is a line in `TENANT_SCOPE_BACKLOG` with a
  * reason — a decision somebody made, not a gap that accumulated.
  *
- * Discovery and the expected total both come from
+ * Discovery and the minimum total both come from
  * `#test/helpers/repository-corpus`, shared with `no-as-never.spec.ts` so the
  * two ledgers cannot come to disagree about what a repository is or how many
  * there are. The sibling `*.repository.spec.ts` is the spec, wherever the
@@ -70,6 +73,25 @@ describe('API repository tenant-scope coverage', () => {
     expect(duplicates).toEqual([]);
   });
 
+  it('the walker finds every committed repository', () => {
+    // A second listing that shares no code with the walker: git's index. With
+    // the counts now floors, this is what notices a walker that stops finding
+    // files once the tree has grown past the floor. Untracked files the walker
+    // finds are fine; a committed one it misses is not.
+    const tracked = execFileSync(
+      'git',
+      ['ls-files', '-z', '--', '*.repository.ts'],
+      { cwd: REPOSITORY_SRC_ROOT, encoding: 'utf8' },
+    )
+      .split('\0')
+      .filter(Boolean)
+      .map((path) => join(REPOSITORY_SRC_ROOT, path));
+    const found = new Set(repositories.map(({ fullPath }) => fullPath));
+
+    expect(tracked.length).toBeGreaterThanOrEqual(MIN_REPOSITORY_COUNT);
+    expect(tracked.filter((path) => !found.has(path))).toEqual([]);
+  });
+
   it('every repository either has a tenant-scope spec or a recorded reason', () => {
     const uncovered = repositories
       .filter(
@@ -108,19 +130,18 @@ describe('API repository tenant-scope coverage', () => {
     expect(withoutHarness).toEqual([]);
   });
 
-  it('reports how much of the repository layer is covered', () => {
+  it('coverage never drops below its recorded floor', () => {
     const covered =
       repositories.length - Object.keys(TENANT_SCOPE_BACKLOG).length;
 
-    // Both numbers are pinned so shrinking coverage is a deliberate edit
-    // rather than a silent regression. Adding a repository moves two of them:
-    // `EXPECTED_REPOSITORY_COUNT` in `#test/helpers/repository-corpus` (the
-    // denominator, shared with `no-as-never.spec.ts`) and `covered` here —
-    // unless it lands with a `TENANT_SCOPE_BACKLOG` reason instead, which
-    // moves only the first.
-    expect({ covered, total: repositories.length }).toEqual({
-      covered: 63,
-      total: EXPECTED_REPOSITORY_COUNT,
-    });
+    // Floors, not exact counts, so a PR that adds a repository (with its spec
+    // or a backlog reason) edits neither number. The exact pins they replaced
+    // made any two such PRs conflict (2026-11-12, #4558). A repository the
+    // walker stops finding is caught by the git cross-check above, not here;
+    // coverage shrinks only by adding a `TENANT_SCOPE_BACKLOG` line, which is
+    // a visible edit. Raise a floor when you like; lower one only with a
+    // reason in the PR.
+    expect(repositories.length).toBeGreaterThanOrEqual(MIN_REPOSITORY_COUNT);
+    expect(covered).toBeGreaterThanOrEqual(63);
   });
 });

@@ -192,9 +192,9 @@ jobs:
             echo ""
             case "$OUTCOME" in
               success)
-                echo "Published to the \`production\` channel for \`$PLATFORM\`. Installed apps download it on their next launch and run it on the one after."
+                echo "Published to the \`production\` channel for \`$PLATFORM\`. Phones download it on their next launch or return to the app, and run it on the next launch or the next return after ten minutes away."
                 echo ""
-                echo "Check it: \`npm run eas -- update:list --branch production\`. Roll back: \`npm run eas -- update:roll-back-to-embedded --channel production\` (docs/ops/deployment/mobile.md § 6.7)."
+                echo "Check it: \`npm run eas -- update:list --branch production\`. Roll back: run **Roll back the app update** in Actions (docs/ops/deployment/mobile.md § 6.7)."
                 if [ "$HAS_SENTRY_AUTH_TOKEN" != "true" ]; then
                   echo ""
                   echo "> Source maps were not uploaded: the \`automation\` environment has no \`SENTRY_AUTH_TOKEN\`, so this update's stack traces in Sentry stay minified."

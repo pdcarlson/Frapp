@@ -93,7 +93,7 @@ export const RANK_REFUSAL =
   'You can only change roles and tiers ranked below your own.';
 
 /** Refusal when a write would grant what the caller does not hold (#4071). */
-export function grantRefusal(missing: readonly string[]): string {
+function grantRefusal(missing: readonly string[]): string {
   return `You can't give a role or tier a permission you don't have yourself: ${missing.join(', ')}.`;
 }
 
@@ -1214,7 +1214,7 @@ function canonicalOverrides(
  * A role's overrides with a patch applied: `true` and `false` set the
  * override, `null` clears it, and a key not in the patch is kept.
  */
-export function mergeOverrides(
+function mergeOverrides(
   current: Readonly<Record<string, boolean>>,
   patch: Readonly<Record<string, boolean | null>>,
 ): Record<string, boolean> {

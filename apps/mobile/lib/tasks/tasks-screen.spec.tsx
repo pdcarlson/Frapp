@@ -10,7 +10,10 @@ import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
-import { TaskRow } from "@/components/tasks/task-row";
+import { TaskRow, TaskTile } from "@/components/tasks/task-row";
+import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
 /**
  * The s08 board's status toggle on a gate refusal (#2710), the fifth paid-ops
@@ -193,9 +196,51 @@ async function tapRow(tree: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  resetListLayoutsForTests();
   mutateAsync.mockClear();
   successHaptic.mockReset();
   chapterId = "chapter-1";
+});
+
+/**
+ * List or Grid (#4175): today's rows are List, the default; Grid lays the same
+ * tasks out as cards two to a line, with the row's two targets.
+ */
+describe("Tasks List / Grid", () => {
+  it("draws rows by default, and cards that keep the box and the open in Grid", async () => {
+    const tree = render();
+    expect(tree.root.findAllByType(ListLayoutToggle)).toHaveLength(1);
+    expect(rows(tree).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByType(TaskTile)).toHaveLength(0);
+
+    act(() => setListLayout("tasks", "grid"));
+    const tiles = tree.root.findAllByType(TaskTile);
+    expect(rows(tree)).toHaveLength(0);
+    expect(tiles.length).toBeGreaterThan(0);
+    // The card's own targets, pressed as a member would: the body opens
+    // the task's detail sheet (where an officer's Edit sits)...
+    const tile = tiles[0]!;
+    const body = tile.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityRole === "button",
+    );
+    act(() => body.props.onPress());
+    expect(tree.root.findByType(TaskDetailSheet).props.row?.id).toBe(
+      tile.props.row.id,
+    );
+
+    // ...and the box completes it.
+    const box = tile.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.testID === `task-checkbox-${tile.props.row.id}`,
+    );
+    await act(async () => {
+      box.props.onPress();
+    });
+    expect(mutateAsync).toHaveBeenCalled();
+  });
 });
 
 describe("A task in flight", () => {
@@ -484,7 +529,9 @@ describe("Tasks with nothing assigned", () => {
     ];
     const tree = render();
 
-    expect(text(tree)).toMatch(/Nothing on your plate\. Next up: Chapter meeting, /);
+    expect(text(tree)).toMatch(
+      /Nothing on your plate\. Next up: Chapter meeting, /,
+    );
     expect(text(tree)).not.toContain("all clear");
     expect(text(tree)).not.toContain("Tap +");
     act(() => tree.unmount());
@@ -495,7 +542,9 @@ describe("Tasks with nothing assigned", () => {
     permissions = ["tasks:manage", "members:view"];
     const tree = render();
 
-    expect(text(tree)).toContain("Nothing on your plate. Tap + to assign a task.");
+    expect(text(tree)).toContain(
+      "Nothing on your plate. Tap + to assign a task.",
+    );
     act(() => tree.unmount());
   });
 

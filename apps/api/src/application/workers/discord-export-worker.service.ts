@@ -96,7 +96,7 @@ export const COPY_BATCH_MAX_ITEMS = 50;
  * which is why the function budgets by the CDN's real `Content-Length` and this
  * does not try to.
  */
-export const COPY_BATCH_MAX_DECLARED_BYTES = 256 * 1024 * 1024;
+const COPY_BATCH_MAX_DECLARED_BYTES = 256 * 1024 * 1024;
 
 export interface ExportSliceResult {
   messagesImported: number;
@@ -127,7 +127,7 @@ export interface ExportSliceResult {
  * again each slice would spend most of a slice's Discord budget on names that
  * have not changed.
  */
-export const MEMBER_PROFILE_TTL_MS = 30 * 60_000;
+const MEMBER_PROFILE_TTL_MS = 30 * 60_000;
 
 /** Member reads that took this long renew the lease before the page goes on. */
 export const MEMBER_READS_RENEW_AFTER_MS = 10_000;
@@ -1295,7 +1295,7 @@ function normaliseMimeType(value: string | null | undefined): string | null {
  * reports no useful type for an iPhone `.heic` photo, and storing it as a
  * generic binary got it refused by the bucket. Null when neither says.
  */
-export function attachmentContentType(
+function attachmentContentType(
   attachment: Pick<DiscordApiAttachment, 'content_type' | 'filename'>,
 ): string | null {
   const reported = normaliseMimeType(attachment.content_type);
