@@ -76,7 +76,7 @@ export const CHECK_IN_CODE_REFUSED_MESSAGE =
  * Check in for Scan code; a spec reads it from the API's source.
  */
 export const CHECK_IN_NEEDS_CODE_MESSAGE =
-  "Scan the code on the check-in screen to check in";
+  "Scan the code on the check-in screen with the Frapp app to check in";
 
 /** Whether a failed check-in was refused for carrying no code. */
 export function needsScannedCode(error: unknown): boolean {

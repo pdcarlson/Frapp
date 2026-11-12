@@ -197,4 +197,26 @@ describe("tryForegroundFix", () => {
       permission: { granted: true, canAskAgain: true },
     });
   });
+
+  it("gives up on a fix that takes longer than the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      requestForegroundPermissionsAsync.mockResolvedValue({
+        granted: true,
+        canAskAgain: true,
+      });
+      // A GPS fix indoors that never arrives.
+      getCurrentPositionAsync.mockReturnValue(new Promise(() => {}));
+
+      const result = tryForegroundFix("high", 8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      await expect(result).resolves.toEqual({
+        fix: null,
+        permission: { granted: true, canAskAgain: true },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

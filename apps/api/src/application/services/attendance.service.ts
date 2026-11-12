@@ -26,7 +26,9 @@ import {
 } from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
+  type CheckInScreenCheck,
   canAnchorCheckIn,
+  isLocatedScreen,
   isNearCheckInScreen,
 } from '#domain/utils/check-in-screen';
 import {
@@ -61,26 +63,16 @@ export interface CheckInScreenFix {
   accuracyMeters?: number;
 }
 
-/**
- * How check-in is guarding presence for an event, as the host screen reports
- * it (#4532):
- *
- * - `zone`: the event has a drawn zone, and that is the check.
- * - `screen`: members must be near a screen that showed the code.
- * - `no_location`: no screen could tell where it is, so the code is required
- *   but distance isn't checked. The host screen tells the officer once.
- * - `not_open` / `closed`: outside the check-in window; nothing is stored.
- */
-export type CheckInScreenCheck =
-  'zone' | 'screen' | 'no_location' | 'not_open' | 'closed';
+export type { CheckInScreenCheck } from '#domain/utils/check-in-screen';
 
 /**
- * Member-facing refusals for the screen check. Exported so the specs and the
- * shared error map (`SERVER_MESSAGE_COPY` in `@repo/validation`, keyed by
- * these exact sentences) can't drift from what is thrown.
+ * Member-facing refusals for the screen check. The shared error map
+ * (`SERVER_MESSAGE_COPY` in `@repo/validation`) is keyed by these exact
+ * sentences, and `attendance.service.spec.ts` checks it still has each one,
+ * so rewording one here without the map fails a test.
  */
 export const CHECK_IN_NEEDS_CODE =
-  'Scan the code on the check-in screen to check in';
+  'Scan the code on the check-in screen with the Frapp app to check in';
 export const CHECK_IN_NEEDS_LOCATION =
   'This check-in needs your location. Allow location for Frapp and scan again.';
 export const CHECK_IN_TOO_FAR =
@@ -135,20 +127,23 @@ export class AttendanceService {
   }
 
   /**
-   * Record that the host screen (s22) is showing the code, and where it is
-   * (#4532). Called about once a minute while the screen is up, by an officer
-   * with `events:update` (the mint's gate).
+   * Record that an officer's host screen (s22) is showing the code, and where
+   * it is (#4532). Called about once a minute while the screen is up, by an
+   * officer with `events:update` (the mint's gate). Each officer has their own
+   * row, and each report replaces it, location included.
    *
    * Stored only inside the check-in window, and only until it closes: a
    * screen opened early stores nothing until the window opens, and the row's
-   * `expires_at` is the window's close, after which nothing reads it and the
-   * sweep deletes it. A drawn zone wins over the screen, so with one the
-   * screen's location isn't stored at all; the row still marks the code as in
-   * use, which makes it required.
+   * `expires_at` is the window's close (read from the event on every report,
+   * so an edited end time is followed from the next one), after which nothing
+   * reads it and the sweep deletes it. A drawn zone wins over the screen, so
+   * with one the screen's location isn't stored at all; the row still marks
+   * the code as in use, which makes it required.
    */
   async reportCheckInScreen(
     eventId: string,
     chapterId: string,
+    userId: string,
     fix: CheckInScreenFix,
   ): Promise<{ check: CheckInScreenCheck }> {
     const event = await this.eventRepo.findById(eventId, chapterId);
@@ -182,16 +177,22 @@ export class AttendanceService {
         ? { lat, lng, accuracy_m: accuracyMeters }
         : null;
 
-    const row = await this.screenRepo.recordShown({
+    const nowIso = now.toISOString();
+    await this.screenRepo.recordShown({
       eventId,
+      reportedBy: userId,
       chapterId,
-      nowIso: now.toISOString(),
+      nowIso,
       expiresAt: closesAt.toISOString(),
       location,
     });
 
     if (hasZone) return { check: 'zone' };
-    return { check: row.lat !== null ? 'screen' : 'no_location' };
+    if (location) return { check: 'screen' };
+    const screens = await this.screenRepo.findLive(eventId, chapterId, nowIso);
+    return {
+      check: screens.some(isLocatedScreen) ? 'other_screen' : 'no_location',
+    };
   }
 
   /** The sweep's half of the retention rule above. */
@@ -237,6 +238,51 @@ export class AttendanceService {
     // period). Nothing writes before `checkInAtomic` below, so no ordering here
     // risks partial work. The window is not secret either — every member can
     // read event times from `GET /v1/events` — so leading with it leaks nothing.
+    // Who may check in, and whether they already have, come next, before the
+    // code and the location: a member already checked in who taps the chat
+    // card again should hear "already checked in", not "scan the code".
+
+    // Attendance by role (`spec/behavior/events.md`): a member the event
+    // doesn't invite can't check in. Read only when some role is listed or
+    // the default leaves anyone out; an untargeted event invites everyone.
+    let invitedByRole = false;
+    if (eventSetsRolesApart(event)) {
+      const member = await this.memberRepo.findByUserAndChapter(
+        userId,
+        chapterId,
+      );
+      if (!member) {
+        throw new ForbiddenException('You are not a member of this chapter');
+      }
+
+      const attendance = attendanceFor(event, member.role_ids);
+      if (attendance.status === 'not_invited') {
+        throw new ForbiddenException(
+          'You are not eligible to check in for this event',
+        );
+      }
+      invitedByRole = attendance.byRole;
+    }
+
+    // Alumni do not check in to events or accrue attendance points
+    // (`spec/behavior/alumni.md`), and the route carries no permission
+    // requirement, so the lifecycle rule is enforced here. An event that
+    // names a role of theirs as required or optional is an explicit chapter
+    // decision about who attends (an alumni homecoming lists the Alumni role),
+    // so the lifecycle rule does not override it.
+    if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
+      throw new ForbiddenException(
+        'Alumni members cannot check in to chapter events',
+      );
+    }
+
+    const existing = await this.attendanceRepo.findByEventAndUser(
+      eventId,
+      userId,
+    );
+    if (existing) {
+      throw new ConflictException('Already checked in for this event');
+    }
 
     // ── Rotating token ──────────────────────────────────────────────────
     //
@@ -250,14 +296,14 @@ export class AttendanceService {
     // A code alone is still not proof of presence: any displayed code can be
     // screenshotted and forwarded inside its window. What makes it one is the
     // location check below, against the drawn zone or the screen.
-    const screen = await this.screenRepo.findLive(
+    const screens = await this.screenRepo.findLive(
       eventId,
       chapterId,
       now.toISOString(),
     );
     const hasCode =
       options.token !== undefined || options.manualCode !== undefined;
-    if (screen && !hasCode) {
+    if (screens.length > 0 && !hasCode) {
       throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
     }
 
@@ -321,15 +367,15 @@ export class AttendanceService {
     }
     // ── Near the screen ─────────────────────────────────────────────────
     //
-    // With no drawn zone, the screen showing the code is the zone (#4532): a
-    // member must be within 100 yards of where it last said it was, plus both
-    // phones' accuracy, capped (`isNearCheckInScreen`). A screen that couldn't
-    // tell where it is stored no location, and then nothing here runs.
+    // With no drawn zone, the screens showing the code are the zone (#4532):
+    // a member must be within 100 yards of one of them, plus both phones'
+    // accuracy, capped (`isNearCheckInScreen`). A screen that couldn't tell
+    // where it is stored no location and anchors nothing; with no located
+    // screen at all, nothing here runs.
+    const anchors = screens.filter(isLocatedScreen);
     if (
       (event.check_in_zone === null || event.check_in_zone === undefined) &&
-      screen &&
-      screen.lat !== null &&
-      screen.lng !== null
+      anchors.length > 0
     ) {
       const { lat, lng } = options;
       if (
@@ -341,59 +387,13 @@ export class AttendanceService {
         throw new BadRequestException(CHECK_IN_NEEDS_LOCATION);
       }
 
-      const near = isNearCheckInScreen(
-        {
-          lat: screen.lat,
-          lng: screen.lng,
-          accuracy_m: screen.accuracy_m ?? 0,
-        },
-        { lat, lng, accuracy_m: options.accuracyMeters ?? null },
+      const member = { lat, lng, accuracy_m: options.accuracyMeters ?? null };
+      const near = anchors.some((anchor) =>
+        isNearCheckInScreen(anchor, member),
       );
       if (!near) {
         throw new ForbiddenException(CHECK_IN_TOO_FAR);
       }
-    }
-
-    // Attendance by role (`spec/behavior/events.md`): a member the event
-    // doesn't invite can't check in. Read only when some role is listed or
-    // the default leaves anyone out; an untargeted event invites everyone.
-    let invitedByRole = false;
-    if (eventSetsRolesApart(event)) {
-      const member = await this.memberRepo.findByUserAndChapter(
-        userId,
-        chapterId,
-      );
-      if (!member) {
-        throw new ForbiddenException('You are not a member of this chapter');
-      }
-
-      const attendance = attendanceFor(event, member.role_ids);
-      if (attendance.status === 'not_invited') {
-        throw new ForbiddenException(
-          'You are not eligible to check in for this event',
-        );
-      }
-      invitedByRole = attendance.byRole;
-    }
-
-    // Alumni do not check in to events or accrue attendance points
-    // (`spec/behavior/alumni.md`), and the route carries no permission
-    // requirement, so the lifecycle rule is enforced here. An event that
-    // names a role of theirs as required or optional is an explicit chapter
-    // decision about who attends (an alumni homecoming lists the Alumni role),
-    // so the lifecycle rule does not override it.
-    if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
-      throw new ForbiddenException(
-        'Alumni members cannot check in to chapter events',
-      );
-    }
-
-    const existing = await this.attendanceRepo.findByEventAndUser(
-      eventId,
-      userId,
-    );
-    if (existing) {
-      throw new ConflictException('Already checked in for this event');
     }
 
     const checkInTime = now.toISOString();

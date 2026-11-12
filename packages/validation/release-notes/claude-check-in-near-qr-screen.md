@@ -1,1 +1,1 @@
-When an officer shows the check-in code from their phone, members check in only when they're within 100 yards of it.
+When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.

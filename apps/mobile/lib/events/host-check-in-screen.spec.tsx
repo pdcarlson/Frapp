@@ -260,7 +260,16 @@ describe("Host check-in while the room fills", () => {
       hooks.presence = { kind: "screen" };
       const tree = render();
       expect(screenText(tree)).toContain(
-        "Members check in within 100 yards of this phone.",
+        "Members check in within about 100 yards of this phone.",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("tells the officer another officer's screen is the check when this phone has no fix", () => {
+      hooks.presence = { kind: "elsewhere" };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Members check in near another officer's screen. This phone can't tell where it is.",
       );
       act(() => tree.unmount());
     });

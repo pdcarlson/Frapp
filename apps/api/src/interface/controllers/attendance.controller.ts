@@ -70,7 +70,7 @@ export class AttendanceController {
   @ApiOperation({
     summary: 'Self check-in to an event',
     description:
-      "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when the screen showing the code reported where it is; then the member must be within 100 yards of it.",
+      "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).",
   })
   // The body is optional (a bare plain check-in), so it may be absent.
   @FeatureEvent(
@@ -95,8 +95,8 @@ export class AttendanceController {
     });
   }
 
-  // PUT: it replaces the event's one screen record, and repeating it changes
-  // nothing more. About once a minute while the host screen is up, so it sits
+  // PUT: it replaces this officer's screen record for the event, and
+  // repeating it changes nothing more. About once a minute while the host screen is up, so it sits
   // well inside the write throttle an officer also needs for everything else.
   @Put('check-in-screen')
   @UseGuards(PermissionsGuard)
@@ -104,19 +104,25 @@ export class AttendanceController {
   @ApiOperation({
     summary: 'Report where the host check-in screen (s22) is',
     description:
-      "Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and stores the screen's location (when precise to 100 m and the event has no drawn zone) so members must check in within 100 yards of it. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.",
+      "Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.",
   })
   @ApiOkResponse({ type: CheckInScreenResultDto })
   async reportCheckInScreen(
     @Param('eventId') eventId: string,
+    @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: CheckInScreenDto,
   ): Promise<CheckInScreenResultDto> {
-    return this.attendanceService.reportCheckInScreen(eventId, chapterId, {
-      lat: dto.lat,
-      lng: dto.lng,
-      accuracyMeters: dto.accuracy_meters,
-    });
+    return this.attendanceService.reportCheckInScreen(
+      eventId,
+      chapterId,
+      userId,
+      {
+        lat: dto.lat,
+        lng: dto.lng,
+        accuracyMeters: dto.accuracy_meters,
+      },
+    );
   }
 
   // GET, not POST: minting writes nothing — the code is derived from the event

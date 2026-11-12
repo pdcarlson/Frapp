@@ -131,7 +131,12 @@ function presenceLine(
   switch (presence.kind) {
     case "screen":
       return {
-        text: "Members check in within 100 yards of this phone.",
+        text: "Members check in within about 100 yards of this phone.",
+        settings: false,
+      };
+    case "elsewhere":
+      return {
+        text: "Members check in near another officer's screen. This phone can't tell where it is.",
         settings: false,
       };
     case "off":

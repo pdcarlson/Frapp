@@ -4,11 +4,12 @@ import { tryForegroundFix, type ForegroundPermission } from "@/lib/location";
 
 /**
  * The host screen (s22) telling the server where it is while it shows the
- * code (#4532). Members then check in only within 100 yards of this phone.
+ * code (#4532). Members then check in only within about 100 yards of this
+ * phone (or of another officer's screen showing the code).
  *
  * Once when a code is first drawn, then every minute while the screen stays
  * up with a code on it, so a phone carried to another room moves the check
- * with it. Never while no code is drawn: a report marks the code as in use,
+ * with it, and one that loses its fix stops anchoring its old spot. Never while no code is drawn: a report marks the code as in use,
  * which makes it required for the event, and a screen that can't get a code
  * (codes not set up here, or failing) must not lock members out of the event
  * card's plain check-in.
@@ -21,6 +22,8 @@ export const CHECK_IN_SCREEN_REPORT_MS = 60_000;
  *
  * - `screen`: members are checked against this phone (or another screen
  *   showing the code).
+ * - `elsewhere`: this phone can't tell where it is, but another officer's
+ *   screen can, so members are checked against that one.
  * - `off`: no screen could tell where it is, so distance isn't checked.
  *   `permission` when location is off for Frapp (with whether the OS will
  *   still ask), `imprecise` when the phone gave no fix within 100 m.
@@ -29,6 +32,7 @@ export const CHECK_IN_SCREEN_REPORT_MS = 60_000;
  */
 export type ScreenPresence =
   | { kind: "screen" }
+  | { kind: "elsewhere" }
   | { kind: "off"; reason: "permission"; canAskAgain: boolean }
   | { kind: "off"; reason: "imprecise" }
   | { kind: "none" };
@@ -38,6 +42,7 @@ export function screenPresenceOf(
   permission: ForegroundPermission,
 ): ScreenPresence {
   if (check === "screen") return { kind: "screen" };
+  if (check === "other_screen") return { kind: "elsewhere" };
   if (check !== "no_location") return { kind: "none" };
   return permission.granted
     ? { kind: "off", reason: "imprecise" }

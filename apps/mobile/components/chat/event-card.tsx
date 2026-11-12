@@ -125,7 +125,9 @@ export function EventCard({
         ? (selectEventDetail((await eventQuery.refetch()).data)
             ?.hasCheckInZone ?? false)
         : needsLocation;
-      // The check-in DTO takes lat/lng only; spreading accuracy would 400.
+      // Coordinates only: the drawn zone is a polygon and reads no accuracy,
+      // and an API from before #4532 refuses an `accuracy_meters` it doesn't
+      // declare.
       const position = zoned
         ? latLngOf(await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY))
         : {};

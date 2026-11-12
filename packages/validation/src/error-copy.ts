@@ -126,8 +126,10 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "This event checks you in by location — use the Frapp mobile app to check in.":
     "This event checks you in by location. Open Frapp on your phone to check in.",
   // Check-in near the QR screen (#4532).
-  "Scan the code on the check-in screen to check in":
-    "Scan the code on the officer's screen to check in.",
+  // Names the app, because the caller that hits this on web (the chat event
+  // card, the event sheet) has no scanner.
+  "Scan the code on the check-in screen with the Frapp app to check in":
+    "Scan the code on the officer's screen with the Frapp app to check in.",
   "This check-in needs your location. Allow location for Frapp and scan again.":
     "This check-in needs your location. Allow location for Frapp and scan again.",
   "You need to be near the check-in screen to check in":

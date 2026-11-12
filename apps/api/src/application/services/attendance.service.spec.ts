@@ -12,6 +12,7 @@ import {
   CHECK_IN_NEEDS_LOCATION,
   CHECK_IN_TOO_FAR,
 } from './attendance.service';
+import { SERVER_MESSAGE_COPY } from '@repo/validation';
 import {
   CHECK_IN_TOKEN_WINDOW_MS,
   mintCheckInToken,
@@ -117,7 +118,7 @@ describe('AttendanceService', () => {
 
     // No screen has shown the code unless a test says so.
     mockScreenRepo = {
-      findLive: jest.fn().mockResolvedValue(null),
+      findLive: jest.fn().mockResolvedValue([]),
       recordShown: jest.fn(),
       deleteExpired: jest.fn(),
     };
@@ -1243,6 +1244,7 @@ describe('AttendanceService', () => {
     const house = { lat: 42.7298, lng: -73.678 };
     const locatedScreen: EventCheckInScreen = {
       event_id: 'evt-1',
+      reported_by: 'officer-1',
       chapter_id: 'ch-1',
       lat: house.lat,
       lng: house.lng,
@@ -1287,7 +1289,20 @@ describe('AttendanceService', () => {
       }
     });
 
-    it('reads only a live screen row', async () => {
+    it('words each refusal through the shared error map', () => {
+      // The clients show these through `SERVER_MESSAGE_COPY`, keyed by the
+      // exact sentence: a rewording here without the map would fall back to
+      // a generic refusal.
+      for (const sentence of [
+        CHECK_IN_NEEDS_CODE,
+        CHECK_IN_NEEDS_LOCATION,
+        CHECK_IN_TOO_FAR,
+      ]) {
+        expect(SERVER_MESSAGE_COPY[sentence]).toEqual(expect.any(String));
+      }
+    });
+
+    it('reads only live screen rows', async () => {
       await service.checkIn('evt-1', 'user-1', 'ch-1');
       expect(mockScreenRepo.findLive).toHaveBeenCalledWith(
         'evt-1',
@@ -1297,7 +1312,7 @@ describe('AttendanceService', () => {
     });
 
     it('checks in a member standing in the room', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
 
       await expect(
         service.checkIn('evt-1', 'user-1', 'ch-1', {
@@ -1309,7 +1324,7 @@ describe('AttendanceService', () => {
     });
 
     it('refuses a member 300 yards away holding a fresh code, before any write', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
 
       await expect(
         service.checkIn('evt-1', 'user-1', 'ch-1', {
@@ -1322,10 +1337,9 @@ describe('AttendanceService', () => {
     });
 
     it('widens the radius by each phone accuracy, and caps it', async () => {
-      mockScreenRepo.findLive.mockResolvedValue({
-        ...locatedScreen,
-        accuracy_m: 40,
-      });
+      mockScreenRepo.findLive.mockResolvedValue([
+        { ...locatedScreen, accuracy_m: 40 },
+      ]);
 
       // 91 m + 40 m + 30 m = 161 m allowed: 150 m passes.
       await expect(
@@ -1347,7 +1361,7 @@ describe('AttendanceService', () => {
     });
 
     it('asks for the member location when the screen has one', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
 
       await expect(
         service.checkIn('evt-1', 'user-1', 'ch-1', { token: freshToken() }),
@@ -1356,7 +1370,7 @@ describe('AttendanceService', () => {
     });
 
     it('requires the code once a screen has shown it', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
 
       // The chat event card's bare body, even from inside the room.
       await expect(
@@ -1365,8 +1379,62 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
+    it('requires the code for an event with a drawn zone too', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        check_in_zone: [
+          { lat: 42.729, lng: -73.679 },
+          { lat: 42.729, lng: -73.677 },
+          { lat: 42.731, lng: -73.677 },
+          { lat: 42.731, lng: -73.679 },
+        ],
+      });
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', house),
+      ).rejects.toThrow(CHECK_IN_NEEDS_CODE);
+    });
+
+    it('tells a member already checked in so, before asking for the code', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(baseAttendance);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('passes a member near any located screen, and ignores one that has none', async () => {
+      // A second door 400 m north, and a laptop that can't tell where it is.
+      mockScreenRepo.findLive.mockResolvedValue([
+        locatedScreen,
+        {
+          ...locatedScreen,
+          reported_by: 'officer-2',
+          ...north(400),
+        },
+        { ...unlocatedScreen, reported_by: 'officer-3' },
+      ]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(420),
+          accuracyMeters: 10,
+        }),
+      ).resolves.toEqual(baseAttendance);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(250),
+          accuracyMeters: 10,
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+    });
+
     it('checks the typed code against the screen too', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
       const { manualCode } = mintCheckInToken(
         'evt-1',
         SECRET,
@@ -1382,7 +1450,7 @@ describe('AttendanceService', () => {
     });
 
     it('requires the code but checks no distance when no screen could tell where it is', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(unlocatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         CHECK_IN_NEEDS_CODE,
@@ -1393,7 +1461,7 @@ describe('AttendanceService', () => {
     });
 
     it('lets a drawn zone win over the screen', async () => {
-      mockScreenRepo.findLive.mockResolvedValue(locatedScreen);
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
       mockEventRepo.findById.mockResolvedValue({
         ...baseEvent,
         // A box around a building 1 km north of the screen.
@@ -1418,6 +1486,7 @@ describe('AttendanceService', () => {
       beforeEach(() => {
         mockScreenRepo.recordShown.mockImplementation(async (input) => ({
           ...unlocatedScreen,
+          reported_by: input.reportedBy,
           ...(input.location
             ? {
                 lat: input.location.lat,
@@ -1432,13 +1501,14 @@ describe('AttendanceService', () => {
 
       it('stores a precise fix until check-in closes', async () => {
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
             ...house,
             accuracyMeters: 12,
           }),
         ).resolves.toEqual({ check: 'screen' });
         expect(mockScreenRepo.recordShown).toHaveBeenCalledWith({
           eventId: 'evt-1',
+          reportedBy: 'officer-1',
           chapterId: 'ch-1',
           nowIso: duringEvent.toISOString(),
           // 19:00 end plus the 15-minute grace.
@@ -1449,28 +1519,37 @@ describe('AttendanceService', () => {
 
       it('stores no location from a fix worse than 100 m, or with no accuracy', async () => {
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
             ...house,
             accuracyMeters: 450,
           }),
         ).resolves.toEqual({ check: 'no_location' });
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', house),
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', house),
         ).resolves.toEqual({ check: 'no_location' });
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {}),
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {}),
         ).resolves.toEqual({ check: 'no_location' });
         for (const [input] of mockScreenRepo.recordShown.mock.calls) {
           expect(input.location).toBeNull();
         }
       });
 
-      it('reports the distance check when another screen gave a location', async () => {
-        mockScreenRepo.recordShown.mockResolvedValue(locatedScreen);
+      it("tells a screen with no fix when another officer's screen is checking distance", async () => {
+        mockScreenRepo.findLive.mockResolvedValue([
+          { ...unlocatedScreen, reported_by: 'officer-2' },
+          { ...locatedScreen, reported_by: 'officer-3' },
+        ]);
 
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {}),
-        ).resolves.toEqual({ check: 'screen' });
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-2', {}),
+        ).resolves.toEqual({ check: 'other_screen' });
+        // This officer's own row is replaced with no location, so their old
+        // spot never lingers.
+        expect(mockScreenRepo.recordShown.mock.calls[0][0]).toMatchObject({
+          reportedBy: 'officer-2',
+          location: null,
+        });
       });
 
       it('stores no location for an event with a drawn zone', async () => {
@@ -1484,7 +1563,7 @@ describe('AttendanceService', () => {
         });
 
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
             ...house,
             accuracyMeters: 5,
           }),
@@ -1495,7 +1574,7 @@ describe('AttendanceService', () => {
       it('stores nothing before check-in opens or after it closes', async () => {
         jest.setSystemTime(new Date('2026-02-26T17:30:00.000Z'));
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
             ...house,
             accuracyMeters: 5,
           }),
@@ -1503,7 +1582,7 @@ describe('AttendanceService', () => {
 
         jest.setSystemTime(new Date('2026-02-26T19:20:00.000Z'));
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
             ...house,
             accuracyMeters: 5,
           }),
@@ -1512,11 +1591,20 @@ describe('AttendanceService', () => {
         expect(mockScreenRepo.recordShown).not.toHaveBeenCalled();
       });
 
+      it('sweeps closed rows through the repository', async () => {
+        mockScreenRepo.deleteExpired.mockResolvedValue(3);
+
+        await expect(service.deleteExpiredCheckInScreens()).resolves.toBe(3);
+        expect(mockScreenRepo.deleteExpired).toHaveBeenCalledWith(
+          duringEvent.toISOString(),
+        );
+      });
+
       it('404s an event outside the caller chapter', async () => {
         mockEventRepo.findById.mockResolvedValue(null);
 
         await expect(
-          service.reportCheckInScreen('evt-1', 'ch-1', {}),
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {}),
         ).rejects.toThrow(NotFoundException);
       });
     });

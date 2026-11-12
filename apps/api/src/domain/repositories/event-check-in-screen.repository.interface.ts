@@ -3,26 +3,27 @@ import type { EventCheckInScreen } from '../entities/event-check-in-screen.entit
 export const EVENT_CHECK_IN_SCREEN_REPOSITORY =
   'EVENT_CHECK_IN_SCREEN_REPOSITORY';
 
-/** Where an event's check-in QR screen is (#4532). API only. */
+/** Officers' screens showing an event's check-in QR (#4532). API only. */
 export interface IEventCheckInScreenRepository {
   /**
-   * The event's row while it is still live (`expires_at` after `nowIso`),
-   * inside the caller's chapter.
+   * The event's live rows (`expires_at` after `nowIso`), one per officer
+   * showing the code, inside the caller's chapter.
    */
   findLive(
     eventId: string,
     chapterId: string,
     nowIso: string,
-  ): Promise<EventCheckInScreen | null>;
+  ): Promise<EventCheckInScreen[]>;
 
   /**
-   * Record a screen showing the code, and return the row as it now stands.
-   * With `location`, it replaces the stored one. Without, any location
-   * another screen gave stays: a laptop that can't tell where it is must not
-   * turn the distance check off for the phone beside it.
+   * Record one officer's screen showing the code, replacing their own row,
+   * location included: with `location: null` their row stops anchoring
+   * anything, so a phone that lost its fix never leaves an old spot behind.
+   * Other officers' rows are untouched.
    */
   recordShown(input: {
     eventId: string;
+    reportedBy: string;
     chapterId: string;
     nowIso: string;
     expiresAt: string;

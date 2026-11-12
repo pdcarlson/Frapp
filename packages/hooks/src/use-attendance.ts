@@ -407,21 +407,25 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
 /**
  * How the server is checking presence for an event, as `PUT
  * /v1/events/{eventId}/attendance/check-in-screen` answers (#4532):
- * `screen` (members must be within 100 yards of a screen showing the code),
- * `no_location` (no screen could tell where it is, so distance isn't
- * checked), `zone` (the event's drawn zone), or `not_open` / `closed`
- * (outside the check-in window).
+ * `screen` (this screen knows where it is, and members must be near a located
+ * screen), `other_screen` (this one can't tell where it is, but another
+ * officer's screen can), `no_location` (no screen could tell where it is, so
+ * distance isn't checked), `zone` (the event's drawn zone), or `not_open` /
+ * `closed` (outside the check-in window). Read from the generated contract.
  */
 export type CheckInScreenCheck =
-  "zone" | "screen" | "no_location" | "not_open" | "closed";
+  components["schemas"]["CheckInScreenResultDto"]["check"];
 
-const CHECK_IN_SCREEN_CHECKS: readonly CheckInScreenCheck[] = [
-  "zone",
-  "screen",
-  "no_location",
-  "not_open",
-  "closed",
-];
+// A record over the union, so a value the contract adds or renames fails the
+// type check here instead of reading as "unknown" on the host screen.
+const CHECK_IN_SCREEN_CHECKS: Readonly<Record<CheckInScreenCheck, true>> = {
+  zone: true,
+  screen: true,
+  other_screen: true,
+  no_location: true,
+  not_open: true,
+  closed: true,
+};
 
 /** The `check` from the route's answer, or `null` for anything else. */
 export function checkInScreenCheckOf(
@@ -429,7 +433,8 @@ export function checkInScreenCheckOf(
 ): CheckInScreenCheck | null {
   if (typeof response !== "object" || response === null) return null;
   const check = (response as { check?: unknown }).check;
-  return CHECK_IN_SCREEN_CHECKS.includes(check as CheckInScreenCheck)
+  return typeof check === "string" &&
+    Object.prototype.hasOwnProperty.call(CHECK_IN_SCREEN_CHECKS, check)
     ? (check as CheckInScreenCheck)
     : null;
 }

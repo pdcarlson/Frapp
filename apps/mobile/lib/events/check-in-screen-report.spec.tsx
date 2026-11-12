@@ -28,6 +28,9 @@ const GRANTED = { granted: true, canAskAgain: true };
 describe("screenPresenceOf", () => {
   it("reads the server's check, and why this phone gave no location", () => {
     expect(screenPresenceOf("screen", GRANTED)).toEqual({ kind: "screen" });
+    expect(screenPresenceOf("other_screen", GRANTED)).toEqual({
+      kind: "elsewhere",
+    });
     expect(screenPresenceOf("no_location", GRANTED)).toEqual({
       kind: "off",
       reason: "imprecise",

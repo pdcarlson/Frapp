@@ -352,7 +352,7 @@ describe("EventCard — Check in", () => {
     const tree = render();
     await press(tree, "Check in");
     expect(screenText(tree)).toContain(
-      "Scan the code on the officer's screen to check in.",
+      "Scan the code on the officer's screen with the Frapp app to check in.",
     );
     await press(tree, "Scan code");
     expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({

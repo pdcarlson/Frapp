@@ -11,6 +11,10 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { EventAttendanceStatus } from '#domain/entities/event-attendance.entity';
+import {
+  CHECK_IN_SCREEN_CHECKS,
+  type CheckInScreenCheck,
+} from '#domain/utils/check-in-screen';
 
 /**
  * Self check-in payload.
@@ -110,11 +114,11 @@ export class CheckInScreenDto {
 
 export class CheckInScreenResultDto {
   @ApiProperty({
-    enum: ['zone', 'screen', 'no_location', 'not_open', 'closed'],
+    enum: CHECK_IN_SCREEN_CHECKS,
     description:
-      "How presence is checked for this event: `zone` (its drawn zone), `screen` (members must be within 100 yards of a screen showing the code), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored).",
+      "How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored).",
   })
-  check: 'zone' | 'screen' | 'no_location' | 'not_open' | 'closed';
+  check: CheckInScreenCheck;
 }
 
 export class UpdateAttendanceDto {

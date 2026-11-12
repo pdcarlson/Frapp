@@ -1,7 +1,8 @@
+import { distanceMeters } from '@repo/validation';
 import {
   CHECK_IN_SCREEN_RADIUS_M,
   canAnchorCheckIn,
-  distanceMeters,
+  isLocatedScreen,
   isNearCheckInScreen,
 } from './check-in-screen';
 
@@ -50,5 +51,12 @@ describe('check-in near the QR screen', () => {
     expect(canAnchorCheckIn(101)).toBe(false);
     expect(canAnchorCheckIn(undefined)).toBe(false);
     expect(canAnchorCheckIn(0)).toBe(false);
+  });
+
+  it('anchors only a row with a location', () => {
+    expect(isLocatedScreen({ lat: 1, lng: 2, accuracy_m: 10 })).toBe(true);
+    expect(isLocatedScreen({ lat: null, lng: null, accuracy_m: null })).toBe(
+      false,
+    );
   });
 });

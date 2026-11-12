@@ -90,6 +90,12 @@ const state = vi.hoisted(() => ({
    * of one tree.
    */
   realCheckIn: false,
+  /** The fix `useWarmCheckInFix` has ready, if any. */
+  warmFix: null as null | {
+    lat: number;
+    lng: number;
+    accuracy_meters?: number;
+  },
   /**
    * What the member's own row reads as when s18 asks on a 409
    * (`useMyAttendance(...).refetch()`): a check-in by default.
@@ -139,6 +145,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
 
 beforeEach(() => {
   state.pendingCheckIns = 0;
+  state.warmFix = null;
 });
 
 vi.mock("@/lib/haptics", () => ({
@@ -153,6 +160,12 @@ vi.mock("expo-camera", () => ({
 
 // The event has no zone, so the screen never asks for a fix; mocked only so
 // `expo-location` is not loaded.
+// No warm fix unless a spec gives one: the scan reads its own.
+vi.mock("@/lib/events/check-in-fix", () => ({
+  CHECK_IN_FIX_TIMEOUT_MS: 8_000,
+  useWarmCheckInFix: () => () => state.warmFix,
+}));
+
 vi.mock("@/lib/location", () => ({
   requireForegroundFix: vi.fn(),
   // No location unless a spec gives one: the scan goes without it.
@@ -869,7 +882,8 @@ describe("Check-in before its event has loaded", () => {
     const tree = render();
     await scan(tree, qrFor("evt-1"));
 
-    expect(tryForegroundFix).toHaveBeenCalledWith("high");
+    // Waiting at most the timeout, so the scanned code can't expire first.
+    expect(tryForegroundFix).toHaveBeenCalledWith("high", 8_000);
     expect(requireForegroundFix).not.toHaveBeenCalled();
     expect(checkIn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -877,6 +891,28 @@ describe("Check-in before its event has loaded", () => {
         lat: 42.73,
         lng: -73.68,
         accuracy_meters: 12,
+      }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("sends the fix kept ready while the scanner was up, without waiting for another", async () => {
+    vi.mocked(tryForegroundFix).mockClear();
+    vi.mocked(requireForegroundFix).mockClear();
+    state.warmFix = { lat: 42.731, lng: -73.679, accuracy_meters: 9 };
+    checkIn.mockResolvedValue({});
+    loaded = ZONED;
+    const tree = render();
+    await scan(tree, qrFor("evt-1"));
+
+    expect(tryForegroundFix).not.toHaveBeenCalled();
+    expect(requireForegroundFix).not.toHaveBeenCalled();
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "evt-1",
+        lat: 42.731,
+        lng: -73.679,
+        accuracy_meters: 9,
       }),
     );
     act(() => tree.unmount());

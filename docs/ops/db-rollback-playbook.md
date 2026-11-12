@@ -4169,7 +4169,7 @@ drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
 
 * **Migration**: `20261112293700_event_check_in_screens.sql`
 
-One table, `event_check_in_screens` (#4532): where each event's check-in QR screen is, kept only until check-in closes. **Roll the API back first.** The API reads the table on every check-in, so dropping it under a running API fails every check-in. With the API reverted, check-in is checked against drawn zones alone and the code is optional again; the rows hold nothing worth keeping (each expires with its check-in window).
+One table, `event_check_in_screens` (#4532): where each officer's screen showing an event's check-in QR is, kept only until check-in closes. **Roll the API back first.** The API reads the table on every check-in, so dropping it under a running API fails every check-in. With the API reverted, check-in is checked against drawn zones alone and the code is optional again; the rows hold nothing worth keeping (each expires with its check-in window).
 
 Keep the migration file ([§ 3) Undo one migration](#3-undo-one-migration)) and, in a later forward migration:
 

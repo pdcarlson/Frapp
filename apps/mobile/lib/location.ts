@@ -12,9 +12,11 @@ import * as Location from "expo-location";
  * `requestForegroundPermissionsAsync`; the "Always" variant appears nowhere in
  * the app, and centralising the call is what keeps it that way.
  *
- * Accuracy is `Balanced` for the same reason at both call sites: the server
- * checks a building-scale polygon, so `High` buys precision nobody reads and
- * costs battery a five-minute heartbeat cannot afford.
+ * Accuracy defaults to `Balanced`: study sessions and drawn event zones are
+ * building-scale polygons, so `High` buys precision nobody reads and costs
+ * battery a five-minute heartbeat cannot afford. Event check-in asks for
+ * `High` (see {@link FixPrecision}), because it may be checked against the
+ * officer's phone at a 91 m radius.
  */
 
 export type LocationFix = {
@@ -22,9 +24,10 @@ export type LocationFix = {
   lng: number;
   /**
    * Device-reported GPS accuracy in meters. Present only when the provider
-   * gave a usable reading. Heartbeat is the only study DTO that declares this
-   * field; start, resume, and event check-in must send `latLngOf(fix)` because
-   * the API ValidationPipe forbids undeclared keys.
+   * gave a usable reading. The study heartbeat and event check-in (s18, for
+   * the QR screen's accuracy allowance) declare this field; study start and
+   * resume, and the chat card's check-in, send `latLngOf(fix)` because the
+   * API ValidationPipe forbids undeclared keys on theirs.
    */
   accuracy_meters?: number;
 };
@@ -99,16 +102,34 @@ export async function requestForegroundPermission(): Promise<ForegroundPermissio
  */
 export type FixPrecision = "balanced" | "high";
 
-/** One position fix. Assumes permission is already granted. */
+/**
+ * One position fix. Assumes permission is already granted. With `timeoutMs`,
+ * rejects when no fix comes in that long: a GPS fix indoors can take tens of
+ * seconds, and a scanned check-in code expires while it waits.
+ */
 export async function readForegroundFix(
   precision: FixPrecision = "balanced",
+  timeoutMs?: number,
 ): Promise<LocationFix> {
-  const position = await Location.getCurrentPositionAsync({
+  const reading = Location.getCurrentPositionAsync({
     accuracy:
       precision === "high"
         ? Location.Accuracy.High
         : Location.Accuracy.Balanced,
   });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const position =
+    timeoutMs === undefined
+      ? await reading
+      : await Promise.race([
+          reading,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("No location fix in time")),
+              timeoutMs,
+            );
+          }),
+        ]).finally(() => clearTimeout(timer));
   const accuracy_meters = accuracyMetersOf(position.coords.accuracy);
   return accuracy_meters === undefined
     ? { lat: position.coords.latitude, lng: position.coords.longitude }
@@ -133,11 +154,12 @@ export const LOCATION_UNAVAILABLE =
 export async function requireForegroundFix(
   deniedMessage: string,
   precision: FixPrecision = "balanced",
+  timeoutMs?: number,
 ): Promise<LocationFix> {
   const permission = await requestForegroundPermission();
   if (!permission.granted) throw new MemberFacingError(deniedMessage);
   try {
-    return await readForegroundFix(precision);
+    return await readForegroundFix(precision, timeoutMs);
   } catch {
     // Location services off, or no fix in time: the platform's own error
     // names neither, and the member's fix is the same for both.
@@ -154,6 +176,7 @@ export async function requireForegroundFix(
  */
 export async function tryForegroundFix(
   precision: FixPrecision = "balanced",
+  timeoutMs?: number,
 ): Promise<{ fix: LocationFix | null; permission: ForegroundPermission }> {
   let permission: ForegroundPermission;
   try {
@@ -163,7 +186,7 @@ export async function tryForegroundFix(
   }
   if (!permission.granted) return { fix: null, permission };
   try {
-    return { fix: await readForegroundFix(precision), permission };
+    return { fix: await readForegroundFix(precision, timeoutMs), permission };
   } catch {
     return { fix: null, permission };
   }

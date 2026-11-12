@@ -16,44 +16,42 @@ export class SupabaseEventCheckInScreenRepository implements IEventCheckInScreen
     eventId: string,
     chapterId: string,
     nowIso: string,
-  ): Promise<EventCheckInScreen | null> {
+  ): Promise<EventCheckInScreen[]> {
     const { data, error } = await this.supabase
       .from('event_check_in_screens')
       .select('*')
       .eq('event_id', eventId)
       .eq('chapter_id', chapterId)
-      .gt('expires_at', nowIso)
-      .maybeSingle();
+      .gt('expires_at', nowIso);
     if (error) throw new SupabaseQueryError(error);
-    return data;
+    return data ?? [];
   }
 
   async recordShown(input: {
     eventId: string;
+    reportedBy: string;
     chapterId: string;
     nowIso: string;
     expiresAt: string;
     location: { lat: number; lng: number; accuracy_m: number } | null;
   }): Promise<EventCheckInScreen> {
-    // An upsert writes only the columns it is given, so a screen with no
-    // location leaves a stored one in place (see the interface).
+    // Every location column is written, nulls included, so a report without
+    // a fix clears this officer's old one (see the interface).
+    const { location } = input;
     const row: TablesInsert<'event_check_in_screens'> = {
       event_id: input.eventId,
+      reported_by: input.reportedBy,
       chapter_id: input.chapterId,
       shown_at: input.nowIso,
       expires_at: input.expiresAt,
-      ...(input.location
-        ? {
-            lat: input.location.lat,
-            lng: input.location.lng,
-            accuracy_m: input.location.accuracy_m,
-            located_at: input.nowIso,
-          }
-        : {}),
+      lat: location?.lat ?? null,
+      lng: location?.lng ?? null,
+      accuracy_m: location?.accuracy_m ?? null,
+      located_at: location ? input.nowIso : null,
     };
     const { data, error } = await this.supabase
       .from('event_check_in_screens')
-      .upsert(row, { onConflict: 'event_id' })
+      .upsert(row, { onConflict: 'event_id,reported_by' })
       .select('*')
       .single();
     if (error) throw new SupabaseQueryError(error);
