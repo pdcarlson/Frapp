@@ -40,17 +40,40 @@ export const SENTRY_NODE_FETCH_INTEGRATION_OPTIONS = {
 };
 
 /**
+ * AI SDK spans: never record what went to a model or came back (#3280,
+ * ADR-28 decision 12). With tracing on, SDK v11's default set includes
+ * `Anthropic_AI` and `Google_GenAI`, which wrap the provider clients and emit
+ * `gen_ai.*` spans. Each records prompts and answers unless both switches
+ * are off, and v11's own default for them is `dataCollection.genAI`, which
+ * defaults to on. `sentryDataCollection` already turns that off and the
+ * transaction scrubber drops every span attribute outside its allowlist;
+ * this is the third layer, at the integration, so neither of the other two
+ * is the only thing between a member's meeting notes and Sentry.
+ */
+export const SENTRY_AI_INTEGRATION_OPTIONS = {
+  recordInputs: false,
+  recordOutputs: false,
+};
+
+/**
  * The default integrations {@link withSafeSentryIntegrations} replaces, by
  * the `name` the SDK gives them. Exported so `sentry-options.spec.ts` can
  * assert each one is still in the SDK's real default set: a rename (v11
  * already calls the server half `Http.Server`) would make the swap below
  * match nothing, and the unconfigured defaults would ship with no error.
  */
-export const SENTRY_REPLACED_INTEGRATION_NAMES = ['Http', 'NodeFetch'] as const;
+export const SENTRY_REPLACED_INTEGRATION_NAMES = [
+  'Http',
+  'NodeFetch',
+  'Anthropic_AI',
+  'Google_GenAI',
+] as const;
 
 /**
  * Keep Sentry's default integration set (HTTP, fetch, Nest, Express, and the
- * rest) and replace only the two that would otherwise attach PII-shaped bags.
+ * rest) and replace only the ones that would otherwise attach PII-shaped
+ * bags: the two HTTP ones, and the two AI SDK ones the gateway's providers
+ * load (`@anthropic-ai/sdk`, `@google/genai`).
  *
  * Do not add `@opentelemetry/sdk-node` (ADR-22). Sentry's own
  * instrumentation produces the API's spans without any OpenTelemetry tracer
@@ -67,6 +90,10 @@ export function withSafeSentryIntegrations(
         return Sentry.nativeNodeFetchIntegration(
           SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
         );
+      case 'Anthropic_AI':
+        return Sentry.anthropicAIIntegration(SENTRY_AI_INTEGRATION_OPTIONS);
+      case 'Google_GenAI':
+        return Sentry.googleGenAIIntegration(SENTRY_AI_INTEGRATION_OPTIONS);
       default:
         return integration;
     }

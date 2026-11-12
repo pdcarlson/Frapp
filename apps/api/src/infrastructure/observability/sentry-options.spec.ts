@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import * as Sentry from '@sentry/nestjs';
 import {
   buildSentryOptions,
+  SENTRY_AI_INTEGRATION_OPTIONS,
   SENTRY_HTTP_INTEGRATION_OPTIONS,
   SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
   SENTRY_REPLACED_INTEGRATION_NAMES,
@@ -21,6 +22,8 @@ jest.mock('@sentry/nestjs', () => {
     ...actual,
     httpIntegration: jest.fn(actual.httpIntegration),
     nativeNodeFetchIntegration: jest.fn(actual.nativeNodeFetchIntegration),
+    anthropicAIIntegration: jest.fn(actual.anthropicAIIntegration),
+    googleGenAIIntegration: jest.fn(actual.googleGenAIIntegration),
   };
 });
 
@@ -83,13 +86,49 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     expect(fetch.mock.calls).toEqual([[SENTRY_NODE_FETCH_INTEGRATION_OPTIONS]]);
   });
 
+  it('builds the AI SDK integrations with input and output recording off', () => {
+    // #3280. A swap to `Sentry.anthropicAIIntegration()` with no argument
+    // keeps the name, and recording then rests on `dataCollection.genAI`
+    // alone, which v11 defaults to on.
+    expect(SENTRY_AI_INTEGRATION_OPTIONS).toEqual({
+      recordInputs: false,
+      recordOutputs: false,
+    });
+    const anthropic = jest.mocked(Sentry.anthropicAIIntegration);
+    const google = jest.mocked(Sentry.googleGenAIIntegration);
+    anthropic.mockClear();
+    google.mockClear();
+    const out = withSafeSentryIntegrations([
+      { name: 'Anthropic_AI' },
+      { name: 'Google_GenAI' },
+    ]);
+    expect(out.map((integration) => integration.name)).toEqual([
+      'Anthropic_AI',
+      'Google_GenAI',
+    ]);
+    expect(anthropic.mock.calls).toEqual([[SENTRY_AI_INTEGRATION_OPTIONS]]);
+    expect(google.mock.calls).toEqual([[SENTRY_AI_INTEGRATION_OPTIONS]]);
+  });
+
+  it('turns model input and output collection off for every AI integration', () => {
+    // The layer under the swap: integrations this file does not replace
+    // (OpenAI, LangChain, Vercel AI and the rest are in the default set too)
+    // fall back to this, and so would a renamed one.
+    expect(options().dataCollection?.genAI).toEqual({
+      inputs: false,
+      outputs: false,
+    });
+  });
+
   it("replaces integrations the SDK's real default set still contains", () => {
     // The swap matches by `name`. If the SDK renames or splits one of these
     // (v11 already calls the server half `Http.Server`), the `switch` in
     // `withSafeSentryIntegrations` matches nothing and the unconfigured
     // default ships silently. This is the test that notices. The synthetic
     // list above cannot, because it spells the names itself.
-    const defaults = Sentry.getDefaultIntegrations({})!;
+    // Built with tracing on, as production is: the AI SDK integrations are
+    // in the default set only then.
+    const defaults = Sentry.getDefaultIntegrations({ tracesSampleRate: 1 })!;
     const out = withSafeSentryIntegrations(defaults);
     const names = defaults.map((integration) => integration.name);
     for (const name of SENTRY_REPLACED_INTEGRATION_NAMES) {
