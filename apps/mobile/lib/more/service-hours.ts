@@ -127,7 +127,9 @@ export function selectServiceEntryRows(data: unknown): ServiceEntryRow[] {
  * not yet credited, so banking it here would overstate what the member has.
  * Pending is surfaced as a count instead, which is what they can act on.
  */
-export function summarizeServiceEntries(rows: ServiceEntryRow[]): ServiceSummary {
+export function summarizeServiceEntries(
+  rows: ServiceEntryRow[],
+): ServiceSummary {
   const approvedMinutes = rows
     .filter((row) => row.status === "APPROVED")
     .reduce((total, row) => total + row.durationMinutes, 0);
@@ -213,8 +215,7 @@ export function serviceDatePresets(now: Date): ServiceDatePreset[] {
  * named when it was picked (see {@link ServiceDatePreset.relative}).
  */
 export type ServiceDateChoice =
-  | { kind: "relative"; daysAgo: number }
-  | { kind: "date"; date: string };
+  { kind: "relative"; daysAgo: number } | { kind: "date"; date: string };
 
 /** A new entry's date choice: "Today". */
 export const DEFAULT_SERVICE_DATE_CHOICE: ServiceDateChoice = {

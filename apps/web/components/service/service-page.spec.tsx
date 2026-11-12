@@ -456,7 +456,9 @@ describe("ServiceHoursPage review queue", () => {
 
     const history = screen.getByRole("region", { name: /history/i });
     expect(within(history).getByText("2 points")).toBeInTheDocument();
-    expect(within(history).queryByText("Points awarded")).not.toBeInTheDocument();
+    expect(
+      within(history).queryByText("Points awarded"),
+    ).not.toBeInTheDocument();
   });
 });
 

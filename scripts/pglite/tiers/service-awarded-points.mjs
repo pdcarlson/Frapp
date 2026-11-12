@@ -1,6 +1,8 @@
 import { db, miss } from "../harness.mjs";
 
-console.log("\n=== Functional: an approval records the points it awarded (#3868) ===");
+console.log(
+  "\n=== Functional: an approval records the points it awarded (#3868) ===",
+);
 {
   // `approve_service_entry` writes the number it awarded onto the entry, so the
   // History row can say "3 points" without recomputing from a rate that may
@@ -92,7 +94,9 @@ console.log("\n=== Functional: an approval records the points it awarded (#3868)
     await db.exec("savepoint p3868;");
     let negative = null;
     try {
-      await db.exec(`update service_entries set awarded_points = -1 where id = '${LONG}';`);
+      await db.exec(
+        `update service_entries set awarded_points = -1 where id = '${LONG}';`,
+      );
     } catch (e) {
       negative = String(e?.message ?? e);
     } finally {
@@ -104,7 +108,11 @@ console.log("\n=== Functional: an approval records the points it awarded (#3868)
       { negative },
     );
   } catch (e) {
-    check("service-awarded-points scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "service-awarded-points scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
@@ -114,7 +122,9 @@ console.log("\n=== Functional: an approval records the points it awarded (#3868)
       console.log(`OK    ${r.name}`);
     } else {
       miss();
-      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+      console.log(
+        `MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`,
+      );
     }
   }
 }

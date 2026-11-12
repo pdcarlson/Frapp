@@ -118,7 +118,7 @@ export class ServiceEntryResponseDto implements ServiceEntry {
     type: Number,
     nullable: true,
     description:
-      'SERVICE points this entry\'s approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then.',
+      "SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then.",
   })
   awarded_points: number | null;
 
