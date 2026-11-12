@@ -216,6 +216,10 @@ const latestReads = vi.hoisted(() => ({
     created_at: string;
   }[],
   enabled: [] as boolean[],
+  // A first read still in flight.
+  pending: false,
+  // A background refetch that failed after a good answer, which keeps data.
+  failedRefetch: false,
 }));
 // The rail's drag-to-reorder controls (#4178), captured like the row actions.
 const railReorder = vi.hoisted(() => ({
@@ -592,7 +596,13 @@ vi.mock("@repo/hooks", async () => ({
   // Direct messages' order and last lines (#3774).
   useChannelLatestMessages: (options?: { enabled?: boolean }) => {
     latestReads.enabled.push(options?.enabled ?? true);
-    return { data: latestReads.rows, isSuccess: true };
+    return latestReads.pending
+      ? { data: undefined, isError: false, fetchStatus: "fetching" }
+      : {
+          data: latestReads.rows,
+          isError: latestReads.failedRefetch,
+          fetchStatus: "idle",
+        };
   },
   useOrgConfig: () =>
     slashGateReads.orgConfigError
@@ -5784,5 +5794,73 @@ describe("ChatShell's two lists (#3774)", () => {
       "href",
       "/members",
     );
+  });
+
+  describe("the Direct messages lines (#3774)", () => {
+    const row = (
+      channel_id: string,
+      sender_id: string,
+      content: string,
+      created_at: string,
+    ) => ({
+      channel_id,
+      sender_id,
+      author_name: null,
+      content,
+      kind: "text",
+      attachment_count: 0,
+      created_at,
+    });
+    const previews = () =>
+      new Map(
+        (rail().getAttribute("data-previews") ?? "")
+          .split("|")
+          .filter(Boolean)
+          .map((pair) => pair.split("=") as [string, string]),
+      );
+
+    afterEach(() => {
+      latestReads.rows = [];
+      latestReads.pending = false;
+      latestReads.failedRefetch = false;
+    });
+
+    it("drops the name in a 1:1 DM and says You for the viewer's own line", () => {
+      latestReads.rows = [
+        row("chan-dm", "other-1", "see you at 7", "2026-11-12T01:00:00.000Z"),
+        row("chan-group", "viewer-1", "on my way", "2026-11-12T02:00:00.000Z"),
+      ];
+      channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+      render(<ChatShell view="direct" />);
+      expect(previews().get("chan-dm")).toBe("see you at 7");
+      expect(previews().get("chan-group")).toBe("You: on my way");
+    });
+
+    it("gives a hidden DM no line, since the server keeps none for it", () => {
+      channelsQueryState.value = {
+        data: [...CHANNELS, DM, { ...GROUP, hidden: true }],
+      };
+      render(<ChatShell view="direct" />);
+      expect(previews().has("chan-group")).toBe(false);
+      expect(previews().get("chan-dm")).toBe("No messages yet");
+    });
+
+    it("holds the list behind its skeleton until the first read answers", () => {
+      latestReads.pending = true;
+      channelsQueryState.value = { data: [...CHANNELS, DM] };
+      render(<ChatShell view="direct" />);
+      expect(screen.queryByTestId("channel-list")).not.toBeInTheDocument();
+    });
+
+    it("keeps the last good order and lines when a later read fails", () => {
+      latestReads.failedRefetch = true;
+      latestReads.rows = [
+        row("chan-dm", "other-1", "see you at 7", "2026-11-12T01:00:00.000Z"),
+      ];
+      channelsQueryState.value = { data: [...CHANNELS, DM] };
+      render(<ChatShell view="direct" />);
+      expect(rail()).toHaveAttribute("data-latest", "chan-dm");
+      expect(previews().get("chan-dm")).toBe("see you at 7");
+    });
   });
 });

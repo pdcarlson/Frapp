@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   arrangeChannelSidebar,
+  compareLatestFirst,
   foldedSectionAnnouncement,
   sidebarMutedChannelIds,
   sidebarSections,
@@ -477,5 +478,23 @@ describe("foldedSectionAnnouncement", () => {
         addressed: false,
       }),
     ).toBe("1 unread message");
+  });
+});
+
+describe("compareLatestFirst (#3774)", () => {
+  it("puts the newest conversation first, one with no message last, ties A to Z", () => {
+    const at: Record<string, string> = {
+      a: "2026-11-12T01:00:00.000Z",
+      b: "2026-11-12T02:00:00.000Z",
+    };
+    const title: Record<string, string> = { a: "Zed", b: "Amy", c: "Cal", d: "Bo" };
+    const rows = ["c", "a", "d", "b"].map((id) => ({ id }));
+    rows.sort(
+      compareLatestFirst(
+        (row) => at[row.id],
+        (row) => title[row.id]!,
+      ),
+    );
+    expect(rows.map((row) => row.id)).toEqual(["b", "a", "d", "c"]);
   });
 });
