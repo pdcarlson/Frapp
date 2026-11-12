@@ -32,6 +32,7 @@ export * from "./beta-off-modules";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
+export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 export * from "./chat-backgrounds";

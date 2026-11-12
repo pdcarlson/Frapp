@@ -6,15 +6,54 @@ import {
 } from "./activity-standing";
 
 const standing = (overrides: Partial<ActivityStanding>): ActivityStanding => ({
-  points: { total: 42, rank: 5, ranked: 58 },
+  points: { total: 42, rank: 5, ranked: 58, goal: null },
   required_events: { required: 8, attended: 6, excused: 1 },
-  service: { approved_minutes: 270, pending_minutes: 90 },
-  study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
+  service: { approved_minutes: 270, pending_minutes: 90, goal_minutes: null },
+  study: {
+    minutes: 125,
+    week_start: "2026-11-08T05:00:00.000Z",
+    goal_minutes: null,
+  },
   unavailable: [],
   ...overrides,
 });
 
 describe("activityStandingRows", () => {
+  it("measures points and hours against the member's goals", () => {
+    const rows = activityStandingRows(
+      standing({
+        points: { total: 42, rank: 5, ranked: 58, goal: 60 },
+        service: {
+          approved_minutes: 270,
+          pending_minutes: 0,
+          goal_minutes: 600,
+        },
+        study: {
+          minutes: 500,
+          week_start: "2026-11-08T05:00:00.000Z",
+          goal_minutes: 360,
+        },
+      }),
+    );
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    expect(byId.points).toMatchObject({
+      value: "42 of 60",
+      detail: "#5 of 58",
+      progress: 0.7,
+      spokenLabel: "42 of 60 points this semester, ranked 5 of 58",
+    });
+    expect(byId.service).toMatchObject({
+      value: "4h 30m of 10h",
+      progress: 0.45,
+      spokenLabel: "4h 30m of 10h of service approved this semester",
+    });
+    // Past the goal, the bar stays full and the count says by how much.
+    expect(byId.study).toMatchObject({
+      value: "8h 20m of 6h",
+      progress: 1,
+    });
+  });
+
   it("draws every part in order, with a meter only on required events", () => {
     const rows = activityStandingRows(standing({}));
     expect(
@@ -28,6 +67,22 @@ describe("activityStandingRows", () => {
     expect(rows[1]?.spokenLabel).toBe(
       "Attended 6 of 8 required events this semester, 1 excused",
     );
+  });
+
+  it("draws no goal from an older API that sends no goal fields", () => {
+    const rows = activityStandingRows({
+      points: { total: 42, rank: 5, ranked: 58 },
+      required_events: { required: 8, attended: 6, excused: 1 },
+      service: { approved_minutes: 270, pending_minutes: 90 },
+      study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
+      unavailable: [],
+    } as unknown as ActivityStanding);
+    expect(rows.map((row) => [row.id, row.value, row.progress])).toEqual([
+      ["points", "42", null],
+      ["required_events", "6 of 8", 0.75],
+      ["service", "4h 30m", null],
+      ["study", "2h 5m", null],
+    ]);
   });
 
   it("leaves out a part the chapter has off", () => {
@@ -62,8 +117,12 @@ describe("activityStandingRows", () => {
   it("names no place for a member off the board, and no pending line at zero", () => {
     const rows = activityStandingRows(
       standing({
-        points: { total: 0, rank: null, ranked: 12 },
-        service: { approved_minutes: 0, pending_minutes: 0 },
+        points: { total: 0, rank: null, ranked: 12, goal: null },
+        service: {
+          approved_minutes: 0,
+          pending_minutes: 0,
+          goal_minutes: null,
+        },
       }),
     );
     expect(rows[0]?.detail).toBeNull();
