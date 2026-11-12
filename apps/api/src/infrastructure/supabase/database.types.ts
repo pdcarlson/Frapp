@@ -387,7 +387,7 @@ export interface Database {
         Returns: CorpusSource[];
       };
       /**
-       * `20261113040007` (#3322) — Google Calendar connections to sync or
+       * `20261113040008` (#3322) — Google Calendar connections to sync or
        * clean up next, each leased; `returns setof google_calendar_connections`.
        */
       claim_google_calendar_syncs: {
