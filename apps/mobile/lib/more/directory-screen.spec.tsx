@@ -174,7 +174,9 @@ vi.mock("@/components/directory/actives-filter-sheet", () => ({
   ActivesFilterSheet: () => null,
 }));
 
+import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 import DirectoryScreen, {
+  MemberTile,
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
@@ -305,6 +307,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
+  resetListLayoutsForTests();
   state.chapterId = "c-1";
   state.search = [];
   state.pending = false;
@@ -1080,5 +1083,57 @@ describe("s13's Invite members button", () => {
     const withButton = render();
     expect(bottom(withButton)).toBeGreaterThan(plain);
     withButton.unmount();
+  });
+});
+
+/**
+ * #4175: the List/Grid toggle in the title row. Grid lays the same rows out
+ * two to a line as tiles; the pick is kept on this phone (`lib/list-layout.ts`).
+ */
+describe("s13 as a grid (#4175)", () => {
+  it("offers List and Grid in the title row, on List until picked", () => {
+    const tree = render();
+    expect(
+      inHeader(tree, (element) => element.props.screen === "directory"),
+    ).toBeTruthy();
+    expect(list(tree).props.numColumns).toBe(1);
+  });
+
+  it("lays the same rows out two to a line once Grid is picked", () => {
+    act(() => setListLayout("directory", "grid"));
+    const tree = render();
+    expect(list(tree).props.numColumns).toBe(2);
+    // `numColumns` can't change on a mounted list, so the layout keys it.
+    expect(list(tree).props.columnWrapperStyle).toBeTruthy();
+  });
+
+  it("names a tile with the row's own words", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberTile
+            row={{
+              memberId: "m-1",
+              userId: "u-1",
+              displayName: "Marcus Reid",
+              initials: "MR",
+              meta: "Treasurer · CS '27",
+              avatarUrl: null,
+              pledgeClassId: null,
+              orderNumber: null,
+            }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const tile = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(tile.props.accessibilityLabel).toBe(
+      "View Marcus Reid's profile, Treasurer · CS '27",
+    );
+    expect(screenText(tree)).toContain("Treasurer · CS '27");
   });
 });

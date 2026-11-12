@@ -82,6 +82,8 @@ const committedFilters: Array<Filters> = [];
 
 vi.mock("@repo/hooks", () => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  // The List/Grid pick is kept per viewer (#4175).
+  useViewerUserId: () => "viewer-1",
   useAlumni: (filters: Filters) => {
     committedFilters.push(filters);
     return isBaseKey(filters) ? baseRead : filteredRead;

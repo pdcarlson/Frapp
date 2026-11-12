@@ -37,6 +37,8 @@ import {
 } from "@/components/floating-create-button";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { useListLayout } from "@/lib/list-layout";
 import { screenTitleStyle } from "@/components/screen-shell";
 import {
   ThemedRefreshControl,
@@ -152,6 +154,7 @@ export default function DirectoryScreen() {
     useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
   const [tab, setTab] = useState<Tab>("actives");
+  const layout = useListLayout("directory");
   const [query, setQuery] = useState("");
   // Keeps typing responsive without a debounce timer of our own: the query only
   // re-runs once React has caught up with the keystrokes.
@@ -293,9 +296,14 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
-      <Text accessibilityRole="header" style={styles.title}>
-        Directory
-      </Text>
+      {/* List or Grid (#4175) at the title row's trailing end: one pick for
+          both tabs and for a search, kept on this phone. */}
+      <View style={styles.titleRow}>
+        <Text accessibilityRole="header" style={styles.title}>
+          Directory
+        </Text>
+        {chapterId ? <ListLayoutToggle screen="directory" /> : null}
+      </View>
 
       <SearchField
         value={query}
@@ -490,6 +498,12 @@ export default function DirectoryScreen() {
           <PinnedBackRow back={BACK_TO_MORE} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
           <FlatList
+            // `numColumns` can't change on a mounted list, so the layout keys it.
+            key={layout}
+            numColumns={layout === "grid" ? GRID_COLUMNS : 1}
+            columnWrapperStyle={
+              layout === "grid" ? styles.gridColumns : undefined
+            }
             data={rows}
             keyExtractor={(row) => row.userId}
             ListHeaderComponent={header}
@@ -512,16 +526,25 @@ export default function DirectoryScreen() {
                 <View style={styles.emptyWrap}>{renderBody()}</View>
               )
             }
-            renderItem={({ item }) => (
-              <MemberRow
-                row={item}
-                avatarTint={avatarTintFor(item.userId)}
-                onPress={() => {
-                  setSelected(item);
-                  detailSheetRef.current?.present();
-                }}
-              />
-            )}
+            renderItem={({ item }) => {
+              const open = () => {
+                setSelected(item);
+                detailSheetRef.current?.present();
+              };
+              return layout === "grid" ? (
+                <MemberTile
+                  row={item}
+                  avatarTint={avatarTintFor(item.userId)}
+                  onPress={open}
+                />
+              ) : (
+                <MemberRow
+                  row={item}
+                  avatarTint={avatarTintFor(item.userId)}
+                  onPress={open}
+                />
+              );
+            }}
             contentContainerStyle={[
               styles.content,
               // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
@@ -619,6 +642,60 @@ export function MemberRow({
   );
 }
 
+/**
+ * One member in the Grid layout (#4175): the face larger, the name and the
+ * row's meta line under it, centered. It shows everything the row does, so
+ * the grid trades density for faces and loses no fact; the label carries the
+ * same words the row's does.
+ */
+export function MemberTile({
+  row,
+  avatarTint,
+  onPress,
+}: {
+  row: DirectoryRow;
+  avatarTint?: MemberAvatarTint | null;
+  onPress?: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
+
+  return (
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={
+        onPress
+          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
+          : undefined
+      }
+      onPress={onPress}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.tile,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
+    >
+      <MemberAvatar
+        uri={row.avatarUrl}
+        initials={row.initials}
+        size={TILE_AVATAR_SIZE}
+        tint={avatarTint}
+        style={styles.tileAvatar}
+        textStyle={styles.tileAvatarText}
+      />
+      <Text style={styles.tileName} numberOfLines={1}>
+        {row.displayName}
+      </Text>
+      {row.meta ? (
+        <Text style={styles.tileMeta} numberOfLines={2}>
+          {row.meta}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 /** Name widths, cycled, so the placeholder roster doesn't read as a grid. */
 const SKELETON_NAME_WIDTHS = [
   "46%",
@@ -680,6 +757,9 @@ function countMembers(data: unknown): number {
 
 /** The member row's avatar, which its skeleton draws at the same size. */
 const AVATAR_SIZE = 40;
+/** The Grid layout's columns and face size (#4175). */
+const GRID_COLUMNS = 2;
+const TILE_AVATAR_SIZE = 56;
 
 function createStyles(tokens: SignetTokens) {
   const avatarSize = AVATAR_SIZE;
@@ -708,7 +788,8 @@ function createStyles(tokens: SignetTokens) {
     },
     // ScreenShell's own title style: this screen draws its own header only
     // because its body is a FlatList.
-    title: screenTitleStyle(tokens),
+    // Shrinks before the List/Grid toggle beside it does (#4175).
+    title: { ...screenTitleStyle(tokens), flexShrink: 1 },
     row: {
       flexDirection: "row",
       alignItems: "center",
@@ -743,6 +824,52 @@ function createStyles(tokens: SignetTokens) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+    },
+    gridColumns: {
+      gap: tokens.spacing.sm,
+    },
+    // A tile is the row's grid twin: hairline-bordered, on the page surface,
+    // not a card, so the grid reads as the same list laid out wider.
+    tile: {
+      flex: 1,
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.sm,
+      marginBottom: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      borderRadius: tokens.radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+    },
+    tileAvatar: {
+      width: TILE_AVATAR_SIZE,
+      height: TILE_AVATAR_SIZE,
+      borderRadius: avatarRadius(TILE_AVATAR_SIZE),
+      backgroundColor: tokens.color.surface.popover,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: tokens.spacing.xs,
+    },
+    tileAvatarText: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.mutedForeground,
+    },
+    tileName: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+      textAlign: "center",
+    },
+    tileMeta: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
     },
     emptyWrap: {
       paddingTop: tokens.spacing.md,

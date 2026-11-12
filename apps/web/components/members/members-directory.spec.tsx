@@ -97,6 +97,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   usesFraternalOrder: actual.usesFraternalOrder,
   usePledgeClasses: () => classesRead,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  // The List/Grid pick is kept per viewer (#4175).
+  useViewerUserId: () => "viewer-1",
   useMembers: () => membersRead,
   useMemberSearch: (q: string) => (q ? searchRead : membersRead),
   useRoles: () => rolesRead,
@@ -632,6 +634,59 @@ describe("Directory on the greenfield shell", () => {
     await user.click(selectAll());
     expect(screen.queryByText(/selected$/)).toBeNull();
     expect(selectAll()).toBeInTheDocument();
+  });
+});
+
+/**
+ * #4175 — the Grid layout, picked in the Directory's tab row and kept per
+ * viewer. #2146 deleted the old card grid for showing less than the row and
+ * for stranding selection; a tile answers both.
+ */
+describe("Directory as a grid (#4175)", () => {
+  beforeEach(() => {
+    window.localStorage.setItem("frapp.directory.layout.viewer-1", "grid");
+  });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("lays the members out as tiles, not the divided list", () => {
+    const { container } = render(<MembersDirectory />);
+    const list = container.querySelector("ul");
+    expect(list?.className).toContain("grid");
+    expect(list?.className).not.toContain("divide-y");
+    expect(list?.querySelectorAll("li")).toHaveLength(MEMBERS.length);
+    // A hairline tile on the page surface, not the wrapper card #2146 removed.
+    expect(cardFilledContainers(container)).toHaveLength(0);
+  });
+
+  it("names a tile for everything the row shows, and opens the member", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+
+    const tile = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(tile.getAttribute("aria-label")).toContain("Treasurer");
+    expect(tile.getAttribute("aria-label")).toContain("42 points");
+    expect(tile.getAttribute("aria-label")).toContain("ada@example.test");
+
+    await user.click(tile);
+    expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
+    );
+  });
+
+  it("keeps every tile selectable, and select-all with it", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Ada Lovelace" }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /select all members on this page/i }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
   });
 });
 
