@@ -3,7 +3,9 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
+  EditMessageDto,
   GetChannelMessagesQueryDto,
+  SendMessageDto,
   SetChapterChatLevelDto,
   UpdateChannelDto,
 } from './chat.dto';
@@ -167,5 +169,32 @@ describe('SetChapterChatLevelDto (#3840)', () => {
     await expect(transform({ level: 'off' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+describe('message content drops U+FFFC (#4346)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const CLIENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  it('removes the placeholder from a sent message', async () => {
+    const result: SendMessageDto = await pipe.transform(
+      { client_message_id: CLIENT_ID, content: 'take a look \uFFFC' },
+      { type: 'body', metatype: SendMessageDto },
+    );
+    expect(result.content).toBe('take a look ');
+  });
+
+  it('removes it from an edit, and refuses an edit that was only the placeholder', async () => {
+    const result: EditMessageDto = await pipe.transform(
+      { content: '\uFFFCfixed' },
+      { type: 'body', metatype: EditMessageDto },
+    );
+    expect(result.content).toBe('fixed');
+    await expect(
+      pipe.transform(
+        { content: '\uFFFC' },
+        { type: 'body', metatype: EditMessageDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

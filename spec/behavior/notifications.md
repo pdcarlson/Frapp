@@ -70,7 +70,15 @@ that a Discord import finished or stopped on an error, sent to the admin who set
 `users.id`, which the in-app list uses to withhold a blocked member's rows
 ([`chat/README.md`](./chat/README.md#what-a-block-does-and-does-not-hide), #2715). A
 bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.ts`
-`buildPayload`). This example previously showed a
+`buildPayload`). Since #4346 every chat row also says what the in-app list draws it by,
+so no client parses a title: `chatKind` (`dm`, `group`, `announcement` or `channel`,
+the announcement test being the push's own), `channelName` when the channel has a name a
+member would recognize (never a DM's or an unnamed group DM's internal name), and
+`mentioned: true` when this message mentioned the recipient, by name or by a role they
+hold, as `chat_messages.mentions` resolved it. Rows written before #4346 have
+none of the three. The member-joined row (`invite.service.ts`) carries `memberId`, who
+joined; it is deliberately not `senderId`, which means a chat sender and drives the block
+filter. This example previously showed a
 `messageId` the chat push worker has never emitted; clients MUST NOT read one.
 
 Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
