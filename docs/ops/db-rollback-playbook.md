@@ -3834,6 +3834,39 @@ drop table if exists public.user_ai_consents;
 drop table if exists public.chapter_ai_settings;
 ```
 
+## Rollback AI search index (20261112140000)
+
+* **Migration**: `20261112140000_ai_corpus.sql`
+
+Two new tables, `corpus_sources` and `corpus_chunks`, four functions the API calls, and two triggers, one on `chapter_documents` and one on `meetings`. On apply it wrote one waiting `corpus_sources` row per existing document and per posted meeting. No existing row changed. Everything in both tables is derived: it can be deleted and rebuilt from the documents and minutes at the cost of embedding them again.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops the indexer and every retrieval. The triggers keep writing `corpus_sources` rows on document and minutes changes, which is harmless and is what lets indexing resume where it left off.
+
+**If a trigger is what is failing** (a document upload or a minutes post errors inside `corpus_follow_chapter_document` or `corpus_follow_meeting`), drop the triggers alone in a forward migration. Uploads and posts work again at once; the index stops following changes, so also clear it, or retrieval could return a passage of a document that has since been deleted:
+
+```sql
+drop trigger if exists trg_chapter_documents_corpus on public.chapter_documents;
+drop trigger if exists trg_meetings_corpus on public.meetings;
+delete from public.corpus_sources;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's indexer and retrieval call the functions by name). The `vector` extension stays: other work may come to use it, and dropping it is not needed to undo this.
+
+```sql
+drop trigger if exists trg_chapter_documents_corpus on public.chapter_documents;
+drop trigger if exists trg_meetings_corpus on public.meetings;
+drop function if exists public.corpus_follow_chapter_document();
+drop function if exists public.corpus_follow_meeting();
+drop function if exists public.match_corpus_chunks(uuid, uuid, text, text, text, integer);
+drop function if exists public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text);
+drop function if exists public.write_corpus_chunks(uuid, bigint, boolean, text, jsonb);
+drop function if exists public.claim_corpus_sources(text, timestamptz, integer);
+drop function if exists public.drop_corpus_source(uuid, text, uuid);
+drop function if exists public.note_corpus_source(uuid, text, uuid, uuid);
+drop table if exists public.corpus_chunks;
+drop table if exists public.corpus_sources;
+```
+
 ## Rollback minutes drafted from notes (20261112150000)
 
 * **Migration**: `20261112150000_meeting_drafts.sql`

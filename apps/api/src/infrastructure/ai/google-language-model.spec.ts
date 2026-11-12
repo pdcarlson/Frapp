@@ -465,6 +465,24 @@ describe('GoogleLanguageModel', () => {
       });
     });
 
+    it('tells Gemini whether a text is a passage or a question, when the caller says', async () => {
+      const embedContent = jest
+        .fn()
+        .mockResolvedValue({ embeddings: [{ values: [1, 0, 0] }] });
+      const model = clientWith({ embedContent });
+      const base = {
+        task: 'corpus.embed' as const,
+        model: 'gemini-embedding-001',
+        dimensions: 3,
+      };
+      await model.embed({ ...base, texts: ['a'], purpose: 'document' });
+      await model.embed({ ...base, texts: ['b'], purpose: 'query' });
+      const sent = (
+        embedContent.mock.calls as Array<[{ config: { taskType?: string } }]>
+      ).map(([call]) => call.config.taskType);
+      expect(sent).toEqual(['RETRIEVAL_DOCUMENT', 'RETRIEVAL_QUERY']);
+    });
+
     it('treats a vector of the wrong width as invalid output', async () => {
       const embedContent = jest
         .fn()

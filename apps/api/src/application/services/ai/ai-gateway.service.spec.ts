@@ -140,6 +140,11 @@ function harness(
   };
 }
 
+/** The model the harness's registry hands the gateway. */
+function modelOf(h: { registry: { resolve: unknown } }): ILanguageModel {
+  return (h.registry.resolve as () => ILanguageModel)();
+}
+
 async function collect(
   stream: AsyncIterable<AiCitedStreamEvent>,
 ): Promise<AiCitedStreamEvent[]> {
@@ -720,6 +725,56 @@ describe('AiGatewayService', () => {
         citationsKept: 0,
         citationsDropped: 0,
       });
+    });
+
+    it('passes the caller’s purpose for the text on to the model', async () => {
+      const h = harness();
+      const embed = jest.spyOn(modelOf(h), 'embed');
+      await h.gateway.embed(
+        'ask.embed-query',
+        { texts: ['when are dues'], promptVersion: 'q@v1', purpose: 'query' },
+        CONTEXT,
+      );
+      expect(embed).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'query', dimensions: 1536 }),
+      );
+    });
+
+    // The consent rule (#4308): indexing a chapter's own records needs only
+    // the chapter's switch, and a question needs the asker's own Yes. The
+    // two embedding tasks sit in different families so that rule can tell
+    // them apart from the descriptor alone.
+    it('a member who said No gets no question embedded, and indexing still works', async () => {
+      const h = harness();
+      h.consent.check.mockImplementation((call) =>
+        Promise.resolve(
+          call.family === 'corpus'
+            ? { allowed: true }
+            : { allowed: false, reason: 'member_declined' },
+        ),
+      );
+      const embed = jest.spyOn(modelOf(h), 'embed');
+
+      const question = await h.gateway.embed(
+        'ask.embed-query',
+        { texts: ['when are dues'], promptVersion: 'q@v1', purpose: 'query' },
+        CONTEXT,
+      );
+      expect(question).toMatchObject({
+        status: 'unavailable',
+        reason: 'consent',
+      });
+      expect(embed).not.toHaveBeenCalled();
+
+      const indexing = await h.gateway.embed(
+        'corpus.embed',
+        { texts: ['bylaws'], promptVersion: 'i@v1', purpose: 'document' },
+        CONTEXT,
+      );
+      expect(indexing.status).toBe('ok');
+      expect(h.consent.check).toHaveBeenLastCalledWith(
+        expect.objectContaining({ task: 'corpus.embed', family: 'corpus' }),
+      );
     });
   });
 });

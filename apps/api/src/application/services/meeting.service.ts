@@ -175,6 +175,41 @@ export class MeetingService {
     );
   }
 
+  /**
+   * `canRead` for many meetings at once, by the same rule (`readable`): one
+   * resolve of the member's permissions and one read of the events, however
+   * many ids. For a caller with a list to filter, such as AI retrieval
+   * (#720). Returns the ids the member may read.
+   */
+  async readableAmong(
+    chapterId: string,
+    userId: string,
+    meetingIds: readonly string[],
+  ): Promise<Set<string>> {
+    const ids = [...new Set(meetingIds)];
+    if (ids.length === 0) return new Set();
+    const [access, found] = await Promise.all([
+      this.access(chapterId, userId),
+      Promise.all(ids.map((id) => this.meetingRepo.findById(chapterId, id))),
+    ]);
+    const rows = found.filter((row): row is Meeting => row !== null);
+    const pointedAt = access.canEditAny
+      ? []
+      : rows.flatMap((row) => (row.event_id ? [row.event_id] : []));
+    const visibleEventIds = new Set(
+      (await this.events.findVisibleByIds(pointedAt, chapterId, userId)).map(
+        (event) => event.id,
+      ),
+    );
+    return new Set(
+      rows
+        .filter((row) =>
+          this.readable(row, userId, access, (id) => visibleEventIds.has(id)),
+        )
+        .map((row) => row.id),
+    );
+  }
+
   async get(
     chapterId: string,
     id: string,

@@ -20,6 +20,7 @@ import {
 import {
   LANGUAGE_MODEL_REGISTRY,
   LanguageModelError,
+  type EmbeddingPurpose,
   type ILanguageModel,
   type ILanguageModelRegistry,
   type LanguageModelCitation,
@@ -352,7 +353,13 @@ export class AiGatewayService {
   /** One vector per text, at the catalog's dimensions for the task. */
   async embed(
     task: AiEmbeddingTaskName,
-    input: { texts: string[]; promptVersion: string; signal?: AbortSignal },
+    input: {
+      texts: string[];
+      promptVersion: string;
+      /** What the texts are, for a model that embeds the two differently. */
+      purpose?: EmbeddingPurpose;
+      signal?: AbortSignal;
+    },
     context: AiCallContext,
   ): Promise<AiEmbeddingResult> {
     const admitted = await this.admit(
@@ -371,6 +378,7 @@ export class AiGatewayService {
         model: entry.model,
         texts: input.texts,
         dimensions: entry.dimensions,
+        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
         signal: input.signal,
       });
       return {

@@ -12,6 +12,7 @@ import {
 import type { GoogleVertexEnvSettings } from '../../config/ai-config';
 import {
   LanguageModelError,
+  type EmbeddingPurpose,
   type EmbeddingRequest,
   type EmbeddingResult,
   type ILanguageModel,
@@ -40,6 +41,16 @@ export type GoogleModelsClient = {
  * it).
  */
 const EMBED_CONCURRENCY = 4;
+
+/**
+ * Gemini embeds a passage and a question differently when told which it is,
+ * which is what makes a short question land near the passage that answers it.
+ * A caller that states no purpose gets the provider's default.
+ */
+const EMBEDDING_TASK_TYPE: Record<EmbeddingPurpose, string> = {
+  document: 'RETRIEVAL_DOCUMENT',
+  query: 'RETRIEVAL_QUERY',
+};
 
 /**
  * Gemini on Google Cloud's paid platform (Vertex AI, which Google now calls
@@ -157,6 +168,9 @@ export class GoogleLanguageModel implements ILanguageModel {
             contents: request.texts[index],
             config: {
               outputDimensionality: request.dimensions,
+              ...(request.purpose
+                ? { taskType: EMBEDDING_TASK_TYPE[request.purpose] }
+                : {}),
               ...(request.signal ? { abortSignal: request.signal } : {}),
             },
           });
