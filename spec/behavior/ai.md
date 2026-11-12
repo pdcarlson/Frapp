@@ -140,6 +140,24 @@ Frapp's server checks every citation. The model returns each cited claim with a 
 
 The model is also prompted to surface conflicts ("I see two different answers — the November dues notice says $225, the September one said $200") rather than synthesize them away, and to say "I don't know" when the corpus is silent.
 
+## Ask Frapp
+
+A member asks a question in their own words and gets an answer from what they could open themselves, with each claim tied to its source. Built 2026-11-12 on web (#450, #451); mobile follows as its own change. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned Ask on, and it needs the member's yes on the AI sheet.
+
+- **Where it is.** The Ask pill in the web top bar opens a panel on the right edge that leaves the page usable beside it ([`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar). With Ask off for the chapter, or for a member without `ai:use`, there is no pill.
+- **One question, one answer.** Each question is answered on its own. Ask keeps no conversation, and the panel says so under the field. Follow-up questions that build on the last answer are not built.
+- **How an answer is made.** The question searches the chapter's index as the asker ([Corpus scope](#corpus-scope)), and in parallel a small planning call picks which live-data tools the question needs from the ones this member may use. The tools run as the asker. One writing call then sees the tool results, the official passages and the chat passages, in that order, and must quote the source for each claim.
+- **Live data is read through tools, never the index:** the roster (names and roles, no contact details), upcoming events, the asker's own points and the leaderboard, and the asker's own dues. Each tool mirrors a route, needs that route's permission and module, and only reads. A tool that would change something is never offered to Ask; the seam for one that proposes a change is the acting agent's (#718). Attendance and "who is behind on dues" have no tool yet.
+- **No answer without a source.** The server checks every quote against its source ([Citation requirement](#citation-requirement)). An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records." When some quotes were dropped and others stood, the answer says part of it could not be matched.
+- **What streams is a preview.** Text appears as it is written, under the step the server is on ("Searching your chapter's sources", "Reading what it found", "Writing"). The server decides what stands after the model stops, and the checked answer replaces the preview.
+- **Sources open.** Each cited sentence carries a numbered marker, and the sources are listed under the answer with their kind, place and full date. A document opens in the viewer, minutes open the meeting, a channel message opens in its channel, and live data opens its page. Live data has no date; it says "Read just now".
+- **Left-out messages are counted, never named.** When the channels an answer drew on hold messages from members who have not agreed, the answer says how many were not included.
+- **When it can't answer** it says which: the member has not answered the AI sheet (with a button that opens it), the president turned Ask off, the chapter or the member reached its allowance, or Ask is not available. A provider refusal reads "Ask can't help with that question."
+- **The stream format is versioned and defined once,** in `@repo/validation` (`ask.ts`), for the API that writes it and for web and mobile that read it. A reader ignores an event type, a key or a source kind it does not know, so an installed mobile build keeps working when the format grows.
+- **Limits.** A question is at most 1,000 characters. Ten questions a minute per member, on top of the spend caps.
+
+> **Added 2026-11-12 (#450, the building session's, Paul's to change).** Not stated before: single questions with no follow-ups; the pill hidden rather than disabled when the president has Ask off; no relevance threshold (the no-source rule is the only "couldn't find it" test); an event's location text is given to the model; and the rate of ten a minute.
+
 ## Suggestions
 
 Some features propose instead of answer: a task drafted from minutes, a decision worth logging, a value for a form field.
@@ -164,10 +182,12 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
 | A member reports an answer or a draft | That one exchange, shown to the member before they confirm | The Frapp team | 30 days, encrypted |
 | Beta diagnostics | Questions and answers in Ask, for one chapter | The Frapp team | 14 days, encrypted, with a fixed end date |
 
-- The diagnostics window exists for the beta only, and only on Ask. While it is on, Ask shows a line saying answers are being saved. It never covers meeting features, and it never keeps an answer that drew on chat. Ask comes after the beta's first features, so until it exists the window keeps nothing and a report is the only stored text.
+- The diagnostics window exists for the beta only, and only on Ask. While it is on, Ask shows a line saying answers are being saved. It never covers meeting features, and it never keeps an answer that drew on chat.
+- **How the window turns on (built 2026-11-12, #4315).** The server names one chapter and holds an encryption key; without both, no chapter is offered it. That chapter's president starts it from Chapter settings, AI, through a confirmation that names the end date, and the yes is written to the audit log. The end date is 14 days out and nothing extends it: on that date the window and everything it kept are deleted, and the president can stop it sooner, which deletes the same. An exchange is kept only when the member's Ask panel showed the saved line before the question was sent. A member's kept exchanges are deleted when they leave the chapter, delete their account, or answer No on the AI sheet. How the Frapp team reads what was kept: [`docs/ops/ai-stored-text.md`](../../docs/ops/ai-stored-text.md).
+- **Reporting an answer is not built.** Until it is, the diagnostics window is the only stored text.
 - Neither store holds meeting audio or Standards material.
 - An officer's notes for drafted minutes are the officer's own input to a feature, not a stored prompt: they are kept beside the unposted minutes so the officer can ask again, with what the officer checks the draft against (what the notes leave out, and each drafted decision and action item beside its line), and are deleted when the minutes are posted ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes)). Added 2026-11-12 (#4312, the drafting session's, Paul's to change).
-- A stored exchange is deleted when the member who asked or reported deletes their account. It is also deleted early when a member it quotes deletes their account or turns their choice off.
+- A stored exchange is deleted when the member who asked or reported deletes their account. It is also deleted early when a member it quotes deletes their account or turns their choice off. (2026-11-12: the diagnostics window quotes no member, because it keeps no answer that had chat in front of the model, so its only early deletions are the asker's.)
 - Both are named on the privacy page.
 - The usage ledger has no text column. It records counts, the model, the prompt version and the cost.
 - No prompt or answer text goes to any outside service: not to error tracking, not to analytics, not to a provider's own request logs. That rule has no exception ([`observability.md`](observability.md)).

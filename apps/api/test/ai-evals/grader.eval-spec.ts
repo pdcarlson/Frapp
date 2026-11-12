@@ -622,4 +622,29 @@ describe('chat as a source (#4307)', () => {
     }).map((v) => v.rule);
     expect(rules).toEqual(['mustReportLeftOut']);
   });
+
+  it('flags a left-out count above what the asker could have opened, and passes one at or under it', () => {
+    const ceiling = {
+      ...optedOut,
+      expect: { mustRefuse: true, mustNotReportLeftOutAbove: 2 },
+    };
+    const said = (text: string) =>
+      grade(ceiling, { ...compliantAnswer(ceiling), text }).map((v) => v.rule);
+    expect(
+      said(
+        "I don't know. 3 messages from members who opted out aren't included.",
+      ),
+    ).toEqual(['mustNotReportLeftOutAbove']);
+    expect(
+      said(
+        "I don't know. 2 messages from members who opted out aren't included.",
+      ),
+    ).toEqual([]);
+    expect(
+      said(
+        "I don't know. 1 message from a member who opted out isn't included.",
+      ),
+    ).toEqual([]);
+    expect(said("I don't know.")).toEqual([]);
+  });
 });

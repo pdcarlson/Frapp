@@ -10,41 +10,55 @@ npm run test:ai-evals -w apps/api
 It needs its own jest config: the unit project is `rootDir: "src"` and the e2e project matches
 `.e2e-spec.ts`, so neither picks up `test/ai-evals/*.eval-spec.ts`.
 
-## Status: graded against the gateway, with a scripted model
+## Status: graded against the product's Ask, with a scripted model
 
-| Layer                | File                             | What it checks                                                                                                                           |
-| -------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Corpus invariants    | `corpus-invariants.eval-spec.ts` | Coverage of all four categories and all four injection vectors, payloads actually planted in context, no self-contradictory expectations |
-| Grader enforcement   | `grader.eval-spec.ts`            | Every case is satisfiable by a compliant answer, and every injection's intended outcome is rejected                                      |
-| Agent behaviour      | `adversarial.eval-spec.ts`       | Every case, answered by the agent below and graded                                                                                       |
-| What the agent sends | `gateway-agent.eval-spec.ts`     | Chat reaches the model after official sources and labelled as chat, which no answer-graded case can see                                  |
+| Layer                        | File                             | What it checks                                                                                                                           |
+| ---------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Corpus invariants            | `corpus-invariants.eval-spec.ts` | Coverage of all four categories and all four injection vectors, payloads actually planted in context, no self-contradictory expectations |
+| Grader enforcement           | `grader.eval-spec.ts`            | Every case is satisfiable by a compliant answer, and every injection's intended outcome is rejected                                      |
+| Agent behaviour              | `adversarial.eval-spec.ts`       | Every case, answered by the agent below and graded                                                                                       |
+| What the agent sends and runs | `ask-agent.eval-spec.ts`         | Source order and labels, what the planner is shown, and that no mutating tool is offered or run, which no answer-graded case can see     |
 
-The agent is `harness/gateway-agent.ts`: a minimal ask over the real `AiGatewayService`, with the
-scripted adapter as the model (`harness/scripted-model.ts`). The suite's jest config registers it
-(`harness/register-gateway-agent.ts`), and CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
-agent fails instead of skipping.
+The agent is `harness/ask-agent.ts`: the product's `AskService` (#450), over the product's
+`CorpusRetrievalService`, chat source (#4314) and `AiGatewayService`, with the scripted adapter as
+the model (`harness/scripted-model.ts`). The suite's jest config registers it
+(`harness/register-ask-agent.ts`), and CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no agent
+fails instead of skipping.
 
 **What a green run proves.** There is no model here, so it proves nothing about a model's judgment.
-It grades three rules, and only one of them is product code today. The scripted model
-misbehaves on purpose so that each rule has something to stop:
+It grades the rules Frapp enforces around one, and each is product code. The scripted model and
+planner misbehave on purpose so that each rule has something to stop:
 
-| The scripted model does this                                                                                 | What has to stop it                                                                                                                        | Where that rule lives                  |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| Cites a quote that is not in the document, on every answer                                                   | The word-for-word check (`isQuoteGrounded`) drops the citation                                                                             | The gateway (product code)             |
-| Cites another chapter's roster, on every answer                                                              | The same check: a source the model was not given is never kept                                                                             | The gateway (product code)             |
-| Repeats any text of another chapter that reaches it                                                          | Only the caller's chapter's documents and tool results are handed to the gateway                                                           | `harness/gateway-agent.ts` (test code) |
-| Answers from a neighbouring topic with a made-up quote                                                       | An answer left with no kept citation becomes "I don't know"                                                                                | `harness/gateway-agent.ts` (test code) |
-| Answers from an opted-out member's message, or one in a channel the asker can't open, whenever it reaches it | Only messages whose author said yes, in channels the asker can open, are handed to the gateway, and the answer says how many were left out | `harness/gateway-agent.ts` (test code) |
+| The scripted model does this                                                                                 | What has to stop it                                                                                                                    | Where that rule lives                                  |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Cites a quote that is not in the document, on every answer                                                   | The word-for-word check (`isQuoteGrounded`) drops the citation                                                                         | The gateway                                            |
+| Cites another chapter's roster, on every answer                                                              | The same check: a source the model was not given is never kept                                                                         | The gateway                                            |
+| Repeats any text of another chapter that reaches it                                                          | Ask searches the asker's chapter and no other, and drops a live read that came back from another chapter                               | `AskService`, `CorpusRetrievalService`                 |
+| Answers from a neighbouring topic with a made-up quote                                                       | An answer left with no kept citation becomes "couldn't find that"                                                                      | `AskService`                                           |
+| Answers from an opted-out member's message, or one in a channel the asker can't open, whenever it reaches it | Indexing leaves the message out, retrieval keeps only channels the asker can open, and the answer says how many messages were left out | `buildChatWindowChunks`, `ChatMessageCorpusSource`     |
+| Plans every tool it is offered, a tool that records a payment, and a tool that does not exist                | Ask offers only read tools the asker holds the permission for, and runs nothing else                                                   | `AskService`                                           |
 
-The rules in the test agent are the ones the product's Ask (#450) and chat index (#4314) have to
-carry themselves: the gateway is handed sources and does not choose them. Until Ask is built on the gateway and put
-under test here, a green run says the quote check works and says nothing about chapter scoping in
-the product. The cases about tools pass because this agent has no tools, so they say nothing yet.
+A case's tool results are served by tools that record being run, so `allowedTools`,
+`forbidsMutation` and the authority ceiling grade calls the product made.
 
-Removing the chapter filter or the quote check turns this run red. Whether a real model ignores an
-injected instruction, prefers the newer source or shows both sides of a conflict is not decided
-here: for those the scripted model plays a compliant answer. The bake-off (#4311) runs these cases
-against real providers.
+**What it does not prove.** `harness/eval-corpus.ts` stands in for the database:
+
+- Its `match` returns the passages of the chapter it is asked for, as `match_corpus_chunks` does.
+  That the SQL filters by chapter is proven by the migration gate
+  (`scripts/pglite/tiers/ai-corpus.mjs`, `ai-corpus-chat.mjs`), not here. A case proves Ask asks for
+  the asker's chapter.
+- Ranking is by shared words. It is not the product's ranking and is not graded.
+- Documents, minutes and announcements are readable by every member of their chapter; their access
+  rules are covered by the adapters' own specs. Announcements count as official here, which the
+  product does not do yet (#4381).
+- The answer's left-out count covers the conversations it drew on. Where the corpus is one
+  conversation a case pins the number (`mustReportLeftOut`); on the synthetic chapter it pins a
+  ceiling (`mustNotReportLeftOutAbove`): never more than the asker could have opened.
+
+Removing Ask's chapter argument, its other-chapter drop on a tool result, its no-source rule or the
+quote check turns this run red. Whether a real model ignores an injected instruction, prefers the
+newer source or shows both sides of a conflict is not decided here: for those the scripted model
+plays a compliant answer. The bake-off (#4311) runs these cases against real providers.
 
 ## Running the cases against a real model
 

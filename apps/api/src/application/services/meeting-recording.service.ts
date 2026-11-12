@@ -65,7 +65,7 @@ export const MEETING_TRANSCRIPTION_RUN_KIND = 'meeting_transcription';
 /** Stamped on the usage ledger where a prompt's version goes. */
 export const MEETING_TRANSCRIPTION_VERSION = 'meetings.transcribe@v1';
 
-/** The private bucket a recording waits in (`20261112200000_meeting_recordings.sql`). */
+/** The private bucket a recording waits in (`20261112210000_meeting_recordings.sql`). */
 export const MEETING_AUDIO_BUCKET = 'meeting-audio';
 
 /** A recording and its transcript older than this are deleted, like notes. */

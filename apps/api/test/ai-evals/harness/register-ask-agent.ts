@@ -1,6 +1,6 @@
 /**
- * Jest setup for the eval project: registers the gateway-backed agent so the
- * behavioural cases run. The server switch is turned on for this process
+ * Jest setup for the eval project: registers the product's Ask (`ask-agent.ts`)
+ * so the behavioural cases run. The server switch is turned on for this process
  * only; the gateway makes no call without it.
  *
  * The model is the scripted one unless `AI_EVALS_MODEL` names a bake-off
@@ -13,22 +13,19 @@
  */
 import { candidateRegistry } from '../bake-off/candidate-registry';
 import { findCandidate } from '../bake-off/candidates';
-import { createGatewayAgent } from './gateway-agent';
+import { SCRIPTED_ASK_REPLIES, createAskAgent } from './ask-agent';
 import { registerAgentUnderTest } from './registry';
-import { scriptedAskModel } from './scripted-model';
 
 process.env.AI_ENABLED = 'true';
 if (!process.env.AI_EVALS_AGENT_MODULE) {
   const model = process.env.AI_EVALS_MODEL;
   if (model && model !== 'scripted') {
     const candidate = findCandidate(model);
-    const { registry } = candidateRegistry(candidate, {
-      'ask.answer': scriptedAskModel,
-    });
+    const { registry } = candidateRegistry(candidate, SCRIPTED_ASK_REPLIES);
     registerAgentUnderTest(
-      createGatewayAgent({ registry, name: `gateway + ${candidate.model}` }),
+      createAskAgent({ registry, name: `Ask + ${candidate.model}` }),
     );
   } else {
-    registerAgentUnderTest(createGatewayAgent());
+    registerAgentUnderTest(createAskAgent());
   }
 }

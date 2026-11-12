@@ -188,7 +188,7 @@ create index if not exists idx_meeting_recordings_uploaded_by
   where uploaded_by is not null;
 
 comment on table public.meeting_recordings is
-  'One meeting''s uploaded recording: where its upload and transcription stand, and the transcript. The audio lives in the meeting-audio bucket only until the transcript is written; the row is kept only while the minutes are a draft. See 20261112200000_meeting_recordings.sql.';
+  'One meeting''s uploaded recording: where its upload and transcription stand, and the transcript. The audio lives in the meeting-audio bucket only until the transcript is written; the row is kept only while the minutes are a draft. See 20261112210000_meeting_recordings.sql.';
 
 -- Posting the minutes removes the recording's row and its transcript, as it
 -- removes the notes (20261112180000_meeting_drafts.sql). Any audio still in
@@ -350,7 +350,7 @@ end;
 $$;
 
 comment on function public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer) is
-  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. p_audio_seconds is the audio a transcription was billed for. Returns settled, inserted or missing. See 20261112130000_ai_usage_ledger.sql and 20261112200000_meeting_recordings.sql.';
+  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. p_audio_seconds is the audio a transcription was billed for. Returns settled, inserted or missing. See 20261112130000_ai_usage_ledger.sql and 20261112210000_meeting_recordings.sql.';
 
 -- `ai_chapter_usage` returns the seconds too. A function's return columns
 -- cannot change with `create or replace` either. The body is 20261112130000's

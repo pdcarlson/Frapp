@@ -14519,6 +14519,188 @@
         ]
       }
     },
+    "/v1/ai/ask": {
+      "get": {
+        "description": "Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.",
+        "operationId": "AskController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What Ask needs to know before the first question",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.",
+        "operationId": "AskController_ask_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask a question; the answer is streamed",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/ask/diagnostics": {
+      "post": {
+        "description": "The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.",
+        "operationId": "AskController_startDiagnostics_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`)."
+          },
+          "409": {
+            "description": "A window is already on (`ai.ask.diagnostics.already_on`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn on the beta diagnostics window (president only)",
+        "tags": [
+          "AI"
+        ]
+      },
+      "delete": {
+        "description": "Ends the window now and deletes everything it kept. Recorded in the audit log.",
+        "operationId": "AskController_stopDiagnostics_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn off the beta diagnostics window (president only)",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/meetings/{id}/draft": {
       "get": {
         "operationId": "MeetingDraftController_get_v1",
@@ -24161,6 +24343,66 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "AskDiagnosticsDto": {
+        "type": "object",
+        "properties": {
+          "offered": {
+            "type": "boolean",
+            "description": "Whether this chapter is the one the beta diagnostics window may be turned on for."
+          },
+          "can_change": {
+            "type": "boolean",
+            "description": "Whether the caller may turn it on or off: the chapter’s president."
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the open window ends, or null when nothing is being kept."
+          }
+        },
+        "required": [
+          "offered",
+          "can_change",
+          "ends_at"
+        ]
+      },
+      "AskStatusDto": {
+        "type": "object",
+        "properties": {
+          "saved_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept."
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/AskDiagnosticsDto"
+          }
+        },
+        "required": [
+          "saved_until",
+          "diagnostics"
+        ]
+      },
+      "AskRequestDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question, in the member’s own words.",
+            "example": "What do the bylaws say about quorum?",
+            "maxLength": 1000
+          },
+          "saved_notice_shown": {
+            "type": "boolean",
+            "description": "True when the client showed the \"answers are being saved\" line before sending. An exchange is kept by the beta diagnostics window only when this is true."
+          }
+        },
+        "required": [
+          "question"
         ]
       },
       "MeetingDraftSourceDto": {

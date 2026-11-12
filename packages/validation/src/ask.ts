@@ -1,0 +1,415 @@
+import { z } from "zod";
+
+/**
+ * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
+ * answer's event format and the words both clients show.
+ *
+ * The format is versioned and defined once, here, for the API that writes it
+ * and for web and mobile that read it (ADR-28, Consequences). The rules that
+ * let an installed mobile build keep working when the format grows:
+ *
+ * - Every event carries `v`. A reader takes events whose `v` it knows and
+ *   ignores the rest.
+ * - A reader ignores an event `type` it does not know, and a key it does not
+ *   know on an event it does. So adding an event type or a key is not a new
+ *   version; changing what an existing key means is.
+ * - A source's `kind` and `target.type` are open strings. A reader shows a
+ *   source of a kind it does not know as plain text with no link.
+ * - The answer is whatever `done` carries. Text deltas are a preview of
+ *   `done.answer.text`: citations, and whether the answer stands at all, are
+ *   decided by the server after the model stops writing, so a reader replaces
+ *   what it streamed with `done`.
+ */
+
+export const ASK_STREAM_VERSION = 1;
+
+/** The stream is Server-Sent Events over the POST's response body. */
+export const ASK_STREAM_CONTENT_TYPE = "text/event-stream";
+
+export const ASK_QUESTION_MAX_LENGTH = 1000;
+
+/** `POST /v1/ai/ask`. */
+export const AskRequestSchema = z.object({
+  question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
+  /**
+   * The client showed the "answers are being saved" line before this
+   * question was sent. An exchange is kept by the beta diagnostics window
+   * only when this is true, so a client that does not know about the window
+   * never has an answer saved (`ai.md` § Stored AI text).
+   */
+  saved_notice_shown: z.boolean().optional(),
+});
+export type AskRequest = z.infer<typeof AskRequestSchema>;
+
+/** What the server is doing before the first word arrives. */
+export const ASK_STEPS = ["searching", "reading", "writing"] as const;
+export type AskStep = (typeof ASK_STEPS)[number];
+
+/**
+ * How an ask ended.
+ *
+ * - `answered`: `text` stands, and every citation in it was checked.
+ * - `not_found`: nothing in the chapter's sources answers it, or the model
+ *   wrote something no source backs. `text` is empty; show the "couldn't
+ *   find that" line.
+ * - `refused`: the model provider declined the question.
+ * - `unavailable`: no answer was attempted; `reason` says why.
+ */
+export const ASK_ANSWER_STATUSES = [
+  "answered",
+  "not_found",
+  "refused",
+  "unavailable",
+] as const;
+export type AskAnswerStatus = (typeof ASK_ANSWER_STATUSES)[number];
+
+export const ASK_UNAVAILABLE_REASONS = [
+  /** The member has not said yes on the AI sheet. Show the sheet. */
+  "consent_required",
+  /** The president turned Ask off. Hide the entry point. */
+  "chapter_off",
+  /** The chapter used its AI allowance for the month. */
+  "chapter_limit",
+  /** The member used their AI allowance for the day. */
+  "member_limit",
+  /** Frapp's own ceiling for the month, or no provider is set up. */
+  "not_available",
+] as const;
+export type AskUnavailableReason = (typeof ASK_UNAVAILABLE_REASONS)[number];
+
+/** The kinds of source this version of the server sends. Open on the wire. */
+export const ASK_SOURCE_KINDS = [
+  "document",
+  "minutes",
+  "chat",
+  "roster",
+  "events",
+  "points",
+  "dues",
+] as const;
+export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
+
+/** The live-data pages a source can open. */
+export const ASK_SOURCE_PAGES = ["members", "events", "points", "dues"] as const;
+export type AskSourcePage = (typeof ASK_SOURCE_PAGES)[number];
+
+/**
+ * Where a source opens. Open on the wire (`type` is any string), so a newer
+ * server can add a target an older client shows without a link.
+ */
+export type AskSourceTarget =
+  | { type: "document"; document_id: string; page: number | null }
+  | { type: "meeting"; meeting_id: string }
+  | { type: "message"; channel_id: string; message_id: string }
+  | { type: "page"; page: AskSourcePage };
+
+const AskSourceSchema = z.object({
+  /** Stable within one answer; what a citation points at. */
+  id: z.string(),
+  kind: z.string(),
+  /** A document's name, "Chapter meeting minutes", "#general", "Roster". */
+  title: z.string(),
+  /** The section or page inside the source, when it has one. */
+  detail: z.string().nullable(),
+  /** When the source is from (ISO), or null for live data read just now. */
+  date: z.string().nullable(),
+  target: z.looseObject({ type: z.string() }).nullable(),
+});
+export type AskSource = z.infer<typeof AskSourceSchema>;
+
+const AskCitationSchema = z.object({
+  /** Index into `sources`. */
+  source: z.number().int().min(0),
+  /**
+   * Offset into `text` (UTF-16 code units, as a JavaScript string counts)
+   * where the citation's marker goes: the end of the sentence it backs.
+   */
+  at: z.number().int().min(0),
+  /** The words quoted, which the server found in the source word for word. */
+  quote: z.string(),
+});
+export type AskCitation = z.infer<typeof AskCitationSchema>;
+
+export const AskAnswerSchema = z.object({
+  status: z.enum(ASK_ANSWER_STATUSES),
+  reason: z.string().nullable(),
+  text: z.string(),
+  /** Ordered by `at`. Only sources a citation names are in `sources`. */
+  citations: z.array(AskCitationSchema),
+  sources: z.array(AskSourceSchema),
+  /**
+   * Channel messages left out because their authors chose not to share
+   * them with AI. A count, never whose.
+   */
+  left_out_messages: z.number().int().min(0),
+  /**
+   * Quotes the model gave that the server could not find in their source
+   * and dropped. Above zero, part of the answer may rest on nothing shown.
+   */
+  unverified_citations: z.number().int().min(0),
+  /** The answer hit the length limit and stops early. */
+  truncated: z.boolean(),
+  /** This exchange was kept by the beta diagnostics window. */
+  saved: z.boolean(),
+});
+export type AskAnswer = z.infer<typeof AskAnswerSchema>;
+
+const version = z.literal(ASK_STREAM_VERSION);
+
+export const AskStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({ v: version, type: z.literal("start"), ask_id: z.string() }),
+  z.object({ v: version, type: z.literal("status"), step: z.string() }),
+  z.object({ v: version, type: z.literal("text"), delta: z.string() }),
+  z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
+  /** The stream broke after it began. Nothing shown so far stands. */
+  z.object({
+    v: version,
+    type: z.literal("error"),
+    code: z.string(),
+    retryable: z.boolean(),
+  }),
+]);
+export type AskStreamEvent = z.infer<typeof AskStreamEventSchema>;
+
+/** One event as its Server-Sent Events frame. */
+export function encodeAskStreamEvent(event: AskStreamEvent): string {
+  // One `data:` line: JSON.stringify never emits a raw newline.
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+/** A comment frame, sent while nothing else is, so a proxy keeps the stream open. */
+export const ASK_STREAM_KEEPALIVE = ": keepalive\n\n";
+
+/**
+ * An event from one frame's JSON, or null for anything this reader should
+ * skip: another version, an unknown type, a frame that is not an event.
+ */
+export function parseAskStreamEvent(json: string): AskStreamEvent | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const parsed = AskStreamEventSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Reads the stream as it arrives. Feed it each decoded chunk of the response
+ * body; it returns the events completed by that chunk. A frame split across
+ * chunks is held until its blank line arrives.
+ */
+export function createAskStreamReader(): {
+  feed(chunk: string): AskStreamEvent[];
+} {
+  let buffer = "";
+  return {
+    feed(chunk: string): AskStreamEvent[] {
+      buffer += chunk.replace(/\r\n/g, "\n");
+      const events: AskStreamEvent[] = [];
+      let end = buffer.indexOf("\n\n");
+      while (end !== -1) {
+        const frame = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const data = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).replace(/^ /, ""))
+          .join("\n");
+        if (data) {
+          const event = parseAskStreamEvent(data);
+          if (event) events.push(event);
+        }
+        end = buffer.indexOf("\n\n");
+      }
+      return events;
+    },
+  };
+}
+
+/** A source's target as a known shape, or null when this build has no page for it. */
+export function askSourceTarget(source: AskSource): AskSourceTarget | null {
+  const target = source.target as Record<string, unknown> | null;
+  if (!target) return null;
+  const text = (key: string): string | null =>
+    typeof target[key] === "string" ? target[key] : null;
+  switch (target.type) {
+    case "document": {
+      const id = text("document_id");
+      const page = typeof target.page === "number" ? target.page : null;
+      return id ? { type: "document", document_id: id, page } : null;
+    }
+    case "meeting": {
+      const id = text("meeting_id");
+      return id ? { type: "meeting", meeting_id: id } : null;
+    }
+    case "message": {
+      const channel = text("channel_id");
+      const message = text("message_id");
+      return channel && message
+        ? { type: "message", channel_id: channel, message_id: message }
+        : null;
+    }
+    case "page": {
+      const page = text("page");
+      return (ASK_SOURCE_PAGES as readonly string[]).includes(page ?? "")
+        ? { type: "page", page: page as AskSourcePage }
+        : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** The words Ask shows, shared so web and mobile cannot drift. */
+export const ASK_COPY = {
+  name: "Ask Frapp",
+  close: "Close Ask Frapp",
+  placeholder: "Ask about your chapter",
+  empty_title: "Ask about your chapter",
+  empty_body:
+    "Answers come from your chapter's documents, minutes and records, with a link to each source.",
+  examples: [
+    "When is the next chapter meeting?",
+    "What do the bylaws say about quorum?",
+    "Who is the treasurer?",
+  ],
+  steps: {
+    searching: "Searching your chapter's sources",
+    reading: "Reading what it found",
+    writing: "Writing",
+  } satisfies Record<AskStep, string>,
+  not_found: "I couldn't find that in your chapter's documents, minutes or records.",
+  not_found_hint:
+    "Ask can only answer from what your chapter has uploaded or posted in Frapp.",
+  refused: "Ask can't help with that question.",
+  failed: "That didn't go through. Try again.",
+  truncated: "This answer was cut short. Ask a narrower question for the rest.",
+  unverified:
+    "Part of this answer could not be matched to a source. Check the sources before you rely on it.",
+  sources: "Sources",
+  unavailable: {
+    consent_required: "Answer the AI question in Settings to use Ask.",
+    chapter_off: "Your chapter's president has turned Ask off.",
+    chapter_limit:
+      "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
+    member_limit:
+      "You've reached today's limit for questions. Ask comes back tomorrow.",
+    not_available: "Ask isn't available right now. Try again later.",
+  } satisfies Record<AskUnavailableReason, string>,
+  /** Live data is read at the moment of the answer, so it has no date. */
+  live: "Read just now",
+  /** What kind of source a row is, under its title. */
+  kinds: {
+    document: "Document",
+    minutes: "Minutes",
+    chat: "Channel message",
+    roster: "Members",
+    events: "Events",
+    points: "Points",
+    dues: "Dues",
+  } satisfies Record<AskSourceKind, string>,
+  send: "Ask",
+  try_again: "Try again",
+  /** Each question is answered on its own; Ask does not remember the last one. */
+  single_shot: "Each question is answered on its own.",
+  consent_action: "Answer the AI question",
+  entry_label: "Ask a question about your chapter",
+} as const;
+
+/** A source kind's label, or null for a kind this build does not know. */
+export function askSourceKindLabel(kind: string): string | null {
+  return (ASK_COPY.kinds as Record<string, string>)[kind] ?? null;
+}
+
+/**
+ * The beta diagnostics window's words in Chapter settings (`ai.md` § Stored
+ * AI text). Shown only to the one chapter the server offers it to.
+ */
+export const ASK_DIAGNOSTICS_COPY = {
+  label: "Save Ask questions for the Frapp team",
+  description:
+    "For 14 days, questions members ask in Ask Frapp and the answers they get are saved, encrypted, so the Frapp team can fix wrong answers during the beta. Answers that used channel messages are never saved. It turns itself off on the end date and everything saved is deleted.",
+  start: "Start saving",
+  stop: "Stop and delete",
+  on: (endsOn: string) => `Saving until ${endsOn}.`,
+  off: "Not saving.",
+  presidentOnly: "Only the chapter president can turn this on or off.",
+  confirmStartTitle: "Save Ask questions for 14 days?",
+  confirmStartBody: (endsOn: string) =>
+    `Until ${endsOn}, each member sees a line in Ask saying their questions and answers are saved for the Frapp team. You can stop it sooner, which deletes everything saved. Your yes is recorded in the chapter's audit log.`,
+  confirmStart: "Start saving",
+  confirmStopTitle: "Stop saving and delete?",
+  confirmStopBody:
+    "Every saved question and answer is deleted now. This can't be undone.",
+  confirmStop: "Stop and delete",
+  cancel: "Cancel",
+  started: "Ask questions are being saved",
+  stopped: "Saving stopped and everything saved was deleted",
+  failed: "That didn't save. Try again.",
+} as const;
+
+/** How long the window runs, for the confirm's end date before the server sets it. */
+export const ASK_DIAGNOSTICS_DAYS = 14;
+
+/** A run of an answer's text, or the marker of one citation inside it. */
+export type AskAnswerSegment =
+  | { type: "text"; text: string }
+  | { type: "citation"; citation: AskCitation; index: number };
+
+/**
+ * An answer's text cut at its citations, in reading order, so a client draws
+ * each marker where the server placed it. A citation past the end of the text
+ * lands at the end; two of the same source at one place are one marker.
+ * `index` is the citation's place in `answer.citations`.
+ */
+export function askAnswerSegments(
+  answer: Pick<AskAnswer, "text" | "citations">,
+): AskAnswerSegment[] {
+  const text = answer.text;
+  const placed = answer.citations
+    .map((citation, index) => ({
+      citation,
+      index,
+      at: Math.min(Math.max(citation.at, 0), text.length),
+    }))
+    .sort((a, b) => a.at - b.at || a.index - b.index);
+  const segments: AskAnswerSegment[] = [];
+  let cursor = 0;
+  let seenHere = new Set<number>();
+  for (const { citation, index, at } of placed) {
+    if (at > cursor) {
+      segments.push({ type: "text", text: text.slice(cursor, at) });
+      cursor = at;
+      seenHere = new Set();
+    }
+    if (seenHere.has(citation.source)) continue;
+    seenHere.add(citation.source);
+    segments.push({ type: "citation", citation, index });
+  }
+  if (cursor < text.length) {
+    segments.push({ type: "text", text: text.slice(cursor) });
+  }
+  return segments;
+}
+
+/** The line under an answer that drew on channels holding left-out messages. */
+export function askLeftOutLine(count: number): string {
+  return count === 1
+    ? "1 message from a member who opted out isn't included."
+    : `${count} messages from members who opted out aren't included.`;
+}
+
+/** The line Ask shows while the beta diagnostics window is on. */
+export function askSavedLine(endsOn: string): string {
+  return `Questions and answers here are saved for the Frapp team until ${endsOn}, to fix problems during the beta.`;
+}
+
+/** What an unavailable answer says, with a fallback for a reason this build does not know. */
+export function askUnavailableLine(reason: string | null): string {
+  return (
+    (ASK_COPY.unavailable as Record<string, string>)[reason ?? ""] ??
+    ASK_COPY.unavailable.not_available
+  );
+}

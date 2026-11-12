@@ -3797,7 +3797,7 @@ One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usa
 drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
 drop function if exists public.expire_ai_spend_holds(timestamptz);
 drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
--- Since 20261112200000_meeting_recordings.sql the function takes a 19th argument (p_audio_seconds):
+-- Since 20261112210000_meeting_recordings.sql the function takes a 19th argument (p_audio_seconds):
 drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer);
 drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
 drop table if exists public.ai_usage_events;
@@ -3944,9 +3944,30 @@ drop trigger if exists meetings_drop_ai_suggestions on public.meetings;
 drop index if exists public.idx_ai_suggestions_source_dedupe;
 alter table public.ai_suggestions drop column if exists dedupe_key;
 ```
-## Rollback meeting recording upload (20261112200000)
 
-* **Migration**: `20261112200000_meeting_recordings.sql`
+## Rollback Ask diagnostics window (20261112200000)
+
+* **Migration**: `20261112200000_ai_ask_diagnostics.sql`
+
+Two new tables, `ai_diagnostics_windows` and `ai_diagnostics_exchanges`. No existing row or function changed. What they hold is sealed text that exists only to be deleted within 14 days, so nothing in them needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). To delete what was kept at once, the chapter's president turns saving off in Chapter settings **before** the setting is unset, because unsetting it hides the row. Then unsetting `AI_DIAGNOSTICS_CHAPTER_ID` in Infisical and redeploying the API stops anything more being kept and hides the setting. If the setting is already unset, nothing more is kept and the sweep still deletes what was kept at the window's end date; to delete it sooner, run:
+
+```sql
+delete from public.ai_diagnostics_windows;
+```
+
+The exchanges go with the window (a cascade).
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_diagnostics_windows` every 10 minutes):
+
+```sql
+drop table if exists public.ai_diagnostics_exchanges;
+drop table if exists public.ai_diagnostics_windows;
+```
+## Rollback meeting recording upload (20261112210000)
+
+* **Migration**: `20261112210000_meeting_recordings.sql`
 
 One new bucket (`meeting-audio`), one new table (`meeting_recordings`) with two trigger functions, an `audio_seconds` column on `ai_usage_events`, `assemblyai` in that table's provider check, `settle_ai_spend` and `ai_chapter_usage` recreated to carry the seconds, and a wider length check on `meeting_drafts.notes`. It writes nothing on apply.
 

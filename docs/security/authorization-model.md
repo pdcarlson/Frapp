@@ -404,7 +404,7 @@ URL:
 | `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
 | `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
 | `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
-| `meeting-audio` (a meeting's recording, until it is transcribed) | `20261112200000_meeting_recordings.sql` | audio |
+| `meeting-audio` (a meeting's recording, until it is transcribed) | `20261112210000_meeting_recordings.sql` | audio |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
 route guards. Every bucket carries a MIME allowlist and a size cap. The table above summarizes the

@@ -38,6 +38,7 @@
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/integration/jest-integration.json",
     "test:ai-evals": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/ai-evals/jest-ai-evals.json",
     "ai:bake-off": "TS_NODE_TRANSPILE_ONLY=1 TS_NODE_COMPILER_OPTIONS='{\"rootDir\":\".\"}' node --conditions=source -r ts-node/register test/ai-evals/bake-off/cli.ts",
+    "ai:open-diagnostics": "node --conditions=source -r ts-node/register src/open-ask-diagnostics.ts",
     "openapi:export": "node --conditions=source -r ts-node/register src/export-openapi.ts"
   },
   "dependencies": {
