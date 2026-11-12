@@ -245,7 +245,7 @@ export function EventDetailSheet({
   const roleNameById = useMemo(
     () =>
       new Map(
-        normalizeRoleOptions(rolesQuery.data).map((role) => [
+        normalizeRoleOptions(rolesQuery.data, "keep").map((role) => [
           role.id,
           role.name,
         ]),

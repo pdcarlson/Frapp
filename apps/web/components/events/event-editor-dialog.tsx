@@ -416,7 +416,7 @@ export function EventEditorDialog({
 
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+      normalizeRoleOptions(rolesQuery.data, "hide").sort((first, second) =>
         first.name.localeCompare(second.name),
       ),
     [rolesQuery.data],

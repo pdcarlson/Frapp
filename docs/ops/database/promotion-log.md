@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: The Member role becomes Everyone (#4191)
+
+### 20261112160000_everyone_role.sql
+
+- **Purpose**: Data-only rename. In each chapter with a seeded Member role (`system_key` MEMBER): any other role whose name reads as `@everyone` (letters and digits only, any case) is renamed "<name> (role)"; pending invites (not used, not revoked) naming the Member role's current name are pointed at "Everyone"; then the Member role is renamed Everyone and its `mentionable` switch is turned off, so `@everyone` is officers-only. The role's id, key, tier, permissions, overrides, color and holders don't change, so no member's permissions or rank move and every stored reference to the role keeps working. The rule: [`spec/behavior/rbac.md` § The Everyone role](../../../spec/behavior/rbac.md#the-everyone-role). Verified in PGlite (`scripts/pglite/tiers/everyone-role.mjs`), including every member's effective permissions before and after, and a second run changing nothing.
+- **Checks**: Before `db push`, save what the rollback restores from: `select id, name, mentionable from roles where system_key = 'MEMBER' or lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) = 'everyone';` and `select i.id, i.role from invites i join roles m on m.chapter_id = i.chapter_id and m.system_key = 'MEMBER' where i.role = m.name and i.used_at is null and i.revoked_at is null;`. After, `select count(*) from roles where system_key = 'MEMBER' and (name <> 'Everyone' or mentionable);` is 0.
+- **Promoter notes**: **Production is Paul's call.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate. Either deploy order is safe: the API before this PR finds the role by its key, never its name, so it keeps working with the new name, and a phone on an older build simply shows an "Everyone" chip where it showed "Member" until it updates. One `do` block; idempotent. No audit row is written. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-everyone-role-20261112160000) § Rollback the Everyone role.
+
 ## 2026-11-12: Service entries record the points their approval awarded (#3868)
 
 ### 20261112153700_service_entry_awarded_points.sql

@@ -735,14 +735,35 @@ describe('InviteService', () => {
         mark_text: 'FIJI',
         accent_color: '#5b2c83',
         invited_by: 'Paul Carlson',
-        // "Member" isn't a role here, so the redeem would grant the seeded
-        // Member role under the name this chapter gave it.
-        role: 'Brother',
+        // "Member" isn't a role here, so the redeem would grant only the
+        // Everyone role, which no card names (#4191).
+        role: null,
         expires_at: LIVE_UNTIL,
       });
       expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
       expect(mockMemberRepo.create).not.toHaveBeenCalled();
       expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('names a role the chapter gave the invite (#4191)', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(
+        invite({ role: 'Brothers' }),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Everyone',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+        roleFixture({
+          id: 'r-brothers',
+          name: 'Brothers',
+          system_key: null,
+          is_system: false,
+          permissions: ['members:view'],
+        }),
+      ]);
+      expect((await service.preview('preview-token')).role).toBe('Brothers');
     });
 
     it('never sends letters a chapter hides', async () => {
@@ -903,7 +924,8 @@ describe('InviteService', () => {
           mark_text: null,
           accent_color: null,
           invited_by: 'Paul Carlson',
-          role: 'Member',
+          // An invite into the Everyone role names no role (#4191).
+          role: null,
           expires_at: LIVE_UNTIL,
           token: 'mine-token',
         },

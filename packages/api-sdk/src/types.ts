@@ -4481,7 +4481,7 @@ export interface components {
             analytics_opt_out?: boolean;
             /**
              * Format: uuid
-             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
         };
@@ -4808,7 +4808,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
         };
@@ -4825,7 +4825,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
             /** @description The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller. */
@@ -4986,6 +4986,8 @@ export interface components {
             tier_id: string | null;
             /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
             user_ids: string[];
+            /** @description True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option. */
+            hidden: boolean;
         };
         MentionRoleDto: {
             /** Format: uuid */

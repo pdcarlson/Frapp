@@ -36,8 +36,8 @@ describe("roleAccessRows", () => {
         null,
       ]),
     ).toEqual([
-      { id: "r1", permissions: ["members:view"] },
-      { id: "r2", permissions: [] },
+      { id: "r1", permissions: ["members:view"], system_key: null },
+      { id: "r2", permissions: [], system_key: null },
     ]);
     expect(roleAccessRows(undefined)).toEqual([]);
   });

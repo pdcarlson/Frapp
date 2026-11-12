@@ -3549,7 +3549,7 @@ describe("ChatShell greenfield grammar (#2142)", () => {
 
     expect(screen.getByText("Chat isn't open to you yet")).toBeInTheDocument();
     expect(
-      screen.getByText(/Ask an officer to give you the Member role/),
+      screen.getByText(/Ask an officer to check your roles/),
     ).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
   });

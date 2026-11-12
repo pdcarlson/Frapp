@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { useMyPermissions, useRoles } from "@repo/hooks";
+import { isEveryoneRole } from "@repo/validation";
 import {
   PresidencyClaimBanner,
   TransferPresidencySection,
@@ -120,7 +121,7 @@ export function SettingsRolesTab({
  * `null` the API clears the setting with.
  */
 const NO_DEFAULT_INVITE_ROLE = "__no-default__";
-const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
+const NO_DEFAULT_INVITE_ROLE_LABEL = "No role";
 
 /**
  * Settings → Roles → Default invite role (#422).
@@ -138,7 +139,7 @@ const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
  */
 function DefaultInviteRoleCard({
   canManage,
-  defaultInviteRoleId,
+  defaultInviteRoleId: configuredDefaultId,
   onSave,
   isSaving,
 }: {
@@ -156,6 +157,23 @@ function DefaultInviteRoleCard({
       ),
     [rolesQuery.data],
   );
+
+  // The Everyone role (#4191) is what an invite with no default grants, so a
+  // chapter whose default names it reads as having none.
+  const everyoneId = useMemo(
+    () =>
+      Array.isArray(rolesQuery.data)
+        ? (
+            (rolesQuery.data as unknown[]).find(isEveryoneRole) as
+              { id?: unknown } | undefined
+          )?.id
+        : undefined,
+    [rolesQuery.data],
+  );
+  const defaultInviteRoleId =
+    configuredDefaultId !== null && configuredDefaultId === everyoneId
+      ? null
+      : configuredDefaultId;
 
   // A configured role that is no longer in the catalog would render as "No
   // default" and silently rewrite the setting on the next save. The API's
@@ -188,7 +206,7 @@ function DefaultInviteRoleCard({
     <ProfileSection
       id="settings-default-invite-role"
       title="Default invite role"
-      hint="Used when an invite doesn't pick a role. Changes are written to the chapter audit log."
+      hint="Used when an invite doesn't pick a role. With none, new members join with no role and get what Everyone gets. Changes are written to the chapter audit log."
     >
       <div className="space-y-2">
         <Label htmlFor="default-invite-role">Role</Label>
@@ -218,7 +236,7 @@ function DefaultInviteRoleCard({
         {isDangling ? (
           <p className="text-caption text-warning">
             The configured default role no longer exists. Pick another, or leave
-            it. New invites fall back to the Member role.
+            it. New invites join with no role until then.
           </p>
         ) : null}
         {rolesQuery.isError ? (

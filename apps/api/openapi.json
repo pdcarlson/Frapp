@@ -14622,7 +14622,7 @@
             "type": "string",
             "format": "uuid",
             "nullable": true,
-            "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise)."
+            "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise)."
           }
         }
       },
@@ -15649,7 +15649,7 @@
           "role": {
             "type": "string",
             "nullable": true,
-            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+            "description": "The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to"
           },
           "expires_at": {
             "type": "string"
@@ -15706,7 +15706,7 @@
           "role": {
             "type": "string",
             "nullable": true,
-            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+            "description": "The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to"
           },
           "expires_at": {
             "type": "string"
@@ -16044,6 +16044,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option."
           }
         },
         "required": [
@@ -16053,7 +16057,8 @@
           "name",
           "color",
           "tier_id",
-          "user_ids"
+          "user_ids",
+          "hidden"
         ]
       },
       "MentionRoleDto": {

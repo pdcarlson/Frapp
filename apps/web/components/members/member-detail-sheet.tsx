@@ -28,6 +28,7 @@ import {
   phoneHref,
   removesMemberAccess,
   resolveRoleChips,
+  rolesAfterSave,
   type MemberRoleChip,
 } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
@@ -439,16 +440,22 @@ export function MemberDetailSheet({
     // Taking away the last role with member access locks the member out of
     // chat, the roster and events, the way the 2026-11-07 testers were
     // (#3670). The API allows it, so ask first, as mobile's editor does.
+    // Asked of the roles the save ends with, Everyone settled as the API
+    // settles it (#4191): with no other role giving access they keep it.
     if (
       removesMemberAccess(
         memberRoleIds,
-        selectedRoleIds,
+        rolesAfterSave(
+          selectedRoleIds,
+          memberRoleIds,
+          roleAccessRows(rolesQuery.data),
+        ),
         memberAccessRoleIds(roleAccessRows(rolesQuery.data)),
       )
     ) {
       const confirmed = await confirm({
         title: `Take away ${displayName}'s access?`,
-        description: `Without a role like Member, ${displayName} can't open chat, the member list or events.`,
+        description: `With none of these roles, ${displayName} can't open chat, the member list or events.`,
         confirmLabel: "Take away access",
         tone: "destructive",
       });

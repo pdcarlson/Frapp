@@ -684,6 +684,17 @@ export {
   WILDCARD_PERMISSION,
 } from "./permissions";
 
+// The chapter's Everyone role, the Member role renamed and hidden (#4191).
+export {
+  EVERYONE_MENTION_NAME,
+  EVERYONE_ROLE_NAME,
+  EVERYONE_ROLE_SYSTEM_KEY,
+  isEveryoneRole,
+  isEveryoneRoleName,
+  rolesAfterSave,
+  withoutEveryoneRole,
+} from "./everyone-role";
+
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
 // the same list from here (#4069).

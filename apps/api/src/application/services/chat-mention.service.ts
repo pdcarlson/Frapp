@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
+  isEveryoneRole,
   resolveMentions,
   sendMentionReading,
   type MentionRole,
@@ -277,10 +279,17 @@ export function mentionRoleViews(
   return [...roles]
     .sort((a, b) => a.display_order - b.display_order)
     .map((role) => {
-      const memberIds = holders.get(role.id) ?? [];
+      // The Everyone role is `@everyone` (#4191): it reaches every member of
+      // the chapter, not only the members whose rows hold it, and it is named
+      // as Discord writes it. Whether the sender may use it is still the
+      // role's own switch, which is off for Everyone until a chapter opens it.
+      const everyone = isEveryoneRole(role);
+      const memberIds = everyone
+        ? members.map((member) => member.user_id)
+        : (holders.get(role.id) ?? []);
       return {
         role_id: role.id,
-        name: role.name,
+        name: everyone ? EVERYONE_MENTION_NAME : role.name,
         color: role.color,
         member_ids: memberIds,
         // A row read before the column existed has no value: on, its default.

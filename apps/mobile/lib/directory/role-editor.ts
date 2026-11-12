@@ -9,9 +9,11 @@
  * opens (held roles first) so a row never jumps out from under a finger.
  */
 import {
+  isEveryoneRole,
   memberAccessRoleIds,
   removesMemberAccess,
   roleColorOrNull,
+  rolesAfterSave,
   WILDCARD_PERMISSION,
 } from "@repo/validation";
 import { records, str } from "../more/narrow";
@@ -33,6 +35,13 @@ export interface RoleOption {
    * locks a member out (2026-11-07).
    */
   grantsBase: boolean;
+  /**
+   * The Everyone role (#4191): never listed, since nobody ticks it, but kept
+   * so a save's access question settles it as the API does.
+   */
+  everyone: boolean;
+  /** The seeded role's rename-proof key, or `null`. */
+  systemKey: string | null;
 }
 
 /** `GET /v1/roles` declares no response schema, so it is read defensively. */
@@ -52,6 +61,8 @@ export function parseRoleOptions(rolesData: unknown): RoleOption[] {
       locked: permissions.includes(WILDCARD_PERMISSION),
       // The shared rule web's member sheet uses too (`@repo/validation`).
       grantsBase: memberAccessRoleIds([{ id, permissions }]).has(id),
+      everyone: isEveryoneRole(row),
+      systemKey: typeof row.system_key === "string" ? row.system_key : null,
     });
   }
   return options;
@@ -69,9 +80,11 @@ export function orderRoleOptions(
   const held = new Set(heldIds);
   const byName = (a: RoleOption, b: RoleOption) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  // The Everyone role is no row (#4191).
+  const listed = options.filter((o) => !o.everyone);
   return [
-    ...options.filter((o) => held.has(o.id)).sort(byName),
-    ...options.filter((o) => !held.has(o.id)).sort(byName),
+    ...listed.filter((o) => held.has(o.id)).sort(byName),
+    ...listed.filter((o) => !held.has(o.id)).sort(byName),
   ];
 }
 
@@ -108,14 +121,25 @@ function baseAccessIds(options: readonly RoleOption[]): Set<string> {
  * True when this change is the one that takes away chat, the roster and
  * events. A member who already lacked base access is not warned again on
  * every tap. The rule is web's too (`removesMemberAccess` in
- * `@repo/validation`).
+ * `@repo/validation`), asked of the roles the save ends with once the API
+ * settles the Everyone role (`rolesAfterSave`, #4191): a member left with no
+ * other role giving access keeps or gets Everyone.
  */
 export function removesBaseAccess(
   before: readonly string[],
   after: readonly string[],
   options: readonly RoleOption[],
 ): boolean {
-  return removesMemberAccess(before, after, baseAccessIds(options));
+  const settled = rolesAfterSave(
+    after,
+    before,
+    options.map((o) => ({
+      id: o.id,
+      system_key: o.systemKey,
+      permissions: o.grantsBase ? ["members:view"] : [],
+    })),
+  );
+  return removesMemberAccess(before, settled, baseAccessIds(options));
 }
 
 export const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";
@@ -125,7 +149,7 @@ export function removeBaseAccessTitle(name: string): string {
 }
 
 export function removeBaseAccessBody(name: string): string {
-  return `Without a role like Member, ${name} can't open chat, the member list or events.`;
+  return `With none of these roles, ${name} can't open chat, the member list or events.`;
 }
 
 export const ROLES_SAVE_FAILED_TITLE = "Couldn't save roles";

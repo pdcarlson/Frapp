@@ -46,10 +46,7 @@ import { anyReadUncached } from "@/components/shared/async-states";
   this family any more; it is the roster's own skeleton
   (`directory-skeleton.tsx`).
 */
-import {
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
@@ -71,6 +68,7 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
+import { isEveryoneRole } from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -203,9 +201,9 @@ export function MembersDirectory() {
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [cohortFilter, setCohortFilter] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<
-    "active" | "pending" | null
-  >(null);
+  const [statusFilter, setStatusFilter] = useState<"active" | "pending" | null>(
+    null,
+  );
   const [sort, setSort] = useState<SortValue>(DEFAULT_SORT);
   const [page, setPage] = useState(1);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -260,6 +258,8 @@ export function MembersDirectory() {
       if (!role || typeof role !== "object") return [];
       if (typeof role.id !== "string" || typeof role.name !== "string")
         return [];
+      // The Everyone role (#4191) is no filter, column or assignment.
+      if (isEveryoneRole(role)) return [];
       // The President role carries the wildcard (`*`) permission. `PATCH
       // /members/:id/roles` rejects president changes (they go through the
       // dedicated presidency-transfer flow), so flag it to keep it out of the
@@ -300,12 +300,16 @@ export function MembersDirectory() {
   // since been cleared) reads as "any" rather than filtering on something the
   // chip no longer lists.
   const filterRoleChipOptions = useMemo(
-    () => filterRoleOptions.map((role) => ({ value: role.id, label: role.name })),
+    () =>
+      filterRoleOptions.map((role) => ({ value: role.id, label: role.name })),
     [filterRoleOptions],
   );
   const assignableRoleChipOptions = useMemo(
     () =>
-      assignableRoleOptions.map((role) => ({ value: role.id, label: role.name })),
+      assignableRoleOptions.map((role) => ({
+        value: role.id,
+        label: role.name,
+      })),
     [assignableRoleOptions],
   );
   // A picked role that has since been deleted reads as unpicked, so the chip
@@ -353,7 +357,11 @@ export function MembersDirectory() {
     return [...years].sort((a, b) => b - a);
   }, [membersQuery.data, usingSearch]);
   const cohortChipOptions = useMemo(
-    () => cohortOptions.map((year) => ({ value: String(year), label: String(year) })),
+    () =>
+      cohortOptions.map((year) => ({
+        value: String(year),
+        label: String(year),
+      })),
     [cohortOptions],
   );
   const effectiveCohortFilter =
@@ -374,7 +382,8 @@ export function MembersDirectory() {
     [pledgeClasses],
   );
   const classChipOptions = useMemo(
-    () => pledgeClasses.map((entry) => ({ value: entry.id, label: entry.name })),
+    () =>
+      pledgeClasses.map((entry) => ({ value: entry.id, label: entry.name })),
     [pledgeClasses],
   );
   const effectiveClassFilter =
@@ -417,10 +426,14 @@ export function MembersDirectory() {
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
+  // The first role the list knows, so the Everyone role (#4191), which it
+  // leaves out, is skipped rather than shown as a raw id. While the roles load
+  // the first id stands in, as before.
   const primaryRoleName = (member: MemberProfile): string | null => {
-    const firstId = member.role_ids[0];
-    if (!firstId) return null;
-    return roleNameById.get(firstId) ?? firstId;
+    const known = member.role_ids.find((id) => roleNameById.has(id));
+    if (known) return roleNameById.get(known) ?? null;
+    if (roleOptions.length > 0) return null;
+    return member.role_ids[0] ?? null;
   };
 
   const filteredMembers = useMemo(() => {
@@ -813,7 +826,11 @@ export function MembersDirectory() {
               setStatusFilter(value as "active" | "pending" | null)
             }
           />
-          <SortChip options={sortOptions} value={effectiveSort} onChange={setSort} />
+          <SortChip
+            options={sortOptions}
+            value={effectiveSort}
+            onChange={setSort}
+          />
           {/*
           The route's primary action, at the trailing edge of the one toolbar
           row `1f` pin 2 describes. It renders above the empty state as well

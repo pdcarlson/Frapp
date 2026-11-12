@@ -154,7 +154,7 @@ describe("SettingsRolesTab", () => {
       expect(picker).toHaveTextContent("New Member");
       await user.click(picker);
       expect(
-        screen.getByRole("option", { name: /no default/i }),
+        screen.getByRole("option", { name: "No role" }),
       ).toBeInTheDocument();
     });
 
@@ -188,8 +188,35 @@ describe("SettingsRolesTab", () => {
         />,
       );
       await user.click(screen.getByRole("combobox", { name: "Role" }));
-      await user.click(screen.getByRole("option", { name: /no default/i }));
+      await user.click(screen.getByRole("option", { name: "No role" }));
       expect(mockSaveDefaultRole).toHaveBeenCalledWith(null);
+    });
+
+    it("reads a default naming the Everyone role as no role (#4191)", async () => {
+      mockUseRoles.mockReturnValue({
+        data: [
+          {
+            id: "role-member",
+            name: "Everyone",
+            system_key: "MEMBER",
+            permissions: ["members:view"],
+            is_system: true,
+            display_order: 1,
+          },
+        ],
+        isPending: false,
+        isError: false,
+      });
+      render(
+        <SettingsRolesTab
+          canManage
+          defaultInviteRoleId="role-member"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(screen.getByRole("combobox", { name: "Role" })).toHaveTextContent(
+        "No role",
+      );
     });
 
     it("disables the picker for a caller who cannot manage config", () => {

@@ -10,7 +10,7 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { ChannelCacheService } from './channel-cache.service';
-import { topRoleColor } from '@repo/validation';
+import { rolesAfterSave, topRoleColor } from '@repo/validation';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -343,10 +343,13 @@ export class MemberService {
    * So a chair holding `roles:manage` can give members the roles below the
    * chairs' tier, and cannot give anyone, least of all themselves, a chair's
    * or officer's role.
+   *
+   * Nobody ticks the Everyone role (#4191): `rolesAfterSave` decides it from
+   * what the save means, before any check below sees the list.
    */
   async updateRoles(
     memberId: string,
-    roleIds: string[],
+    requestedRoleIds: string[],
     chapterId: string,
     actorUserId: string,
   ): Promise<Member> {
@@ -357,6 +360,7 @@ export class MemberService {
     }
 
     const roles = await this.roleRepo.findByChapter(chapterId);
+    const roleIds = rolesAfterSave(requestedRoleIds, member.role_ids, roles);
 
     // Ids the member ALREADY holds are exempt from validation: deleting a role leaves its id on member rows by design (spec
     // fail-safe — it resolves to no row and grants nothing), and a client

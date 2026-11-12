@@ -222,6 +222,7 @@ await import("./tiers/chat-channel-access-lists.mjs");
 await import("./tiers/role-tier-reorder.mjs");
 await import("./tiers/request-context.mjs");
 await import("./tiers/member-social-trust-defaults.mjs");
+await import("./tiers/everyone-role.mjs");
 await import("./tiers/clear-deleted-message-payloads.mjs");
 await import("./tiers/notifications-forget-deleted-message.mjs");
 await import("./tiers/service-awarded-points.mjs");

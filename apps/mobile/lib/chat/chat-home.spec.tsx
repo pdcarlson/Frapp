@@ -1217,8 +1217,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const field = sheet.findByProps({
       accessibilityLabel: "Type general to confirm",
     });
-    const button = () =>
-      sheet.findAllByType(SheetPrimaryButton).at(-1)!;
+    const button = () => sheet.findAllByType(SheetPrimaryButton).at(-1)!;
     act(() => field.props.onChangeText("General"));
     expect(button().props.disabled).toBe(true);
     act(() => field.props.onChangeText("general"));
@@ -1743,9 +1742,7 @@ describe("Chat home loading and error states", () => {
 
     const error = tree.root.findByType(ErrorState);
     expect(error.props.title).toBe("Chat isn't open to you yet");
-    expect(error.props.body).toContain(
-      "Ask an officer to give you the Member role",
-    );
+    expect(error.props.body).toContain("Ask an officer to check your roles");
     expect(error.props.body).not.toContain("reach the server");
   });
 

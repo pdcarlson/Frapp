@@ -502,6 +502,47 @@ describe('RbacService', () => {
     expect(mockRoleRepo.update).not.toHaveBeenCalled();
   });
 
+  describe('the Everyone role (#4191)', () => {
+    const everyone: Role = roleFixture({
+      id: 'role-everyone',
+      name: 'Everyone',
+      system_key: 'MEMBER',
+      is_system: true,
+      tier_id: 'tier-3',
+    });
+
+    it('refuses another role a name that reads as @everyone', async () => {
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      await expect(
+        service.create('ch-1', ACTOR, { name: 'every-one', permissions: [] }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'role.everyone_name' }),
+      });
+      mockRoleRepo.findById.mockResolvedValue(roleFixture());
+      await expect(
+        service.update('role-1', 'ch-1', ACTOR, { name: 'EVERYONE' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'role.everyone_name' }),
+      });
+      expect(mockRoleRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps its name and tier, and leaves the rest editable', async () => {
+      mockRoleRepo.findById.mockResolvedValue(everyone);
+      await expect(
+        service.update('role-everyone', 'ch-1', ACTOR, { name: 'Members' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'role.everyone_fixed' }),
+      });
+      await expect(
+        service.update('role-everyone', 'ch-1', ACTOR, { tier_id: null }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'role.everyone_fixed' }),
+      });
+      expect(mockRoleRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   it('should reject rename to existing name', async () => {
     const role: Role = roleFixture();
     const existingOther: Role = roleFixture({

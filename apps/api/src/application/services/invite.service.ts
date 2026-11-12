@@ -75,9 +75,9 @@ export interface InvitePreview {
   invited_by: string | null;
   /**
    * The invite's own role, which the redeem grants (`resolveRedeemRole`);
-   * the redeem may add Member beside it (`resolveRedeemRoles`). Null when
-   * it would grant none: the invite's role is gone and the chapter has no
-   * seeded Member role to fall back to.
+   * the redeem may add Everyone beside it (`resolveRedeemRoles`). Null when
+   * it would grant none (the invite's role is gone and the chapter has no
+   * Everyone role to fall back to), or only Everyone, which no card names.
    */
   role: string | null;
   expires_at: string;
@@ -629,7 +629,10 @@ export class InviteService {
       mark_text: chapterTextMark(branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
-      role: role?.name ?? null,
+      // Joining with only the Everyone role (#4191) joins as nobody in
+      // particular: the card says no role, as it does for none.
+      role:
+        role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null,
       expires_at: invite.expires_at,
     };
   }
