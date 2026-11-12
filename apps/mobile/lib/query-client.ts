@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
 import { isRetryableFailure, statusOf } from "@repo/api-sdk";
 import {
   markChannelReadMutationKey,
@@ -123,37 +123,68 @@ for (const mutationKey of [
 }
 
 /**
- * Whether a failed query was refused because its sign-in token was no longer
- * accepted (a 401). The SDK puts the status on the error; chat-core wraps it
- * on `response` or `context` instead.
- */
-export function isUnauthorizedFailure(error: unknown): boolean {
-  const wrapped = error as {
-    response?: { status?: unknown };
-    context?: { status?: unknown };
-  } | null;
-  const status =
-    statusOf(error) ?? wrapped?.response?.status ?? wrapped?.context?.status;
-  return status === 401;
-}
-
-/**
- * Re-run every query that failed with a 401, once a new token for the same
- * member has arrived.
+ * Retrying what the API refused for a lapsed sign-in token, once a new token
+ * for the same member has arrived.
  *
  * A member back from the background can have their first round of requests
  * go out with a token that lapsed while the app was suspended, before the
- * refresh lands. Those queries fail, and nothing refetches them: focus has
- * already fired, so each screen sat on its error state until the app was
- * restarted (FRAPP-API-E, ios/0.11.0+20, 2026-11-12). Retrying them when the
- * refreshed token arrives turns that into a moment of loading instead.
+ * refresh lands (FRAPP-API-E, ios/0.11.0+20, 2026-11-12). Focus has already
+ * fired by then, so a screen that read one of those 401s kept its error state
+ * until the member pulled to refresh or left the app and came back. These
+ * turn that into a moment of loading instead.
+ *
+ * Each token change is a new generation. A query whose 401 answers a request
+ * sent under an earlier generation is retried once, whether it failed before
+ * the new token arrived ({@link noteRefreshedSignInToken}'s sweep) or after
+ * it, its request still in flight when the refresh landed (the cache listener
+ * below). A query refused under the current generation is left on its error:
+ * that 401 is about the new token, and `onUnauthorized` decides what it means.
+ * A retry runs under the current generation, so none of this can loop.
  */
-export function refetchQueriesRefusedForAuth(): void {
-  void queryClient.refetchQueries({
-    predicate: (query) =>
+let signInGeneration = 0;
+const generationSentUnder = new WeakMap<Query, number>();
+
+function refusedForSignIn(error: unknown): boolean {
+  return statusOf(error) === 401;
+}
+
+function retryUnderCurrentToken(query: Query): void {
+  generationSentUnder.set(query, signInGeneration);
+  void queryClient.refetchQueries({ predicate: (candidate) => candidate === query });
+}
+
+queryClient.getQueryCache().subscribe((event) => {
+  if (event.type !== "updated") return;
+  const { query, action } = event;
+  if (action.type === "fetch") {
+    generationSentUnder.set(query, signInGeneration);
+    return;
+  }
+  if (
+    action.type === "error" &&
+    refusedForSignIn(action.error) &&
+    generationSentUnder.get(query) !== signInGeneration
+  ) {
+    retryUnderCurrentToken(query);
+  }
+});
+
+/**
+ * A new token for the same member, in the same chapter, has arrived: retry
+ * every query that is sitting on a 401 from an earlier one. The auth session
+ * calls this; a chapter switch doesn't, because its own cache clear refetches
+ * everything once the new chapter is committed.
+ */
+export function noteRefreshedSignInToken(): void {
+  signInGeneration += 1;
+  for (const query of queryClient.getQueryCache().getAll()) {
+    if (
       query.state.status === "error" &&
-      isUnauthorizedFailure(query.state.error),
-  });
+      refusedForSignIn(query.state.error)
+    ) {
+      retryUnderCurrentToken(query);
+    }
+  }
 }
 
 /**

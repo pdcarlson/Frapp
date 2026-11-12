@@ -24,11 +24,12 @@ import {
   type OAuthProvider,
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
+import { accessTokenPayload } from "./fresh-auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
 import { reportAuthFailure } from "./sentry/auth-failures";
 import {
   clearProductQueryCache,
-  refetchQueriesRefusedForAuth,
+  noteRefreshedSignInToken,
 } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -41,6 +42,11 @@ WebBrowser.maybeCompleteAuthSession();
  * because the mobile app must not import from the API workspace.
  */
 const ACTIVE_CHAPTER_CLAIM = "active_chapter_id";
+
+/** The token's own chapter claim, read without verifying it. */
+function chapterClaimOf(token: string): unknown {
+  return accessTokenPayload(token)?.[ACTIVE_CHAPTER_CLAIM];
+}
 
 export type AuthMethod = "password" | "magic_link";
 
@@ -370,9 +376,11 @@ export function AuthSessionProvider({
         clearProductQueryCache();
       }
       previousAuthUserIdRef.current = nextUserId;
-      // A refreshed token for the same member: retry whatever the API refused
-      // while the old one was lapsing, so no screen keeps a sign-in error the
-      // member can only clear by restarting the app.
+      // A refreshed token for the same member in the same chapter: retry what
+      // the API refused while the old one was lapsing (`noteRefreshedSignInToken`).
+      // A chapter switch also refreshes the token, but its refetch has to wait
+      // for the new chapter id to commit (`lib/frapp-client.tsx`), and the
+      // chapter change's cache clear does it.
       const nextToken = nextSession?.access_token ?? null;
       const previousToken = previousAccessTokenRef.current;
       previousAccessTokenRef.current = nextToken;
@@ -380,9 +388,10 @@ export function AuthSessionProvider({
         nextToken &&
         previousToken &&
         nextToken !== previousToken &&
-        previousUserId === nextUserId
+        previousUserId === nextUserId &&
+        chapterClaimOf(nextToken) === chapterClaimOf(previousToken)
       ) {
-        refetchQueriesRefusedForAuth();
+        noteRefreshedSignInToken();
       }
       setSession(nextSession ?? null);
       setStatus(nextSession ? "authenticated" : "unauthenticated");
