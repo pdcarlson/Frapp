@@ -65,6 +65,16 @@ Each module is a row in the rail's Modules group and opens one page ([#4073](htt
 - **Analytics opt-out.** A single toggle writes the `chapters.analytics_opt_out` scalar through the config PATCH mutation (so it is audit-logged like every other config change). The switch is framed positively ("Chapter analytics" on/off) to avoid a double-negative — *checked = analytics enabled = `analytics_opt_out` false*. Default is opt-in (analytics on); onboarding discloses this. The same flag gates PostHog session replay ([`observability.md` § Privacy and replay](../observability.md#privacy-and-replay)).
 - When opted out, **web and mobile** emit **zero** events for the chapter's members (enforced at each app's `AnalyticsProvider` via the shared `isAnalyticsOptedOut` gate in `@repo/validation`) and the API repeats the check server-side as defense-in-depth. Full pipeline + keying semantics live in [`../data-retention.md`](../data-retention.md) (#analytics-events-pseudonymous).
 
+## AI Tab
+
+The president's switch for each AI feature family ([#4308](https://github.com/pdcarlson/Frapp/issues/4308); the rules are [`../ai.md` § Consent](../ai.md#consent), gate 1). A **Chapter** row, `?tab=ai`, after Privacy. Implementation: `apps/web/components/settings/settings-ai-tab.tsx`; the words are `AI_SWITCHES` and `AI_SETTINGS_COPY` in `@repo/validation`, which mobile shares.
+
+- **Only while the server has AI.** With `AI_ENABLED` off every AI route answers 404 `ai.not_available`, and the rail has no AI row, so Chapter settings is what it was. The row waits for that answer rather than flashing in and out.
+- **Every config viewer sees the switches; only the president changes them.** `GET /v1/ai/settings` answers `can_change` for the member holding the chapter's President role, and the page draws the switches read-only for everyone else with "Only the chapter president can turn these on or off." The PATCH checks again (`ai.settings.president_only`) and audits each change to `#chapter-audit`.
+- **Three switches, in this order:** Minutes from notes (the beta feature), Ask Frapp, and Include channel messages. The last only changes what Ask reads, so it is drawn nested under Ask Frapp and can't be turned on while Ask is off ("Turn on Ask Frapp first."). The server stores it either way.
+- **A feature with no screen yet says so.** Ask Frapp's row carries one line saying it comes in a later update and is on for members the day it arrives, so a president isn't left wondering where it went. The slice that ships Ask removes the line (`notYetInApp`).
+- The header names who the chapter's information goes to, from the AI sheet's providers, so the page and the member's sheet never disagree.
+
 ## Beta Tab
 
 > **Not yet built, and there is no longer a renderer or a rail entry.** The API contract below

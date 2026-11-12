@@ -23,6 +23,9 @@ const PERMISSIONS = [
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
 vi.mock("@repo/hooks", () => ({
+  // A server with AI off: no AI row (#4308).
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => false,
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: PERMISSIONS },

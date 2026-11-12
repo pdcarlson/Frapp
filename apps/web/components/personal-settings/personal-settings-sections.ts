@@ -21,6 +21,9 @@ export const PERSONAL_SETTINGS_SECTIONS = [
   { value: "notifications", label: "Notifications", group: "account" },
   { value: "appearance", label: "Appearance and chat", group: "account" },
   { value: "account", label: "Account", group: "account" },
+  // The member's answer on the AI sheet (#4308). Shown only while the server
+  // has AI: the page passes `aiAvailable`.
+  { value: "ai", label: "AI", group: "account" },
   { value: "alerts", label: "Chapter alerts", group: "chapter" },
   { value: "blocked", label: "Blocked members", group: "chapter" },
   { value: "invoices", label: "My invoices", group: "chapter" },
@@ -39,10 +42,17 @@ const SECTION_MODULES: Partial<Record<PersonalSettingsSection, string>> = {
   invoices: "dues",
 };
 
-/** Whether a section is in the product right now. */
+/**
+ * Whether a section is in the product right now. `aiAvailable` is whether the
+ * server has AI (`aiAvailableFrom(useAiConsent())`): the AI section shows
+ * only on `true`, so with `AI_ENABLED` off, or before the server answers,
+ * Settings is what it was.
+ */
 export function isPersonalSettingsSectionShown(
   section: PersonalSettingsSection,
+  aiAvailable?: boolean,
 ): boolean {
+  if (section === "ai") return aiAvailable === true;
   const moduleKey = SECTION_MODULES[section];
   return !(moduleKey && isBetaOffModule(moduleKey));
 }
@@ -59,9 +69,10 @@ export function personalSettingsHref(section: PersonalSettingsSection): string {
 
 export function resolvePersonalSettingsSection(
   param: string | null | undefined,
+  aiAvailable?: boolean,
 ): PersonalSettingsSection {
   const match = PERSONAL_SETTINGS_SECTIONS.find((s) => s.value === param);
-  return match && isPersonalSettingsSectionShown(match.value)
+  return match && isPersonalSettingsSectionShown(match.value, aiAvailable)
     ? match.value
     : DEFAULT_PERSONAL_SETTINGS_SECTION;
 }

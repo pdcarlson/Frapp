@@ -126,6 +126,12 @@ export class AiChapterSettingsDto implements AiChapterSettingsView {
     description: 'When a switch last changed. Null when none ever has.',
   })
   updated_at: string | null;
+
+  @ApiProperty({
+    description:
+      "Whether the caller may change the switches: they hold the chapter's President role. A hint for drawing the page; PATCH checks again.",
+  })
+  can_change: boolean;
 }
 
 export class UpdateAiChapterSettingsDto {

@@ -61,6 +61,12 @@ export interface AiChapterSettingsView {
   chat_source: boolean;
   /** When a switch last changed, or null when none ever has. */
   updated_at: string | null;
+  /**
+   * Whether the caller may change the switches: they hold the chapter's
+   * President role. Clients draw the switches read-only otherwise; the PATCH
+   * checks again, so this is a hint, never the gate.
+   */
+  can_change: boolean;
 }
 
 /** A person's standing against the current AI sheet. */
@@ -79,12 +85,16 @@ export interface AiConsentState {
   sheet_changed: boolean;
 }
 
-function settingsView(row: ChapterAiSettings | null): AiChapterSettingsView {
+function settingsView(
+  row: ChapterAiSettings | null,
+  canChange: boolean,
+): AiChapterSettingsView {
   return {
     ask: row?.ask_enabled ?? false,
     meeting_notes: row?.meeting_notes_enabled ?? false,
     chat_source: row?.chat_source_enabled ?? false,
     updated_at: row?.updated_at ?? null,
+    can_change: canChange,
   };
 }
 
@@ -171,8 +181,19 @@ export class AiConsentService implements IAiConsentCheck {
     );
   }
 
-  async getChapterSettings(chapterId: string): Promise<AiChapterSettingsView> {
-    return settingsView(await this.consents.findChapterSettings(chapterId));
+  /**
+   * The chapter's switches, and whether `viewerRoleIds` may change them, so
+   * the settings page draws them read-only for everyone but the president.
+   */
+  async getChapterSettings(
+    chapterId: string,
+    viewerRoleIds: readonly string[],
+  ): Promise<AiChapterSettingsView> {
+    const [row, canChange] = await Promise.all([
+      this.consents.findChapterSettings(chapterId),
+      this.isPresident(chapterId, viewerRoleIds),
+    ]);
+    return settingsView(row, canChange);
   }
 
   /**
@@ -195,7 +216,7 @@ export class AiConsentService implements IAiConsentCheck {
     }
 
     const existing = await this.consents.findChapterSettings(chapterId);
-    const before = settingsView(existing);
+    const before = settingsView(existing, true);
     const patch: ChapterAiSettingsPatch = {};
     const diff: Record<string, { from: boolean; to: boolean }> = {};
     for (const key of AI_CHAPTER_SWITCHES) {
@@ -238,7 +259,7 @@ export class AiConsentService implements IAiConsentCheck {
       );
       throw error;
     }
-    return settingsView(saved);
+    return settingsView(saved, true);
   }
 
   async getConsentState(userId: string): Promise<AiConsentState> {

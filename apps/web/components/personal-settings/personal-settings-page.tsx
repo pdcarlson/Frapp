@@ -2,8 +2,9 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { useCurrentChapter } from "@repo/hooks";
+import { aiAvailableFrom, useAiConsent, useCurrentChapter } from "@repo/hooks";
 import { AccountSection } from "@/components/personal-settings/account-section";
+import { AiSection } from "@/components/personal-settings/ai-section";
 import { ChapterAlertsSection } from "@/components/personal-settings/chapter-alerts-section";
 import { QuietHoursSection } from "@/components/personal-settings/quiet-hours-section";
 import { MyInvoicesSection } from "@/components/personal-settings/my-invoices-section";
@@ -37,8 +38,11 @@ import {
  * carries its own offline, loading and error states.
  */
 function PersonalSettingsContent() {
+  // Whether the server has AI: the AI section shows only on `true` (#4308).
+  const aiAvailable = aiAvailableFrom(useAiConsent());
   const section = resolvePersonalSettingsSection(
     useSearchParams().get("section"),
+    aiAvailable,
   );
   // The chapter group is named for the chapter it changes with. Before the
   // chapter is known (or with none active) it says so in general terms; each
@@ -55,7 +59,9 @@ function PersonalSettingsContent() {
   ].map(({ label, group }) => ({
     label,
     items: PERSONAL_SETTINGS_SECTIONS.filter(
-      (s) => s.group === group && isPersonalSettingsSectionShown(s.value),
+      (s) =>
+        s.group === group &&
+        isPersonalSettingsSectionShown(s.value, aiAvailable),
     ).map(
       (s) => ({
         value: s.value,
@@ -102,6 +108,8 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
       );
     case "account":
       return <AccountSection />;
+    case "ai":
+      return <AiSection />;
     case "alerts":
       return <ChapterAlertsSection />;
     case "blocked":

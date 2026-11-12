@@ -25,6 +25,9 @@ const { mockCurrentChapter, permissions } = vi.hoisted(() => ({
 // real API would refuse it to: this spec is about the save gates, and a failed
 // config read would hide the Chapter tab's form behind `renderConfigGated`.
 vi.mock("@repo/hooks", () => ({
+  // A server with AI off: no AI row (#4308).
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => false,
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: permissions.current },
