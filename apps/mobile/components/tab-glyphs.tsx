@@ -29,7 +29,7 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Sizing is 24px per iconography.md §2.
  */
 
-export const TAB_GLYPH_SIZE = 24;
+const TAB_GLYPH_SIZE = 24;
 
 export const STROKE_WIDTH = 1.6;
 

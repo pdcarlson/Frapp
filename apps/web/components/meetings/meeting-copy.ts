@@ -9,7 +9,6 @@ export {
   meetingDayLabel,
   meetingDueLabel,
   meetingSectionLabel as sectionLabel,
-  meetingTitleLine,
   meetingVoteLine as voteLine,
   meetingWhenLabel,
 } from "@repo/validation";

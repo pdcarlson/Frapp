@@ -31,7 +31,7 @@ const MUTATION_RETRIES = 2;
  *
  * `spec/ui/resilience/api-retry.md` § Reads.
  */
-export function retryQuery(failureCount: number, error: unknown): boolean {
+function retryQuery(failureCount: number, error: unknown): boolean {
   if (failureCount >= QUERY_RETRIES) return false;
   return isRetryableFailure(error);
 }
@@ -46,7 +46,7 @@ export function retryQuery(failureCount: number, error: unknown): boolean {
  * A non-idempotent write that a lost response would turn into a refused retry
  * (a compare-and-set) still sets `retry: false` itself (`docs/hooks/README.md`).
  */
-export function retryMutation(failureCount: number, error: unknown): boolean {
+function retryMutation(failureCount: number, error: unknown): boolean {
   return failureCount < MUTATION_RETRIES && isRetryableFailure(error);
 }
 

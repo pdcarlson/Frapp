@@ -73,6 +73,18 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 // Its own spec covers it; here it would need the AI reads.
+// The Subscribe sheet (#3322) has its own spec; here only its door matters.
+// The sheet has its own spec; here only its door, so it records what the
+// screen hands it.
+const subscribeSheet = vi.hoisted(() => ({
+  props: null as null | { open: boolean; onDismiss: () => void },
+}));
+vi.mock("@/components/events/calendar-subscribe-sheet", () => ({
+  CalendarSubscribeSheet: (props: { open: boolean; onDismiss: () => void }) => {
+    subscribeSheet.props = props;
+    return null;
+  },
+}));
 vi.mock("@/components/events/suggested-events-entry", () => ({
   SuggestedEventsEntry: () => null,
 }));
@@ -145,6 +157,25 @@ afterEach(() => {
  * while the list was on screen never showed as open, and a finished event
  * never fell off. This pins that the list reads the shared ticking clock.
  */
+// #3322: the header's Subscribe door. The sheet asks for a link only while
+// `open`, so a member who never taps it never has one made.
+describe("Events header Subscribe", () => {
+  it("opens the sheet from the header and closes it on dismiss", () => {
+    const tree = render();
+    expect(subscribeSheet.props?.open).toBe(false);
+    const door = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel ===
+          "Subscribe to events in your calendar" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => door.props.onPress());
+    expect(subscribeSheet.props?.open).toBe(true);
+    act(() => subscribeSheet.props?.onDismiss());
+    expect(subscribeSheet.props?.open).toBe(false);
+  });
+});
+
 describe("Events list clock (#2101)", () => {
   it("opens a check-in window that starts while the list is on screen", () => {
     const tree = render();

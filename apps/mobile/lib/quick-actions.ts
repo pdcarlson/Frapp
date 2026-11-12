@@ -38,7 +38,7 @@ export const QUICK_ACTION_LIMIT = 6;
  * it on the first open (owner ask 2026-11-06, "I couldn't find a way to
  * invite new members"); Log hours moves to the Add row for that officer.
  */
-export const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
+const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
   "newEvent",
   "newTask",
   "invite",

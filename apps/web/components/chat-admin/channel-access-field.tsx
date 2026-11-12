@@ -31,7 +31,6 @@ import {
 // The reading of a list lives in `@repo/hooks/channel-access`, shared with
 // the phone's Edit channel sheet (#3702); re-exported for this page's callers.
 export {
-  channelAccessReach,
   describeChannelAccess,
   type ChannelAccessOption,
   type ChannelAccessQuestion,

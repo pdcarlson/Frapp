@@ -271,7 +271,7 @@ function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
  * create that couldn't post one says why rather than leaving the member to
  * wonder where it went. Neither case is a failure: the event exists.
  */
-export function createdToast(
+function createdToast(
   name: string,
   card: { cardKeptOut: boolean; cardLost: boolean },
 ): { title: string; description: string } {

@@ -69,7 +69,7 @@ export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.mobile.whats-new-quiet";
  * before this feature already wrote to disk, whatever shape that helper takes
  * later. Once a phone has a marker, these prefixes are never read again.
  */
-export const EXISTING_INSTALL_KEY_PREFIXES: readonly string[] = [
+const EXISTING_INSTALL_KEY_PREFIXES: readonly string[] = [
   CHAT_KV_PREFIX,
   "frapp.chat.last-channel.",
 ];

@@ -32,7 +32,7 @@ import { createReportingCaches } from "@/lib/sentry/query-errors";
 export const CLIENT_POLICY_QUERY_KEY = ["client-policy"] as const;
 
 /** How old an answer may be before a return to the foreground asks again. */
-export const CLIENT_POLICY_STALE_MS = 60_000;
+const CLIENT_POLICY_STALE_MS = 60_000;
 
 // These defaults are this client's own, not a copy to keep in step with
 // `lib/query-client.ts`: the check has no spinner and fails open, so it only

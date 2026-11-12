@@ -44,7 +44,7 @@ export function emptyZoneDraft(): ZoneDraft {
  * hand edit) leaves a stale `circle` behind, and the outline is what members
  * are checked against, so the outline wins.
  */
-export function zoneCircle(zone: ZoneShapeRow): ZoneCircle | null {
+function zoneCircle(zone: ZoneShapeRow): ZoneCircle | null {
   if (!isValidZoneCircle(zone.circle)) return null;
   const points = Array.isArray(zone.coordinates) ? zone.coordinates : [];
   const derived = circleToPolygon(zone.circle);

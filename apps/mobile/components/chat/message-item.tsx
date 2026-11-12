@@ -197,7 +197,7 @@ export interface MessageItemProps {
 }
 
 /** The author's profile, as a named action beside the message actions. */
-export const OPEN_PROFILE_A11Y_LABEL = "Open profile";
+const OPEN_PROFILE_A11Y_LABEL = "Open profile";
 const OPEN_PROFILE_ACTION: AccessibilityActionInfo = {
   name: "openProfile",
   label: OPEN_PROFILE_A11Y_LABEL,
@@ -693,7 +693,7 @@ function CompactLead({
  * is metadata, so it never takes the chapter accent (foundations.md §6,
  * "Where the accent goes").
  */
-export function PinnedMarker({
+function PinnedMarker({
   style,
   lead = true,
 }: {

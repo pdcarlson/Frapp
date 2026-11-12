@@ -45,7 +45,7 @@ export function resolveGlassMode({
 }
 
 /** Whether the member has asked the system for less transparency (iOS). */
-export function useReduceTransparency(): boolean {
+function useReduceTransparency(): boolean {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     let live = true;
@@ -66,7 +66,7 @@ export function useReduceTransparency(): boolean {
   return enabled;
 }
 
-export function useGlassMode(): GlassMode {
+function useGlassMode(): GlassMode {
   const reduceTransparency = useReduceTransparency();
   return resolveGlassMode({
     os: Platform.OS,

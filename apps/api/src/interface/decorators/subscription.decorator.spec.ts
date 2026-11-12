@@ -68,6 +68,7 @@ import { ReportController } from '../controllers/report.controller';
 import { AlumniController } from '../controllers/alumni.controller';
 import { SemesterRolloverController } from '../controllers/semester-rollover.controller';
 import { DiscordAuthorLinkController } from '../controllers/discord-author-link.controller';
+import { CalendarFeedController } from '../controllers/calendar-feed.controller';
 
 /** A route-level marker: its label, its handler, and the class it lives on. */
 type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
@@ -98,6 +99,8 @@ describe('subscription decorator wiring', () => {
     DiscordAuthorLinkController,
     // #3939: pledge classes are Directory data, and the Directory is free.
     PledgeClassController,
+    // #3322: a member's own calendar subscription link.
+    CalendarFeedController,
   ];
 
   /**
@@ -173,6 +176,12 @@ describe('subscription decorator wiring', () => {
       'FinancialInvoiceController.createPaymentIntent',
       FinancialInvoiceController.prototype.createPaymentIntent,
       FinancialInvoiceController,
+    ],
+    // #3322: member safety, cutting off a calendar link that got out.
+    [
+      'CalendarFeedController.reset',
+      CalendarFeedController.prototype.reset,
+      CalendarFeedController,
     ],
   ];
 

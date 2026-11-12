@@ -88,7 +88,27 @@
 
 ## Calendar Integration
 
-- **No calendar export, until calendar sync ships.** Events carry no "Add to Calendar" action on web or mobile. *Withdrawn 2026-11-08 (#3708), on the owner's call that handing a member an `.ics` file was not useful:* the web downloaded one from `GET /v1/events/:id/ics` and mobile built its own and handed it to the share sheet. The route, both builders and both buttons were deleted. Real calendar sync is tracked in #3322.
+### Calendar subscription
+
+Added 2026-11-12 (#3322, step 1). A member puts the chapter's calendar on the calendar app they already use (Apple Calendar, Google Calendar, Outlook) through a **private subscription link**. Frapp never writes to the member's calendar account; the calendar app fetches the link on its own schedule and shows what it gets.
+
+- **Where.** A **Subscribe** menu on the web Events toolbar, and a calendar icon in the mobile Events header that opens the same choices as a sheet: Apple Calendar (web, and iPhone only on mobile, since it opens a `webcal://` link as a one-tap subscription), Google Calendar, Outlook.com and Outlook for school or work (web only: outlook.live.com is personal Microsoft accounts, outlook.office.com is Microsoft 365, the Outlook most college members have), **Copy link**, and **Reset link**. Shaped after TeamSnap's schedule Subscribe, Canvas's Calendar Feed and Heja's schedule sync, which each put this one control on the calendar screen.
+- **Google Calendar adds a calendar by link only on a computer**, never in its phone app (Google's own help says so). On the web the row opens Google's add-by-URL page. On a phone it says so instead, and offers **Share link** so the member can send it to themselves and add it from a computer.
+- **One link per member per chapter**, made the first time they open the menu (`POST /v1/calendar-feed`, idempotent) and the same link every time after. **Reset link** (`POST /v1/calendar-feed/reset`, behind a confirm) replaces it.
+- **What it serves**, read fresh on every fetch with the app's own read rules, so an edit, a cancelled or deleted event, or a role change reaches the calendar at its next check:
+  - every event the member can see ([§ Attendance by role](#event-creation)) that ends within the last 60 days or starts within the next year, one calendar item per occurrence, in UTC;
+  - the member's own tasks that aren't completed or confirmed: on the due day as an all-day item, or at the due time when the task has one (a moment with no length), titled "Due: <title>";
+  - nothing from a module the chapter turned off.
+- **What leaves Frapp.** An event's name, time, location and description, and "Required" when the event requires this member (the push's rule, `memberAttendance`). A task's title, due date or time and description. Points, meeting notes, check-in details and who else is invited stay in Frapp.
+- **Every item links back** to its Frapp page, twice: the iCalendar `URL` field, and the first line of the description ("Open in Frapp: …"), because not every calendar app shows `URL`. Events link to `/events?event=<id>` on the web app; tasks link to `/tasks`, which has no per-task web link yet.
+- **The link is the credential.** Calendar apps fetch with no sign-in, so the URL carries a 256-bit random token (`GET /v1/calendar-feed/feed.ics?token=…`, no auth guard, no per-address throttle, because Google fetches every subscription from a shared pool of addresses). The token rides in the query string, which the API's request log and Sentry drop. Anyone holding the link reads what it serves, which is why the menu offers Reset link, and why Reset works even while the chapter's subscription has lapsed (`@SubscriptionExempt`, as member safety; making a first link follows the free wedge). Each link's calendar is rendered at most once every five minutes per API instance, so a link fetched in a loop costs one render, and a change can take up to five more minutes to reach the calendar.
+- **When access ends, the calendar empties.** A reset link, a member who left the chapter, or one who lost `members:view` gets a valid but empty calendar rather than an error, so the calendar app clears what it holds; calendar apps keep their last copy when a fetch fails. An unknown token is a 404. A deleted account's links are deleted with it.
+- **How fast changes arrive** is the calendar app's choice. The feed asks for hourly checks (`REFRESH-INTERVAL`, `X-PUBLISHED-TTL`); Apple Calendar and Outlook read one of them. Google Calendar ignores both and refreshes on its own schedule, reported as several hours up to about a day. The menu says so in one line. Instant updates in Google need a push integration through Google's Calendar API (Google sign-in, a Google app review), which #3322 keeps as a possible second step.
+- **One way only.** Nothing is read back from the member's calendar.
+
+### The withdrawn `.ics` download
+
+- **No per-event "Add to Calendar".** Withdrawn 2026-11-08 (#3708), on the owner's call that handing a member an `.ics` file was not useful: the web downloaded one from `GET /v1/events/:id/ics` and mobile built its own and handed it to the share sheet. The route, both builders and both buttons were deleted. The subscription above replaced it (2026-11-12).
 - **Files already exported stay valid.** Each mobile-built `.ics` carries `frapp://event-details?id=<event id>`, and those entries live on in members' calendars, so the route and its `id` param stay a contract ([`navigation.md` § Deep links](../ui/mobile/navigation.md#deep-links)).
 
 ## Chat Integration

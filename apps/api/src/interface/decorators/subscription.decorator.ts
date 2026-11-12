@@ -35,7 +35,10 @@ export const FreeTier = () => SetMetadata(SUBSCRIPTION_FREE_TIER_KEY, true);
  *   exception: a member being harassed in a chapter whose card failed needs
  *   them exactly as much as one in a paying chapter. `@FreeTier()` is not
  *   enough — it lapses with the `past_due` grace window and never applies under
- *   `canceled`.
+ *   `canceled`. Resetting a calendar subscription link
+ *   (`CalendarFeedController.reset`, #3322) is the same kind: the link's
+ *   fetch has no subscription check, so one that got out must be cut off
+ *   while the chapter is locked.
  *
  * Nothing else. A route that is merely important is not exempt; the bar is that
  * refusing it while a chapter is locked would be either unrecoverable or unsafe.
