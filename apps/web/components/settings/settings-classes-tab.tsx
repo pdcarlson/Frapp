@@ -18,7 +18,9 @@ import { memberLabel } from "@repo/hooks/display-names";
 import {
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
+  ORDER_NUMBER_INVALID_MESSAGE,
   PLEDGE_CLASSES_MAX,
+  parseOrderNumber,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -46,7 +48,6 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import {
   classAssignments,
   nextOrderNumber,
-  parseOrderNumber,
   renumberRows,
   type ClassEditorRow,
 } from "@/lib/pledge-classes";
@@ -704,7 +705,7 @@ function ClassMembersEditor({
           )}
           {invalid ? (
             <p role="alert" className="text-caption text-destructive-text">
-              A number is a whole number from 1 up, or blank for none.
+              {ORDER_NUMBER_INVALID_MESSAGE}
             </p>
           ) : null}
           {tooMany ? (
