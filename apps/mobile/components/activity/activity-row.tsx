@@ -4,8 +4,8 @@ import {
   ACTIVITY_GLYPH_NAV,
   activityBadgeIsAsk,
   activityDetailParts,
+  type ActivityFace,
   type ActivityRow,
-  type MemberAvatarTint,
 } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -24,16 +24,9 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
-/** A member's face as a row draws it: their photo, else initials on their tint. */
-export interface ActivityFace {
-  name: string;
-  uri: string | null;
-  tint: MemberAvatarTint | null;
-}
-
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The screen
- * provides it from `useMemberDisplayNames`; without a provider, and for an id
+ * provides it from `useActivityFaces`; without a provider, and for an id
  * the roster doesn't hold (a member who left), a row leads with its glyph.
  */
 export const ActivityFaces = createContext<
@@ -41,8 +34,9 @@ export const ActivityFaces = createContext<
 >(() => null);
 
 /**
- * One Activity row on the phone (#4173, step 2): its lead (the kind's glyph,
- * or an event's date), its two lines, and what it asks of the member or the
+ * One Activity row on the phone (#4173, step 2): its lead (the face of who
+ * it's from, its kind's glyph, or an event's date: `ActivityRowLead`), its
+ * two lines, and what it asks of the member or the
  * state it is in. Web's row (`apps/web/components/activity/activity-page.tsx`)
  * on the phone's flush list recipe: on the screen background, split by
  * hairlines, the way the phone's Events and Tasks lists draw theirs
@@ -69,6 +63,13 @@ export function ActivityListRow({
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
   const dotStyles = createUnreadDotStyles(tokens);
+  // A poll's detail is its channel, so its poster, shown only as the face,
+  // is said after the title ("…, from Olive Officer"); every other row's
+  // detail already names the person.
+  const faceFor = useContext(ActivityFaces);
+  const poster =
+    row.kind === "poll" && row.faceId ? faceFor(row.faceId)?.name : null;
+  const label = poster ? `${row.title}, from ${poster}` : row.title;
   const rowStyle = [styles.row, isFirst ? null : styles.divider];
   const content = (
     <>
@@ -106,7 +107,7 @@ export function ActivityListRow({
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={row.unread ? `Unread: ${row.title}` : row.title}
+      accessibilityLabel={row.unread ? `Unread: ${label}` : label}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
       // Offline, why its button is held, after the detail: the button is no
@@ -135,12 +136,15 @@ export function ActivityListRow({
 }
 
 /**
- * What leads a row: an event's date, month over day as a calendar draws it,
- * else its kind's glyph from the shared nav set (`ACTIVITY_GLYPH_NAV`), in
- * the same 40pt tile, so a row with either is the same height. Both are
- * neutral: colour on this screen is for what asks something of the member
- * and for status, never for a kind (`components.md` §5). Decoration only:
- * the row's detail says the day in words ("Tomorrow · 7:00 PM").
+ * What leads a row: an event's date, month over day as a calendar draws it;
+ * the face of who the row is from, with its kind's glyph small on the corner
+ * (#4402, item 4); else its kind's glyph from the shared nav set
+ * (`ACTIVITY_GLYPH_NAV`). All are 40pt, so every row is the same height, and
+ * all are neutral apart from the member's own tint: colour on this screen is
+ * for what asks something of the member and for status, never for a kind
+ * (`components.md` §5). Decoration only: the detail says the day in words
+ * ("Tomorrow · 7:00 PM") and names the person, and a poll's poster is in the
+ * row's label (`ActivityListRow`).
  */
 export function ActivityRowLead({ row }: { row: ActivityRow }) {
   const { tokens } = useFrappTheme();
@@ -158,14 +162,14 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
         testID={`activity-face-${row.glyph}`}
       >
         <MemberAvatar
-          uri={face.uri}
-          initials={initialsFor(face.name)}
+          uri={face.avatarUrl}
+          initials={initialsFor(face.name ?? "?")}
           size={LEAD_SIZE}
           tint={face.tint}
           style={styles.faceCircle}
           textStyle={styles.faceText}
         />
-        <View style={styles.faceGlyph}>
+        <View style={styles.faceGlyph} testID="activity-face-glyph">
           <NavGlyph
             paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
             color={tokens.color.text.mutedForeground}

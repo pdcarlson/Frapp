@@ -18,7 +18,7 @@ import {
   useRestoreActivityLink,
   useSetActivityLinkState,
   useViewerUserId,
-  useMemberDisplayNames,
+  useActivityFaces,
   type ActivityFilter,
   type ActivityGroup,
   type ActivityPart,
@@ -30,7 +30,6 @@ import {
   ActivityFaces,
   ActivityListRow,
   ActivityRowSkeleton,
-  type ActivityFace,
 } from "@/components/activity/activity-row";
 import {
   ActivityRowItem,
@@ -99,16 +98,7 @@ export default function ActivityScreen() {
   const now = useNowDate();
   const viewerId = useViewerUserId();
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
-  const { nameFor, avatarFor, avatarTintFor } = useMemberDisplayNames();
-  const faceFor = useCallback(
-    (id: string): ActivityFace | null => {
-      const name = nameFor(id);
-      return name
-        ? { name, uri: avatarFor(id), tint: avatarTintFor(id) }
-        : null;
-    },
-    [nameFor, avatarFor, avatarTintFor],
-  );
+  const faceFor = useActivityFaces();
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();

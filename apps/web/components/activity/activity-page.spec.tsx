@@ -34,11 +34,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
     // The roster knows the officer only: anyone else has left.
-    useMemberDisplayNames: () => ({
-      nameFor: (id: string) => (id === "officer" ? "Olive Officer" : null),
-      avatarFor: () => null,
-      avatarTintFor: () => null,
-    }),
+    useActivityFaces: () => (id: string) =>
+      id === "officer"
+        ? {
+            name: "Olive Officer",
+            avatarUrl: "https://photos.example/olive.png",
+            tint: { fill: "rgb(1, 2, 3)", text: "rgb(4, 5, 6)" },
+          }
+        : null,
   };
 });
 // The chapter's module switch, unknown here: every tile shows.
@@ -533,7 +536,7 @@ describe("ActivityPage", () => {
 
     const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
     const taskRow = screen.getByRole("button", { name: /Book the venue/ });
-    expect(pollRow).toHaveAccessibleName(/^Unread:\s?Formal venue\?/);
+    expect(pollRow).toHaveAccessibleName(/^Unread:\s?From Olive Officer\.\s?Formal venue\?/);
     expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
     expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
 
@@ -901,9 +904,32 @@ describe("ActivityPage", () => {
     const needs = screen.getByRole("region", { name: "Needs you" });
     const faces = within(needs).getAllByTestId("activity-face");
     expect(faces).toHaveLength(1);
+    // Initials on the member's tint until the photo loads (jsdom loads none).
     expect(faces[0]).toHaveTextContent("OO");
-    // The kind still shows, on the face's corner.
-    expect(faces[0]).toHaveAttribute("data-glyph", "task");
+    expect(within(faces[0]!).getByText("OO")).toHaveStyle({
+      backgroundColor: "rgb(1, 2, 3)",
+      color: "rgb(4, 5, 6)",
+    });
+    // The kind still shows, as a glyph on the face's corner.
+    expect(
+      within(faces[0]!).getByTestId("activity-face-glyph").querySelector("svg"),
+    ).not.toBeNull();
+  });
+
+  it("says a poll's poster to a screen reader, since its detail names only the channel (#4402)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [poll],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const row = screen.getByRole("button", { name: /Formal venue\?/ });
+    expect(row).toHaveAccessibleName(/^From Olive Officer\.\s?Formal venue\?/);
   });
 
   it("draws a closing time less than a day away relatively, in the warning tone (#4402)", () => {

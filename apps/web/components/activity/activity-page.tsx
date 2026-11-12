@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,7 +43,6 @@ import {
   ActivityRowDetail,
   ActivityRowLead,
   ActivityUnreadDot,
-  type ActivityFace,
 } from "./activity-row-lead";
 import { ActivitySummary } from "./activity-summary";
 import {
@@ -58,7 +57,7 @@ import {
   useActiveChapterId,
   useActivity,
   useActivityUnread,
-  useMemberDisplayNames,
+  useActivityFaces,
   useNowDate,
   useMyPermissions,
   type ActivityFilter,
@@ -69,7 +68,8 @@ import {
 import { ActivityPageSkeleton } from "./activity-skeleton";
 
 /**
- * The row's lead (its kind's glyph, or an event's date), its two lines, and
+ * The row's lead (the face of who it's from, its kind's glyph, or an event's
+ * date: `ActivityRowLead`), its two lines, and
  * its badge, shared by the button and the link form. A badge that asks the
  * member to act draws as the action (`ActivityAsk`); any other is a status.
  */
@@ -419,16 +419,7 @@ export function ActivityPage() {
   const linkActions = useActivityLinkActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
-  const { nameFor, avatarFor, avatarTintFor } = useMemberDisplayNames();
-  const faceFor = useCallback(
-    (id: string): ActivityFace | null => {
-      const name = nameFor(id);
-      return name
-        ? { name, src: avatarFor(id), tint: avatarTintFor(id) }
-        : null;
-    },
-    [nameFor, avatarFor, avatarTintFor],
-  );
+  const faceFor = useActivityFaces();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),

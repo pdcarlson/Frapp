@@ -1216,7 +1216,8 @@ describe("faces and closing soon (#4402, item 4)", () => {
       rows(needsYou({ polls: [poll(overrides)] }))[0]!.soon;
     expect(soonOf({ closes_at: IN(24 * 60) })).toBeNull();
     expect(soonOf({ closes_at: null })).toBeNull();
-    const madeClosed = rows(
+    // Closed by hand with time still on the clock: it sits in the archive.
+    const archived = activityGroups(
       activity({
         made_by_you: {
           polls: [poll({ is_closed: true, closes_at: IN(30) })],
@@ -1224,8 +1225,12 @@ describe("faces and closing soon (#4402, item 4)", () => {
           events: [],
         },
       }),
-    );
-    expect(madeClosed.every((row) => row.soon === null)).toBe(true);
+      "all",
+      NOW,
+    ).flatMap((group) => group.archive?.rows ?? []);
+    expect(archived).toHaveLength(1);
+    expect(archived[0]!.soon).toBeNull();
+    expect(archived[0]!.detail).toBe("#general");
   });
 
   it("says a timed task due within a day relatively; a bare date and overdue as before", () => {
@@ -1249,6 +1254,26 @@ describe("faces and closing soon (#4402, item 4)", () => {
     expect(bare!.soon).toBeNull();
     expect(overdue!.soon).toBeNull();
     expect(overdue!.detail).toBe("from Olive · Overdue by 1 hour");
+  });
+
+  it("gives a finished task waiting on a confirm no countdown, whatever its due time", () => {
+    const [row] = rows(
+      needsYou({
+        task_confirmations: [
+          task({
+            id: "done",
+            assignee_id: "pledge",
+            assignee_name: "Pat",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            completed_at: "2026-11-11T11:00:00.000Z",
+            due_at: IN(120),
+          }),
+        ],
+      }),
+    );
+    expect(row!.soon).toBeNull();
+    expect(row!.detail).toBe("Pat");
   });
 
   it("keeps the whole detail when nothing is closing soon", () => {

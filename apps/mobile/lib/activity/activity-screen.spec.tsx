@@ -159,11 +159,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRemoveActivityLink: () => ({ mutateAsync: links.remove }),
   useRestoreActivityLink: () => ({ mutateAsync: links.restore }),
   // The roster knows the officer only: anyone else has left (#4402, faces).
-  useMemberDisplayNames: () => ({
-    nameFor: (id: string) => (id === "officer" ? "Olive Officer" : null),
-    avatarFor: () => null,
-    avatarTintFor: () => null,
-  }),
+  useActivityFaces: () => (id: string) =>
+    id === "officer"
+      ? {
+          name: "Olive Officer",
+          avatarUrl: "https://photos.example/olive.png",
+          tint: { fill: "#102030", text: "#405060" },
+        }
+      : null,
 }));
 
 /** The props the screen last handed its sheet. */
@@ -200,6 +203,7 @@ import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { StatusChip } from "@/components/status-chip";
+import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
 import { UndoBar } from "@/components/tasks/undo-bar";
 
@@ -393,6 +397,14 @@ describe("Activity screen (#3897)", () => {
     expect(face.length).toBeGreaterThan(0);
     expect(drawnText(face[0]!)).toContain("OO");
     expect(face[0]!.props.accessibilityElementsHidden).toBe(true);
+    // Her photo and tint reach the avatar, and the kind's glyph its corner.
+    const avatar = face[0]!.findByType(MemberAvatar);
+    expect(avatar.props.uri).toBe("https://photos.example/olive.png");
+    expect(avatar.props.tint).toEqual({ fill: "#102030", text: "#405060" });
+    expect(
+      face[0]!.findAll((node) => node.props.testID === "activity-face-glyph")
+        .length,
+    ).toBeGreaterThan(0);
     // A poll the member made shows no face of their own.
     expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
     const block = row(tree, "Chapter").findAll(
@@ -431,6 +443,13 @@ describe("Activity screen (#3897)", () => {
         node.props.testID === "activity-soon",
     );
     expect(drawnText(phrase!)).toBe("closes in 2 hours");
+    // Its detail names only the channel, so the label says who posted it.
+    expect(
+      row(tree, "Formal venue?").findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Formal venue?, from Olive Officer",
+      ).length,
+    ).toBeGreaterThan(0);
     expect(StyleSheet.flatten(phrase!.props.style).color).toBe(
       getSignetTokens("dark").color.semantic.warning,
     );

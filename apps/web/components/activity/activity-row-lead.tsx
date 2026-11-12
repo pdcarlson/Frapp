@@ -9,24 +9,17 @@ import {
   activityDetailParts,
   type ActivityRow,
 } from "@repo/hooks/activity-rows";
-import type { MemberAvatarTint } from "@repo/hooks";
+import type { ActivityFace } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { cn, initials } from "@/lib/utils";
 
-/** A member's face as a row draws it: their photo, else initials on their tint. */
-export interface ActivityFace {
-  name: string;
-  src: string | null;
-  tint: MemberAvatarTint | null;
-}
-
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The page
- * provides it from `useMemberDisplayNames`; without a provider, and for an id
- * the roster doesn't hold (a member who left), a row leads with its glyph.
+ * provides it from `useActivityFaces`; without a provider, and for an id the
+ * roster doesn't hold (a member who left), a row leads with its glyph.
  */
 export const ActivityFaces = createContext<
   (userId: string) => ActivityFace | null
@@ -43,33 +36,45 @@ const LEAD_TILE =
  * (#4402, item 4); else the kind's glyph alone (`ACTIVITY_GLYPH_NAV`, from
  * the shared nav set). All are neutral apart from the member's own tint:
  * colour on this page is for what asks something of the member
- * (`ActivityAsk`) and for status, never for a kind. Decoration only: the
- * detail names the person, and the title says what the row is.
+ * (`ActivityAsk`) and for status, never for a kind. Decoration: the title
+ * says what the row is, and the detail names the person, except on a poll,
+ * whose detail is its channel, so a poll's poster is said to a screen reader
+ * here ("From Olive Officer.").
  */
 export function ActivityRowLead({ row }: { row: ActivityRow }) {
   const faceFor = useContext(ActivityFaces);
   const face = !row.dateBlock && row.faceId ? faceFor(row.faceId) : null;
   if (face) {
     return (
-      <span
-        className="relative h-10 w-10 shrink-0"
-        aria-hidden="true"
-        data-glyph={row.glyph}
-        data-testid="activity-face"
-      >
-        <Avatar className="h-10 w-10">
-          {face.src ? <AvatarImage src={face.src} alt="" /> : null}
-          <AvatarFallback tint={face.tint}>
-            {initials(face.name)}
-          </AvatarFallback>
-        </Avatar>
-        <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground">
-          <NavGlyph
-            paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
-            className="h-3 w-3"
-          />
+      <>
+        {row.kind === "poll" && face.name ? (
+          <span className="sr-only">From {face.name}. </span>
+        ) : null}
+        <span
+          className="relative h-10 w-10 shrink-0"
+          aria-hidden="true"
+          data-glyph={row.glyph}
+          data-testid="activity-face"
+        >
+          <Avatar className="h-10 w-10">
+            {face.avatarUrl ? (
+              <AvatarImage src={face.avatarUrl} alt="" />
+            ) : null}
+            <AvatarFallback tint={face.tint}>
+              {initials(face.name)}
+            </AvatarFallback>
+          </Avatar>
+          <span
+            data-testid="activity-face-glyph"
+            className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground"
+          >
+            <NavGlyph
+              paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
+              className="h-3 w-3"
+            />
+          </span>
         </span>
-      </span>
+      </>
     );
   }
   if (row.dateBlock) {
