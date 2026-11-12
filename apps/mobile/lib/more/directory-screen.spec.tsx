@@ -1183,4 +1183,60 @@ describe("s13 as a grid (#4175)", () => {
     expect(screenText(tile)).toContain("Member 1");
     expect(screenText(tile)).toContain("Treasurer · CS '27");
   });
+  /**
+   * #4137: the row carries the member's custom status line under the name and
+   * their presence dot on the avatar, as web's Directory row and the member
+   * sheet do (`components.md` § Directory row). Nothing until presence has
+   * synced: no dot, no claim of Offline.
+   */
+  describe("Directory row presence and status line (#4137)", () => {
+    const AWAY = { status: "idle" as const, line: "At practice till 6" };
+
+    it("draws the status line under the name and the dot on the avatar", () => {
+      const tree = renderNode(
+        <MemberRow row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+      );
+      const text = screenText(tree);
+      expect(text).toContain("At practice till 6");
+      expect(text.indexOf("Member 1")).toBeLessThan(
+        text.indexOf("At practice till 6"),
+      );
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "member-presence-idle",
+        ),
+      ).not.toHaveLength(0);
+      expect(pressables(tree)[0]!.props.accessibilityLabel).toBe(
+        memberPressLabel(row(1), AWAY),
+      );
+    });
+
+    it("speaks presence and the status line before the meta line", () => {
+      expect(memberPressLabel(row(1), AWAY)).toBe(
+        "View Member 1's profile, Idle, At practice till 6, Treasurer · CS '27",
+      );
+    });
+
+    it("draws neither before presence has synced", () => {
+      const tree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+      expect(screenText(tree)).not.toContain("At practice");
+      expect(
+        tree.root.findAll((node) =>
+          String(node.props.testID ?? "").startsWith("member-presence-"),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("gives a tile the same line and dot", () => {
+      const tile = renderNode(
+        <MemberTile row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+      );
+      expect(screenText(tile)).toContain("At practice till 6");
+      expect(
+        tile.root.findAll(
+          (node) => node.props.testID === "member-presence-idle",
+        ),
+      ).not.toHaveLength(0);
+    });
+  });
 });
