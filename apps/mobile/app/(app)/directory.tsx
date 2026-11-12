@@ -38,6 +38,7 @@ import {
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { GridLine as GridLineRow, toGridChunks } from "@/components/grid-line";
 import { useListLayout } from "@/lib/list-layout";
 import { screenTitleStyle } from "@/components/screen-shell";
 import {
@@ -600,7 +601,7 @@ export function memberPressLabel(row: DirectoryRow): string {
   return `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`;
 }
 
-/** One line of the Grid layout (#4175): up to {@link GRID_COLUMNS} members. */
+/** One line of the Grid layout (#4175): up to `GRID_COLUMNS` members. */
 export interface GridLine {
   key: string;
   rows: DirectoryRow[];
@@ -611,18 +612,13 @@ export function isGridLine(item: DirectoryRow | GridLine): item is GridLine {
 }
 
 export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
-  const lines: GridLine[] = [];
-  for (let i = 0; i < rows.length; i += GRID_COLUMNS) {
-    const chunk = rows.slice(i, i + GRID_COLUMNS);
-    lines.push({ key: chunk[0]!.userId, rows: chunk });
-  }
-  return lines;
+  return toGridChunks(rows).map((chunk) => ({
+    key: chunk[0]!.userId,
+    rows: chunk,
+  }));
 }
 
-/**
- * A line of tiles. A short last line is padded with empty cells, so its tiles
- * keep the width of every other tile instead of stretching across the row.
- */
+/** A line of member tiles, padded short as every grid's is (`GridLine`). */
 export function GridLineView({
   line,
   avatarTintFor,
@@ -632,10 +628,8 @@ export function GridLineView({
   avatarTintFor: (userId: string) => MemberAvatarTint | null;
   onOpen: (row: DirectoryRow) => void;
 }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   return (
-    <View style={styles.gridLine}>
+    <GridLineRow filled={line.rows.length}>
       {line.rows.map((row) => (
         <MemberTile
           key={row.userId}
@@ -644,10 +638,7 @@ export function GridLineView({
           onPress={() => onOpen(row)}
         />
       ))}
-      {Array.from({ length: GRID_COLUMNS - line.rows.length }, (_, i) => (
-        <View key={`pad-${i}`} style={styles.gridPad} />
-      ))}
-    </View>
+    </GridLineRow>
   );
 }
 
@@ -812,8 +803,7 @@ function countMembers(data: unknown): number {
 
 /** The member row's avatar, which its skeleton draws at the same size. */
 const AVATAR_SIZE = 40;
-/** The Grid layout's columns and face size (#4175). */
-const GRID_COLUMNS = 2;
+/** The Grid layout's face size (#4175); its columns are `GRID_COLUMNS`. */
 const TILE_AVATAR_SIZE = 56;
 
 function createStyles(tokens: SignetTokens) {
@@ -885,13 +875,6 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "space-between",
       gap: tokens.spacing.md,
-    },
-    gridLine: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-    },
-    gridPad: {
-      flex: 1,
     },
     // A tile is the row's grid twin: hairline-bordered, on the page surface,
     // not a card, so the grid reads as the same list laid out wider.

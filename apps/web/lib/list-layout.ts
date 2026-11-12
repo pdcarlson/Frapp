@@ -19,7 +19,7 @@ import { useViewerUserId } from "@repo/hooks";
 export type ListLayout = "list" | "grid";
 
 /** The screens that offer the toggle. A new one joins here. */
-export type ListLayoutScreen = "directory";
+export type ListLayoutScreen = "directory" | "documents";
 
 export function listLayoutStorageKey(
   screen: ListLayoutScreen,
