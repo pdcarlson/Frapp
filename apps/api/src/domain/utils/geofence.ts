@@ -1,4 +1,7 @@
-import { isValidZoneOutline, pointInPolygon as sharedPointInPolygon } from '@repo/validation';
+import {
+  isValidZoneOutline,
+  pointInPolygon as sharedPointInPolygon,
+} from '@repo/validation';
 import type { GeofenceCoordinate } from '../entities/study.entity';
 
 /**
