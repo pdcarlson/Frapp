@@ -224,6 +224,7 @@ await import("./tiers/request-context.mjs");
 await import("./tiers/member-social-trust-defaults.mjs");
 await import("./tiers/everyone-role.mjs");
 await import("./tiers/clear-deleted-message-payloads.mjs");
+await import("./tiers/merge-backwork-department-case-variants.mjs");
 await import("./tiers/notifications-forget-deleted-message.mjs");
 await import("./tiers/service-awarded-points.mjs");
 

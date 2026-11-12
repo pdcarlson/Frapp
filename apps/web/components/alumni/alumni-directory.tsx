@@ -21,12 +21,16 @@ import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardToolbarHeightClassName,
+  denseGridClassName,
   denseListClassName,
+  gridTileButtonClassName,
+  gridTileFrameClassName,
 } from "@/components/shared/table-controls";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, cn, initials } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useListLayout } from "@/lib/list-layout";
 import { AlumniRowsSkeleton } from "@/components/members/directory-skeleton";
 
 type AlumniRow = {
@@ -66,6 +70,8 @@ export function AlumniDirectory() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   // An alum's initials wear the color they wear everywhere else (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
+  // List or Grid (#4175), picked in the Directory's tab row.
+  const [layout] = useListLayout("directory");
 
   const [graduationYear, setGraduationYear] = useState("");
   const [cityFilter, setCityFilter] = useState("");
@@ -282,7 +288,12 @@ export function AlumniDirectory() {
           `role="list"` for the reason `members-directory.tsx` spells out:
           flexing the `<li>` drops the semantics WebKit reads off it.
         */
-        <ul role="list" className={denseListClassName}>
+        <ul
+          role="list"
+          className={
+            layout === "grid" ? denseGridClassName : denseListClassName
+          }
+        >
           {alumni.map((alum) => {
             const id = alum.id ?? alum.user_id;
             const name = memberLabel(alum.display_name, alum.user_id);
@@ -303,6 +314,62 @@ export function AlumniDirectory() {
             ]
               .filter(Boolean)
               .join(" · ");
+            const open = () => {
+              setOpenAlumnus(alum);
+              setSheetOpen(true);
+            };
+            const label = [name, meta || null, alum.bio || null]
+              .filter(Boolean)
+              .join(", ");
+            if (layout === "grid") {
+              /*
+                The grid's tile (#4175), as the actives tab's
+                (`member-grid.tsx`): a hairline-bordered button, the face
+                larger, every fact the row shows. The bio takes two lines
+                here, where the row gives it one.
+              */
+              return (
+                <li key={id} className={gridTileFrameClassName}>
+                  <button
+                    type="button"
+                    onClick={open}
+                    aria-label={label}
+                    className={cn(
+                      gridTileButtonClassName,
+                      "hover:bg-card-hover hover:text-foreground",
+                      FOCUS_RING_OFFSET,
+                    )}
+                  >
+                    <Avatar className="h-14 w-14">
+                      {alum.avatar_url ? (
+                        <AvatarImage src={alum.avatar_url} alt="" />
+                      ) : null}
+                      <AvatarFallback
+                        className="text-base"
+                        tint={alum.user_id ? avatarTintFor(alum.user_id) : null}
+                      >
+                        {initials(alum.display_name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="flex w-full min-w-0 flex-col items-center">
+                      <span className="w-full truncate text-sm font-semibold">
+                        {name}
+                      </span>
+                      {meta ? (
+                        <span className="line-clamp-2 text-caption text-muted">
+                          {meta}
+                        </span>
+                      ) : null}
+                      {alum.bio ? (
+                        <span className="line-clamp-2 text-caption text-muted">
+                          {alum.bio}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              );
+            }
             return (
               <li key={id} className="flex">
                 {/*
@@ -312,13 +379,8 @@ export function AlumniDirectory() {
                 */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setOpenAlumnus(alum);
-                    setSheetOpen(true);
-                  }}
-                  aria-label={[name, meta || null, alum.bio || null]
-                    .filter(Boolean)
-                    .join(", ")}
+                  onClick={open}
+                  aria-label={label}
                   className={cn(
                     "flex min-h-9 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
                     "pointer-coarse:min-h-11 hover:bg-card-hover hover:text-foreground",

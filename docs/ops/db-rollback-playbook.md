@@ -3824,6 +3824,21 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
+## Rollback merge Backwork department case variants (20261112154000)
+
+* **Migration**: `20261112154000_merge_backwork_department_case_variants.sql`
+
+Folds each chapter's Backwork departments whose codes differ only in case or spaces into one. Course entries are merged, files moved, the other department rows deleted (their course entries cascade), and the kept department's empty full name filled. **It cannot be reverted by a migration**: the deleted rows and each file's earlier `department_id` are gone from the database. Nothing needs them back: since #4485 every upload and the web upload sheet treat those codes as one department, so splitting them again would only bring the duplicate back.
+
+If a split must be restored, there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot). Then, for the departments the promoter's pre-push listing named:
+
+1. Re-insert each deleted `backwork_departments` row by `id`, and set the kept department's `name` back to its backup value.
+2. Copy back `department_id` for the `backwork_resources` rows that had a deleted department, by `id`.
+3. For the kept department, delete its `backwork_courses` rows and re-insert them from the backup: a fold changed their names and nicknames, and created a row for each course only a deleted department had.
+4. Re-insert the deleted departments' `backwork_courses` rows from the backup.
+
+Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
 ## Rollback request context lookup (20261112151000)
 
 * **Migration**: `20261112151000_request_context_lookup.sql`

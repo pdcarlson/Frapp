@@ -58,6 +58,8 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import { MemberGrid } from "@/components/members/member-grid";
+import { useListLayout } from "@/lib/list-layout";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
   AvatarPresenceDot,
@@ -196,6 +198,8 @@ export function MembersDirectory() {
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const { toast } = useToast();
+  // List or Grid (#4175), picked in the Directory's tab row.
+  const [layout] = useListLayout("directory");
   const [query, setQuery] = useState("");
   // `null` is "any", the shape `FilterChip` speaks.
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
@@ -583,6 +587,46 @@ export function MembersDirectory() {
     effectiveCohortFilter !== null ||
     effectiveClassFilter !== null ||
     statusFilter !== null;
+
+  /**
+   * What a member's row and tile both show, and the accessible name that
+   * restates all of it in a fixed order with the status last. An
+   * `aria-label` replaces the subtree's text as the name, so it must keep
+   * every fact on screen.
+   */
+  function factsOf(member: MemberProfile) {
+    const name = displayNameOf(member);
+    const roleName = primaryRoleName(member);
+    const joined = formatJoined(member.created_at);
+    const className = member.pledge_class_id
+      ? (classNameById.get(member.pledge_class_id) ?? null)
+      : null;
+    const points = pointsOf(member);
+    const status = presenceStatusOf(member);
+    const customLine = customLineOf(member);
+    const label = [
+      name,
+      roleName,
+      className,
+      `${points} points`,
+      joined ? `joined ${joined}` : null,
+      member.email || null,
+      customLine,
+      status ? presenceLabel(status) : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return {
+      name,
+      roleName,
+      joined,
+      className,
+      points,
+      status,
+      customLine,
+      label,
+    };
+  }
 
   function toggleMember(id: string, isSelected: boolean) {
     setSelectedMemberIds((prev) =>
@@ -981,47 +1025,59 @@ export function MembersDirectory() {
             </span>
             Select all on this page
           </label>
-          <ul role="list" className={denseListClassName}>
-            {pageMembers.map((member) => {
-              const id = memberId(member);
-              const name = displayNameOf(member);
-              const roleName = primaryRoleName(member);
-              const joined = formatJoined(member.created_at);
-              const className = member.pledge_class_id
-                ? (classNameById.get(member.pledge_class_id) ?? null)
-                : null;
-              const points = pointsOf(member);
-              const status = presenceStatusOf(member);
-              const customLine = customLineOf(member);
-              const selected = selectedMemberIds.includes(id);
-              return (
-                <li
-                  key={id}
-                  className={cn(
-                    "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                    // Fill means state, never striping. `--popover` is what
-                    // `TableRow` paints for `data-state="selected"`: neutral
-                    // since 2026-11-05 (`foundations.md` §6), a step under the
-                    // `--card-hover` hover so a control inside the row still
-                    // lifts, with the checked box and the "N selected" bar
-                    // carrying the selection.
-                    selected && "bg-popover",
-                  )}
-                >
-                  <label
-                    className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+          {layout === "grid" ? (
+            <MemberGrid
+              members={pageMembers}
+              idOf={memberId}
+              factsOf={factsOf}
+              selectedIds={selectedMemberIds}
+              onToggle={toggleMember}
+              onOpen={openMember}
+              avatarTintFor={avatarTintFor}
+            />
+          ) : (
+            <ul role="list" className={denseListClassName}>
+              {pageMembers.map((member) => {
+                const id = memberId(member);
+                const {
+                  name,
+                  roleName,
+                  joined,
+                  className,
+                  points,
+                  status,
+                  customLine,
+                  label,
+                } = factsOf(member);
+                const selected = selectedMemberIds.includes(id);
+                return (
+                  <li
+                    key={id}
+                    className={cn(
+                      "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
+                      // Fill means state, never striping. `--popover` is what
+                      // `TableRow` paints for `data-state="selected"`: neutral
+                      // since 2026-11-05 (`foundations.md` §6), a step under the
+                      // `--card-hover` hover so a control inside the row still
+                      // lifts, with the checked box and the "N selected" bar
+                      // carrying the selection.
+                      selected && "bg-popover",
+                    )}
                   >
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${name}`}
-                      className={dashboardTableCheckboxClassName}
-                      checked={selected}
-                      onChange={(event) =>
-                        toggleMember(id, event.target.checked)
-                      }
-                    />
-                  </label>
-                  {/*
+                    <label
+                      className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${name}`}
+                        className={dashboardTableCheckboxClassName}
+                        checked={selected}
+                        onChange={(event) =>
+                          toggleMember(id, event.target.checked)
+                        }
+                      />
+                    </label>
+                    {/*
                   The row is the control. `4a`'s note is "Click a row →
                   profile popover with Message", and the trailing "View
                   details" Secondary button this replaces was a 44px control
@@ -1043,54 +1099,44 @@ export function MembersDirectory() {
                   `FOCUS_RING_OFFSET`, not `FOCUS_RING`: the row carries no
                   border, and `FOCUS_RING`'s indicator is the border swap.
                 */}
-                  <button
-                    type="button"
-                    onClick={() => openMember(member)}
-                    aria-label={[
-                      name,
-                      roleName,
-                      className,
-                      `${points} points`,
-                      joined ? `joined ${joined}` : null,
-                      member.email || null,
-                      customLine,
-                      status ? presenceLabel(status) : null,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
-                    className={cn(
-                      "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
-                      "pointer-coarse:min-h-11",
-                      /*
+                    <button
+                      type="button"
+                      onClick={() => openMember(member)}
+                      aria-label={label}
+                      className={cn(
+                        "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
+                        "pointer-coarse:min-h-11",
+                        /*
                         Hover only while NOT selected. The selected fill lives
                         on the `<li>` and this button is `flex-1`, so a hover
                         here would paint across everything right of the
                         checkbox and the selected row would stop reading as
                         one row.
                       */
-                      !selected && "hover:bg-card-hover hover:text-foreground",
-                      FOCUS_RING_OFFSET,
-                    )}
-                  >
-                    <div className="relative shrink-0">
-                      <Avatar className="h-6 w-6">
-                        {member.avatar_url ? (
-                          <AvatarImage src={member.avatar_url} alt="" />
-                        ) : null}
-                        <AvatarFallback
-                          className="text-[9px]"
-                          tint={
-                            typeof member.user_id === "string"
-                              ? avatarTintFor(member.user_id)
-                              : null
-                          }
-                        >
-                          {initials(name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <AvatarPresenceDot status={status} />
-                    </div>
-                    {/*
+                        !selected &&
+                          "hover:bg-card-hover hover:text-foreground",
+                        FOCUS_RING_OFFSET,
+                      )}
+                    >
+                      <div className="relative shrink-0">
+                        <Avatar className="h-6 w-6">
+                          {member.avatar_url ? (
+                            <AvatarImage src={member.avatar_url} alt="" />
+                          ) : null}
+                          <AvatarFallback
+                            className="text-[9px]"
+                            tint={
+                              typeof member.user_id === "string"
+                                ? avatarTintFor(member.user_id)
+                                : null
+                            }
+                          >
+                            {initials(name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <AvatarPresenceDot status={status} />
+                      </div>
+                      {/*
                       Name over meta below the page's `@xl` (576px), side by side above it — the
                       stacking shape lane 4's document row uses. An earlier
                       draft hid the meta line outright on a phone (`hidden
@@ -1100,38 +1146,39 @@ export function MembersDirectory() {
                       too, so the row's own `aria-label` was the only place they
                       survived.
                     */}
-                    <span className="flex min-w-0 flex-1 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
-                      {/*
+                      <span className="flex min-w-0 flex-1 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
+                        {/*
                         The custom status line (#3845) stacks under the name in
                         both layouts, one muted caption line that truncates.
                       */}
-                      <span className="flex min-w-0 flex-col @xl:flex-1">
-                        <span className="min-w-0 truncate text-sm font-semibold">
-                          {name}
+                        <span className="flex min-w-0 flex-col @xl:flex-1">
+                          <span className="min-w-0 truncate text-sm font-semibold">
+                            {name}
+                          </span>
+                          <CustomStatusLine line={customLine} />
                         </span>
-                        <CustomStatusLine line={customLine} />
-                      </span>
-                      {/*
+                        {/*
                         One meta line, `·`-joined, bounded fields first and the
                         free-text one last — lane 4's ordering rule, for the
                         same reason: this line truncates, so whatever leads it
                         is what survives a narrow row, and an email is the field
                         that can run long.
                       */}
-                      <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
-                        {[roleName, className, joined, member.email]
-                          .filter(Boolean)
-                          .join(" · ")}
+                        <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
+                          {[roleName, className, joined, member.email]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-caption tabular-nums text-muted">
-                      {points} pts
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      <span className="shrink-0 text-caption tabular-nums text-muted">
+                        {points} pts
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {pageCount > 1 ? (
             <div className="flex items-center justify-between gap-2 text-caption">
