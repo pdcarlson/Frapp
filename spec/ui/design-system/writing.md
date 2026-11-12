@@ -359,7 +359,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 
 The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
 
-Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a holder of `tasks:manage` and `members:view` (New task's grants) reads ` Tap + to assign a task.` after it, since New task lives in the tab bar's + (2026-11-07). It replaced the `You're all clear` card.
+Mobile's task board (s08, a tab until #4610, now pushed from Activity) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a holder of `tasks:manage` and `members:view` (New task's grants) reads ` Tap + to assign a task.` after it, since New task lives in the + (the tab bar's, 2026-11-07, and the board's own since #4610). It replaced the `You're all clear` card.
 
 ### Service Hours (dashboard)
 

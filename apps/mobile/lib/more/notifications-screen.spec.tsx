@@ -200,7 +200,7 @@ describe("Notifications row target", () => {
     data: { target: { screen: target } },
   });
 
-  it("pops down to a tab and pushes any other screen", () => {
+  it("pushes the screen each target names, the task board included (#4610)", () => {
     inbox.data = [read("n-tasks", "tasks"), read("n-dues", "billing")];
     const router = vi.mocked(useRouter)();
     vi.mocked(router.push).mockClear();
@@ -214,8 +214,8 @@ describe("Notifications row target", () => {
       );
 
     act(() => row("About tasks").props.onPress());
-    expect(router.dismissTo).toHaveBeenCalledWith("/tasks");
-    expect(router.push).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith("/tasks");
+    expect(router.dismissTo).not.toHaveBeenCalled();
 
     act(() => row("About billing").props.onPress());
     expect(router.push).toHaveBeenCalledWith("/dues");

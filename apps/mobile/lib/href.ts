@@ -11,8 +11,8 @@ export function asRoute(path: string): Href {
 /** The four tabs' paths (`app/(app)/(tabs)/`). */
 const TAB_PATHS: ReadonlySet<string> = new Set([
   "/",
+  "/activity",
   "/events",
-  "/tasks",
   "/more",
 ]);
 

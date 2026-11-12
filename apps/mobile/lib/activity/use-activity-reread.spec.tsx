@@ -19,7 +19,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActiveChapterId: () => chapterId,
 }));
 
-import { useActivityReread } from "./use-activity-reread";
+import { useActivityReread, useActivityRereadOnTab } from "./use-activity-reread";
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -110,5 +110,38 @@ describe("useActivityReread (#3897)", () => {
     act(() => refocus());
     act(() => hook.reread());
     expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("useActivityRereadOnTab (#4610)", () => {
+  function TabProbe({ tab }: { tab: string }) {
+    useActivityRereadOnTab(tab);
+    return null;
+  }
+
+  it("reads again on each change of tab, not on the first draw", () => {
+    chapterId = "chapter-1";
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const draw = (tab: string) => (
+      <QueryClientProvider client={queryClient}>
+        <TabProbe tab={tab} />
+      </QueryClientProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(draw("index-1"));
+    });
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => tree.update(draw("index-1")));
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => tree.update(draw("events-1")));
+    act(() => tree.update(draw("index-1")));
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenLastCalledWith({
+      queryKey: activityKeys.chapter("chapter-1"),
+      exact: true,
+    });
+    act(() => tree.unmount());
   });
 });

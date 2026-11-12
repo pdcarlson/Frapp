@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,10 +14,11 @@ import {
  * `useActivity` is never served fresh from cache, but on web that rests on
  * the page mounting again each visit. On the phone a tab is never unmounted
  * and a pushed screen stays mounted under whatever it pushes, and none of
- * the records' own writers (a vote in chat, a task finished on the Tasks tab,
- * a check-in) knows about this read. So the two screens that show it, More
- * (the count) and Activity, read it again whenever the member returns to
- * them. Back to the app is already covered: the query client re-reads on an
+ * the records' own writers (a vote in chat, a task finished on the task
+ * board, a check-in) knows about this read. So the Activity screen reads it
+ * again whenever the member returns to it, and the tab bar, which carries the
+ * count on Activity's tab (#4610), on every change of tab
+ * (`useActivityRereadOnTab`). Back to the app is already covered: the query client re-reads on an
  * AppState focus (`lib/connection/query-connectivity.ts`).
  *
  * The mount is skipped, since the query reads on mount by itself. Returns the
@@ -58,4 +59,26 @@ export function useActivityReread(
     }, [reread]),
   );
   return reread;
+}
+
+/**
+ * Reads Activity again each time `tabKey` changes: the tab bar's hold on the
+ * count. The bar is drawn once and never refocuses, so it can't use a focus
+ * effect; a change of tab is the moment the member may have done something
+ * on the tab they left (a vote in chat). The first value is skipped, since
+ * the query reads on mount by itself.
+ */
+export function useActivityRereadOnTab(tabKey: string): void {
+  const chapterId = useActiveChapterId();
+  const queryClient = useQueryClient();
+  const seen = useRef(tabKey);
+  useEffect(() => {
+    if (seen.current === tabKey) return;
+    seen.current = tabKey;
+    if (!chapterId) return;
+    void queryClient.invalidateQueries({
+      queryKey: activityKeys.chapter(chapterId),
+      exact: true,
+    });
+  }, [chapterId, queryClient, tabKey]);
 }

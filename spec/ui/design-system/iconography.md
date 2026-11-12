@@ -187,9 +187,10 @@ second, filled variant to swap to.
 | Semantic intent | Glyph (nav set key, Phosphor name) | Notes |
 |---|---|---|
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
-| Events tab | `events`, `calendar-dots` | |
-| Tasks tab | `tasks`, `seal-check` | |
+| Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
+| Calendar tab (the `events` route) | `events`, `calendar-dots` | Named Events until #4610. |
 | More tab | `more`, `squares-four` | Not an ellipsis: Canvas draws a 2×2 grid, and Canvas wins for visuals. |
+| Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.

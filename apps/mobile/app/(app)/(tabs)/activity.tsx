@@ -50,7 +50,6 @@ import {
   ActivitySummary,
   ActivitySummarySkeleton,
 } from "@/components/activity/activity-summary";
-import { BACK_TO_MORE } from "@/components/back-row";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
@@ -76,8 +75,10 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
 
 /**
  * Activity: what is waiting on the member and what they made, in one place
- * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home; it
- * is reached from the More hub, whose row carries the "needs you" count.
+ * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
+ * Tab 2 since 2026-11-12 (#4610), whose icon carries the "needs you" count;
+ * before that it was the More hub's first row. The task board left the tab
+ * bar the same day, so its door is here, on the title row.
  *
  * The phone's twin of web's `/activity`
  * (`spec/ui/web-dashboard/README.md` § Activity), on the same row model
@@ -142,8 +143,9 @@ export default function ActivityScreen() {
   const standing = useActivityStanding();
   const router = useRouter();
   const openStanding = (destination: StandingDestination) => {
-    // Tasks and Events are tabs: go to them rather than stack a second copy.
-    if (destination === "/tasks" || destination === "/events") {
+    // Calendar (the `events` route) is a tab: go to it rather than stack a
+    // second copy. The task board is a pushed screen since #4610.
+    if (destination === "/events") {
       router.navigate(destination);
     } else {
       router.push(destination);
@@ -295,7 +297,11 @@ export default function ActivityScreen() {
 
   return (
     <ActivityFaces.Provider value={faceFor}>
-      <ScreenShell back={BACK_TO_MORE} title="Activity" refresh={refresh}>
+      <ScreenShell
+        title="Activity"
+        refresh={refresh}
+        headerAction={<TaskBoardLink />}
+      >
         {renderBody()}
         <ActivitySheet
           row={sheetRow}
@@ -323,6 +329,30 @@ export default function ActivityScreen() {
  * seconds) has to outlive the sheet. Remove is `channels:manage`'s, as in
  * chat. A write that fails puts the row back and says so.
  */
+/**
+ * The task board's door (#4610): the board (List and Grid, the points card)
+ * is a pushed screen now that Activity and Calendar hold a member's tasks.
+ * A plain neutral control on the title row, never the accent, which marks
+ * only the one primary action (foundations.md § Where the accent goes).
+ */
+function TaskBoardLink() {
+  const router = useRouter();
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Task board"
+      accessibilityHint="Opens all of your tasks as a list or a grid."
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      onPress={() => router.push("/tasks")}
+      style={({ pressed }) => [styles.boardLink, pressed && styles.pressed]}
+    >
+      <Text style={styles.boardLinkText}>Task board</Text>
+    </Pressable>
+  );
+}
+
 function useLinkActions() {
   const router = useRouter();
   const permissions = useMyPermissions();
@@ -567,6 +597,20 @@ function createStyles(tokens: SignetTokens) {
     body: {
       gap: tokens.spacing.lg,
     },
+    boardLink: {
+      minHeight: 36,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      justifyContent: "center",
+    },
+    boardLinkText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    pressed: { opacity: 0.7 },
     group: {
       gap: tokens.spacing.sm,
     },

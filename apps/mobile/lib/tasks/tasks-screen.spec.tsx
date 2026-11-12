@@ -7,6 +7,8 @@ import * as expoRouter from "expo-router";
 import { AppState, StyleSheet } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { expectBackRow } from "@/test/back-row";
+import { FloatingCreateButton } from "@/components/floating-create-button";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -26,7 +28,7 @@ import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
  * why and stops offering a toggle that cannot win, and that an ordinary
  * failure keeps its quiet revert and retap.
  *
- * It renders `app/(app)/(tabs)/tasks.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/tasks.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -159,7 +161,7 @@ vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
 }));
 
-import TasksScreen from "@/app/(app)/(tabs)/tasks";
+import TasksScreen from "@/app/(app)/tasks";
 import { UndoBar } from "@/components/tasks/undo-bar";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
@@ -504,9 +506,41 @@ describe("Tasks board pull-to-refresh", () => {
 });
 
 /**
+ * The board left the tab bar for Activity's place there (#4610): it is pushed
+ * from Activity, goes back to it, and carries its own + for New task, since a
+ * pushed screen covers the tab bar's.
+ */
+describe("Tasks as a pushed screen (#4610)", () => {
+  afterEach(() => {
+    permissions = [];
+  });
+
+  it("goes back to Activity", () => {
+    const tree = render();
+    expectBackRow(tree, "Activity", "/activity");
+    act(() => tree.unmount());
+  });
+
+  it("draws its own New task + for a role that can assign", () => {
+    permissions = ["tasks:manage", "members:view"];
+    const tree = render();
+    const [plus] = tree.root.findAllByType(FloatingCreateButton);
+    expect(plus!.props.label).toBe("New task");
+    act(() => tree.unmount());
+  });
+
+  it("draws no + for a member who can't assign", () => {
+    const tree = render();
+    expect(tree.root.findAllByType(FloatingCreateButton)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+/**
  * Rule 7 of the empty-states plan: a member with nothing assigned reads one
  * line under the points card, the same line web's board writes, rather than a
- * card. The + lives in the tab bar, so only an officer hears about it.
+ * card. The + is the board's own (New task), so only an officer hears about
+ * it.
  */
 describe("Tasks with nothing assigned", () => {
   const soon = (hours: number) =>

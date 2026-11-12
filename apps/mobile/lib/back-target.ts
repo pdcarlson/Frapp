@@ -23,15 +23,18 @@ import {
  */
 export const SCREEN_TITLES = {
   index: "Chat",
-  events: "Events",
-  tasks: "Tasks",
+  activity: "Activity",
+  // The route stays `events` so links and notification targets keep working;
+  // the tab holds tasks too, so it is named for the calendar (#4610).
+  events: "Calendar",
   more: "More",
+  // A pushed screen since #4610, opened from Activity, Calendar and Up next.
+  tasks: "Tasks",
   // The thread names a channel, which a capsule has no room for; "Chat" is
   // where the member is going back to.
   "chat-thread": "Chat",
   "event-details": "Event",
   notifications: "Notifications",
-  activity: "Activity",
   messages: "Messages",
   preferences: "Settings",
   profile: "Profile",
