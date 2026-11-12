@@ -2840,6 +2840,32 @@ describe('ChatService', () => {
         expect(mockMessageRepo.create).not.toHaveBeenCalled();
       });
 
+      // A card that committed while the channel was still the announcements
+      // channel, whose response was lost: its outbox replay must not be
+      // marked failed because the channel was opened up or renamed since.
+      it('answers a replay of an announcement that already committed as a duplicate', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        const committed = { ...baseMessage, kind: 'announcement' as const };
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        const result = await send({
+          client_message_id: '22222222-2222-2222-2222-222222222222',
+        });
+
+        expect(result).toEqual({ message: committed, deduplicated: true });
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still refuses when the replayed id belongs to a message of another kind', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+        await expect(
+          send({ client_message_id: '22222222-2222-2222-2222-222222222222' }),
+        ).rejects.toThrow(PLACEMENT);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
       it('posts one from a member on the announcements channel\u2019s who-can-post list', async () => {
         asAnnouncer();
 

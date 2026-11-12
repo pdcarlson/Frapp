@@ -255,16 +255,13 @@ function cardPayloadForSend(
  * channel, so a refusal here is a hand-built request, and quietly changing
  * its kind would hide that from the sender (#3414).
  */
-function assertAnnouncementPlacement(
+function misplacedAnnouncement(
   kind: ChatMessageKind,
   channel: Pick<ChatChannel, 'name' | 'type' | 'is_read_only'>,
   threadRootId: string | null,
-): void {
-  if (kind !== 'announcement') return;
-  if (threadRootId === null && isAnnouncementChannel(channel)) return;
-  throw new ForbiddenException(
-    'Announcements can only be posted in the announcements channel',
-  );
+): boolean {
+  if (kind !== 'announcement') return false;
+  return threadRootId !== null || !isAnnouncementChannel(channel);
 }
 
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
@@ -1085,7 +1082,32 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
-    assertAnnouncementPlacement(kind, channel, threadRootId);
+    // A refusal below that only exists because something changed after the
+    // card committed (the module switched off, the announcements channel
+    // renamed or opened up) must not refuse that card's replay: answer it as
+    // the duplicate below would, or the client's outbox marks a card that
+    // exists on the server as failed. Nothing is written on this path, not
+    // even the attachment repair.
+    const committedReplay = async () => {
+      const existing = input.client_message_id
+        ? await this.messageRepo.findByClientMessageId(
+            input.channel_id,
+            input.sender_id,
+            input.client_message_id,
+          )
+        : null;
+      return existing && existing.kind === kind
+        ? { message: redactDeletedMessage(existing), deduplicated: true }
+        : null;
+    };
+
+    if (misplacedAnnouncement(kind, channel, threadRootId)) {
+      const replay = await committedReplay();
+      if (replay) return replay;
+      throw new ForbiddenException(
+        'Announcements can only be posted in the announcements channel',
+      );
+    }
     // Before anything is written (thread follows, the attachment repair), so
     // a card that can't be stored costs nothing.
     const payload = cardPayloadForSend(kind, input.payload);
@@ -1095,20 +1117,8 @@ export class ChatService {
       gatedModule &&
       !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
     ) {
-      // A replay of a card that committed before the module was switched off
-      // is not a new write: answer it as the duplicate below would, or the
-      // client's outbox marks a card that exists on the server as failed.
-      // Nothing is written on this path, not even the attachment repair.
-      const existing = input.client_message_id
-        ? await this.messageRepo.findByClientMessageId(
-            input.channel_id,
-            input.sender_id,
-            input.client_message_id,
-          )
-        : null;
-      if (existing && existing.kind === kind) {
-        return { message: redactDeletedMessage(existing), deduplicated: true };
-      }
+      const replay = await committedReplay();
+      if (replay) return replay;
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
 

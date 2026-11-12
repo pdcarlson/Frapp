@@ -22,8 +22,8 @@ export * from "./payloads";
 /**
  * A slash command the user can invoke from the composer. `requiredModule` ties
  * the command to a `chapters.enabled_modules` key; the UI hides commands whose
- * module is disabled. `null` means always available (e.g. announcements is a
- * free, always-on module).
+ * module is disabled. `null` means no module gates it (`/announce`); who may
+ * use a command is a separate rule (`filterSlashCommands`' `canAnnounce`).
  */
 export interface SlashCommand {
   /** Invocation token without the leading slash, e.g. "event". */
@@ -39,7 +39,7 @@ export interface SlashCommand {
   /** Hint text for the argument string, e.g. "<title> <date>". */
   usage?: string;
   /**
-   * `enabled_modules` key that gates this command, or `null` for always-on.
+   * `enabled_modules` key that gates this command, or `null` when no module does.
    * Resolve it against the member view's `enabled_modules`
    * (`useChapterModuleGateState` on web), never the officer-only config, which
    * errors for every member below President (#2957).
@@ -173,7 +173,8 @@ export function getSlashCommand(
  * the slash; an empty query returns everything. Commands whose module is
  * disabled are excluded via the supplied predicate (on web, the gate from
  * `useChapterModuleGateState`, which reads the member view). Commands with no
- * `requiredModule` are always included.
+ * `requiredModule` pass the module gate; `/announce` can still be left out by
+ * `options.canAnnounce` below.
  *
  * Pass `options.recruitment` so the rush row matches and displays the chapter's
  * vocabulary token (`/intake`, `/recruitment`, …) without changing `name`.

@@ -1127,11 +1127,12 @@ export function ChatShell({
     [channels],
   );
   const announcementsChannelId = announcementsChannel?.id ?? null;
-  // `/announce` is offered only to a member the server would let post there:
-  // that channel's `can_post`, from the same gate the send goes through
-  // (#3414). No announcements channel, or none this member can read, hides it
-  // too, where it could only fail.
-  const canAnnounce = announcementsChannel?.can_post === true;
+  // `/announce` is withheld from a member the server would refuse there: that
+  // channel's `can_post`, from the same gate the send goes through (#3414).
+  // Only an explicit `false` withholds it. With no announcements channel the
+  // command stays, so dispatch can say the channel is missing rather than
+  // the member being told they lack permission.
+  const canAnnounce = announcementsChannel?.can_post !== false;
 
   // Backs `@member` resolution for member-targeted slash commands (/points).
   // Reads the roster projection rather than the full member list: `matchMember`
