@@ -566,6 +566,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
+  // One push per batch of AI suggestions (#4309): `notifyBatch` and its
+  // `notifyMembers`. Titled with the meeting or event name an officer wrote.
+  'application/services/ai-suggestion.service.ts': {
+    calls: 2,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/billing.service.ts': {
     calls: 4,
     entries: [

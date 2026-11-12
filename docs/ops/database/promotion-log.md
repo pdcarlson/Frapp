@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: AI suggestions (#4309, on `ai-integration`)
+
+### 20261112130001_ai_suggestions.sql
+
+- **Purpose**: Adds `ai_suggestions`, the one table of AI proposals (a suggested task first), with RLS on and no policies (API only), six partial indexes, and `ai_suggestions_drop_for_source()` (security invoker, EXECUTE revoked from `public`, `anon`, `authenticated`) fired `after delete` on `events` and `chat_channels` to delete that source's waiting and mid-accept suggestions. A decided or expired row keeps no text (`ai_suggestions_decided_hold_no_text`); a row mid-accept (`accepting`) keeps it until the change is made, and `notified_at` marks the rows whose batch push went out. Writes no row on apply. The rules are [`spec/behavior/ai.md` § Suggestions](../../../spec/behavior/ai.md#suggestions).
+- **Checks**: After `db push`, `select count(*) from ai_suggestions;` returns 0, `select tgname from pg_trigger where tgname in ('events_drop_ai_suggestions', 'chat_channels_drop_ai_suggestions');` returns 2 rows, and `select has_function_privilege('authenticated', 'public.ai_suggestions_drop_for_source()', 'execute');` returns `false`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. The API writes the table only with AI switched on (`AI_ENABLED`), and nothing writes it yet (the first writer is suggested tasks from minutes, #4313), so the older and newer API both run against it unchanged. Applies after `20261112020000_ai_runs.sql`, whose `ai_runs` its `run_id` references, and after `20261112120400_meetings.sql` and `20261112130000_ai_usage_ledger.sql`, so it sorts after every migration on `ai-integration`. The foreign keys and the two triggers take SHARE ROW EXCLUSIVE locks on `chapters`, `users`, `ai_runs`, `events` and `chat_channels` until commit; the table is new and empty, so that is milliseconds. `if not exists`, `create or replace` and `drop trigger if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-suggestions-20261112130001) § Rollback AI suggestions.
+
 ## 2026-11-12: The AI usage ledger and caps (#714)
 
 ### 20261112130000_ai_usage_ledger.sql
@@ -38,6 +48,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table. The newer API with `AI_ENABLED` unset never touches it either: the gateway makes no call, so nothing is held, and the hold sweep returns before its query. With `AI_ENABLED` on against an unmigrated database, every AI call fails at its hold (the gateway lets the error through, and nothing reaches a provider), and the sweep reports `cron:handle-ai-spend-sweep` to Sentry every 10 minutes. A new table and functions, so no lock on any existing table beyond the three foreign keys' brief `SHARE ROW EXCLUSIVE` on `chapters`, `users` and `ai_runs` while the table is created. `if not exists` and `create or replace` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-usage-ledger.mjs`). Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-ai-usage-ledger-20261112130000) § Rollback the AI usage ledger.
+
 
 ## 2026-11-12: Meeting minutes written by hand (#4312)
 

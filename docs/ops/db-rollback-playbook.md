@@ -3801,3 +3801,20 @@ drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, te
 drop table if exists public.ai_usage_events;
 drop function if exists public.ai_usage_charge(text, bigint, bigint);
 ```
+
+## Rollback AI suggestions (20261112130001)
+
+* **Migration**: `20261112130001_ai_suggestions.sql`
+
+One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
+
+To remove it all, in a later forward migration:
+
+```sql
+drop trigger if exists events_drop_ai_suggestions on public.events;
+drop trigger if exists chat_channels_drop_ai_suggestions on public.chat_channels;
+drop function if exists public.ai_suggestions_drop_for_source();
+drop table if exists public.ai_suggestions;
+```

@@ -2935,6 +2935,74 @@ export interface paths {
         patch: operations["TaskController_updateSubtask_v1"];
         trace?: never;
     };
+    "/v1/ai/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Suggested list: waiting suggestions the caller could accept, newest first */
+        get: operations["AiSuggestionController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them. */
+        post: operations["AiSuggestionController_accept_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a suggestion */
+        post: operations["AiSuggestionController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome. */
+        post: operations["AiSuggestionController_decide_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pledge-classes": {
         parameters: {
             query?: never;
@@ -6358,6 +6426,117 @@ export interface components {
         UpdateTaskSubtaskDto: {
             /** @description True to check it off, false to uncheck it. */
             done: boolean;
+        };
+        AiSuggestionSourceDto: {
+            /** @enum {string} */
+            type: "meeting" | "event" | "channel";
+            /** Format: uuid */
+            id: string;
+        };
+        TaskSuggestionDto: {
+            title: string;
+            description: string | null;
+            /**
+             * Format: uuid
+             * @description Null when no name or role was said for it: the screen shows "Who?".
+             */
+            assignee_id: string | null;
+            /** Format: date */
+            due_date: string | null;
+            /** Format: date-time */
+            due_at: string | null;
+            subtasks: string[];
+        };
+        AiSuggestionDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "task";
+            /** @enum {string} */
+            status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
+            source: components["schemas"]["AiSuggestionSourceDto"];
+            /**
+             * Format: uuid
+             * @description Suggestions made together (one push) share it.
+             */
+            batch_id: string;
+            /** @description The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text). */
+            task: components["schemas"]["TaskSuggestionDto"] | null;
+            /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
+            quote: string | null;
+            /** @description Accepted with changes. */
+            edited: boolean;
+            /**
+             * Format: uuid
+             * @description What accepting made (a task id), once accepted.
+             */
+            result_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        AiSuggestionListDto: {
+            items: components["schemas"]["AiSuggestionDto"][];
+            /** @description More waiting suggestions exist than one list returns. */
+            has_more: boolean;
+        };
+        TaskSuggestionEditsDto: {
+            title?: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description Who the task is for. Required to accept when none was suggested.
+             */
+            assignee_id?: string | null;
+            /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
+            due_date?: string | null;
+            /**
+             * Format: date-time
+             * @description The moment it is due, or null for no time. A new `due_date` sent without it clears the time.
+             */
+            due_at?: string | null;
+            subtasks?: string[];
+        };
+        AcceptAiSuggestionDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+        };
+        AiSuggestionResultDto: {
+            /** @enum {string} */
+            kind: "task";
+            /** Format: uuid */
+            id: string;
+        };
+        AiSuggestionDecisionDto: {
+            suggestion: components["schemas"]["AiSuggestionDto"];
+            /** @description What accepting made. Null for a dismissal. */
+            result: components["schemas"]["AiSuggestionResultDto"] | null;
+        };
+        AiSuggestionDecideItemDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "accept" | "dismiss";
+        };
+        DecideAiSuggestionsDto: {
+            items: components["schemas"]["AiSuggestionDecideItemDto"][];
+        };
+        AiSuggestionDecideOutcomeDto: {
+            /** Format: uuid */
+            id: string;
+            ok: boolean;
+            decision?: components["schemas"]["AiSuggestionDecisionDto"];
+            /** @description The HTTP status the single-item route would have answered. */
+            status?: number;
+            /** @description Why it was refused, e.g. ai.suggestion.decided. */
+            code?: string;
+            message?: string;
+        };
+        AiSuggestionDecideResponseDto: {
+            outcomes: components["schemas"]["AiSuggestionDecideOutcomeDto"][];
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -14132,6 +14311,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only suggestions drawn from this source. Send with `source_id`. */
+                source_type?: "meeting" | "event" | "channel";
+                source_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_accept_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptAiSuggestionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideAiSuggestionsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecideResponseDto"];
                 };
             };
             /** @description Error */

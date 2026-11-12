@@ -492,6 +492,19 @@ Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28]
 
 A call the gateway stops before the provider (the server switch, no credential, consent, a spend cap) sends nothing. A provider error is thrown as a `LanguageModelError`, which carries the error's kind, HTTP status and request id and never the provider's message, because a provider's 400 can quote the request back. `ai-gateway.service.spec.ts` asserts that no prompt, source or answer text reaches a log line, a Sentry envelope or the event, on a call that succeeds and one that fails.
 
+## AI Suggestion Events
+
+AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run and expired by an hourly sweep, neither of which is a request, so they are not feature events. `AiSuggestionService` sends four events itself, through `AnalyticsService`:
+
+| Event | Sent when | Keyed by | Properties |
+| --- | --- | --- | --- |
+| `ai-suggestions-proposed` | A run saves a batch | Chapter (`trackForChapter`) | `kind`, `count` |
+| `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
+| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
+| `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
+
+`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
+
 ## Member Onboarding Funnel
 
 The activation funnel follows a chapter. This one follows a member, from the
