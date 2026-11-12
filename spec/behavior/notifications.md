@@ -161,7 +161,10 @@ Multiple notifications from the same source are collapsed before they reach the 
 `BurstBundler` (`apps/api/src/application/workers/burst-bundler.ts`) collapses
 3+ messages from the same sender to the same recipient inside a 60s window into a
 single "N new messages" push, and that decision reaches the client only as
-`data.bundled` / `data.count`.
+`data.bundled` / `data.count`. Messages past the threshold in the same window
+push nothing, since the bundle covers them, except one that mentions the
+recipient: it pushes and writes its row on its own, with `mentioned: true`, so a
+mention is never folded into a count written before it (#4359).
 
 **On the device, a conversation's pushes stack and leave once read.**
 
