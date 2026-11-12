@@ -11,6 +11,9 @@ import {
   isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   releaseNoteLineProblem,
+  releaseNoteGroups,
+  releaseNoteLineCount,
+  openingReleaseNotePlace,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -26,12 +29,21 @@ describe("RELEASE_NOTES", () => {
       expect(note.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(formatReleaseNoteDate(note.date)).not.toBe(note.date);
       expect(note.title.trim()).not.toBe("");
-      expect(note.changes.length).toBeGreaterThan(0);
-      for (const line of [note.title, ...note.changes]) {
+      expect(releaseNoteLineCount(note)).toBeGreaterThan(0);
+      const lines = releaseNoteGroups(note).flatMap((group) => group.lines);
+      expect(lines).toHaveLength(releaseNoteLineCount(note));
+      for (const line of [note.title, ...lines]) {
         expect(releaseNoteLineProblem(line)).toBeNull();
       }
     },
   );
+
+  it("leaves the place out of a web or phone line, which its heading says", () => {
+    for (const note of RELEASE_NOTES) {
+      for (const line of note.web ?? []) expect(line).not.toMatch(/^on the web\b/i);
+      for (const line of note.phone ?? []) expect(line).not.toMatch(/^on your phone\b/i);
+    }
+  });
 });
 
 describe("releaseNoteLineProblem", () => {
@@ -77,11 +89,74 @@ describe("releaseNoteText", () => {
   });
 });
 
+describe("releaseNoteText with places", () => {
+  const split: ReleaseNote = {
+    date: "2026-11-12",
+    title: "A title",
+    changes: ["Both."],
+    web: ["Web."],
+    phone: ["Phone."],
+  };
+
+  it("lists each place under its heading, Everywhere first", () => {
+    expect(releaseNoteText(split)).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n" +
+        "Everywhere\n- Both.\n\nOn the web\n- Web.\n\nOn your phone\n- Phone.",
+    );
+  });
+
+  it("keeps only the places asked for, as the store text does", () => {
+    expect(releaseNoteText(split, ["everywhere", "phone"])).not.toContain("Web.");
+  });
+});
+
+describe("releaseNoteGroups", () => {
+  it("gives an entry with no web or phone lines one group with no heading", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-07", title: "t", changes: ["A."] }),
+    ).toEqual([{ place: "everywhere", label: null, short: "Both", lines: ["A."] }]);
+  });
+
+  it("names every place once any line is split, leaving out empty ones", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-12", title: "t", changes: [], phone: ["P."] }),
+    ).toEqual([{ place: "phone", label: "On your phone", short: "Phone", lines: ["P."] }]);
+    expect(
+      releaseNoteGroups({
+        date: "2026-11-12",
+        title: "t",
+        changes: ["A."],
+        web: ["W."],
+      }).map((group) => group.label),
+    ).toEqual(["Everywhere", "On the web"]);
+  });
+});
+
+describe("openingReleaseNotePlace", () => {
+  const groups = releaseNoteGroups({
+    date: "2026-11-12",
+    title: "t",
+    changes: ["A."],
+    web: ["W."],
+  });
+
+  it("opens on the reader's own surface when it has lines, else the first place", () => {
+    expect(openingReleaseNotePlace(groups, "web")).toBe("web");
+    expect(openingReleaseNotePlace(groups, "phone")).toBe("everywhere");
+    expect(openingReleaseNotePlace([], "phone")).toBeNull();
+  });
+});
+
 describe("releaseNoteVersion", () => {
   const note = { date: "2026-11-09", title: "A title", changes: ["One.", "Two."] };
 
   it("is the date and the number of lines", () => {
     expect(releaseNoteVersion(note)).toBe("2026-11-09#2");
+  });
+
+  it("counts the web and phone lines too, so moving a line between places isn't news", () => {
+    expect(releaseNoteVersion({ ...note, web: ["Three."], phone: ["Four."] })).toBe("2026-11-09#4");
+    expect(releaseNoteVersion({ ...note, changes: ["One."], web: ["Two."] })).toBe("2026-11-09#2");
   });
 
   it("moves when lines are added, not when one is reworded", () => {

@@ -31,8 +31,8 @@
 // step is also `continue-on-error`.
 //
 // It reads the notes file at each commit as text (`git show`) and never runs
-// the deployed commit's code, so `date:` and `changes: [...]` stay literal
-// there (its header says so). What counts as news, a later day or the same day
+// the deployed commit's code, so `date:` and the `changes`, `web` and `phone`
+// lists stay literal there (its header says so). What counts as news, a later day or the same day
 // with more lines, is `isNewerReleaseNoteVersion` from that file, imported
 // from this job's own trusted checkout so the phones and this check share one
 // rule. A same-day entry that got shorter also warns: the file's rule is that
@@ -114,19 +114,28 @@ export function countArrayElements(source, open) {
 
 /**
  * The newest entry of `RELEASE_NOTES` (newest first; its spec enforces the
- * order): its date and how many lines it has. `null` when the file has no
- * such list, as before What's new existed.
+ * order): its date and how many lines it has, across its `changes`, `web`
+ * and `phone` lists (`releaseNoteLineCount` in the notes file). `null` when
+ * the file has no such list, as before What's new existed.
  */
 export function newestReleaseNote(source) {
   if (typeof source !== "string") return null;
   const list = source.indexOf("RELEASE_NOTES");
   if (list === -1) return null;
-  const date = /\bdate:\s*["'](\d{4}-\d{2}-\d{2})["']/.exec(source.slice(list));
+  const dates = /\bdate:\s*["'](\d{4}-\d{2}-\d{2})["']/g;
+  dates.lastIndex = list;
+  const date = dates.exec(source);
   if (!date) return null;
-  const from = list + date.index;
-  const changes = /\bchanges:\s*\[/.exec(source.slice(from));
-  const lines = changes ? countArrayElements(source, from + changes.index + changes[0].length - 1) : null;
-  return { date: date[1], lines: lines ?? 0 };
+  const from = date.index;
+  const to = dates.exec(source)?.index ?? source.length;
+  const entry = source.slice(from, to);
+  let lines = 0;
+  for (const key of ["changes", "web", "phone"]) {
+    const open = new RegExp(`\\b${key}:\\s*\\[`).exec(entry);
+    if (!open) continue;
+    lines += countArrayElements(source, from + open.index + open[0].length - 1) ?? 0;
+  }
+  return { date: date[1], lines };
 }
 
 /** Changed files a member could notice: shipped code, not its tests, tooling or notes. */

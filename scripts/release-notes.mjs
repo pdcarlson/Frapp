@@ -5,12 +5,15 @@
 //   npm run -s release-notes            the newest entry
 //   npm run -s release-notes -- --all   every entry, newest first
 //
-// Paste the same block into TestFlight's "What to Test" and Play Console's
-// "Release notes". Play caps a language's notes at 500 characters, so the
-// script says when the block is longer and prints a short version to use
-// there (the title plus as many lines as fit).
+// The first block is the whole entry, for a group chat. When the entry has
+// web-only lines, a second block leaves them out: paste that one into
+// TestFlight's "What to Test" and Play Console's "Release notes", which only
+// phone testers read. Play caps a language's notes at 500 characters, so the
+// script says when the store block is longer and prints a short version to
+// use there (the title plus as many lines as fit).
 import {
   RELEASE_NOTES,
+  releaseNoteGroups,
   releaseNoteText,
 } from "../packages/validation/src/release-notes.ts";
 
@@ -25,21 +28,37 @@ if (notes.length === 0) {
   process.exit(1);
 }
 
-console.log(notes.map(releaseNoteText).join("\n\n"));
+console.log(notes.map((note) => releaseNoteText(note)).join("\n\n"));
 
 if (!all) {
   const [note] = notes;
-  const full = releaseNoteText(note);
-  if (full.length > PLAY_LIMIT) {
-    let short = { ...note, changes: [] };
-    for (const change of note.changes) {
-      const next = { ...short, changes: [...short.changes, change] };
-      if (releaseNoteText(next).length > PLAY_LIMIT) break;
-      short = next;
+  const phone = ["everywhere", "phone"];
+  const store = releaseNoteText(note, phone);
+  if (note.web?.length) {
+    console.log(
+      "\n---- TestFlight and Google Play (leaves out the web-only lines) ----\n",
+    );
+    console.log(store);
+  }
+  if (store.length > PLAY_LIMIT) {
+    // Lines in the order the block shows them, until the next would not fit.
+    let short = { ...note, changes: [], web: [], phone: [] };
+    for (const group of releaseNoteGroups(note, phone)) {
+      const key = group.place === "everywhere" ? "changes" : group.place;
+      let full = false;
+      for (const change of group.lines) {
+        const next = { ...short, [key]: [...short[key], change] };
+        if (releaseNoteText(next, phone).length > PLAY_LIMIT) {
+          full = true;
+          break;
+        }
+        short = next;
+      }
+      if (full) break;
     }
     console.log(
-      `\n---- Google Play (the block above is ${full.length} characters; Play takes ${PLAY_LIMIT}) ----\n`,
+      `\n---- Google Play (the store block is ${store.length} characters; Play takes ${PLAY_LIMIT}) ----\n`,
     );
-    console.log(releaseNoteText(short));
+    console.log(releaseNoteText(short, phone));
   }
 }

@@ -39,6 +39,12 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
+// A split entry's switch takes the chapter accent, which would otherwise pull
+// the API client into a spec about when the sheet opens.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#F4CB63" }),
+}));
+
 const storage = vi.mocked(AsyncStorage);
 let values: Map<string, string>;
 let bootKeys: string[];

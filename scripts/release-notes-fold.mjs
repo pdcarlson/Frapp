@@ -9,9 +9,15 @@
 // entry dated `--date` at the top, under a plain title anyone may reword.
 // Lines fold in file-name order.
 //
-// The notes file is edited as text, keeping `date:` and `changes: [...]`
-// literal, one string per line, as `scripts/ci/release-notes-freshness.mjs`
-// reads it. A line is written with `JSON.stringify`, so no line text can end
+// Which list it joins is its folder: `web/` and `phone/` hold lines only true
+// there, the folder itself lines true on both (`changes`). A line at the top
+// that still opens "On the web, " or "On your phone, " (the rule before the
+// split) joins that list without those words, so a PR written the old way
+// still lands under the right heading.
+//
+// The notes file is edited as text, keeping `date:` and `changes: [...]`,
+// `web: [...]` and `phone: [...]` literal, one string per line, as
+// `scripts/ci/release-notes-freshness.mjs` reads it. A line is written with `JSON.stringify`, so no line text can end
 // the string it sits in. The writing rules are the notes file's own
 // `releaseNoteLineProblem`; a bad or misnamed line file fails here before
 // anything is written, and on every PR through
@@ -39,26 +45,63 @@ export const DEFAULT_TITLE = "New in this update";
 /** A line file's name: lowercase, ending `.md`. */
 const LINE_FILE = /^[a-z0-9][a-z0-9._-]*\.md$/;
 
+/** The places a line can be, and the folder each one's files sit in. */
+const PLACE_DIRS = Object.freeze({ web: "web", phone: "phone" });
+/** Where each place's lines go in an entry, in the order they're written. */
+const PLACE_KEYS = Object.freeze({
+  everywhere: "changes",
+  web: "web",
+  phone: "phone",
+});
+/** The old way to say a line's place, kept for lines written before the split. */
+const LEGACY_PREFIXES = Object.freeze([
+  ["On the web, ", "web"],
+  ["On your phone, ", "phone"],
+]);
+
+function readDir(dir) {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
 /**
- * The folder's line files in name order, and the names that can't be one
- * (another extension, upper case, a subfolder), which would otherwise sit
- * there unread while their author thinks the line is in.
+ * The line files in name order, as paths under `dir` (`a.md`, `web/b.md`),
+ * and the names that can't be one (another extension, upper case, a folder
+ * other than `web/` and `phone/`), which would otherwise sit there unread
+ * while their author thinks the line is in.
  */
 export function lineFiles(dir = LINES_DIR) {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return { files: [], stray: [] };
-  }
   const files = [];
   const stray = [];
-  for (const entry of entries) {
+  const places = new Set(Object.values(PLACE_DIRS));
+  for (const entry of readDir(dir)) {
     if (entry.isFile() && entry.name === "README.md") continue;
     if (entry.isFile() && LINE_FILE.test(entry.name)) files.push(entry.name);
-    else stray.push(entry.name);
+    else if (entry.isDirectory() && places.has(entry.name)) {
+      for (const inner of readDir(join(dir, entry.name))) {
+        const name = `${entry.name}/${inner.name}`;
+        if (inner.isFile() && LINE_FILE.test(inner.name)) files.push(name);
+        else stray.push(name);
+      }
+    } else stray.push(entry.name);
   }
   return { files: files.sort(), stray: stray.sort() };
+}
+
+/** A line file's place and text, from its folder or an old-style opening. */
+export function placeOf(name, text) {
+  const folder = name.includes("/") ? name.slice(0, name.indexOf("/")) : null;
+  if (folder) return { place: folder, line: text };
+  for (const [prefix, place] of LEGACY_PREFIXES) {
+    if (text.startsWith(prefix) && text.length > prefix.length) {
+      const rest = text.slice(prefix.length);
+      return { place, line: rest[0].toUpperCase() + rest.slice(1) };
+    }
+  }
+  return { place: "everywhere", line: text };
 }
 
 /** Reads and checks the waiting lines; throws naming every bad file. */
@@ -66,13 +109,13 @@ export function readLines(dir = LINES_DIR) {
   const { files, stray } = lineFiles(dir);
   const problems = stray.map(
     (name) =>
-      `${name} isn't a line file: name it like \`short-name.md\`, lowercase`,
+      `${name} isn't a line file: name it like \`short-name.md\`, lowercase, at the top or in web/ or phone/`,
   );
   const lines = files.map((name) => {
     const text = readFileSync(join(dir, name), "utf8");
     const problem = releaseNoteLineProblem(text);
     if (problem) problems.push(`${name} ${problem}`);
-    return { name, line: text.trim() };
+    return { name, ...placeOf(name, text.trim()) };
   });
   if (problems.length > 0) {
     throw new Error(
@@ -109,60 +152,118 @@ export function closingBracket(source, open) {
 }
 
 const DATE = /\bdate:\s*["'](\d{4}-\d{2}-\d{2})["']/g;
-const CHANGES = /\bchanges:\s*\[/g;
+
+/** `lines` as `{place, line}`; a bare string is a line for both. */
+function byPlace(lines) {
+  const groups = { everywhere: [], web: [], phone: [] };
+  for (const item of lines) {
+    const { place, line } =
+      typeof item === "string" ? { place: "everywhere", line: item } : item;
+    if (!groups[place]) throw new Error(`Not a place: ${place}`);
+    groups[place].push(line);
+  }
+  return groups;
+}
+
+const quoted = (lines) => lines.map((line) => `      ${JSON.stringify(line)},`);
+
+/** Where the list `key: [` opens and closes inside `[from, to)`, or null. */
+function listIn(source, key, from, to) {
+  const pattern = new RegExp(`\\b${key}:\\s*\\[`, "g");
+  pattern.lastIndex = from;
+  const found = pattern.exec(source);
+  if (!found || found.index >= to) return null;
+  const open = found.index + found[0].length - 1;
+  const close = closingBracket(source, open);
+  if (close === -1 || close >= to) {
+    throw new Error(`A ${key} list never closes`);
+  }
+  return { open, close };
+}
+
+/** `source` with `strings` after the last element of the list closing at `close`. */
+function appendTo(source, close, strings) {
+  // After the last element (or the `[` of an empty list), adding the comma
+  // that element may lack; the `]` moves to a line of its own if it shared one.
+  let last = close - 1;
+  while (/\s/.test(source[last])) last -= 1;
+  const comma = source[last] === "," || source[last] === "[" ? "" : ",";
+  const sameLine = !source.slice(last + 1, close).includes("\n");
+  return (
+    source.slice(0, last + 1) +
+    comma +
+    "\n" +
+    strings.join("\n") +
+    (sameLine ? "\n    " : "") +
+    source.slice(last + 1)
+  );
+}
 
 /**
- * The notes source with `lines` folded in under `date` (`YYYY-MM-DD`). Throws
- * when the file isn't the shape it expects, rather than guessing.
+ * The notes source with `lines` folded in under `date` (`YYYY-MM-DD`). Each
+ * line is `{place, line}` (`everywhere`, `web` or `phone`), or a string for a
+ * line true on both. Throws when the file isn't the shape it expects, rather
+ * than guessing.
  */
 export function foldLines(source, lines, date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error(`Not a YYYY-MM-DD date: ${date}`);
   }
   if (lines.length === 0) return source;
+  const groups = byPlace(lines);
   const freeze = source.indexOf(
     "Object.freeze([",
     source.indexOf("RELEASE_NOTES"),
   );
   if (freeze === -1) throw new Error("No RELEASE_NOTES list found");
   const listOpen = freeze + "Object.freeze(".length;
-  const strings = lines.map((line) => `      ${JSON.stringify(line)},`);
 
   DATE.lastIndex = listOpen;
   const newest = DATE.exec(source);
   if (newest && newest[1] >= date) {
-    // The newest entry runs to the next entry's date, or the end of the list.
-    const next = DATE.exec(source);
-    const entryEnd = next ? next.index : source.length;
-    CHANGES.lastIndex = newest.index;
-    const changes = CHANGES.exec(source);
-    if (!changes || changes.index >= entryEnd) {
-      throw new Error(`The ${newest[1]} entry has no changes list`);
+    let out = source;
+    // One place at a time, finding the entry again after each edit.
+    for (const [place, key] of Object.entries(PLACE_KEYS)) {
+      if (groups[place].length === 0) continue;
+      const start = newest.index;
+      DATE.lastIndex = start + 1;
+      const next = DATE.exec(out);
+      const end = next ? next.index : out.length;
+      const changes = listIn(out, "changes", start, end);
+      if (!changes) {
+        throw new Error(`The ${newest[1]} entry has no changes list`);
+      }
+      const list = listIn(out, key, start, end);
+      if (list) {
+        out = appendTo(out, list.close, quoted(groups[place]));
+        continue;
+      }
+      // No list for this place yet: open one after the lists before it.
+      let after = changes.close;
+      if (key === "phone")
+        after = listIn(out, "web", start, end)?.close ?? after;
+      const comma = out[after + 1] === "," ? after + 2 : after + 1;
+      out =
+        out.slice(0, comma) +
+        `${out[after + 1] === "," ? "" : ","}\n    ${key}: [\n${quoted(groups[place]).join("\n")}\n    ],` +
+        out.slice(comma);
     }
-    const open = changes.index + changes[0].length - 1;
-    const close = closingBracket(source, open);
-    if (close === -1 || close >= entryEnd) {
-      throw new Error(`The ${newest[1]} entry's changes list never closes`);
-    }
-    // After the last element (or the `[` of an empty list), adding the comma
-    // that element may lack; the `]` moves to a line of its own if it shared one.
-    let last = close - 1;
-    while (/\s/.test(source[last])) last -= 1;
-    const comma = source[last] === "," || source[last] === "[" ? "" : ",";
-    const sameLine = !source.slice(last + 1, close).includes("\n");
-    return (
-      source.slice(0, last + 1) +
-      comma +
-      "\n" +
-      strings.join("\n") +
-      (sameLine ? "\n    " : "") +
-      source.slice(last + 1)
-    );
+    return out;
   }
 
+  const lists = [
+    `    changes: [\n${quoted(groups.everywhere)
+      .map((l) => `${l}\n`)
+      .join("")}    ],\n`,
+  ];
+  for (const key of ["web", "phone"]) {
+    if (groups[key].length > 0) {
+      lists.push(`    ${key}: [\n${quoted(groups[key]).join("\n")}\n    ],\n`);
+    }
+  }
   const entry =
-    `  {\n    date: "${date}",\n    title: ${JSON.stringify(DEFAULT_TITLE)},\n    changes: [\n` +
-    `${strings.join("\n")}\n    ],\n  },\n`;
+    `  {\n    date: "${date}",\n    title: ${JSON.stringify(DEFAULT_TITLE)},\n` +
+    `${lists.join("")}  },\n`;
   const after = source.indexOf("\n", listOpen) + 1;
   return source.slice(0, after) + entry + source.slice(after);
 }
@@ -198,7 +299,7 @@ export function runCli(
     notesPath,
     foldLines(
       source,
-      lines.map((l) => l.line),
+      lines.map(({ place, line }) => ({ place, line })),
       date,
     ),
   );

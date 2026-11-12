@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
-import { RELEASE_NOTES, formatReleaseNoteDate } from "@repo/validation";
+import {
+  RELEASE_NOTES,
+  formatReleaseNoteDate,
+  releaseNoteGroups,
+} from "@repo/validation";
 import { SitePage } from "../../components/site-page";
 import { routeMetadata } from "../../lib/route-metadata";
 
@@ -16,6 +20,8 @@ export const metadata: Metadata = routeMetadata({
  * account menu → What's new and `npm run release-notes`, so this page and the
  * apps cannot disagree. Entries are written there, never here; how to write
  * one is the comment at the top of `packages/validation/src/release-notes.ts`.
+ * An entry split by place lists its lines under Everywhere, On the web and On
+ * your phone, as the apps do (`releaseNoteGroups`).
  *
  * Built at deploy time like the rest of the site, so a new entry appears here
  * on the next landing deploy after it merges.
@@ -45,11 +51,20 @@ export default function ChangelogPage() {
                 <h2 id={`note-${note.date}`} className="mt-2 text-title">
                   {note.title}
                 </h2>
-                <ul className="mt-4 list-disc space-y-2 pl-5 text-body text-muted-foreground marker:text-border">
-                  {note.changes.map((change) => (
-                    <li key={change}>{change}</li>
-                  ))}
-                </ul>
+                {releaseNoteGroups(note).map((group) => (
+                  <section key={group.place} className="mt-4">
+                    {group.label ? (
+                      <h3 className="mb-2 text-caption font-medium text-foreground">
+                        {group.label}
+                      </h3>
+                    ) : null}
+                    <ul className="list-disc space-y-2 pl-5 text-body text-muted-foreground marker:text-border">
+                      {group.lines.map((change) => (
+                        <li key={change}>{change}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
               </article>
             </li>
           ))}

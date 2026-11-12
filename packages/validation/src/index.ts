@@ -25,6 +25,8 @@ export {
   formatReleaseNoteDate,
   releaseNoteText,
   releaseNoteVersion,
+  releaseNoteGroups,
+  openingReleaseNotePlace,
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
   decideWhatsNew,
@@ -32,6 +34,7 @@ export {
   isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   type ReleaseNote,
+  type ReleaseNotePlace,
   type ReleaseNoteVersion,
   type WhatsNewDecision,
 } from "./release-notes";
