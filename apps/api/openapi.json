@@ -12363,6 +12363,124 @@
         ]
       }
     },
+    "/v1/ai/runs": {
+      "get": {
+        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
+        "operationId": "AiRunController_list_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only runs of this kind (`minutes_draft`).",
+            "schema": {
+              "example": "minutes_draft",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiRunDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's AI runs",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}": {
+      "get": {
+        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
+        "operationId": "AiRunController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get one AI run",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -20716,6 +20834,98 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "AiRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The run kind, `snake_case`.",
+            "example": "minutes_draft"
+          },
+          "label": {
+            "type": "string",
+            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
+            "example": "Drafting minutes"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempt_count": {
+            "type": "number",
+            "description": "Tries so far, the one in progress included.",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "unknown_kind",
+              "ai_unavailable",
+              "not_permitted",
+              "source_gone",
+              "spend_limit",
+              "invalid_result",
+              "handler_failed",
+              "attempts_exhausted"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
+          },
+          "result_ref": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "status",
+          "attempt_count",
+          "max_attempts",
+          "failure_reason",
+          "failure_message",
+          "result_ref",
+          "created_at",
+          "started_at",
+          "finished_at"
         ]
       },
       "CreateDiscordImportDto": {

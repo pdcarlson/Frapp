@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: The AI run queue (#4310)
+
+### 20261112020000_ai_runs.sql
+
+- **Purpose**: Adds `ai_runs`, one row per background AI job (drafting minutes, transcribing, indexing), and the functions the API's queue calls: `enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer)` makes one run per `(chapter_id, kind, dedupe_key)` and returns the existing one on a repeat, and `claim_ai_run(text, timestamptz, integer)` leases the oldest claimable run with `for update skip locked`, raises its `attempt_count`, and fails runs that used their tries (`attempts_exhausted`). Both are security invoker, EXECUTE for `service_role` only. `ai_run_ref_is_ids_only(jsonb)` backs the checks on `input_ref` and `result_ref`, so a run holds uuids, numbers, booleans and lists of them, never text (ADR-28 decision 8). RLS on, no policies (API only, service role). Indexes: the unique `(chapter_id, kind, dedupe_key)`, `idx_ai_runs_claimable` on `(created_at, id)` for queued and running runs, `idx_ai_runs_requester` on `(chapter_id, requested_by, created_at desc)`, and `idx_ai_runs_finished` on `finished_at` for finished runs. Writes no row and changes no table. The rule is [`spec/architecture/README.md` § 13](../../../spec/architecture/README.md#13-ai-corpus-architecture-v1).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'ai_runs';` returns `true`, `select count(*) from pg_policies where tablename = 'ai_runs';` returns `0`, and `select has_function_privilege('authenticated', 'public.claim_ai_run(text, timestamptz, integer)', 'execute');` returns `false` while the same for `service_role` returns `true`. `select public.ai_run_ref_is_ids_only('{"notes":"text"}'::jsonb);` returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table. The newer API with `AI_ENABLED` unset never touches it either (no claim, no prune, and the two `/v1/ai/runs` routes answer 404 `ai.not_available`); with `AI_ENABLED` on against an unmigrated database, the worker's tick fails each 30 seconds and reports `ai-run-sweep-tick` to Sentry. A new table and functions, so no lock on any existing table beyond the two foreign keys' brief `SHARE ROW EXCLUSIVE` on `chapters` and `users` while the table is created. `if not exists` and `create or replace` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-runs.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-ai-run-queue-20261112020000) § Rollback the AI run queue.
+
 ## 2026-11-12: Unread badges count per channel (#3728)
 
 ### 20261112010000_chat_unread_counts_per_channel.sql
