@@ -220,8 +220,8 @@ export function useConfirmDialog(): {
               value={typed}
               autoComplete="off"
               autoCapitalize="off"
+              // No placeholder: one showing the name reads as already typed.
               spellCheck={false}
-              placeholder={shown.typeToConfirm.text}
               onChange={(event) => setTyped(event.target.value)}
             />
           </form>
