@@ -20,6 +20,8 @@ import {
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import {
+  MEETING_COPY,
+  MEETING_LIST_COPY,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_OTHER_LABEL_MAX_LENGTH,
@@ -137,12 +139,12 @@ export function MinutesPage({ id }: { id: string }) {
       <div className="mx-auto max-w-3xl space-y-4">
         <ErrorState
           title={
-            missing ? "These minutes aren't here" : "Couldn't load the minutes"
+            missing ? MEETING_COPY.missingTitle : MEETING_COPY.loadFailedTitle
           }
           description={
             missing
-              ? "They were deleted, or they aren't shared with you."
-              : "Check your connection and try again."
+              ? MEETING_COPY.missingBody
+              : MEETING_COPY.loadFailedBody
           }
           onRetry={missing ? undefined : () => void query.refetch()}
         />
@@ -293,10 +295,9 @@ function Minutes({
 
   async function handlePost() {
     const answer = await confirm({
-      title: "Post these minutes?",
-      description:
-        "Everyone the meeting's event invites can read them, and each of them is told once. You can still edit them after.",
-      confirmLabel: "Post minutes",
+      title: MEETING_COPY.postConfirmTitle,
+      description: MEETING_COPY.postConfirmBody,
+      confirmLabel: MEETING_COPY.post,
     });
     if (!answer) return;
     const expectedUpdatedAt = dirty ? (await save())?.updated_at : loadedAt;
@@ -304,14 +305,14 @@ function Minutes({
     try {
       await post.mutateAsync({ id: meeting.id, expectedUpdatedAt });
       setEditing(false);
-      toast({ title: "Minutes posted" });
+      toast({ title: MEETING_COPY.posted_toast });
     } catch (error) {
       if (codeOf(error) === "meeting.stale") {
         setStale(true);
         return;
       }
       toast({
-        title: "Couldn't post the minutes",
+        title: MEETING_COPY.postFailed,
         description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
@@ -396,7 +397,7 @@ function Minutes({
             </Button>
             {isDraft ? (
               <Button disabled={busy} onClick={() => void handlePost()}>
-                Post minutes
+                {MEETING_COPY.post}
               </Button>
             ) : null}
           </>
@@ -433,10 +434,10 @@ function Minutes({
           {typeLabel} meeting, {when}
         </p>
         {isDraft ? (
-          <Badge variant="outline">Draft</Badge>
+          <Badge variant="outline">{MEETING_COPY.draftBadge}</Badge>
         ) : meeting.posted_at ? (
           <p className="text-caption text-muted-foreground">
-            Posted {meetingDayLabel(meeting.posted_at)}
+            {MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}
           </p>
         ) : null}
       </header>
@@ -447,15 +448,14 @@ function Minutes({
           className="space-y-2 rounded-lg border border-warning/30 bg-warning-tint p-3 text-sm"
         >
           <p>
-            Someone else saved these minutes since you opened them. Copy
-            anything you want to keep, then load their version.
+            {MEETING_COPY.stale}
           </p>
           <Button
             size="sm"
             variant="secondary"
             onClick={() => void loadTheirs()}
           >
-            Load their version
+            {MEETING_COPY.loadTheirs}
           </Button>
         </div>
       ) : null}
@@ -530,7 +530,7 @@ function Minutes({
 
         {!editing && shown.length === 0 ? (
           <InlineNote>
-            Nothing has been written in these minutes yet.
+            {MEETING_COPY.nothingWritten}
           </InlineNote>
         ) : null}
 
@@ -627,20 +627,18 @@ function Attendees({
   const attendees = meeting.attendees;
   if (!attendees) {
     return (
-      <InlineNote>The event is gone, so its check-ins are too.</InlineNote>
+      <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>
     );
   }
   if (!hasAttendees(meeting)) {
     return (
-      <InlineNote>
-        Nobody has checked in yet. Who checked in to the event shows here.
-      </InlineNote>
+      <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>
     );
   }
   const groups = [
-    { label: "Present", ids: attendees.present },
-    { label: "Late", ids: attendees.late },
-    { label: "Excused", ids: attendees.excused },
+    { label: MEETING_LIST_COPY.present, ids: attendees.present },
+    { label: MEETING_LIST_COPY.late, ids: attendees.late },
+    { label: MEETING_LIST_COPY.excused, ids: attendees.excused },
   ].filter((group) => group.ids.length > 0);
   return (
     <dl className="space-y-2 text-sm">

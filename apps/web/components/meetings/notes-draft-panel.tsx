@@ -12,8 +12,10 @@ import {
 } from "@repo/hooks";
 import {
   MEETING_DRAFT_FAILURE_COPY,
+  MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
   STANDARDS_MEETING_NOTE,
+  meetingLocalDay,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,19 +27,6 @@ import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { RecordingUpload } from "@/components/meetings/recording-upload";
 import { getErrorMessage } from "@/lib/utils";
-
-/** `2026-11-09` for the calendar day `value` falls on where the reader is. */
-export function localDayOf(value: string): string {
-  const date = new Date(value);
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-function leftOutLine(count: number): string {
-  return count === 1
-    ? "One drafted line was left out because nothing in your notes backed it."
-    : `${count} drafted lines were left out because nothing in your notes backed them.`;
-}
 
 /**
  * The notes box above a draft's sections (`spec/behavior/meetings.md`
@@ -126,12 +115,12 @@ export function NotesDraftPanel({
   async function handleDraft() {
     const text = notes.trim();
     if (!text) {
-      setProblem("Paste or type your notes first.");
+      setProblem(MEETING_NOTES_COPY.empty);
       return;
     }
     if (text.length > MEETING_NOTES_MAX_LENGTH) {
       setProblem(
-        `Notes can be up to ${MEETING_NOTES_MAX_LENGTH.toLocaleString("en-US")} characters, and these are ${text.length.toLocaleString("en-US")}. Shorten them, or draft the meeting in two parts.`,
+        MEETING_NOTES_COPY.tooLong(MEETING_NOTES_MAX_LENGTH, text.length),
       );
       return;
     }
@@ -141,16 +130,15 @@ export function NotesDraftPanel({
         // A No leaves everything as it was: the notes stay in the box.
         if (!(await ensureConsent())) return;
       } catch {
-        setProblem("Couldn't check your AI choice. Try again in a moment.");
+        setProblem(MEETING_NOTES_COPY.consentCheckFailed);
         return;
       }
     }
     if (hasContent) {
       const answer = await confirm({
-        title: "Replace what's written?",
-        description:
-          "The draft replaces the sections below with what it finds in your notes. Who checked in stays as it is.",
-        confirmLabel: "Draft minutes",
+        title: MEETING_NOTES_COPY.replaceTitle,
+        description: MEETING_NOTES_COPY.replaceBodyDraft,
+        confirmLabel: MEETING_NOTES_COPY.draft,
         tone: "default",
       });
       if (!answer) return;
@@ -163,7 +151,7 @@ export function NotesDraftPanel({
         body: {
           notes: text,
           expected_updated_at: expected,
-          meeting_date: localDayOf(eventStart),
+          meeting_date: meetingLocalDay(eventStart),
         },
       });
     } catch (error) {
@@ -177,10 +165,7 @@ export function NotesDraftPanel({
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
       else
         setProblem(
-          getErrorMessage(
-            error,
-            "Couldn't start the draft. Your notes are still in the box, so try again.",
-          ),
+          getErrorMessage(error, MEETING_NOTES_COPY.startFailed),
         );
     }
   }
@@ -190,18 +175,18 @@ export function NotesDraftPanel({
     try {
       await discard.mutateAsync({ id: meetingId, keepNotes: true });
     } catch (error) {
-      setProblem(getErrorMessage(error, "Couldn't stop the draft. Try again."));
+      setProblem(getErrorMessage(error, MEETING_NOTES_COPY.stopFailed));
     }
   }
 
   async function handleClear() {
     const answer = await confirm({
-      title: "Clear your notes?",
+      title: MEETING_NOTES_COPY.clearTitle,
       description:
         recording && recording.status !== "none"
-          ? "The notes, the recording and its transcript are removed for good. What is written in the minutes below stays."
-          : "The notes are removed for good. What is written in the minutes below stays.",
-      confirmLabel: "Clear notes",
+          ? MEETING_NOTES_COPY.clearBodyRecording
+          : MEETING_NOTES_COPY.clearBody,
+      confirmLabel: MEETING_NOTES_COPY.clear,
       tone: "destructive",
     });
     if (!answer) return;
@@ -214,19 +199,16 @@ export function NotesDraftPanel({
       setNotes("");
       setProblem(null);
     } catch (error) {
-      setProblem(
-        getErrorMessage(error, "Couldn't clear the notes. Try again."),
-      );
+      setProblem(getErrorMessage(error, MEETING_NOTES_COPY.clearFailed));
     }
   }
 
   async function handleUse() {
     if (hasContent) {
       const answer = await confirm({
-        title: "Replace what's written?",
-        description:
-          "The draft replaces the sections below with what it found in your notes. Who checked in stays as it is.",
-        confirmLabel: "Use the draft",
+        title: MEETING_NOTES_COPY.replaceTitle,
+        description: MEETING_NOTES_COPY.replaceBodyUse,
+        confirmLabel: MEETING_NOTES_COPY.useDraft,
         tone: "default",
       });
       if (!answer) return;
@@ -240,9 +222,7 @@ export function NotesDraftPanel({
     } catch (error) {
       if (codeOf(error) === "meeting.stale") onStale();
       else
-        setProblem(
-          getErrorMessage(error, "Couldn't use the draft. Try again."),
-        );
+        setProblem(getErrorMessage(error, MEETING_NOTES_COPY.useFailed));
     }
   }
 
@@ -250,7 +230,7 @@ export function NotesDraftPanel({
   const status = problem
     ? { tone: "problem" as const, text: problem }
     : drafting
-      ? { tone: "quiet" as const, text: "Drafting minutes from your notes" }
+      ? { tone: "quiet" as const, text: MEETING_NOTES_COPY.drafting }
       : needsConsent
         ? {
             tone: "quiet" as const,
@@ -267,16 +247,16 @@ export function NotesDraftPanel({
           : waiting
             ? {
                 tone: "quiet" as const,
-                text: "The minutes changed while the draft was being written, so it wasn't put in.",
+                text: MEETING_NOTES_COPY.waiting,
               }
             : state.status === "applied"
               ? {
                   tone: "quiet" as const,
-                  text: "Drafted from your notes. Read it through before you post.",
+                  text: MEETING_NOTES_COPY.applied,
                 }
               : {
                   tone: "quiet" as const,
-                  text: "Your notes go to an AI provider to write the draft. Nothing is posted until you post it.",
+                  text: MEETING_NOTES_COPY.idle,
                 };
 
   const reviewed = state.status === "applied" || state.status === "ready";
@@ -289,11 +269,10 @@ export function NotesDraftPanel({
     >
       <div className="space-y-1">
         <h3 id={`${ids}-heading`} className="text-base font-semibold">
-          Your notes
+          {MEETING_NOTES_COPY.heading}
         </h3>
         <p className="text-caption text-muted-foreground">
-          Rough is fine. The draft keeps only what your notes say, and lists
-          what they leave out.
+          {MEETING_NOTES_COPY.hint}
         </p>
       </div>
       {recording?.available && recording.blocked !== "chapter_off" ? (
@@ -318,7 +297,7 @@ export function NotesDraftPanel({
         aria-labelledby={`${ids}-heading`}
         aria-describedby={`${ids}-status`}
         aria-invalid={problem ? true : undefined}
-        placeholder="Paste or type what you wrote down during the meeting."
+        placeholder={MEETING_NOTES_COPY.placeholder}
         rows={8}
         value={notes}
         disabled={drafting || disabled}
@@ -334,7 +313,7 @@ export function NotesDraftPanel({
             disabled={discard.isPending || request.isPending}
             onClick={() => void handleStop()}
           >
-            Stop
+            {MEETING_NOTES_COPY.stop}
           </Button>
         ) : (
           <Button
@@ -342,7 +321,7 @@ export function NotesDraftPanel({
             disabled={disabled}
             onClick={() => void handleDraft()}
           >
-            {reviewed ? "Draft again" : "Draft minutes"}
+            {reviewed ? MEETING_NOTES_COPY.draftAgain : MEETING_NOTES_COPY.draft}
           </Button>
         )}
         {waiting ? (
@@ -350,7 +329,7 @@ export function NotesDraftPanel({
             disabled={disabled || use.isPending}
             onClick={() => void handleUse()}
           >
-            Use the draft
+            {MEETING_NOTES_COPY.useDraft}
           </Button>
         ) : null}
         {!drafting &&
@@ -362,7 +341,7 @@ export function NotesDraftPanel({
             disabled={disabled || discard.isPending}
             onClick={() => void handleClear()}
           >
-            Clear notes
+            {MEETING_NOTES_COPY.clear}
           </Button>
         ) : null}
         {/* A draft the AI wrote can be reported, like an Ask answer. */}
@@ -388,7 +367,9 @@ export function NotesDraftPanel({
       </p>
       {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
         <div className="space-y-1 border-t border-border pt-3">
-          <h4 className="text-sm font-semibold">To fill in</h4>
+          <h4 className="text-sm font-semibold">
+            {MEETING_NOTES_COPY.toFillIn}
+          </h4>
           {gaps.length > 0 ? (
             <ul role="list" className="list-disc space-y-1 pl-5 text-sm">
               {gaps.map((gap, index) => (
@@ -398,7 +379,7 @@ export function NotesDraftPanel({
           ) : null}
           {leftOut > 0 ? (
             <p className="text-sm text-muted-foreground">
-              {leftOutLine(leftOut)}
+              {MEETING_NOTES_COPY.leftOut(leftOut)}
             </p>
           ) : null}
         </div>

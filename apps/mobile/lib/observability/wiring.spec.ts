@@ -7,12 +7,11 @@ function source(relative: string): string {
 }
 
 describe("mobile observability wiring", () => {
-  it("initializes PostHog then wraps Sentry beforeSend, and does not instrument Ask", () => {
+  it("initializes PostHog then wraps Sentry beforeSend", () => {
     const layout = source("app/_layout.tsx");
     expect(layout).toContain("initMobilePostHog()");
     expect(layout).toContain("withPostHogSentryCorrelation");
     expect(layout).toContain("ObservabilityIdentityProvider");
-    expect(layout).not.toContain("lib/ask/corpus");
     expect(layout).not.toMatch(/mobileReplayIntegration/);
   });
 
@@ -31,12 +30,21 @@ describe("mobile observability wiring", () => {
     expect(metro).not.toContain("getDefaultConfig");
   });
 
-  it("does not emit PostHog or Sentry from the synthetic Ask corpus", () => {
-    const corpus = source("lib/ask/corpus.ts");
-    expect(corpus).not.toMatch(/posthog/i);
-    expect(corpus).not.toMatch(/Sentry\./);
-    expect(corpus).not.toContain("captureException");
-    expect(corpus).not.toContain("sentry-error-correlated");
+  it("sends no question, answer or source text from Ask to PostHog or Sentry", () => {
+    // `00-rules`: no prompt or answer text in any log or event. The Ask
+    // surfaces report nothing of their own; the API owns Ask's telemetry.
+    for (const file of [
+      "components/ask/ask-sheet.tsx",
+      "components/ask/answer-card.tsx",
+      "lib/ask/source-route.ts",
+      "components/minutes/notes-draft-sheet.tsx",
+    ]) {
+      const text = source(file);
+      expect(text).not.toMatch(/posthog/i);
+      expect(text).not.toMatch(/Sentry\./);
+      expect(text).not.toContain("captureException");
+      expect(text).not.toMatch(/console\.(log|warn|error)/);
+    }
   });
 
   it("does not depend on PostHog session-replay native or widen React", () => {

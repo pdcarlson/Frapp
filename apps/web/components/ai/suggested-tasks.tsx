@@ -17,6 +17,7 @@ import {
 import { memberLabel } from "@repo/hooks/display-names";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
+import { AI_SUGGESTION_COPY, aiSuggestionRefusalLine } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -105,18 +106,10 @@ function editsFor(
 
 /** Why an accept or dismiss was refused, in words an officer can act on. */
 function refusalLine(error: unknown): string {
-  switch (codeOf(error)) {
-    case "ai.suggestion.decided":
-      return "Another officer already decided this one.";
-    case "ai.suggestion.expired":
-      return "This suggestion expired.";
-    case "ai.suggestion.accepting":
-      return "Another officer is accepting this one right now.";
-    case "ai.suggestion.not_found":
-      return "This suggestion is gone. The minutes it came from changed.";
-    default:
-      return getErrorMessage(error, "Try again in a moment.");
-  }
+  return (
+    aiSuggestionRefusalLine(codeOf(error)) ??
+    getErrorMessage(error, AI_SUGGESTION_COPY.tryAgain)
+  );
 }
 
 export function SuggestedTasks({
@@ -190,11 +183,11 @@ export function SuggestedTasks({
     setBusyId(item.id);
     try {
       await accept.mutateAsync({ id: item.id, task: editsFor(item, values) });
-      toast({ title: "Task created", description: item.task.title });
+      toast({ title: AI_SUGGESTION_COPY.created, description: item.task.title });
       return true;
     } catch (error) {
       toast({
-        title: "Couldn't accept the suggestion",
+        title: AI_SUGGESTION_COPY.acceptFailed,
         description: refusalLine(error),
         variant: "destructive",
       });
@@ -210,7 +203,7 @@ export function SuggestedTasks({
       await dismiss.mutateAsync(item.id);
     } catch (error) {
       toast({
-        title: "Couldn't dismiss the suggestion",
+        title: AI_SUGGESTION_COPY.dismissFailed,
         description: refusalLine(error),
         variant: "destructive",
       });
@@ -236,17 +229,15 @@ export function SuggestedTasks({
       const made = outcomes.filter((outcome) => outcome.ok).length;
       const refused = outcomes.length - made;
       toast({
-        title: made === 1 ? "1 task created" : `${made} tasks created`,
+        title: AI_SUGGESTION_COPY.createdCount(made),
         description:
-          refused > 0
-            ? `${refused} couldn't be accepted and ${refused === 1 ? "is" : "are"} still listed.`
-            : undefined,
+          refused > 0 ? AI_SUGGESTION_COPY.stillListed(refused) : undefined,
         variant: made === 0 ? "destructive" : undefined,
       });
     } catch (error) {
       toast({
-        title: "Couldn't accept the suggestions",
-        description: getErrorMessage(error, "Try again in a moment."),
+        title: AI_SUGGESTION_COPY.acceptAllFailed,
+        description: getErrorMessage(error, AI_SUGGESTION_COPY.tryAgain),
         variant: "destructive",
       });
     }
@@ -256,7 +247,7 @@ export function SuggestedTasks({
     const meeting = (meetingsQuery.data ?? []).find((row) => row.id === id);
     return meeting
       ? `${meeting.event_name}, ${meetingDayLabel(meeting.event_start_time)}`
-      : "Meeting minutes";
+      : AI_SUGGESTION_COPY.meetingFallback;
   };
 
   const renderRow = (item: WaitingSuggestion) => (
@@ -282,7 +273,7 @@ export function SuggestedTasks({
   return (
     <section aria-labelledby={headingId} className={cn("space-y-3", className)}>
       <SectionLabel id={headingId} count={items.length}>
-        Suggested tasks
+        {AI_SUGGESTION_COPY.heading}
       </SectionLabel>
       {grouped ? (
         groups.map((group) => {
@@ -290,7 +281,7 @@ export function SuggestedTasks({
           return (
             <div key={first.source.id} className="space-y-2">
               <p className="text-caption text-muted-foreground">
-                From the minutes of{" "}
+                {AI_SUGGESTION_COPY.fromMinutesOf}{" "}
                 {first.source.type === "meeting" ? (
                   <Link
                     href={meetingHref(first.source.id)}
@@ -299,7 +290,7 @@ export function SuggestedTasks({
                     {meetingName(first.source.id)}
                   </Link>
                 ) : (
-                  "a meeting"
+                  AI_SUGGESTION_COPY.aMeeting
                 )}
               </p>
               <ul className="space-y-2">{group.map(renderRow)}</ul>
@@ -309,7 +300,7 @@ export function SuggestedTasks({
       ) : (
         <>
           <p className="text-caption text-muted-foreground">
-            From the action items above. Nothing is a task until you accept it.
+            {AI_SUGGESTION_COPY.fromActionItems}
           </p>
           <ul className="space-y-2">{items.map(renderRow)}</ul>
         </>
@@ -328,10 +319,10 @@ export function SuggestedTasks({
             onClick={() => void acceptAllReady()}
           >
             {decide.isPending
-              ? "Accepting…"
+              ? AI_SUGGESTION_COPY.accepting
               : ready.length === items.length
-                ? `Accept all ${ready.length}`
-                : `Accept the ${ready.length} with an assignee and a due date`}
+                ? AI_SUGGESTION_COPY.acceptAll(ready.length)
+                : AI_SUGGESTION_COPY.acceptReady(ready.length)}
           </Button>
         </div>
       ) : null}
@@ -433,7 +424,7 @@ function SuggestedTaskRow({
               aria-label={`Assignee for ${task.title}`}
               aria-invalid={missingWho || undefined}
             >
-              <SelectValue placeholder="Who?" />
+              <SelectValue placeholder={AI_SUGGESTION_COPY.who} />
             </SelectTrigger>
             <SelectContent>
               {members.map((member) => (
@@ -448,7 +439,7 @@ function SuggestedTaskRow({
           </Select>
           {missingWho ? (
             <p role="alert" className="mt-1 text-caption text-destructive-text">
-              Pick who this is for.
+              {AI_SUGGESTION_COPY.missingWho}
             </p>
           ) : null}
         </div>
@@ -489,7 +480,7 @@ function SuggestedTaskRow({
             <Pencil className="h-4 w-4" aria-hidden="true" />
           </Button>
           <Button size="sm" disabled={disabled} onClick={onAccept}>
-            Accept
+            {AI_SUGGESTION_COPY.accept}
           </Button>
         </div>
       </div>

@@ -30,7 +30,6 @@ vi.mock("@/components/profile/profile-photo", () => ({
   PROFILE_PHOTO_SIZE: 84,
   ProfilePhoto: "ProfilePhoto",
 }));
-vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
 import {
   SkeletonBlock,

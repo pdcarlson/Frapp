@@ -141,6 +141,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useChapterRoster: () => ({ data: [] }),
 }));
 
+// Suggested tasks' entry has its own spec
+// (`components/tasks/suggested-tasks-entry.spec.tsx`).
+vi.mock("@/components/tasks/suggested-tasks-entry", () => ({
+  SuggestedTasksEntry: () => null,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
