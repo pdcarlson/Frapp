@@ -303,13 +303,13 @@ function createStyles(tokens: SignetTokens, accent: string) {
     rowPressed: {
       opacity: 0.6,
     },
-    // A tier holds roles, so it draws as a ring; a role as its color dot.
+    // A tier holds roles, so it draws as a small filled square; a role as
+    // its color dot. Filled, so it never reads as an empty checkbox.
     tierMark: {
       width: markSize,
       height: markSize,
-      borderRadius: 3,
-      borderWidth: 1.5,
-      borderColor: tokens.color.text.mutedForeground,
+      borderRadius: markSize / 4,
+      backgroundColor: tokens.color.text.muted,
     },
     dot: {
       width: markSize,

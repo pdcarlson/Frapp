@@ -338,7 +338,7 @@ function ArrangeRow({
               <DisclosureGlyph
                 color={
                   categoryPlace.first
-                    ? tokens.color.text.muted
+                    ? tokens.color.border.hairline
                     : tokens.color.text.mutedForeground
                 }
                 direction="up"
@@ -352,7 +352,7 @@ function ArrangeRow({
               <DisclosureGlyph
                 color={
                   categoryPlace.last
-                    ? tokens.color.text.muted
+                    ? tokens.color.border.hairline
                     : tokens.color.text.mutedForeground
                 }
                 direction="down"
