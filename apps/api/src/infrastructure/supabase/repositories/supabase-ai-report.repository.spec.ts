@@ -68,7 +68,7 @@ describe('SupabaseAiReportRepository — tenant scope', () => {
         createdAt: new Date(CREATED),
         expiresAt: new Date(EXPIRES),
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe('kept');
     expect(
       harness.rows('ai_reports').filter((row) => row.reported_by === USER_B),
     ).toEqual([

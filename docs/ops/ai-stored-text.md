@@ -13,6 +13,10 @@ A row is deleted:
 - when a member whose words are in it (`quoted_user_ids`) deletes their account or answers No on the AI sheet;
 - when the chapter is deleted.
 
+A report is not kept at all when the reporter or a member it quotes had already deleted their account when it was made (the table's insert trigger, `ai_reports_refuse_deleted_users`): an Ask answer can be reported up to 7 days after it was given, so a chat author can be gone by then. The member is still told their report was sent.
+
+The member's note is stored as they typed it, not sealed, so the reason and the note can be counted and read without the key. The sheet's note field is optional, and the note goes with the row's early deletions like the rest of it.
+
 No route serves a report, and the chapter's officers never see them. To read them, export the rows and open them with the key, as below for the diagnostics window, using `ai_reports` and the reports reader:
 
 ```sql

@@ -79,9 +79,9 @@ export const SystemPermissions = {
   // AI (ADR-28). `AI_USE` is in every starting tier (#4308), so a chapter
   // created today lets every active member use the AI features the president
   // turns on, once that member says yes on the AI sheet; Alumni, outside the
-  // tiers, do not hold it. `AI_ACT` is held by no seeded role. Neither gates
-  // a route yet: `AI_USE` is for the first member-facing AI route, `AI_ACT`
-  // for the acting agent (#718). Left out of the permissions catalog while
+  // tiers, do not hold it. `AI_ACT` is held by no seeded role. `AI_USE` gates
+  // Ask and Report this; `AI_ACT` gates nothing until the acting agent
+  // (#718). Left out of the permissions catalog while
   // the server switch is off (`RbacService.getPermissionsCatalog`).
   AI_USE: 'ai:use',
   AI_ACT: 'ai:act',

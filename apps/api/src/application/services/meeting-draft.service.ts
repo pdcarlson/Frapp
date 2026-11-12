@@ -19,6 +19,7 @@ import {
   STANDARDS_MEETING_REFUSAL,
   STANDARDS_MEETING_TYPE,
   isMeetingDraftFailure,
+  isModuleEnabled,
   readMeetingContent,
   type MeetingContent,
   type MeetingDraftFailure,
@@ -45,6 +46,7 @@ import {
 } from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
 import { RbacService } from './rbac.service';
+import type { EnabledModules } from './module-gate';
 import { AiRunService } from './ai-run.service';
 import {
   AiRunFailure,
@@ -362,6 +364,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     chapterId: string,
     meetingId: string,
     userId: string,
+    enabledModules: EnabledModules | null,
   ): Promise<{
     /** One per request: a draft asked for again is a new thing to report. */
     requestId: string;
@@ -373,6 +376,22 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     /** The officer whose notes they are. */
     requestedBy: string | null;
   } | null> {
+    // The draft routes' own gates (`@RequireModule('meetings')` and
+    // `meetings:record` on the controller): a report reads no draft its
+    // reporter could not open there.
+    if (
+      enabledModules !== null &&
+      !isModuleEnabled(enabledModules, 'meetings')
+    ) {
+      return null;
+    }
+    const held = await this.rbac.getEffectivePermissions(chapterId, userId);
+    if (
+      !held.includes('*') &&
+      !held.includes(SystemPermissions.MEETINGS_RECORD)
+    ) {
+      return null;
+    }
     const meeting = await this.meetings.editableBy(
       chapterId,
       meetingId,

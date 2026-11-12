@@ -92,6 +92,11 @@ export const AI_REPORT_COPY = {
   /** A receipt older than the server accepts. */
   too_old:
     "This answer is too old to report. Ask again, then report the new answer.",
+  /** A receipt this server can no longer open (its key was replaced). */
+  receipt_invalid:
+    "This answer can't be reported any more. Ask again, then report the new answer.",
+  /** The draft or suggestion went away while the sheet was open. */
+  gone: "There's nothing to report here any more. It may have been changed or removed.",
   done: "Done",
 } as const;
 
@@ -106,7 +111,7 @@ export function aiReportAttachedLine(
   keepsText: boolean,
 ): string {
   if (!keepsText) {
-    return "Only your reason and note are sent. The text itself isn't kept.";
+    return `Only your reason and note are sent, and deleted after ${AI_REPORT_RETENTION_DAYS} days. The text itself isn't kept.`;
   }
   return `Sent with your report, encrypted: ${ATTACHED[subject]}. It is deleted after ${AI_REPORT_RETENTION_DAYS} days.`;
 }

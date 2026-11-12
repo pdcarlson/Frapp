@@ -153,6 +153,15 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
       JSON.stringify(afterQuoted) === JSON.stringify([U1, U3]),
       { afterQuoted },
     );
+    // An Ask answer can be reported days after it was given: by then U2's
+    // account is gone, and a report quoting them keeps nothing.
+    await report(U3, [U2]);
+    const lateQuoting = await reporters();
+    check(
+      "a report quoting an account already deleted is not kept",
+      JSON.stringify(lateQuoting) === JSON.stringify([U1, U3]),
+      { lateQuoting },
+    );
     await db.query(`select anonymize_user($1)`, [U1]);
     const afterReporter = await reporters();
     check(

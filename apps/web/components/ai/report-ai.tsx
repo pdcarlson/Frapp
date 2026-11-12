@@ -3,12 +3,13 @@
 import { useId, useState } from "react";
 import { Flag, Loader2 } from "lucide-react";
 import { codeOf } from "@repo/api-sdk";
-import { useAiReportPolicy, useReportAi } from "@repo/hooks";
+import { useAiReportPolicy, useMyPermissions, useReportAi } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   AI_REPORT_NOTE_MAX_LENGTH,
   AI_REPORT_REASONS,
   aiReportAttachedLine,
+  can,
   type AiReportReason,
   type AiReportSubject,
 } from "@repo/validation";
@@ -66,7 +67,12 @@ export function ReportAiButton({
 }) {
   const [open, setOpen] = useState(false);
   const [reported, setReported] = useState(false);
+  const permissions = useMyPermissions().data?.permissions;
   const label = reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action;
+  // The report route asks for `ai:use`, as Ask does. A member without it
+  // (a chapter from before AI, an alumnus) is not offered a report that
+  // could never send. Held until known, the shell has usually loaded it.
+  if (!permissions || !can("ai:use", permissions)) return null;
   return (
     <>
       {iconOnly ? (
@@ -163,10 +169,15 @@ export function ReportAiDialog({
       setOutcome(filed.already_reported ? "already" : "sent");
       onReported();
     } catch (error) {
+      const code = codeOf(error);
       setFailure(
-        codeOf(error) === "ai.report.too_old"
+        code === "ai.report.too_old"
           ? AI_REPORT_COPY.too_old
-          : AI_REPORT_COPY.failed,
+          : code === "ai.report.receipt_invalid"
+            ? AI_REPORT_COPY.receipt_invalid
+            : code === "ai.report.not_found"
+              ? AI_REPORT_COPY.gone
+              : AI_REPORT_COPY.failed,
       );
     }
   }

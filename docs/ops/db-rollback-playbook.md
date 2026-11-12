@@ -3991,7 +3991,7 @@ Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds`
 
 * **Migration**: `20261112220000_ai_reports.sql`
 
-One new table, `ai_reports`, and one trigger on `users`. No existing row or function changed. What the table holds is sealed text that exists only to be deleted within 30 days, so nothing in it needs saving.
+One new table, `ai_reports`, with an insert trigger of its own, and one trigger on `users`. No existing row or function changed. What the table holds is sealed text that exists only to be deleted within 30 days, so nothing in it needs saving.
 
 **Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides every Report this button and refuses the route; the hourly sweep still deletes reports at their date. To delete every report at once, run:
 
@@ -4005,4 +4005,5 @@ delete from public.ai_reports;
 drop trigger if exists users_drop_ai_reports on public.users;
 drop function if exists public.ai_reports_drop_for_deleted_user();
 drop table if exists public.ai_reports;
+drop function if exists public.ai_reports_refuse_deleted_users();
 ```

@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { SupabaseQueryError } from '../supabase-query-error';
 import type {
+  AiReportInsertResult,
   IAiReportRepository,
   InsertAiReportInput,
 } from '#domain/repositories/ai-report.repository.interface';
@@ -26,7 +27,7 @@ export class SupabaseAiReportRepository implements IAiReportRepository {
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async insert(input: InsertAiReportInput): Promise<boolean> {
+  async insert(input: InsertAiReportInput): Promise<AiReportInsertResult> {
     const row: TablesInsert<'ai_reports'> = {
       reported_by: input.reportedBy,
       subject_type: input.subjectType,
@@ -41,12 +42,17 @@ export class SupabaseAiReportRepository implements IAiReportRepository {
       expires_at: input.expiresAt.toISOString(),
       chapter_id: input.chapterId,
     };
-    const { error } = await this.supabase.from('ai_reports').insert(row);
+    // The insert trigger skips a row naming a deleted account, without an
+    // error: no row comes back.
+    const { data, error } = await this.supabase
+      .from('ai_reports')
+      .insert(row)
+      .select('id');
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return false;
+      if (error.code === UNIQUE_VIOLATION) return 'duplicate';
       throw new SupabaseQueryError(error);
     }
-    return true;
+    return data && data.length > 0 ? 'kept' : 'refused';
   }
 
   async deleteQuoting(userId: string): Promise<number> {

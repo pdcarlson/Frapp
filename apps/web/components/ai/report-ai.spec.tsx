@@ -11,11 +11,15 @@ const state = vi.hoisted(() => ({
   },
   report: vi.fn(),
   pending: false,
+  permissions: ["ai:use"] as string[] | undefined,
 }));
 
 vi.mock("@repo/hooks", () => ({
   useAiReportPolicy: () => state.policy,
   useReportAi: () => ({ mutateAsync: state.report, isPending: state.pending }),
+  useMyPermissions: () => ({
+    data: state.permissions ? { permissions: state.permissions } : undefined,
+  }),
 }));
 
 const { ReportAiButton } = await import("./report-ai");
@@ -42,6 +46,7 @@ describe("ReportAiButton (#4315)", () => {
     };
     state.report.mockReset();
     state.pending = false;
+    state.permissions = ["ai:use"];
   });
 
   it("says what goes with the report, who reads it and for how long, before Send", async () => {
@@ -144,6 +149,22 @@ describe("ReportAiButton (#4315)", () => {
     expect(
       screen.getByRole("button", { name: AI_REPORT_COPY.send }),
     ).toBeEnabled();
+  });
+
+  it("says the draft went away, not that the connection failed", async () => {
+    state.report.mockRejectedValue({ code: "ai.report.not_found" });
+    const user = await openSheet();
+    await user.click(screen.getByLabelText(AI_REPORT_COPY.reasons.wrong));
+    await user.click(screen.getByRole("button", { name: AI_REPORT_COPY.send }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      AI_REPORT_COPY.gone,
+    );
+  });
+
+  it("is not offered to a member without ai:use, whose report could never send", () => {
+    state.permissions = ["members:view"];
+    const { container } = render(<ReportAiButton target={ASK} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("names what is reported on the icon-only flag", () => {

@@ -173,12 +173,12 @@ export class AiReportService implements OnModuleInit {
       createdAt: now,
       expiresAt,
     });
-    if (inserted && sealed && quoted.length > 0) {
+    if (inserted === 'kept' && sealed && quoted.length > 0) {
       await this.dropIfQuotedSaidNo(quoted);
     }
     return {
-      already_reported: !inserted,
-      kept_text: inserted && sealed !== null,
+      already_reported: inserted === 'duplicate',
+      kept_text: inserted === 'kept' && sealed !== null,
       expires_at: expiresAt.toISOString(),
     };
   }
@@ -246,18 +246,17 @@ export class AiReportService implements OnModuleInit {
       };
     } catch (error) {
       if (error instanceof AskReportReceiptError) {
-        throw new BadRequestException(
-          error.reason === 'expired'
-            ? {
-                code: 'ai.report.too_old',
-                message:
-                  'This answer is too old to report. Ask again, then report the new answer.',
-              }
-            : {
-                code: 'ai.report.receipt_invalid',
-                message: 'This answer could not be matched. Ask again.',
-              },
-        );
+        if (error.reason === 'expired') {
+          throw new BadRequestException({
+            code: 'ai.report.too_old',
+            message:
+              'This answer is too old to report. Ask again, then report the new answer.',
+          });
+        }
+        throw new BadRequestException({
+          code: 'ai.report.receipt_invalid',
+          message: 'This answer could not be matched. Ask again.',
+        });
       }
       throw error;
     }
@@ -268,11 +267,13 @@ export class AiReportService implements OnModuleInit {
     keepText: boolean,
   ): Promise<Kept> {
     // 403 or 404 from the minutes' own rule when the caller may not edit
-    // them; null when there is no draft to report.
+    // them; null when there is no draft to report, or the caller could not
+    // open the draft routes (the meetings module off, no `meetings:record`).
     const draft = await this.drafts.forReport(
       input.chapterId,
       input.subjectId,
       input.userId,
+      input.enabledModules,
     );
     if (!draft) throw notFound();
     if (!keepText) return { ...NOTHING, subjectId: draft.requestId };

@@ -44,12 +44,22 @@ const receipt = (over: Partial<AskReportReceipt> = {}): AskReportReceipt => ({
 const sealed = (r: AskReportReceipt, userId = REPORTER) =>
   sealAskReportReceipt(ring, r, { chapterId: CHAPTER, userId })!;
 
-/** `ai_reports` in memory, with the table's one-per-member rule. */
-function fakeRepository() {
+/**
+ * `ai_reports` in memory, with the table's one-per-member rule and its insert
+ * trigger's refusal of a row naming a deleted account.
+ */
+function fakeRepository(deletedUsers: readonly string[] = []) {
   const rows: InsertAiReportInput[] = [];
   return {
     rows,
     insert: jest.fn(async (input: InsertAiReportInput) => {
+      if (
+        [input.reportedBy, ...input.quotedUserIds].some((id) =>
+          deletedUsers.includes(id),
+        )
+      ) {
+        return 'refused' as const;
+      }
       if (
         rows.some(
           (row) =>
@@ -58,10 +68,10 @@ function fakeRepository() {
             row.subjectId === input.subjectId,
         )
       ) {
-        return false;
+        return 'duplicate' as const;
       }
       rows.push(input);
-      return true;
+      return 'kept' as const;
     }),
     deleteQuoting: jest.fn(async (userId: string) => {
       const before = rows.length;
@@ -85,9 +95,10 @@ function build(
     draft?: unknown;
     suggestion?: unknown;
     saidNo?: string[];
+    deletedUsers?: string[];
   } = {},
 ) {
-  const reports = fakeRepository();
+  const reports = fakeRepository(options.deletedUsers);
   const drafts = {
     forReport: jest.fn(async () =>
       options.draft === undefined
@@ -297,7 +308,12 @@ describe('AiReportService', () => {
         { ...base, subject: 'meeting_draft', subjectId: MEETING },
         NOW,
       );
-      expect(drafts.forReport).toHaveBeenCalledWith(CHAPTER, MEETING, REPORTER);
+      expect(drafts.forReport).toHaveBeenCalledWith(
+        CHAPTER,
+        MEETING,
+        REPORTER,
+        null,
+      );
       const [row] = reports.rows;
       // Named by its request, so a draft asked for again is reported anew.
       expect(row.subjectId).toBe('00000000-0000-4000-8000-0000000000d1');
@@ -371,6 +387,23 @@ describe('AiReportService', () => {
       expect(reports.rows.map((row) => row.subjectType)).toEqual([
         'ai_suggestion',
       ]);
+    });
+
+    it('a quoted member who deleted their account before the report is not kept', async () => {
+      const { service, reports } = build({ deletedUsers: ['dana'] });
+      const outcome = await service.report(
+        {
+          ...base,
+          subject: 'ask_answer',
+          subjectId: ASK_ID,
+          receipt: sealed(receipt()),
+        },
+        NOW,
+      );
+      expect(reports.rows).toHaveLength(0);
+      expect(outcome).toEqual(
+        expect.objectContaining({ already_reported: false, kept_text: false }),
+      );
     });
 
     it('a quoted member who said No while the report was made is not kept', async () => {

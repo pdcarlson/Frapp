@@ -521,7 +521,14 @@ export class AiSuggestionService {
     enabledModules: EnabledModules | null,
   ): Promise<AiSuggestion | null> {
     const row = await this.repo.findById(chapterId, id);
-    if (!row) return null;
+    // The Suggested list holds only pending suggestions that have not run out.
+    if (
+      !row ||
+      row.status !== 'pending' ||
+      new Date(row.expires_at).getTime() <= this.now().getTime()
+    ) {
+      return null;
+    }
     const [visible] = await this.visibleTo(
       chapterId,
       userId,

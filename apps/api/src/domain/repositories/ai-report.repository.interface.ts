@@ -2,6 +2,8 @@ import type { AiReportReason, AiReportSubject } from '@repo/validation';
 
 export const AI_REPORT_REPOSITORY = 'AI_REPORT_REPOSITORY';
 
+export type AiReportInsertResult = 'kept' | 'duplicate' | 'refused';
+
 export interface InsertAiReportInput {
   chapterId: string;
   reportedBy: string;
@@ -24,10 +26,12 @@ export interface InsertAiReportInput {
  */
 export interface IAiReportRepository {
   /**
-   * Keeps one report. Returns false when this member already reported this
-   * thing, and nothing new is kept.
+   * Keeps one report. `duplicate` when this member already reported this
+   * thing; `refused` when the reporter or a member it quotes has deleted
+   * their account (the table's insert trigger keeps nothing). Either way
+   * nothing new is kept.
    */
-  insert(input: InsertAiReportInput): Promise<boolean>;
+  insert(input: InsertAiReportInput): Promise<AiReportInsertResult>;
 
   /**
    * Deletes every report quoting this person, in every chapter: their answer

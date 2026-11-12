@@ -39,7 +39,11 @@
 --     (trigger 2 below: `anonymize_user` sets `users.deleted_at`, and a
 --     trigger here keeps that function from being redefined again);
 --   - when a member it quotes answers No on the AI sheet (the API's consent
---     listener, which runs the same delete).
+--     listener, which runs the same delete);
+--   - never kept at all when the reporter or a member it quotes deleted their
+--     account before it was made (trigger 3 below: an Ask answer can be
+--     reported up to 7 days after it was given, so a chat author can be gone
+--     by then, and trigger 2 fired once, before the row existed).
 --
 -- RLS on and no policies: only the API, with the service role, writes it,
 -- and no route reads it. The Frapp team reads rows from the database with
@@ -125,3 +129,35 @@ create trigger users_drop_ai_reports
   for each row
   when (new.deleted_at is not null and old.deleted_at is null)
   execute function public.ai_reports_drop_for_deleted_user();
+
+-- 3. ------------------------------------------------------------------------
+-- A report made after the reporter or a member it quotes deleted their
+-- account is not kept: their words were to go with the account.
+
+create or replace function public.ai_reports_refuse_deleted_users()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (
+    select 1
+    from public.users u
+    where (u.id = new.reported_by or u.id = any (new.quoted_user_ids))
+      and u.deleted_at is not null
+  ) then
+    return null;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.ai_reports_refuse_deleted_users()
+  from public, anon, authenticated;
+
+drop trigger if exists ai_reports_refuse_deleted_users on public.ai_reports;
+create trigger ai_reports_refuse_deleted_users
+  before insert on public.ai_reports
+  for each row
+  execute function public.ai_reports_refuse_deleted_users();
