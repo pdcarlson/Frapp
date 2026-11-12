@@ -57,6 +57,14 @@ export class MemberProfileDto {
 
   @ApiProperty({
     type: String,
+    nullable: true,
+    description:
+      "The member's own phone number (#3711), as they typed it, or null. Only they set it.",
+  })
+  phone: string | null;
+
+  @ApiProperty({
+    type: String,
     format: 'uuid',
     nullable: true,
     description:
@@ -97,6 +105,16 @@ export class MemberProfileDto {
       'single-member reads.',
   })
   viewer_can_remove?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Whether the requesting viewer may fix this member's name and " +
+      'graduation year (PATCH /v1/members/{id}/profile): they hold ' +
+      'roles:manage, it is not their own profile, the member ranks below ' +
+      'them, and the member is in no other chapter. Present only on ' +
+      'single-member reads.',
+  })
+  viewer_can_edit_profile?: boolean;
 }
 
 /**

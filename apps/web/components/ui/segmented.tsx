@@ -24,7 +24,20 @@ export function SegmentedChoice<T extends string>({
   className,
 }: {
   label: string;
-  options: readonly { value: T; label: string }[];
+  /**
+   * `disabled` on one option greys out that answer alone (a Roles override a
+   * caller may not grant), and `title` gives it a hover hint saying why.
+   * `quiet` draws the answer, when held, in neutral rather than the accent:
+   * the default a row starts on, so the rows set apart from it are the ones
+   * that stand out down a long list.
+   */
+  options: readonly {
+    value: T;
+    label: string;
+    disabled?: boolean;
+    title?: string;
+    quiet?: boolean;
+  }[];
   value: T;
   onChange: (next: T) => void;
   disabled?: boolean;
@@ -43,13 +56,15 @@ export function SegmentedChoice<T extends string>({
     >
       {options.map((option) => {
         const held = option.value === value;
+        const off = disabled || Boolean(option.disabled);
         return (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={held}
-            disabled={disabled}
+            disabled={off}
+            title={option.title}
             onClick={() => {
               if (!held) onChange(option.value);
             }}
@@ -58,9 +73,11 @@ export function SegmentedChoice<T extends string>({
               fill && "flex-1",
               // The held answer as chat search's filter radios draw theirs.
               held
-                ? "bg-accent-subtle text-accent-text"
+                ? option.quiet
+                  ? "bg-card-hover text-foreground"
+                  : "bg-accent-subtle text-accent-text"
                 : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
-              disabled && "pointer-events-none text-disabled",
+              off && "pointer-events-none text-disabled",
               FOCUS_RING,
             )}
           >

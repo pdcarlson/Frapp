@@ -38,6 +38,17 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: **Merging this PR is the owner's approval.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate. **Merge with or after #4485** (the matching fix): merged first, an upload before #4485 deploys can create a new variant that stays (harmless to uploads once #4485 is live; an officer can merge it by hand). Before the production push, take and record your own backup per [`promotion.md`](promotion.md): it is the only record of which department each file and course was under. After production, delete the "until it runs" clause from the case-variant bullet in `spec/behavior/backwork.md` § Auto-Vivification. One `do` block; no trigger fires on the Backwork tables. Idempotent. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-merge-backwork-department-case-variants-20261112150500) § Rollback merge Backwork department case variants.
+
+## 2026-11-12: A member's phone number (#3711)
+
+### 20261112150000_users_phone.sql
+
+- **Purpose**: Adds `users.phone text` (nullable) with the check `users_phone_length` (`phone is null or char_length(phone) <= 32`, added `not valid` then validated; every existing row is null). Redefines `anonymize_user` as written in `20261111235900_chat_important_seen.sql` with one more line, `phone = null`, so account deletion erases it. The member sets it through `PATCH /v1/users/me`; profile reads return it. The rule is [`spec/behavior/members.md` § Profiles](../../../spec/behavior/members.md#profiles).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'phone';` returns `1`, `select convalidated from pg_constraint where conname = 'users_phone_length';` returns `true`, and `select prosrc like '%phone = null%' from pg_proc where proname = 'anonymize_user';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never names the column. The newer API against an unmigrated database fails every profile read and `PATCH /v1/users/me` that names it, so don't deploy the API first. Adding a nullable column is metadata-only, and validating the check scans `users` once (a few hundred rows). `if not exists`, `drop constraint if exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-a-members-phone-number-20261112150000) § Rollback a member's phone number.
+
 ## 2026-11-12: Deleting a chat message deletes its notifications (#4418)
 
 ### 20261112140000_notifications_chat_message_id.sql

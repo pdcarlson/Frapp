@@ -3822,3 +3822,20 @@ If a split must be restored, there is no point-in-time recovery ([§ Backup real
 4. Re-insert the deleted departments' `backwork_courses` rows from the backup.
 
 Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
+## Rollback a member's phone number (20261112150000)
+
+* **Migration**: `20261112150000_users_phone.sql`
+
+One nullable column on `users` (`phone`) with its length check, and `anonymize_user` redefined to also clear it. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never reads or writes `phone`, so the stored numbers sit unused. That is safe to leave.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the column is gone:
+
+```sql
+-- Re-create anonymize_user from 20261111235900_chat_important_seen.sql, verbatim.
+alter table public.users
+  drop constraint if exists users_phone_length,
+  drop column if exists phone;
+```

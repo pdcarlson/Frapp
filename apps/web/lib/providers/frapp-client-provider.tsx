@@ -3,10 +3,16 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "@repo/hooks";
+import { FrappClientProvider, PermissionPreviewProvider } from "@repo/hooks";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import {
+  activePreview,
+  isPreviewBlockedWrite,
+  ROLE_PREVIEW_REFUSAL_CODE,
+  useRolePreviewStore,
+} from "@/lib/stores/role-preview-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 import { clearCachedAccent } from "@/lib/theme/accent-cache";
@@ -76,9 +82,12 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   const previousChapterId = useRef<string | null | undefined>(undefined);
   const previousAuthUserId = useRef<string | null | undefined>(undefined);
 
-  const client = useMemo(
-    () =>
-      createFrappClient({
+  const preview = useRolePreviewStore((s) =>
+    activePreview(s.preview, activeChapterId),
+  );
+
+  const client = useMemo(() => {
+    const created = createFrappClient({
         // Bare origin — the generated SDK paths already carry `/v1`.
         baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
         getAuthToken: async () => {
@@ -91,9 +100,32 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
         // deleted elsewhere, most often). One sign-out owns that outcome for
         // every screen: `lib/auth/rejected-session.ts`.
         onUnauthorized: () => void handleRejectedSession(),
-      }),
-    [activeChapterId],
-  );
+      });
+    // "View as a role" (#4072) is for looking: while it runs, a write the
+    // officer starts is answered here with a refusal the error map words
+    // ("Exit the preview to make changes"), and never reaches the API. Read
+    // per request, so starting or ending a preview needs no new client.
+    created.use({
+      onRequest({ request }) {
+        const running = activePreview(
+          useRolePreviewStore.getState().preview,
+          activeChapterId,
+        );
+        if (!running || !isPreviewBlockedWrite(request.method, request.url)) {
+          return undefined;
+        }
+        return new Response(
+          JSON.stringify({
+            statusCode: 403,
+            code: ROLE_PREVIEW_REFUSAL_CODE,
+            message: "Viewing as a role; writes are off until the preview ends.",
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    return created;
+  }, [activeChapterId]);
 
   /*
    * Drop every cached query when the active chapter changes.
@@ -124,11 +156,16 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * queries for no benefit.
    */
   useEffect(() => {
+    const previous = previousChapterId.current;
     dropCacheWhenIdentityChanges(
       previousChapterId,
       activeChapterId,
       queryClient,
     );
+    // A preview belongs to the chapter it started in (#4072).
+    if (previous && previous !== activeChapterId) {
+      useRolePreviewStore.getState().stop();
+    }
   }, [activeChapterId, queryClient]);
 
   /*
@@ -145,7 +182,10 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     dropCacheWhenIdentityChanges(previousAuthUserId, authUserId, queryClient);
     // Every batch but the new account's: the page may already have made one
     // for it in this commit, and that one stays.
-    if (previous && previous !== authUserId) endBulkSessions({ except: authUserId });
+    if (previous && previous !== authUserId) {
+      endBulkSessions({ except: authUserId });
+      useRolePreviewStore.getState().stop();
+    }
     // Signed out from somewhere else (another tab sharing this session, most
     // often the one that just deleted the account): this tab's reads now go
     // out with no token and every screen would fail on its own. Leave too.
@@ -154,7 +194,9 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <FrappClientProvider client={client} chapterId={activeChapterId}>
-      {children}
+      <PermissionPreviewProvider permissions={preview?.permissions ?? null}>
+        {children}
+      </PermissionPreviewProvider>
     </FrappClientProvider>
   );
 }
