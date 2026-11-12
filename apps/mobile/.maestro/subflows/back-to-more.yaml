@@ -1,0 +1,7 @@
+# Leaves a More page by its drawn back row, the way a member would, and
+# checks it lands on More.
+appId: live.frapp.mobile
+---
+- tapOn: "Back to More"
+- assertVisible:
+    id: "tab-more"

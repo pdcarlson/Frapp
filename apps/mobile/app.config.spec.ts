@@ -1386,3 +1386,57 @@ describe("invite links open the app (#4002)", () => {
     ]);
   });
 });
+
+// The device pass's automated half (`.eas/workflows/device-smoke.yml`,
+// docs/mobile/testing.md § Automated flows) builds with the `e2e` profile. The
+// Maestro flows sign in with the staging smoke account and post to #general,
+// so this profile must never point at production or carry signing
+// credentials: a build from it is an emulator or simulator app only.
+describe("the e2e profile behind the Maestro flows (#808)", () => {
+  const easJson = requireConfig("./eas.json") as {
+    build: Record<
+      string,
+      {
+        environment?: string;
+        extends?: string;
+        distribution?: string;
+        withoutCredentials?: boolean;
+        ios?: { simulator?: boolean };
+        android?: { buildType?: string };
+        env?: Record<string, string>;
+      }
+    >;
+  };
+  const e2e = easJson.build.e2e;
+  const workflow = readFileSync(
+    path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      ".eas/workflows/device-smoke.yml",
+    ),
+    "utf8",
+  );
+
+  it("builds a simulator app and an emulator APK, without signing credentials", () => {
+    expect(e2e?.ios?.simulator).toBe(true);
+    expect(e2e?.android?.buildType).toBe("apk");
+    expect(e2e?.withoutCredentials).toBe(true);
+    expect(e2e?.distribution).toBe("internal");
+  });
+
+  it("points at staging, never production", () => {
+    expect(e2e?.environment).toBe("preview");
+    expect(e2e?.extends).toBeUndefined();
+    expect(e2e?.env?.EXPO_PUBLIC_API_URL).toBe(
+      "https://api-staging.frapp.live",
+    );
+    expect(e2e?.env?.EXPO_PUBLIC_API_URL).not.toBe(easProductionApiUrl);
+    expect(e2e?.env?.EXPO_PUBLIC_SENTRY_ENVIRONMENT).toBe("e2e");
+  });
+
+  it("is the only profile the workflow builds", () => {
+    const profiles = [...workflow.matchAll(/^\s*profile:\s*(\S+)\s*$/gm)].map(
+      (match) => match[1],
+    );
+    expect(profiles).toEqual(["e2e", "e2e"]);
+  });
+});
