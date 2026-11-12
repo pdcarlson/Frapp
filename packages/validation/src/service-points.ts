@@ -41,3 +41,39 @@ export function servicePointsForDuration(
     durationMinutes / effectiveMinutesPerPoint(minutesPerPoint),
   );
 }
+
+/** The fields of a service entry {@link awardedPointsLabel} reads. */
+export interface AwardedPointsSource {
+  status: string;
+  points_awarded: boolean;
+  /** Absent from a response served before #3868, `null` until approved. */
+  awarded_points?: number | null;
+}
+
+/**
+ * What a reviewed entry's History row says about its points (#3868): the
+ * number its approval recorded (`3 points`, `1 point`), `No points` for a
+ * sub-rate approval, or `null` for an entry that awarded nothing to show
+ * (pending or rejected). The number is the one the approval wrote, never
+ * recomputed from today's rate.
+ *
+ * Falls back to `Points awarded` when the entry was awarded but carries no
+ * number: an approval whose ledger row was gone when the column was
+ * backfilled, or an API older than the field.
+ *
+ * Shared by web's History list and mobile's Service hours rows so the two
+ * read the same. Copy: `spec/ui/design-system/writing.md` § Service Hours.
+ */
+export function awardedPointsLabel(entry: AwardedPointsSource): string | null {
+  const points = entry.awarded_points;
+  if (
+    typeof points === "number" &&
+    Number.isInteger(points) &&
+    points >= 0 &&
+    (entry.status === "APPROVED" || entry.points_awarded)
+  ) {
+    if (points === 0) return "No points";
+    return `${points} ${points === 1 ? "point" : "points"}`;
+  }
+  return entry.points_awarded ? "Points awarded" : null;
+}

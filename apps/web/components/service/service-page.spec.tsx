@@ -55,6 +55,7 @@ const APPROVED_ENTRY = {
   proof_path: null,
   status: "APPROVED" as const,
   points_awarded: true,
+  awarded_points: 2,
 };
 
 const entriesPending = vi.hoisted(() => ({ current: false }));
@@ -448,6 +449,16 @@ describe("ServiceHoursPage review queue", () => {
     // token (principles.md P2.1).
     expect(within(history).getByText("Approved")).toBeInTheDocument();
     expect(within(history).queryByText("APPROVED")).not.toBeInTheDocument();
+  });
+
+  it("says how many points an approved entry awarded, not just that it did (#3868)", () => {
+    render(<ServiceHoursPage />);
+
+    const history = screen.getByRole("region", { name: /history/i });
+    expect(within(history).getByText("2 points")).toBeInTheDocument();
+    expect(
+      within(history).queryByText("Points awarded"),
+    ).not.toBeInTheDocument();
   });
 });
 
