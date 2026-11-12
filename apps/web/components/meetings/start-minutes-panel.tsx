@@ -18,7 +18,6 @@ import {
   can,
   type MeetingType,
 } from "@repo/validation";
-import { formatDayTime } from "@repo/formatting";
 import {
   Panel,
   PanelBody,
@@ -40,6 +39,7 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import {
   guessMeetingType,
   meetingHref,
+  meetingWhenLabel,
 } from "@/components/meetings/meeting-copy";
 
 /** How far back the event list reaches: a meeting written up within the month. */
@@ -260,7 +260,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
                             {event.name}
                           </span>
                           <span className="block text-caption text-muted-foreground">
-                            {formatDayTime(event.start_time) ?? ""}
+                            {meetingWhenLabel(event.start_time)}
                           </span>
                         </span>
                         {existing ? (

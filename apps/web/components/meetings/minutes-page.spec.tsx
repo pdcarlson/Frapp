@@ -196,7 +196,7 @@ describe("MinutesPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
-    expect(mocks.update.mock.calls[0][0]).toMatchObject({
+    expect(mocks.update.mock.calls[0]![0]).toMatchObject({
       id: "m-1",
       body: {
         expected_updated_at: "2026-11-10T01:00:00.000Z",
@@ -223,7 +223,7 @@ describe("MinutesPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
-    expect(mocks.update.mock.calls[0][0].body.content.decisions).toEqual([]);
+    expect(mocks.update.mock.calls[0]![0].body.content.decisions).toEqual([]);
   });
 
   it("says someone else saved, and keeps the typing, when a save is stale", async () => {

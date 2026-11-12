@@ -35,7 +35,6 @@ import {
   type MeetingTextSection,
   type MeetingType,
 } from "@repo/validation";
-import { formatDayTimeRange } from "@repo/formatting";
 import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -65,6 +64,7 @@ import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
   meetingDueLabel,
+  meetingWhenLabel,
   sectionLabel,
   voteLine,
 } from "@/components/meetings/meeting-copy";
@@ -314,9 +314,7 @@ function Minutes({
     }
   }
 
-  const when =
-    formatDayTimeRange(meeting.event_start_time, meeting.event_end_time) ??
-    meetingDayLabel(meeting.event_start_time);
+  const when = meetingWhenLabel(meeting.event_start_time);
   const typeLabel = meetingTypeLabel(
     (editing ? draft.meeting_type : base.meeting_type) as MeetingType,
     editing ? draft.other_label : base.other_label,
@@ -382,19 +380,16 @@ function Minutes({
         <h2 className="text-2xl font-bold leading-tight">
           {meeting.event_name}
         </h2>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-          <span>{typeLabel}</span>
-          <span aria-hidden="true">·</span>
-          <span>{when}</span>
-          {isDraft ? (
-            <Badge variant="outline">Draft</Badge>
-          ) : meeting.posted_at ? (
-            <span>
-              <span aria-hidden="true">· </span>
-              Posted {meetingDayLabel(meeting.posted_at)}
-            </span>
-          ) : null}
-        </div>
+        <p className="text-sm text-muted-foreground">
+          {typeLabel} meeting, {when}
+        </p>
+        {isDraft ? (
+          <Badge variant="outline">Draft</Badge>
+        ) : meeting.posted_at ? (
+          <p className="text-caption text-muted-foreground">
+            Posted {meetingDayLabel(meeting.posted_at)}
+          </p>
+        ) : null}
       </header>
 
       {stale ? (

@@ -26,6 +26,20 @@ export function meetingDayLabel(
   });
 }
 
+/** "Tuesday, November 10 at 11:21 PM": when a meeting started, written out. */
+export function meetingWhenLabel(
+  value: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(value, now);
+  if (!day || !value) return day;
+  const time = new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${day} at ${time}`;
+}
+
 /** A due day stored as `YYYY-MM-DD`, read in the reader's own calendar. */
 export function meetingDueLabel(
   value: string | null | undefined,
