@@ -7,6 +7,7 @@ import {
   selectForcedDownloadUrl,
   useDocument,
 } from "@repo/hooks";
+import { classifyFile } from "@repo/hooks/document-library";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatDay } from "@repo/formatting";
@@ -31,35 +32,17 @@ export type PreviewKind = "pdf" | "image" | "none";
  * Photos (chat's raster list: JPEG, PNG, GIF, WebP, BMP) and PDFs preview.
  * Everything else, Office files included, gets the download card: rendering
  * those needs a converter or an outside viewer, a privacy call tracked in
- * #3889. The declared type is what the bucket gated, so it decides; the stored
- * extension stands in only for a row filed before the type was recorded.
+ * #3889. The type is `classifyFile`'s, the same one the File type filter
+ * groups by (#3959): the declared type, or the stored extension's when none
+ * useful was recorded. Guessing from a name is safe here because neither path
+ * loads the file as a page: pdf.js parses bytes, and an `<img>` decodes or
+ * fails.
  */
 export function previewKind(doc: Pick<ChapterDocument, "content_type" | "storage_path">): PreviewKind {
-  const type = doc.content_type?.split(";")[0]?.trim().toLowerCase() ?? null;
-  if (type === "application/pdf") return "pdf";
-  if (isViewableImage(type)) return "image";
-  if (type === null && /\.pdf$/i.test(doc.storage_path)) return "pdf";
+  const file = classifyFile(doc);
+  if (file.kind === "pdf") return "pdf";
+  if (isViewableImage(file.type)) return "image";
   return "none";
-}
-
-const KIND_LABEL: Record<string, string> = {
-  "application/pdf": "PDF",
-  "application/msword": "Word document",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word document",
-  "application/vnd.ms-excel": "Excel spreadsheet",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheet",
-  "application/vnd.ms-powerpoint": "PowerPoint deck",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint deck",
-  "text/plain": "Text file",
-  "text/csv": "CSV file",
-};
-
-function kindLabel(doc: ChapterDocument): string {
-  const type = doc.content_type?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (KIND_LABEL[type]) return KIND_LABEL[type];
-  if (previewKind(doc) === "pdf") return "PDF";
-  if (previewKind(doc) === "image") return "Photo";
-  return "File";
 }
 
 /** Pages drawn at most; a longer file says so and offers the download. */
@@ -162,7 +145,7 @@ function OpenDocumentViewer({
     else void download(doc.id);
   }
 
-  const label = kindLabel(doc);
+  const { label } = classifyFile(doc);
   const meta = [label, labelled("Uploaded", formatDay(doc.created_at)), doc.folder]
     .filter(Boolean)
     .join(" · ");

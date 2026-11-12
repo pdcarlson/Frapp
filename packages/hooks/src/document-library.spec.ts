@@ -11,6 +11,7 @@ import {
   queryDocuments,
   toLibraryDocuments,
   uploaderOptions,
+  classifyFile,
   fileKind,
   isFiltering,
   kindOptions,
@@ -241,6 +242,31 @@ describe("file type (#3938)", () => {
     ).toBe("slides");
     expect(fileKind({ content_type: null, storage_path: "c/d/1/README" })).toBe("other");
     expect(fileKind({ content_type: null, storage_path: null })).toBe("other");
+  });
+
+  // #3959: one classifier for the filter, search and the web viewer.
+  it("names what it groups, from the same type", () => {
+    expect(classifyFile({ content_type: null, storage_path: "c/d/1/Budget.xlsx" })).toEqual({
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      kind: "spreadsheet",
+      label: "Excel spreadsheet",
+    });
+    expect(classifyFile({ content_type: "IMAGE/JPEG; q=1", storage_path: "c/d/1/x" })).toEqual({
+      type: "image/jpeg",
+      kind: "image",
+      label: "Photo",
+    });
+    expect(classifyFile({ content_type: "application/pdf", storage_path: "c/d/1/x.docx" }).kind).toBe(
+      "pdf",
+    );
+    expect(classifyFile({ content_type: null, storage_path: "c/d/1/x.constructor" })).toEqual({
+      type: null,
+      kind: "other",
+      label: "File",
+    });
+    expect(classifyFile({ content_type: "application/zip", storage_path: "c/d/1/a.zip" }).label).toBe(
+      "File",
+    );
   });
 
   const rows = toLibraryDocuments(

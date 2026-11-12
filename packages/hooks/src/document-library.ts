@@ -87,35 +87,42 @@ const FILE_KIND_WORDS: Record<FileKind, readonly string[]> = {
   other: [],
 };
 
-const EXTENSION_KIND: Record<string, FileKind> = {
-  pdf: "pdf",
-  doc: "word",
-  docx: "word",
-  odt: "word",
-  rtf: "word",
-  ppt: "slides",
-  pptx: "slides",
-  key: "slides",
-  odp: "slides",
-  xls: "spreadsheet",
-  xlsx: "spreadsheet",
-  csv: "spreadsheet",
-  ods: "spreadsheet",
-  jpg: "image",
-  jpeg: "image",
-  png: "image",
-  gif: "image",
-  webp: "image",
-  heic: "image",
-  heif: "image",
-  bmp: "image",
-  tif: "image",
-  tiff: "image",
-  svg: "image",
-};
+/**
+ * The type a stored extension stands for, when a row recorded none. Wider than
+ * the upload allowlist (`@repo/validation`'s `upload-allowlists.ts`), which is
+ * the gate for new files: rows filed before it existed can carry an `.odt`,
+ * `.key` or `.svg`, and they still need a group and a label. No prototype, so
+ * a file named `x.constructor` reads as unknown.
+ */
+const EXTENSION_TYPE: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  odt: "application/vnd.oasis.opendocument.text",
+  rtf: "application/rtf",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  key: "application/vnd.apple.keynote",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  csv: "text/csv",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  txt: "text/plain",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  svg: "image/svg+xml",
+});
 
-function kindOfMime(mime: string): FileKind | null {
-  const type = mime.split(";")[0]!.trim().toLowerCase();
+function kindOfMime(type: string): FileKind {
   if (type === "application/pdf") return "pdf";
   if (type.startsWith("image/")) return "image";
   if (
@@ -144,24 +151,73 @@ function kindOfMime(mime: string): FileKind | null {
   ) {
     return "spreadsheet";
   }
-  return null;
+  return "other";
 }
 
+/** The name a type goes by in the viewer ("Excel spreadsheets can't be previewed yet"). */
+const TYPE_LABEL: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
+  "application/msword": "Word document",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word document",
+  "application/vnd.ms-excel": "Excel spreadsheet",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheet",
+  "application/vnd.ms-powerpoint": "PowerPoint deck",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint deck",
+  "application/vnd.apple.keynote": "Keynote deck",
+  "text/plain": "Text file",
+  "text/csv": "CSV file",
+});
+
+const KIND_LABEL: Record<FileKind, string> = {
+  pdf: "PDF",
+  word: "Word document",
+  slides: "Slide deck",
+  spreadsheet: "Spreadsheet",
+  image: "Photo",
+  other: "File",
+};
+
+/** What one file is, for every surface that groups, names or previews it. */
+export type ClassifiedFile = {
+  /**
+   * The type the file is taken to be: the declared `content_type` (base type,
+   * lowercased), or, when that is missing or the generic
+   * `application/octet-stream`, the type its stored extension stands for.
+   * Null when neither says.
+   */
+  type: string | null;
+  /** Its format group, for the File type filter and search. */
+  kind: FileKind;
+  /** Its name for people: "PDF", "Excel spreadsheet", "Photo", "File". */
+  label: string;
+};
+
 /**
- * A document's format group: from its declared `content_type`, or, when that
- * is missing or the generic `application/octet-stream`, from the extension of
- * the stored filename. Anything unrecognised is Other.
+ * The one classifier for a chapter document's file (#3959): the File type
+ * filter, search, and the web viewer's preview and label all read it, so a
+ * file is never an Image in the filter and a "File" in the viewer. The
+ * declared type wins; the stored extension stands in only when no useful type
+ * was recorded (rows filed before 2026-08-31, or a client that sent
+ * `application/octet-stream`). Whether a type previews is the viewer's call
+ * (`previewKind`), made on {@link ClassifiedFile.type}.
  */
-export function fileKind(doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">): FileKind {
-  const mime = doc.content_type?.trim();
-  if (mime && mime.toLowerCase() !== "application/octet-stream") {
-    const kind = kindOfMime(mime);
-    if (kind) return kind;
+export function classifyFile(
+  doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
+): ClassifiedFile {
+  const declared = doc.content_type?.split(";")[0]?.trim().toLowerCase() || null;
+  let type = declared && declared !== "application/octet-stream" ? declared : null;
+  if (type === null) {
+    const name = doc.storage_path?.split("/").pop() ?? "";
+    const dot = name.lastIndexOf(".");
+    const ext = dot > 0 ? name.slice(dot + 1).trim().toLowerCase() : "";
+    type = EXTENSION_TYPE[ext] ?? null;
   }
-  const name = doc.storage_path?.split("/").pop() ?? "";
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  return EXTENSION_KIND[ext] ?? "other";
+  const kind = type ? kindOfMime(type) : "other";
+  return { type, kind, label: (type && TYPE_LABEL[type]) || KIND_LABEL[kind] };
+}
+
+/** A document's format group ({@link classifyFile}). Anything unrecognised is Other. */
+export function fileKind(doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">): FileKind {
+  return classifyFile(doc).kind;
 }
 
 /** One choice in the Uploaded by filter. */

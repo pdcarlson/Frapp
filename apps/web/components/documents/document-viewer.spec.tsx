@@ -44,6 +44,7 @@ afterAll(() => {
   Object.defineProperty(window, "location", { value: realLocation, configurable: true });
 });
 
+const { fileKind } = await import("@repo/hooks/document-library");
 const { DocumentViewer, previewKind, MAX_PREVIEW_PAGES, OPEN_DOCUMENT_ATTRIBUTE } =
   await import("./document-viewer");
 const { VIEWER_BACKDROP_ATTRIBUTE } = await import("@/components/shared/media-viewer");
@@ -119,9 +120,24 @@ describe("previewKind", () => {
     expect(previewKind(doc("x", "x", "image/svg+xml"))).toBe("none");
   });
 
-  it("falls back to the stored extension only when no type was recorded", () => {
+  it("falls back to the stored extension only when no useful type was recorded", () => {
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.pdf"))).toBe("pdf");
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.docx"))).toBe("none");
+    // The declared type wins over the name.
+    expect(previewKind(doc("x", "x", "text/plain", "c/documents/x/minutes.pdf"))).toBe("none");
+  });
+
+  // #3959: the File type filter called this an Image while the viewer showed
+  // a bare "File" card. Both now read `classifyFile`.
+  it("previews an older row's photo the File type filter calls an Image", () => {
+    const old = doc("x", "x", null, "c/documents/x/rush.JPG");
+    expect(fileKind(old)).toBe("image");
+    expect(previewKind(old)).toBe("image");
+    const generic = doc("x", "x", "application/octet-stream", "c/documents/x/rush.png");
+    expect(fileKind(generic)).toBe("image");
+    expect(previewKind(generic)).toBe("image");
+    // Grouped as an image, but not one a browser draws.
+    expect(previewKind(doc("x", "x", null, "c/documents/x/logo.svg"))).toBe("none");
   });
 });
 
