@@ -8,10 +8,13 @@ import {
   fetchThreadUnread,
   loadThreadReplies,
   sendThreadReply,
+  threadCardLabel,
   threadChipLabel,
+  threadPreviewParts,
+  threadVersion,
 } from "./threads";
 import { emptyCache } from "./cache";
-import type { ChannelCache, RawChatMessage } from "./types";
+import type { ChannelCache, ChatMessage, RawChatMessage } from "./types";
 import type { FrappApiClient } from "./chat-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -38,13 +41,82 @@ function cacheOf(queryClient: QueryClient): ChannelCache | undefined {
   return queryClient.getQueryData<ChannelCache>(chatThreadRepliesKey(CH, ROOT));
 }
 
+const versionRow = (id: string, last_reply_at: string | null | undefined) =>
+  ({
+    id,
+    thread:
+      last_reply_at === undefined
+        ? null
+        : { reply_count: 1, last_reply_at, recent_sender_ids: [] },
+  }) as ChatMessage;
+
+describe("threadVersion (#4297)", () => {
+  test("is empty when no loaded message has a thread, so nothing is read", () => {
+    expect(threadVersion([versionRow("a", undefined)])).toBe("");
+  });
+
+  test("changes when a parent's last reply moves, and only then", () => {
+    const before = [
+      versionRow("a", "2026-11-11T20:00:00Z"),
+      versionRow("b", undefined),
+    ];
+    const after = [
+      versionRow("a", "2026-11-11T20:05:00Z"),
+      versionRow("b", undefined),
+    ];
+    expect(threadVersion([...before])).toBe(threadVersion(before));
+    expect(threadVersion(after)).not.toBe(threadVersion(before));
+  });
+
+  test("holds when an older page brings a thread with an older reply", () => {
+    // The server's answer already covers every followed thread in the
+    // channel, loaded or not, so an older page needs no read of its own.
+    const one = [versionRow("a", "2026-11-11T20:00:00Z")];
+    const two = [versionRow("z", "2026-11-10T09:00:00Z"), ...one];
+    expect(threadVersion(two)).toBe(threadVersion(one));
+  });
+
+  test("leaves the open thread out, which re-reads on its own when read", () => {
+    const before = [
+      versionRow("a", "2026-11-11T20:00:00Z"),
+      versionRow("open", "2026-11-11T20:01:00Z"),
+    ];
+    const after = [
+      versionRow("a", "2026-11-11T20:00:00Z"),
+      versionRow("open", "2026-11-11T20:09:00Z"),
+    ];
+    expect(threadVersion(after, "open")).toBe(threadVersion(before, "open"));
+  });
+
+  test("still reads when the open thread is the only one", () => {
+    expect(
+      threadVersion([versionRow("open", "2026-11-11T20:01:00Z")], "open"),
+    ).toBe("-");
+  });
+});
+
 describe("fetchThreadUnread (#4297)", () => {
   test("keys what's new by root, leaving out muted and caught-up threads", async () => {
     const GET = vi.fn(async () => ({
       data: [
-        { thread_root_id: "a", state: "following", last_read_at: null, unread_count: 2 },
-        { thread_root_id: "b", state: "following", last_read_at: "x", unread_count: 0 },
-        { thread_root_id: "c", state: "muted", last_read_at: null, unread_count: 0 },
+        {
+          thread_root_id: "a",
+          state: "following",
+          last_read_at: null,
+          unread_count: 2,
+        },
+        {
+          thread_root_id: "b",
+          state: "following",
+          last_read_at: "x",
+          unread_count: 0,
+        },
+        {
+          thread_root_id: "c",
+          state: "muted",
+          last_read_at: null,
+          unread_count: 0,
+        },
       ],
       error: undefined,
     }));
@@ -59,7 +131,10 @@ describe("fetchThreadUnread (#4297)", () => {
   });
 
   test("throws when the read fails, so the query keeps its last answer", async () => {
-    const GET = vi.fn(async () => ({ data: undefined, error: { message: "no" } }));
+    const GET = vi.fn(async () => ({
+      data: undefined,
+      error: { message: "no" },
+    }));
     await expect(
       fetchThreadUnread({ GET } as unknown as FrappApiClient, "chan-1"),
     ).rejects.toThrow();
@@ -380,5 +455,66 @@ describe("thread reads carry their actions (#4034)", () => {
     );
 
     expect(meta.root_actions).toEqual([onRoot]);
+  });
+});
+
+describe("threadPreviewParts and threadCardLabel (#4297)", () => {
+  const names = {
+    nameOf: (id: string) => (id === "u1" ? "Devin Okafor" : null),
+    fallbackLabel: (id: string) => `Member ${id.slice(0, 6)}`,
+  };
+  const reply = (
+    sender_id: string | null,
+    content = "grill is in my **garage**",
+  ) => ({
+    id: "r1",
+    sender_id,
+    content,
+    kind: "text" as const,
+    attachment_count: 0,
+    created_at: "2026-11-11T20:00:00.000Z",
+    sender_blocked: false,
+  });
+
+  test("names the replier by first name, the viewer as You, a stranger by the fallback", () => {
+    expect(threadPreviewParts(reply("u1"), "me", names)).toEqual({
+      name: "Devin",
+      fullName: "Devin Okafor",
+      text: "grill is in my garage",
+    });
+    expect(threadPreviewParts(reply("me"), "me", names).name).toBe("You");
+    expect(threadPreviewParts(reply("2f4a1c99"), "me", names).name).toBe(
+      "Member 2f4a1c",
+    );
+    expect(threadPreviewParts(reply(null), "me", names).name).toBeNull();
+  });
+
+  test("reads a file-only reply as its quote does", () => {
+    expect(
+      threadPreviewParts(
+        { ...reply("u1", ""), attachment_count: 2 },
+        null,
+        names,
+      ).text,
+    ).toBe("2 attachments");
+  });
+
+  test("says only what the card draws", () => {
+    expect(
+      threadCardLabel({
+        replies: "3 replies",
+        fresh: "2 new",
+        lastReply: "last reply 5m ago",
+        preview: { name: "Devin", text: "on my way" },
+      }),
+    ).toBe("3 replies, 2 new, last reply 5m ago, latest from Devin: on my way");
+    expect(
+      threadCardLabel({
+        replies: "1 reply",
+        fresh: null,
+        lastReply: null,
+        preview: { name: null, text: "hi" },
+      }),
+    ).toBe("1 reply, latest: hi");
   });
 });

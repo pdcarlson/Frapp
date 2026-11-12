@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { setChatDensity } from "@/lib/chat/chat-density";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1429,5 +1431,74 @@ describe("ThreadMessageRow flags", () => {
       visibility: "visible",
     });
     expect(caption(tree)[0]?.props.accessibilityLabel).toBe("Important");
+  });
+});
+
+describe("ThreadMessageRow — the thread card's preview (#4297)", () => {
+  const withPreview = (sender: string, evaluated: boolean) =>
+    message({
+      _blockEvaluated: evaluated,
+      thread: {
+        reply_count: 2,
+        last_reply_at: null,
+        recent_sender_ids: [sender],
+        last_reply: {
+          id: "reply-9",
+          sender_id: sender,
+          content: "see you at the lot",
+          kind: "text",
+          attachment_count: 0,
+          created_at: "2026-11-11T20:00:00.000Z",
+          sender_blocked: false,
+        },
+      },
+    });
+
+  it("shows a cleared replier's words on the card", () => {
+    const tree = renderRow(
+      { message: withPreview(FRIEND, true), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).toContain("see you at the lot");
+  });
+
+  it("never shows a blocked replier's words, even off the parent's raw echo", () => {
+    const tree = renderRow(
+      { message: withPreview(BLOCKED, false), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).not.toContain("see you at the lot");
+    expect(tree.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
+      0,
+    );
+  });
+
+  it("puts the card under the viewer's own poll on their side in Bubbles", () => {
+    act(() => setChatDensity("bubbles"));
+    const poll = message({
+      sender_id: VIEWER,
+      kind: "poll",
+      payload: {
+        question: "Formal theme?",
+        options: [{ id: "o1", label: "Masquerade" }],
+      },
+      thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+    });
+    const tree = renderRow(
+      { message: poll, visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    const card = tree.root.find(
+      (node) =>
+        node.props.testID === "thread-chip" &&
+        typeof node.props.style === "function",
+    );
+    const style = StyleSheet.flatten(
+      (card.props.style as (s: { pressed: boolean }) => unknown)({
+        pressed: false,
+      }) as StyleProp<ViewStyle>,
+    );
+    expect(style.alignSelf).toBe("flex-end");
+    act(() => setChatDensity("cozy"));
   });
 });

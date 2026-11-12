@@ -9,8 +9,11 @@ import {
   resolveAuthorName,
   useNow,
 } from "@repo/hooks";
-import { replyPreviewText } from "@repo/chat-core/reply-preview";
-import { threadChipLabel } from "@repo/chat-core/threads";
+import {
+  threadCardLabel,
+  threadChipLabel,
+  threadPreviewParts,
+} from "@repo/chat-core/threads";
 import type { ThreadLastReply, ThreadSummary } from "@repo/chat-core/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -136,21 +139,22 @@ export function ThreadChip({
     </>
   );
   const previewSender = preview?.sender_id ?? null;
-  // Named as the timeline names its author: the roster's name (its first
-  // word, as the Chat home preview does), "You", Frapp, or "Member 2f4a1c"
-  // for someone who left.
+  // Named as the timeline names its author, by the rule the phone's card
+  // shares: the roster's first name, "You", Frapp, or "Member 2f4a1c" for
+  // someone who left.
+  const parts = preview
+    ? threadPreviewParts(preview, viewerId, {
+        nameOf: (id) =>
+          resolveAuthorName({ sender_id: id, author_name: null }, nameFor),
+        fallbackLabel: (id) =>
+          resolveAuthorLabel(
+            { sender_id: id, author_name: null },
+            nameFor,
+            null,
+          ),
+      })
+    : null;
   const previewAuthor = { sender_id: previewSender, author_name: null };
-  const previewFullName = preview
-    ? resolveAuthorName(previewAuthor, nameFor)
-    : null;
-  const previewName = preview
-    ? previewSender !== null && previewSender === viewerId
-      ? "You"
-      : previewFullName
-        ? firstName(previewFullName)
-        : resolveAuthorLabel(previewAuthor, nameFor, viewerId)
-    : null;
-  const previewText = preview ? replyPreviewText(preview) : null;
   const previewSrc = previewSender
     ? (avatarFor?.(previewSender) ?? null)
     : null;
@@ -178,19 +182,19 @@ export function ThreadChip({
                   ),
                 )}
               >
-                {previewFullName
-                  ? initials(previewFullName)
+                {parts?.fullName
+                  ? initials(parts.fullName)
                   : authorInitialsFallback(previewAuthor)}
               </AvatarFallback>
             </Avatar>
           ) : null}
-          {previewName ? (
+          {parts?.name ? (
             <span className="max-w-[40%] shrink-0 truncate font-semibold text-foreground">
-              {previewName}
+              {parts.name}
             </span>
           ) : null}
           <span className="min-w-0 truncate text-muted-foreground">
-            {previewText}
+            {parts?.text}
           </span>
         </span>
       ) : null}
@@ -201,16 +205,7 @@ export function ThreadChip({
     // column, and a bordered card as wide as a long message reads wrong.
     "mt-1.5 inline-flex min-w-0 max-w-full self-start flex-col gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
   );
-  const label = [
-    replies,
-    fresh,
-    lastReply,
-    preview
-      ? `latest${previewName ? ` from ${previewName}` : ""}: ${previewText}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const label = threadCardLabel({ replies, fresh, lastReply, preview: parts });
   if (!onOpen) {
     return (
       <div data-slot="thread-card" className={className}>
@@ -229,9 +224,4 @@ export function ThreadChip({
       {body}
     </button>
   );
-}
-
-/** A name's first word, as the Chat home preview names people. */
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0] || name;
 }

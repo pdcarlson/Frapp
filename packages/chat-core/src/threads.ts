@@ -18,11 +18,15 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomClientId } from "@repo/api-sdk";
+import { firstName } from "./channel-preview";
+import { replyPreviewText } from "./reply-preview";
 import {
   chatThreadKey,
   chatThreadRepliesKey,
   optimisticMessage,
   type ChannelCache,
+  type ChatMessage,
+  type ThreadLastReply,
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
@@ -433,6 +437,90 @@ export async function fetchThreadUnread(
     if (row.unread_count > 0) unread[row.thread_root_id] = row.unread_count;
   }
   return unread;
+}
+
+/**
+ * One string that changes when a loaded parent's thread gains a reply: the
+ * latest reply among them, left out the open thread's. "-" when the only
+ * loaded thread is the open one, empty when no loaded message has a thread,
+ * so nothing is read.
+ */
+export function threadVersion(
+  messages: readonly ChatMessage[],
+  openThreadId: string | null = null,
+): string {
+  let any = false;
+  let latest = "";
+  for (const message of messages) {
+    if (!message.thread) continue;
+    any = true;
+    if (message.id === openThreadId) continue;
+    const at = message.thread.last_reply_at;
+    if (at && at > latest) latest = at;
+  }
+  if (!any) return "";
+  return latest || "-";
+}
+
+/**
+ * How the thread card names a preview's replier (#4297). Callers bind
+ * `@repo/hooks`' helpers to their roster, as for the Chat home preview
+ * (`PreviewNames`): `nameOf` is the replier's resolved name or `null`
+ * (`resolveAuthorName`), `fallbackLabel` what the timeline prints without one
+ * (`resolveAuthorLabel` with no viewer: "Member 2f4a1c").
+ */
+export interface ThreadPreviewNames {
+  nameOf: (senderId: string) => string | null;
+  fallbackLabel: (senderId: string) => string;
+}
+
+/**
+ * The thread card's preview line (#4297), one rule for web and the phone:
+ * the replier's first name ("You" for the viewer's own, the fallback label
+ * for someone the roster can't name, none for an unlinked import) and the
+ * reply's one-line text (`replyPreviewText`: "Attachment", "2 attachments",
+ * a card's kind). `fullName` is for the face's initials.
+ */
+export function threadPreviewParts(
+  preview: ThreadLastReply,
+  viewerId: string | null,
+  names: ThreadPreviewNames,
+): { name: string | null; fullName: string | null; text: string } {
+  const sender = preview.sender_id;
+  const fullName = sender ? names.nameOf(sender) : null;
+  const name =
+    sender === null
+      ? null
+      : sender === viewerId
+        ? "You"
+        : fullName
+          ? firstName(fullName)
+          : names.fallbackLabel(sender);
+  return { name, fullName, text: replyPreviewText(preview) };
+}
+
+/**
+ * What a screen reader hears for the thread card (#4297), on web and the
+ * phone alike: "3 replies, 2 new, last reply 5m ago, latest from Devin: grill
+ * is in my garage", without the parts the card doesn't draw.
+ */
+export function threadCardLabel(parts: {
+  replies: string;
+  fresh: string | null;
+  lastReply: string | null;
+  preview: { name: string | null; text: string } | null;
+}): string {
+  const { replies, fresh, lastReply, preview } = parts;
+  return [
+    replies,
+    fresh,
+    lastReply,
+    preview
+      ? `latest${preview.name ? ` from ${preview.name}` : ""}: ${preview.text}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
