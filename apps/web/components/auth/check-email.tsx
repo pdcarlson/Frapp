@@ -11,6 +11,7 @@ import {
   describeEmailSendError,
   emailCooldownSeconds,
 } from "@/lib/auth/email-auth-errors";
+import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
  * GoTrue sends one address one auth email a minute and refuses a second with
@@ -138,6 +139,13 @@ export function CheckEmail({
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
       setNotice({ text: `We sent a new link to ${email}.`, isError: false });
     } catch (error) {
+      // Shown on `/sign-in` and `/sign-up` alike; a path that isn't a bare
+      // screen name is reported as `unknown`.
+      reportAuthFailure({
+        flow: "confirmation_resend",
+        screen: window.location.pathname,
+        error,
+      });
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
         setSecondsLeft(Math.max(cooldown, 1));
