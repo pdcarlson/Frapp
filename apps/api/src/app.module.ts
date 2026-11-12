@@ -23,6 +23,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { AiSuggestionModule } from './modules/ai-suggestion/ai-suggestion.module';
 import { PledgeClassModule } from './modules/pledge-class/pledge-class.module';
 import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
@@ -84,6 +85,7 @@ import { validateEnv } from './config/env.validation';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    AiSuggestionModule,
     PledgeClassModule,
     RushModule,
     NotificationModule,

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
   AiRun,
+  AiSuggestion,
   ChapterAiSettings,
   UserAiConsent,
   ActivityUnreadStart,
@@ -156,6 +157,7 @@ export interface Database {
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      ai_suggestions: TableDefinition<AiSuggestion>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;

@@ -70,11 +70,13 @@ alter table public.user_ai_consents enable row level security;
 comment on table public.user_ai_consents is
   'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112130100_ai_consent.sql.';
 
--- 3. Account deletion purges consent rows ------------------------------------
+-- 3. Account deletion purges consent rows and quotes -----------------------
 
 -- `anonymize_user` is redefined in full from
--- `20261111235900_chat_important_seen.sql`; the one change is the
--- `user_ai_consents` delete. Same signature, so its grants are kept.
+-- `20261111235900_chat_important_seen.sql`; the changes are the
+-- `user_ai_consents` delete and clearing the member's quotes from
+-- `ai_suggestions` (`20261112130001_ai_suggestions.sql`, which this file
+-- must sort after). Same signature, so its grants are kept.
 create or replace function anonymize_user(
   p_user_id uuid,
   p_rescan_cards boolean default false
@@ -160,6 +162,10 @@ begin
   -- AI consent (#4308): the member's answers on the AI sheet. Deleting an
   -- account counts as turning AI off (spec/behavior/ai.md § Consent).
   delete from user_ai_consents where user_id = p_user_id;
+  -- AI suggestions (#4309): the member's words leave every suggestion that
+  -- quotes them, as a No on the sheet does. Decided rows hold no quote.
+  update ai_suggestions set quote = null, quote_author_id = null
+   where quote_author_id = p_user_id;
   delete from rush_candidate_votes where voter_id = p_user_id;
   delete from study_sessions where user_id = p_user_id;
 

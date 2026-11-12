@@ -266,7 +266,8 @@ What every change is held to (Paul, 2026-11-11: "I need a higher standard for sp
 | API, reads | `http.server` span, p50 / p95 | 150 ms / 600 ms |
 | API, hot-path writes | p50 / p99 | the budget and list in [`architecture` § Hot path vs cold path](../architecture/README.md#hot-path-vs-cold-path) |
 | Mobile | cold start (`ui.load`), p50 / p95 | 1.5 s / 3 s |
-| Mobile | screen ready (time to full display), p50 | chat home 1 s, a channel 500 ms. Not recorded yet: the app has no time-to-full-display spans ([#4342](https://github.com/pdcarlson/Frapp/issues/4342)) |
+| Mobile | app open until chat home shows its channels (time to full display on the cold-start `ui.load` span), p50 | 2 s |
+| Mobile | a channel shows its messages (time to full display on its navigation span), p50 | 500 ms |
 | Web | first paint, cached channel, CLS above the composer | [`performance-budgets.md` § First paint](../ui/resilience/performance-budgets.md#first-paint), which the framework board owns |
 | Web | LCP / INP, p75 | 2.5 s / 200 ms |
 
@@ -491,6 +492,19 @@ Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28]
 | `is_background_run` | Whether an AI run made the call |
 
 A call the gateway stops before the provider (the server switch, no credential, consent, a spend cap) sends nothing. A provider error is thrown as a `LanguageModelError`, which carries the error's kind, HTTP status and request id and never the provider's message, because a provider's 400 can quote the request back. `ai-gateway.service.spec.ts` asserts that no prompt, source or answer text reaches a log line, a Sentry envelope or the event, on a call that succeeds and one that fails.
+
+## AI Suggestion Events
+
+AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run and expired by an hourly sweep, neither of which is a request, so they are not feature events. `AiSuggestionService` sends four events itself, through `AnalyticsService`:
+
+| Event | Sent when | Keyed by | Properties |
+| --- | --- | --- | --- |
+| `ai-suggestions-proposed` | A run saves a batch | Chapter (`trackForChapter`) | `kind`, `count` |
+| `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
+| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
+| `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
+
+`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
 
 ## Member Onboarding Funnel
 

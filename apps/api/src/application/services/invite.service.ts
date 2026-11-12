@@ -818,7 +818,11 @@ export class InviteService {
             body: 'New member of the chapter',
             priority: 'NORMAL',
             category: 'members',
-            data: { target: { screen: 'members' } },
+            // `memberUserId` is who joined, a `users.id`, so the in-app list
+            // draws their picture and their name's colour (#4346). Not
+            // `senderId`: that key means a chat sender, and a block withholds
+            // rows by it. Not `memberId`, which means a `members.id`.
+            data: { target: { screen: 'members' }, memberUserId: userId },
           },
         );
       }

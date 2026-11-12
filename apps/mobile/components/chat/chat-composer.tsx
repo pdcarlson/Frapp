@@ -19,6 +19,7 @@ import {
   mentionPickerEntries,
   type MentionCandidate,
   type MentionPickerEntry,
+  withoutObjectReplacement,
 } from "@repo/validation";
 import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
@@ -208,8 +209,12 @@ export function ChatComposer({
   // An empty or whitespace-only body is not a send — unless a photo is
   // staged. A photo-only message is a real message, uploaded or still
   // uploading, and gating it on the text alone would strand it with the send
-  // button greyed out and no way to explain why.
-  const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
+  // button greyed out and no way to explain why. A body that is only U+FFFC,
+  // the placeholder a keyboard leaves for a sticker it couldn't insert, is
+  // empty too: the server saves it as spaces and refuses it (#4346).
+  const isSendable =
+    canSend &&
+    (withoutObjectReplacement(value).trim().length > 0 || photos.length > 0);
 
   // The sheet greys what can't work this second and says why, so the + itself
   // only waits for the photo library it opened and for the chat runtime.

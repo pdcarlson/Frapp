@@ -164,6 +164,17 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       -- version and a No on the current one, and someone else's Yes.
       insert into user_ai_consents (user_id, sheet_version, accepted)
       values ('${U}', 1, true), ('${U}', 2, false), ('${OTHER}', 1, true);
+      -- #4309: two waiting suggestions in this chapter's channel, one quoting
+      -- the member and one quoting someone else.
+      insert into ai_suggestions (chapter_id, batch_id, ordinal, kind, source_type,
+                                  source_id, payload, quote, quote_author_id,
+                                  required_permission, expires_at)
+      values ('${C}', gen_random_uuid(), 0, 'task', 'channel', '${CH}',
+              '{"title":"Book the venue"}', 'hi, Doomed User here', '${U}',
+              'tasks:manage', now() + interval '14 days'),
+             ('${C}', gen_random_uuid(), 0, 'task', 'channel', '${CH}',
+              '{"title":"Order shirts"}', 'order the shirts', '${OTHER}',
+              'tasks:manage', now() + interval '14 days');
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -263,6 +274,19 @@ console.log("\n=== Functional smoke: anonymize_user ===");
                      (select count(*)::int from user_ai_consents where user_id = '${OTHER}') as others`,
         ok: (rows) =>
           rows.length === 1 && rows[0].leftovers === 0 && rows[0].others === 1,
+      },
+      {
+        // #4309. Its line in the same block (20261112130100): the member's
+        // words leave waiting suggestions, which stay; others' quotes stay.
+        name: "AI suggestions drop the member's quotes, and only theirs",
+        sql: `select (select count(*)::int from ai_suggestions where quote_author_id = '${U}' or quote = 'hi, Doomed User here') as leftovers,
+                     (select count(*)::int from ai_suggestions where quote_author_id = '${OTHER}' and quote is not null) as others,
+                     (select count(*)::int from ai_suggestions where status = 'pending') as kept`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].leftovers === 0 &&
+          rows[0].others === 1 &&
+          rows[0].kept === 2,
       },
       {
         // Exact counts, not `>= 0`: an over-purge gives 0 and a spurious

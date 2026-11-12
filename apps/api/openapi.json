@@ -10043,6 +10043,402 @@
         ]
       }
     },
+    "/v1/ai/suggestions": {
+      "get": {
+        "operationId": "AiSuggestionController_list_v1",
+        "parameters": [
+          {
+            "name": "source_type",
+            "required": false,
+            "in": "query",
+            "description": "Only suggestions drawn from this source. Send with `source_id`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "meeting",
+                "event",
+                "channel"
+              ]
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The Suggested list: waiting suggestions the caller could accept, newest first",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/accept": {
+      "post": {
+        "operationId": "AiSuggestionController_accept_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptAiSuggestionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/dismiss": {
+      "post": {
+        "operationId": "AiSuggestionController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss a suggestion",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/decide": {
+      "post": {
+        "operationId": "AiSuggestionController_decide_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideAiSuggestionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecideResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/consent": {
+      "get": {
+        "description": "The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.",
+        "operationId": "AiConsentController_getConsent_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConsentStateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the AI sheet and the caller’s answer",
+        "tags": [
+          "AI"
+        ]
+      },
+      "put": {
+        "description": "Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.",
+        "operationId": "AiConsentController_answerConsent_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerAiConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConsentStateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "409": {
+            "description": "The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Answer the AI sheet",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/settings": {
+      "get": {
+        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.",
+        "operationId": "AiChapterSettingsController_getSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChapterSettingsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the chapter’s AI switches",
+        "tags": [
+          "AI"
+        ]
+      },
+      "patch": {
+        "description": "President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.",
+        "operationId": "AiChapterSettingsController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiChapterSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChapterSettingsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.settings.president_only`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the chapter’s AI features on or off",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/pledge-classes": {
       "get": {
         "operationId": "PledgeClassController_list_v1",
@@ -14120,192 +14516,6 @@
         "summary": "Post to the team's Dev log channel (GitHub Actions only)",
         "tags": [
           "Integrations"
-        ]
-      }
-    },
-    "/v1/ai/consent": {
-      "get": {
-        "description": "The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.",
-        "operationId": "AiConsentController_getConsent_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiConsentStateDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get the AI sheet and the caller’s answer",
-        "tags": [
-          "AI"
-        ]
-      },
-      "put": {
-        "description": "Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.",
-        "operationId": "AiConsentController_answerConsent_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnswerAiConsentDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiConsentStateDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "409": {
-            "description": "The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Answer the AI sheet",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/ai/settings": {
-      "get": {
-        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.",
-        "operationId": "AiChapterSettingsController_getSettings_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiChapterSettingsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get the chapter’s AI switches",
-        "tags": [
-          "AI"
-        ]
-      },
-      "patch": {
-        "description": "President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.",
-        "operationId": "AiChapterSettingsController_updateSettings_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAiChapterSettingsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiChapterSettingsDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not the chapter’s president (`ai.settings.president_only`)."
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Turn the chapter’s AI features on or off",
-        "tags": [
-          "AI"
         ]
       }
     }
@@ -20378,6 +20588,516 @@
           "done"
         ]
       },
+      "AiSuggestionSourceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "meeting",
+              "event",
+              "channel"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "TaskSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "assignee_id",
+          "due_date",
+          "due_at",
+          "subtasks"
+        ]
+      },
+      "AiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepting",
+              "accepted",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AiSuggestionSourceDto"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Suggestions made together (one push) share it."
+          },
+          "task": {
+            "nullable": true,
+            "description": "The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionDto"
+              }
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The words it came from, exactly as they appear in the source. Null when there are none to show."
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "Accepted with changes."
+          },
+          "result_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "What accepting made (a task id), once accepted."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "source",
+          "batch_id",
+          "task",
+          "quote",
+          "edited",
+          "result_id",
+          "created_at",
+          "expires_at"
+        ]
+      },
+      "AiSuggestionListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDto"
+            }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "More waiting suggestions exist than one list returns."
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ]
+      },
+      "TaskSuggestionEditsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Who the task is for. Required to accept when none was suggested."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD). Required to accept when none was suggested."
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment it is due, or null for no time. A new `due_date` sent without it clears the time."
+          },
+          "subtasks": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AcceptAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          }
+        }
+      },
+      "AiSuggestionResultDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      },
+      "AiSuggestionDecisionDto": {
+        "type": "object",
+        "properties": {
+          "suggestion": {
+            "$ref": "#/components/schemas/AiSuggestionDto"
+          },
+          "result": {
+            "nullable": true,
+            "description": "What accepting made. Null for a dismissal.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionResultDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "suggestion",
+          "result"
+        ]
+      },
+      "AiSuggestionDecideItemDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "dismiss"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      },
+      "DecideAiSuggestionsDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AiSuggestionDecideOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+          },
+          "status": {
+            "type": "number",
+            "description": "The HTTP status the single-item route would have answered."
+          },
+          "code": {
+            "type": "string",
+            "description": "Why it was refused, e.g. ai.suggestion.decided."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "AiSuggestionDecideResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideOutcomeDto"
+            }
+          }
+        },
+        "required": [
+          "outcomes"
+        ]
+      },
+      "AiConsentSheetProviderDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The company's own name, shown as is.",
+            "example": "Anthropic"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ]
+      },
+      "AiConsentSheetDataKindDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "questions",
+              "chapter_records",
+              "roster",
+              "channel_messages",
+              "meetings"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "What is sent, in words a client shows as is.",
+            "example": "Questions you ask"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "AiConsentSheetDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "description": "The sheet version. Send it back with the answer; a new version asks everyone again.",
+            "example": 1
+          },
+          "providers": {
+            "description": "Every provider member data is sent to.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiConsentSheetProviderDto"
+            }
+          },
+          "data": {
+            "description": "Every kind of data that is sent.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiConsentSheetDataKindDto"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "providers",
+          "data"
+        ]
+      },
+      "AiConsentStateDto": {
+        "type": "object",
+        "properties": {
+          "sheet": {
+            "$ref": "#/components/schemas/AiConsentSheetDto"
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "nullable": true,
+            "description": "The answer on the current version. Null when not answered, which counts as No."
+          },
+          "answered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sheet_changed": {
+            "type": "boolean",
+            "description": "True when the caller answered an earlier version but not this one, so the sheet changed since."
+          }
+        },
+        "required": [
+          "sheet",
+          "answer",
+          "answered_at",
+          "sheet_changed"
+        ]
+      },
+      "AnswerAiConsentDto": {
+        "type": "object",
+        "properties": {
+          "sheet_version": {
+            "type": "number",
+            "description": "The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.",
+            "example": 1
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          }
+        },
+        "required": [
+          "sheet_version",
+          "answer"
+        ]
+      },
+      "AiChapterSettingsDto": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": "boolean",
+            "description": "Ask Frapp is on for the chapter."
+          },
+          "meeting_notes": {
+            "type": "boolean",
+            "description": "Drafting minutes, and tasks suggested from them, is on."
+          },
+          "chat_source": {
+            "type": "boolean",
+            "description": "Messages in chapter channels, from members who said yes, are a source."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When a switch last changed. Null when none ever has."
+          }
+        },
+        "required": [
+          "ask",
+          "meeting_notes",
+          "chat_source",
+          "updated_at"
+        ]
+      },
+      "UpdateAiChapterSettingsDto": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": "boolean"
+          },
+          "meeting_notes": {
+            "type": "boolean"
+          },
+          "chat_source": {
+            "type": "boolean"
+          }
+        }
+      },
       "PledgeClassDto": {
         "type": "object",
         "properties": {
@@ -23033,176 +23753,6 @@
         "required": [
           "status"
         ]
-      },
-      "AiConsentSheetProviderDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "enum": [
-              "anthropic",
-              "google"
-            ]
-          },
-          "name": {
-            "type": "string",
-            "description": "The company's own name, shown as is.",
-            "example": "Anthropic"
-          }
-        },
-        "required": [
-          "key",
-          "name"
-        ]
-      },
-      "AiConsentSheetDataKindDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "enum": [
-              "questions",
-              "chapter_records",
-              "roster",
-              "channel_messages",
-              "meetings"
-            ]
-          },
-          "label": {
-            "type": "string",
-            "description": "What is sent, in words a client shows as is.",
-            "example": "Questions you ask"
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ]
-      },
-      "AiConsentSheetDto": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "type": "number",
-            "description": "The sheet version. Send it back with the answer; a new version asks everyone again.",
-            "example": 1
-          },
-          "providers": {
-            "description": "Every provider member data is sent to.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AiConsentSheetProviderDto"
-            }
-          },
-          "data": {
-            "description": "Every kind of data that is sent.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AiConsentSheetDataKindDto"
-            }
-          }
-        },
-        "required": [
-          "version",
-          "providers",
-          "data"
-        ]
-      },
-      "AiConsentStateDto": {
-        "type": "object",
-        "properties": {
-          "sheet": {
-            "$ref": "#/components/schemas/AiConsentSheetDto"
-          },
-          "answer": {
-            "type": "string",
-            "enum": [
-              "yes",
-              "no"
-            ],
-            "nullable": true,
-            "description": "The answer on the current version. Null when not answered, which counts as No."
-          },
-          "answered_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "sheet_changed": {
-            "type": "boolean",
-            "description": "True when the caller answered an earlier version but not this one, so the sheet changed since."
-          }
-        },
-        "required": [
-          "sheet",
-          "answer",
-          "answered_at",
-          "sheet_changed"
-        ]
-      },
-      "AnswerAiConsentDto": {
-        "type": "object",
-        "properties": {
-          "sheet_version": {
-            "type": "number",
-            "description": "The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.",
-            "example": 1
-          },
-          "answer": {
-            "type": "string",
-            "enum": [
-              "yes",
-              "no"
-            ]
-          }
-        },
-        "required": [
-          "sheet_version",
-          "answer"
-        ]
-      },
-      "AiChapterSettingsDto": {
-        "type": "object",
-        "properties": {
-          "ask": {
-            "type": "boolean",
-            "description": "Ask Frapp is on for the chapter."
-          },
-          "meeting_notes": {
-            "type": "boolean",
-            "description": "Drafting minutes, and tasks suggested from them, is on."
-          },
-          "chat_source": {
-            "type": "boolean",
-            "description": "Messages in chapter channels, from members who said yes, are a source."
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "When a switch last changed. Null when none ever has."
-          }
-        },
-        "required": [
-          "ask",
-          "meeting_notes",
-          "chat_source",
-          "updated_at"
-        ]
-      },
-      "UpdateAiChapterSettingsDto": {
-        "type": "object",
-        "properties": {
-          "ask": {
-            "type": "boolean"
-          },
-          "meeting_notes": {
-            "type": "boolean"
-          },
-          "chat_source": {
-            "type": "boolean"
-          }
-        }
       }
     }
   }

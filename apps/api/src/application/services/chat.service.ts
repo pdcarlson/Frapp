@@ -12,6 +12,7 @@ import {
   canChangeMessageFlag,
   isDirectChannel,
   isModuleEnabled,
+  withoutObjectReplacement,
   type ChatMessageFlag,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
@@ -958,8 +959,14 @@ export class ChatService {
    *   `chat-realtime-carrier.spec.ts`.
    */
   async sendMessage(
-    input: SendMessageInput,
+    sent: SendMessageInput,
   ): Promise<{ message: ChatMessage; deduplicated: boolean }> {
+    // The text loses U+FFFC, the placeholder a phone keyboard leaves where a
+    // picture or sticker couldn't go, before anything reads it: the emptiness
+    // rule, the mentions and the insert all see the cleaned text (#4346).
+    // Here rather than in the DTO, so the server's own cards built from a
+    // member's typing (a task title, an event name) are cleaned too.
+    const input = { ...sent, content: withoutObjectReplacement(sent.content) };
     // Validated before anything else, because the emptiness rule below depends
     // on it: a message that is nothing but a file is a real message.
     const attachments = this.attachments.validateAttachmentInputs(
@@ -1355,6 +1362,14 @@ export class ChatService {
 
     if (message.is_deleted) {
       throw new BadRequestException('Cannot edit a deleted message');
+    }
+
+    // Cleaned as a send is (#4346). An edit has no attachments to stand in for
+    // text, so one that is blank once cleaned is refused here, in words a
+    // member can act on, as a blank send is.
+    content = withoutObjectReplacement(content);
+    if (!content.trim()) {
+      throw new BadRequestException('An edited message needs some text');
     }
 
     // Re-resolve mentions against the new body. Skipping this leaves the stored

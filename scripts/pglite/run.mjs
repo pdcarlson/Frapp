@@ -220,6 +220,7 @@ await import("./tiers/chat-channel-access-lists.mjs");
 await import("./tiers/role-tier-reorder.mjs");
 await import("./tiers/ai-runs.mjs");
 await import("./tiers/ai-usage-ledger.mjs");
+await import("./tiers/ai-suggestions.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

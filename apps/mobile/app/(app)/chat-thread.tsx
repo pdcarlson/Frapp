@@ -150,6 +150,7 @@ import { selectionHaptic } from "@/lib/haptics";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
@@ -1299,6 +1300,15 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
+          {/* Ready once the skeleton below gives way, to rows or to a state. */}
+          <ScreenReady
+            ready={
+              !channelId ||
+              !!loadError ||
+              (!viewerId && viewerQuery.isError) ||
+              (!isLoading && !!viewerId)
+            }
+          />
           {!channelId ? (
             <View style={styles.stateBlock}>
               <Text style={styles.stateTitle}>No channel selected</Text>

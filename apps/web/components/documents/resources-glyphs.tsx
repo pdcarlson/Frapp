@@ -5,9 +5,10 @@
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
  * `spec/ui/design-system/iconography.md` §1.1) except three: the re-exported
- * `SearchGlyph`, which keeps the §1 stroke recipe until #3491; `PinGlyph`,
- * re-exported from the chat family; and `StarGlyph`, drawn here on the §1
- * recipe because the set has no star (both #3934). The
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491; and `PinGlyph`
+ * and `StarGlyph`, drawn here from `MARK_GLYPH_PATHS` (#3934) and filled solid
+ * while on (#4289), because the set has no star and chat's pin keeps the
+ * tinted recipe. The
  * intent → glyph map lives in `iconography.md` §6.2.5 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
@@ -38,16 +39,10 @@
  */
 
 import { MARK_GLYPH_PATHS, NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { Svg, fillProps, stroke } from "@/components/ui/duotone";
+import { Svg, detail, markFillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-/**
- * A pin, for a folder or file an officer pinned for the whole chapter
- * (#3934). The chat family's glyph, re-exported: pinning a message, a channel
- * and a document is one idea, so it is one shape.
- */
-export { PinGlyph } from "@/components/chat/chat-glyphs";
 
 export {
   DocumentsGlyph,
@@ -76,11 +71,33 @@ export function FolderGlyph(props: ResourcesGlyphProps) {
 }
 
 /**
+ * A pin, for a folder or file an officer pinned for the whole chapter
+ * (#3934). Chat's pin shape (`MARK_GLYPH_PATHS.pin`): pinning a message, a
+ * channel and a document is one idea, so it is one shape. Drawn here rather
+ * than re-exported because a pinned document's pin is solid (#4289,
+ * `markFillProps`); the needle stays a stroke. #4292 brings chat's pin to the
+ * same fill, after which this goes back to a re-export.
+ */
+export function PinGlyph({ className, active }: ResourcesGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d={MARK_GLYPH_PATHS.pin.body}
+        {...stroke}
+        {...markFillProps(active)}
+      />
+      <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
+    </Svg>
+  );
+}
+
+/**
  * A star, for a folder or file a member starred for themselves (#3934),
- * filled while starred, as `PinGlyph` fills while pinned. A star rather than a
- * second pin for the reason chat's `BookmarkGlyph` gives: the two sit side by
- * side, one is chapter-wide and one is private, and two similar shapes would
- * invite pinning for everyone while meaning to mark it for yourself.
+ * solid while starred and an outline while not (#4289), as Drive, Gmail and
+ * Dropbox draw theirs. A star rather than a second pin for the reason chat's
+ * `BookmarkGlyph` gives: the two sit side by side, one is chapter-wide and one
+ * is private, and two similar shapes would invite pinning for everyone while
+ * meaning to mark it for yourself.
  */
 export function StarGlyph({ className, active }: ResourcesGlyphProps) {
   return (
@@ -88,7 +105,7 @@ export function StarGlyph({ className, active }: ResourcesGlyphProps) {
       <path
         d={MARK_GLYPH_PATHS.star.body}
         {...stroke}
-        {...fillProps(active)}
+        {...markFillProps(active)}
       />
     </Svg>
   );
