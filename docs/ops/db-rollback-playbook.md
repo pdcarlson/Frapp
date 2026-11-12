@@ -3763,12 +3763,13 @@ drop function if exists public.claim_ai_run(text, timestamptz, integer, text[]);
 drop function if exists public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer);
 drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
+```
 
 ## Rollback AI suggestions (20261112021000)
 
 * **Migration**: `20261112021000_ai_suggestions.sql`
 
-One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with `AI_ENABLED=true`.
+One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
 
