@@ -10,11 +10,11 @@ import {
   signedIn,
 } from "../probe.mjs";
 import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
-import { readSeeded } from "./chat-read-enforcement.mjs";
+import { readSeeded } from "../chat-read-enforcement.mjs";
 
 // ─── BLACK-BOX policy enforcement (FRA-38) ──────────────────────────────────
 //
-// The read-enforcement tier (`chat-read-enforcement.mjs`) calls
+// The read-enforcement tier (`../chat-read-enforcement.mjs`) calls
 // can_read_chat_message() directly, which proves the PREDICATE is right but
 // says nothing about whether the POLICY is wired to it.
 // The shape assertion covers the wiring only by pattern-matching the policy
