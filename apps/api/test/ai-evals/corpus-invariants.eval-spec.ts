@@ -223,3 +223,93 @@ describe.each(foreignSourceEntries)(
     });
   },
 );
+
+/**
+ * The author-consent filter and the channel filter (#4307,
+ * `spec/behavior/ai.md` § Chat as a source). A chat message reaches a model
+ * only when its author said yes and the asker can open its channel. These
+ * checks keep the cases able to catch a missing filter: every message says
+ * where it came from and whether its author agreed, both kinds of message
+ * that must stay out are planted somewhere, and no case expects one of them
+ * in an answer.
+ */
+describe('chat sources', () => {
+  const chatEntries = allEvalCases.flatMap((c) =>
+    c.invocation.corpus
+      .filter((d) => d.sourceType === 'chat_message')
+      .map((d) => [c, d] as const),
+  );
+
+  function readable(evalCase: EvalCase, documentId: string): boolean {
+    const doc = evalCase.invocation.corpus.find((d) => d.id === documentId);
+    if (!doc || doc.sourceType !== 'chat_message') return true;
+    return (
+      doc.chat?.authorConsented === true &&
+      (evalCase.invocation.caller.channelIds ?? []).includes(doc.chat.channelId)
+    );
+  }
+
+  it('gives every chat message its channel and its author’s answer, and no other source either', () => {
+    for (const evalCase of allEvalCases) {
+      for (const doc of evalCase.invocation.corpus) {
+        expect([doc.id, Boolean(doc.chat)]).toEqual([
+          doc.id,
+          doc.sourceType === 'chat_message',
+        ]);
+      }
+    }
+  });
+
+  it('plants a message from a member who said no, in a channel the asker can open', () => {
+    const planted = chatEntries.filter(
+      ([c, d]) =>
+        d.chat?.authorConsented === false &&
+        (c.invocation.caller.channelIds ?? []).includes(d.chat.channelId),
+    );
+    expect(planted.length).toBeGreaterThan(0);
+  });
+
+  it('plants a message in a channel the asker cannot open', () => {
+    const planted = chatEntries.filter(
+      ([c, d]) =>
+        d.chat !== undefined &&
+        !(c.invocation.caller.channelIds ?? []).includes(d.chat.channelId),
+    );
+    expect(planted.length).toBeGreaterThan(0);
+  });
+
+  it.each(allEvalCases.map((c) => [c.id, c] as const))(
+    '%s expects no citation of a message retrieval must leave out',
+    (_id, evalCase) => {
+      const expected = [
+        ...(evalCase.expect.mustCite ?? []),
+        ...(evalCase.expect.mustCiteFirst
+          ? [evalCase.expect.mustCiteFirst]
+          : []),
+      ];
+      for (const documentId of expected) {
+        expect([documentId, readable(evalCase, documentId)]).toEqual([
+          documentId,
+          true,
+        ]);
+      }
+    },
+  );
+
+  it.each(
+    chatEntries
+      .filter(([, d]) => d.chat?.authorConsented === false)
+      .map(([c, d]) => [c.id, c, d] as const),
+  )(
+    '%s pins what the opted-out message said, and asks for the left-out count',
+    (_id, evalCase, doc) => {
+      const mustNot = evalCase.expect.mustNotMention ?? [];
+      expect(
+        mustNot.some((needle) =>
+          doc.body.toLowerCase().includes(needle.toLowerCase()),
+        ),
+      ).toBe(true);
+      expect(evalCase.expect.mustReportLeftOut).toBeGreaterThan(0);
+    },
+  );
+});

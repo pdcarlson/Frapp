@@ -15,6 +15,12 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 > and scripted adapters, the quote check and the content-free telemetry. It is off unless the
 > server sets `AI_ENABLED=true`, and no feature calls it yet. Consent, the caps and the ledger are
 > still to come; the gateway asks for each through an interface that allows everything today.
+>
+> **Updated 2026-11-12 ([#4311](https://github.com/pdcarlson/Frapp/issues/4311)).** The Google
+> adapter of decision 1 is built on `@google/genai`, in Vertex AI mode with a service account and no
+> API-key path. It is off until `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_CREDENTIALS_JSON` are set.
+> The eval harness is provider-neutral and the bake-off command exists; its first paid run waits on
+> the credentials, so "Not verified" below still stands.
 
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR

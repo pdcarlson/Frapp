@@ -1,4 +1,5 @@
 import { AnthropicLanguageModel } from './anthropic-language-model';
+import { GoogleLanguageModel } from './google-language-model';
 import { buildLanguageModelRegistry } from './language-model-registry';
 import { ScriptedLanguageModel } from './scripted-language-model';
 
@@ -33,5 +34,30 @@ describe('buildLanguageModelRegistry', () => {
     });
     expect(registry.resolve('anthropic')).toBeInstanceOf(ScriptedLanguageModel);
     expect(registry.resolve('google')).toBe(registry.resolve('anthropic'));
+  });
+
+  it('builds the Google adapter only with a project and a service account key', () => {
+    const key = JSON.stringify({
+      type: 'service_account',
+      client_email: 'unit-test@example.invalid',
+      private_key: 'unit-test-value',
+    });
+    expect(
+      buildLanguageModelRegistry({ GOOGLE_VERTEX_PROJECT: 'p' }).resolve(
+        'google',
+      ),
+    ).toBeNull();
+    // An AI Studio key is never a way in (ADR-28 decision 3).
+    expect(
+      buildLanguageModelRegistry({ GEMINI_API_KEY: 'unit-test-value' }).resolve(
+        'google',
+      ),
+    ).toBeNull();
+    const registry = buildLanguageModelRegistry({
+      GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging',
+      GOOGLE_VERTEX_CREDENTIALS_JSON: key,
+    });
+    expect(registry.resolve('google')).toBeInstanceOf(GoogleLanguageModel);
+    expect(registry.resolve('anthropic')).toBeNull();
   });
 });

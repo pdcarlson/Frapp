@@ -1,5 +1,17 @@
 import { PRODUCTION_SUPABASE_PROJECT_REF } from '@repo/validation';
-import { aiProviderMode, isAiEnabled, validateAiEnv } from './ai-config';
+import {
+  aiProviderMode,
+  googleVertexSettings,
+  isAiEnabled,
+  validateAiEnv,
+} from './ai-config';
+
+/** Shaped like a key file. Not a real key, and nothing here makes a request. */
+const SERVICE_ACCOUNT = JSON.stringify({
+  type: 'service_account',
+  client_email: 'unit-test@example.invalid',
+  private_key: 'unit-test-value',
+});
 
 describe('isAiEnabled', () => {
   it('is on only for exactly "true"', () => {
@@ -60,6 +72,69 @@ describe('validateAiEnv', () => {
       validateAiEnv({
         AI_PROVIDER: 'scripted',
         SUPABASE_URL: 'http://127.0.0.1:54321',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('googleVertexSettings', () => {
+  it('is null unless the project and the key file are both set', () => {
+    expect(googleVertexSettings({})).toBeNull();
+    expect(
+      googleVertexSettings({ GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging' }),
+    ).toBeNull();
+    expect(
+      googleVertexSettings({ GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT }),
+    ).toBeNull();
+  });
+
+  it('reads the project, the key file and a default location', () => {
+    expect(
+      googleVertexSettings({
+        GOOGLE_VERTEX_PROJECT: ' frapp-ai-staging ',
+        GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT,
+      }),
+    ).toEqual({
+      project: 'frapp-ai-staging',
+      location: 'global',
+      credentials: JSON.parse(SERVICE_ACCOUNT),
+    });
+  });
+
+  it('is null for a key file that is not a service account', () => {
+    expect(
+      googleVertexSettings({
+        GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging',
+        GOOGLE_VERTEX_CREDENTIALS_JSON: '{"type":"authorized_user"}',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('validateAiEnv, Google', () => {
+  it('refuses the project without the key file, and the reverse', () => {
+    expect(
+      validateAiEnv({ GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging' }),
+    ).toHaveLength(1);
+    expect(
+      validateAiEnv({ GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT }),
+    ).toHaveLength(1);
+  });
+
+  it('refuses a key file that does not parse, without echoing it', () => {
+    const problems = validateAiEnv({
+      GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging',
+      GOOGLE_VERTEX_CREDENTIALS_JSON: 'secret-looking-text',
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems.join(' ')).not.toContain('secret-looking-text');
+  });
+
+  it('accepts both together', () => {
+    expect(
+      validateAiEnv({
+        GOOGLE_VERTEX_PROJECT: 'frapp-ai-staging',
+        GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT,
       }),
     ).toEqual([]);
   });
