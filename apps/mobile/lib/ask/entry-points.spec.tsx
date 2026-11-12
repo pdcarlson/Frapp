@@ -134,7 +134,6 @@ vi.mock("@repo/hooks", async (importOriginal) => {
 // The read-ahead reaches the real Supabase client (secure store); these
 // specs are about the list, not the thread it opens.
 vi.mock("@/lib/chat/prefetch-channel", () => ({
-  usePrefetchChannel: () => () => undefined,
   usePrefetchUnreadChannels: () => undefined,
 }));
 

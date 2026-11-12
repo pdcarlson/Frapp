@@ -45,7 +45,6 @@ import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import { channelsErrorCopy } from "@/lib/chat/channels-error";
 import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { usePrefetchChannel } from "@/lib/chat/prefetch-channel";
 
 /**
  * Messages: the member's direct and group messages on their own screen,
@@ -140,10 +139,6 @@ export default function MessagesScreen() {
   }, [direct, latestById, pinnedIds, viewerId, memberNames]);
   const hidden = useMemo(() => hiddenChannels(direct), [direct]);
 
-  // A conversation's messages are read the moment a finger lands on its row,
-  // so the thread paints them as it slides in (#3699).
-  const prefetchChannel = usePrefetchChannel();
-
   function openChannel(channelId: string) {
     router.push({ pathname: "/chat-thread", params: { channelId } });
   }
@@ -214,7 +209,6 @@ export default function MessagesScreen() {
                   unreadCount={counts?.unreadCount ?? 0}
                   mentionCount={counts?.mentionCount ?? 0}
                   onPress={() => openChannel(channel.id)}
-                  onPressIn={() => prefetchChannel(channel.id)}
                   onHide={
                     canHideConversation(channel)
                       ? () =>

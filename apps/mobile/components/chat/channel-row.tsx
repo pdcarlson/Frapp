@@ -102,11 +102,6 @@ export interface ChannelRowProps {
   mentionCount: number;
   onPress: () => void;
   /**
-   * The finger landed on the row. Chat home reads the channel's messages
-   * ahead here, so the thread can paint them as it slides in (#3699).
-   */
-  onPressIn?: () => void;
-  /**
    * Offer "Hide conversation" (#2303): a long press, and the same thing as a
    * named accessibility action, since a long press is not discoverable by a
    * screen reader. Pass it only for a row that can be hidden
@@ -158,7 +153,6 @@ export function ChannelRow({
   unreadCount,
   mentionCount,
   onPress,
-  onPressIn,
   onHide,
   onTogglePin,
   onLongPress,
@@ -193,7 +187,6 @@ export function ChannelRow({
         preview,
       })}
       onPress={onPress}
-      onPressIn={onPressIn}
       onLongPress={onLongPress ?? onHide}
       accessibilityActions={
         onLongPress || onTogglePin || onHide

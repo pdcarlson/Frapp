@@ -126,7 +126,7 @@ import {
 import { useFrappClient, withChatRecordRefresh } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
-import { CHANNEL_MESSAGES_GC_TIME } from "./prefetch-channel";
+import { CHANNEL_MESSAGES_GC_TIME, takeReadAhead } from "./prefetch-channel";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
@@ -425,6 +425,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const reload = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // A page chat home read ahead (#3699) paints at once, then is read again
+  // here behind the rows already shown: nothing kept it current while no
+  // thread had the channel open, and this read, through the pager, is the one
+  // that records where a short channel's history starts.
+  const hasData = query.data !== undefined;
+  useEffect(() => {
+    if (!channelId || !hasData) return;
+    if (takeReadAhead(channelId)) void refetch();
+  }, [channelId, hasData, refetch]);
 
   // Older history (#2772), one page per call, merged into the same cache the
   // realtime merge, the outbox and the reconnect backfill write to. It only
