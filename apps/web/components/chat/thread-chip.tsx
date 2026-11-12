@@ -1,7 +1,14 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { memberAvatarHue, memberAvatarTint, useNow } from "@repo/hooks";
+import {
+  authorInitialsFallback,
+  memberAvatarHue,
+  memberAvatarTint,
+  resolveAuthorLabel,
+  resolveAuthorName,
+  useNow,
+} from "@repo/hooks";
 import { replyPreviewText } from "@repo/chat-core/reply-preview";
 import { threadChipLabel } from "@repo/chat-core/threads";
 import type { ThreadLastReply, ThreadSummary } from "@repo/chat-core/types";
@@ -22,11 +29,12 @@ import { cn, initials } from "@/lib/utils";
  * and the chevron always show.
  *
  * Under that, a one-line preview of the latest reply (slice 2): that
- * replier's face, first name ("You" for the viewer's own) and words, cut
+ * replier's face, first name ("You" for the viewer's own, "Member 2f4a1c"
+ * for someone who left) and words, cut
  * with an ellipsis. Only when the row hands one over: `MessageItem` passes
  * it through `threadPreviewVisible`, so a blocked replier's words never draw.
- * With a preview the card is capped at 26rem, so a long reply doesn't widen
- * it to the message's width.
+ * The preview line is capped at 24rem, so a long reply doesn't widen the
+ * card, or the message under it, to the pane.
  *
  * On an Important row the count draws in the foreground, as every
  * chapter-accent text on that row does (`IMPORTANT_ROW`), matching mobile.
@@ -103,7 +111,10 @@ export function ThreadChip({
           data-slot="thread-unread"
           className="flex shrink-0 items-center gap-1 font-semibold text-foreground"
         >
-          <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+          <span
+            className="h-2 w-2 rounded-full bg-primary"
+            aria-hidden="true"
+          />
           {fresh}
         </span>
       ) : null}
@@ -125,22 +136,35 @@ export function ThreadChip({
     </>
   );
   const previewSender = preview?.sender_id ?? null;
+  // Named as the timeline names its author: the roster's name (its first
+  // word, as the Chat home preview does), "You", Frapp, or "Member 2f4a1c"
+  // for someone who left.
+  const previewAuthor = { sender_id: previewSender, author_name: null };
+  const previewFullName = preview
+    ? resolveAuthorName(previewAuthor, nameFor)
+    : null;
   const previewName = preview
     ? previewSender !== null && previewSender === viewerId
       ? "You"
-      : previewSender
-        ? firstName(nameFor(previewSender))
-        : null
+      : previewFullName
+        ? firstName(previewFullName)
+        : resolveAuthorLabel(previewAuthor, nameFor, viewerId)
     : null;
   const previewText = preview ? replyPreviewText(preview) : null;
-  const previewSrc = previewSender ? (avatarFor?.(previewSender) ?? null) : null;
+  const previewSrc = previewSender
+    ? (avatarFor?.(previewSender) ?? null)
+    : null;
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-2">{content}</span>
       {preview ? (
         <span
           data-slot="thread-preview"
-          className="flex min-w-0 items-center gap-1.5"
+          // A fixed cap, not a percentage: the row's `w-fit` extent sizes
+          // to this line's one-line width, and a percentage max-width counts
+          // as none there, so a long reply would widen the message and push
+          // its action bar to the pane's edge.
+          className="flex min-w-0 max-w-[24rem] items-center gap-1.5"
         >
           {previewSender ? (
             <Avatar className="h-5 w-5 shrink-0" aria-hidden="true">
@@ -154,7 +178,9 @@ export function ThreadChip({
                   ),
                 )}
               >
-                {initials(nameFor(previewSender) ?? "?")}
+                {previewFullName
+                  ? initials(previewFullName)
+                  : authorInitialsFallback(previewAuthor)}
               </AvatarFallback>
             </Avatar>
           ) : null}
@@ -174,7 +200,6 @@ export function ThreadChip({
     // `self-start`: in cozy and compact the card sits in a stretching
     // column, and a bordered card as wide as a long message reads wrong.
     "mt-1.5 inline-flex min-w-0 max-w-full self-start flex-col gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
-    preview && "max-w-[min(100%,26rem)]",
   );
   const label = [
     replies,
@@ -207,7 +232,6 @@ export function ThreadChip({
 }
 
 /** A name's first word, as the Chat home preview names people. */
-function firstName(name: string | null): string | null {
-  if (!name) return null;
+function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || name;
 }

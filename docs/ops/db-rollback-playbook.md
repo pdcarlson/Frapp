@@ -3302,7 +3302,7 @@ Four columns, a check, a trigger and two partial indexes on `chat_messages`; one
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies. *Since 2026-11-12:* remove the thread card's latest-reply preview first ([§ Rollback the thread card's latest-reply preview](#rollback-the-thread-cards-latest-reply-preview-20261112020000)), because its trigger's `when` clause reads `thread_root_id` and the column won't drop while it stands:
 
 ```sql
 drop trigger if exists chat_messages_thread_summary on public.chat_messages;

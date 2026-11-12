@@ -399,6 +399,7 @@ describe("thread fields (#3785)", () => {
       kind: "text",
       attachment_count: 1,
       created_at: "2026-11-10T12:05:00.000Z",
+      sender_blocked: false,
     });
     expect(normalizeRow(toRawRow(withReply)).thread).toEqual(withReply.thread);
 
@@ -421,6 +422,7 @@ describe("thread fields (#3785)", () => {
       kind: "text",
       attachment_count: 0,
       created_at: "",
+      sender_blocked: false,
     });
     expect(
       normalizeRow({ ...parent, thread_last_reply: { content: "hi" } }).thread

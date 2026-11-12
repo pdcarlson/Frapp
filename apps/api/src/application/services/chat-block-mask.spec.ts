@@ -89,7 +89,7 @@ describe('maskBlockedMessages', () => {
       created_at: '2026-03-01T00:05:00.000Z',
     });
 
-    it("drops a blocked replier's preview under a clear parent", () => {
+    it("withholds a blocked replier's preview under a clear parent", () => {
       const [row] = maskBlockedMessages(
         [
           servedRow({
@@ -100,12 +100,21 @@ describe('maskBlockedMessages', () => {
         [BLOCKED],
       );
       expect(row.sender_blocked).toBe(false);
-      expect(row.thread_last_reply).toBeNull();
+      // Withheld, with the verdict the client carries onto the next echo.
+      expect(row.thread_last_reply).toEqual({
+        id: 'reply-1',
+        sender_id: BLOCKED,
+        content: '',
+        kind: null,
+        attachment_count: 0,
+        created_at: '2026-03-01T00:05:00.000Z',
+        sender_blocked: true,
+      });
       // The count stays: a block counts what it hides, as the open thread does.
       expect(row.thread_reply_count).toBe(2);
     });
 
-    it('drops it under a masked parent too', () => {
+    it('withholds it under a masked parent too', () => {
       const [row] = maskBlockedMessages(
         [
           servedRow({
@@ -116,7 +125,8 @@ describe('maskBlockedMessages', () => {
         ],
         [BLOCKED],
       );
-      expect(row.thread_last_reply).toBeNull();
+      expect(row.thread_last_reply?.sender_blocked).toBe(true);
+      expect(row.thread_last_reply?.content).toBe('');
     });
 
     it("keeps another member's preview, under a masked parent as well", () => {
@@ -133,8 +143,14 @@ describe('maskBlockedMessages', () => {
         ],
         [BLOCKED],
       );
-      expect(mine.thread_last_reply).toEqual(clear);
-      expect(masked.thread_last_reply).toEqual(clear);
+      expect(mine.thread_last_reply).toEqual({
+        ...clear,
+        sender_blocked: false,
+      });
+      expect(masked.thread_last_reply).toEqual({
+        ...clear,
+        sender_blocked: false,
+      });
     });
 
     it("keeps an imported reply's preview, which no one can block", () => {
@@ -143,7 +159,10 @@ describe('maskBlockedMessages', () => {
         [servedRow({ thread_reply_count: 1, thread_last_reply: imported })],
         [BLOCKED],
       );
-      expect(row.thread_last_reply).toEqual(imported);
+      expect(row.thread_last_reply).toEqual({
+        ...imported,
+        sender_blocked: false,
+      });
     });
   });
 

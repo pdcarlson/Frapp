@@ -26,7 +26,12 @@ describe("ThreadChip (#3785)", () => {
 
   it("says how many replies are new to the viewer (#4297)", () => {
     render(
-      <ThreadChip summary={summary} nameFor={nameFor} unread={2} onOpen={vi.fn()} />,
+      <ThreadChip
+        summary={summary}
+        nameFor={nameFor}
+        unread={2}
+        onOpen={vi.fn()}
+      />,
     );
     expect(
       screen.getByRole("button", {
@@ -48,11 +53,7 @@ describe("ThreadChip (#3785)", () => {
       id === "u1" ? "https://example.test/p.png" : null,
     );
     const { container } = render(
-      <ThreadChip
-        summary={summary}
-        nameFor={nameFor}
-        avatarFor={avatarFor}
-      />,
+      <ThreadChip summary={summary} nameFor={nameFor} avatarFor={avatarFor} />,
     );
     // A photo is asked for each replier (jsdom never loads one, so the
     // initials below are what it draws until it does).
@@ -68,7 +69,12 @@ describe("ThreadChip (#3785)", () => {
     // jsdom lays nothing out, so this pins the shrink factors that decide the
     // order; the widths themselves were measured in Chrome.
     const { container } = render(
-      <ThreadChip summary={summary} nameFor={nameFor} unread={2} onOpen={vi.fn()} />,
+      <ThreadChip
+        summary={summary}
+        nameFor={nameFor}
+        unread={2}
+        onOpen={vi.fn()}
+      />,
     );
     const time = screen.getByText(/last reply/).parentElement!;
     const faces = screen.getByText("PC").closest("[aria-hidden]")!;
@@ -82,7 +88,11 @@ describe("ThreadChip (#3785)", () => {
     expect(
       container.querySelector('[data-slot="thread-unread"]')!.className,
     ).toContain("shrink-0");
-    expect(container.querySelector("svg.lucide-chevron-right")!.getAttribute("class")).toContain("shrink-0");
+    expect(
+      container
+        .querySelector("svg.lucide-chevron-right")!
+        .getAttribute("class"),
+    ).toContain("shrink-0");
   });
 
   it("previews the latest reply under the count, capped in width (#4297)", () => {
@@ -97,6 +107,7 @@ describe("ThreadChip (#3785)", () => {
           kind: "text",
           attachment_count: 2,
           created_at: summary.last_reply_at,
+          sender_blocked: false,
         }}
         onOpen={vi.fn()}
       />,
@@ -104,9 +115,32 @@ describe("ThreadChip (#3785)", () => {
     const line = container.querySelector('[data-slot="thread-preview"]');
     // A file-only reply reads as the timeline's quote of it does.
     expect(line).toHaveTextContent("Shawn2 attachments");
+    // A fixed cap: a percentage one counts as none in the row's w-fit extent.
+    expect(line?.className).toContain("max-w-[24rem]");
+  });
+
+  it("names a replier who left as the timeline does (#4297)", () => {
+    render(
+      <ThreadChip
+        summary={summary}
+        nameFor={() => null}
+        preview={{
+          id: "r1",
+          sender_id: "2f4a1c99-0000-4000-8000-000000000000",
+          content: "see you there",
+          kind: "text",
+          attachment_count: 0,
+          created_at: summary.last_reply_at,
+          sender_blocked: false,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
     expect(
-      container.querySelector('[data-slot="thread-card"]')?.className,
-    ).toContain("max-w-[min(100%,26rem)]");
+      screen.getByRole("button", {
+        name: /latest from Member 2f4a1c: see you there\. Open thread$/,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("draws no preview line without one", () => {

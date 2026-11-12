@@ -218,27 +218,47 @@ export function maskBlockedMessages(
 }
 
 /**
- * A thread's parent whose latest reply is from a blocked member serves no
- * preview of it (#4297), whoever wrote the parent.
+ * A thread's parent whose latest reply is from a blocked member serves that
+ * preview withheld (#4297), whoever wrote the parent, and every other preview
+ * flagged clear.
  *
  * The preview is the replier's content riding on someone else's row, so the
  * row's own mask never reaches it: without this, a blocked member's reply
- * would read on the card under any parent. The whole preview goes, not just
- * its text, so the card draws as it does for a thread with no preview; the
- * replier's face stays among `thread_recent_sender_ids`, as the open thread
- * keeps their tombstone in place. Nothing replaces it with the next reply: the
- * trigger keeps one reply, and the open thread is where the rest are read.
- * The Realtime echo carries it raw, and each client applies its own list.
+ * would read on the card under any parent. What survives is what the row's own
+ * mask keeps of a message (`maskMessage`): the reply's id, its sender and its
+ * time, with `sender_blocked: true`. That flag is the server's verdict, which
+ * the client carries onto the parent's next Realtime echo (`mergeServerRow`),
+ * as it does a masked message's, so a block made on another device holds even
+ * where this client's list predates it; and it is how Unblock finds the
+ * parents to re-read (`hasMaskedCopyFrom`). Nothing replaces it with the next
+ * reply: the trigger keeps one, and the open thread is where the rest are read.
+ * The Realtime echo carries the preview raw, and each client applies its own
+ * list (`threadPreviewVisible`).
  */
 function withThreadPreviewMasked(
   message: MaskedChatMessage,
   blocked: ReadonlySet<string>,
 ): MaskedChatMessage {
   const preview = message.thread_last_reply;
-  if (!preview || !isFromBlockedSender(preview.sender_id, blocked)) {
-    return message;
+  if (!preview) return message;
+  if (!isFromBlockedSender(preview.sender_id, blocked)) {
+    return {
+      ...message,
+      thread_last_reply: { ...preview, sender_blocked: false },
+    };
   }
-  return { ...message, thread_last_reply: null };
+  return {
+    ...message,
+    thread_last_reply: {
+      id: preview.id,
+      sender_id: preview.sender_id,
+      content: '',
+      kind: null,
+      attachment_count: 0,
+      created_at: preview.created_at,
+      sender_blocked: true,
+    },
+  };
 }
 
 /**

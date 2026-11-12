@@ -392,6 +392,13 @@ export interface ChatThreadLastReply {
   kind: string | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * Set by a read that masks: `true` when the viewer blocked this replier, so
+   * the preview is withheld (`content` empty) and the client keeps that
+   * verdict through the parent's Realtime echo; `false` when it was cleared.
+   * Absent on the Realtime echo and on a read that doesn't mask.
+   */
+  sender_blocked?: boolean;
 }
 
 /**

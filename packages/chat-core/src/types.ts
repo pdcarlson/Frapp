@@ -457,6 +457,7 @@ export interface RawThreadLastReply {
   kind?: unknown;
   attachment_count?: unknown;
   created_at?: unknown;
+  sender_blocked?: unknown;
 }
 
 /** The parent's copy of its newest reply, read defensively (#4297). */
@@ -468,6 +469,14 @@ export interface ThreadLastReply {
   kind: ChatMessageKind;
   attachment_count: number;
   created_at: string;
+  /**
+   * The server's verdict that it withheld this preview because the viewer
+   * blocked its replier (`content` is then empty). Only a REST read sets it;
+   * `mergeServerRow` carries it onto the parent's next Realtime echo while the
+   * same replier's reply is still the latest, as it carries a masked
+   * message's `sender_blocked`.
+   */
+  sender_blocked: boolean;
 }
 
 /**
@@ -488,6 +497,7 @@ function threadLastReplyOf(
       attachment_count: raw.attachment_count,
     }),
     created_at: typeof raw.created_at === "string" ? raw.created_at : "",
+    sender_blocked: raw.sender_blocked === true,
   };
 }
 

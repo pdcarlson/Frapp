@@ -36,45 +36,44 @@ vi.mock("./inline-message-editor", async () => {
     onSave: () => void;
     onCancel: () => void;
   };
-  const InlineMessageEditor = React.forwardRef<
-    { focus: () => void },
-    Props
-  >(function InlineMessageEditorDouble(props, ref) {
-    const field = React.useRef<HTMLTextAreaElement | null>(null);
-    const [text, setText] = React.useState(props.value);
-    const [loaded, setLoaded] = React.useState(props.resetKey ?? 0);
-    if ((props.resetKey ?? 0) !== loaded) {
-      setLoaded(props.resetKey ?? 0);
-      setText(props.value);
-    }
-    React.useImperativeHandle(ref, () => ({
-      focus: () => field.current?.focus(),
-    }));
-    return (
-      <textarea
-        ref={field}
-        aria-label="Edit message"
-        autoFocus
-        data-chips={props.chips ? "passed" : "missing"}
-        value={text}
-        disabled={props.disabled}
-        onChange={(event) => {
-          setText(event.target.value);
-          props.onChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            props.onCancel();
-          }
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            props.onSave();
-          }
-        }}
-      />
-    );
-  });
+  const InlineMessageEditor = React.forwardRef<{ focus: () => void }, Props>(
+    function InlineMessageEditorDouble(props, ref) {
+      const field = React.useRef<HTMLTextAreaElement | null>(null);
+      const [text, setText] = React.useState(props.value);
+      const [loaded, setLoaded] = React.useState(props.resetKey ?? 0);
+      if ((props.resetKey ?? 0) !== loaded) {
+        setLoaded(props.resetKey ?? 0);
+        setText(props.value);
+      }
+      React.useImperativeHandle(ref, () => ({
+        focus: () => field.current?.focus(),
+      }));
+      return (
+        <textarea
+          ref={field}
+          aria-label="Edit message"
+          autoFocus
+          data-chips={props.chips ? "passed" : "missing"}
+          value={text}
+          disabled={props.disabled}
+          onChange={(event) => {
+            setText(event.target.value);
+            props.onChange(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.onCancel();
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              props.onSave();
+            }
+          }}
+        />
+      );
+    },
+  );
   return { InlineMessageEditor };
 });
 vi.mock("./message-attachments", () => ({
@@ -2652,6 +2651,7 @@ describe("MessageItem thread entry points", () => {
             kind: "text",
             attachment_count: 0,
             created_at: "2026-11-11T20:00:00.000Z",
+            sender_blocked: false,
           },
         },
       } as Partial<ChatMessage>);
@@ -2686,7 +2686,9 @@ describe("MessageItem thread entry points", () => {
         onOpenThread: vi.fn(),
         blockState: { ...NOBODY_BLOCKED, ids: new Set([BLOCKED_REPLIER]) },
       });
-      expect(container.querySelector('[data-slot="thread-preview"]')).toBeNull();
+      expect(
+        container.querySelector('[data-slot="thread-preview"]'),
+      ).toBeNull();
       expect(screen.queryByText(/garage/)).not.toBeInTheDocument();
       expect(
         container.querySelector('[data-slot="thread-card"]'),
@@ -2717,7 +2719,11 @@ describe("MessageItem thread entry points", () => {
       act(() => setChatDensity(density));
       const { container } = renderItemWithProps({
         message: message({
-          thread: { reply_count: 3, last_reply_at: null, recent_sender_ids: [] },
+          thread: {
+            reply_count: 3,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
         } as Partial<ChatMessage>),
         onOpenThread: vi.fn(),
       });

@@ -962,23 +962,6 @@ export class ResolveAuthorAvatarsDto {
   message_ids: string[];
 }
 
-/**
- * A chat message as a read surface serves it — the whole row, plus the
- * server's masking verdict for the caller.
- *
- * **Declared rather than inferred, and that is the point of it.** Neither
- * `GET /v1/channels/{id}/messages` nor `GET /v1/channels/{id}/pins` carried a
- * response schema, so `openapi.json` documented no 200 body and
- * `openapi-typescript` typed both responses `never` — the #1049 defect.
- * `sender_blocked` was therefore emitted by the API and invisible to every
- * typed client: the one machine-readable half of
- * `spec/behavior/chat/README.md` § The masking contract, unreachable.
- *
- * Mirrors {@link MaskedChatMessage} in `chat-block-mask.ts` field for field.
- * Nothing in this app serializes to a declared DTO — there is no
- * `ClassSerializerInterceptor` — so this class documents the wire shape and
- * does not enforce it; the service's return type is what keeps it true.
- */
 /** What a thread's parent holds of its newest reply (#4297). */
 export class ChatThreadLastReplyDto {
   @ApiProperty()
@@ -1001,8 +984,33 @@ export class ChatThreadLastReplyDto {
 
   @ApiProperty()
   created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list.',
+  })
+  sender_blocked?: boolean;
 }
 
+/**
+ * A chat message as a read surface serves it — the whole row, plus the
+ * server's masking verdict for the caller.
+ *
+ * **Declared rather than inferred, and that is the point of it.** Neither
+ * `GET /v1/channels/{id}/messages` nor `GET /v1/channels/{id}/pins` carried a
+ * response schema, so `openapi.json` documented no 200 body and
+ * `openapi-typescript` typed both responses `never` — the #1049 defect.
+ * `sender_blocked` was therefore emitted by the API and invisible to every
+ * typed client: the one machine-readable half of
+ * `spec/behavior/chat/README.md` § The masking contract, unreachable.
+ *
+ * Mirrors {@link MaskedChatMessage} in `chat-block-mask.ts` field for field.
+ * Nothing in this app serializes to a declared DTO — there is no
+ * `ClassSerializerInterceptor` — so this class documents the wire shape and
+ * does not enforce it; the service's return type is what keeps it true.
+ */
 export class ChatMessageDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -1146,7 +1154,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      'On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row, on a parent whose replies are all deleted, and on a read that masks when the viewer blocked that replier.',
+      'On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).',
   })
   thread_last_reply?: ChatThreadLastReplyDto | null;
 
