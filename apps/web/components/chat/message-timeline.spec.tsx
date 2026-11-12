@@ -34,6 +34,18 @@ const virtuosoProps = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
 }));
 
+/**
+ * What the timeline's `followOutput` answers for a count rise while the list
+ * sits at its end. It is a function since #4537 (the member's own send is
+ * followed from anywhere), so the cases that predate it ask it this way.
+ */
+function followsFromBottom(atBottom = true): unknown {
+  const follow = virtuosoProps.current.followOutput;
+  return typeof follow === "function"
+    ? (follow as (atBottom: boolean) => unknown)(atBottom)
+    : follow;
+}
+
 // A stand-in poll card, so the wiring test below proves the timeline carries
 // `onClosePoll` through MessageItem and MessageRenderer to the card (#3794).
 // It still draws the question and a Vote control, as the real card does, so
@@ -1175,11 +1187,11 @@ describe("MessageTimeline older history (#1571)", () => {
     act(() => virtuosoProps.current.atTopStateChange?.(false));
 
     rerender(view(history(1, 20)));
-    expect(virtuosoProps.current.followOutput).toBe(false);
+    expect(followsFromBottom()).toBe(false);
 
     // A new message at the end is followed as ever.
     rerender(view(history(1, 21)));
-    expect(virtuosoProps.current.followOutput).toBe("smooth");
+    expect(followsFromBottom()).toBe("smooth");
   });
 
   it("still follows while a cold open settles onto its newest row", () => {
@@ -1203,7 +1215,7 @@ describe("MessageTimeline older history (#1571)", () => {
 
     rerender(view(history(1, 20)));
 
-    expect(virtuosoProps.current.followOutput).toBe("smooth");
+    expect(followsFromBottom()).toBe("smooth");
   });
 
   it("does not follow a growing list while a jump is on its way", () => {
@@ -1223,10 +1235,10 @@ describe("MessageTimeline older history (#1571)", () => {
       />
     );
     const { rerender } = render(view(history(1, 5), true));
-    expect(virtuosoProps.current.followOutput).toBe(false);
+    expect(followsFromBottom()).toBe(false);
 
     rerender(view(history(1, 6), false));
-    expect(virtuosoProps.current.followOutput).toBe("smooth");
+    expect(followsFromBottom()).toBe("smooth");
   });
 
   it("says a page is loading above the oldest row", () => {
@@ -1972,5 +1984,171 @@ describe("MessageTimeline thread cards (#4297)", () => {
     );
     expect(screen.getByText("2 new")).toBeInTheDocument();
     expect(screen.queryByText("9 new")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4537: Paul sent from a line or two above the end of #Discussion and his
+ * message went nowhere: the list followed new rows only from within 16px of
+ * its end, so his own landed below the fold with the list left where it was.
+ * And web had no way back to the newest message short of scrolling, which
+ * mobile has had as `JumpToLatestButton`.
+ */
+describe("MessageTimeline own sends and Jump to latest (#4537)", () => {
+  const thread = [
+    message({ id: "m-1", client_message_id: "cm-1", content: "one" }),
+    message({ id: "m-2", client_message_id: "cm-2", content: "two" }),
+  ];
+
+  function view(messages: ChatMessage[], channelId = "chan-1") {
+    return (
+      <MessageTimeline
+        channelId={channelId}
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+  }
+
+  /** A 600px scroller over `scrollHeight`, scrolled to `scrollTop`. */
+  function scroller(scrollHeight: number, scrollTop: number) {
+    const element = document.createElement("div");
+    Object.defineProperty(element, "clientHeight", { value: 600 });
+    Object.defineProperty(element, "scrollHeight", {
+      value: scrollHeight,
+      writable: true,
+    });
+    element.scrollTop = scrollTop;
+    return element;
+  }
+
+  function scrollTo(element: HTMLElement, scrollTop: number) {
+    element.scrollTop = scrollTop;
+    act(() => {
+      element.dispatchEvent(new Event("scroll"));
+    });
+  }
+
+  const jumpButton = () =>
+    screen.queryByRole("button", { name: /Jump to latest/ });
+
+  beforeEach(() => virtuosoProps.scrollToIndex.mockClear());
+
+  it("follows the member's own send from off the bottom, instantly", () => {
+    const { rerender } = render(view(thread));
+    rerender(
+      view([
+        ...thread,
+        message({
+          id: "cm-mine",
+          client_message_id: "cm-mine",
+          sender_id: VIEWER,
+          content: "mine",
+          _status: "pending",
+        }),
+      ]),
+    );
+
+    expect(followsFromBottom(false)).toBe("auto");
+    expect(followsFromBottom(true)).toBe("smooth");
+  });
+
+  it("leaves a reader off the bottom where they are for anyone else's message", () => {
+    const { rerender } = render(view(thread));
+    rerender(
+      view([
+        ...thread,
+        message({ id: "m-3", client_message_id: "cm-3", sender_id: BOB }),
+      ]),
+    );
+
+    expect(followsFromBottom(false)).toBe(false);
+    expect(followsFromBottom(true)).toBe("smooth");
+  });
+
+  it("does not chase the member's own confirmed row from off the bottom", () => {
+    // Confirmed means it came from the server: a send from another device,
+    // or this one's confirmation, which the pending row already followed.
+    const { rerender } = render(view(thread));
+    rerender(
+      view([
+        ...thread,
+        message({
+          id: "m-mine",
+          client_message_id: "cm-mine",
+          sender_id: VIEWER,
+        }),
+      ]),
+    );
+
+    expect(followsFromBottom(false)).toBe(false);
+  });
+
+  it("offers Jump to latest a screen or more back, and takes the reader there", async () => {
+    const user = userEvent.setup();
+    render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    // Within a screen of the end: no control, the way the phone draws it.
+    scrollTo(element, 2000);
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    scrollTo(element, 1000);
+    expect(jumpButton()).toHaveAccessibleName("Jump to latest");
+
+    await user.click(jumpButton()!);
+    expect(virtuosoProps.scrollToIndex).toHaveBeenLastCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    expect(jumpButton()).not.toBeInTheDocument();
+  });
+
+  it("says when someone else's message lands out of sight, and not for the reader's own", () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    // Off the end, but within a screen of it.
+    scrollTo(element, 2200);
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    const mine = message({
+      id: "m-mine",
+      client_message_id: "cm-mine",
+      sender_id: VIEWER,
+    });
+    rerender(view([...thread, mine]));
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    rerender(
+      view([
+        ...thread,
+        mine,
+        message({ id: "m-bob", client_message_id: "cm-bob", sender_id: BOB }),
+      ]),
+    );
+    expect(jumpButton()).toHaveAccessibleName("New messages. Jump to latest");
+    expect(screen.getByTestId("jump-to-latest-dot")).toBeInTheDocument();
+  });
+
+  it("starts each channel at its newest row, with no control", () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    scrollTo(element, 500);
+    expect(jumpButton()).toBeInTheDocument();
+
+    rerender(view(thread, "chan-2"));
+    expect(jumpButton()).not.toBeInTheDocument();
   });
 });

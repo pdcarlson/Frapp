@@ -11,6 +11,9 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
+import { arrivedSince, type LatestRow } from "@repo/chat-core/jump-to-latest";
+
+export type { LatestRow };
 
 /**
  * How close to the newest message, in points, the list still follows an
@@ -32,27 +35,6 @@ export interface LatestScrollableList {
  */
 type Zone = "newest" | "near" | "away";
 
-/**
- * One row of the thread, newest first as the inverted list draws it.
- */
-export interface LatestRow {
-  /** Its stable key: `client_message_id`, unchanged through confirmation. */
-  id: string;
-  /**
-   * The viewer's own message: an unconfirmed send from this device, or one
-   * of theirs the server has confirmed, from here or another device. Never
-   * news to them.
-   */
-  own: boolean;
-  /**
-   * Drawn with nothing to read: a tombstone for a member the viewer blocked
-   * (on their list, or masked by the server), or a deleted message. Never
-   * news either. Blocked members' messages raise no unread badge for the
-   * same reason (spec/behavior/chat § Read Receipts).
-   */
-  silent: boolean;
-}
-
 /** Where the reader is, per channel. */
 interface ReadingState {
   channelKey: string | null;
@@ -62,59 +44,6 @@ interface ReadingState {
    * from a row that was already there.
    */
   seenWhenLeft: ReadonlySet<string> | null;
-}
-
-/**
- * Whether a row landed below the reader since they left `newest`, judged on
- * the cache as it is now rather than on anything frozen when they left. The
- * newest row's identity or timestamp is not enough:
- *
- * - The viewer's own message is re-sorted when the server confirms it (its
- *   `created_at` becomes the server's), so a device clock ahead of the
- *   server's puts a later arrival behind a timestamp the cache no longer
- *   orders by.
- * - A message queued offline is confirmed after everything backfilled from
- *   the outage, so it comes back newest under the same key with the
- *   backfilled rows beneath it.
- * - Discarding your own failed newest message takes a row away, and the row
- *   before it becomes the newest without anything having arrived.
- *
- * So a row arrived when all of these hold:
- *
- * - Its key was not there when they left. A removal adds no key.
- * - It sits newer than the oldest row that was, which every row they could
- *   have been reading is. An older page loads past that end. With none of
- *   the old rows left (an empty thread when they left), anything there now
- *   arrived.
- * - It is someone else's and has something to read (`own`, `silent`).
- *
- * Where it sits among the rows they saw, and how old it is, don't matter.
- * The cache fills gaps under rows the reader has already seen: on reconnect
- * the realtime manager resubscribes before its REST backfill, so a live
- * message can be on screen before the ones posted during the outage are
- * merged in beneath it at their own times. Those are real messages the
- * reader hasn't seen, and missing one is worse than the other mistake this
- * rule allows: an older row released mid-history (a held row, once the
- * block list loads) lights the dot too, which costs one jump offer they can
- * ignore, since the jump only ever goes to the newest message.
- */
-function arrivedSince(
-  rows: readonly LatestRow[],
-  seen: ReadonlySet<string> | null,
-): boolean {
-  if (seen === null) return false;
-  let oldestSeen = rows.length;
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    if (seen.has(rows[index]!.id)) {
-      oldestSeen = index;
-      break;
-    }
-  }
-  for (let index = 0; index < oldestSeen; index += 1) {
-    const row = rows[index]!;
-    if (!row.own && !row.silent && !seen.has(row.id)) return true;
-  }
-  return false;
 }
 
 /**

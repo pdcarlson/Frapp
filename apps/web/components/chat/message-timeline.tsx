@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import { JumpToLatestButton } from "./jump-to-latest-button";
+import { useJumpToLatest } from "@/lib/chat/use-jump-to-latest";
+import type { LatestRow } from "@repo/chat-core/jump-to-latest";
 import {
   ImageViewer,
   ImageViewerProvider,
@@ -760,6 +763,60 @@ export const MessageTimeline = forwardRef<
     hold: holdFollow,
   });
 
+  // The way back to the newest message once the member has read back through
+  // history, as mobile draws it: past one screen, or once someone else's
+  // message lands out of sight below them (`useJumpToLatest`).
+  const latestRows = useMemo<LatestRow[]>(() => {
+    const out: LatestRow[] = [];
+    for (let index = decorated.length - 1; index >= 0; index -= 1) {
+      const { message, visibility } = decorated[index]!;
+      out.push({
+        id: message.client_message_id ?? message.id,
+        own: viewerId !== null && message.sender_id === viewerId,
+        silent: visibility === "tombstone" || message.is_deleted === true,
+      });
+    }
+    return out;
+  }, [decorated, viewerId]);
+  const jump = useJumpToLatest({
+    rows: latestRows,
+    channelKey: channelId ?? null,
+    followWithin: STICK_TO_BOTTOM_SLACK_PX,
+  });
+  const markNewest = jump.markNewest;
+  const pinToBottom = stickToBottom.pinned;
+  const jumpToLatest = useCallback(() => {
+    if (!virtuoso.current) return;
+    // Instant, for the reason `scrollToMessage` gives: a smooth scroll is
+    // aimed once from estimated row heights and settles short.
+    virtuoso.current.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    pinToBottom();
+    markNewest();
+  }, [markNewest, pinToBottom]);
+
+  /*
+    Whether the newest row is a send the member just made from here: their own
+    row, not yet confirmed. Virtuoso asks `followOutput` each time the count
+    rises, and it used to follow only while the list sat within
+    `STICK_TO_BOTTOM_SLACK_PX` of its end. A member a line or two up when they
+    pressed Enter (a photo above that grew, a nudge of the wheel) saw their
+    message go nowhere: it landed below the fold with the list left where it
+    was, and read as unsent (2026-11-12, #4537). Their own send now always
+    brings the list to it, as the phone's Send does (`jumpToLatest` on the
+    tap). Anyone else's message still follows only from the bottom, so reading
+    back is never yanked away.
+  */
+  const newestEntry = decorated[decorated.length - 1];
+  const newestIsOwnSend =
+    newestEntry !== undefined &&
+    viewerId !== null &&
+    newestEntry.message.sender_id === viewerId &&
+    newestEntry.message._status === "pending";
+
   /*
     Load the next older page while the member sits at the top of what is
     loaded. Tracked as a state rather than answered from `startReached`, which
@@ -889,12 +946,14 @@ export const MessageTimeline = forwardRef<
   // `useStickToBottom`'s callback is stable, and must stay so: Virtuoso calls
   // a new `scrollerRef` again, which would re-pin the list to its bottom.
   const stickScrollerRef = stickToBottom.scrollerRef;
+  const jumpScrollerRef = jump.scrollerRef;
   const scrollerRef = useCallback(
     (element: HTMLElement | Window | null) => {
       scroller.current = element instanceof HTMLElement ? element : null;
       stickScrollerRef(element);
+      jumpScrollerRef(element);
     },
-    [stickScrollerRef],
+    [stickScrollerRef, jumpScrollerRef],
   );
   const reportVisible = useCallback(() => {
     const range = visibleRange.current;
@@ -1099,7 +1158,7 @@ export const MessageTimeline = forwardRef<
 
   return (
     <ImageViewerProvider value={imageViewer.open}>
-      <div className="h-full">
+      <div className="relative h-full">
         <Virtuoso
           ref={virtuoso}
           data={decorated}
@@ -1107,7 +1166,13 @@ export const MessageTimeline = forwardRef<
           // Until the list is armed it is still settling onto its bottom, and
           // the live page landing over the cached tail prepends rows; following
           // those is what keeps a cold open at the newest message.
-          followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
+          followOutput={(atBottom) => {
+            if (holdFollow || (prepended && armed)) return false;
+            if (atBottom) return "smooth";
+            // Off the bottom only for the member's own send, and instantly:
+            // a smooth scroll over estimated heights settles short.
+            return newestIsOwnSend ? "auto" : false;
+          }}
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
           rangeChanged={handleRangeChanged}
@@ -1226,6 +1291,9 @@ export const MessageTimeline = forwardRef<
             entry.message.client_message_id ?? entry.message.id
           }
         />
+        {jump.showsJump ? (
+          <JumpToLatestButton hasNew={jump.hasNewBelow} onJump={jumpToLatest} />
+        ) : null}
       </div>
       <ImageViewer viewer={imageViewer} />
     </ImageViewerProvider>
