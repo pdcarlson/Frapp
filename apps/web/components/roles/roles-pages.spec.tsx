@@ -52,23 +52,33 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/settings",
   useSearchParams: () => new URLSearchParams("tab=roles&role=brother"),
 }));
-vi.mock("@repo/hooks", () => ({
-  useAiConsent: () => ({ data: h.aiConsent }),
-  aiAvailableFrom: (consent: { data: object | null | undefined }) =>
-    consent.data === undefined ? undefined : consent.data !== null,
-  useRoles: () => ok(h.roles),
-  useRoleTiers: () => ok(h.tiers),
-  useMembers: () => ok(h.members),
-  useMyPermissions: () => ok({ permissions: h.mine }),
-  useViewerUserId: () => "me",
-  useUpdateRole: () => mutation(h.updateRole),
-  useCreateRole: () => mutation(h.createRole),
-  useDeleteRole: () => mutation(h.deleteRole),
-  useUpdateRoleTier: () => mutation(h.updateTier),
-  useCreateRoleTier: () => mutation(h.createTier),
-  useDeleteRoleTier: () => mutation(h.deleteTier),
-  useReorderRoleTiers: () => mutation(h.reorderTiers),
-}));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  // The real rule (#4504), fed whether this server has AI from `h`.
+  const { isPermissionHidden } =
+    await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    useAiConsent: () => ({ data: h.aiConsent }),
+    aiAvailableFrom: (consent: { data: object | null | undefined }) =>
+      consent.data === undefined ? undefined : consent.data !== null,
+    useIsPermissionHidden: () => (permission: string) =>
+      isPermissionHidden(
+        permission,
+        h.aiConsent === undefined ? undefined : h.aiConsent !== null,
+      ),
+    useRoles: () => ok(h.roles),
+    useRoleTiers: () => ok(h.tiers),
+    useMembers: () => ok(h.members),
+    useMyPermissions: () => ok({ permissions: h.mine }),
+    useViewerUserId: () => "me",
+    useUpdateRole: () => mutation(h.updateRole),
+    useCreateRole: () => mutation(h.createRole),
+    useDeleteRole: () => mutation(h.deleteRole),
+    useUpdateRoleTier: () => mutation(h.updateTier),
+    useCreateRoleTier: () => mutation(h.createTier),
+    useDeleteRoleTier: () => mutation(h.deleteTier),
+    useReorderRoleTiers: () => mutation(h.reorderTiers),
+  };
+});
 vi.mock("@/lib/hooks/use-chapter-vocabulary", () => ({
   useChapterVocabulary: () => h.vocabulary,
 }));

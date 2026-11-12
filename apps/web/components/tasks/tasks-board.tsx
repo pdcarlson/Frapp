@@ -4,6 +4,7 @@ import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
+  isFirstAiReadInFlight,
   useAiSuggestions,
   useConfirmTask,
   useCreateTask,
@@ -166,13 +167,12 @@ export function TasksBoard() {
   // some. The board waits for that read with its own, so the columns are
   // drawn once and never pushed down by a list arriving late. A server with
   // AI off answers at once with none. Only a read in flight holds the
-  // board: one that can't run (offline) leaves the columns to draw, as the
-  // permissions read above does.
+  // board: one that can't run (offline) or failed once leaves the columns
+  // to draw, as the permissions read above does, rather than wait out the
+  // retries.
   const suggestionsQuery = useAiSuggestions({ enabled: canManage });
   const suggestionsLoading =
-    canManage &&
-    suggestionsQuery.isPending &&
-    suggestionsQuery.fetchStatus === "fetching";
+    canManage && isFirstAiReadInFlight(suggestionsQuery);
   const moduleGate = useChapterModuleGateState();
   const nowTick = useNow();
   // A member with nothing assigned sees one line instead of the board, and

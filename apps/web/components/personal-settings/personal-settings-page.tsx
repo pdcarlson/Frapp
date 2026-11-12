@@ -2,7 +2,12 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { aiAvailableFrom, useAiConsent, useCurrentChapter } from "@repo/hooks";
+import {
+  aiAvailableFrom,
+  isFirstAiReadInFlight,
+  useAiConsent,
+  useCurrentChapter,
+} from "@repo/hooks";
 import { AccountSection } from "@/components/personal-settings/account-section";
 import { AiSection } from "@/components/personal-settings/ai-section";
 import { ChapterAlertsSection } from "@/components/personal-settings/chapter-alerts-section";
@@ -75,10 +80,11 @@ function PersonalSettingsContent() {
   /*
     The rail waits for the first AI read rather than drawing without the AI
     row and inserting it a moment later, which pushed every row below it
-    down (and sent `?section=ai` to Notifications first). A failed or
-    paused read stops waiting: the row stays out, as with AI off.
+    down (and sent `?section=ai` to Notifications first). A paused read, or
+    a first attempt that failed, stops waiting without sitting out the
+    retries (#4504): the row stays out, as with AI off.
   */
-  if (aiConsent.isPending && aiConsent.fetchStatus === "fetching") {
+  if (isFirstAiReadInFlight(aiConsent)) {
     return <PersonalSettingsBodySkeleton />;
   }
 

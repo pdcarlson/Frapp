@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useUpdateRole } from "@repo/hooks";
+import { useIsPermissionHidden, useUpdateRole } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   useOverrideOverlay,
@@ -17,7 +17,6 @@ import {
   type TierRow,
 } from "@repo/hooks/role-tiers";
 import { groupPermissionsByModule } from "@repo/validation";
-import { useIsPermissionHidden } from "@/lib/roles/hidden-permissions";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_ROLES } from "@/components/back-row";

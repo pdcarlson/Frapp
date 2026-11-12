@@ -28,6 +28,7 @@ import {
 import { FieldError } from "@/components/shared/short-form";
 import { InlineNote } from "@/components/shared/inline-note";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
@@ -160,7 +161,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
       if (!name.trim()) next.name = "Name the meeting.";
       const from = localIso(date, startTime);
       const to = localIso(date, endTime);
-      if (!from || !to) next.time = "Add when it started and ended.";
+      if (!date) next.date = "Add the day it met, like Tuesday or Nov 4.";
+      else if (!from || !to) next.time = "Add when it started and ended.";
       else if (Date.parse(to) <= Date.parse(from)) {
         next.time = "It has to end after it starts.";
       }
@@ -318,12 +320,17 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
               </div>
               <div className="grid gap-1">
                 <Label htmlFor={`${ids}-date`}>Date</Label>
-                <Input
+                <DateField
                   id={`${ids}-date`}
-                  type="date"
+                  lean="back"
+                  placeholder="e.g. yesterday"
                   value={date}
-                  onChange={(event) => setDate(event.target.value)}
+                  aria-invalid={problems.date ? true : undefined}
+                  onChange={setDate}
                 />
+                {problems.date ? (
+                  <FieldError>{problems.date}</FieldError>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid min-w-0 gap-1">

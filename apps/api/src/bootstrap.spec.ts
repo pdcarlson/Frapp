@@ -42,12 +42,21 @@ class EchoController {
   }
 }
 
+/** Stands in for the meetings routes, which take the larger body (#4504). */
+@Controller('meetings')
+class MeetingsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
 /** No `environment` configures for this process, which under Jest is `local`. */
 async function createConfiguredEchoApp(
   environment?: DeploymentEnvironment,
 ): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    controllers: [EchoController],
+    controllers: [EchoController, MeetingsEchoController],
   }).compile();
   const app = moduleRef.createNestApplication();
   configureApp(app, environment);
@@ -73,19 +82,33 @@ describe('configureApp', () => {
       await app.close();
     });
 
-    it('takes a two-hour transcript as notes, which Express’s 100 KB default would refuse', async () => {
+    it('takes a two-hour transcript as notes on a meetings route, which Express’s 100 KB default would refuse', async () => {
       const res = await request(app.getHttpServer())
-        .post('/v1/echo')
+        .post('/v1/meetings')
         .send({ text: 'x'.repeat(160_000) })
         .expect(201);
       expect(res.body).toEqual({ length: 160_000 });
+    });
+
+    // The larger ceiling is only for meetings: every other route, the ones a
+    // caller with no token can reach among them, keeps Express's 100 KB.
+    it('keeps the 100 KB ceiling on every other route', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(90_000) })
+        .expect(201);
+      const tooLarge = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(160_000) });
+      expect(tooLarge.status).toBeGreaterThanOrEqual(400);
+      expect(tooLarge.body.requestId).toMatch(/^req_/);
     });
 
     // The global filter answers both as 500 today, where 413 and 400 are
     // meant (#4404); what this guards is that the answer names its request.
     it('names the request when it refuses a body over the limit, or one that is not JSON', async () => {
       const tooLarge = await request(app.getHttpServer())
-        .post('/v1/echo')
+        .post('/v1/meetings')
         .send({ text: 'x'.repeat(1_100_000) });
       expect(tooLarge.status).toBeGreaterThanOrEqual(400);
       expect(tooLarge.body.requestId).toMatch(/^req_/);

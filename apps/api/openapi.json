@@ -14789,7 +14789,7 @@
       },
       "delete": {
         "description": "Ends the window now and deletes everything it kept. Recorded in the audit log.",
-        "operationId": "AskController_stopDiagnostics_v1",
+        "operationId": "AskDiagnosticsStopController_stopDiagnostics_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -14806,7 +14806,7 @@
             "description": "The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`)."
           },
           "404": {
-            "description": "AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`)."
+            "description": "No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on."
           },
           "default": {
             "description": "Error",

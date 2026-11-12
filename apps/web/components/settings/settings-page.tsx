@@ -7,6 +7,7 @@ import {
   type OrgDues,
   useCurrentChapter,
   aiAvailableFrom,
+  isFirstAiReadInFlight,
   useAiConsent,
   useMyPermissions,
   useOrgConfig,
@@ -294,13 +295,14 @@ function SettingsPageContent() {
       ) : (
         <SettingsBodySkeleton />
       );
-  } else if (aiConsent.isPending && aiConsent.fetchStatus === "fetching") {
+  } else if (isFirstAiReadInFlight(aiConsent)) {
     /*
       The same hold for the AI row (#4308): drawn without it and then
       inserted, it pushed every row below Privacy down and sent `?tab=ai` to
       the first tab. The read runs beside the permissions read, so the wait
-      is rarely longer. A failed or paused read stops waiting and leaves the
-      row out, as with AI off.
+      is rarely longer. A paused read, or a first attempt that failed, stops
+      waiting and leaves the row out, as with AI off, without waiting out
+      the retries (#4504).
     */
     stateBanner = <SettingsBodySkeleton />;
   }

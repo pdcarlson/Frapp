@@ -18,6 +18,7 @@ export * from "./use-event-types";
 export * from "./use-meetings";
 export * from "./use-act";
 export * from "./use-ai";
+export * from "./use-hidden-permissions";
 export * from "./use-ai-suggestions";
 export * from "./use-ask";
 export * from "./use-chat-catch-up";

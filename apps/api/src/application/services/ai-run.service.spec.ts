@@ -309,6 +309,31 @@ describe('AiRunService', () => {
     expect(listed.map((run) => run.id)).toEqual([second.id, first.id]);
   });
 
+  it('neither lists nor reads the chapter’s upkeep as the member it only acts for (#4504)', async () => {
+    registry.register({
+      kind: 'corpus_index',
+      label: 'Indexing for search',
+      actsForMember: true,
+      chapterUpkeep: true,
+      run: async () => undefined,
+    });
+    const indexing = await service.enqueue({
+      chapterId: CHAPTER,
+      kind: 'corpus_index',
+      dedupeKey: 'source:1',
+      requestedBy: null,
+      actingUserId: MEMBER,
+      input: { corpus_source_id: MEETING },
+    });
+
+    await expect(
+      service.listForMember(CHAPTER, MEMBER, { limit: 20 }),
+    ).resolves.toEqual([]);
+    await expect(
+      service.getForMember(CHAPTER, MEMBER, indexing.id),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('cancels a queued run once', async () => {
     const run = await draft();
     await expect(service.cancel(CHAPTER, run.id)).resolves.toBe(true);
