@@ -22,6 +22,7 @@ import { canAll, isModuleEnabled } from "@repo/validation";
 import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
+import { SuggestedTasksEntry } from "@/components/tasks/suggested-tasks-entry";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   SectionHeader,
@@ -531,6 +532,8 @@ export default function TasksScreen() {
         ) : null}
 
         {renderBoard()}
+
+        <SuggestedTasksEntry />
       </ScreenShell>
 
       {undo ? (

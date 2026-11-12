@@ -234,10 +234,17 @@ export type PermissionRow = {
  * something a role actually holds. The wildcard is never a row: nobody
  * switches it, it moves only through Transfer presidency.
  */
-export function permissionRows(extra: readonly string[]): PermissionRow[] {
+export function permissionRows(
+  extra: readonly string[],
+  /**
+   * Leaves out switches for features this server does not offer: the AI
+   * permissions until it has AI, Meetings while the module is held off.
+   */
+  isHidden: (permission: string) => boolean = () => false,
+): PermissionRow[] {
   const known = new Set(PERMISSION_REGISTRY.map((entry) => entry.permission));
   const rows: PermissionRow[] = PERMISSION_REGISTRY.filter(
-    (entry) => entry.permission !== "*",
+    (entry) => entry.permission !== "*" && !isHidden(entry.permission),
   ).map((entry) => ({
     permission: entry.permission,
     label: entry.label,

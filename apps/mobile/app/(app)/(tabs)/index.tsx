@@ -66,9 +66,7 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { AskSheet } from "@/components/ask/ask-sheet";
 import { StatusSheet } from "@/components/account/status-sheet";
-import { AskPill } from "@/components/chat/ask-pill";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
   AccountButton,
@@ -102,7 +100,6 @@ import {
   SetupChecklistView,
 } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
-import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
@@ -139,14 +136,14 @@ import { usePrefetchUnreadChannels } from "@/lib/chat/prefetch-channel";
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
  *
- * Three surfaces, top to bottom: the ✦ Ask pill in the header
- * (`navigation.md` § Global entries — only in a build that has Ask), the UP
- * NEXT pulse strip, then the channel list with unread and mention badges.
+ * Two surfaces, top to bottom: the UP NEXT pulse strip, then the channel
+ * list with unread and mention badges. (Ask opens from the tab bar's +:
+ * `navigation.md` § Global entries.)
  *
  * `ScreenShell` is the right host here even though it wraps its children in a
  * `ScrollView`: a chapter's channel list is tens of rows, not thousands, so
- * windowing buys nothing, and the shell already carries the `headerAction` slot
- * S2 added for this exact pill. The thread (s05) is the screen that genuinely
+ * windowing buys nothing, and the shell already carries the `headerAction`
+ * slot. The thread (s05) is the screen that genuinely
  * needs to escape the shell.
  *
  * **Unread and mention counts are read, never computed** — `GET /v1/channels/unread`
@@ -171,11 +168,8 @@ export default function ChatHomeScreen() {
   const styles = createStyles(tokens);
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
-  // s17 is a sheet hosted by its parent screen, not a route
-  // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
-  // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
-  // for s19.
-  const askSheetRef = useRef<BottomSheetModal>(null);
+  // The status sheet is hosted here, by the screen whose avatar menu opens it
+  // (`spec/ui/mobile/patterns.md` § Bottom sheets).
   const statusSheetRef = useRef<BottomSheetModal>(null);
   // Chat home is titled by the chapter, its mark and name, not by the word
   // "Chat" (`components/chapter-mark.tsx`).
@@ -698,12 +692,6 @@ export default function ChatHomeScreen() {
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* No pill at all in a build without Ask (#2259): `AskSheet`
-              renders nothing then, so the pill would be a control with
-              nothing behind it. */}
-          {isAskAvailable() ? (
-            <AskPill onPress={() => askSheetRef.current?.present()} />
-          ) : null}
           {/* The Messages door, then the member's avatar, whose menu holds
               Profile, Notifications (the inbox, #3362) and Settings
               (owner, 2026-11-07). */}
@@ -961,7 +949,6 @@ export default function ChatHomeScreen() {
         </>
       )}
 
-      <AskSheet ref={askSheetRef} />
       <StatusSheet ref={statusSheetRef} />
       {channelForm ? (
         <ChannelFormSheet

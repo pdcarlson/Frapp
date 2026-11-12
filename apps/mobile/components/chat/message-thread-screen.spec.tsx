@@ -5,6 +5,10 @@ import { Alert } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CHAT_CATCH_UP_COPY,
+  chatCatchUpThreadOfferLine,
+} from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import { Chip } from "@/components/filter-chips";
@@ -228,6 +232,38 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   useBlockActions: () => ({ unblock, block: vi.fn(), reloadMaskedCopies }),
 }));
 
+/** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
+const catchUp = vi.hoisted(() => ({
+  surface: false,
+  waiting: false,
+  active: false,
+  start: vi.fn(),
+  resume: vi.fn(),
+  drop: vi.fn(),
+  options: undefined as
+    | { onOpenPoint: (point: unknown) => void }
+    | undefined,
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({ catchUp: catchUp.surface }),
+}));
+vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/chat/catch-up-sheet")
+  >()),
+  useCatchUp: (options: { onOpenPoint: (point: unknown) => void }) => {
+    catchUp.options = options;
+    return {
+      start: catchUp.start,
+      waiting: catchUp.waiting,
+      active: catchUp.active,
+      resume: catchUp.resume,
+      drop: catchUp.drop,
+      sheets: null,
+    };
+  },
+}));
+
 let writeBlockedReason: string | null = null;
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({
@@ -279,6 +315,9 @@ beforeEach(() => {
   writes.actionError = null;
   writesInput = null;
   queryClient = new QueryClient();
+  catchUp.surface = false;
+  catchUp.waiting = false;
+  catchUp.active = false;
 });
 
 describe("MessageThreadScreen (#3785)", () => {
@@ -577,6 +616,118 @@ describe("MessageThreadScreen (#3785)", () => {
       );
     });
     expect(seen).toBe("polling");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Catch me up on a thread (#3946)", () => {
+  const longThread = (replies: number) =>
+    threadState({
+      root: {
+        ...threadState().root!,
+        thread: {
+          reply_count: replies,
+          last_reply_at: null,
+          recent_sender_ids: [],
+        },
+      },
+    });
+  const byLabel = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === label,
+    );
+  const strips = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" && node.props.testID === "catch-up-strip",
+    );
+
+  it("offers nothing where the chapter has no summaries", () => {
+    thread = longThread(40);
+    const tree = render();
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(0);
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers nothing on a thread too short to shorten", () => {
+    catchUp.surface = true;
+    const tree = render();
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers nothing in a direct message", () => {
+    catchUp.surface = true;
+    channelRow = { ...channelRow, type: "DM" };
+    thread = longThread(40);
+    const tree = render();
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(0);
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers nothing in the audit log", () => {
+    catchUp.surface = true;
+    channelRow = { ...channelRow, is_audit_log: true, is_read_only: true };
+    thread = longThread(40);
+    const tree = render();
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(0);
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("summarizes this thread from the reply count's line", () => {
+    catchUp.surface = true;
+    thread = longThread(8);
+    const tree = render();
+    // Not long enough for the strip: the divider's action is the way in.
+    expect(strips(tree)).toHaveLength(0);
+    act(() =>
+      byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)[0]!.props.onPress(),
+    );
+    expect(catchUp.start).toHaveBeenCalledWith({
+      kind: "thread",
+      channelId: CHANNEL,
+      channelName: "general",
+      rootId: ROOT,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("offers a long thread's summary under the header, once", () => {
+    catchUp.surface = true;
+    thread = longThread(34);
+    const tree = render();
+    expect(screenText(tree)).toContain(chatCatchUpThreadOfferLine(34));
+    act(() =>
+      byLabel(tree, CHAT_CATCH_UP_COPY.offer_dismiss)[0]!.props.onPress(),
+    );
+    expect(strips(tree)).toHaveLength(0);
+    expect(catchUp.start).not.toHaveBeenCalled();
+    // The divider's action is still there for a change of mind.
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("leads back to a summary left for one of its lines, without asking again", () => {
+    catchUp.surface = true;
+    catchUp.waiting = true;
+    thread = longThread(34);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(CHAT_CATCH_UP_COPY.resume_line);
+    expect(text).not.toContain(chatCatchUpThreadOfferLine(34));
+    act(() =>
+      byLabel(
+        tree,
+        `${CHAT_CATCH_UP_COPY.resume_line} ${CHAT_CATCH_UP_COPY.resume_action}`,
+      )[0]!.props.onPress(),
+    );
+    expect(catchUp.resume).toHaveBeenCalledTimes(1);
+    expect(catchUp.start).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

@@ -36,6 +36,7 @@ import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 import { RushCard } from "./rush-card";
+import { SignupCard } from "./signup-card";
 import { SystemAuditLine } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
@@ -254,7 +255,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote, onClosePoll },
+        { onVote, onClosePoll, nameFor },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -355,6 +356,7 @@ function cardFor(
   row: {
     onVote: ThreadMessageRowProps["onVote"];
     onClosePoll: ThreadMessageRowProps["onClosePoll"];
+    nameFor: ThreadMessageRowProps["nameFor"];
   },
 ): ReactNode | null {
   const { message } = frame;
@@ -366,6 +368,11 @@ function cardFor(
           onVote={row.onVote}
           onClosePoll={row.onClosePoll}
         />
+      );
+    case "signup":
+      // A sign-up claim is a card action, the same path a poll vote takes.
+      return (
+        <SignupCard {...frame} nameFor={row.nameFor} onClaim={row.onVote} />
       );
     case "event": {
       const payload = readEventPayload(message);

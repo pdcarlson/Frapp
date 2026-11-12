@@ -14,6 +14,9 @@ import { MemberModule } from './modules/member/member.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
+import { MeetingModule } from './modules/meeting/meeting.module';
+import { MeetingDraftModule } from './modules/meeting/meeting-draft.module';
+import { MeetingRecordingModule } from './modules/meeting/meeting-recording.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -22,6 +25,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { AiSuggestionModule } from './modules/ai-suggestion/ai-suggestion.module';
 import { PledgeClassModule } from './modules/pledge-class/pledge-class.module';
 import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
@@ -33,6 +37,8 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { AiRunsModule } from './modules/ai-runs/ai-runs.module';
+import { CorpusModule } from './modules/corpus/corpus.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
@@ -42,6 +48,12 @@ import { ScheduledJobsModule } from './modules/scheduled-jobs/scheduled-jobs.mod
 import { DiscordImportModule } from './modules/discord-import/discord-import.module';
 import { ClientPolicyModule } from './modules/client-policy/client-policy.module';
 import { DevLogModule } from './modules/dev-log/dev-log.module';
+import { AiModule } from './modules/ai/ai.module';
+import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
+import { AskModule } from './modules/ask/ask.module';
+import { ActModule } from './modules/act/act.module';
+import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
+import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -71,6 +83,7 @@ import { validateEnv } from './config/env.validation';
     RbacModule,
     InviteModule,
     EventModule,
+    MeetingModule,
     AttendanceModule,
     PointsModule,
     BillingModule,
@@ -79,6 +92,7 @@ import { validateEnv } from './config/env.validation';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    AiSuggestionModule,
     PledgeClassModule,
     RushModule,
     NotificationModule,
@@ -90,6 +104,8 @@ import { validateEnv } from './config/env.validation';
     SearchModule,
     ActivityFeedModule,
     ActivityModule,
+    AiRunsModule,
+    CorpusModule,
     ChapterConfigModule,
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,
@@ -99,6 +115,16 @@ import { validateEnv } from './config/env.validation';
     DiscordImportModule,
     ClientPolicyModule,
     DevLogModule,
+    AiModule,
+    AiConsentModule,
+    AskModule,
+    ActModule,
+    ChatCatchUpModule,
+    AiReportModule,
+    // After the AI modules it imports, so their routes keep their place in
+    // the exported contract.
+    MeetingDraftModule,
+    MeetingRecordingModule,
   ],
   providers: [
     {

@@ -18,6 +18,7 @@ const SCREENS_BY_PATHNAME: Record<string, readonly string[]> = {
   "/dues": ["billing"],
   "/service-hours": ["service"],
   "/directory": ["members"],
+  "/suggested-tasks": ["ai_suggestions"],
 };
 
 const NONE: readonly string[] = [];

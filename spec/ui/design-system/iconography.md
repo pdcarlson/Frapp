@@ -328,6 +328,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Study hours | `StudyGlyph` | `study`, `graduation-cap` |
 | Service hours | `ServiceGlyph` | `service`, `hand-heart` |
 | Polls (no nav row since #3871; kept for the chat composer's + menu, #3865) | `PollsGlyph` | `polls`, `chart-bar` |
+| Meetings (minutes) | `MeetingsGlyph` | `meetings`, `notebook` |
 | Documents | `DocumentsGlyph` | `documents`, `file-text` |
 | Backwork | `BackworkGlyph` | `backwork`, `books` |
 | Directory | `DirectoryGlyph` | `directory`, `users-three` |
@@ -392,6 +393,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Add a reaction | `ReactionGlyph` |
 | The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
 | Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
+| Sign-up sheet, in the composer's **+** menu (#3926): a clipboard, the board filled, the clip and a ticked line stroke-only | `SignupGlyph` |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |

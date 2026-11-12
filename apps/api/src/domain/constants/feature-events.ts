@@ -45,6 +45,30 @@ export const FEATURE_EVENTS = {
     properties: ['status', 'has_excuse'],
   },
 
+  // Meetings (#4312): minutes written by hand. Only the type and which
+  // sections hold something, never a word of the minutes.
+  'meeting-started': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'from_new_event'],
+  },
+  'meeting-posted': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'has_decisions', 'has_action_items'],
+  },
+  // An officer asks for minutes drafted from their notes (#4312). No
+  // property: the AI call itself is counted by the gateway's own event.
+  'meeting-draft-requested': {
+    feature: 'meetings',
+    properties: [],
+  },
+  // An officer's recording finished uploading and its transcription was
+  // queued (#712). No property: nothing about the file, and the provider
+  // call is counted by the gateway's own event.
+  'meeting-recording-uploaded': {
+    feature: 'meetings',
+    properties: [],
+  },
+
   // Tasks
   'task-created': {
     feature: 'tasks',

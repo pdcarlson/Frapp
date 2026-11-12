@@ -124,7 +124,8 @@ export interface ChatComposerProps {
   /** Photos staged for the next send, each uploading, ready or failed. */
   photos?: StagedPhoto[];
   /**
-   * Opens the + sheet (#3865: Photo, Poll, Event, Task, Service hours), which
+   * Opens the + sheet (#3865: Photo, Poll, Sign-up sheet, Event, Task, Service
+   * hours), which
    * says itself what can't be used and why. Omit to render no + at all, as
    * while editing, rather than an inert one.
    */

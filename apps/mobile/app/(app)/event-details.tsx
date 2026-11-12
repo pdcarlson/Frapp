@@ -53,6 +53,7 @@ import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -247,6 +248,8 @@ export default function EventDetailsScreen() {
         ) : null}
 
         <SeriesSection event={event} now={now} />
+
+        <EventMinutesRow eventId={event.id} eventName={event.name} />
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet

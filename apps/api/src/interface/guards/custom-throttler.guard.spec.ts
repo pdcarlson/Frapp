@@ -21,7 +21,10 @@ import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
 import { DevLogController } from '../controllers/dev-log.controller';
 import { InviteController } from '../controllers/invite.controller';
+import { ActController } from '../controllers/act.controller';
 import { EventController } from '../controllers/event.controller';
+import { AskController } from '../controllers/ask.controller';
+import { ChatCatchUpController } from '../controllers/chat-catch-up.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChatController } from '../controllers/chat.controller';
@@ -710,6 +713,20 @@ describe('CustomThrottlerGuard', () => {
       route('POST /invites/preview', InviteController, IN.preview, 10),
       route('POST /events', EventController, EV.create, 10),
       route('PATCH /events/:id', EventController, EV.update, 10),
+      route('POST /ai/ask', AskController, AskController.prototype.ask, 10),
+      route('POST /ai/act', ActController, ActController.prototype.act, 10),
+      route(
+        'POST /ai/act/event-audience',
+        ActController,
+        ActController.prototype.eventAudience,
+        10,
+      ),
+      route(
+        'POST /ai/catch-up',
+        ChatCatchUpController,
+        ChatCatchUpController.prototype.catchUp,
+        10,
+      ),
       route(
         'POST /documents/upload-url',
         ChapterDocumentController,

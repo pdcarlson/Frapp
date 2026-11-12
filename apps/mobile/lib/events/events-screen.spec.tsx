@@ -72,6 +72,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionList: () => permissions,
 }));
 
+// Its own spec covers it; here it would need the AI reads.
+vi.mock("@/components/events/suggested-events-entry", () => ({
+  SuggestedEventsEntry: () => null,
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: ACCENT,
@@ -80,7 +84,6 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
 import EventsScreen from "@/app/(app)/(tabs)/events";
 

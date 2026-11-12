@@ -20,6 +20,8 @@ const h = vi.hoisted(() => ({
   tiers: [] as Array<Record<string, unknown>>,
   members: [] as Array<Record<string, unknown>>,
   mine: ["*"] as string[],
+  // `null` is a server without AI; an object is one that has it.
+  aiConsent: null as object | null,
   vocabulary: undefined as { vocabulary: Record<string, string> } | undefined,
   updateRole: vi.fn(),
   createRole: vi.fn(),
@@ -51,6 +53,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("tab=roles&role=brother"),
 }));
 vi.mock("@repo/hooks", () => ({
+  useAiConsent: () => ({ data: h.aiConsent }),
+  aiAvailableFrom: (consent: { data: object | null | undefined }) =>
+    consent.data === undefined ? undefined : consent.data !== null,
   useRoles: () => ok(h.roles),
   useRoleTiers: () => ok(h.tiers),
   useMembers: () => ok(h.members),
@@ -402,6 +407,39 @@ describe("a tier's permissions", () => {
       <TierPermissionsPage tierId="t1" onBack={vi.fn()} onOpenRole={vi.fn()} />,
     );
     expect(screen.queryByRole("switch", { name: /everything/i })).toBeNull();
+  });
+
+  it("leaves out the AI and Meetings switches while those features are off", () => {
+    h.aiConsent = null;
+    render(
+      <TierPermissionsPage tierId="t1" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    expect(screen.queryByRole("switch", { name: /use ai/i })).toBeNull();
+    expect(
+      screen.queryByRole("switch", { name: /let ai take actions/i }),
+    ).toBeNull();
+    // Meetings is held off for the beta (`BETA_OFF_MODULES`).
+    expect(
+      screen.queryByRole("switch", { name: /write meeting minutes/i }),
+    ).toBeNull();
+  });
+
+  it("offers the AI switches once the server has AI", () => {
+    h.aiConsent = {};
+    try {
+      render(
+        <TierPermissionsPage
+          tierId="t1"
+          onBack={vi.fn()}
+          onOpenRole={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole("switch", { name: /use ai/i }),
+      ).toBeInTheDocument();
+    } finally {
+      h.aiConsent = null;
+    }
   });
 });
 

@@ -221,9 +221,9 @@ so scale the output the same way until it renders 1206 × 2622 itself
 Supabase):
 
 1. Write `apps/mobile/.env.local` per
-   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), **without**
-   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the run stops
-   rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
+   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), and leave
+   the API's `AI_ENABLED` off (the default). With AI on, the Tasks shot can carry a suggested-tasks row, and the run stops
+   rather than write a set containing it. (Ask itself sits inside the + panel, which no shot opens.) The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
    it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
    shot times out.
@@ -244,7 +244,7 @@ Supabase):
 It prints each folder it wrote, and exits non-zero if a screen lands on a route other than the one
 requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file is
 the wrong size or (for Play) not an opaque 8-bit RGB PNG, and then deletes all three folders so
-there is no set with a gap to upload; re-run it. If any Ask surface is on screen it stops at once,
+there is no set with a gap to upload; re-run it. If an AI surface is on screen in a shot (Ask, or a suggested-tasks row) it stops at once,
 with the same deletion. A caption that says "Signet", or common wording that ranks the app or
 cites an award, price or promotion (which Play forbids), refuses the run before anything is
 captured, as does a frame list in `store-frames.mjs` that no longer matches the screens. The copy
@@ -659,7 +659,7 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
   holds, so nothing local is inlined. A name set in both places must agree: a store build takes
   `eas.json`'s value and an update would take EAS's, so the guard refuses a difference.
 - **The production fences.** `app.config.js` reads `FRAPP_EAS_UPDATE_PROFILE`, which the guard
-  sets, so the API, Supabase, app URL and Ask fences run as they would for a store build. A
+  sets, so the API, Supabase and app URL fences run as they would for a store build. A
   production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
   visibility is Plain text or Sensitive, never Secret, so keep the § 6.3 variables Plain text.
 - **How far an update reaches.** `runtimeVersion` uses the `appVersion` policy, so an update
