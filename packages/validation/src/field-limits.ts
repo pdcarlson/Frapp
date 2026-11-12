@@ -177,6 +177,11 @@ export const SIGNUP_NOTE_MAX_LENGTH = 1_000;
 export const SIGNUP_SLOTS_MAX = 20;
 export const SIGNUP_SLOT_LABEL_MAX_LENGTH = 120;
 export const SIGNUP_SLOT_CAPACITY_MAX = 100;
+/**
+ * The note a member may add to their answer on a headcount (a sign-up card
+ * with `format: 'headcount'`, #3926 step 2): "running 10 minutes late".
+ */
+export const SIGNUP_ANSWER_NOTE_MAX_LENGTH = 140;
 
 /**
  * Pledge classes and a member's order number (#3939). The name and number

@@ -1,7 +1,7 @@
 import { db, miss } from "../harness.mjs";
 
 console.log(
-  "\n=== Functional: sign-up sheet claims keep to each slot's limit (#3926) ===",
+  "\n=== Functional: sign-up sheet claims keep to each slot's limit, and stop once closed (#3926) ===",
 );
 {
   // `claim_signup_slots` is the only thing that keeps a sign-up sheet's slot
@@ -29,13 +29,21 @@ console.log(
 
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
-  const claim = async (user, slots, messageId = CARD) => {
+  const claim = async (user, slots, messageId = CARD, note) => {
     await db.exec("savepoint s3926;");
     try {
-      const { rows } = await db.query(
-        `select claim_signup_slots($1, $2, $3::text[]) as r`,
-        [messageId, user, slots],
-      );
+      // Three arguments unless a note is given: the step 1 API's call shape,
+      // which must keep resolving after step 2 replaced the function.
+      const { rows } =
+        note === undefined
+          ? await db.query(
+              `select claim_signup_slots($1, $2, $3::text[]) as r`,
+              [messageId, user, slots],
+            )
+          : await db.query(
+              `select claim_signup_slots($1, $2, $3::text[], $4) as r`,
+              [messageId, user, slots, note],
+            );
       await db.exec("release savepoint s3926;");
       return { ok: rows[0].r };
     } catch (e) {
@@ -109,9 +117,50 @@ console.log(
       { dropped, cAgain },
     );
 
+    // Step 2: a headcount answer's note, and closing.
+    const noted = await claim(C, ["sat"], CARD, "  running late  ");
+    const blank = await claim(B, ["sat"], CARD, "   ");
+    check(
+      "a note is stored trimmed on the claim, and a blank one is none",
+      noted.ok?.action?.payload?.note === "running late" &&
+        blank.ok && !("note" in (blank.ok.action?.payload ?? {})),
+      { noted, blank },
+    );
+
+    await db.exec(
+      `update chat_messages set payload = payload || jsonb_build_object('closes_at', (now() - interval '1 minute')::text) where id = '${CARD}';`,
+    );
+    const pastEnd = await claim(A, []);
+    await db.exec(
+      `update chat_messages set payload = (payload - 'closes_at') || jsonb_build_object('closed_at', now()::text) where id = '${CARD}';`,
+    );
+    const closedEarly = await claim(A, []);
+    await db.exec(
+      `update chat_messages set payload = (payload - 'closed_at') || '{"closes_at":"not a time"}'::jsonb where id = '${CARD}';`,
+    );
+    const oddEnd = await claim(A, ["fri"]);
+    check(
+      "a card past its end time or closed early refuses every claim; an end time that doesn't parse is none",
+      /signup_closed/.test(pastEnd.error ?? "") &&
+        /signup_closed/.test(closedEarly.error ?? "") &&
+        !!oddEnd.ok,
+      { pastEnd, closedEarly, oddEnd },
+    );
+
+    const oldShape = (
+      await db.query(
+        `select count(*)::int as n from pg_proc where proname = 'claim_signup_slots'`,
+      )
+    ).rows[0].n;
+    check(
+      "the step 1 signature is gone, so there is one function to call",
+      oldShape === 1,
+      { oldShape },
+    );
+
     const def = (
       await db.query(
-        `select pg_get_functiondef('public.claim_signup_slots(uuid, uuid, text[])'::regprocedure) as d`,
+        `select pg_get_functiondef('public.claim_signup_slots(uuid, uuid, text[], text)'::regprocedure) as d`,
       )
     ).rows[0].d;
     check(
@@ -123,8 +172,8 @@ console.log(
     const grants = (
       await db.query(
         `select
-           has_function_privilege('authenticated', 'public.claim_signup_slots(uuid, uuid, text[])', 'execute') as authed,
-           has_function_privilege('service_role', 'public.claim_signup_slots(uuid, uuid, text[])', 'execute') as service`,
+           has_function_privilege('authenticated', 'public.claim_signup_slots(uuid, uuid, text[], text)', 'execute') as authed,
+           has_function_privilege('service_role', 'public.claim_signup_slots(uuid, uuid, text[], text)', 'execute') as service`,
       )
     ).rows[0];
     check(

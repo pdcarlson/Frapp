@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Sign-up headcounts and closing (#3926, step 2)
+
+### 20261112260000_signup_headcount_close.sql
+
+- **Purpose**: Replaces `claim_signup_slots(uuid, uuid, text[])` with `claim_signup_slots(uuid, uuid, text[], text default null)`. The new argument is the note a member may add to a headcount answer, stored as the claim's `payload.note`. The function now refuses every claim on a card that is closed (`signup_closed`): `payload.closed_at` is set, or `payload.closes_at` has passed. Both are read under the card's row lock. Still security definer, with EXECUTE for `service_role` only. Changes no table and writes no row on apply.
+- **Checks**: After `db push`, `select count(*) from pg_proc where proname = 'claim_signup_slots';` returns `1`. `select has_function_privilege('authenticated', 'public.claim_signup_slots(uuid, uuid, text[], text)', 'execute');` returns `false`, and the same check for `service_role` returns `true`.
+- **Promoter notes**: Apply it after `20261112250000_signup_card_claims.sql`, whose function it replaces. The step 1 API's three-argument call still resolves, because `p_note` has a default, so the migration can land before or with the API. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-sign-up-headcounts-and-closing-20261112260000) § Rollback sign-up headcounts and closing.
+
 ## 2026-11-12: Sign-up sheet cards in chat (#3926)
 
 ### 20261112250000_signup_card_claims.sql

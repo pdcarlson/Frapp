@@ -16,7 +16,10 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
-import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
+import {
+  isSignupCardClosed,
+  normalizeSignupCard,
+} from '#domain/utils/signup-card-rules';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -1759,6 +1762,69 @@ export class ChatService {
   ): Promise<MaskedChatMessage> {
     const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
     return maskBlockedMessages([message], blocked)[0];
+  }
+
+  // ── Sign-up cards (#3926) ────────────────────────────────────────────
+
+  /**
+   * Close a sign-up card early (#3926 step 2), as `PollService.closeCard`
+   * closes a poll card: its creator may, whatever their permissions now, and
+   * so may a `channels:manage` holder (`canModerate`, asked only when the
+   * caller isn't the creator). Channel access is a `close`: read access, with
+   * archive and the audit log refusing it, but not who can post, so a card
+   * whose creator lost post rights can still be closed.
+   *
+   * Stamps `payload.closed_at` / `closed_by`, which `ChatService.sendMessage`
+   * never takes from a client (`normalizeSignupCard` rebuilds the card). The
+   * row update reaches every open card as a Realtime UPDATE, and
+   * `claim_signup_slots` refuses every claim once it is set. Claims already
+   * made stay.
+   */
+  async closeSignup(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    canModerate: () => Promise<boolean> = () => Promise.resolve(false),
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) throw new NotFoundException('Message not found');
+    await this.channelAccess.assertChannelAccess(
+      message.channel_id,
+      chapterId,
+      userId,
+      'close',
+    );
+    if (message.kind !== 'signup') {
+      throw new BadRequestException('Message is not a sign-up card');
+    }
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot close a deleted sign-up');
+    }
+    if (message.sender_id !== userId && !(await canModerate())) {
+      throw new ForbiddenException(
+        'Only the sign-up’s creator or a member who manages channels can close it',
+      );
+    }
+    const payload = message.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new BadRequestException('Malformed sign-up card');
+    }
+    if (isSignupCardClosed(payload)) {
+      throw new BadRequestException('Sign-ups are already closed');
+    }
+    // Only while the card is live: a delete landing between the read and this
+    // write cleared the payload (#1575), and an unconditional update would put
+    // the removed slots back on the tombstone.
+    const closed = await this.messageRepo.updateIfLive(message.id, {
+      payload: {
+        ...payload,
+        closed_at: new Date().toISOString(),
+        closed_by: userId,
+      },
+    });
+    if (!closed)
+      throw new BadRequestException('Cannot close a deleted sign-up');
+    return closed;
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────

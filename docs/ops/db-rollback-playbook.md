@@ -4149,6 +4149,20 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
+## Rollback sign-up headcounts and closing (20261112260000)
+
+* **Migration**: `20261112260000_signup_headcount_close.sql`
+
+Replaces the one function sign-up taps call (#3926 step 2). It changes no table. **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The step 1 API calls the function with three arguments, which this version still takes. Leaving the function in place is the safe rollback: a closed card keeps refusing claims, and the older clients draw it as open, so a tap there gets a 400.
+
+To restore the step 1 behaviour in a later forward migration, recreate the step 1 function body from `20261112250000_signup_card_claims.sql` and drop this one:
+
+```sql
+drop function if exists public.claim_signup_slots(uuid, uuid, text[], text);
+```
+
+Claims that carry a `note` stay ordinary action rows; older clients ignore the field.
+
 ## Rollback sign-up sheet claims (20261112250000)
 
 * **Migration**: `20261112250000_signup_card_claims.sql`
