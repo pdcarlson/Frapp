@@ -40,7 +40,9 @@ read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChap
 chapter rows: the guards read them first, and the handler's access checks (`ChannelAccessService`,
 `RbacService`) reuse them. The guards' reads start while `auth.getUser` is still in flight, on the `sub`
 that `CustomThrottlerGuard` already verified (`prefetchChapterContext`); they are used only once the
-session check passes for that same user. A `GET` or `HEAD` keeps the store to its end. Any other method
+session check passes for that same user. With a chapter named, the user, chapter, membership and roles
+come from one call, `get_request_context`, and each lands in the store under the key its own read uses; if
+the call fails, each is read on its own as before. A `GET` or `HEAD` keeps the store to its end. Any other method
 keeps it only through its guards: `RequestReadsInterceptor` seals it before the handler, so a handler
 that writes a membership or a role and reads it back reads the database. The store is created per request and never outlives it.
 

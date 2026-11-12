@@ -22,8 +22,7 @@ export function readRolesByIds(
   ids: readonly string[],
   chapterId?: string,
 ): Promise<Role[]> {
-  const key = `roles:${chapterId ?? '*'}:${[...ids].sort().join(',')}`;
-  return readOncePerRequest(key, async () => {
+  return readOncePerRequest(rolesReadKey(ids, chapterId), async () => {
     let query = supabase
       .from('roles')
       .select('*')
@@ -40,6 +39,14 @@ export function readRolesByIds(
     if (error) throw new SupabaseQueryError(error);
     return data || [];
   });
+}
+
+/** The request-store key `readRolesByIds` reads under. */
+export function rolesReadKey(
+  ids: readonly string[],
+  chapterId?: string,
+): string {
+  return `roles:${chapterId ?? '*'}:${[...ids].sort().join(',')}`;
 }
 
 @Injectable()

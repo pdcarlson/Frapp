@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: The chapter guards read the caller in one call (#3583)
+
+### 20261112140000_request_context_lookup.sql
+
+- **Purpose**: Adds `get_request_context(uuid, uuid)` (security invoker, `stable`, EXECUTE for `service_role` only), which the API's chapter-guard prefetch calls with the caller's auth id and the requested chapter. It returns one jsonb object: the caller's `users.id`, the chapter's `subscription_status`, `past_due_since` and `enabled_modules`, the caller's whole `members` row in that chapter, and the `roles` rows that row names in that chapter. Before it the API read those as a chain of PostgREST calls (user, then membership, then roles), about 320 ms at production's p50; the body runs in under 1 ms. Writes no row and changes no table.
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.get_request_context(uuid, uuid)', 'execute');` returns `false` and the same for `service_role` returns `true`. Verified in PGlite (`scripts/pglite/tiers/request-context.mjs`). Once the API ships, Sentry's `POST /rest/v1/rpc/get_request_context` spans in `frapp-api` replace most `GET /rest/v1/members` and `GET /rest/v1/roles` spans, and the `ChapterGuard` and `PermissionsGuard` spans shrink.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never calls it. The newer API against an unmigrated database gets an error from the call and reads each row itself, as before, so nothing breaks either way; it is only slower. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-request-context-lookup-20261112140000) § Rollback request context lookup.
+
 ## 2026-11-12: The thread card's latest-reply preview (#4297)
 
 ### 20261112121000_chat_thread_last_reply.sql

@@ -13,8 +13,6 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { ChapterGuard } from './chapter.guard';
-import { PermissionsGuard } from './permissions.guard';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -24,6 +22,7 @@ describe('SupabaseAuthGuard', () => {
   let mockGetUser: jest.Mock;
   let mockGetClaims: jest.Mock;
   let mockFrom: jest.Mock;
+  let mockRpc: jest.Mock;
 
   /** A route guarded by this guard alone, as `GET /v1/users/me` is. */
   class AuthOnlyController {}
@@ -39,19 +38,6 @@ describe('SupabaseAuthGuard', () => {
     GUARDS_METADATA,
     [SupabaseAuthGuard, ChapterGuard],
     ChapterController,
-  );
-
-  /** The usual class-level chain, with a permission to check. */
-  class PermissionedController {}
-  Reflect.defineMetadata(
-    GUARDS_METADATA,
-    [SupabaseAuthGuard, ChapterGuard, PermissionsGuard],
-    PermissionedController,
-  );
-  Reflect.defineMetadata(
-    PERMISSIONS_KEY,
-    ['members:view'],
-    PermissionedController,
   );
 
   const mockExecutionContext = (
@@ -85,6 +71,7 @@ describe('SupabaseAuthGuard', () => {
       chain.maybeSingle = () => new Promise(() => undefined);
       return chain;
     });
+    mockRpc = jest.fn(() => new Promise(() => undefined));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,6 +81,7 @@ describe('SupabaseAuthGuard', () => {
           useValue: {
             auth: { getUser: mockGetUser, getClaims: mockGetClaims },
             from: mockFrom,
+            rpc: mockRpc,
           },
         },
       ],
@@ -361,8 +349,12 @@ describe('SupabaseAuthGuard', () => {
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(ctx);
         await settle();
-        expect(mockFrom).toHaveBeenCalledWith('users');
-        expect(mockFrom).toHaveBeenCalledWith('chapters');
+        // One call for the user, chapter, membership and roles (#3583).
+        expect(mockRpc).toHaveBeenCalledWith('get_request_context', {
+          p_auth_id: claims.sub,
+          p_chapter_id: CHAPTER,
+        });
+        expect(mockFrom).not.toHaveBeenCalled();
 
         answer({ id: claims.sub });
         await expect(verdict).resolves.toBe(true);
@@ -395,6 +387,7 @@ describe('SupabaseAuthGuard', () => {
         await verdict;
       });
       expect(mockFrom).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
     it('starts nothing when the throttler verified nothing', async () => {
@@ -409,47 +402,7 @@ describe('SupabaseAuthGuard', () => {
         await verdict;
       });
       expect(mockFrom).not.toHaveBeenCalled();
-    });
-
-    it('reads roles only where PermissionsGuard will check a permission', async () => {
-      const memberRow = { id: 'member-1', role_ids: ['role-1'] };
-      mockFrom.mockImplementation((table: string) => {
-        const chain: Record<string, unknown> = {};
-        chain.select = () => chain;
-        chain.eq = () => chain;
-        chain.in = () => chain;
-        chain.maybeSingle = () =>
-          Promise.resolve({
-            data:
-              table === 'users'
-                ? { id: 'user-1' }
-                : table === 'members'
-                  ? memberRow
-                  : { subscription_status: 'active' },
-            error: null,
-          });
-        return chain;
-      });
-      const tables = () =>
-        mockFrom.mock.calls.map(([table]: [string]) => table).sort();
-
-      for (const controller of [ChapterController, PermissionedController]) {
-        mockFrom.mockClear();
-        claims = { ...claims, sub: `${claims.sub}-${controller.name}` };
-        const answer = pendingSession();
-        await runWithRequestReads('GET', async () => {
-          const verdict = guard.canActivate(contextWith(claims, controller));
-          await settle();
-          answer({ id: claims.sub });
-          await verdict;
-        });
-        // Only roles is in question; the chapter read may have joined an
-        // earlier case's in-flight lookup (#3753) and not show up here.
-        expect(tables()).toContain('members');
-        expect(tables().includes('roles')).toBe(
-          controller === PermissionedController,
-        );
-      }
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
     it('still refuses a revoked session whose lookups already started', async () => {
@@ -459,7 +412,7 @@ describe('SupabaseAuthGuard', () => {
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(ctx);
         await settle();
-        expect(mockFrom).toHaveBeenCalled();
+        expect(mockRpc).toHaveBeenCalled();
         answer(null);
         await expect(verdict).rejects.toThrow(UnauthorizedException);
       });
