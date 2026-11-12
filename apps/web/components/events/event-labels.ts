@@ -18,16 +18,16 @@ import {
  */
 
 /**
- * `WEEKLY` → `"Weekly"`, through the catalog the editor's picker already uses.
- * `null` for an event that does not repeat: the row and the sheet print no
- * cadence at all for a one-time event rather than a "One-time" badge, because
- * an absent value is absent (`spec/ui/web-dashboard/README.md` § Page grammar).
- *
- * A structured rule (#4488) reads as its pattern ("Every Mon and Thu"), its
- * days as this browser's calendar has them; `start`, a meeting of the series,
- * names a by-date monthly rule's day when the rule doesn't. A token outside the catalog (the API rejects one,
- * but a row written before a rule was retired could still carry it) reads in
- * sentence case rather than as the raw enum.
+ * The cadence badge: a legacy token through its catalog (`WEEKLY` →
+ * `"Weekly"`); a structured rule (#4488) as its pattern ("Every Mon and
+ * Thu"), its days as this browser's calendar has them, where the editors
+ * read them in the rule's own zone. `start`, a meeting of the series, names a
+ * by-date monthly rule's day when the rule doesn't. `null` for an event that
+ * does not repeat: the row and the sheet print no cadence for a one-time
+ * event rather than a "One-time" badge, because an absent value is absent
+ * (`spec/ui/web-dashboard/README.md` § Page grammar). A token outside the
+ * catalog (the API rejects one, but a row written before a rule was retired
+ * could still carry it) reads in sentence case rather than as the raw enum.
  */
 export function recurrenceLabel(rule: unknown, start?: unknown): string | null {
   if (typeof rule !== "string" || rule.trim() === "") return null;

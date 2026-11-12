@@ -1,3 +1,4 @@
+import { editRepeatDraft, pickRepeatPreset } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
   draftFromEvent,
@@ -154,9 +155,92 @@ describe("validateEventEdit", () => {
   });
 
   it("ends a series with a null rule", () => {
-    expect(patchOf(occurrence, (d) => (d.recurrenceRule = null))).toEqual({
-      recurrence_rule: null,
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = pickRepeatPreset(d.repeat, "NONE")),
+      ),
+    ).toEqual({ recurrence_rule: null });
+  });
+
+  it("leaves a legacy rule alone until Repeat is changed", () => {
+    expect(patchOf(occurrence, (d) => (d.name = "Renamed"))).toEqual({
+      name: "Renamed",
     });
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = editRepeatDraft(d.repeat, { countInput: "4" })),
+      ).recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=\w\w;COUNT=4;TZID=/);
+  });
+
+  it("steps a changed rule from the parent, not an occurrence on another weekday", () => {
+    // A Monday series, its head still ahead; the occurrence opened was moved
+    // by hand to Thursday.
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=10;TZID=America/New_York";
+    const parent = {
+      id: "evt-parent",
+      start_time: "2026-11-09T23:45:00.000Z",
+      end_time: "2026-11-10T01:15:00.000Z",
+    };
+    const thursday: EventEditTarget = {
+      event: {
+        ...EVENT,
+        id: "evt-3",
+        parent_event_id: parent.id,
+        start_time: "2026-11-26T23:45:00.000Z",
+        end_time: "2026-11-27T01:15:00.000Z",
+      },
+      seriesRule: rule,
+      parent,
+    };
+    expect(
+      patchOf(
+        thursday,
+        (d) => (d.repeat = editRepeatDraft(d.repeat, { countInput: "6" })),
+      ).recurrence_rule,
+    ).toBe(rule.replace("COUNT=10", "COUNT=6"));
+    // Moved a day later in the same save, the stored Monday moves with it.
+    expect(
+      patchOf(thursday, (d) => {
+        d.start = new Date("2026-11-27T23:45:00.000Z");
+        d.end = new Date("2026-11-28T01:15:00.000Z");
+        d.repeat = editRepeatDraft(d.repeat, { countInput: "6" });
+      }).recurrence_rule,
+    ).toBe(rule.replace("MO;COUNT=10", "TU;COUNT=6"));
+  });
+
+  it("checks a started series' new end against its next meeting", () => {
+    // The head (Sep 7) has started; the next meeting is Nov 9. An end date
+    // between them would leave the new first meeting alone.
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=20;TZID=America/New_York";
+    const started: EventEditTarget = { ...occurrence, seriesRule: rule };
+    const draft = draftFromEvent(started);
+    draft.repeat = editRepeatDraft(
+      { ...draft.repeat, endKind: "until" },
+      { until: "2026-11-12" },
+    );
+    const result = validateEventEdit(draft, started, NOW);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.repeat).toBeTruthy();
+  });
+
+  it("reads a structured series rule back without a change", () => {
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York";
+    const head = {
+      ...single,
+      event: { ...EVENT, recurrence_rule: rule },
+      seriesRule: rule,
+    };
+    expect(
+      isEmptyPatch(
+        patchOf(head, (d) => (d.repeat = editRepeatDraft(d.repeat, {}))),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -290,8 +374,8 @@ describe("isInSeries", () => {
         "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=8;TZID=America/New_York",
     };
     expect(isInSeries(structured)).toBe(true);
-    // The form shows legacy tokens only until the Repeat control reads more.
-    expect(seriesRuleOf(structured, null)).toBeNull();
+    // The Repeat control reads it (#4488).
+    expect(seriesRuleOf(structured, null)).toBe(structured.recurrence_rule);
     expect(isInSeries({ ...EVENT, recurrence_rule: null })).toBe(false);
   });
 });
