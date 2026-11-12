@@ -526,7 +526,7 @@ aggregate questions. Structured data is now a **tool surface**, not corpus — s
 
 ### What is built (2026-11-12, #720)
 
-Chapter documents and posted minutes are indexed and can be retrieved. Chapter chat followed the same day ([below](#chat-in-the-index-2026-11-12-4314)), and nothing calls retrieval until Ask (#450). All of it is off unless the server sets `AI_ENABLED=true`.
+Chapter documents and posted minutes are indexed and can be retrieved. Chapter chat followed the same day ([below](#chat-in-the-index-2026-11-12-4314)), and Ask is what calls retrieval ([below](#ask-2026-11-12-450)). All of it is off unless the server sets `AI_ENABLED=true`.
 
 - **Two tables.** `corpus_sources` has one row per indexable thing, with a revision that goes up each time the thing changes. `corpus_chunks` has the passages: the text, a 1,536-wide vector and a generated `tsvector`. A passage's chapter cannot differ from its source's (a composite foreign key).
 - **The database follows the sources, not the API.** Triggers on `chapter_documents` and `meetings` bump the source's revision and delete its passages in the same transaction as the change, and remove the source on delete or un-post. So a changed or deleted source is out of retrieval at once, whichever code path changed it, and is back when its new text is indexed. Moving a document between folders, pinning or starring it changes nothing in the index.
@@ -556,6 +556,19 @@ Messages in chapter channels are the third source type, `chat_message`, built on
 - **Announcements are indexed under these chat rules for now** (consent applies and they rank below official sources), though the table above lists them as their own source.
 - **Scale.** At about 30 tokens a message, 500,000 messages are about 15 million embedding tokens. The sweep claims 25 sources a minute across all chapters, so a backfill of 20,000 windows takes about 13 hours. Spend is bounded by the spend caps (#714, #4374).
 - **Chat never triggers an action.** Its text is retrieved content: data in a prompt, never an instruction ([`ai-prompt-injection.md`](../../docs/security/ai-prompt-injection.md), C8).
+
+### Ask (2026-11-12, #450)
+
+The first caller of retrieval, and the first member-facing AI surface. What a member sees is [`behavior/ai.md` § Ask Frapp](../behavior/ai.md#ask-frapp); this is how it is put together.
+
+- **`AskService.ask` is the product path, and the evals grade it.** The eval suite (`apps/api/test/ai-evals`) runs its cases through this service with a scripted model and an in-memory corpus, so the chapter filter, the authority order, the no-source rule and the read-only tool rule are tested where they are enforced, not in a harness copy ([`ai-prompt-injection.md`](../../docs/security/ai-prompt-injection.md)).
+- **Three model calls at most per question,** all through the gateway, each with its own consent and spend check: `ask.embed-query` (inside retrieval), `ask.plan` (which tools) and `ask.answer` (the cited answer, streamed). The planner sees only the question and the names of the tools this member may use, never a source, so retrieved text cannot steer which tools run. A planning call that fails means no live data, not no answer.
+- **Tools are a small Frapp-owned registry** (`ASK_TOOLS`): each names the permission and module of the route it mirrors and an effect, `read` or `propose`. Ask offers and runs only `read` tools, checks the permission as the asker, and passes the chapter from the guard, never from a model. A tool result from another chapter is dropped and reported. At most three tools run for one question.
+- **Sources reach the model in authority order:** tool results, then official passages, then chat, each labelled as what it is. Chat passages are checked against consent a last time just before the call ([Chat in the index](#chat-in-the-index-2026-11-12-4314)).
+- **The answer is decided after the model stops.** Citations are verified by the gateway ([Citation protocol](#citation-protocol)); the service keeps only citations of sources it sent, places each marker at the end of the sentence it backs, and turns an answer with no kept citation into `not_found`. Text deltas are a preview and the `done` event is the answer.
+- **The stream is Server-Sent Events over the POST's response,** one JSON event per frame, format version 1 in `@repo/validation`. Refusals a client acts on (no consent, Ask off, AI off) are checked before the stream opens and arrive as ordinary errors. A keepalive comment goes out every 15 seconds, and a closed connection aborts the model call.
+- **Nothing is stored** except by the diagnostics window ([`behavior/ai.md` § Stored AI text](../behavior/ai.md#stored-ai-text)): two tables, one row for the open window (at most one exists) and one sealed row per kept exchange, AES-256-GCM under `AI_STORED_TEXT_KEY`. No log line, Sentry event or analytics event carries a question or an answer.
+- **Not built:** follow-up questions; a relevance threshold; tools for attendance or for chapter-wide dues; reporting an answer; Ask on mobile.
 
 ### Citation protocol
 

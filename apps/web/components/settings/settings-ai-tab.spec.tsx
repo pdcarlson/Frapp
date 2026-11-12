@@ -31,6 +31,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAiConsent: () => ({
     data: { sheet: SHEET, answer: null, answered_at: null, sheet_changed: false },
   }),
+  // The diagnostics row has its own spec; here it is not offered.
+  useAskStatus: () => ({ data: null }),
+  useSetAskDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateAiChapterSettings: () => ({
     mutateAsync: state.update,
     isPending: state.saving,

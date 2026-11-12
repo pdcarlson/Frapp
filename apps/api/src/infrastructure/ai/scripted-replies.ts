@@ -1,3 +1,4 @@
+import { scriptedAskAnswer, scriptedAskPlan } from './scripted-ask';
 import type { ScriptedReplies } from './scripted-language-model';
 import { scriptedMinutesDraft } from './scripted-minutes-draft';
 
@@ -14,5 +15,7 @@ import { scriptedMinutesDraft } from './scripted-minutes-draft';
  * read this map.
  */
 export const SCRIPTED_REPLIES: ScriptedReplies = {
+  'ask.plan': scriptedAskPlan,
+  'ask.answer': scriptedAskAnswer,
   'minutes.draft': scriptedMinutesDraft,
 };

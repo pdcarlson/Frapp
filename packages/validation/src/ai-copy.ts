@@ -25,13 +25,6 @@ export interface AiSwitchCopy {
   key: AiChapterSwitchKey;
   label: string;
   description: string;
-  /**
-   * Shown under the switch while the feature has no screen in the app yet.
-   * The switch is still stored and read by the server, so turning it on now
-   * means the feature is on for the chapter the day it ships. Set to `null`
-   * by the slice that ships the feature (Ask: #450).
-   */
-  notYetInApp: string | null;
   /** The switch this one only matters under, drawn nested beneath it. */
   dependsOn?: AiChapterSwitchKey;
 }
@@ -46,22 +39,18 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     label: "Minutes from notes",
     description:
       "An officer pastes or types the meeting's notes and gets a first draft of the minutes to fix and post, with tasks suggested from it. Never for Standards meetings.",
-    notYetInApp: null,
   },
   {
     key: "ask",
     label: "Ask Frapp",
     description:
       "Members ask a question and get an answer from the chapter's documents, announcements and posted minutes, with the sources it used.",
-    notYetInApp:
-      "Ask Frapp comes in a later update. If it's on, members can use it the day it arrives.",
   },
   {
     key: "chat_source",
     label: "Include channel messages",
     description:
       "Ask Frapp also reads messages in chapter channels, only from members who said yes. Never direct messages.",
-    notYetInApp: null,
     dependsOn: "ask",
   },
 ];

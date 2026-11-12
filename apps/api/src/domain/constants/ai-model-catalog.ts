@@ -76,6 +76,18 @@ export const AI_MODEL_CATALOG = {
     maxOutputTokens: 8_000,
     effort: 'medium',
   },
+  /**
+   * Which live reads a question needs before it is answered (#450): the
+   * names of at most a few of Ask's read-only tools, picked from the
+   * question alone. Small on purpose; a cheaper model is the bake-off's call.
+   */
+  'ask.plan': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 300,
+    effort: 'low',
+  },
   /** A member's question, answered from the sources retrieved for it (#450). */
   'ask.answer': {
     ...CLAUDE_SONNET,

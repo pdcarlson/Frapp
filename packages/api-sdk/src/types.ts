@@ -4338,6 +4338,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Ask needs to know before the first question
+         * @description Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.
+         */
+        get: operations["AskController_status_v1"];
+        put?: never;
+        /**
+         * Ask a question; the answer is streamed
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         */
+        post: operations["AskController_ask_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn on the beta diagnostics window (president only)
+         * @description The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.
+         */
+        post: operations["AskController_startDiagnostics_v1"];
+        /**
+         * Turn off the beta diagnostics window (president only)
+         * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
+         */
+        delete: operations["AskController_stopDiagnostics_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/draft": {
         parameters: {
             query?: never;
@@ -7674,6 +7722,34 @@ export interface components {
              * @enum {string}
              */
             status: "posted" | "duplicate";
+        };
+        AskDiagnosticsDto: {
+            /** @description Whether this chapter is the one the beta diagnostics window may be turned on for. */
+            offered: boolean;
+            /** @description Whether the caller may turn it on or off: the chapter’s president. */
+            can_change: boolean;
+            /**
+             * Format: date-time
+             * @description When the open window ends, or null when nothing is being kept.
+             */
+            ends_at: string | null;
+        };
+        AskStatusDto: {
+            /**
+             * Format: date-time
+             * @description While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept.
+             */
+            saved_until: string | null;
+            diagnostics: components["schemas"]["AskDiagnosticsDto"];
+        };
+        AskRequestDto: {
+            /**
+             * @description The question, in the member’s own words.
+             * @example What do the bylaws say about quorum?
+             */
+            question: string;
+            /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
+            saved_notice_shown?: boolean;
         };
         MeetingDraftSourceDto: {
             /** @enum {string} */
@@ -17555,6 +17631,179 @@ export interface operations {
             };
             /** @description The configured channel is gone or archived. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskStatusDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_ask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequestDto"];
+            };
+        };
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_startDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A window is already on (`ai.ask.diagnostics.already_on`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_stopDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

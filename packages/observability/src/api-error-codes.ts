@@ -92,6 +92,11 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // the other's newer version (#4312).
   "meeting.already_started",
   "meeting.stale",
+  // Ask's beta diagnostics window (#4315): it is already on, this chapter
+  // is not the one it is offered to, or the caller is not the president.
+  "ai.ask.diagnostics.already_on",
+  "ai.ask.diagnostics.not_offered",
+  "ai.ask.diagnostics.president_only",
   // A draft from notes asked for on minutes that were posted meanwhile.
   "meeting.draft_posted",
   // "Use the draft" on a draft that is no longer waiting.

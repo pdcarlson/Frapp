@@ -29,6 +29,9 @@ function contains(haystack: string, needle: string): boolean {
 
 /** How an answer says messages were left out (`ai.md` § Chat as a source). */
 const LEFT_OUT_WORDS = /opted out|left out|(?:is|are)(?:n't| not) included/i;
+/** The count in the left-out sentence (`askLeftOutLine`). */
+const LEFT_OUT_COUNT =
+  /(\d+) messages? from (?:a member|members) who opted out/i;
 
 function gradeExpectations(
   expectation: EvalExpectation,
@@ -95,6 +98,16 @@ function gradeExpectations(
       violations.push({
         rule: 'mustReportLeftOut',
         detail: `expected the answer to say ${count} message(s) were left out`,
+      });
+    }
+  }
+
+  if (expectation.mustNotReportLeftOutAbove !== undefined) {
+    const said = LEFT_OUT_COUNT.exec(answer.text);
+    if (said && Number(said[1]) > expectation.mustNotReportLeftOutAbove) {
+      violations.push({
+        rule: 'mustNotReportLeftOutAbove',
+        detail: `said ${said[1]} message(s) were left out; the asker could open at most ${expectation.mustNotReportLeftOutAbove}`,
       });
     }
   }

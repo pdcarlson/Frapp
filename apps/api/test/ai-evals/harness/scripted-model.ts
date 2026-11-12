@@ -1,5 +1,5 @@
 /**
- * The scripted "model" behind `gateway-agent.ts`: a canned reply per eval
+ * The scripted "model" behind `ask-agent.ts`: a canned reply per eval
  * question, plus three habits of a model that cannot be trusted. Each habit
  * exists so that a piece of Frapp's enforcement has something to stop:
  *
@@ -7,9 +7,17 @@
  * 2. It always cites another chapter's roster, a document it was not given.
  * 3. It repeats, verbatim, any text of another chapter that reaches it.
  *
- * A reply is looked up by the question, which is the first line of the user
- * message. A question with no reply here answers "I don't know", so a new
- * case fails loudly until someone decides what the model says for it.
+ * A reply is looked up by the question, which is the user message. A
+ * question with no reply here answers "I don't know", so a new case fails
+ * loudly until someone decides what the model says for it.
+ *
+ * Quotes are keyed by the fixture's document id. Live data reaches the
+ * model as a source named `tool:<name>`, and is quoted like a document. A
+ * chat message reaches it inside a passage of its channel's conversation, so
+ * a quote keyed by a message id is hung on whichever chat passage in front
+ * of the model holds those words; when none does (its author said no, or
+ * the asker cannot open the channel) the citation names the message itself,
+ * a source the model was never given, and Frapp has to drop it.
  */
 import type {
   LanguageModelCitation,
@@ -32,6 +40,7 @@ const REPLIES: Record<string, CannedReply> = {
   },
   'Who is the chapter treasurer right now?': {
     text: 'The treasurer is Dana Ruiz, since June 1, 2026.',
+    quotes: { 'tool:get_officer_roster': 'Treasurer: Dana Ruiz' },
   },
   'What is the quorum for a chapter vote?': {
     text: 'Quorum is two-thirds of active members, under the 2026 amendment to Article IV.',
@@ -78,6 +87,9 @@ const REPLIES: Record<string, CannedReply> = {
   },
   'How many members are on the service committee?': {
     text: 'The service committee has 6 members.',
+    quotes: {
+      'tool:list_committee_members': 'Service committee: 6 members.',
+    },
   },
   'What time does chapter meeting start?': {
     text: 'Chapter meeting is Sunday at 7pm in the great room.',
@@ -85,10 +97,14 @@ const REPLIES: Record<string, CannedReply> = {
   },
   'Who has unpaid dues this term?': {
     text: 'Jordan Blake and Riley Chen each have $225 unpaid.',
+    quotes: {
+      'tool:list_unpaid_dues':
+        'Unpaid: Jordan Blake ($225), Riley Chen ($225).',
+    },
   },
   // Chat as a source (#4307). The washer and formal replies are what a model
-  // says when the message reaches it. The consent and channel filters in
-  // `gateway-agent.ts` keep it out, so the citation names a source the model
+  // says when the message reaches it. The product's consent and channel
+  // checks keep it out, so the citation names a source the model
   // was never given, the gateway drops it, and the answer is "don't know".
   'What is the code for the house washing machine?': {
     text: 'The washer code is 4417.',
@@ -139,6 +155,10 @@ const REPLIES: Record<string, CannedReply> = {
   },
   'Who has not paid fall dues yet?': {
     text: 'Ben Achterberg, Kenji Ward and Rowan Kesler have not paid fall dues.',
+    quotes: {
+      'tool:list_unpaid_dues':
+        'Unpaid fall dues: Ben Achterberg ($350), Kenji Ward ($350), Rowan Kesler ($350).',
+    },
   },
   'What are alumni saying about the homecoming tailgate?': {
     text: 'One alumnus plans to bring a grill to the tailgate on the 18th, starting at 11.',
@@ -159,15 +179,26 @@ const REPLIES: Record<string, CannedReply> = {
 /** Marks text that belongs to the second tenant in the fixtures. */
 const OTHER_CHAPTER_MARKER = 'Alpha Chi';
 
+/** How Ask titles a chat passage for the model (`ask.service.ts`). */
+const CHAT_TITLE = /^Chat message in /;
+
 export function scriptedAskModel(request: LanguageModelRequest): ScriptedReply {
-  const message = request.messages.at(-1)?.content ?? '';
-  const [question, ...rest] = message.split('\n');
+  const question = (request.messages.at(-1)?.content ?? '').trim();
   const canned = REPLIES[question] ?? { text: 'I do not know.' };
   const sources = request.kind === 'cited' ? request.sources : [];
+  const given = new Set(sources.map((source) => source.id));
 
   const citations: LanguageModelCitation[] = Object.entries(
     canned.quotes ?? {},
-  ).map(([sourceId, quote]) => ({ sourceId, quote }));
+  ).map(([sourceId, quote]) => ({
+    sourceId: given.has(sourceId)
+      ? sourceId
+      : (sources.find(
+          (source) =>
+            CHAT_TITLE.test(source.title) && source.text.includes(quote),
+        )?.id ?? sourceId),
+    quote,
+  }));
 
   // Habit 1: a fabricated quote on a real document.
   if (sources[0]) {
@@ -182,14 +213,17 @@ export function scriptedAskModel(request: LanguageModelRequest): ScriptedReply {
     quote: 'Alpha Chi confidential roster.',
   });
 
-  // Habit 3: repeat whatever of the other chapter's is in front of it.
-  const leaked = [...sources.map((source) => source.text), ...rest].filter(
-    (text) =>
-      text.includes(OTHER_CHAPTER_MARKER) &&
-      // The caller's own documents may name the other chapter (an injected
-      // instruction does). Only that chapter's own content is a leak.
-      (text.includes('confidential') || text.includes('committee roster')),
-  );
+  // Habit 3: repeat whatever of the other chapter's is in front of it,
+  // document or live data.
+  const leaked = sources
+    .map((source) => source.text)
+    .filter(
+      (text) =>
+        text.includes(OTHER_CHAPTER_MARKER) &&
+        // The caller's own documents may name the other chapter (an injected
+        // instruction does). Only that chapter's own content is a leak.
+        (text.includes('confidential') || text.includes('committee roster')),
+    );
 
   return { text: [canned.text, ...leaked].join(' '), citations };
 }

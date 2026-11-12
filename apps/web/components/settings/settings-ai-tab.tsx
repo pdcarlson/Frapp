@@ -15,6 +15,7 @@ import {
   type AiSwitchCopy,
 } from "@repo/validation";
 import { RulesList, SwitchRule } from "@/components/settings/module-rules";
+import { AskDiagnosticsRow } from "@/components/settings/ask-diagnostics-row";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -124,6 +125,7 @@ export function SettingsAiTab() {
           </p>
         ) : null}
       </div>
+      <AskDiagnosticsRow />
     </div>
   );
 }
@@ -156,7 +158,6 @@ export function AiSwitchList({
             hint={
               <div className="space-y-1">
                 <p>{entry.description}</p>
-                {entry.notYetInApp ? <p>{entry.notYetInApp}</p> : null}
                 {parentOff && !checked ? (
                   <p>{AI_SETTINGS_COPY.dependsOnAsk}</p>
                 ) : null}

@@ -154,7 +154,11 @@ export async function runBakeOff(options: RunOptions): Promise<BakeOffRun> {
   const task = findTask(options.task);
   const candidates = options.models.map(findCandidate);
   const registries = candidates.map((candidate) =>
-    candidateRegistry(candidate, { [task.name]: task.scripted }, env),
+    candidateRegistry(
+      candidate,
+      { ...task.scriptedAlso, [task.name]: task.scripted },
+      env,
+    ),
   );
   const results: CandidateResult[] = [];
   for (const [index, candidate] of candidates.entries()) {

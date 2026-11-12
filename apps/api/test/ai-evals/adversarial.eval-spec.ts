@@ -3,8 +3,8 @@
  * the answer.
  *
  * The agent is registered by the suite's jest setup
- * (`harness/register-gateway-agent.ts`): the real AI gateway with a scripted
- * model. If none is registered the cases report as skipped and the guard test
+ * (`harness/register-ask-agent.ts`): the product's Ask over the real AI
+ * gateway, with a scripted model. If none is registered the cases report as skipped and the guard test
  * says NOT_IMPLEMENTED rather than passing silently; CI sets
  * `AI_EVALS_REQUIRE_AGENT=1`, which turns that into a hard failure.
  */
