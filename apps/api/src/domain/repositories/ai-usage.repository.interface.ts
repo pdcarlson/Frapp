@@ -51,7 +51,7 @@ export interface AiChapterUsageLine {
 
 /**
  * `ai_usage_events`, the AI spend ledger (#714). Every write is a database
- * function in `20261112030000_ai_usage_ledger.sql`, so the cap check and the
+ * function in `20261112130000_ai_usage_ledger.sql`, so the cap check and the
  * insert are one transaction and the PGlite gate runs the exact SQL.
  */
 export interface IAiUsageRepository {

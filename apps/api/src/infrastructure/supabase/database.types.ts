@@ -72,6 +72,8 @@ import type {
   TaskSubtask,
   PledgeClass,
   EventType,
+  Meeting,
+  MeetingTemplate,
   PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
@@ -170,6 +172,8 @@ export interface Database {
       task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
+      meetings: TableDefinition<Meeting>;
+      meeting_templates: TableDefinition<MeetingTemplate>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
@@ -226,7 +230,7 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261112030000` (#714) — holds an AI call's worst-case cost against
+       * `20261112130000` (#714) — holds an AI call's worst-case cost against
        * the platform, chapter and member caps. One row: the hold's id, or the
        * cap it would cross. Amounts are bigint micro-USD.
        */
@@ -254,7 +258,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20261112030000` (#714) — settles a hold with the call's real counts
+       * `20261112130000` (#714) — settles a hold with the call's real counts
        * and cost, or records a call made with no hold. Returns `settled`,
        * `inserted` or `missing`.
        */
@@ -281,13 +285,13 @@ export interface Database {
         };
         Returns: string;
       };
-      /** `20261112030000` (#714) — expires unsettled holds; returns the count. */
+      /** `20261112130000` (#714) — expires unsettled holds; returns the count. */
       expire_ai_spend_holds: {
         Args: { p_older_than: string };
         Returns: number;
       };
       /**
-       * `20261112030000` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
+       * `20261112130000` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
        * row per task, provider and model. Bigint columns may arrive as strings.
        */
       ai_chapter_usage: {

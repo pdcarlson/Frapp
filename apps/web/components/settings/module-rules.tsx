@@ -114,7 +114,7 @@ function NumberRule({
   );
 }
 
-function SwitchRule({
+export function SwitchRule({
   label,
   hint,
   checked,
@@ -146,7 +146,7 @@ function SwitchRule({
   );
 }
 
-function RulesList({ children }: { children: ReactNode }) {
+export function RulesList({ children }: { children: ReactNode }) {
   return (
     <div className="divide-y divide-border rounded-[14px] border border-border">
       {children}

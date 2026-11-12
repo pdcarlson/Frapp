@@ -3748,6 +3748,24 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback meeting minutes (20261112120400)
+
+* **Migration**: `20261112120400_meetings.sql`
+
+Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping the tables loses every set of minutes, so do it only before any chapter has written some, and export them first otherwise. In a later migration:
+
+```sql
+drop table if exists public.meeting_templates;
+drop table if exists public.meetings;
+update public.role_tiers
+   set permissions = array_remove(permissions, 'meetings:record')
+ where 'meetings:record' = any(permissions);
+```
+
+Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
+
 ## Rollback the AI run queue (20261112020000)
 
 * **Migration**: `20261112020000_ai_runs.sql`
@@ -3765,9 +3783,9 @@ drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
 
-## Rollback the AI usage ledger (20261112030000)
+## Rollback the AI usage ledger (20261112130000)
 
-* **Migration**: `20261112030000_ai_usage_ledger.sql`
+* **Migration**: `20261112130000_ai_usage_ledger.sql`
 
 One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
 

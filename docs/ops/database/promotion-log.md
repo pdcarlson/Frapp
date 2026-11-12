@@ -31,13 +31,23 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-12: The AI usage ledger and caps (#714)
 
-### 20261112030000_ai_usage_ledger.sql
+### 20261112130000_ai_usage_ledger.sql
 
 - **Purpose**: Adds `ai_usage_events`, the AI spend ledger: one row per provider call the AI gateway makes, with the chapter, acting member, run, task, provider, model, prompt version, token counts and cost in micro-USD, and no text column. Functions, all security invoker with EXECUTE for `service_role` only: `reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz)` holds a call's worst-case cost against the provider's month across every chapter, the chapter's month and the member's day (all UTC), under transaction advisory locks per chapter then per provider, and returns the hold or the cap it would cross; `settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz)` replaces a hold with the call's real counts and cost (or charges the hold itself, marked `cost_estimated`, for a call the provider never reported), or records a call that held nothing; `expire_ai_spend_holds(timestamptz)` marks unsettled holds expired; `ai_chapter_usage(uuid, timestamptz, timestamptz)` sums one chapter's period by task, provider and model; `ai_usage_charge(text, bigint, bigint)` is what a row counts toward a cap. RLS on, no policies (API only, service role). Indexes: `idx_ai_usage_events_chapter` on `(chapter_id, created_at)`, `idx_ai_usage_events_member` on `(chapter_id, user_id, created_at)`, `idx_ai_usage_events_provider` on `(provider, created_at)`, and `idx_ai_usage_events_reserved` on `created_at` for reserved rows. Writes no row and changes no table. The rule is [`billing.md` § Caps](../../../spec/behavior/billing.md#caps).
 - **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'ai_usage_events';` returns `true`, `select count(*) from pg_policies where tablename = 'ai_usage_events';` returns `0`, and `select has_function_privilege('authenticated', 'public.expire_ai_spend_holds(timestamptz)', 'execute');` returns `false` while the same for `service_role` returns `true`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table. The newer API with `AI_ENABLED` unset never touches it either: the gateway makes no call, so nothing is held, and the hold sweep returns before its query. With `AI_ENABLED` on against an unmigrated database, every AI call fails at its hold (the gateway lets the error through, and nothing reaches a provider), and the sweep reports `cron:handle-ai-spend-sweep` to Sentry every 10 minutes. A new table and functions, so no lock on any existing table beyond the three foreign keys' brief `SHARE ROW EXCLUSIVE` on `chapters`, `users` and `ai_runs` while the table is created. `if not exists` and `create or replace` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-usage-ledger.mjs`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-ai-usage-ledger-20261112030000) § Rollback the AI usage ledger.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-ai-usage-ledger-20261112130000) § Rollback the AI usage ledger.
+
+## 2026-11-12: Meeting minutes written by hand (#4312)
+
+### 20261112120400_meetings.sql
+
+- **Purpose**: Adds `meetings` (one set of minutes per event, `event_id` unique where set and `on delete set null`, so deleting an event keeps its minutes) and `meeting_templates` (a chapter's minutes sections; no row reads the defaults). `meeting_type` is checked to chapter, exec, committee or other, so a Standards meeting can't be stored even past the API. RLS on with no policies; the API uses the service role. Backfills `meetings:record` onto every chapter's top role tier (position 1), and the tier trigger rewrites `roles.permissions` for the roles in it. Writes no other row.
+- **Checks**: After `db push`, `select count(*) from public.meetings;` returns 0, `select count(*) from public.role_tiers where position = 1 and not ('meetings:record' = any(permissions));` returns 0, and `select relrowsecurity from pg_class where relname in ('meetings', 'meeting_templates');` returns two `true`.
+- **Promoter notes**: Ship it with or before the API that reads it: `MeetingModule` queries both tables, and every route sits behind the `meetings` module, which `BETA_OFF_MODULES` keeps off for every chapter until it is removed from that list. The backfill only adds a permission nothing uses while the module is off. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-meeting-minutes-20261112120400) § Rollback meeting minutes.
 
 ## 2026-11-12: The AI run queue (#4310)
 

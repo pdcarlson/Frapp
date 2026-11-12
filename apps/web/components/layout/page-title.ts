@@ -60,6 +60,14 @@ const SUB_PAGE_TITLES: Readonly<Record<string, string>> = {
   "/backwork/upload": "Bulk upload",
 };
 
+/**
+ * Pages one record deep under a nav row, matched by prefix: any
+ * `/meetings/<id>` is that meeting's "Minutes", under Meetings.
+ */
+const RECORD_PAGE_TITLES: Readonly<Record<string, string>> = {
+  "/meetings/": "Minutes",
+};
+
 function matchesRoute(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -96,12 +104,20 @@ export function resolvePageTitle(
   const navItem = DASHBOARD_NAV_ITEMS.find((item) =>
     matchesRoute(pathname, item.href),
   );
-  const subPage = Object.entries(SUB_PAGE_TITLES).find(([href]) =>
-    matchesRoute(pathname, href),
-  );
+  const subPage =
+    Object.entries(SUB_PAGE_TITLES).find(([href]) =>
+      matchesRoute(pathname, href),
+    ) ??
+    Object.entries(RECORD_PAGE_TITLES).find(
+      ([prefix]) =>
+        pathname.startsWith(prefix) && pathname.length > prefix.length,
+    );
   if (navItem && subPage) {
     return isNavItemVisible(navItem)
-      ? { title: subPage[1], parent: { label: navItem.label, href: navItem.href } }
+      ? {
+          title: subPage[1],
+          parent: { label: navItem.label, href: navItem.href },
+        }
       : { title: subPage[1] };
   }
   if (navItem) return { title: navItem.label };
