@@ -282,11 +282,13 @@ export class EventService {
       }
     }
 
-    await this.announcements.notifyEventCreated(
-      input.chapter_id,
-      parent,
-      input.created_by,
-    );
+    if (!input.silent) {
+      await this.announcements.notifyEventCreated(
+        input.chapter_id,
+        parent,
+        input.created_by,
+      );
+    }
 
     // The `/event` slash command asks us to surface an interactive event card
     // in chat. The card is server-originated (a client cannot forge

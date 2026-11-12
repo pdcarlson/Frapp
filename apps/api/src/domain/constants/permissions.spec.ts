@@ -28,6 +28,7 @@ const EXEC_BOARD = [
   'channels:manage',
   'chapter-config:manage',
   'chapter-config:view',
+  'meetings:record',
   'members:view',
   'polls:view_all',
   'roles:manage',

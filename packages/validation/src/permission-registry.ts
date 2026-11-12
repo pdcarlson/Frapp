@@ -32,6 +32,7 @@ export const PERMISSION_MODULES = [
   { key: "announcements", label: "Announcements" },
   { key: "events", label: "Events" },
   { key: "tasks", label: "Tasks" },
+  { key: "meetings", label: "Meetings" },
   { key: "points", label: "Points" },
   { key: "hours", label: "Service hours" },
   { key: "polls", label: "Polls" },
@@ -166,6 +167,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "tasks",
     "Manage tasks",
     "Create and assign tasks, and confirm them done.",
+  ),
+
+  chapterPermission(
+    "meetings:record",
+    "meetings",
+    "Write meeting minutes",
+    "Start minutes for a meeting, and edit and post the ones they started.",
+  ),
+  chapterPermission(
+    "meetings:edit",
+    "meetings",
+    "Edit anyone's minutes",
+    "Edit and post minutes another officer started, before or after they are posted.",
+  ),
+  chapterPermission(
+    "meetings:delete",
+    "meetings",
+    "Delete minutes",
+    "Delete a meeting's minutes for good.",
   ),
 
   chapterPermission(

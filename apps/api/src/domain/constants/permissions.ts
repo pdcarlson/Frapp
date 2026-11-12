@@ -50,6 +50,13 @@ export const SystemPermissions = {
 
   TASKS_MANAGE: 'tasks:manage',
 
+  // Meeting minutes (#4312, `spec/behavior/meetings.md` § Permissions).
+  // Whoever started a meeting's minutes may edit and post them without
+  // `meetings:edit`; the service checks that.
+  MEETINGS_RECORD: 'meetings:record',
+  MEETINGS_EDIT: 'meetings:edit',
+  MEETINGS_DELETE: 'meetings:delete',
+
   // Recruitment (#4070). `RUSH_NOTES`, `RUSH_VIEW_RESULTS` and `RUSH_MANAGE`
   // gate no route yet: notes, delete and export are not built, and the vote
   // count still travels with the prospect (#4084).
@@ -167,6 +174,9 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.ROLES_MANAGE,
       SystemPermissions.CHAPTER_CONFIG_VIEW,
       SystemPermissions.CHAPTER_CONFIG_MANAGE,
+      // The exec board writes minutes (`meetings.md` § Permissions); migration
+      // `20261112120400_meetings.sql` gives existing chapters' top tier the same.
+      SystemPermissions.MEETINGS_RECORD,
     ],
   },
   {
