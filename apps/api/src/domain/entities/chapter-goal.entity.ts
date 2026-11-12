@@ -2,7 +2,7 @@ import { GOAL_METRICS, type GoalMetric } from '@repo/validation';
 
 /**
  * What a chapter holds its members to (#1062), persisted to `chapter_goals`
- * (`20261112291500_chapter_goals.sql`), one row per chapter and measure.
+ * (`20261113040002_chapter_goals.sql`), one row per chapter and measure.
  *
  * - `points`: points this semester, in points.
  * - `service`: approved service hours this semester, in minutes.
