@@ -34,6 +34,7 @@ import {
   describeAttendance,
   eventLimitsAudience,
   repeatEditAnchor,
+  repeatEditDraft,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -709,6 +710,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 roleName,
                 repeatStart,
                 setsRequirements,
+                repeatSeries,
               )}
               onToggle={() => {
                 Keyboard.dismiss();
@@ -812,7 +814,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     doesn't know its rule, so it doesn't offer to change it. */}
                 {repeatUnknown ? null : (
                   <RepeatOptions
-                    draft={draft.repeat}
+                    draft={
+                      repeatSeries
+                        ? repeatEditDraft(draft.repeat, repeatSeries)
+                        : draft.repeat
+                    }
                     start={repeatStart}
                     onChange={(repeat) => update({ repeat }, ["repeat"])}
                     disabled={pending}

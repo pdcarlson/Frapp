@@ -26,7 +26,10 @@ import {
   formatRepeatRule,
   nthWeekdayPhrase,
   parseRepeatRule,
+  advanceRepeatRule,
   seriesChildStarts,
+  shiftRepeatRule,
+  shiftWeekdays,
   zonedCalendarDay,
   type NthWeek,
   type RepeatFrequency,
@@ -331,7 +334,7 @@ export function monthlyByFor(
 // ---------------------------------------------------------------------------
 
 /** Which field a problem belongs under. */
-export type RepeatField = "interval" | "count" | "until";
+export type RepeatField = "interval" | "count" | "until" | "start";
 
 export type RepeatRuleResult =
   | { ok: true; rule: string | null }
@@ -343,14 +346,16 @@ function wholeNumber(text: string): number | null {
 }
 
 /**
- * The legacy token a rule says exactly, if one does: weekly on the first
- * meeting's weekday or every 2 weeks, or monthly on its day of the month,
- * each with the token's own length. Shipped phone builds read only tokens
- * (they show anything else raw as the cadence and treat the head as
- * one-time), so a client sends a token whenever one says the same series
- * (#4488). A token steps in UTC: a monthly one is used only where the
- * first meeting's day is the same in UTC and is one every month has, so
- * the meetings it makes are the rule's.
+ * The legacy token that makes exactly the meetings `rule` does, if one does.
+ * Shipped phone builds read only tokens (they show anything else raw as the
+ * cadence and treat the head as one-time), so a client sends a token where
+ * it says the same series (#4488): weekly on the first meeting's weekday or
+ * every 2 weeks, or monthly on its day of the month, at the token's own
+ * length. A token steps in UTC, so its meetings are compared with the rule's
+ * instant by instant: a run a DST change moves, or a monthly series whose
+ * UTC date differs, keeps the structured rule and its wall-clock time.
+ * What stays different is regeneration: a series edit that rebuilds a token
+ * makes its run again from now, where a `COUNT` holds (spec § Recurring).
  */
 function legacyTokenFor(
   rule: RepeatRule,
@@ -359,28 +364,38 @@ function legacyTokenFor(
 ): RecurrenceRule | null {
   if (rule.end.kind !== "count") return null;
   const children = rule.end.count - 1;
-  if (rule.freq === "WEEKLY") {
-    if (rule.byDay.length !== 1 || rule.byDay[0] !== day.weekday) return null;
-    if (rule.interval === 1 && children === LEGACY_CHILD_COUNT.WEEKLY) {
-      return "WEEKLY";
-    }
-    if (rule.interval === 2 && children === LEGACY_CHILD_COUNT.BIWEEKLY) {
-      return "BIWEEKLY";
-    }
-    return null;
-  }
+  let token: RecurrenceRule | null = null;
   if (
+    rule.freq === "WEEKLY" &&
+    rule.byDay.length === 1 &&
+    rule.byDay[0] === day.weekday
+  ) {
+    if (rule.interval === 1 && children === LEGACY_CHILD_COUNT.WEEKLY) {
+      token = "WEEKLY";
+    } else if (
+      rule.interval === 2 &&
+      children === LEGACY_CHILD_COUNT.BIWEEKLY
+    ) {
+      token = "BIWEEKLY";
+    }
+  } else if (
     rule.freq === "MONTHLY" &&
     rule.interval === 1 &&
     rule.nthWeekday === null &&
     rule.monthDay === day.day &&
-    day.day <= 28 &&
-    start.getUTCDate() === day.day &&
     children === LEGACY_CHILD_COUNT.MONTHLY
   ) {
-    return "MONTHLY";
+    token = "MONTHLY";
   }
-  return null;
+  if (!token) return null;
+  const ours = seriesChildStarts(formatRepeatRule(rule), start);
+  const theirs = seriesChildStarts(token, start);
+  const same =
+    !!ours &&
+    !!theirs &&
+    ours.length === theirs.length &&
+    ours.every((at, i) => at.getTime() === theirs[i]!.getTime());
+  return same ? token : null;
 }
 
 /**
@@ -475,10 +490,27 @@ export function repeatCaption(
  * The cadence in a few words, for the "More options" summary: "Every Mon
  * and Thu", "Every month on the 12th", "Doesn't repeat".
  */
-export function repeatSummary(draft: RepeatDraft, start: Date): string {
+export function repeatSummary(
+  draft: RepeatDraft,
+  start: Date,
+  /** On an edit, the series the change applies to: says what it will save. */
+  series?: RepeatEditSeries,
+): string {
   if (draft.preset === "NONE") return REPEAT_PRESET_LABELS.NONE;
-  const result = repeatRuleOf(draft, start);
-  const rule = result.ok ? result.rule : null;
+  const result = series
+    ? repeatRuleForEdit(draft, series)
+    : repeatRuleOf(draft, start);
+  // An untouched rule is sent as stored and moved by the API with the start.
+  const rule =
+    result.ok && series && result.rule === draft.source
+      ? shiftRepeatRule(
+          result.rule,
+          series.headStart,
+          new Date(series.headStart.getTime() + series.shiftMs),
+        )
+      : result.ok
+        ? result.rule
+        : null;
   const parsed = parseRepeatRule(rule);
   if (parsed?.legacy) return RECURRENCE_REPEAT_LABELS[parsed.legacy];
   return (
@@ -558,44 +590,83 @@ function sameDays(a: readonly WeekdayCode[], b: readonly WeekdayCode[]) {
 }
 
 /**
+ * The draft as the control shows it on an edit, so the chips, the count,
+ * the caption and the rule saved all say the same series:
+ *
+ * - Weekdays left as stored move with a start moved in this save, as the API
+ *   moves a kept rule's (`shiftRepeatRule`): a Monday series moved to
+ *   Tuesday lights Tuesday.
+ * - Once the head has started, a count left as stored counts what is left
+ *   from the next meeting, as the API hands a kept rule on
+ *   (`advanceRepeatRule`); a changed rule is taken as sent, so without this
+ *   adding a weekday would quietly add the meetings already held.
+ *
+ * The draft's `source` and `pristine` are kept: an untouched draft still
+ * sends the stored rule, which the API moves and hands on itself.
+ */
+export function repeatEditDraft(
+  draft: RepeatDraft,
+  series: RepeatEditSeries,
+): RepeatDraft {
+  const stored = parseRepeatRule(draft.source);
+  if (draft.preset === "NONE" || !stored || stored.legacy) return draft;
+  let shown = draft;
+  const movedFrom = new Date(series.headStart.getTime() + series.shiftMs);
+  if (
+    series.shiftMs !== 0 &&
+    draft.byDay &&
+    sameDays(draft.byDay, stored.byDay)
+  ) {
+    const days =
+      zonedCalendarDay(movedFrom, draft.timeZone).dayNumber -
+      zonedCalendarDay(series.headStart, draft.timeZone).dayNumber;
+    if (days !== 0)
+      shown = { ...shown, byDay: shiftWeekdays(draft.byDay, days) };
+  }
+  const anchor = repeatEditAnchor(series);
+  if (
+    stored.end.kind === "count" &&
+    draft.endKind === "count" &&
+    draft.countInput.trim() === String(stored.end.count) &&
+    anchor.getTime() !== movedFrom.getTime()
+  ) {
+    const handed = parseRepeatRule(
+      advanceRepeatRule(
+        draft.source,
+        series.headStart,
+        new Date(anchor.getTime() - series.shiftMs),
+      ),
+    );
+    if (handed && !handed.legacy && handed.end.kind === "count") {
+      shown = { ...shown, countInput: String(handed.end.count) };
+    }
+  }
+  return shown;
+}
+
+/**
  * The rule an edit sends, as {@link repeatRuleOf} from the meeting the rule
- * will step from ({@link repeatEditAnchor}). An untouched draft gives back the
- * stored rule, which the API shifts with a moved start itself. A changed one
- * is taken as sent, so weekdays the officer left as stored move with the
- * start here, as the API would have moved them: a Monday series moved to
- * Tuesday whose count changed in the same save meets on Tuesdays.
+ * will step from ({@link repeatEditAnchor}), read from what the control
+ * shows ({@link repeatEditDraft}). An untouched draft gives back the stored
+ * rule. A one-time event that has already started can't begin a series:
+ * the series would start in the past, which the API refuses.
  */
 export function repeatRuleForEdit(
   draft: RepeatDraft,
   series: RepeatEditSeries,
 ): RepeatRuleResult {
   const anchor = repeatEditAnchor(series);
-  if (draft.preset === "NONE" || (draft.pristine && draft.source)) {
-    return repeatRuleOf(draft, anchor);
+  if (
+    draft.preset !== "NONE" &&
+    !series.headRule &&
+    anchor.getTime() <= series.now.getTime()
+  ) {
+    return {
+      ok: false,
+      field: "start",
+      error:
+        "This event has started, so it can't begin a series. Make its next meeting a new event that repeats.",
+    };
   }
-  const stored = parseRepeatRule(draft.source);
-  let moved = draft;
-  if (series.shiftMs !== 0 && draft.byDay && stored && !stored.legacy) {
-    const from = zonedCalendarDay(series.headStart, draft.timeZone);
-    const to = zonedCalendarDay(
-      series.headStart.getTime() + series.shiftMs,
-      draft.timeZone,
-    );
-    const days = to.dayNumber - from.dayNumber;
-    if (days !== 0 && sameDays(draft.byDay, stored.byDay)) {
-      const shifted = new Set(
-        draft.byDay.map(
-          (code) =>
-            WEEKDAY_CODES[
-              (((WEEKDAY_CODES.indexOf(code) + days) % 7) + 7) % 7
-            ]!,
-        ),
-      );
-      moved = {
-        ...draft,
-        byDay: WEEKDAY_CODES.filter((code) => shifted.has(code)),
-      };
-    }
-  }
-  return repeatRuleOf(moved, anchor);
+  return repeatRuleOf(repeatEditDraft(draft, series), anchor);
 }

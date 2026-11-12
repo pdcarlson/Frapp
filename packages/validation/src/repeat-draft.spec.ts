@@ -9,6 +9,7 @@ import {
   repeatDays,
   repeatDraftFromRule,
   repeatEditAnchor,
+  repeatEditDraft,
   repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
@@ -54,17 +55,23 @@ describe("repeat draft", () => {
     expect(ruleOf(toggleRepeatDay(weekly, "MO", START))).toContain(
       "BYDAY=MO,TU",
     );
-    // The 12th, 7 PM in New York, is the 12th in UTC too.
-    const twelfth = new Date("2026-11-12T23:00:00Z");
+    // Apr 12, 7 PM in New York (the 12th in UTC too), to Oct 12: no DST
+    // change in the run, so the token makes the same meetings.
+    const twelfth = new Date("2027-04-12T23:00:00Z");
     const monthly = pickRepeatPreset(noRepeatDraft(NY), "MONTHLY");
     expect(ruleOf(monthly, twelfth)).toBe("MONTHLY");
-    // 9 PM on the 12th is the 13th in UTC, where the token would step.
-    expect(ruleOf(monthly, new Date("2026-11-13T02:00:00Z"))).toContain(
-      "BYMONTHDAY=12",
+    // From Nov 12 the run crosses March's change: the token would meet at
+    // 8 PM from then, so the rule keeps 7 PM.
+    expect(ruleOf(monthly, new Date("2026-11-13T00:00:00Z"))).toContain(
+      "TZID=America/New_York",
+    );
+    // A weekly run from Oct 1 crosses November's change.
+    expect(ruleOf(weekly, new Date("2026-10-01T23:00:00Z"))).toContain(
+      "COUNT=13",
     );
     expect(
       ruleOf(editRepeatDraft(monthly, { monthlyBy: "nth" }), twelfth),
-    ).toContain("BYDAY=2TH");
+    ).toContain("BYDAY=2MO");
     expect(ruleOf(pickRepeatPreset(noRepeatDraft(NY), "DAILY"))).toContain(
       "FREQ=DAILY",
     );
@@ -249,6 +256,54 @@ describe("repeat draft", () => {
         now: before,
       });
       expect(kept.ok && kept.rule).toContain("BYDAY=TU,FR");
+    });
+
+    it("lights the moved weekday, so the chips are the rule saved", () => {
+      const series = {
+        headStart: START,
+        headRule: RULE,
+        shiftMs: DAY,
+        now: before,
+      };
+      const shown = repeatEditDraft(repeatDraftFromRule(RULE, NY), series);
+      expect(shown.byDay).toEqual(["WE"]);
+      expect(shown.pristine).toBe(true);
+      expect(repeatSummary(repeatDraftFromRule(RULE, NY), START, series)).toBe(
+        "Every Wednesday",
+      );
+    });
+
+    it("counts what is left once the head has started", () => {
+      // Three of ten held; adding a day keeps the seven left, not ten more.
+      const series = {
+        headStart: START,
+        headRule: RULE,
+        shiftMs: 0,
+        now: new Date("2026-11-27T12:00:00Z"),
+      };
+      const draft = repeatDraftFromRule(RULE, NY);
+      expect(repeatEditDraft(draft, series).countInput).toBe("7");
+      const added = toggleRepeatDay(
+        repeatEditDraft(draft, series),
+        "TH",
+        START,
+      );
+      const result = repeatRuleForEdit(added, series);
+      expect(result.ok && result.rule).toContain("BYDAY=TU,TH;COUNT=7");
+    });
+
+    it("won't begin a series on a one-time event that has started", () => {
+      const result = repeatRuleForEdit(
+        pickRepeatPreset(noRepeatDraft(NY), "WEEKLY"),
+        {
+          headStart: START,
+          headRule: null,
+          shiftMs: 0,
+          now: new Date("2026-11-12T00:00:00Z"),
+        },
+      );
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.field).toBe("start");
     });
 
     it("gives back an untouched rule for the API to shift", () => {

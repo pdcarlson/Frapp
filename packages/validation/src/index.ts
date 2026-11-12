@@ -930,6 +930,7 @@ export {
   seriesChildStarts,
   seriesExtent,
   shiftRepeatRule,
+  shiftWeekdays,
   zonedCalendarDay,
 } from "./recurrence";
 export type {
@@ -960,6 +961,7 @@ export {
   repeatDays,
   repeatDraftFromRule,
   repeatEditAnchor,
+  repeatEditDraft,
   repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,

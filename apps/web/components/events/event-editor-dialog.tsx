@@ -43,6 +43,7 @@ import {
   REPEAT_PRESET_LABELS,
   repeatDraftFromRule,
   repeatEditAnchor,
+  repeatEditDraft,
   repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
@@ -785,16 +786,20 @@ export function EventEditorDialog({
         // A Repeat change is about the series: sent with `series` scope, so
         // the API rebuilds the upcoming meetings (and the rest of this save
         // reaches them too), and "Doesn't repeat" as `null`, which ends it.
-        // An unchanged rule isn't sent, so nothing is rebuilt.
-        const repeatChanged =
-          !repeatLocked && repeatResult.rule !== (editSeries?.headRule ?? null);
+        // An unchanged rule is sent back as stored with the instance edit,
+        // as it always was: the API checks a moved head's start against it
+        // (an UNTIL the head would pass), and writes nothing new.
+        const storedRule = editSeries?.headRule ?? null;
+        const repeatChanged = !repeatLocked && repeatResult.rule !== storedRule;
         await updateEventMutation.mutateAsync({
           id: eventId,
           body: {
             ...payload,
             ...(repeatChanged
               ? { recurrence_rule: repeatResult.rule, scope: "series" as const }
-              : {}),
+              : storedRule && !repeatLocked
+                ? { recurrence_rule: storedRule }
+                : {}),
             ...typeField,
             required_role_ids: wire.required_role_ids,
             optional_role_ids: wire.optional_role_ids,
@@ -865,7 +870,7 @@ export function EventEditorDialog({
     repeatLocked
       ? "Part of a series"
       : repeatStart
-        ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart)
+        ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart, repeatSeries)
         : repeat.preset === "NONE"
           ? REPEAT_PRESET_LABELS.NONE
           : "Repeats",
@@ -1010,7 +1015,11 @@ export function EventEditorDialog({
                   </section>
                 ) : (
                   <RepeatOptions
-                    draft={repeat}
+                    draft={
+                      repeatSeries
+                        ? repeatEditDraft(repeat, repeatSeries)
+                        : repeat
+                    }
                     start={repeatAnchorStart}
                     onChange={setRepeat}
                     disabled={usingPreviewData}

@@ -276,8 +276,35 @@ describe("EventEditorDialog form shape and attendance by role", () => {
         target: { value: "Chapter meeting" },
       });
       const body = await saved();
-      expect(body).not.toHaveProperty("recurrence_rule");
+      // Sent back as stored, for the API's check of a moved head, with no
+      // series scope: nothing is rebuilt.
+      expect(body.recurrence_rule).toBe(RULE);
       expect(body).not.toHaveProperty("scope");
+    });
+
+    it("moves stored weekdays with a start moved in the same save", async () => {
+      renderEdit(head);
+      // Monday Jul 5 → Tuesday Jul 6, same time, and 8 meetings.
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: "2027-07-06" },
+      });
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "8" },
+      });
+      // The chip lit is the day saved.
+      expect(screen.getByRole("button", { name: "Tuesday" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Monday" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("MO;COUNT=10", "TU;COUNT=8"),
+        scope: "series",
+      });
     });
 
     it("sends a changed rule to the whole series", async () => {

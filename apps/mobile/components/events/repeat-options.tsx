@@ -71,7 +71,10 @@ export function RepeatOptions({
   const styles = createStyles(tokens, brand.accent);
   const [focused, setFocused] = useState<"interval" | "count" | null>(null);
 
-  const caption = repeatCaption(draft, start, series);
+  // An untouched draft can't be wrong, and its length isn't shown: the
+  // caption steps the whole series, so it isn't worked out on every keystroke.
+  const caption =
+    showCaption || !draft.pristine ? repeatCaption(draft, start, series) : null;
   const choices =
     draft.preset === "MONTHLY" ? monthlyChoices(draft, start) : [];
   // A problem the officer can see as they type is said at once; the length

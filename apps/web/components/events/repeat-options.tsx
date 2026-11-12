@@ -56,7 +56,12 @@ export function RepeatOptions({
       : draft.preset === "WEEKLY"
         ? "week"
         : "month";
-  const caption = start ? repeatCaption(draft, start, series) : null;
+  // An untouched draft can't be wrong, and its length isn't shown: the
+  // caption steps the whole series, so it isn't worked out on every keystroke.
+  const caption =
+    start && (showLength || !draft.pristine)
+      ? repeatCaption(draft, start, series)
+      : null;
   const line = caption?.problem || showLength ? caption : null;
   const choices = start ? monthlyChoices(draft, start) : [];
   const days = start ? repeatDays(draft, start) : (draft.byDay ?? []);

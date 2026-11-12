@@ -13,6 +13,7 @@ import {
   withEveryone,
   type EventAttendanceDraft,
   type RepeatDraft,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 
@@ -356,6 +357,8 @@ export function moreOptionsSummary(
   start: Date,
   /** False hides points, for a member who can't attach them (#3709). */
   setsRequirements = true,
+  /** On an edit, the series a Repeat change applies to. */
+  series?: RepeatEditSeries,
 ): string {
   const points = parsePointReward(draft.pointsInput);
   const pointsText = !setsRequirements
@@ -365,7 +368,7 @@ export function moreOptionsSummary(
       : points.kind === "omit"
         ? "0 pts"
         : "Points need a fix";
-  const repeat = repeatSummary(draft.repeat, start);
+  const repeat = repeatSummary(draft.repeat, start, series);
   const opens = parseCheckInOpens(draft.checkInOpensInput);
   const opensText =
     opens === null
