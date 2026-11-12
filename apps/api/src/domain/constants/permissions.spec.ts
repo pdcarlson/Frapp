@@ -48,6 +48,7 @@ const EXEC_BOARD = [
   'chapter-config:view',
   'events:delete',
   'events:update',
+  'groups:manage',
   'meetings:record',
   'polls:view_all',
   'roles:manage',
@@ -90,6 +91,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       'announcements:post',
       'channels:create',
       'channels:manage',
+      'groups:manage',
       'service:approve',
       'tasks:manage',
     ];

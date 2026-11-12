@@ -22,6 +22,8 @@ export interface MentionRoleEntry {
   role_id: string;
   name: string;
   mentionable: boolean;
+  /** `role`, `tier` or `group` (#4076); none from an older API, a role. */
+  kind?: string;
 }
 
 /**
@@ -54,6 +56,7 @@ function filterMentionEntries(
           id: entry.role.role_id,
           label: entry.label,
           displayName: entry.role.name,
+          roleKind: entry.role.kind,
           avatarUrl: null,
           avatarTint: null,
         },

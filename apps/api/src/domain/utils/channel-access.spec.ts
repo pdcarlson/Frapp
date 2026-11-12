@@ -4,6 +4,7 @@ import {
   channelAllowsThreads,
   EMPTY_ACCESS_HOLDER,
   isAlumniPostableChannel,
+  listsNameGroups,
   needsAccessHolder,
   type ChannelAccessHolder,
   type ChannelAccessRecord,
@@ -115,6 +116,20 @@ describe('accessHolderFromRoles', () => {
         'post',
       ),
     ).toBe(true);
+  });
+});
+
+describe('canAccessChannel — groups (#4076)', () => {
+  const FLOOR = '00000000-0000-4000-8000-0000000000f1';
+  it("admits a listed group's member to read and post, and nobody else", () => {
+    const listed = channel({
+      type: 'ROLE_GATED',
+      who_can_see: [`group:${FLOOR}`],
+    });
+    const inGroup = accessHolderFromRoles([roles.brother], [FLOOR]);
+    expect(check(listed, inGroup)).toBe(true);
+    expect(check(listed, inGroup, 'post')).toBe(true);
+    expect(check(listed, holding(roles.brother))).toBe(false);
   });
 });
 
@@ -412,6 +427,17 @@ describe('isAlumniPostableChannel', () => {
       ),
     ).toBe(true);
     expect(isAlumniPostableChannel(channel(), alumni)).toBe(false);
+  });
+});
+
+describe('listsNameGroups (#4076)', () => {
+  it.each([
+    [['group:g1'], null, true],
+    [null, ['role:r', 'group:g1'], true],
+    [['role:r', 'tier:t'], ['role:r'], false],
+    [null, null, false],
+  ])('see %j, post %j: %s', (who_can_see, who_can_post, named) => {
+    expect(listsNameGroups({ who_can_see, who_can_post })).toBe(named);
   });
 });
 

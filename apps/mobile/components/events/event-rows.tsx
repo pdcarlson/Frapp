@@ -1,11 +1,11 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatPointsChip, parseInstant } from "@repo/formatting";
+import { useRequiredOfViewer } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
-import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**

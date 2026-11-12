@@ -27,6 +27,7 @@ import { ServiceEntryModule } from './modules/service-entry/service-entry.module
 import { TaskModule } from './modules/task/task.module';
 import { AiSuggestionModule } from './modules/ai-suggestion/ai-suggestion.module';
 import { PledgeClassModule } from './modules/pledge-class/pledge-class.module';
+import { ChapterGroupModule } from './modules/chapter-group/chapter-group.module';
 import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
@@ -97,6 +98,7 @@ import { validateEnv } from './config/env.validation';
     TaskModule,
     AiSuggestionModule,
     PledgeClassModule,
+    ChapterGroupModule,
     RushModule,
     NotificationModule,
     StudyModule,

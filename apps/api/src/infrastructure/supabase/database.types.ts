@@ -25,6 +25,9 @@ import type {
   ChapterDocumentStar,
   ChapterDuesConfig,
   ChapterGoalRow,
+  ChapterGroup,
+  ChapterGroupMember,
+  ChapterGroupMembership,
   ChapterPointsConfig,
   ChapterServiceConfig,
   ChapterWorkflow,
@@ -161,6 +164,8 @@ export interface Database {
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
+      chapter_group_members: TableDefinition<ChapterGroupMember>;
+      chapter_groups: TableDefinition<ChapterGroup>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       chapter_points_config: TableDefinition<ChapterPointsConfig>;
       chapter_service_config: TableDefinition<ChapterServiceConfig>;
@@ -229,7 +234,13 @@ export interface Database {
       user_settings: TableDefinition<UserSettings>;
       users: TableDefinition<User>;
     };
-    Views: Record<string, never>;
+    Views: {
+      /** `20261113040007` (#4076): one row per (group, member), every kind. */
+      chapter_group_memberships: {
+        Row: TableRow<ChapterGroupMembership>;
+        Relationships: [];
+      };
+    };
     Functions: {
       /**
        * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
@@ -932,6 +943,18 @@ export interface Database {
           p_limit: number;
         };
         Returns: ChatMessage[];
+      };
+      /**
+       * `20261113040007` (#4076): a manual group's members set to exactly
+       * `p_user_ids`, all or none. Returns the `users.id`s after.
+       */
+      set_chapter_group_members: {
+        Args: {
+          p_chapter_id: string;
+          p_group_id: string;
+          p_user_ids: string[];
+        };
+        Returns: string[];
       };
       /**
        * `20261111233000` (#3722). Sets a category's who-can-see and

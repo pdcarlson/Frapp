@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -66,6 +66,21 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useActiveChapterId: () => "chap-1",
+  useRequiredOfViewer: () => () => excuseState.required,
+  useViewerUserId: () => excuseState.viewerId,
+}));
+
+// Excuses (#3735): the blocks have their own spec (`event-excuses.spec.tsx`);
+// here, only whether the sheet mounts them.
+const excuseState = vi.hoisted(() => ({
+  required: false,
+  viewerId: null as string | null,
+}));
+vi.mock("@/components/events/event-excuses", () => ({
+  MyExcuse: ({ required }: { required: boolean }) => (
+    <div data-testid="my-excuse" data-required={String(required)} />
+  ),
+  ExcuseReview: () => <div data-testid="excuse-review" />,
 }));
 
 vi.mock("@/lib/providers/network-provider", async () => {
@@ -137,6 +152,8 @@ beforeEach(() => {
   permissionsState.isError = false;
   realtimeCalls.length = 0;
   mockOffline.value = false;
+  excuseState.required = false;
+  excuseState.viewerId = null;
   Object.assign(eventQueryState, {
     isLoading: false,
     isError: false,
@@ -905,5 +922,45 @@ describe("EventDetailSheet delete (#3667)", () => {
       ).getByRole("button", { name: "Delete event" }),
     );
     expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "instance" });
+  });
+});
+
+describe("EventDetailSheet excuses (#3735)", () => {
+  function renderLive(event: Record<string, unknown>) {
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+  }
+
+  it("hands the member's block whether the event requires them", () => {
+    excuseState.required = true;
+    renderLive(baseEvent);
+    expect(screen.getByTestId("my-excuse")).toHaveAttribute(
+      "data-required",
+      "true",
+    );
+  });
+
+  it("shows the Excuses list to the event's creator, and to no other member", () => {
+    permissionsState.value = ["members:view"];
+    excuseState.viewerId = "u-creator";
+    renderLive({ ...baseEvent, created_by: "u-creator" });
+    expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
+    cleanup();
+    renderLive({ ...baseEvent, created_by: "someone-else" });
+    expect(screen.queryByTestId("excuse-review")).toBeNull();
+  });
+
+  it("shows the Excuses list to an officer who can edit events", () => {
+    permissionsState.value = ["events:update", "members:view"];
+    renderLive({ ...baseEvent, created_by: "someone-else" });
+    expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
   });
 });

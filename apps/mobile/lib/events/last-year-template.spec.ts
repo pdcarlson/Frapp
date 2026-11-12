@@ -27,6 +27,7 @@ const FORMAL: EventDetail = {
   notes: null,
   check_in_zone_name: null,
   event_type_id: "type-1",
+  created_by: null,
   hasCheckInZone: false,
   recurrence_rule: "WEEKLY",
   parent_event_id: null,

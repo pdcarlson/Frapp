@@ -32,6 +32,7 @@ const EVENT: EventDetail = {
   notes: null,
   check_in_zone_name: null,
   event_type_id: null,
+  created_by: null,
   hasCheckInZone: false,
   recurrence_rule: null,
   parent_event_id: null,

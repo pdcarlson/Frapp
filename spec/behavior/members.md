@@ -29,6 +29,17 @@ Added for [#3939](https://github.com/pdcarlson/Frapp/issues/3939) (asked by shaw
 - Deleting a class leaves its members with no class; they keep their order number. Alumni keep both.
 - `GET /v1/members` returns `pledge_class_id` and `order_number` on every profile.
 
+## Groups
+
+Added for [#4076](https://github.com/pdcarlson/Frapp/issues/4076) (epic #4068, Paul 2026-11-10). A **group** is a named set of members, such as Third floor or Live-ins, that carries **no permissions**. It exists to be `@`-mentioned ([`chat/README.md` § Role mentions](chat/README.md#role-mentions)) and to be named on a channel's who-can-see and who-can-post lists ([§ Who can see and post](chat/README.md#who-can-see-and-post)). It is Slack's user group, not a Discord role: what a member can do stays with roles and tiers ([`rbac.md`](rbac.md)).
+
+- **Manual groups** are the chapter's own: an officer names one, picks a palette color and who is in it, and can switch off its ping. A name is 1 to 80 characters, and can't match a role, tier or other group of the chapter, compared as a mention compares (case and punctuation ignored), or read as `@everyone` or `@here`. A chapter can have 200; a group can hold 2,000 members. Its member list is replaced whole on Save, all or none, so picking someone who left the chapter meanwhile fails the save. A member who leaves the chapter leaves its groups.
+- **Automatic groups**: Frapp keeps one per pledge class (named as the class, renamed with it, deleted with it) and one per graduation year that a member has ("Class of 2027"). Who is in them follows the members' own data, read live, so they are never out of date. A class year is for `@`-mentions only and can't go on a channel's lists, because members set their own graduation year. Only their color and ping switch can change. One nobody is in is left out of the Groups page, the pickers and the mentions, and comes back when someone joins it.
+- **The API refuses anything else on a group**: no permissions, no tier, and no member list for an automatic one (`/v1/groups`; an unknown field is a 400).
+- **Who can do what.** Reading needs `members:view`, like the Directory. Every write needs `groups:manage` ([`rbac.md`](rbac.md#permission-model)), which the Exec board and Officers and chairs tiers start with, and which every existing role or tier holding `roles:manage` or `channels:manage` was given when groups shipped. There is no rank rule on it, unlike roles: a group grants no permission. Once a channel's or category's who-can-see or who-can-post list names a group, changing who is in it or deleting it also needs `channels:manage`, since it changes who reads that channel ([`chat/README.md` § Who can see and post](chat/README.md#who-can-see-and-post)).
+- **Where.** Web's Chapter settings → People → Groups lists manual groups, then pledge classes and class years marked "Follows pledge class" or "Follows graduation year". Each opens an editor; creating one opens it to pick members. The member profile sheet lists the groups a member is in, on web and mobile, read-only.
+- Every change writes a `chapter_audit_log` row mirrored to `#chapter-audit`.
+
 ## Profiles
 
 - Each member has a profile card showing: display name, profile photo, role(s), point balance, join date, and optional bio.

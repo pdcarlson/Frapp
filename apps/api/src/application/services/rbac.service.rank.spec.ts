@@ -9,6 +9,8 @@ import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.
 import type { Role, RoleTier } from '#domain/entities/role.entity';
 import { effectivePermissions } from '#domain/utils/role-rank';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
+import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
 import {
   CHAPTER_ID,
   ROLE,
@@ -91,6 +93,10 @@ describe('RbacService rank rules (#4071)', () => {
           useValue: { findByChapter: jest.fn().mockResolvedValue(tiers) },
         },
         { provide: ChapterAuditLogService, useValue: audit },
+        {
+          provide: CHAPTER_GROUP_REPOSITORY,
+          useValue: createChapterGroupRepoMock(),
+        },
       ],
     }).compile();
     service = module.get(RbacService);

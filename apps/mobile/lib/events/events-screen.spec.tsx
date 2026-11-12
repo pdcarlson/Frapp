@@ -46,8 +46,16 @@ const refetch = vi.fn();
 const tasksRefetch = vi.fn();
 let tasks: unknown[] = [];
 
+const { eventAttendanceFor } = await vi.hoisted(
+  async () => await import("@repo/validation"),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // A viewer with no roles: the hook reads the providers this spec doesn't mount.
+  useRequiredOfViewer:
+    () => (fields: Parameters<typeof eventAttendanceFor>[0]) =>
+      eventAttendanceFor(fields, []).status === "required",
   useActiveChapterId: () => chapterId,
   useListChapters: () => ({
     data: [{ chapter_id: "chapter-1", role_ids: [] }],
@@ -95,7 +103,6 @@ vi.mock("@/lib/chapter-branding", () => ({
     accentBorder: "#6B5619",
   }),
 }));
-
 
 import EventsScreen from "@/app/(app)/(tabs)/events";
 

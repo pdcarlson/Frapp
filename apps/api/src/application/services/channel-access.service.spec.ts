@@ -231,7 +231,8 @@ describe('ChannelAccessService', () => {
       ).resolves.toBe(roleGatedChannel);
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
 
       mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
@@ -240,6 +241,27 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("asks for the caller's groups only when a list names a group (#4076)", async () => {
+      const groupChannel: ChatChannel = {
+        ...roleGatedChannel,
+        who_can_see: ['group:g-floor'],
+      };
+      mockChannelRepo.findById.mockResolvedValue(groupChannel);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
+        holderOf('group:g-floor'),
+      );
+
+      await expect(
+        service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
+      ).resolves.toBe(groupChannel);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
+        'chap-1',
+        member,
+        true,
+      );
     });
 
     it('gates posting on the who-can-post list', async () => {
@@ -357,7 +379,10 @@ describe('ChannelAccessService', () => {
         },
         { user_id: 'no-role', role_rank: null, role_id: null, role_name: null },
       ]);
-      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        false,
+      );
     });
 
     it('lists only who its who-can-see list names, and the wildcard', async () => {
@@ -601,7 +626,8 @@ describe('ChannelAccessService', () => {
 
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
     });
 

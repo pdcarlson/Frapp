@@ -5,6 +5,7 @@ import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
+import { proximityCopy, type ZoneProximity } from "@/lib/study/proximity";
 import { CardMessages } from "@/components/card-messages";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 
@@ -21,6 +22,13 @@ import { SkeletonBlock, SkeletonText } from "@/components/state-block";
  */
 export interface StartCardProps {
   zone: StudyZoneModel | null;
+  /**
+   * Where the member is relative to `zone`, from a fix read while the screen
+   * is open, or null with no fix yet (location not allowed, or still reading).
+   * Shown before the tap, so "You're outside the zone" stops being news that
+   * only arrives after Start.
+   */
+  proximity?: ZoneProximity | null;
   /** True when more than one zone exists, so the row is worth tapping. */
   canChooseZone: boolean;
   isStarting: boolean;
@@ -45,6 +53,7 @@ export interface StartCardProps {
 
 export function StartCard({
   zone,
+  proximity = null,
   canChooseZone,
   isStarting,
   isBlocked = false,
@@ -65,7 +74,9 @@ export function StartCard({
       <Pressable
         accessibilityRole={canChooseZone ? "button" : "text"}
         accessibilityLabel={
-          zone ? `Study zone: ${zone.name}` : "No study zone selected"
+          zone
+            ? `Study zone: ${zone.name}${proximity ? `, ${proximityCopy(proximity)}` : ""}`
+            : "No study zone selected"
         }
         accessibilityHint={canChooseZone ? "Choose a different zone." : undefined}
         disabled={!canChooseZone}
@@ -81,7 +92,21 @@ export function StartCard({
               is a moment between loads, and the old line only narrated that
               zones exist. */}
           {zone ? (
-            <Text style={styles.zoneMeta}>{zoneRewardCopy(zone)}</Text>
+            <Text style={styles.zoneMeta}>
+              {/* Inline, on the line that is always there, so a fix landing
+                  never moves the button (the no-layout-shift rule). */}
+              {proximity ? (
+                <Text
+                  style={
+                    proximity.inside ? styles.proximityHere : styles.proximityAway
+                  }
+                >
+                  {proximityCopy(proximity)}
+                  {" · "}
+                </Text>
+              ) : null}
+              {zoneRewardCopy(zone)}
+            </Text>
           ) : null}
         </View>
         {canChooseZone ? <Text style={styles.chevron}>›</Text> : null}
@@ -194,6 +219,12 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       marginTop: margin.zoneMeta,
+    },
+    proximityHere: {
+      color: tokens.color.semantic.success,
+    },
+    proximityAway: {
+      color: tokens.color.text.foreground,
     },
     chevron: {
       ...typeRole(tokens.typography.role.title),
