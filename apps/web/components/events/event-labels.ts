@@ -1,7 +1,12 @@
-import { RECURRENCE_RULE_LABELS, isRecurrenceRule } from "@repo/validation";
+import {
+  RECURRENCE_RULE_LABELS,
+  describeRepeatPattern,
+  isRecurrenceRule,
+} from "@repo/validation";
 import { ruleTokenLabel } from "@repo/hooks/event-series";
 import {
   formatDayTime,
+  formatPoints,
   formatTimeOfDay,
   localIsoDate,
   parseInstant,
@@ -18,14 +23,18 @@ import {
  * cadence at all for a one-time event rather than a "One-time" badge, because
  * an absent value is absent (`spec/ui/web-dashboard/README.md` § Page grammar).
  *
- * A token outside the catalog (the API rejects one, but a row written before a
- * rule was retired could still carry it) reads in sentence case rather than as
- * the raw enum.
+ * A structured rule (#4488) reads as its pattern ("Every Mon and Thu"), its
+ * days as this browser's calendar has them; `start`, a meeting of the series,
+ * names a by-date monthly rule's day when the rule doesn't. A token outside the catalog (the API rejects one,
+ * but a row written before a rule was retired could still carry it) reads in
+ * sentence case rather than as the raw enum.
  */
-export function recurrenceLabel(rule: unknown): string | null {
+export function recurrenceLabel(rule: unknown, start?: unknown): string | null {
   if (typeof rule !== "string" || rule.trim() === "") return null;
   if (isRecurrenceRule(rule)) return RECURRENCE_RULE_LABELS[rule];
-  return ruleTokenLabel(rule);
+  const at = typeof start === "string" ? start : "";
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return describeRepeatPattern(rule, at, { timeZone }) ?? ruleTokenLabel(rule);
 }
 
 /** `"1 point"`, `"5 points"`; `null` when the event awards none. */
@@ -33,7 +42,7 @@ export function pointsLabel(value: unknown): string | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return null;
   }
-  return `${value} ${value === 1 ? "point" : "points"}`;
+  return formatPoints(value);
 }
 
 /**

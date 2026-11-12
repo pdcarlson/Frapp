@@ -93,6 +93,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, a Backwork department code typed in any case, like math for MATH, now files the upload under the department you already have.",
       "When you make an event, Who's coming now lists every role with Required, Optional or Not invited beside it and says the whole plan in one line, and on your phone it closes with Done back to your event.",
       "On the web, Settings now lets you set chat to Mentions and DMs only for the whole chapter, and a channel's notification menu shows which level is your default.",
+      "On your phone, officers can now change what each tier and role can do from More, Chapter settings, which also holds the chapter accent and chat background.",
+      "Text boxes, dropdowns, switches and outlined buttons now have a clearer edge, so they are easier to spot, on the web and on your phone.",
+      "Every member can now add events to the chapter calendar and upload backwork, while making an event required or worth points stays with the officers who manage events.",
+      "Chat names someone who just joined as soon as they start typing or posting, instead of \"Member\" and a code, and the typing line never says \"Someone\".",
+      "Event and task cards in chat now say when the same way on the web and your phone, and a task in progress or done shows its own colour instead of your chapter's.",
+      "Approved service hours now show how many points they earned, like 3 points, instead of only saying points were awarded.",
     ],
   },
   {

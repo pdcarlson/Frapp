@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import * as accentPreviewInk from "@/components/settings/accent-preview-ink";
-import { signetDarkTokens } from "@repo/theme/signet";
 
 const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -202,107 +201,26 @@ describe("settings semester rollover subscription gating", () => {
   });
 });
 
-describe("the accent preview reports its own legibility", () => {
+describe("the accent preview draws its label in the ink previewInkFor picks", () => {
   /*
    * `resolveChapterAccentColor` asks whether the accent is legible *as text on
-   * the card*; a primary button needs the other question, whether text is
-   * legible *on the accent*. They diverge, and the pre-push review found the
-   * band where: `#0086FE` passes the first with `reason: "ok"` and no warning,
-   * and fails the second (both figures pinned in `settings-contrast.spec.ts`).
-   * Before this, the swatch drew "Preview" in a tone `pickAccessibleColor` had
-   * explicitly rejected and said nothing.
-   *
-   * The band is narrow by construction, which is why the seed is exact and why
-   * it moved once already. Both checks rise together as the accent lightens —
-   * a lighter accent is more legible on the card AND gives dark ink more
-   * contrast — so "kept by the resolver but illegible under ink" is a thin
-   * strip rather than a broad region. The original seed was `#0080FD`, which
-   * measured 4.497:1 on the old `--card` and survived only because the
-   * resolver rounds to 2dp before comparing. The greenfield ladder
-   * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it under 4.5:1
-   * and substituting it away, which silently emptied this test. `#0086FE` clears
-   * the card floor on the value rather than on the rounding. (The darker
-   * neutral ladder, 2026-11-05, keeps `#0080FD` again; the seed stays
-   * `#0086FE`, which has the wider margin.) The 2026-11-12 ladder's lighter
-   * `--card` emptied the band altogether: `#0086FE` is now substituted
-   * (`insufficient_contrast`), and the two tests below drive the warning with
-   * a stubbed ink on `#4DA3FF`, which the resolver keeps at 5.76:1.
-   *
-   * `settings-contrast.spec.ts` measures the tones. This asserts the screen
-   * actually surfaces the verdict, which no measurement can.
+   * the card*; the swatch's label needs the other question, whether text is
+   * legible *on the accent*, which `previewInkFor` answers. A warning used to
+   * sit under the swatch for a kept colour whose best ink still missed AA;
+   * since the 2026-11-12 ladder no kept colour reaches that band, and #4388
+   * deleted it (`settings-contrast.spec.ts` sweeps the band).
    */
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
   });
 
-  /**
-   * Since the 2026-11-12 surface ladder (#3826) no colour the resolver keeps
-   * on `--card` has a label under AA (`settings-contrast.spec.ts` sweeps it),
-   * so these two drive the warning with a stubbed ink on a kept colour, the
-   * way the swatch test below always has. What they pin is the screen's half:
-   * that a failing ink surfaces, and how its ratio prints.
-   */
-  const withInkRatio = async (inkRatio: number) => {
-    const real = accentPreviewInk.previewInkFor;
-    const spy = vi
-      .spyOn(accentPreviewInk, "previewInkFor")
-      .mockImplementation((fill) =>
-        fill.toUpperCase() === "#4DA3FF"
-          ? { ink: signetDarkTokens.color.gold.onHouse, ratio: inkRatio }
-          : real(fill),
-      );
-    // Restore here if setup throws, so a broken render can't leak the stub
-    // into the tests after this one; on success the caller restores it.
-    try {
-      const user = userEvent.setup();
-      render(<SettingsPage />);
-      await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
-      const hex = screen.getByLabelText(/accent color hex value/i);
-      await user.clear(hex);
-      await user.type(hex, "#4DA3FF");
-    } catch (error) {
-      spy.mockRestore();
-      throw error;
-    }
-    return spy;
-  };
-
-  it("warns when label text on the typed accent misses AA", async () => {
-    const spy = await withInkRatio(4.45);
-    try {
-      expect(
-        screen.getByText(/under the 4\.5:1 minimum/i),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("never prints a failing ratio as 4.5:1", async () => {
-    // A ratio just under 4.5:1 fails AA, and rounding once printed it as
-    // "4.5:1, under the 4.5:1 minimum".
-    const spy = await withInkRatio(4.4999);
-    try {
-      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
-        /reads at 4\.4:1/,
-      );
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("paints the swatch label in the ink the warning measured", async () => {
-    // The warning's ratio comes from `previewInkFor`; the swatch must draw that
-    // same ink, or the warning measures a label nobody sees. A real accent
-    // can't show it: on today's ladder `onHouse` wins for every colour the
-    // resolver keeps (keeping it takes 4.5:1 on the dark card, past the two
-    // tones' crossover), and `onHouse` is also the fallback a hard-coded
-    // swatch would reach for. So for the typed colour, and only for it, the
-    // ink is a sentinel neither tone is, with a failing ratio: the swatch must
-    // paint that ink and the warning must print that ratio, which pins both
-    // to one call on one input.
+  it("paints the swatch label in the ink previewInkFor picks", async () => {
+    // A real accent can't show it: on today's ladder `onHouse` wins for every
+    // colour the resolver keeps (keeping it takes 4.5:1 on the dark card, past
+    // the two tones' crossover), and `onHouse` is also the fallback a
+    // hard-coded swatch would reach for. So for the typed colour, and only for
+    // it, the ink is a sentinel neither tone is: the swatch must paint it.
     const real = accentPreviewInk.previewInkFor;
     const spy = vi
       .spyOn(accentPreviewInk, "previewInkFor")
@@ -319,22 +237,9 @@ describe("the accent preview reports its own legibility", () => {
       await user.clear(hex);
       await user.type(hex, "#4DA3FF");
       expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
-      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
-        /reads at 3\.2:1/,
-      );
     } finally {
       spy.mockRestore();
     }
-  });
-
-  it("stays quiet for an accent whose label text is legible", async () => {
-    const user = userEvent.setup();
-    render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
-    const hex = screen.getByLabelText(/accent color hex value/i);
-    await user.clear(hex);
-    await user.type(hex, "#F2B72E");
-    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
   });
 });
 
@@ -396,9 +301,6 @@ describe("the accent save sends the colour the preview shows", () => {
       expect(saveButton()).toHaveAccessibleDescription(
         /enter a hex code like #5AA9E6/i,
       );
-      // The preview is the fallback gold there, which its ink clears, so the
-      // label-ink warning never promises what a save that can't happen picks.
-      expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
     }
 
     await user.clear(hex);
@@ -428,9 +330,8 @@ describe("the accent save sends the colour the preview shows", () => {
 
 describe("the accent form surfaces the server's own §8 disclosure (#1183)", () => {
   /*
-   * Independent of the draft checks tested above — the preview's two contrast
-   * questions, each against one fixed backdrop and computed by
-   * `resolveChapterAccentColor`/`pickAccessibleColor`, and its format. This is the real
+   * Independent of the draft checks tested above — the preview's contrast as
+   * text on the card, computed by `resolveChapterAccentColor`, and its format. This is the real
    * Signet engine's verdict on the colour actually saved, returned by
    * `PATCH /v1/chapters/current` and disclosed rather than corrected: §8
    * forbids a runtime substitution, so a failing save still succeeds.

@@ -40,5 +40,14 @@ export interface ServiceEntry {
   reviewed_by: string | null;
   review_comment: string | null;
   points_awarded: boolean;
+  /**
+   * The SERVICE points this entry's approval awarded: 0 for a sub-rate
+   * duration, `null` until approved. Written by `approve_service_entry` from
+   * the rate read at approval, never recomputed, so a later rate change
+   * doesn't rewrite history (#3868). An entry approved before the column
+   * existed was backfilled from its ledger row; one whose ledger row is gone
+   * stays `null`, and clients fall back to `points_awarded`.
+   */
+  awarded_points: number | null;
   created_at: string;
 }

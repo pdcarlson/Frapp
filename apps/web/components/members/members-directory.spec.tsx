@@ -380,7 +380,7 @@ describe("Directory on the greenfield shell", () => {
     // The board's no-results state names what was asked for, rather than
     // reusing the empty state's claim about the roster.
     expect(
-      await screen.findByText(/No actives match “pigg”\./),
+      await screen.findByText(/Nobody matches “pigg”\./),
     ).toBeInTheDocument();
     expect(screen.queryByText("No actives yet.")).toBeNull();
 
@@ -588,7 +588,7 @@ describe("Directory on the greenfield shell", () => {
     Object.assign(membersRead, read([]), { isError: true });
     const { container } = render(<MembersDirectory />);
 
-    expect(screen.getByText("Couldn't load members")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load the directory")).toBeInTheDocument();
     // `NestedError`, not `ErrorState`: the whole-screen family paints
     // `--card` on its box, which would put back the wrapper this lane just
     // removed. The Retry button inside it may still be Secondary.

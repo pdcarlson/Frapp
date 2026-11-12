@@ -488,7 +488,7 @@ export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
     field: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,

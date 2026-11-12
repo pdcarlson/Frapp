@@ -25,7 +25,16 @@ describe("typingLabel (#4014, #3785)", () => {
       "Several people are typing…",
     );
   });
-  test("an unknown name reads as Someone", () => {
-    expect(typingLabel(["x"], nameOf)).toBe("Someone is typing…");
+  test("a typist the roster can't name yet is left out, never Someone", () => {
+    expect(typingLabel(["x"], nameOf)).toBeNull();
+    expect(typingLabel(["x", "p"], nameOf)).toBe("Paul is typing…");
+    expect(typingLabel(["p", "x", "s"], nameOf)).toBe(
+      "Paul and Shawn are typing…",
+    );
+  });
+  test("counts only the named toward several people", () => {
+    expect(typingLabel(["p", "s", "a", "x"], nameOf)).toBe(
+      "Paul, Shawn and Alex are typing…",
+    );
   });
 });

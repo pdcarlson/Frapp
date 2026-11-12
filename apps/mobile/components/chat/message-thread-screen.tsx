@@ -45,6 +45,7 @@ import {
   useChannel,
   useMemberDisplayNames,
   usePermissionList,
+  useRosterCatchUp,
   useViewerUserId,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -155,6 +156,7 @@ export function MessageThreadScreen({
   const roster = useMemberDisplayNames();
   const {
     nameFor,
+    typistLabelFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
     refetch: refetchRoster,
@@ -240,8 +242,16 @@ export function MessageThreadScreen({
 
   const typing = typingLabel(
     visibleTypingUsers(thread.typingUsers, blockState, viewerId),
-    nameFor,
+    typistLabelFor,
   );
+  // A typist, replier or parent's author the roster doesn't hold yet is named
+  // once it's re-read (#4493). The channel screen isn't mounted under this
+  // one, so the parent is asked after here too.
+  const namedRows = useMemo(
+    () => (root ? [root, ...thread.messages] : thread.messages),
+    [root, thread.messages],
+  );
+  useRosterCatchUp(thread.typingUsers, namedRows);
 
   // The app-wide pill says the transport while this screen is up, as s05
   // does while it is (`spec/ui/resilience/connection-state.md` § One indicator).

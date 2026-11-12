@@ -15,10 +15,11 @@
  * than print a placeholder (`spec/ui/web-dashboard/README.md`: an absent
  * value is absent, not a glyph).
  *
- * The relative forms ("Today · 5:00 PM", "Due tomorrow") are worded like
- * mobile's `formatDueSubtitle`, so a member reads one product across both
- * apps. Mobile's Events headings and up-next strip read `formatDayHeading`
- * here; its other copies move over in #3420.
+ * The relative forms ("Today · 5:00 PM", "Due tomorrow") read the same on
+ * both apps, so a member reads one product. Mobile's Events headings and
+ * up-next strip read `formatDayHeading` here, and since #4135 its task due
+ * lines (`formatDueSubtitle`, `formatDueDate`) and event window read
+ * `formatDueLabel`, `formatDueOn` and `formatEventWindow`.
  */
 
 import { parseInstantOrBareLocalNoon } from "./bare-date";
@@ -101,12 +102,70 @@ export function formatDayTimeRange(
 ): string | null {
   const from = toDate(start);
   if (!from) return null;
-  const to = toDate(end);
-  if (!to) return formatDayTime(start, now);
+  return withTimes(weekdayMonthDay(from, now), from, toDate(end), now);
+}
+
+/**
+ * `"<day> · 5:00 – 7:00 PM"`: a day label followed by a time range. The day
+ * period is said once when both ends share it; an end on another day names
+ * that day (`"<day> · 10:00 PM – Sat, Nov 7 · 1:00 AM"`); without a readable
+ * end it is just the start time. Shared by {@link formatDayTimeRange} and
+ * {@link formatEventWindow}, so the two can't word a range differently.
+ */
+function withTimes(day: string, from: Date, to: Date | null, now: Date): string {
+  if (!to) return `${day} · ${time(from)}`;
   if (dayDelta(from, to) !== 0) {
-    return `${formatDayTime(start, now)} – ${formatDayTime(end, now)}`;
+    return `${day} · ${time(from)} – ${weekdayMonthDay(to, now)} · ${time(to)}`;
   }
-  return `${weekdayMonthDay(from, now)} · ${formatTimeOfDayShort(from.toISOString(), to.toISOString())} – ${time(to)}`;
+  return `${day} · ${formatTimeOfDayShort(from.toISOString(), to.toISOString())} – ${time(to)}`;
+}
+
+/**
+ * An event's when, worded for someone deciding whether to go:
+ * `"Tonight · 6:00 – 7:00 PM"` (today from 5 PM on), `"Today · 9:00 –
+ * 10:00 AM"`, `"Tomorrow · …"`, the weekday within the coming week
+ * (`"Friday · …"`), otherwise `"Sat, Mar 14 · …"` with the year outside the
+ * current one. An end on another day names that day, as
+ * {@link formatDayTimeRange} does. Both apps' chat event cards and the phone's
+ * event detail read this one (#4135), so a member reads the same line on each.
+ */
+export function formatEventWindow(
+  start: unknown,
+  end: unknown,
+  now: Date = new Date(),
+): string | null {
+  const from = toDate(start);
+  if (!from) return null;
+  const days = dayDelta(now, from);
+  let day: string;
+  if (days === 0) {
+    // "Tonight" only when it reads true; a 9am meeting today is not tonight.
+    day = from.getHours() >= 17 ? "Tonight" : "Today";
+  } else if (days === 1) {
+    day = "Tomorrow";
+  } else if (days > 1 && days < 7) {
+    day = weekdayName(from);
+  } else {
+    day = weekdayMonthDay(from, now);
+  }
+  return withTimes(day, from, toDate(end), now);
+}
+
+/**
+ * A point count in a sentence or a metadata line: `"1 point"`, `"10
+ * points"`. Both apps write a count this way wherever it is read as text
+ * (#4135); a chip, where space is tight, takes {@link formatPointsChip}.
+ */
+export function formatPoints(value: number): string {
+  return `${value} ${value === 1 ? "point" : "points"}`;
+}
+
+/**
+ * A reward on a chip or badge: `"+10 pts"`. The one short form both apps
+ * draw on a points chip (#4135).
+ */
+export function formatPointsChip(value: number): string {
+  return `+${value} pts`;
 }
 
 /**
@@ -128,10 +187,7 @@ export function formatDayRange(start: unknown, end: unknown): string | null {
 /**
  * A list row's when: `"Today · 5:00 PM"`, `"Tomorrow · 5:00 PM"`, the weekday
  * within the coming week (`"Friday · 5:00 PM"`), otherwise
- * `"Nov 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before. Mobile's
- * event row (`formatEventRowTime`) has its own copy that lacks the yesterday
- * case and the out-of-year year, so the two differ there until mobile reads
- * this one (#3420).
+ * `"Nov 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before.
  */
 export function formatRelativeDayTime(
   value: unknown,
@@ -195,9 +251,8 @@ export function formatSentLabel(
 /**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
- * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy
- * that leaves the year off a date outside the current one, until mobile reads
- * this one (#3420).
+ * has passed. Both apps' task due lines read this one (#4135), through
+ * `@repo/hooks`' `taskDueLine` and mobile's `formatDueSubtitle`.
  *
  * A task due at a time of day passes its `due_at` instant instead of its
  * `due_date` (#4003), and the countdown names the time: `"Due today at
@@ -218,6 +273,16 @@ export function formatDueLabel(
   if (days === 1) return "Due tomorrow";
   if (days < 7) return `Due ${weekdayName(due)}`;
   return `Due ${monthDay(due, now)}`;
+}
+
+/**
+ * Whether a due date has passed: a bare day once that day is over, a task
+ * due at a time (#4003) from that minute. The one rule both apps draw a due
+ * date in red by (Shawn's pick, #4133, 2026-11-12): due today or tomorrow
+ * stays plain. `false` for a missing or unreadable date.
+ */
+export function isDueOverdue(value: unknown, now: Date = new Date()): boolean {
+  return formatDueLabel(value, now)?.startsWith("Overdue") ?? false;
 }
 
 /** A full timestamp rather than a bare `YYYY-MM-DD` day. */

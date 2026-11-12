@@ -199,7 +199,9 @@ sheet is option `3a`.
 > (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`, text `#EBEBEB` / `#A3A3A3` / `#737373` /
 > `#525252`; the text ladder was lifted again on 2026-11-09, and the surface steps spread apart to
 > `#050505` / `#1A1A1A` / `#262626` / `#313131` on 2026-11-12, [#3826](https://github.com/pdcarlson/Frapp/issues/3826)). The table above is the lock as it was settled; the current values and the reasons
-> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4.
+> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4. On 2026-11-12 the
+> interactive edge also moved: controls now draw `--control-edge` (`.42`), and `--input` stays `.14` for
+> quiet edges ([#4389](https://github.com/pdcarlson/Frapp/issues/4389), foundations §3).
 
 This closes the lock as stated. The board does **not** close L-06 or L-08, which it was also hoped to
 settle: L-06 is still open, and L-08 was closed separately by

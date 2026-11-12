@@ -122,6 +122,7 @@ function cssToken(name: string): string {
 }
 
 export const DESTRUCTIVE_TEXT = cssToken("--destructive-text");
+export const INFO_TEXT = cssToken("--info-text");
 
 /** A card-filled control's hover (components.md §3), an opaque literal. */
 export const CARD_HOVER = cssToken("--card-hover");
@@ -163,6 +164,7 @@ export const STATUS_TINT = {
   warning: parseStatusTint("--warning-tint"),
   destructive: parseStatusTint("--destructive-tint"),
   destructiveHover: parseStatusTint("--destructive-tint-hover"),
+  info: parseStatusTint("--info-tint"),
 } as const;
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */

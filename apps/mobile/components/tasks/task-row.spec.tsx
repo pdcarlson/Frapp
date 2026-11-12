@@ -254,8 +254,8 @@ describe("TaskRow — the completed row", () => {
 
   it("marks an awarded reward in the success role", () => {
     const tree = render(<TaskRow row={done} now={NOW} />);
-    expect(texts(tree)).toContain("+15 ✓");
-    expect(styleOfText(tree, "+15 ✓").color).toBe(
+    expect(texts(tree)).toContain("+15 pts ✓");
+    expect(styleOfText(tree, "+15 pts ✓").color).toBe(
       signetDarkTokens.color.semantic.success,
     );
   });
@@ -285,8 +285,8 @@ describe("TaskRow — the points chip", () => {
         now={NOW}
       />,
     );
-    expect(texts(tree)).toContain("+15");
-    expect(styleOfText(tree, "+15").color).toBe("#CB9FFF");
+    expect(texts(tree)).toContain("+15 pts");
+    expect(styleOfText(tree, "+15 pts").color).toBe("#CB9FFF");
   });
 });
 

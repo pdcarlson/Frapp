@@ -113,18 +113,18 @@ VALUES ('c0ffee00-0000-4000-8000-000000000001', 'Beta Theta Omega', 'Westfield U
 -- role triggers were dropped (the rollback playbook's first step).
 INSERT INTO role_tiers (id, chapter_id, position, name, permissions)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000b1', 'c0ffee00-0000-4000-8000-000000000001', 1, 'Exec board',          ARRAY['members:view','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage']),
- ('c0ffee00-0000-4000-8000-0000000000b2', 'c0ffee00-0000-4000-8000-000000000001', 2, 'Officers and chairs', ARRAY['members:view','service:approve','announcements:post','tasks:manage','channels:create','channels:manage']),
- ('c0ffee00-0000-4000-8000-0000000000b3', 'c0ffee00-0000-4000-8000-000000000001', 3, 'Members',             ARRAY['members:view','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid']),
+ ('c0ffee00-0000-4000-8000-0000000000b1', 'c0ffee00-0000-4000-8000-000000000001', 1, 'Exec board',          ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','events:update','events:delete','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage']),
+ ('c0ffee00-0000-4000-8000-0000000000b2', 'c0ffee00-0000-4000-8000-000000000001', 2, 'Officers and chairs', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','service:approve','announcements:post','tasks:manage','channels:create','channels:manage']),
+ ('c0ffee00-0000-4000-8000-0000000000b3', 'c0ffee00-0000-4000-8000-000000000001', 3, 'Members',             ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid']),
  ('c0ffee00-0000-4000-8000-0000000000b4', 'c0ffee00-0000-4000-8000-000000000001', 4, 'New members',         ARRAY['members:view','backwork:upload']);
 
 INSERT INTO roles (id, chapter_id, name, tier_id, permission_overrides, permissions, is_system, display_order, system_key, color)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      'c0ffee00-0000-4000-8000-0000000000b1', '{"*": true}', ARRAY['members:view','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage','*'], true, 1, 'PRESIDENT', '#F2994A'),
- ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      'c0ffee00-0000-4000-8000-0000000000b1', '{"billing:view": true, "billing:manage": true, "points:adjust": true, "points:view_all": true, "reports:export": true, "events:create": true, "events:update": true}', ARRAY['members:view','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage','billing:view','billing:manage','points:adjust','points:view_all','reports:export','events:create','events:update'], true, 2, 'TREASURER', '#6FD08C'),
- ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', 'c0ffee00-0000-4000-8000-0000000000b1', '{}', ARRAY['members:view','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage'], true, 3, 'VICE_PRESIDENT', '#8FA8FF'),
- ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      'c0ffee00-0000-4000-8000-0000000000b1', '{}', ARRAY['members:view','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage'], true, 4, 'SECRETARY', '#F47FA4'),
- ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         'c0ffee00-0000-4000-8000-0000000000b3', '{}', ARRAY['members:view','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid'], true, 5, 'MEMBER', NULL),
+ ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      'c0ffee00-0000-4000-8000-0000000000b1', '{"*": true}', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','events:update','events:delete','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage','*'], true, 1, 'PRESIDENT', '#F2994A'),
+ ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      'c0ffee00-0000-4000-8000-0000000000b1', '{"billing:view": true, "billing:manage": true, "points:adjust": true, "points:view_all": true, "reports:export": true, "events:create": true, "events:update": true}', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','events:update','events:delete','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage','billing:view','billing:manage','points:adjust','points:view_all','reports:export'], true, 2, 'TREASURER', '#6FD08C'),
+ ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', 'c0ffee00-0000-4000-8000-0000000000b1', '{}', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','events:update','events:delete','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage'], true, 3, 'VICE_PRESIDENT', '#8FA8FF'),
+ ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      'c0ffee00-0000-4000-8000-0000000000b1', '{}', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid','events:update','events:delete','polls:view_all','service:approve','announcements:post','tasks:manage','channels:create','channels:manage','roles:manage','chapter-config:view','chapter-config:manage'], true, 4, 'SECRETARY', '#F47FA4'),
+ ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         'c0ffee00-0000-4000-8000-0000000000b3', '{}', ARRAY['members:view','events:create','backwork:upload','service:log','polls:create','rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid'], true, 5, 'MEMBER', NULL),
  ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     'c0ffee00-0000-4000-8000-0000000000b4', '{}', ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER', NULL),
  ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         NULL, '{"members:view": true, "alumni:post": true}', ARRAY['members:view','alumni:post'], true, 7, 'ALUMNI', '#A9B4C2');
 
@@ -377,12 +377,15 @@ FROM (VALUES
 
 -- ── Service hours ────────────────────────────────────────────────────────────
 INSERT INTO service_entries (chapter_id, user_id, date, duration_minutes, description,
-                             status, reviewed_by, points_awarded, created_at)
+                             status, reviewed_by, points_awarded, awarded_points, created_at)
 SELECT 'c0ffee00-0000-4000-8000-000000000001', (SELECT id FROM u WHERE n = s.who), (current_date - s.days_ago)::date,
        s.mins, s.descr, s.status,
        -- The president reviews everyone's entries; the VP reviews the president's.
        CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = CASE WHEN s.who = 1 THEN 3 ELSE 1 END) END,
-       s.status = 'APPROVED', now() - (interval '1 day' * s.days_ago)
+       s.status = 'APPROVED',
+       -- What approval at the default 60-minute rate records (#3868).
+       CASE WHEN s.status = 'APPROVED' THEN s.mins / 60 END,
+       now() - (interval '1 day' * s.days_ago)
 FROM (VALUES
  -- Roster #1's own entry: Service hours shows only the viewer's history, and the
  -- App Review notes send the reviewer there.

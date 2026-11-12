@@ -99,7 +99,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.surface1,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
     },
     segment: {
       flex: 1,

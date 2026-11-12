@@ -37,7 +37,7 @@ import {
   reachesRole,
   reachesTier,
   type TieredRole,
-} from "@/lib/role-tiers";
+} from "@repo/hooks/role-tiers";
 
 /** The Select's value for "outside the tiers"; Radix can't carry `""`. */
 const OUTSIDE = "__outside__";

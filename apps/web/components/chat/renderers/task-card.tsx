@@ -10,7 +10,9 @@ import {
   taskStatusLabel,
   useMyPermissions,
   subtaskProgress,
+  useNow,
   useTask,
+  taskDueLine,
   useUpdateTaskStatus,
   useConfirmTask,
   useRejectTask,
@@ -23,10 +25,11 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readTaskPayload } from "@repo/chat-core/cards";
 import { Badge } from "@/components/ui/badge";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
-import { formatDueOn } from "@repo/formatting";
+import { formatPointsChip } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -41,17 +44,6 @@ interface TaskCardProps {
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
 }
-
-/** Exported for the sign-in showcase, which draws this badge without a live task. */
-export const STATUS_BADGE: Record<
-  TaskStatus,
-  "default" | "outline" | "destructive"
-> = {
-  TODO: "outline",
-  IN_PROGRESS: "default",
-  COMPLETED: "default",
-  OVERDUE: "destructive",
-};
 
 /**
  * What a refused confirm says, wherever a card's Confirm runs: the task card
@@ -110,6 +102,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // surface itself is `@FreeTier`, so it is easy to assume a card rendered inside
   // chat inherits that; it does not. The route decides, not the host (#841).
   const gate = useSubscriptionGate();
+  // The due countdown's clock, a hook for the same reason.
+  const now = useNow();
 
   if (!payload) {
     return (
@@ -125,6 +119,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // a finished task "To do".
   const status: TaskStatus | null = live?.status ?? null;
   const statusLabel = live ? taskStatusLabel(live) : null;
+  // The due line (#4135): the live due date once read, since an edit can move
+  // it after this card was posted, counting down against a ticking clock.
+  const due = taskDueLine(
+    live?.due ?? payload.due_at ?? payload.due_date,
+    status,
+    new Date(now),
+  );
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   // The controls follow whom the task is assigned to now (#4296): an edit
@@ -195,8 +196,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
-        {status && statusLabel ? (
-          <Badge variant={STATUS_BADGE[status]}>{statusLabel}</Badge>
+        {live && statusLabel ? (
+          <Badge variant={taskStatusKind(live)}>{statusLabel}</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>
@@ -205,9 +206,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           {payload.assigner_name} → {payload.assignee_name}
         </span>
         <span aria-hidden="true">·</span>
-        <span>
-          {formatDueOn(payload.due_at ?? payload.due_date) ??
-            `Due ${payload.due_date}`}
+        <span className={cn(due?.overdue && "text-destructive-text")}>
+          {due?.text ?? `Due ${payload.due_date}`}
         </span>
         {live && live.subtasks.length > 0 ? (
           <>
@@ -216,7 +216,9 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           </>
         ) : null}
         {payload.point_reward ? (
-          <Badge variant="outline">+{payload.point_reward} pts</Badge>
+          <Badge variant="outline">
+            {formatPointsChip(payload.point_reward)}
+          </Badge>
         ) : null}
       </div>
       {memberControls.length > 0 || managerControls.length > 0 ? (

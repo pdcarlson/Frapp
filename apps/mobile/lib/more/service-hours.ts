@@ -12,6 +12,7 @@ import {
   parseBareDateLocalNoon,
 } from "@repo/formatting";
 import type { ServiceEntryStatus } from "@repo/hooks";
+import { awardedPointsLabel } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
@@ -22,7 +23,10 @@ export interface ServiceEntryRow {
   description: string;
   status: ServiceEntryStatus;
   durationMinutes: number;
-  /** e.g. `"2h 30m · Aug 12"`. */
+  /**
+   * e.g. `"2h 30m · Aug 12"`, and on an approved entry what it awarded:
+   * `"3h · Aug 12 · 3 points"` (#3868, web's History badge).
+   */
   meta: string | null;
   date: string;
 }
@@ -89,12 +93,21 @@ function toRow(row: Record<string, unknown>): ServiceEntryRow | null {
   if (!id || !rawStatus || !STATUSES.has(rawStatus) || !date) return null;
 
   const durationMinutes = num(row, "duration_minutes") ?? 0;
+  const points = awardedPointsLabel({
+    status: rawStatus,
+    points_awarded: row.points_awarded === true,
+    awarded_points: num(row, "awarded_points"),
+  });
   return {
     id,
     description: str(row, "description") ?? "Service entry",
     status: rawStatus as ServiceEntryStatus,
     durationMinutes,
-    meta: metaLine([formatMinutesRounded(durationMinutes), formatDate(date)]),
+    meta: metaLine([
+      formatMinutesRounded(durationMinutes),
+      formatDate(date),
+      points,
+    ]),
     date,
   };
 }
@@ -114,7 +127,9 @@ export function selectServiceEntryRows(data: unknown): ServiceEntryRow[] {
  * not yet credited, so banking it here would overstate what the member has.
  * Pending is surfaced as a count instead, which is what they can act on.
  */
-export function summarizeServiceEntries(rows: ServiceEntryRow[]): ServiceSummary {
+export function summarizeServiceEntries(
+  rows: ServiceEntryRow[],
+): ServiceSummary {
   const approvedMinutes = rows
     .filter((row) => row.status === "APPROVED")
     .reduce((total, row) => total + row.durationMinutes, 0);
@@ -200,8 +215,7 @@ export function serviceDatePresets(now: Date): ServiceDatePreset[] {
  * named when it was picked (see {@link ServiceDatePreset.relative}).
  */
 export type ServiceDateChoice =
-  | { kind: "relative"; daysAgo: number }
-  | { kind: "date"; date: string };
+  { kind: "relative"; daysAgo: number } | { kind: "date"; date: string };
 
 /** A new entry's date choice: "Today". */
 export const DEFAULT_SERVICE_DATE_CHOICE: ServiceDateChoice = {

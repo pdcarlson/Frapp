@@ -106,7 +106,11 @@ export function TaskRow({
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not
   // someone speaking to you.
-  const urgent = !row.isDone && !!row.dueDate && isDueUrgent(row.dueDate, now);
+  // Red once overdue (#4133): past the local due day, or already OVERDUE by
+  // the server's clock, which the detail sheet and web also read.
+  const urgent =
+    !row.isDone &&
+    (row.isOverdue || (!!row.dueDate && isDueUrgent(row.dueDate, now)));
 
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen

@@ -979,7 +979,7 @@ function createStyles(tokens: SignetTokens) {
       height: RADIO_SIZE,
       borderRadius: RADIO_SIZE / 2,
       borderWidth: 2,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       alignItems: "center",
       justifyContent: "center",
     },

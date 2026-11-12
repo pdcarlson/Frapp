@@ -3748,6 +3748,22 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback service entry awarded points (20261112153700)
+
+* **Migration**: `20261112153700_service_entry_awarded_points.sql`
+
+One nullable column on `service_entries` (`awarded_points`), backfilled from the SERVICE ledger, and `approve_service_entry` redefined to write it. No ledger row changes.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API ignores the column, and the function keeps writing it, which is harmless.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped, re-create `approve_service_entry(uuid, uuid, uuid, text, integer)` with its body from `20260603120000_add_approve_service_entry_rpc.sql` plus `set search_path = public, pg_temp` (`create or replace` keeps its grants but drops that setting), then:
+
+```sql
+alter table public.service_entries drop column if exists awarded_points;
+```
+
+Dropping the column first would fail every approval, since the function's update names it.
+
 ## Rollback deleted chat messages take their notifications (20261112140000)
 
 * **Migration**: `20261112140000_notifications_chat_message_id.sql`
@@ -3853,3 +3869,34 @@ alter table public.users
   drop constraint if exists users_phone_length,
   drop column if exists phone;
 ```
+
+## Rollback member defaults for existing chapters (20261112152000)
+
+* **Migration**: `20261112152000_member_social_trust_defaults.sql`
+
+Adds `events:create` to the tier holding each chapter's Member role and every tier above it, `backwork:upload` to the tiers above it when the Member role holds it, or `events:create` as an "on" override on a Member role outside the tiers (#3709). The tier trigger rewrites `roles.permissions` for every role in those tiers.
+
+**Roll the data back before the API.** An API from before #3709 lets anyone holding `events:create` make an event required and worth points, so rolling the API back while the grants stand hands that to every member.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A key the migration added can't be told apart from one an officer added by hand afterwards, and the same keys were already held in many chapters before it, so don't strip them by name: that would take away what officers had granted. Restore from the rows the promoter saved before the push ([`promotion-log.md`](database/promotion-log.md#20261112152000_member_social_trust_defaultssql)), removing only the keys a row didn't hold then. Load the saved rows into two temporary tables, `before_tiers (id uuid, permissions text[])` and `before_members (id uuid, permission_overrides jsonb)`, then:
+
+```sql
+update public.role_tiers t
+   set permissions = array(
+     select p from unnest(t.permissions) as p
+      where p not in ('events:create', 'backwork:upload')
+         or p = any (b.permissions)
+   )
+  from before_tiers b
+ where b.id = t.id
+   and t.permissions <> b.permissions;
+
+update public.roles r
+   set permission_overrides = r.permission_overrides - 'events:create'
+  from before_members b
+ where b.id = r.id
+   and not (b.permission_overrides ? 'events:create')
+   and r.permission_overrides ? 'events:create';
+```
+
+Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), restore a backup taken before the push into a scratch project ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) and copy the rows from it.

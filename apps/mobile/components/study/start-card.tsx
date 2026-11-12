@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
@@ -169,10 +170,8 @@ function createStyles(tokens: SignetTokens) {
       padding: tokens.spacing.lg,
     },
     eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 0.6,
     },
     zoneRow: {
       flexDirection: "row",

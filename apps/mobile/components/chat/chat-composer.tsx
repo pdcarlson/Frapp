@@ -807,7 +807,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       maxHeight: 120,
       borderRadius: tokens.radius.control,
       borderWidth: INPUT_BORDER,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md + 2,
       // Top and bottom set apart, not `paddingVertical`: iOS gives a multiline
