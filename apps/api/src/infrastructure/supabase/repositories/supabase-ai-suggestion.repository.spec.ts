@@ -50,11 +50,13 @@ const waiting = (batch: string) => ({
   notified_at: null,
   expires_at: '2026-11-26T12:00:00.000Z',
   created_at: '2026-11-12T11:00:00.000Z',
+  dedupe_key: 'k1' as string | null,
 });
 
 const lapsed = (batch: string) => ({
   ...waiting(batch),
   ordinal: 1,
+  dedupe_key: null,
   expires_at: '2026-11-12T11:30:00.000Z',
 });
 
@@ -99,6 +101,35 @@ describe('SupabaseAiSuggestionRepository — tenant scope', () => {
       }),
     );
     expect(rows.map((row) => row.id)).toEqual([SUG_A]);
+  });
+
+  it('listKeyedForSource stays in the chapter and reads only rows that carry a key (#4313)', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.listKeyedForSource(
+        CHAPTER_A,
+        { type: 'meeting', id: MEETING },
+        'task',
+      ),
+    );
+    expect(rows.map((row) => row.id)).toEqual([SUG_A]);
+  });
+
+  it('deletePending stays in the chapter and leaves a row mid-accept alone (#4313)', async () => {
+    const deleted = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.deletePending(CHAPTER_A, [SUG_A, SUG_B]),
+    );
+    expect(deleted).toBe(1);
+    expect(harness.rows('ai_suggestions').some((row) => row.id === SUG_B)).toBe(
+      true,
+    );
+
+    await repo.claim(CHAPTER_A, SUG_A_DONE, {
+      status: 'accepting',
+      decidedBy: USER_A,
+      edited: false,
+      now: '2026-11-12T11:15:00.000Z',
+    });
+    expect(await repo.deletePending(CHAPTER_A, [SUG_A_DONE])).toBe(0);
   });
 
   it('listPending asks nothing for a caller who holds none of the permissions', async () => {

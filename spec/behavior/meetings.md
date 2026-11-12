@@ -58,7 +58,7 @@ There are three ways to start, and they end in the same review screen.
 2. For a recording, the audio is transcribed on the server by a transcription provider behind Frapp's own interface. The vendor is chosen by a bake-off on a real meeting ([#712](https://github.com/pdcarlson/Frapp/issues/712)). Transcription is its own step: a general model is not asked to listen.
 3. The summarizer drafts the templated minutes from the notes or the transcript, using the meeting type as context. It is given the roster's names, who holds each role, and who checked in, so "the treasurer will send the invoice" resolves to a person.
 4. The officer reviews and edits the draft before posting. With a recording, each drafted line links to its moment in the audio, so checking a line takes seconds.
-5. The same screen lists suggested tasks, under the rules in [Suggested tasks](#suggested-tasks).
+5. Once the minutes are posted, the same screen lists suggested tasks, under the rules in [Suggested tasks](#suggested-tasks).
 6. On post, the minutes are saved to the meeting and its audience is notified. The officer can also drop a link to them in a channel. The link opens only for the audience, and the minutes' text is never copied into a chat message: a chat message is read by everyone in its channel, and is a chat source for AI under the channel's rules, not the meeting's.
 7. Posted minutes, and the transcript when there is one, are indexed for AI Q&A (see [`ai.md`](ai.md)). An answer draws on them only for a member in the meeting's audience; a `chapter_id` match alone is not enough.
 
@@ -129,12 +129,21 @@ The officer who recorded the meeting on their phone uploads the file on web and 
 
 ## Suggested tasks
 
-Minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal.
+Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); mobile reads the same list.
 
-- **The officer creates them, not the AI.** The review screen lists each suggested task with its title, owner, due date and the line it came from. The officer unticks, edits, and confirms. Tasks are then created under that officer's own permission.
-- **An owner only when one was named.** A task gets an owner only when a name or a role was said or written for it. Otherwise it shows "Who?" with a member picker. A wrong owner is worse than a blank one.
+- **When.** Posting minutes turns each action item into a suggested task. A draft suggests nothing: its action items are still being written, and a draft is its author's. Hand-written minutes are treated exactly as drafted ones are.
+- **No model is asked.** By the time minutes post, an action item already holds what a task needs: its words, an owner only when one was named, a day only when one was said. A drafted item got those from the notes under the checks in [Drafting from notes](#drafting-from-notes), and the officer read it before posting. So a suggested task is the action item as posted, and nothing leaves Frapp to make it.
+- **The officer creates them, not the AI.** Each suggested task shows its title, its owner and its due date, and an officer accepts it, changes it first, or dismisses it. Accepting makes the task under that officer's own permission, as the task form would, and its assignee is told as for any task. Nothing is a task until then.
+- **Where.** Under the posted minutes, and in a Suggested list at the top of the Tasks board, grouped by the minutes each came from with a link back to them. Only someone who may manage tasks and may read those minutes sees either. With nothing waiting, neither place shows anything.
+- **An owner only when one was named.** A task gets an owner only when the minutes name one for it. Otherwise it shows "Who?" with a member picker. A wrong owner is worse than a blank one. The same goes for the day. Accept asks for whichever is missing, in place.
 - **Two members with the same first name are the officer's pick,** never a guess.
-- **A suggested task never carries points.** "Give Jake 50 points" spoken in a meeting is not an instruction. The officer adds points by hand.
+- **A suggested task never carries points.** "Give Jake 50 points" spoken in a meeting is not an instruction. The officer adds points by hand, on the task.
+- **Accepting several.** Accept all sits under the list and takes only the ones that already say who and when.
+- **Each action item is suggested once.** Editing posted minutes follows them: a new action item is suggested, a removed one's waiting suggestion is taken back, and a changed owner or day replaces the waiting suggestion. An item an officer already accepted or dismissed is never suggested again, and neither is one whose capitals, spacing or punctuation were tidied. Rewording an item makes it a new item.
+- **Who is told.** The officer who posted the minutes gets one notification for all of them, and only if they could accept one. Edits after posting tell nobody.
+- **Off unless** the server has AI on and the president has meeting notes on ([`ai.md` § Consent](ai.md#consent)). No member's answer on the AI sheet is asked for, because nothing is sent to a provider.
+
+> **Changed 2026-11-12 (#4313, the drafting session's, Paul's to change).** This section used to put the review on the draft's screen and show each task beside the line of the officer's notes it came from. Suggestions are now made when the minutes post, from the posted action items, with no second model call: the action items are already structured and already read by the officer, and the notes are private to their author and deleted at posting ([Drafting from notes](#drafting-from-notes)), so a line of them is not copied onto a suggestion other officers read. The line a suggested task shows is the action item in the minutes. Matching an item by its words, so that rewording one after it was decided suggests it again, is also this session's choice.
 
 ## Standards meetings
 

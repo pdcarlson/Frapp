@@ -496,7 +496,7 @@ A call the gateway stops before the provider (the server switch, no credential, 
 
 ## AI Suggestion Events
 
-AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run and expired by an hourly sweep, neither of which is a request, so they are not feature events. `AiSuggestionService` sends four events itself, through `AnalyticsService`:
+AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run, or by the save of posted minutes ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks), #4313), and expired by an hourly sweep, none of which is a request to the suggestion routes, so they are not feature events. `AiSuggestionService` sends five events itself, through `AnalyticsService`:
 
 | Event | Sent when | Keyed by | Properties |
 | --- | --- | --- | --- |
@@ -504,8 +504,9 @@ AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed
 | `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
 | `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
 | `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
+| `ai-suggestions-withdrawn` | A source that changed takes back waiting ones (#4313): the action item was removed, or its owner or day changed and it is proposed again | Chapter | `kind`, `count` |
 
-`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
+`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
 
 ## Member Onboarding Funnel
 

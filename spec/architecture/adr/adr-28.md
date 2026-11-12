@@ -61,6 +61,9 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 3. **Both providers, split by job, for the beta.**
    - Claude, on Anthropic's own API, runs the text features: minutes, suggested tasks, and later Ask
      Frapp and the acting agent. It also judges evals.
+     Overridden in #4313 by pdcarlson's suggested-tasks session, 2026-11-12; pending Paul: suggested
+     tasks call no model. They are the posted minutes' action items as written
+     ([`meetings.md` § Suggested tasks](../../behavior/meetings.md#suggested-tasks)).
    - Gemini, on Google Cloud's paid platform (Vertex AI, which Google now calls the Gemini
      Enterprise Agent Platform), runs embeddings from the first day there is an index: Gemini
      Embedding at 1,536 dimensions. It is the first candidate for bulk PDF reading, and Google's

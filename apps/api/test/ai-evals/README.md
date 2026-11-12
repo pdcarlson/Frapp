@@ -85,9 +85,9 @@ for every provider and rewrites the model id, so the prompt, the catalog's outpu
 and Frapp's checks are the product's; only the model changes. The winner then moves to the catalog
 (`src/domain/constants/ai-model-catalog.ts`) in one edit. `minutes.draft` runs the product's own
 prompt and schema (`src/domain/utils/minutes-draft.ts`, #4312), and grades the model's reply
-before Frapp's checks drop anything, so a model that invents a line is marked down for it. The `minutes.suggest-tasks` prompt and schema in `bake-off/tasks.ts` are still the
-bake-off's own, written to `spec/behavior/meetings.md` before the feature exists; when #4313
-lands, the task should import its prompt.
+before Frapp's checks drop anything, so a model that invents a line is marked down for it. The `minutes.suggest-tasks` prompt and schema in `bake-off/tasks.ts` are the
+bake-off's own and nothing ships them: suggested tasks (#4313) are the posted minutes' action items
+as written, with no model call.
 
 Prices in `bake-off/candidates.ts` are dated observations. The Gemini prices and model ids come
 from search results and are checked at Google before a paid run.

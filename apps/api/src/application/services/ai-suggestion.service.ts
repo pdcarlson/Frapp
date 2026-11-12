@@ -8,7 +8,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { isModuleEnabled } from '@repo/validation';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import type {
   AiSuggestion,
   AiSuggestionKind,
@@ -84,9 +86,32 @@ export interface ProposeAiSuggestionsInput {
     quote?: string | null;
     /** Whose words the quote is, when they are a member's. */
     quoteAuthorId?: string | null;
+    /** What in the source it was made from; see `AiSuggestion.dedupe_key`. */
+    dedupeKey?: string | null;
   }[];
   /** Who hears about the batch. Defaults to `requestedFor`. */
   notify?: readonly string[];
+}
+
+export interface ReconcileAiSuggestionsInput {
+  chapterId: string;
+  requestedFor: string | null;
+  source: ProposeAiSuggestionsInput['source'];
+  kind: AiSuggestionKind;
+  /** Everything the source holds now that should be proposed, each keyed. */
+  proposals: readonly {
+    dedupeKey: string;
+    payload: unknown;
+    quote?: string | null;
+  }[];
+  /** Who hears about what is new. Defaults to `requestedFor`. */
+  notify?: readonly string[];
+}
+
+export interface ReconcileAiSuggestionsResult {
+  created: AiSuggestion[];
+  /** Waiting suggestions taken back: their thing left the source or changed. */
+  withdrawn: number;
 }
 
 export interface ProposeAiSuggestionsResult {
@@ -228,6 +253,7 @@ export class AiSuggestionService {
         payload,
         quote,
         quote_author_id: quote ? (proposal.quoteAuthorId ?? null) : null,
+        dedupe_key: proposal.dedupeKey ?? null,
         required_permission: handler.requiredPermission,
         expires_at: new Date(
           now.getTime() + handler.expiresAfterDays * DAY_MS,
@@ -252,6 +278,97 @@ export class AiSuggestionService {
       }
     }
     return { created, dropped };
+  }
+
+  /**
+   * Brings a source's waiting suggestions of one kind in line with what the
+   * source holds now, for a feature that proposes from something people keep
+   * editing (posted minutes, #4313). Safe to run on every save:
+   *
+   * - a thing already proposed is not proposed again, whatever became of the
+   *   first proposal (accepted, dismissed, expired, or still waiting);
+   * - a waiting suggestion whose thing left the source is taken back, and one
+   *   whose thing changed (a new owner, a new day) is replaced;
+   * - only what is new is written, as one batch with one push.
+   *
+   * A suggestion being accepted at that moment is left alone.
+   */
+  async reconcileSource(
+    input: ReconcileAiSuggestionsInput,
+  ): Promise<ReconcileAiSuggestionsResult> {
+    const handler = this.kinds.get(input.kind);
+    if (!handler) return { created: [], withdrawn: 0 };
+    const wanted = new Map<
+      string,
+      { payload: AiSuggestion['payload']; raw: unknown; quote: string | null }
+    >();
+    for (const proposal of input.proposals) {
+      const payload = handler.normalizeProposal(proposal.payload);
+      if (!payload || wanted.has(proposal.dedupeKey)) continue;
+      wanted.set(proposal.dedupeKey, {
+        payload,
+        raw: proposal.payload,
+        quote: proposal.quote ?? null,
+      });
+    }
+
+    let withdrawn = 0;
+    // Twice at most: a save a moment earlier may be writing the same rows,
+    // which the table refuses; the second pass reads what it wrote.
+    for (let attempt = 0; ; attempt += 1) {
+      const existing = await this.repo.listKeyedForSource(
+        input.chapterId,
+        { type: input.source.type, id: input.source.id },
+        input.kind,
+      );
+      const stale = existing.filter((row) => {
+        if (row.status !== 'pending') return false;
+        const now = row.dedupe_key ? wanted.get(row.dedupe_key) : undefined;
+        return !now || !samePayload(now.payload, row.payload);
+      });
+      const gone = new Set(stale.map((row) => row.id));
+      const takenBack = await this.repo.deletePending(
+        input.chapterId,
+        stale.map((row) => row.id),
+      );
+      withdrawn += takenBack;
+      if (takenBack > 0) {
+        // So proposed still adds up to accepted, dismissed, expired,
+        // withdrawn and waiting: a replaced suggestion is proposed twice.
+        this.emit(
+          this.analytics.trackForChapter(
+            'ai-suggestions-withdrawn',
+            input.chapterId,
+            { kind: input.kind, count: takenBack },
+          ),
+        );
+      }
+      const taken = new Set(
+        existing
+          .filter((row) => !gone.has(row.id))
+          .map((row) => row.dedupe_key),
+      );
+      const fresh = [...wanted].filter(([key]) => !taken.has(key));
+      if (fresh.length === 0) return { created: [], withdrawn };
+      try {
+        const { created } = await this.proposeBatch({
+          chapterId: input.chapterId,
+          batchId: randomUUID(),
+          requestedFor: input.requestedFor,
+          source: input.source,
+          proposals: fresh.map(([dedupeKey, proposal]) => ({
+            kind: input.kind,
+            payload: proposal.raw,
+            quote: proposal.quote,
+            dedupeKey,
+          })),
+          notify: input.notify,
+        });
+        return { created, withdrawn };
+      } catch (error) {
+        if (attempt > 0 || !isUniqueViolation(error)) throw error;
+      }
+    }
   }
 
   /**

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
+  AI_SUGGESTIONS_NOTIFICATION_SCREEN,
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   DISCORD_IMPORT_NOTIFICATION_SCREEN,
   useInvalidateChatReports,
@@ -73,6 +74,9 @@ type Notification = {
       meetingId?: string;
       taskId?: string;
       invoiceId?: string;
+      /** "Suggested tasks to review" names what they were drawn from. */
+      sourceType?: string;
+      sourceId?: string;
     };
     priority?: "URGENT" | "NORMAL" | "SILENT";
     senderId?: string;
@@ -111,6 +115,12 @@ function deepLinkFor(notification: Notification): string {
       return "/billing";
     case "tasks":
       return "/tasks";
+    // Suggested tasks to review (#4313): on the minutes they came from, where
+    // the action items are; from any other source, the board's Suggested list.
+    case AI_SUGGESTIONS_NOTIFICATION_SCREEN:
+      return target.sourceType === "meeting" && target.sourceId
+        ? `/meetings/${target.sourceId}`
+        : "/tasks";
     case "service":
       return "/service";
     case "profile":

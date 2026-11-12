@@ -62,6 +62,39 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     return data ?? [];
   }
 
+  async listKeyedForSource(
+    chapterId: string,
+    source: { type: AiSuggestion['source_type']; id: string },
+    kind: AiSuggestion['kind'],
+  ): Promise<AiSuggestion[]> {
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('source_type', source.type)
+      .eq('source_id', source.id)
+      .eq('kind', kind)
+      .not('dedupe_key', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async deletePending(
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('status', 'pending')
+      .in('id', [...ids])
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
   async listUnnotified(
     chapterId: string,
     batchId: string,
@@ -124,6 +157,9 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     }
     const { data, error } = await request
       .order('created_at', { ascending: false })
+      // One batch is written at one instant, so within it the order the
+      // source gave them holds: minutes' action items read top to bottom.
+      .order('ordinal', { ascending: true })
       .order('id', { ascending: true })
       .range(query.offset, query.offset + query.limit - 1);
     if (error) throw new SupabaseQueryError(error);

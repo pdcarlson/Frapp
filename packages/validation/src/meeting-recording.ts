@@ -10,7 +10,7 @@
  * is about 60 MB at the rate iPhones record and about 115 MB at the rate most
  * Android recorders do, so 200 MB covers both with room to spare. The
  * `meeting-audio` bucket's `file_size_limit` mirrors it
- * (`supabase/migrations/20261112190000_meeting_recordings.sql`).
+ * (`supabase/migrations/20261112200000_meeting_recordings.sql`).
  */
 export const MAX_MEETING_RECORDING_BYTES = 200 * 1024 * 1024;
 export const MAX_MEETING_RECORDING_LABEL = "200 MB";

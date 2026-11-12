@@ -21,7 +21,7 @@ export type NewAiSuggestion = Pick<
   | 'quote_author_id'
   | 'required_permission'
   | 'expires_at'
->;
+> & { dedupe_key?: string | null };
 
 export interface ListPendingAiSuggestionsQuery {
   /**
@@ -56,12 +56,32 @@ export interface AiSuggestionClaim {
 export interface IAiSuggestionRepository {
   /**
    * Writes a batch. Idempotent on `(batch_id, ordinal)`: a row already written
-   * is left alone and not returned. Returns the rows this call wrote.
+   * is left alone and not returned. Returns the rows this call wrote. Throws
+   * a unique violation (`isUniqueViolation`) when a row's `dedupe_key` is
+   * already taken for its source and kind, and then writes none of them.
    */
   insertBatch(
     chapterId: string,
     rows: readonly NewAiSuggestion[],
   ): Promise<AiSuggestion[]>;
+
+  /**
+   * Every suggestion of one kind ever made from a source and told apart by a
+   * `dedupe_key`, whatever became of it: what a feature reads before it
+   * proposes from that source again.
+   */
+  listKeyedForSource(
+    chapterId: string,
+    source: { type: AiSuggestionSourceType; id: string },
+    kind: AiSuggestionKind,
+  ): Promise<AiSuggestion[]>;
+
+  /**
+   * Withdraws waiting suggestions: the thing each was made from is gone from
+   * its source, or changed. Only rows still `pending` go; one being accepted
+   * or already decided stays. Returns how many went.
+   */
+  deletePending(chapterId: string, ids: readonly string[]): Promise<number>;
 
   /** A batch's waiting rows whose push has not gone out yet. */
   listUnnotified(chapterId: string, batchId: string): Promise<AiSuggestion[]>;
