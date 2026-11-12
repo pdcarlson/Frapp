@@ -99,6 +99,18 @@ describe("ChannelRowMenu", () => {
     expect(onSet).toHaveBeenCalledWith("c-gen", "off");
   });
 
+  it("marks the checked level as your default when Chat messages set it (#4124)", async () => {
+    const user = userEvent.setup();
+    renderRow({
+      actions: actions({ notificationFromChapterLevel: () => true }),
+    });
+    await open();
+    await user.click(screen.getByRole("menuitem", { name: /Notifications/ }));
+    const radios = await screen.findAllByRole("menuitemradio");
+    expect(radios[1]).toHaveTextContent("Only @mentions (your default)");
+    expect(radios[0]).not.toHaveTextContent("your default");
+  });
+
   it("locks Notifications while the level is unknown", async () => {
     renderRow({ actions: actions({ notificationLevelFor: () => undefined }) });
     await open();

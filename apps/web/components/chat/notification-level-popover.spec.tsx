@@ -112,4 +112,27 @@ describe("NotificationLevelPanel", () => {
     await user.click(screen.getByRole("button", { name: /only @mentions/i }));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("marks a level Settings → Chat messages decided as your default (#4124)", () => {
+    render(
+      <NotificationLevelPanel
+        level="mentions"
+        fromChapterLevel
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Notifications: only @mentions (your default)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Only @mentions \(your default\)/ }),
+    ).toHaveAttribute("aria-current", "true");
+    // Only the checked option carries it.
+    expect(screen.getAllByText(/\(your default\)/)).toHaveLength(2);
+  });
+
+  it("says nothing about a default for a level set on the channel", () => {
+    render(<NotificationLevelPanel level="mentions" onChange={vi.fn()} />);
+    expect(screen.queryByText(/your default/)).toBeNull();
+  });
 });

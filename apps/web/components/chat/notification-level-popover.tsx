@@ -71,8 +71,12 @@ const CURRENT_LABEL: Record<ChatNotificationLevel, string> = {
   off: "muted",
 };
 
+/** What the checked option adds when Settings → Chat messages decided it. */
+export const YOUR_DEFAULT_SUFFIX = " (your default)";
+
 export function NotificationLevelPanel({
   level,
+  fromChapterLevel = false,
   onChange,
   disabled,
   isSaving,
@@ -84,6 +88,12 @@ export function NotificationLevelPanel({
    * stating the wrong one is the defect this whole change exists to remove.
    */
   level: ChatNotificationLevel | null;
+  /**
+   * The level came from the member's chapter-wide "Chat messages" setting
+   * (#3840, `from_chapter_level`), not from this channel, so the checked
+   * option reads "Only @mentions (your default)", as on the phone (#4124).
+   */
+  fromChapterLevel?: boolean;
   onChange: (level: ChatNotificationLevel) => void;
   disabled?: boolean;
   isSaving?: boolean;
@@ -100,7 +110,7 @@ export function NotificationLevelPanel({
         <p className="text-caption text-foreground">
           {unknown
             ? "Notification level unavailable"
-            : `Notifications: ${CURRENT_LABEL[level]}`}
+            : `Notifications: ${CURRENT_LABEL[level]}${fromChapterLevel ? YOUR_DEFAULT_SUFFIX : ""}`}
         </p>
       </div>
       <ul className="divide-y divide-border">
@@ -136,7 +146,10 @@ export function NotificationLevelPanel({
                     : "text-foreground hover:bg-card-hover",
                 )}
               >
-                <span className="text-label font-semibold">{option.label}</span>
+                <span className="text-label font-semibold">
+                  {option.label}
+                  {selected && fromChapterLevel ? YOUR_DEFAULT_SUFFIX : null}
+                </span>
                 <span
                   className={cn(
                     "text-caption",

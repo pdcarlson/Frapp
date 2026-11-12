@@ -23,6 +23,7 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
 import { NotificationSettingsSkeleton } from "@/components/personal-settings/personal-settings-skeleton";
+import { ChatLevelControl } from "@/components/personal-settings/chat-level-control";
 
 /**
  * The offline note under the notification switches, referenced by every one of
@@ -181,6 +182,14 @@ export function ChapterAlertsSection() {
       title="Chapter alerts"
       hint="For this chapter, on every device you use."
     >
+      {/* The chapter-wide chat level (#4124) has its own read and its own
+          states, so it is drawn whenever there is a chapter to set it for,
+          even while the switches below are still loading. */}
+      {chapterId ? (
+        <div className="mb-4">
+          <ChatLevelControl />
+        </div>
+      ) : null}
       {categoriesState ?? (
         <div className="space-y-4">
           <ul className={denseListClassName}>
@@ -310,7 +319,8 @@ export function ChapterAlertsSection() {
           */}
           {/* Chat has no switch here: a channel or DM is muted where it
               is read (the catalog's docblock in @repo/validation says why
-              the coarse Chat switch was dropped, 2026-11-06). */}
+              the coarse Chat switch was dropped, 2026-11-06). Chat messages
+              above lowers every channel at once but never silences chat. */}
           <p className="text-sm text-muted-foreground">
             Mute a channel or DM from the chat itself.
           </p>

@@ -120,6 +120,9 @@ vi.mock("@repo/hooks", () => ({
   useUpdateNotificationPreference: () => ({
     mutateAsync: mocks.updatePreferenceMutateAsync,
   }),
+  // The Chat messages choice has its own spec (`chat-level-control.spec.tsx`).
+  useChapterChatLevel: () => ({ data: "all", isError: false }),
+  useSetChapterChatLevel: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
