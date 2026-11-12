@@ -15,9 +15,7 @@ import { RbacModule } from '../rbac/rbac.module';
  *
  * A feature that runs background AI work imports this module, registers its
  * handler with `AiRunRegistry` in its own `onModuleInit`, and enqueues
- * through `AiRunService`. Nothing does yet, so nothing is exported: the first
- * such feature (the minutes draft, #4312) adds `exports: [AiRunService,
- * AiRunRegistry]` with its import.
+ * through `AiRunService`. The corpus index (#720) is the first.
  */
 @Module({
   // `RbacService`, for reading a run under a permission its kind names.
@@ -32,5 +30,6 @@ import { RbacModule } from '../rbac/rbac.module';
     // chapter before it runs.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
+  exports: [AiRunService, AiRunRegistry],
 })
 export class AiRunsModule {}

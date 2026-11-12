@@ -94,6 +94,22 @@ export const AI_MODEL_CATALOG = {
     dimensions: 1536,
     inputUsdPerMillionTokens: 0.15,
   },
+  /**
+   * A member's question, embedded to search the corpus (#720). The same
+   * model and width as `corpus.embed`, or the two could not be compared. It
+   * is its own task because it is a different act: indexing sends the
+   * chapter's records and stands behind the chapter's switch, and this sends
+   * a member's own words, so it sits in the `ask` family and the gateway
+   * asks for that member's yes.
+   */
+  'ask.embed-query': {
+    family: 'ask',
+    kind: 'embedding',
+    provider: 'google',
+    model: 'gemini-embedding-001',
+    dimensions: 1536,
+    inputUsdPerMillionTokens: 0.15,
+  },
 } as const satisfies Record<string, AiCatalogEntry>;
 
 export type AiTaskName = keyof typeof AI_MODEL_CATALOG;
