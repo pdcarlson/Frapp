@@ -38,7 +38,10 @@
     "./threads": "./src/threads.ts",
     "./typing-label": "./src/typing-label.ts",
     "./flags": "./src/flags.ts",
-    "./jump-to-latest": "./src/jump-to-latest.ts"
+    "./jump-to-latest": "./src/jump-to-latest.ts",
+    "./emoji": "./src/emoji.ts",
+    "./emoji-data": "./src/emoji-data.ts",
+    "./emoji-recent": "./src/emoji-recent.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

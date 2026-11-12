@@ -52,11 +52,11 @@ import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
   MessageActionsSheet,
-  QUICK_REACTIONS,
   quickReactionLabel,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
+import { QUICK_REACTIONS } from "@repo/chat-core/emoji-recent";
 import {
   BLOCK_NOT_A_MEMBER_BODY,
   blockConfirmBody,

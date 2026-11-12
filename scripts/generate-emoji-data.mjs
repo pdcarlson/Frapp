@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 /**
- * Writes `apps/mobile/lib/chat/emoji-data.ts`, the mobile emoji picker's
- * catalog, from an unpacked `emojibase-data` package.
+ * Writes `packages/chat-core/src/emoji-data.ts`, the catalog both emoji
+ * pickers draw (web's popover and mobile's sheet), from an unpacked
+ * `emojibase-data` package.
  *
  *   npm pack emojibase-data@16 && tar xzf emojibase-data-*.tgz
  *   node scripts/generate-emoji-data.mjs ./package
- *   npx prettier --write apps/mobile/lib/chat/emoji-data.ts
+ *   npx prettier --write packages/chat-core/src/emoji-data.ts
  *
  * Why a generated file and not the package: the package's smallest English
  * file is ~540 KB of JSON, and the picker needs only the emoji, its group
  * and the words a search matches. Bundling the package would ship all of it
- * in every OTA update. Web's picker (`frimousse`) reads emojibase too, so the
- * names match; web offers newer emoji where the browser draws them.
+ * in every OTA update, and web used to fetch it from a CDN on every new tab
+ * (`frimousse`), which is why its picker opened on "Loading…".
  *
- * Emoji newer than `MAX_VERSION` are left out: a phone whose OS predates
- * them draws an empty box, and a reaction nobody can see is worse than one
- * missing from the picker.
+ * Emoji newer than `MAX_VERSION` are left out on both surfaces: a phone or
+ * a Windows machine whose OS predates them draws an empty box, and a
+ * reaction nobody can see is worse than one missing from the picker.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -87,7 +88,7 @@ ${body}
 writeFileSync(
   join(
     dirname(fileURLToPath(import.meta.url)),
-    "../apps/mobile/lib/chat/emoji-data.ts",
+    "../packages/chat-core/src/emoji-data.ts",
   ),
   out,
 );
