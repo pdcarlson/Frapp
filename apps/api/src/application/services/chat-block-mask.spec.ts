@@ -63,6 +63,7 @@ describe('maskBlockedMessages', () => {
     thread_reply_count: 0,
     thread_last_reply_at: null,
     thread_recent_sender_ids: [],
+    thread_last_reply: null,
     is_pinned: false,
     pinned_at: null,
     flag: null,
@@ -80,6 +81,93 @@ describe('maskBlockedMessages', () => {
       [BLOCKED],
     );
     expect(masked.thread_root_id).toBe('root-1');
+  });
+
+  describe('the thread card preview (#4297)', () => {
+    const preview = (sender_id: string | null) => ({
+      id: 'reply-1',
+      sender_id,
+      content: 'grill is in my garage',
+      kind: 'text',
+      attachment_count: 0,
+      created_at: '2026-03-01T00:05:00.000Z',
+    });
+
+    it("withholds a blocked replier's preview under a clear parent", () => {
+      const [row] = maskBlockedMessages(
+        [
+          servedRow({
+            thread_reply_count: 2,
+            thread_last_reply: preview(BLOCKED),
+          }),
+        ],
+        [BLOCKED],
+      );
+      expect(row.sender_blocked).toBe(false);
+      // Withheld, with the verdict the client carries onto the next echo.
+      expect(row.thread_last_reply).toEqual({
+        id: 'reply-1',
+        sender_id: BLOCKED,
+        content: '',
+        kind: null,
+        attachment_count: 0,
+        created_at: '2026-03-01T00:05:00.000Z',
+        sender_blocked: true,
+      });
+      // The count stays: a block counts what it hides, as the open thread does.
+      expect(row.thread_reply_count).toBe(2);
+    });
+
+    it('withholds it under a masked parent too', () => {
+      const [row] = maskBlockedMessages(
+        [
+          servedRow({
+            sender_id: BLOCKED,
+            thread_reply_count: 1,
+            thread_last_reply: preview(BLOCKED),
+          }),
+        ],
+        [BLOCKED],
+      );
+      expect(row.thread_last_reply?.sender_blocked).toBe(true);
+      expect(row.thread_last_reply?.content).toBe('');
+    });
+
+    it("keeps another member's preview, under a masked parent as well", () => {
+      const clear = preview(FRIEND);
+      const [mine, masked] = maskBlockedMessages(
+        [
+          servedRow({ thread_reply_count: 1, thread_last_reply: clear }),
+          servedRow({
+            id: 'msg-2',
+            sender_id: BLOCKED,
+            thread_reply_count: 1,
+            thread_last_reply: clear,
+          }),
+        ],
+        [BLOCKED],
+      );
+      expect(mine.thread_last_reply).toEqual({
+        ...clear,
+        sender_blocked: false,
+      });
+      expect(masked.thread_last_reply).toEqual({
+        ...clear,
+        sender_blocked: false,
+      });
+    });
+
+    it("keeps an imported reply's preview, which no one can block", () => {
+      const imported = preview(null);
+      const [row] = maskBlockedMessages(
+        [servedRow({ thread_reply_count: 1, thread_last_reply: imported })],
+        [BLOCKED],
+      );
+      expect(row.thread_last_reply).toEqual({
+        ...imported,
+        sender_blocked: false,
+      });
+    });
   });
 
   it('masks a message from a blocked sender', () => {

@@ -157,6 +157,8 @@ export interface RawChatMessage {
   thread_reply_count?: number | null;
   thread_last_reply_at?: string | null;
   thread_recent_sender_ids?: string[] | null;
+  /** The parent's newest reply not deleted (#4297); see `ThreadSummary.last_reply`. */
+  thread_last_reply?: RawThreadLastReply | null;
   /**
    * Whether the server evaluated the viewer's block list and found this row's
    * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
@@ -437,6 +439,66 @@ export interface ThreadSummary {
   last_reply_at: string | null;
   /** Up to three, newest first. */
   recent_sender_ids: string[];
+  /**
+   * The newest reply that isn't deleted, for the thread card's preview line
+   * (#4297). `null` (or absent, on a row from an older server) when there is
+   * none to show, including on a read that masked a replier the viewer
+   * blocked. The Realtime echo carries it unmasked, so a client shows it only
+   * through `threadPreviewVisible`.
+   */
+  last_reply?: ThreadLastReply | null;
+}
+
+/** The parent's copy of its newest reply, as the API serves it. */
+export interface RawThreadLastReply {
+  id?: unknown;
+  sender_id?: unknown;
+  content?: unknown;
+  kind?: unknown;
+  attachment_count?: unknown;
+  created_at?: unknown;
+  sender_blocked?: unknown;
+}
+
+/** The parent's copy of its newest reply, read defensively (#4297). */
+export interface ThreadLastReply {
+  id: string;
+  sender_id: string | null;
+  /** Cut to 500 characters by the server; flatten it with `replyPreviewText`. */
+  content: string;
+  kind: ChatMessageKind;
+  attachment_count: number;
+  created_at: string;
+  /**
+   * The server's verdict that it withheld this preview because the viewer
+   * blocked its replier (`content` is then empty). Only a REST read sets it;
+   * `mergeServerRow` carries it onto the parent's next Realtime echo while the
+   * same replier's reply is still the latest, as it carries a masked
+   * message's `sender_blocked`.
+   */
+  sender_blocked: boolean;
+}
+
+/**
+ * The parent's newest reply, or `null` when the row carries none or one this
+ * client can't read: without its id there is no reply to classify.
+ */
+function threadLastReplyOf(
+  raw: RawThreadLastReply | null | undefined,
+): ThreadLastReply | null {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || raw.id.length === 0) return null;
+  return {
+    id: raw.id,
+    sender_id: typeof raw.sender_id === "string" ? raw.sender_id : null,
+    content: typeof raw.content === "string" ? raw.content : "",
+    kind: coerceKind(typeof raw.kind === "string" ? raw.kind : null),
+    attachment_count: attachmentCount({
+      attachment_count: raw.attachment_count,
+    }),
+    created_at: typeof raw.created_at === "string" ? raw.created_at : "",
+    sender_blocked: raw.sender_blocked === true,
+  };
 }
 
 /**
@@ -456,6 +518,7 @@ export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
           .filter((id): id is string => typeof id === "string")
           .slice(0, 3)
       : [],
+    last_reply: threadLastReplyOf(row.thread_last_reply),
   };
 }
 
@@ -576,6 +639,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     thread_reply_count: message.thread?.reply_count ?? 0,
     thread_last_reply_at: message.thread?.last_reply_at ?? null,
     thread_recent_sender_ids: message.thread?.recent_sender_ids ?? [],
+    thread_last_reply: message.thread?.last_reply ?? null,
     ...(message._blockEvaluated
       ? { sender_blocked: message.sender_blocked }
       : {}),
