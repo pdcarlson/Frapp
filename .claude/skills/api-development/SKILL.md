@@ -213,10 +213,9 @@ Constraints to know before you fight the compiler:
   `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
 - Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
-  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin
-  the repository count, so adding one means raising `EXPECTED_REPOSITORY_COUNT` in that helper
-  (and the `covered` count in `tenant-scope-coverage.spec.ts`, unless it lands with a
-  `TENANT_SCOPE_BACKLOG` reason). Direct service-layer writes use the same
+  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives, and needs
+  a tenant-scope spec or a `TENANT_SCOPE_BACKLOG` reason. The counts there are floors, so adding
+  a repository edits no number. Direct service-layer writes use the same
   `TablesInsert` / `TablesUpdate` types.
 
 ## Rate limiting

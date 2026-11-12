@@ -220,7 +220,7 @@ npm run supabase -- db push --local
   Do not add a generic base repository; keep each repository's query
   logic and only parameterize the write methods.
   `no-as-never.spec.ts` guards every `*.repository.ts` under
-  `apps/api/src`, wherever it lives (repository count,
+  `apps/api/src`, wherever it lives (a floor on the repository count,
   `FrappSupabaseClient` injection, and no cast, `@ts-expect-error`, or
   erased `.from()`/client binding on a write path). It names its own
   gaps in its docblock — read them there before reading a green run as

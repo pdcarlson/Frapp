@@ -21,13 +21,18 @@ interface RepositoryFile {
 }
 
 /**
- * The denominator both ledgers measure against, pinned so a repository cannot
- * join the tree without both noticing. One home for *this* number — raise it
- * here, not in either spec. `tenant-scope-coverage.spec.ts` separately pins
- * how many of them are covered, which is a different fact and moves with the
- * spec you write.
+ * The fewest repositories both ledgers may find: a floor, so a walker that
+ * silently stops finding files (a moved directory, a skipped symlink) fails
+ * both, while a new repository needs no edit here. Lower it only when
+ * repositories are really removed.
+ *
+ * It used to be the exact count, which every PR adding a repository bumped,
+ * so any two such PRs open at once conflicted on this line (2026-11-12, #4558).
+ * The ledgers themselves already notice a new repository: the tenant-scope
+ * ledger fails until it has a spec or a backlog reason, and every file is
+ * checked by `no-as-never.spec.ts`.
  */
-export const EXPECTED_REPOSITORY_COUNT = 71;
+export const MIN_REPOSITORY_COUNT = 71;
 
 /** `apps/api/src` — the one root both ledgers walk, and what paths report against. */
 export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');
