@@ -710,7 +710,7 @@ const BUCKET_WRITERS = new Set([
   // Creates the private `meeting-audio` bucket (#712); never `chat`.
   '20261112210000_meeting_recordings.sql',
   // Creates the private `tasks` bucket for task photos (#4565); never `chat`.
-  '20261113040002_task_photos.sql',
+  '20261113040004_task_photos.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { isAllowedUploadMime, uploadMimeList } from "./upload-allowlists";
 
 const MIGRATION = join(
   __dirname,
-  "../../../supabase/migrations/20261113040002_task_photos.sql",
+  "../../../supabase/migrations/20261113040004_task_photos.sql",
 );
 
 /**
