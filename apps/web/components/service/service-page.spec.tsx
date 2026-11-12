@@ -59,16 +59,46 @@ const APPROVED_ENTRY = {
 };
 
 const entriesPending = vi.hoisted(() => ({ current: false }));
+// Entries from other members, appended to the read an approver gets.
+const entriesExtra = vi.hoisted(() => ({ current: [] as unknown[] }));
 const entriesEmpty = vi.hoisted(() => ({ current: false }));
+// `GET /v1/semesters`: no archives, so this semester is all time.
+const semestersData = vi.hoisted(() => ({
+  current: [] as { end_date: string; created_at: string }[] | undefined,
+}));
+// `GET /v1/service-entries/leaderboard`, as `useServiceLeaderboard` narrows it.
+const leaderboardRows = vi.hoisted(() => ({
+  current: [] as {
+    user_id: string;
+    member_name: string;
+    total_minutes: number;
+    entry_count: number;
+  }[],
+}));
+const mockLeaderboard = vi.hoisted(() => vi.fn());
 // `GET /v1/service-entries/points-rate`, or undefined while unread/failed.
 const pointsRate = vi.hoisted(() => ({
   current: undefined as { minutes_per_point: number } | undefined,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
-  // The real PUT, so the specs below assert on the request it actually sends.
-  putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
-    .putSignedUpload,
+  // The real PUT, so the specs below assert on the request it actually sends,
+  // and the real pure helpers the page's numbers come from.
+  ...(({ putSignedUpload, formatServiceHours, serviceSemesterStartDate }) => ({
+    putSignedUpload,
+    formatServiceHours,
+    serviceSemesterStartDate,
+  }))(await importOriginal<typeof import("@repo/hooks")>()),
+  useSemesters: () => ({ data: semestersData.current, isError: false }),
+  useServiceLeaderboard: (...args: unknown[]) => {
+    mockLeaderboard(...args);
+    return {
+      data: leaderboardRows.current,
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+  },
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({ data: { permissions: ["service:log"] } }),
   useServiceEntries: (...args: unknown[]) => {
@@ -76,7 +106,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return entriesPending.current
       ? { data: undefined, isPending: true, isError: false }
       : {
-          data: entriesEmpty.current ? [] : [PENDING_ENTRY, APPROVED_ENTRY],
+          data: entriesEmpty.current
+            ? []
+            : [PENDING_ENTRY, APPROVED_ENTRY, ...entriesExtra.current],
           isPending: false,
           isError: false,
         };
@@ -168,14 +200,17 @@ describe("ServiceHoursPage with nothing logged", () => {
     const { container } = render(<ServiceHoursPage />);
 
     expect(screen.getByText("Nothing waiting for review.")).toBeInTheDocument();
-    expect(screen.getByText(/^No service logged yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^You haven't logged any service yet\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Nothing reviewed yet.")).toBeInTheDocument();
     // Lines, not the old centered cards.
     expect(container.querySelector("h2, h3")?.textContent ?? "").not.toMatch(
       /No service activity|No pending entries/,
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Log the first hours" }),
+      screen.getByRole("button", { name: "Log your first hours" }),
     );
     expect(
       await screen.findByRole("dialog", { name: /log service hours/i }),
@@ -404,10 +439,12 @@ describe("ServiceHoursPage withdraw is the submitter's own", () => {
 
     expectNoWithdraw();
     expect(
-      screen.getByText(/couldn't confirm your account, so withdrawing/i),
+      screen.getByText(
+        /couldn't confirm your account, so your hours and withdrawing/i,
+      ),
     ).toBeInTheDocument();
-    // Still headed as the viewer's card, so the sentence has a subject.
-    expect(screen.getByText(/your pending entries/i)).toBeInTheDocument();
+    // Still headed as the viewer's section, so the sentence has a subject.
+    expect(screen.getByText(/your service hours/i)).toBeInTheDocument();
   });
 });
 
@@ -887,3 +924,171 @@ describe("ServiceHoursPage pre-filled date (#3167)", () => {
   });
 });
 /* eslint-enable turbo/no-undeclared-env-vars */
+
+describe("ServiceHoursPage your own hours and the leaderboard (#4669)", () => {
+  const OTHER_MEMBERS_ENTRY = {
+    ...APPROVED_ENTRY,
+    id: "svc-9",
+    user_id: "u-2",
+    description: "Someone else's park cleanup",
+    duration_minutes: 300,
+  };
+  const board = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      user_id: `u-${i + 1}`,
+      member_name: `Member Number ${i + 1}`,
+      total_minutes: 600 - i * 30,
+      entry_count: 1,
+    }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    entriesExtra.current = [OTHER_MEMBERS_ENTRY];
+    semestersData.current = [];
+    leaderboardRows.current = [];
+  });
+  afterEach(() => {
+    entriesExtra.current = [];
+    semestersData.current = [];
+    leaderboardRows.current = [];
+  });
+
+  it("shows the viewer's own totals and full log, apart from anyone else's", () => {
+    render(<ServiceHoursPage />);
+
+    const mine = screen.getByRole("region", { name: "Your service hours" });
+    // Approved only in the totals: the 2h approved entry, not the 5h of u-2's.
+    expect(within(mine).getByText("All time").nextSibling).toHaveTextContent(
+      "2 h",
+    );
+    expect(within(mine).getByText("Pending", { selector: "dt" }).nextSibling).toHaveTextContent(
+      /2 h\s*1 entry/,
+    );
+    const log = within(mine).getByRole("list", { name: "Your log" });
+    // Every status, the viewer's alone.
+    expect(within(log).getByText("Soup kitchen shift")).toBeInTheDocument();
+    expect(within(log).getByText("Highway cleanup")).toBeInTheDocument();
+    expect(within(log).getByText("Pending")).toBeInTheDocument();
+    expect(within(log).getByText("Approved")).toBeInTheDocument();
+    expect(within(log).getByText("2 points")).toBeInTheDocument();
+    expect(
+      within(mine).queryByText(/someone else's park cleanup/i),
+    ).not.toBeInTheDocument();
+    // Withdraw on the pending row only.
+    expect(
+      within(log).getAllByRole("button", { name: /withdraw/i }),
+    ).toHaveLength(1);
+  });
+
+  it("counts this semester from the day after the latest archive", () => {
+    semestersData.current = [
+      { end_date: "2026-08-15", created_at: "2026-08-16T00:00:00Z" },
+    ];
+    render(<ServiceHoursPage />);
+
+    const mine = screen.getByRole("region", { name: "Your service hours" });
+    // The approved entry is dated Aug 1, before the semester began.
+    expect(
+      within(mine).getByText("This semester").nextSibling,
+    ).toHaveTextContent("0 h");
+    expect(mockLeaderboard).toHaveBeenLastCalledWith(
+      { start_date: "2026-08-16" },
+      { enabled: true },
+    );
+  });
+
+  it("holds the semester board until the semester's start is known", () => {
+    semestersData.current = undefined;
+    render(<ServiceHoursPage />);
+
+    expect(mockLeaderboard).toHaveBeenLastCalledWith({}, { enabled: false });
+    const mine = screen.getByRole("region", { name: "Your service hours" });
+    expect(
+      within(mine).getByText("This semester").nextSibling,
+    ).toHaveTextContent("–");
+  });
+
+  it("ranks approved hours, shares a place on a tie, and marks the viewer", () => {
+    leaderboardRows.current = [
+      {
+        user_id: "u-2",
+        member_name: "Avery Lead",
+        total_minutes: 300,
+        entry_count: 2,
+      },
+      {
+        user_id: "u-3",
+        member_name: "Blake Tie",
+        total_minutes: 120,
+        entry_count: 1,
+      },
+      {
+        user_id: "u-1",
+        member_name: "Casey Viewer",
+        total_minutes: 120,
+        entry_count: 1,
+      },
+    ];
+    render(<ServiceHoursPage />);
+
+    const boardRegion = screen.getByRole("region", { name: /leaderboard/i });
+    const rows = within(boardRegion).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringMatching(/^#1Avery Lead5 h/),
+      expect.stringMatching(/^#2Blake Tie2 h/),
+      expect.stringMatching(/^#2Casey ViewerYou2 h/),
+    ]);
+    expect(within(rows[2]!).getByText("You")).toBeInTheDocument();
+    expect(within(rows[0]!).queryByText("You")).not.toBeInTheDocument();
+  });
+
+  it("switches between this semester and all time", async () => {
+    const user = userEvent.setup();
+    semestersData.current = [
+      { end_date: "2026-08-15", created_at: "2026-08-16T00:00:00Z" },
+    ];
+    render(<ServiceHoursPage />);
+
+    expect(screen.getByRole("radio", { name: "This semester" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "All time" }));
+    expect(mockLeaderboard).toHaveBeenLastCalledWith({}, { enabled: true });
+  });
+
+  it("pins the viewer's row under the top ten, and Show all lists everyone", async () => {
+    const user = userEvent.setup();
+    leaderboardRows.current = board(12).map((row) =>
+      row.user_id === "u-12" ? row : { ...row, user_id: `x-${row.user_id}` },
+    );
+    mockFrappUser.mockReturnValue({ userId: "u-12", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    const boardRegion = screen.getByRole("region", { name: /leaderboard/i });
+    const pinned = within(boardRegion).getByRole("list", {
+      name: "Your place",
+    });
+    expect(pinned).toHaveTextContent(/#12Member Number 12You/);
+    expect(within(boardRegion).getAllByRole("listitem")).toHaveLength(11);
+
+    await user.click(
+      within(boardRegion).getByRole("button", { name: "Show all 12" }),
+    );
+    expect(
+      within(boardRegion).queryByRole("list", { name: "Your place" }),
+    ).not.toBeInTheDocument();
+    expect(within(boardRegion).getAllByRole("listitem")).toHaveLength(12);
+  });
+
+  it("tells a viewer with no approved hours how to get on the board", () => {
+    leaderboardRows.current = board(3).map((row) => ({
+      ...row,
+      user_id: `x-${row.user_id}`,
+    }));
+    render(<ServiceHoursPage />);
+
+    expect(
+      screen.getByText(/not on the board yet this semester/i),
+    ).toBeInTheDocument();
+  });
+});
