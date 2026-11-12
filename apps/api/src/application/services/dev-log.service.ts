@@ -10,6 +10,7 @@ import {
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   RELEASE_NOTES,
+  releaseNoteGroups,
   type ReleaseNote,
 } from '@repo/validation';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
@@ -225,7 +226,10 @@ function whatsNewBlock(note: ReleaseNote | undefined, now: Date): string[] {
   return [
     '',
     `What's new (${note.date}): ${note.title}`,
-    ...note.changes.map((change) => `• ${change}`),
+    ...releaseNoteGroups(note).flatMap((group) => [
+      ...(group.label ? [group.label] : []),
+      ...group.lines.map((change) => `• ${change}`),
+    ]),
   ];
 }
 

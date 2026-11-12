@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ReleaseNoteEntry } from "@/components/whats-new/whats-new";
+import { ReleaseNoteEntry } from "@/components/whats-new/release-note-entry";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
   accountPredatesNote,

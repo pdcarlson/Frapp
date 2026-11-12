@@ -157,6 +157,8 @@ export {
   RELEASE_NOTE_VERSION_PATTERN,
   RELEASE_NOTES,
   type ReleaseNote,
+  releaseNoteGroups,
+  releaseNoteStoreText,
   releaseNoteText,
   releaseNoteVersion,
   type ReleaseNoteVersion,
