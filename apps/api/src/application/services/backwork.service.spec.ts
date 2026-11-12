@@ -555,6 +555,48 @@ describe('BackworkService', () => {
       });
     });
 
+    it('files under the department another upload created a moment before', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(baseDepartment);
+      mockDepartmentRepo.create.mockRejectedValue(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-race',
+        department_code: 'Math',
+      });
+
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: baseDepartment.id }),
+      );
+    });
+
+    it('still fails an upload whose department insert fails for another reason', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockRejectedValue(
+        new Error('connection reset'),
+      );
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+          file_hash: 'uniquehash-err',
+          department_code: 'MATH',
+        }),
+      ).rejects.toThrow('connection reset');
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
     it('files no department for a code that is only spaces', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockResourceRepo.create.mockResolvedValue(baseResource);

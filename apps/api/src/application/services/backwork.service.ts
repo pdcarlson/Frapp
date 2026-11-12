@@ -47,6 +47,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { safeObjectFilename } from '#domain/constants/storage';
 import {
   applyNicknameEdit,
@@ -631,11 +632,21 @@ export class BackworkService {
     const existing = await this.departmentRepo.findByCode(chapterId, code);
     if (existing) return existing.id;
 
-    const created = await this.departmentRepo.create({
-      chapter_id: chapterId,
-      code: departmentCodeKey(code),
-    });
-    return created.id;
+    try {
+      const created = await this.departmentRepo.create({
+        chapter_id: chapterId,
+        code: departmentCodeKey(code),
+      });
+      return created.id;
+    } catch (error) {
+      // Another upload created it between the lookup and the insert (bulk
+      // upload confirms two files at once, and "math" and "Math" now store
+      // the same code): file under that one rather than failing the upload.
+      if (!isUniqueViolation(error)) throw error;
+      const raced = await this.departmentRepo.findByCode(chapterId, code);
+      if (!raced) throw error;
+      return raced.id;
+    }
   }
 
   private async resolveOrCreateProfessor(
