@@ -19,6 +19,7 @@ import {
 import {
   AskReportReceiptError,
   openAskReportReceipt,
+  openChatSummaryReportReceipt,
 } from '#domain/utils/ai-report-receipt';
 import { sealAiText } from '#domain/utils/ai-text-cipher';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
@@ -94,8 +95,8 @@ function notFound(): NotFoundException {
  *
  * - **Only what the member could see.** A draft is reported by someone who
  *   may edit those minutes, a suggestion by someone whose Suggested list
- *   holds it, and an answer only by the member it was given to (its receipt
- *   opens for no one else). The text kept is the server's own copy, never
+ *   holds it, and an answer or a channel summary only by the member it was
+ *   given to (its receipt opens for no one else). The text kept is the server's own copy, never
  *   what the client sends: Ask's comes from the receipt the server sealed
  *   into the answer, the others from the database.
  * - **No key, no text.** Without `AI_STORED_TEXT_KEY` the report still
@@ -205,6 +206,8 @@ export class AiReportService implements OnModuleInit {
         return this.keptDraft(input, keepText);
       case 'ai_suggestion':
         return this.keptSuggestion(input, keepText);
+      case 'chat_summary':
+        return this.keptSummary(input, keepText, now);
       default:
         throw notFound();
     }
@@ -256,6 +259,62 @@ export class AiReportService implements OnModuleInit {
         throw new BadRequestException({
           code: 'ai.report.receipt_invalid',
           message: 'This answer could not be matched. Ask again.',
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A channel summary (#3946), from the receipt the server sealed into it,
+   * exactly as an answer's. Opening it is the access check: it opens only
+   * for the member the summary was made for, in this chapter.
+   */
+  private keptSummary(
+    input: AiReportInput,
+    keepText: boolean,
+    now: Date,
+  ): Kept {
+    if (!keepText || !input.receipt) return NOTHING;
+    try {
+      const receipt = openChatSummaryReportReceipt(
+        aiStoredTextKeyRing(),
+        input.receipt,
+        { chapterId: input.chapterId, userId: input.userId },
+        now,
+      );
+      if (receipt.summary_id !== input.subjectId) {
+        throw new AskReportReceiptError('invalid');
+      }
+      const { quoted_user_ids, model, prompt_version } = receipt;
+      const exchange: Record<string, unknown> = { ...receipt };
+      for (const key of [
+        'v',
+        'summary_id',
+        'quoted_user_ids',
+        'model',
+        'prompt_version',
+      ]) {
+        delete exchange[key];
+      }
+      return {
+        exchange,
+        quoted: quoted_user_ids,
+        model,
+        promptVersion: prompt_version,
+      };
+    } catch (error) {
+      if (error instanceof AskReportReceiptError) {
+        if (error.reason === 'expired') {
+          throw new BadRequestException({
+            code: 'ai.report.too_old',
+            message:
+              'This summary is too old to report. Summarize again, then report the new one.',
+          });
+        }
+        throw new BadRequestException({
+          code: 'ai.report.receipt_invalid',
+          message: 'This summary could not be matched. Summarize again.',
         });
       }
       throw error;

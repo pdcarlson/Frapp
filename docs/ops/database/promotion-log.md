@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Report this on a channel summary (#3946, on `ai-integration`)
+
+### 20261112233000_ai_reports_chat_summary.sql
+
+- **Purpose**: Widens `ai_reports_subject_type_allowed` so a report may name a channel summary (`chat_summary`) beside the three subjects it already allowed ([`spec/behavior/ai.md` § Catch me up](../../../spec/behavior/ai.md#catch-me-up)). Adds no column and no table, and writes no row.
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_reports_subject_type_allowed';` names four subjects, `chat_summary` among them, and `select convalidated from pg_constraint where conname = 'ai_reports_subject_type_allowed';` returns `t`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112220000_ai_reports.sql`, whose constraint it replaces. The check is dropped and re-added NOT VALID, then validated, in the migration's transaction; every existing row already satisfies it, since the old list is a subset of the new. `drop constraint if exists` makes re-applying idempotent. Nothing writes a `chat_summary` report unless the server has `AI_ENABLED=true`. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-report-this-on-a-channel-summary-20261112233000) § Rollback Report this on a channel summary.
+
 ## 2026-11-12: Report this (#4315, on `ai-integration`)
 
 ### 20261112220000_ai_reports.sql

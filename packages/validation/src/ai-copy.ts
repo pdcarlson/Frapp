@@ -31,7 +31,7 @@ export interface AiSwitchCopy {
 
 /**
  * In the order the settings page draws them: the beta feature first, then
- * Ask and the one switch that only changes what Ask reads.
+ * Ask and the switch that lets Ask and summaries read channel messages.
  */
 export const AI_SWITCHES: readonly AiSwitchCopy[] = [
   {
@@ -50,7 +50,7 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     key: "chat_source",
     label: "Include channel messages",
     description:
-      "Ask Frapp also reads messages in chapter channels, only from members who said yes. Never direct messages.",
+      "Ask Frapp also reads messages in chapter channels, and members can ask for a summary of a channel's new messages or of a thread. Only messages from members who said yes. Never direct messages.",
     dependsOn: "ask",
   },
 ];

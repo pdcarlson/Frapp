@@ -21,7 +21,7 @@ export interface AiReportInput {
   subjectId: string;
   reason: AiReportReason;
   note?: string;
-  /** Ask only: the answer's `report_receipt`, exactly as it came. */
+  /** An Ask answer or a channel summary: its `report_receipt`, as it came. */
   receipt?: string | null;
 }
 

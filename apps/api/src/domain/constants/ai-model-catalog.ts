@@ -113,6 +113,19 @@ export const AI_MODEL_CATALOG = {
     effort: 'low',
   },
   /**
+   * Catch me up (#3946): a channel's new messages or one thread in, a few
+   * points out, each naming the message it rests on with a quote the caller
+   * checks. In the `ask` family: a summary is the member's own use of AI, so
+   * it stands behind the Ask switch and the member's yes.
+   */
+  'chat.catch-up': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 2_000,
+    effort: 'low',
+  },
+  /**
    * Corpus embeddings (#720). Gemini Embedding at 1,536 dimensions, decision
    * 3. Model id and price unverified (see above). Served by the Google adapter
    * once `GOOGLE_VERTEX_PROJECT` and its key are set; until then, outside

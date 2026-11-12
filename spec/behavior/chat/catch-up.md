@@ -5,6 +5,8 @@ landing (see [`../../ui/web-dashboard/README.md`](../../ui/web-dashboard/README.
 that dashboard carried — *chapter health at a glance* — was promised as an "inline chat artifact"
 but never specified, so it has been homeless since the redesign. This file is that specification.
 
+Not the same thing as **Catch me up**, the summary of a channel's new messages a member asks for ([`../ai.md` § Catch me up](../ai.md#catch-me-up)), whose code is named `chat-catch-up`.
+
 **Status: accepted design, unbuilt.** Nothing here ships until the follow-up issues are promoted.
 The contract below is written so an implementation PR can be reviewed against it.
 

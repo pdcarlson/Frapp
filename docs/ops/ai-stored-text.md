@@ -4,7 +4,7 @@ Frapp keeps no prompt or answer text, with the exceptions in [`spec/behavior/ai.
 
 ## Reports
 
-A member reports an Ask answer, a drafted set of minutes, or a suggested task from the "Report this" action under it. Each report is one row in `ai_reports`: who reported what (ids), the reason, the member's own note, which model and prompt version made it, and one sealed value holding the exchange. It is sealed with AES-256-GCM under `AI_STORED_TEXT_KEY`, bound to the chapter. With no key set, the row keeps the ids, the reason and the note, and `sealed` is null.
+A member reports an Ask answer, a drafted set of minutes, a suggested task, or a channel summary (#3946) from the "Report this" action under it. Each report is one row in `ai_reports`: who reported what (ids), the reason, the member's own note, which model and prompt version made it, and one sealed value holding the exchange. It is sealed with AES-256-GCM under `AI_STORED_TEXT_KEY`, bound to the chapter. With no key set, the row keeps the ids, the reason and the note, and `sealed` is null.
 
 A row is deleted:
 
@@ -71,7 +71,7 @@ If the variable was changed while a window was still open, nothing more is kept 
 
 The value is `<key id>:<base64 of 32 random bytes>`, for example an id of `k1`. Generate the bytes with `openssl rand -base64 32`. It is an app secret, so it goes in Infisical, never on Render directly ([`SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md)). Production and staging get different keys.
 
-To rotate: put the new key first and keep the old one after it, separated by a comma. New rows seal with the first key and old rows still open. Drop the old key once no row sealed with it is left: 30 days at most, since a report keeps its row that long (14 days for the diagnostics window). An Ask answer's report receipt is sealed with the same key and is accepted for 7 days, so keep an old key at least that long too.
+To rotate: put the new key first and keep the old one after it, separated by a comma. New rows seal with the first key and old rows still open. Drop the old key once no row sealed with it is left: 30 days at most, since a report keeps its row that long (14 days for the diagnostics window). The report receipt of an Ask answer or a channel summary is sealed with the same key and is accepted for 7 days, so keep an old key at least that long too.
 
 ### Reading what was kept
 

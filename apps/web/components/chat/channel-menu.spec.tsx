@@ -420,6 +420,32 @@ describe("ChannelMenu hide conversation", () => {
   });
 });
 
+describe("ChannelMenu catch me up (#3946)", () => {
+  it("offers no row without `catchUp`", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+
+    expect(
+      screen.queryByRole("button", { name: "Catch me up" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts the summary and closes the menu", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    renderMenu({ catchUp: { onStart } });
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: "Catch me up" }));
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Catch me up" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("ChannelMenu pin to top (#2877)", () => {
   it("offers no row without `pinToTop`", async () => {
     const user = userEvent.setup();

@@ -2,7 +2,9 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { InsertAiReportInput } from '#domain/repositories/ai-report.repository.interface';
 import {
   sealAskReportReceipt,
+  sealChatSummaryReportReceipt,
   type AskReportReceipt,
+  type ChatSummaryReportReceipt,
 } from '#domain/utils/ai-report-receipt';
 import { openAiText, parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { AiReportService, aiReportContext } from './ai-report.service';
@@ -176,6 +178,120 @@ describe('AiReportService', () => {
   afterAll(() => {
     if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
     else process.env.AI_STORED_TEXT_KEY = savedKey;
+  });
+
+  describe('a channel summary (#3946)', () => {
+    const SUMMARY_ID = '00000000-0000-4000-8000-000000000004';
+    const summaryReceipt = (
+      over: Partial<ChatSummaryReportReceipt> = {},
+    ): ChatSummaryReportReceipt => ({
+      v: 1,
+      summary_id: SUMMARY_ID,
+      issued_at: NOW.toISOString(),
+      channel_id: 'channel-general',
+      thread_root_id: null,
+      given:
+        '<conversation>\n[m1] Dana: formal is at the boathouse\n</conversation>',
+      written: [
+        {
+          kind: 'decision',
+          text: 'Formal is at the boathouse.',
+          message: 'm1',
+          quote: 'formal is at the boathouse',
+        },
+      ],
+      shown: {
+        points: [
+          {
+            kind: 'decision',
+            text: 'Formal is at the boathouse.',
+            message_id: 'message-1',
+            quote: 'formal is at the boathouse',
+          },
+        ],
+        messages_read: 1,
+        messages_total: 1,
+        left_out_messages: 0,
+        unverified_points: 0,
+      },
+      model: 'claude-test',
+      prompt_version: 'chat.catch-up@v1',
+      quoted_user_ids: ['dana'],
+      ...over,
+    });
+    const sealedSummary = (r: ChatSummaryReportReceipt, userId = REPORTER) =>
+      sealChatSummaryReportReceipt(ring, r, { chapterId: CHAPTER, userId })!;
+
+    it('keeps the conversation and the summary from the receipt, and names whose words they are', async () => {
+      const { service, reports } = build();
+      const outcome = await service.report(
+        {
+          ...base,
+          subject: 'chat_summary',
+          subjectId: SUMMARY_ID,
+          receipt: sealedSummary(summaryReceipt()),
+        },
+        NOW,
+      );
+      expect(outcome.kept_text).toBe(true);
+      const [row] = reports.rows;
+      expect(row).toEqual(
+        expect.objectContaining({
+          subjectType: 'chat_summary',
+          subjectId: SUMMARY_ID,
+          model: 'claude-test',
+          promptVersion: 'chat.catch-up@v1',
+          quotedUserIds: ['dana'],
+        }),
+      );
+      expect(row.sealed).not.toContain('boathouse');
+      expect(opened(row)).toEqual(
+        expect.objectContaining({
+          subject: 'chat_summary',
+          channel_id: 'channel-general',
+          given: expect.stringContaining('formal is at the boathouse'),
+        }),
+      );
+      expect(opened(row)).not.toHaveProperty('quoted_user_ids');
+    });
+
+    it('refuses a receipt made for someone else, for another summary, or of another kind', async () => {
+      const { service, reports } = build();
+      const attempts = [
+        sealedSummary(summaryReceipt(), 'another-member'),
+        sealedSummary(summaryReceipt({ summary_id: ASK_ID })),
+        // An Ask answer's receipt is not a summary's.
+        sealed(receipt({ ask_id: SUMMARY_ID })),
+      ];
+      for (const attempt of attempts) {
+        await expect(
+          service.report(
+            {
+              ...base,
+              subject: 'chat_summary',
+              subjectId: SUMMARY_ID,
+              receipt: attempt,
+            },
+            NOW,
+          ),
+        ).rejects.toMatchObject({
+          response: { code: 'ai.report.receipt_invalid' },
+        });
+      }
+      expect(reports.rows).toHaveLength(0);
+    });
+
+    it('keeps only the reason when the summary came with no receipt', async () => {
+      const { service, reports } = build();
+      const outcome = await service.report(
+        { ...base, subject: 'chat_summary', subjectId: SUMMARY_ID },
+        NOW,
+      );
+      expect(outcome.kept_text).toBe(false);
+      expect(reports.rows[0]).toEqual(
+        expect.objectContaining({ sealed: null, quotedUserIds: [] }),
+      );
+    });
   });
 
   describe('an Ask answer', () => {
