@@ -98,7 +98,7 @@ export function placeTextItems(
 }
 
 /** Margin, in page units, a word must keep from every box to survive. */
-export const TEXT_BOX_MARGIN = 2;
+const TEXT_BOX_MARGIN = 2;
 
 export function textOutsideBoxes(
   placed: readonly PlacedText[],

@@ -32,7 +32,7 @@ export interface MentionRoleEntry {
  * the name as written and when it is reduced to letters, digits and marks. Roles come after members,
  * at most three, and only the ones the viewer may ping (2026-11-06).
  */
-export function filterMentionEntries(
+function filterMentionEntries(
   roster: readonly MentionRosterEntry[],
   roles: readonly MentionRoleEntry[],
   query: string,

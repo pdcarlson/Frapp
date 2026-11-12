@@ -105,7 +105,7 @@ export interface ReportAiSheetProps {
   onReported: (target: AiReportTarget) => void;
 }
 
-export const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
+const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
   function ReportAiSheet({ target, onReported }, ref) {
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();

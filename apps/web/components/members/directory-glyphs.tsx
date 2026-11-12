@@ -34,7 +34,7 @@ import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-export { RolesGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
+export { SearchGlyph } from "@/components/layout/nav-glyphs";
 
 export type DirectoryGlyphProps = DuotoneGlyphProps;
 

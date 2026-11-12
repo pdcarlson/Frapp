@@ -2153,9 +2153,29 @@ export interface paths {
         put?: never;
         /**
          * Self check-in to an event
-         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.
+         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).
          */
         post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in-screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Report where the host check-in screen (s22) is
+         * @description Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.
+         */
+        put: operations["AttendanceController_reportCheckInScreen_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2251,6 +2271,68 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an event's excuses (its creator, or events:update) */
+        get: operations["EventExcuseController_list_v1"];
+        put?: never;
+        /**
+         * Send an excuse for an event that requires you
+         * @description Any time before the event and up to 48 hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.
+         */
+        post: operations["EventExcuseController_submit_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own excuse for an event, and who receives it */
+        get: operations["EventExcuseController_mine_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw your pending or approved excuse
+         * @description Only until check-in closes. Withdrawing an approved excuse also removes the EXCUSED attendance it wrote, so the member can check in. 409 for a declined excuse or a finished event.
+         */
+        delete: operations["EventExcuseController_withdraw_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Approve or decline a member's pending excuse
+         * @description The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.
+         */
+        patch: operations["EventExcuseController_decide_v1"];
         trace?: never;
     };
     "/v1/points/me": {
@@ -3840,6 +3922,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/standing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get how the caller is doing this semester
+         * @description The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.
+         */
+        get: operations["ActivityController_getStanding_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -3920,6 +4022,57 @@ export interface paths {
         post?: never;
         /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
         delete: operations["ActivityController_restoreLink_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter's goals for points, service hours and study hours */
+        get: operations["GoalsController_getGoals_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own goal on each measure (points, service and study minutes), null where none */
+        get: operations["GoalsController_getMyGoals_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/{metric}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace one measure's goals */
+        put: operations["GoalsController_setGoals_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4420,7 +4573,7 @@ export interface paths {
          * Turn off the beta diagnostics window (president only)
          * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
          */
-        delete: operations["AskController_stopDiagnostics_v1"];
+        delete: operations["AskDiagnosticsStopController_stopDiagnostics_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4541,6 +4694,57 @@ export interface paths {
         put?: never;
         /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
         post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The caller's calendar subscription link, made on first ask. Asking again returns the same link. */
+        post: operations["CalendarFeedController_ensure_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace the caller's calendar link. Calendars subscribed to the old link show nothing from their next check. */
+        post: operations["CalendarFeedController_reset_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/feed.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The iCalendar feed behind a calendar subscription link. Called by calendar apps, not by Frapp clients. */
+        get: operations["CalendarFeedFetchController_fetch_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5581,7 +5785,7 @@ export interface components {
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description That role's name, the group's heading, or null when they hold no role. */
+            /** @description The group's heading: that role's name, "Members" for the chapter's Everyone role, or null when they hold no role. */
             role_name: string | null;
         };
         AddChannelMemberDto: {
@@ -6370,10 +6574,27 @@ export interface components {
              * @example 4KQ-88
              */
             manualCode?: string;
-            /** @description Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner latitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lat?: number;
-            /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner longitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lng?: number;
+            /** @description The scanner's reported location accuracy in meters. Widens the distance allowed from the officer's screen, up to 50 m. Omit when the phone reports none. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenDto: {
+            /** @description The screen's latitude. */
+            lat?: number;
+            /** @description The screen's longitude. */
+            lng?: number;
+            /** @description The screen's reported accuracy in meters. A fix less precise than 100 m isn't stored, and distance isn't checked. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenResultDto: {
+            /**
+             * @description How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored).
+             * @enum {string}
+             */
+            check: "zone" | "screen" | "other_screen" | "no_location" | "not_open" | "closed";
         };
         EventAttendanceDto: {
             /** Format: uuid */
@@ -6404,6 +6625,69 @@ export interface components {
         AutoAbsentResultDto: {
             /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
             marked: number;
+        };
+        SubmitEventExcuseDto: {
+            /** @description One line on why the member can't attend, 1 to 500 characters after trimming. */
+            reason: string;
+        };
+        EventExcuseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ExcuseReceiverDto: {
+            /** Format: uuid */
+            user_id: string;
+            display_name: string;
+        };
+        MyEventExcuseDto: {
+            /** @description The caller's excuse, or null when they sent none. */
+            excuse: components["schemas"]["EventExcuseDto"] | null;
+            /** @description The event's creator, who receives it ("Excuse sent to Jake"). Null when the event has no creator in the chapter, or the caller made it: it then goes to the officers who can edit events. */
+            receiver: components["schemas"]["ExcuseReceiverDto"] | null;
+        };
+        EventExcuseWithMemberDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description The sender's display name; empty when they set none. */
+            display_name: string;
+        };
+        DecideEventExcuseDto: {
+            /** @enum {string} */
+            decision: "APPROVED" | "DECLINED";
         };
         AdjustPointsDto: {
             /** Format: uuid */
@@ -7675,6 +7959,52 @@ export interface components {
              */
             unread_since: string | null;
         };
+        StandingPointsDto: {
+            /** @description Points earned this semester. */
+            total: number;
+            /** @description Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board. */
+            rank: number | null;
+            /** @description How many members the board ranks. */
+            ranked: number;
+            /** @description The caller’s points goal this semester (#1062), or null when the chapter sets none for them. */
+            goal: number | null;
+        };
+        StandingRequiredEventsDto: {
+            /** @description Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in. */
+            required: number;
+            /** @description Of `required`, those marked present or late. */
+            attended: number;
+            /** @description Required events the caller was excused from. */
+            excused: number;
+        };
+        StandingServiceDto: {
+            /** @description Approved service minutes this semester. */
+            approved_minutes: number;
+            /** @description Service minutes waiting for approval. */
+            pending_minutes: number;
+            /** @description The caller’s service goal this semester in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
+        };
+        StandingStudyDto: {
+            /** @description Minutes from study sessions that started this week and have ended. */
+            minutes: number;
+            /** Format: date-time */
+            week_start: string;
+            /** @description The caller’s study goal for the week in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
+        };
+        ActivityStandingDto: {
+            /** @description Null when Points is off or couldn’t be read. */
+            points: components["schemas"]["StandingPointsDto"] | null;
+            /** @description Null when Events is off or couldn’t be read. */
+            required_events: components["schemas"]["StandingRequiredEventsDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            service: components["schemas"]["StandingServiceDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            study: components["schemas"]["StandingStudyDto"] | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("points" | "required_events" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
              * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.
@@ -7694,6 +8024,34 @@ export interface components {
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        RoleGoalDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description Points for a points goal; minutes for a service or study goal. Null holds the role to no goal. */
+            target: number | null;
+        };
+        GoalSetDto: {
+            /** @description Every member's goal (points, or minutes for hours), or null for none. */
+            everyone: number | null;
+            /** @description Roles held to a different goal. A member with several is held to the one on their highest-ranked role. */
+            roles: components["schemas"]["RoleGoalDto"][];
+        };
+        ChapterGoalsDto: {
+            /** @description Points this semester. */
+            points: components["schemas"]["GoalSetDto"];
+            /** @description Approved service minutes this semester. */
+            service: components["schemas"]["GoalSetDto"];
+            /** @description Study minutes this week (Sunday to Saturday). */
+            study: components["schemas"]["GoalSetDto"];
+        };
+        MyGoalsDto: {
+            /** @description The caller's points goal this semester, or null. */
+            points: number | null;
+            /** @description The caller's approved service minutes goal this semester, or null. */
+            service: number | null;
+            /** @description The caller's study minutes goal this week, or null. */
+            study: number | null;
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -8318,6 +8676,18 @@ export interface components {
              * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
              */
             expected_updated_at: string;
+        };
+        CalendarFeedLinkDto: {
+            /**
+             * @description The private link, as https. Google Calendar and Outlook subscribe to it by URL; anyone holding it can read the calendar it serves, so it is shown only to its member.
+             * @example https://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            url: string;
+            /**
+             * @description The same link as webcal://, which Apple Calendar (and most desktop calendar apps) open as a new subscription.
+             * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            webcal_url: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -13470,6 +13840,40 @@ export interface operations {
             };
         };
     };
+    AttendanceController_reportCheckInScreen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInScreenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckInScreenResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AttendanceController_mintCheckInToken_v1: {
         parameters: {
             query?: never;
@@ -13606,6 +14010,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoAbsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseWithMemberDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_submit_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitEventExcuseDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_mine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyEventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_withdraw_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideEventExcuseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
                 };
             };
             /** @description Error */
@@ -17260,6 +17821,44 @@ export interface operations {
             };
         };
     };
+    ActivityController_getStanding_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStandingDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ActivityController_startUnread_v1: {
         parameters: {
             query?: never;
@@ -17416,6 +18015,103 @@ export interface operations {
         requestBody?: never;
         responses: {
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_getGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGoalsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_getMyGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyGoalsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_setGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                metric: "points" | "service" | "study";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalSetDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalSetDto"];
+                };
+            };
+            /** @description A target out of range, a role named twice, or a role not in this chapter. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -18434,7 +19130,7 @@ export interface operations {
             };
         };
     };
-    AskController_stopDiagnostics_v1: {
+    AskDiagnosticsStopController_stopDiagnostics_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -18458,7 +19154,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            /** @description No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18860,6 +19556,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDraftDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_ensure_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedFetchController_fetch_v1: {
+        parameters: {
+            query: {
+                token: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No link has this token. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

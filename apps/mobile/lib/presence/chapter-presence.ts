@@ -130,7 +130,7 @@ const attach: PresenceAttach = (topic, configure, options) => {
   );
 };
 
-export const phoneActivity: PresenceActivitySource = {
+const phoneActivity: PresenceActivitySource = {
   latest: () => (isForeground() ? Date.now() : null),
   subscribe(onActivity) {
     const interval = setInterval(() => {

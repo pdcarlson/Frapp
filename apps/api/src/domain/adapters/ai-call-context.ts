@@ -12,6 +12,15 @@ export interface AiCallContext {
   actingUserId: string;
   /** The AI run this call belongs to, when it is background work. */
   runId?: string;
+  /**
+   * Upkeep the chapter turned on, not something the acting member asked for:
+   * indexing the chapter's sources for Ask (#720). The spend ledger holds it
+   * against the chapter's month and the provider's month only, and records
+   * it with no member, so a large backfill never spends the acting
+   * member's own daily allowance (#4504). Consent is still checked as the
+   * acting member.
+   */
+  chapterUpkeep?: true;
 }
 
 /**

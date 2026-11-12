@@ -451,6 +451,38 @@ describe("ChatAdminPage — the create panel", () => {
   });
 });
 
+describe("ChatAdminPage — the create panel docked (#4593)", () => {
+  it("opens in place of Chat admin beside chat, and the arrow drops the draft", () => {
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <ChatAdminPage />
+        </div>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Create a channel" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    // The line under the title is the panel's description, as it was the
+    // sheet's.
+    expect(region).toHaveAccessibleDescription(
+      /Choose who can see the channel/,
+    );
+    fireEvent.change(within(region).getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat admin" }));
+    expect(
+      screen.queryByRole("region", { name: "Create a channel" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    expect(screen.getByLabelText("Name")).toHaveValue("");
+  });
+});
+
 describe("ChatAdminPage — the channel structure's states", () => {
   it("keeps the loaded channels through a failed background read, and says they are the last that loaded", () => {
     reads.channels = { ...settled(CHANNELS), isError: true };

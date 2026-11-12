@@ -203,6 +203,21 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
+ * Search, leading a search field (#4137): web's toolbar search draws the same
+ * lens and handle (`apps/web/components/layout/nav-glyphs.tsx` `SearchGlyph`),
+ * as iOS's own search bar, Slack and Discord lead theirs.
+ */
+export function SearchGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx="10.5" cy="10.5" r="6.2" {...detail} />
+      <Path d="M15.2 15.2l4.3 4.3" {...detail} />
+    </Frame>
+  );
+}
+
+/**
  * Add one (New channel, #3838): the + beside a Chat home section heading,
  * as Discord and Slack draw it beside a channel group.
  */
@@ -211,6 +226,27 @@ export function PlusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M12 5v14M5 12h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Put on your calendar (#3322): the Events header's Subscribe control, the
+ * same mark web's toolbar button draws (Lucide's `CalendarPlus`).
+ */
+export function CalendarPlusGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M8 2v4M16 2v4M3 10h18" {...detail} />
+      <Path
+        d="M21 13V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h8"
+        {...detail}
+      />
+      <Path d="M16 19h6M19 16v6" {...detail} />
     </Frame>
   );
 }

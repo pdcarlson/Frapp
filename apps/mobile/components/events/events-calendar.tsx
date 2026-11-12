@@ -81,7 +81,7 @@ export function EventsCalendar({
    */
   tasksByDay?: Map<string, CalendarTask[]>;
   nameOf?: (userId: string) => string;
-  /** The member's own task, opened on the Tasks tab. */
+  /** The member's own task, opened on the task board. */
   onOpenTask?: (taskId: string) => void;
   /** The Events / My tasks / Assigned by me chips, under the month. */
   layerChips?: ReactNode;

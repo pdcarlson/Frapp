@@ -11,7 +11,10 @@ import {
 import { AskService } from '../../application/services/ask/ask.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
-import { AskController } from '../../interface/controllers/ask.controller';
+import {
+  AskController,
+  AskDiagnosticsStopController,
+} from '../../interface/controllers/ask.controller';
 import { AiEnabledGuard } from '../../interface/guards/ai-enabled.guard';
 import { SupabaseAskDiagnosticsRepository } from '../../infrastructure/supabase/repositories/supabase-ask-diagnostics.repository';
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
@@ -48,7 +51,7 @@ import { RbacModule } from '../rbac/rbac.module';
     PointsModule,
     FinancialInvoiceModule,
   ],
-  controllers: [AskController],
+  controllers: [AskController, AskDiagnosticsStopController],
   providers: [
     AskService,
     AskDiagnosticsService,

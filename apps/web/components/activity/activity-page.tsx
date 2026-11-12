@@ -44,6 +44,10 @@ import {
   ActivityRowLead,
   ActivityUnreadDot,
 } from "./activity-row-lead";
+import {
+  ActivityStanding,
+  ActivityStandingSkeleton,
+} from "./activity-standing";
 import { ActivitySummary } from "./activity-summary";
 import {
   ACTIVITY_FILTERS,
@@ -53,9 +57,11 @@ import {
   activityGroups,
   activityRowAction,
   activityKeys,
+  activityStandingKeys,
   activitySummary,
   useActiveChapterId,
   useActivity,
+  useActivityStanding,
   useActivityUnread,
   useActivityFaces,
   useNowDate,
@@ -378,6 +384,9 @@ function GroupPart({
  */
 export function ActivityPage() {
   const activity = useActivity();
+  // How the member is doing this semester, on top. Its own read: when it
+  // fails the rest of the page is as it was.
+  const standing = useActivityStanding();
   // The shared 30s clock the poll cards read: a poll whose time runs out
   // leaves its section within a tick, without a re-read (#4258), and Now and
   // Later and Next up stay current while the page is open.
@@ -484,12 +493,19 @@ export function ActivityPage() {
     );
   }
 
+  // The standing too: a check-in or approval from a row here moves it.
   const reread = (): Promise<unknown> =>
     chapterId
-      ? queryClient.invalidateQueries({
-          queryKey: activityKeys.chapter(chapterId),
-          exact: true,
-        })
+      ? Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: activityKeys.chapter(chapterId),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: activityStandingKeys.chapter(chapterId),
+            exact: true,
+          }),
+        ])
       : Promise.resolve();
   const refresh = () => void reread();
   // Acting on an item from Activity reads it, as opening it does (#4402).
@@ -501,6 +517,11 @@ export function ActivityPage() {
   return (
     <ActivityFaces.Provider value={faceFor}>
       <div className="space-y-8">
+        {standing.isPending ? (
+          <ActivityStandingSkeleton />
+        ) : standing.data ? (
+          <ActivityStanding standing={standing.data} />
+        ) : null}
         {summary ? (
           <ActivitySummary
             summary={summary}

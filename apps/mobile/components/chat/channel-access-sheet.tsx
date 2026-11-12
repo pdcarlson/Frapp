@@ -35,7 +35,7 @@ import {
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 
 /** A search shows once the chapter has more tiers and roles than fit a screen. */
-export const CHANNEL_ACCESS_SEARCH_FROM = 8;
+const CHANNEL_ACCESS_SEARCH_FROM = 8;
 
 export const CHANNEL_ACCESS_TITLE: Record<ChannelAccessQuestion, string> = {
   see: "Who can see",

@@ -3,7 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
+const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
+  () => ({ isPending: false, data: undefined }),
+);
 const mockInvalidate = vi.fn();
+/**
+ * How many times the page re-read its list. Each re-read also re-reads the
+ * standing ("This semester"), so counting every invalidation would double.
+ */
+const listRereads = () =>
+  mockInvalidate.mock.calls.filter(
+    ([options]) =>
+      Array.isArray(options?.queryKey) &&
+      !JSON.stringify(options.queryKey).includes("standing"),
+  ).length;
+const standingRereads = () =>
+  mockInvalidate.mock.calls.filter(([options]) =>
+    JSON.stringify(options?.queryKey ?? "").includes("standing"),
+  ).length;
 const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
 const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
@@ -24,12 +41,15 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityGroups: actual.activityGroups,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
+    activityStandingKeys: actual.activityStandingKeys,
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
     activitySummary: actual.activitySummary,
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useActivityStanding: () => mockStanding(),
+    activityStandingRows: actual.activityStandingRows,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
@@ -197,6 +217,7 @@ beforeEach(() => {
   mockUser.mockReturnValue({ userId: "me", isLoading: false });
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockStanding.mockReturnValue({ isPending: false, data: undefined });
   mockGate.mockReturnValue({
     allowed: true,
     isOffline: false,
@@ -206,6 +227,41 @@ beforeEach(() => {
 });
 
 describe("ActivityPage", () => {
+  it("draws This semester on top, each tile linking to the page that owns it", () => {
+    mockActivity.mockReturnValue(loaded());
+    mockStanding.mockReturnValue({
+      isPending: false,
+      data: {
+        points: { total: 42, rank: 5, ranked: 58, goal: null },
+        required_events: { required: 8, attended: 6, excused: 1 },
+        service: null,
+        study: null,
+        unavailable: ["service"],
+      },
+    });
+    render(<ActivityPage />);
+
+    const standing = screen.getByRole("region", { name: "This semester" });
+    const events = within(standing).getByRole("link", {
+      name: "Attended 6 of 8 required events this semester, 1 excused",
+    });
+    expect(events).toHaveAttribute("href", "/events");
+    expect(
+      within(standing).getByRole("link", {
+        name: "42 points this semester, ranked 5 of 58",
+      }),
+    ).toHaveAttribute("href", "/points");
+    // A part that couldn't load says so, and never reads as zero.
+    expect(
+      within(standing).getByRole("link", {
+        name: "Service hours: couldn't load",
+      }),
+    ).toHaveTextContent("Couldn't load");
+    expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent(
+      "This semester",
+    );
+  });
+
   it("draws Needs you first, with each row's badge, and no Files chip (#4291)", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
@@ -536,7 +592,9 @@ describe("ActivityPage", () => {
 
     const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
     const taskRow = screen.getByRole("button", { name: /Book the venue/ });
-    expect(pollRow).toHaveAccessibleName(/^Unread:\s?From Olive Officer\.\s?Formal venue\?/);
+    expect(pollRow).toHaveAccessibleName(
+      /^Unread:\s?From Olive Officer\.\s?Formal venue\?/,
+    );
     expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
     expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
 
@@ -611,14 +669,16 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
     fireEvent.click(screen.getByRole("button", { name: "close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
-    expect(mockInvalidate).toHaveBeenCalledTimes(1);
+    expect(listRereads()).toBe(1);
+    expect(standingRereads()).toBe(1);
 
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
     fireEvent.click(screen.getByRole("button", { name: "acted" }));
     fireEvent.click(screen.getByRole("button", { name: "settled close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
     // `acted` re-read; the settled close did not read a second time.
-    expect(mockInvalidate).toHaveBeenCalledTimes(2);
+    expect(listRereads()).toBe(2);
+    expect(standingRereads()).toBe(2);
   });
 
   it("does not close the open row when another row's action answers late", () => {
@@ -791,7 +851,7 @@ describe("ActivityPage", () => {
       expect(mockMarkRead).toHaveBeenCalledWith([
         { kind: "hours_entry", item_id: "h1" },
       ]);
-      expect(mockInvalidate).toHaveBeenCalledTimes(1);
+      expect(listRereads()).toBe(1);
     });
 
     it("keeps every ask in its row, opening the panel, when the chapter's plan refuses the writes", () => {

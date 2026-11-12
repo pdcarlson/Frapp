@@ -36,6 +36,24 @@ function press(ref: React.RefObject<MentionListHandle | null>, key: string) {
 }
 
 describe("MentionList", () => {
+  it("says who @everyone and @here reach instead of Role", () => {
+    renderList(
+      ["everyone", "here"].map((name) => ({
+        kind: "role" as const,
+        id: name,
+        label: name,
+        displayName: name,
+        avatarUrl: null,
+      })),
+    );
+    expect(screen.getByRole("option", { name: /everyone/ })).toHaveTextContent(
+      "Notifies the whole channel",
+    );
+    expect(screen.getByRole("option", { name: /here/ })).toHaveTextContent(
+      "Notifies who's online",
+    );
+  });
+
   it("draws a role row with the group glyph and says it is a role", () => {
     const { command } = renderList([
       ...ITEMS.slice(0, 1),

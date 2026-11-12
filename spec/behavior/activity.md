@@ -4,10 +4,11 @@ The Activity page gathers, for one member, what is waiting on them and what they
 don't have to look through channels and module pages to find it (#3897). It is an inbox beside
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
-This file owns the read behind the page, `GET /v1/activity`. The page itself (where it sits, how
+This file owns the reads behind the page, `GET /v1/activity` and its
+[standing](#standing), `GET /v1/activity/standing`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
-the phone's screen, reached from the More hub, is in
+the phone's screen, the Activity tab (#4610), is in
 [`../ui/mobile/screens.md`](../ui/mobile/screens.md) (supporting routes).
 
 Not to be confused with two other things that use the word:
@@ -99,6 +100,29 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
+
+## Standing
+
+`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block at the top of the page (Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
+
+- **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
+- **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).
+- **Required events:** events that hold the caller to them by the absence sweep's rule (`memberAttendance`: required for them by their roles, and never an alumnus by the event's default alone), read with the caller as viewer so an event that leaves them out never counts. Only events since the semester began and since the caller joined. An event counts once its check-in has closed, or as soon as they checked in, even before it starts. `attended` is marked present or late; an event they were excused from is counted as `excused` and left out of `required`, so "6 of 8" is out of the events that held them.
+- **Service:** approved and pending minutes on the caller's entries dated from the day after the archived semester's last day (that day is the archive's).
+- **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The read settles nothing: a paused session whose grace ran out counts once Study settles it. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
+- **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a meter, full once the goal is met; a part without one draws no meter. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
+
+## Goals
+
+What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:view` and `chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure. A member reads only their own: on the standing, or through `GET /v1/goals/mine` (`members:view`), which the phone's Study screen and More row use so they needn't read the whole standing.
+
+- **The window.** Points and service are per semester, the standing's window; study is per week, Sunday at local midnight, the Study screen's week.
+- **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A role set apart with no number is held to no goal, which is how alumni or an officer role is exempted while everyone else owes hours. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
+- **Units.** Points are points. Hours are stored as minutes and typed in whole hours: up to 500 a semester for service and 80 a week for study, and up to 100,000 points (`GOAL_TARGET_MAX` in `@repo/validation`). A save naming a role the chapter doesn't have, or one role twice, is refused.
+- **A deleted role** drops out of the goals when they are next read, and the next save leaves it out.
+- **Where a member sees it.** Activity's "This semester" block draws the bar ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+- **Audit.** Each save writes a `chapter_goals_updated` row to `chapter_audit_log`, with the measure's goals before and after as its diff.
 
 ## Unread
 

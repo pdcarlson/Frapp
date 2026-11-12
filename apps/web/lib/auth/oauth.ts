@@ -5,10 +5,10 @@ import {
   describeAuthError,
 } from "@/lib/auth/redirect";
 
-export const OAUTH_PROVIDERS = ["apple", "google"] as const;
+const OAUTH_PROVIDERS = ["apple", "google"] as const;
 export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
 
-export const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
+const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
 const PLACEHOLDER_EMAIL_HOST = "users.invalid";
 
 /**

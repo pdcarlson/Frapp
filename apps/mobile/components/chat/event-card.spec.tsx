@@ -13,6 +13,8 @@ import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { formatEventWindow } from "@/lib/events/format";
+import { CHECK_IN_NEEDS_CODE_MESSAGE } from "@/lib/events/check-in-outcome";
+import * as expoRouter from "expo-router";
 
 /**
  * The mobile chat event card (#3185): the snapshot, the officer-only count,
@@ -271,7 +273,12 @@ describe("EventCard — the snapshot", () => {
   it("leaves out what the payload doesn't carry", () => {
     const text = screenText(
       render({
-        payload: { ...PAYLOAD, location: null, point_value: 0, is_mandatory: false },
+        payload: {
+          ...PAYLOAD,
+          location: null,
+          point_value: 0,
+          is_mandatory: false,
+        },
       }),
     );
     expect(text).not.toContain("pts");
@@ -325,7 +332,10 @@ describe("EventCard — Check in", () => {
     const payload = { ...PAYLOAD, check_in_opens_minutes: 30 };
     expect(hasButton(render({ payload }), "Check in")).toBe(true);
     expect(
-      hasButton(render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }), "Check in"),
+      hasButton(
+        render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }),
+        "Check in",
+      ),
     ).toBe(false);
   });
 
@@ -356,6 +366,24 @@ describe("EventCard — Check in", () => {
       eventId: "evt-1",
       lat: 42.73,
       lng: -73.68,
+    });
+  });
+
+  it("turns Check in into Scan code once the officer's screen wants the code (#4532)", async () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
+    checkIn.mockRejectedValue({
+      statusCode: 403,
+      message: CHECK_IN_NEEDS_CODE_MESSAGE,
+    });
+    const tree = render();
+    await press(tree, "Check in");
+    expect(screenText(tree)).toContain(
+      "Scan the code on the officer's screen with the Frapp app to check in.",
+    );
+    await press(tree, "Scan code");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/check-in",
+      params: { eventId: "evt-1" },
     });
   });
 
@@ -426,7 +454,9 @@ describe("EventCard — Check in", () => {
     expect(text).not.toContain("complete checkout");
     const retry = button(tree, "Check in");
     expect(retry.props.disabled).toBe(true);
-    expect(retry.props.accessibilityHint).toBe(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(retry.props.accessibilityHint).toBe(
+      SUBSCRIPTION_REFUSAL_COPY.checkIn,
+    );
   });
 
   it("relays any other refusal and leaves the button to retry", async () => {
@@ -452,9 +482,9 @@ describe("EventCard — Check in", () => {
   });
 
   it("can't be pressed on a row the server hasn't acknowledged", () => {
-    expect(button(render({ isConfirmed: false }), "Check in").props.disabled).toBe(
-      true,
-    );
+    expect(
+      button(render({ isConfirmed: false }), "Check in").props.disabled,
+    ).toBe(true);
   });
 
   it("gives way to the module note once Events is known to be off", () => {

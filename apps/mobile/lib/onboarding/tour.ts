@@ -118,7 +118,7 @@ export interface Rect {
 }
 
 /** Room around the control inside the lit spot. */
-export const TOUR_SPOT_PADDING = 6;
+const TOUR_SPOT_PADDING = 6;
 
 /**
  * The lit spot for a control measured in the window: padded, no taller than

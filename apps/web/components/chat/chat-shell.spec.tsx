@@ -1031,6 +1031,7 @@ vi.mock("./composer", () => ({
     isModuleEnabled,
     slashCommandsStatus,
     recruitmentVocab,
+    canAnnounce,
     onOpenCommandForm,
     commandForms,
     renderPlusForm,
@@ -1052,6 +1053,7 @@ vi.mock("./composer", () => ({
       args: string,
     ) => string | null;
     recruitmentVocab?: string;
+    canAnnounce?: boolean;
     isModuleEnabled?: (moduleKey: string) => boolean;
     slashCommandsStatus?: string;
     // The shell-to-editor handoff (#2176) is entirely carried by these two:
@@ -1103,6 +1105,7 @@ vi.mock("./composer", () => ({
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
         data-recruitment={recruitmentVocab ?? ""}
+        data-can-announce={String(canAnnounce)}
         data-command-forms={(commandForms ?? [])
           .map((form) => `${form.command}:${String(form.roleAllows)}`)
           .join(",")}
@@ -1588,6 +1591,56 @@ beforeEach(() => {
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
+});
+
+// The server refuses an announcement from anyone who can't post in the
+// announcements channel (#3414); the shell tells the composer so, from that
+// channel's `can_post`, and only that: a chapter with no announcements channel
+// leaves `/announce` to dispatch, which says the channel is missing.
+describe("ChatShell /announce gate (#3414)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  const withAnnouncements = (can_post: boolean | undefined) => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((ch) =>
+        ch.id === "chan-announcements" ? { ...ch, can_post } : ch,
+      ),
+    };
+  };
+
+  it("withholds /announce from a member who can't post in the announcements channel", () => {
+    withAnnouncements(false);
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-can-announce",
+      "false",
+    );
+  });
+
+  it("offers /announce to a member who can post there", () => {
+    withAnnouncements(true);
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-can-announce",
+      "true",
+    );
+  });
+
+  it("does not blame the member's permissions when the chapter has no announcements channel", () => {
+    channelsQueryState.value = {
+      data: CHANNELS.filter((ch) => ch.id !== "chan-announcements"),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-can-announce",
+      "true",
+    );
+  });
 });
 
 describe("ChatShell slash-command module gate (#2957, #2993)", () => {

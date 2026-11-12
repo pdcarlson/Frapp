@@ -1,4 +1,9 @@
-import { can, checkInZoneLine, statusLabel } from "@repo/validation";
+import {
+  can,
+  checkInZoneLine,
+  seriesRuleOf,
+  statusLabel,
+} from "@repo/validation";
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -20,7 +25,7 @@ import {
   NewEventSheet,
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
-import { seriesRuleOf, type EventEditTarget } from "@/lib/events/edit-event";
+import { type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
@@ -156,7 +161,7 @@ export default function EventDetailsScreen() {
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <InlineNote>Open an event from the Events tab.</InlineNote>
+        <InlineNote>Open an event from the Calendar tab.</InlineNote>
       </ScreenShell>
     );
   }
@@ -342,12 +347,12 @@ function CheckInCard({
     : marked
       ? `Marked ${statusLabel("attendance", marked).toLowerCase()}`
       : isOpen
-      ? "Check-in is open"
-      : window.state === "upcoming" && window.opensAt
-        ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
-        : window.state === "closed"
-          ? "Check-in is closed"
-          : "Check-in is unavailable";
+        ? "Check-in is open"
+        : window.state === "upcoming" && window.opensAt
+          ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
+          : window.state === "closed"
+            ? "Check-in is closed"
+            : "Check-in is unavailable";
   const trailing = checkedInAt
     ? event.point_value
       ? `+${event.point_value} pts`
@@ -526,7 +531,9 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{cadence ?? "Also in this series"}</Text>
+      <Text style={styles.sectionLabel}>
+        {cadence ?? "Also in this series"}
+      </Text>
       <View>
         {occurrences.map((occurrence, index) => {
           const when = formatEventWindow(

@@ -8,6 +8,7 @@ import { useMeetingRecorderRuntime } from "@/lib/minutes/recorder/use-recorder-r
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
 import { useMemberInviteHandoff } from "@/lib/onboarding/use-member-invite-handoff";
 import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
+import { useResumeUpdates } from "@/lib/updates/use-resume-updates";
 
 /**
  * The app-wide runtimes that have no screen to live on.
@@ -59,6 +60,12 @@ import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
  * that screen, locks the phone, and it records for two hours. So the one
  * recorder is bound here to the signed-in member, and finds a recording a
  * killed app left on the phone (`lib/minutes/recorder`).
+ *
+ * **Over-the-air updates** are checked for when the app comes back to the
+ * foreground, and a downloaded one runs when the member returns after ten
+ * minutes or more away, never mid-recording (`lib/updates/resume-updates.ts`).
+ * Without it an update waits for two cold launches, which iOS can put off
+ * for days.
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
@@ -74,5 +81,6 @@ export function AppRuntime(): null {
   useNotificationSyncRuntime();
   useChapterPresenceRuntime();
   useMeetingRecorderRuntime();
+  useResumeUpdates();
   return null;
 }

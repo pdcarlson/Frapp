@@ -69,9 +69,9 @@ export interface AiRunView {
  * The AI run queue's front door (#4310): features enqueue and cancel runs
  * here, and members read them.
  *
- * Who may read a run: the member who started it, the member it acts for, and
- * anyone its kind's handler lets read it (`canView`), all in the run's own
- * chapter. Everyone else gets the same 404 as for a run that does not exist.
+ * Who may read a run: the member who started it, the member it acts for
+ * unless the run is the chapter's upkeep (`chapterUpkeep`, #4504), and anyone
+ * its kind's handler lets read it (`canView`), all in the run's own chapter. Everyone else gets the same 404 as for a run that does not exist.
  */
 @Injectable()
 export class AiRunService {
@@ -145,22 +145,27 @@ export class AiRunService {
     return this.toView(run);
   }
 
-  /** Runs the member started or that act for them, newest first. */
+  /**
+   * Runs the member started or that act for them, newest first. A run of the
+   * chapter's upkeep that only acts for them is left out (#4504).
+   */
   async listForMember(
     chapterId: string,
     userId: string,
     options: { kind?: string; limit: number },
   ): Promise<AiRunView[]> {
     if (!isAiEnabled()) throw aiNotAvailable();
-    const runs = await this.runs.listForMember(chapterId, userId, options);
+    const runs = await this.runs.listForMember(chapterId, userId, {
+      ...options,
+      upkeepKinds: this.registry.upkeepKinds(),
+    });
     return runs.map((run) => this.toView(run));
   }
 
   private async canRead(run: AiRun, userId: string): Promise<boolean> {
-    if (run.requested_by === userId || run.acting_user_id === userId) {
-      return true;
-    }
     const handler = this.registry.get(run.kind);
+    if (run.requested_by === userId) return true;
+    if (run.acting_user_id === userId && !handler?.chapterUpkeep) return true;
     if (!handler?.canView) return false;
     return handler.canView(handlerView(run), userId);
   }

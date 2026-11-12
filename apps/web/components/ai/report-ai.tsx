@@ -123,7 +123,7 @@ export function ReportAiButton({
  * message report: closing would throw the answer away, and a failure would
  * reach no one.
  */
-export function ReportAiDialog({
+function ReportAiDialog({
   target,
   onClose,
   onReported,

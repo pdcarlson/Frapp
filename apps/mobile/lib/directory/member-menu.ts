@@ -42,7 +42,7 @@ export function memberMenuActions({
 }
 
 /** A row's label: `Block <name>` is `block-copy`'s on every surface. */
-export function memberMenuLabel(
+function memberMenuLabel(
   action: MemberMenuAction,
   name: string,
 ): string {

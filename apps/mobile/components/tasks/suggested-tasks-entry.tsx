@@ -5,7 +5,7 @@ import { ListRow, ListSection } from "@/components/list-section";
 import { useAiSurfaces } from "@/lib/ai/availability";
 
 /**
- * The Tasks tab's way to the suggested tasks (#4313): one row, "3 suggested
+ * The task board's way to the suggested tasks (#4313): one row, "3 suggested
  * tasks", only while some are waiting for this member. The server lists a
  * suggestion only for someone who could accept it, so everyone else, and
  * every chapter with the server's AI off, sees nothing here.

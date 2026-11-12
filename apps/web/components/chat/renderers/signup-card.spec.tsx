@@ -73,9 +73,12 @@ describe("SignupCard (#3926)", () => {
     const friday = screen.getByText("Friday").closest("li")!;
     expect(within(friday).getByText("1/2")).toBeInTheDocument();
     expect(within(friday).getByText("Devin Okafor")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Full: Saturday" }),
-    ).toBeDisabled();
+    const saturday = screen.getByRole("button", { name: "Full: Saturday" });
+    expect(saturday).toBeDisabled();
+    // Full and not the viewer's: the row says so where its count would be,
+    // and a reader still hears the count.
+    expect(within(saturday).getByText("Full")).toBeInTheDocument();
+    expect(saturday).toHaveAccessibleDescription("1 of 1 spot taken");
     expect(screen.getByText("2 people signed up")).toBeInTheDocument();
   });
 
@@ -194,9 +197,10 @@ describe("SignupCard (#3926)", () => {
     );
     expect(screen.getByText("Sign-up · Closed")).toBeInTheDocument();
     expect(screen.getByText("Devin Okafor")).toBeInTheDocument();
+    // Its rows stay, as a closed poll's options do, and take no taps.
     expect(
-      screen.queryByRole("button", { name: "Sign up: Friday" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Sign up: Friday" }),
+    ).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Close sign-ups" })).toBeNull();
     unmount();
 

@@ -336,10 +336,10 @@ export interface ChannelReorderControls {
 }
 
 /** Copy for the reorder (#4178), rostered in writing.md § Arrange the channel list. */
-export const EMPTY_CATEGORY_HINT = "Drag channels here";
+const EMPTY_CATEGORY_HINT = "Drag channels here";
 
 /** The heading +'s name: "New channel", or "New channel in Exec" under a category. */
-export function newChannelLabel(categoryName: string | null): string {
+function newChannelLabel(categoryName: string | null): string {
   return categoryName ? `New channel in ${categoryName}` : "New channel";
 }
 export const REORDER_SAVE_FAILED_TITLE = "Couldn't save the channel order";

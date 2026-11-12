@@ -152,7 +152,7 @@ export const IOS_PURPOSE_STRINGS = new Map([
   [
     "NSLocationWhenInUseUsageDescription",
     {
-      text: "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+      text: "Frapp confirms you are inside a chapter study zone while you track study hours and that you are at the event when you scan a check-in code. When you show a check-in code, Frapp uses your location so members near you can check in.",
       requestedBy: { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" },
     },
   ],

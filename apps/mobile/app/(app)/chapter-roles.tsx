@@ -8,7 +8,7 @@ import {
   isWildcardRole,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
-import { roleColorOrNull } from "@repo/validation";
+import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAPTER_SETTINGS } from "@/components/back-row";
@@ -125,6 +125,7 @@ export default function ChapterRolesScreen() {
             onChangeText={setQuery}
             placeholder="Find a role"
             accessibilityLabel="Find a role"
+            searchGlyph
           />
         ) : null}
         {filtering && shown.length === 0 ? (
@@ -173,8 +174,13 @@ export default function ChapterRolesScreen() {
                         ]}
                       />
                     }
+                    // The same notes web's Roles list puts beside a name.
                     description={
-                      isWildcardRole(role) ? "Can do everything" : null
+                      isWildcardRole(role)
+                        ? "Can do everything"
+                        : isEveryoneRole(role)
+                          ? "Pinged as @everyone"
+                          : null
                     }
                     value={count === null ? null : String(count)}
                     accessibilityValue={

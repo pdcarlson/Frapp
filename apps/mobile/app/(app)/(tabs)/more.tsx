@@ -2,13 +2,13 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
-  useActivity,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
   useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
+  useMyGoals,
   useMyPermissions,
   useMyPoints,
   useNowDate,
@@ -16,13 +16,13 @@ import {
   useStudySessions,
   useViewerUserId,
   useOwnAvatarTint,
+  selectPointsBalance,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
-  ActivityGlyph,
   ChapterGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
@@ -36,19 +36,21 @@ import {
 } from "@/components/more/more-glyphs";
 import { ProfileCard } from "@/components/more/profile-card";
 import { StatusChip } from "@/components/status-chip";
-import { activityCountChip } from "@/lib/activity/count-chip";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
-import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { formatPointsLabel } from "@/lib/more/hub";
-import { selectPointsBalance, selectViewerProfile } from "@/lib/more/profile";
+import { selectViewerProfile } from "@/lib/more/profile";
 import {
   dueChip,
   selectInvoiceRows,
   selectNextDueInvoice,
 } from "@/lib/dues/invoices";
-import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
+import {
+  formatHoursLabel,
+  formatHoursValue,
+  startOfWeek,
+} from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -100,9 +102,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Activity
  *
- * **Activity** leads the chapter tools, as it leads web's Chapter group
- * (#3897). Its chip is the count of things waiting on the member
- * (`needs_you_count`), drawn only when there is one.
+ * Activity was this hub's first row until it became tab 2 on 2026-11-12
+ * (#4610). Its count now rides on the tab (`GlassTabBar`).
  *
  * ## Rows nobody has set up
  *
@@ -117,9 +118,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Trailing statuses
  *
- * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
- * anywhere, so the row shows the week's real total with no denominator (see
- * `components/study/week-summary.tsx`). Neither Study nor Dues renders a
+ * Canvas draws "4.0 / 6.0" on Study: the week's real total over the member's
+ * weekly study goal, which officers set in Chapter settings (#1062,
+ * `useMyGoals`). With no goal the row shows the total with no denominator
+ * (see `components/study/week-summary.tsx`). Neither Study nor Dues renders a
  * placeholder while its query is in flight: a row that says "0.0 hrs" for a
  * beat at a member who studied all week is worse than one that says nothing
  * yet.
@@ -210,23 +212,20 @@ export default function MoreScreen() {
   // narrows and sorts the whole session list, and the answer only changes once a
   // week.
   const weekStart = startOfWeek(now).getTime();
+  // With a weekly goal (#1062) the row reads "4.0 / 6.0 hrs", as the board
+  // draws it. The goal is its own small read (`GET /v1/goals/mine`, fresh for
+  // five minutes), not the whole Activity standing.
+  const studyGoal =
+    useMyGoals({ enabled: !hiddenFeatures.has("study") }).data?.study ?? null;
   const studyThisWeek = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const minutes = selectSessionHistory(sessionsQuery.data)
       .filter((row) => Date.parse(row.startTime) >= weekStart)
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
-    return formatHoursLabel(minutes);
-  }, [sessionsQuery.data, weekStart]);
-
-  // The Activity row's count: what is waiting on the member right now
-  // (`needs_you_count`, counted server-side before the list cap). Nothing is
-  // drawn until the read answers or while nothing waits: a "0" chip would
-  // be noise. This tab is never unmounted, so the count is read again on
-  // every return to it (`useActivityReread`), or it would keep counting a
-  // task the member has since finished on the Tasks tab.
-  useActivityReread();
-  const activity = useActivity().data;
-  const needsYou = activityCountChip(activity);
+    return studyGoal
+      ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
+      : formatHoursLabel(minutes);
+  }, [sessionsQuery.data, weekStart, studyGoal]);
 
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
@@ -248,23 +247,6 @@ export default function MoreScreen() {
       />
 
       <ListSection>
-        <ListRow
-          label="Activity"
-          leading={<ActivityGlyph color={glyphColor} />}
-          accessibilityHint="Opens what is waiting on you and what you made."
-          accessibilityValue={needsYou?.spoken}
-          trailing={
-            needsYou ? (
-              <StatusChip
-                label={needsYou.label}
-                // Something to do, not yet settled: the warning role, as the
-                // rows it counts wear on the screen itself.
-                hue={tokens.color.semantic.warning}
-              />
-            ) : undefined
-          }
-          onPress={() => router.push("/activity")}
-        />
         {hiddenFeatures.has("study") ? null : (
           <ListRow
             label="Study hours"

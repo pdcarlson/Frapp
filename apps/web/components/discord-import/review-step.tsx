@@ -23,7 +23,7 @@ import type { RoleChoice, SameAsDiscordReaders } from "./role-matching";
 /** How far back a bot import reads (#2858), as one-tap choices. */
 export type CutoffPreset = "all" | "4y" | "2y" | "1y" | "date";
 
-export const CUTOFF_PRESETS: {
+const CUTOFF_PRESETS: {
   key: CutoffPreset;
   label: string;
   years?: number;

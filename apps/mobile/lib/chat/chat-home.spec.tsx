@@ -2275,6 +2275,68 @@ describe("Chat home: the swipe to Messages", () => {
     expect(push).toHaveBeenCalledWith("/messages");
   });
 
+  it("never also opens the channel the swipe started on", () => {
+    // Paul, 2026-11-12: a swipe into Messages from a channel row opened the
+    // channel too, on top of Messages. A full-width row never sees the
+    // finger leave it, so its release reads as a tap unless the swipe holds
+    // the touch.
+    const push = vi.mocked(useRouter)().push;
+    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
+    try {
+      const tree = render();
+      const swipe = () => pan(tree);
+      const general = () =>
+        rowNamed(tree, "general").find(
+          (node) => (node.type as unknown) === "Pressable",
+        );
+      const door = () => pressableLabelled(tree, "Messages");
+      vi.mocked(push).mockClear();
+
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onStart!({}));
+      act(() =>
+        swipe().handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
+      );
+      // The row's release can land on either side of the pan's finalize,
+      // and late on a slow phone.
+      act(() => general().props.onPress());
+      act(() => swipe().handlers.onFinalize!({}, true));
+      now.mockReturnValue(10_900);
+      act(() => general().props.onPress());
+      // A flick that starts on the Messages door opens Messages once.
+      act(() => door().props.onPress());
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith("/messages");
+      // Nor does the swipe's touch open the row's actions menu, which would
+      // hold the swipe while it is open.
+      act(() => general().props.onLongPress(undefined));
+      expect(swipe().config?.enabled).toBe(true);
+
+      // A slide that took the touch over but stopped short opens nothing.
+      vi.mocked(push).mockClear();
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onStart!({}));
+      act(() =>
+        swipe().handlers.onEnd!({ translationX: -30, velocityX: 0 }, true),
+      );
+      act(() => swipe().handlers.onFinalize!({}, true));
+      act(() => general().props.onPress());
+      expect(push).not.toHaveBeenCalled();
+
+      // The next touch is a plain tap: it never activates the pan, and the
+      // row opens at once.
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onFinalize!({}, false));
+      act(() => general().props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c-general" },
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("holds while a menu is open over Chat home", () => {
     const tree = render();
     expect(pan(tree).config?.enabled).toBe(true);

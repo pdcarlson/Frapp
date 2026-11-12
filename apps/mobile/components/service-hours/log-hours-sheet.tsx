@@ -7,6 +7,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { formatBytes } from "@repo/formatting";
 import {
+  formatServiceHours,
   useCreateServiceEntry,
   useRequestServiceProofUploadUrl,
 } from "@repo/hooks";
@@ -33,7 +34,6 @@ import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
-import { formatHours } from "@/lib/more/profile";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_SERVICE_DATE_CHOICE,
@@ -430,7 +430,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         });
     };
 
-    const hours = formatHours(minutes);
+    const hours = formatServiceHours(minutes);
     const canDecrease = !pending && minutes > DURATION_STEP_MINUTES;
     const canIncrease = !pending && minutes < MAX_DURATION_MINUTES;
     const step = (direction: 1 | -1) =>

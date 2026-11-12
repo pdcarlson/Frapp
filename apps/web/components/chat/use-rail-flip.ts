@@ -23,8 +23,8 @@ import { signetDarkTokens } from "@repo/theme/signet";
  */
 
 /** Standard-transition timing, `motion.duration.micro` on the standard curve. */
-export const RAIL_SLIDE_MS = signetDarkTokens.motion.duration.micro;
-export const RAIL_EASING = signetDarkTokens.motion.easing.standard;
+const RAIL_SLIDE_MS = signetDarkTokens.motion.duration.micro;
+const RAIL_EASING = signetDarkTokens.motion.easing.standard;
 
 /** Script-driven motion checks the preference itself (README §7). */
 export function prefersReducedMotion(): boolean {

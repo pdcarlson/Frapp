@@ -950,3 +950,33 @@ describe("MemberDetailSheet Edit name and graduation year", () => {
     expect(correctMutateAsync).not.toHaveBeenCalled();
   });
 });
+
+describe("MemberDetailSheet docked in the Directory (2026-11-12)", () => {
+  it("opens in place of the directory, named by the member, with a back arrow", () => {
+    memberQueryState.data = baseMember;
+    const onOpenChange = vi.fn();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <button type="button">Trevor row</button>
+        </div>
+        <MemberDetailSheet
+          open
+          onOpenChange={onOpenChange}
+          userId="u1"
+          docked
+          backLabel="Back to directory"
+        />
+      </div>,
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Jane Smith" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    expect(screen.getAllByRole("heading", { name: "Jane Smith" })).toHaveLength(
+      1,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to directory" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});

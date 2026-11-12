@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecorderDevice, RecorderStore } from "./controller";
-import { bindMeetingRecorder } from "./session";
+import { bindMeetingRecorder, isMeetingRecorderBusy } from "./session";
 
 /**
  * One recorder per signed-in member and chapter. A change of either ends
@@ -45,5 +45,25 @@ describe("bindMeetingRecorder", () => {
   it("binds nothing on a build that can't record", () => {
     expect(bindMeetingRecorder(paul, null, store)).toBeNull();
     expect(store.all).not.toHaveBeenCalled();
+  });
+});
+
+describe("isMeetingRecorderBusy", () => {
+  it("is false with no recorder, and with one sitting idle", () => {
+    expect(isMeetingRecorderBusy()).toBe(false);
+    bindMeetingRecorder(paul, device, store);
+    expect(isMeetingRecorderBusy()).toBe(false);
+  });
+
+  it("is true while the recorder starts, records, saves or uploads, and false once a recording is only kept", () => {
+    const recorder = bindMeetingRecorder(paul, device, store)!;
+    const getState = vi.spyOn(recorder, "getState");
+    const subject = { meetingId: "m1", eventName: "Chapter", maxSeconds: 7200 };
+    for (const phase of ["starting", "recording", "saving", "uploading"] as const) {
+      getState.mockReturnValue({ phase, subject } as never);
+      expect(isMeetingRecorderBusy(), phase).toBe(true);
+    }
+    getState.mockReturnValue({ phase: "kept", subject } as never);
+    expect(isMeetingRecorderBusy()).toBe(false);
   });
 });

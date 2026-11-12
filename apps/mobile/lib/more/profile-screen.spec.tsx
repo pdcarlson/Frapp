@@ -9,16 +9,13 @@ import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
-import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
- * s12's service-hours total reads `GET /v1/service-entries`, which the
- * endpoint does not scope by itself: `service-entry.controller.ts` resolves
- * `userId: isAdmin ? query.userId : userId`, so a read with no `userId` hands
- * anyone holding `service:approve` every entry in the chapter. The card
- * presents the total as the viewer's own, so the screen must ask for the
- * viewer's entries, and must wait for the viewer's id rather than firing
- * once unscoped. `service-hours-screen.spec.tsx` pins the same for s20.
+ * s15, the viewer's own Profile. Its two stat cards come from `@repo/hooks`
+ * `useMyProfileStats`, mocked whole here: the reads behind them, including
+ * the service read scoped to the viewer (an unscoped one hands a
+ * `service:approve` holder the whole chapter's entries as their own), are
+ * pinned in `packages/hooks/src/profile-stats.hook.spec.tsx`.
  *
  * It renders `app/(app)/profile.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -46,20 +43,20 @@ const usePledgeClasses = vi.fn((options?: { enabled?: boolean }) =>
     ? { data: undefined, isPending: true, isSuccess: false }
     : { data: pledgeClasses, isPending: false, isSuccess: true },
 );
-const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
-  data: [],
-  isPending: false,
-  isError: false,
-}));
-
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useOwnAvatarTint: () => null,
-  useActiveChapterId: () => "chapter-1",
   useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,
-  useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
-  useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
+  // The reads behind the cards are `profile-stats.hook.spec.tsx`'s business.
+  useMyProfileStats: () => ({
+    points: null,
+    serviceHours: null,
+    hasChapter: true,
+    visible: true,
+    pointsFailed: false,
+    serviceFailed: false,
+  }),
   useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
   useMemberByUserId: (userId: string) => useMemberByUserId(userId),
   usePermissionList: () => permissions,
@@ -95,26 +92,6 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
-
-describe("Profile reads only the viewer's service entries", () => {
-  beforeEach(() => {
-    useServiceEntries.mockClear();
-  });
-
-  it("asks for the viewer's entries once the viewer is known", () => {
-    viewerUserId = "user-1";
-    const tree = render();
-    expectViewerScopedReads(useServiceEntries.mock.calls, "user-1");
-    act(() => tree.unmount());
-  });
-
-  it("sends nothing while the viewer is still unknown", () => {
-    viewerUserId = null;
-    const tree = render();
-    expectViewerScopedReads(useServiceEntries.mock.calls, null);
-    act(() => tree.unmount());
-  });
-});
 
 /**
  * #3022. s15 is opened from More's profile card and draws `‹ More`, in its

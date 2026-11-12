@@ -12,7 +12,7 @@ import {
  * localStorage, best-effort: a private window, blocked site data or a full
  * quota throws or reads empty, and the page then opens on All.
  */
-export function activityFilterStorageKey(userId: string): string {
+function activityFilterStorageKey(userId: string): string {
   return `frapp.activity.filter.${userId}`;
 }
 

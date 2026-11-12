@@ -219,7 +219,7 @@ export const TEXT_BANS = [
   {
     walk: "product",
     ban: /Signet System/,
-    reach: ["apps/api/src/main.ts", "apps/web/app/layout.tsx", "apps/mobile/app/(auth)/sign-in.tsx", "packages/validation/src/index.ts"],
+    reach: ["apps/api/src/main.ts", "apps/web/app/layout.tsx", "apps/mobile/app/(auth)/sign-in.tsx", "packages/validation/src/chat-message.ts"],
   },
   // Specs keep design-system test names ("no Signet map"), so they aren't
   // walked for the word, only for the payment fixtures a sweep would copy
@@ -563,7 +563,7 @@ export const PINS = [
   {
     // @repo/validation owns the literal so both clients can hide Block on a
     // system message; the API re-exports it rather than keep a second copy.
-    file: "packages/validation/src/index.ts",
+    file: "packages/validation/src/chat-message.ts",
     why: "SYSTEM_SENDER_ID is the all-zeros id",
     has: [new RegExp(`export const SYSTEM_SENDER_ID = ["']${ZERO_ID}["']`)],
   },

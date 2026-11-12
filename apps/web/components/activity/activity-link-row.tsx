@@ -34,7 +34,7 @@ type LinkRow = Extract<ActivityRow, { kind: "link" }>;
  * reply isn't on the channel's timeline, so it goes to the thread's first
  * message, where the thread opens from.
  */
-export function linkChatHref(row: LinkRow): string {
+function linkChatHref(row: LinkRow): string {
   return chatDeepLink({
     channelId: row.link.channel_id,
     messageId: row.link.thread_root_id ?? row.link.message_id,

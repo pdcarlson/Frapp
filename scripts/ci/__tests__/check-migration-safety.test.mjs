@@ -32,6 +32,8 @@ import {
   isLedgerPage,
   LEDGER_PAGE_PLACEHOLDER,
   ledgerPageEntries,
+  readLedgerPages,
+  withLedgerPages,
   MIGRATION_DOCS,
   RATCHET_VERSION_CEILING,
   UNLEDGERED,
@@ -42,6 +44,7 @@ import {
   staleDocs,
   unexcusedRemovals,
 } from "../../check-migration-safety.mjs";
+import { MIGRATION_LEDGER_DIR } from "../lib/ops-docs.mjs";
 
 const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
@@ -497,20 +500,27 @@ test("the ratchet holds against the real corpus", () => {
   const migrations = readdirSync(join(REPO_ROOT, "supabase", "migrations"))
     .filter((file) => file.endsWith(".sql"))
     .sort();
-  const entriesByDoc = new Map(
-    MIGRATION_DOCS.map((doc) => [
-      doc,
-      ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
-    ]),
+  // Ledger pages count, as they do in the gate itself: a migration made since
+  // #4556 is recorded on its own page and in neither shared doc.
+  const entriesByDoc = withLedgerPages(
+    new Map(
+      MIGRATION_DOCS.map((doc) => [
+        doc,
+        ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
+      ]),
+    ),
+    migrations,
+    ledgerPageEntries(readLedgerPages()).covered,
   );
-  // As the gate does: a ledger page stands in for an entry in both shared
-  // docs, for a migration on disk. Without this the first migration ledgered
-  // on its own page reads as missing from both.
-  const ledgerDir = join(REPO_ROOT, "docs", "ops", "database", "migrations");
+  // A ledger page stands in for an entry in both shared docs, as the gate's
+  // own run counts it; without this, the first migration ledgered on a page
+  // reads as missing from both.
+  const pageDir = join(REPO_ROOT, MIGRATION_LEDGER_DIR);
   const pages = ledgerPageEntries(
-    readdirSync(ledgerDir)
-      .filter((name) => name.endsWith(".md") && name !== "README.md")
-      .map((name) => ({ name, text: readFileSync(join(ledgerDir, name), "utf8") })),
+    readdirSync(pageDir).map((name) => ({
+      name,
+      text: readFileSync(join(pageDir, name), "utf8"),
+    })),
   );
   assert.deepEqual(pages.malformed, []);
   const onDisk = new Set(migrations);

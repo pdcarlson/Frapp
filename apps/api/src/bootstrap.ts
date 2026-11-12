@@ -4,6 +4,7 @@ import {
   VersioningType,
 } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { json } from 'express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { corsOptionsFor } from './interface/http/cors.options';
@@ -141,13 +142,38 @@ const HELMET_OPTIONS = {
 } as const;
 
 /**
- * The largest JSON body the API reads. Express's own default is 100 KB, which
- * every body fitted under until a recording's transcript became an officer's
- * notes (#712): `MEETING_NOTES_MAX_LENGTH` is 160,000 characters, and a
- * character can take three bytes. Each DTO still caps its own fields; this is
- * only the ceiling the parser enforces before any of them is read.
+ * The largest JSON body the API reads, on every route but the ones below:
+ * Express's own default, stated so it reads as a choice. Each DTO still caps
+ * its own fields; this is only the ceiling the parser enforces before any of
+ * them is read, or any guard has run.
  */
-const JSON_BODY_LIMIT = '1mb';
+const JSON_BODY_LIMIT = '100kb';
+
+/**
+ * The routes that take a larger body (#4504), and how large:
+ *
+ * - Meetings. A recording's transcript becomes an officer's notes (#712), and
+ *   `MEETING_NOTES_MAX_LENGTH` is 160,000 characters, where a character can
+ *   take three bytes; a full set of minutes (four 20,000-character sections
+ *   and up to 200 items) can pass 100 KB too.
+ * - AI reports. "Report this" on an Ask answer hands back the answer's sealed
+ *   receipt, up to `AI_REPORT_RECEIPT_MAX_LENGTH` (200,000) characters.
+ * - Discord imports. The web client confirms uploaded export files 500 paths
+ *   at a time (`CONFIRM_BATCH`), each path around 200 bytes, and the channel
+ *   map can list up to 1,000 channels: both pass 100 KB on a large server.
+ *
+ * Every route under these prefixes needs a signed-in member. The parser runs
+ * before the guards, so a caller with no token can still send these
+ * prefixes a 1 MB body before the 401, but not the sign-in, invite and
+ * webhook routes, nor any other. A new route that needs more than 100 KB is
+ * added here, not by raising the general limit.
+ */
+const LARGE_JSON_BODY_LIMIT = '1mb';
+export const LARGE_JSON_BODY_PATHS = [
+  '/v1/meetings',
+  '/v1/ai/reports',
+  '/v1/discord-imports',
+];
 
 /**
  * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to
@@ -200,8 +226,11 @@ export function configureApp(
   app.use(requestReadsMiddleware);
 
   // Here, not in `main.ts`, so the e2e suite parses bodies as production does.
-  // After the request id: this registers the parser at once, and a body it
-  // refuses (malformed, or over the limit) must still answer with an id.
+  // After the request id: these register at once, and a body they refuse
+  // (malformed, or over the limit) must still answer with an id. The larger
+  // parser goes first; a body it has read is marked read, and the general
+  // parser after it passes over that request.
+  app.use(LARGE_JSON_BODY_PATHS, json({ limit: LARGE_JSON_BODY_LIMIT }));
   (app as NestExpressApplication).useBodyParser('json', {
     limit: JSON_BODY_LIMIT,
   });

@@ -18,7 +18,8 @@ import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
   EVERYONE_ROLE_NAME,
-  isEveryoneRoleName,
+  isEveryoneRole,
+  reservedMentionName,
   permissionDefinition,
   permissionModuleLabel,
 } from '@repo/validation';
@@ -138,9 +139,10 @@ export interface ChapterMemberAccess {
   /**
    * The held live role that `top_role_order` belongs to (ties broken by name,
    * then id, so the pick is stable), or `null` when none. Chat's member list
-   * groups readers under it.
+   * groups readers under it; `everyone` marks the chapter's Everyone role
+   * (#4191), which that list never names.
    */
-  top_role: { id: string; name: string } | null;
+  top_role: { id: string; name: string; everyone?: true } | null;
   /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
   channel_access: ChannelAccessHolder;
 }
@@ -420,7 +422,7 @@ export class RbacService {
       );
     }
 
-    assertNotEveryoneName(data.name);
+    assertNotReservedMentionName(data.name);
     const existing = await this.roleRepo.findByChapterAndName(
       chapterId,
       data.name!,
@@ -539,7 +541,7 @@ export class RbacService {
         });
       }
     } else if (data.name && data.name !== role.name) {
-      assertNotEveryoneName(data.name);
+      assertNotReservedMentionName(data.name);
     }
 
     if (data.name && data.name !== role.name) {
@@ -1138,7 +1140,13 @@ export class RbacService {
           liveRoles.map((role) => role.permissions),
         ),
         top_role_order: top?.display_order ?? null,
-        top_role: top ? { id: top.id, name: top.name } : null,
+        top_role: top
+          ? {
+              id: top.id,
+              name: top.name,
+              ...(isEveryoneRole(top) ? { everyone: true } : {}),
+            }
+          : null,
         channel_access: accessHolderFromRoles(liveRoles),
       };
     });
@@ -1234,14 +1242,17 @@ function withoutUndefined<T extends object>(changes: T): Partial<T> {
 }
 
 /**
- * Refuses a role name that reads as `@everyone` (#4191): a second role folding
- * to it would make every `@everyone` ambiguous, which reaches nobody.
+ * Refuses a role name that reads as `@everyone` (#4191) or `@here`
+ * (2026-11-12): a second role folding to `@everyone` would make every
+ * `@everyone` ambiguous, which reaches nobody, and `@here` is the members
+ * online, never a role.
  */
-function assertNotEveryoneName(name: string | undefined): void {
-  if (name !== undefined && isEveryoneRoleName(name)) {
+function assertNotReservedMentionName(name: string | undefined): void {
+  const reserved = name === undefined ? null : reservedMentionName(name);
+  if (name !== undefined && reserved !== null) {
     throw new ConflictException({
       code: 'role.everyone_name',
-      message: `"${name.trim()}" is what @everyone reads as. Pick another name.`,
+      message: `"${name.trim()}" is what @${reserved} reads as. Pick another name.`,
     });
   }
 }

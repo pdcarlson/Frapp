@@ -75,7 +75,7 @@ import { cn } from "@/lib/utils";
  * server keeps nothing from a client that did not show it.
  */
 /** On `<html>` while the panel is open: the shell makes room from `lg` up. */
-export const ASK_OPEN_ATTRIBUTE = "data-ask-open";
+const ASK_OPEN_ATTRIBUTE = "data-ask-open";
 
 /** Tailwind's `lg`: from here the page and the panel fit side by side. */
 const BESIDE_PAGE_QUERY = "(min-width: 1024px)";

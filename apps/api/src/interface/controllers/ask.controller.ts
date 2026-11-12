@@ -222,6 +222,21 @@ export class AskController {
       new Date(),
     );
   }
+}
+
+/**
+ * Turning the Ask diagnostics window off (#4315). Its own controller, without
+ * `AiEnabledGuard`, so a president can end a window and delete what it kept
+ * even after `AI_ENABLED` goes off (#4504); otherwise only the 14-day sweep,
+ * which runs either way, would end it. Nor does it need `ai:use`: the service
+ * lets only the chapter's president stop a window, and it starts nothing.
+ */
+@ApiTags('AI')
+@ApiBearerAuth()
+@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@Controller('ai/ask')
+export class AskDiagnosticsStopController {
+  constructor(private readonly diagnostics: AskDiagnosticsService) {}
 
   @Delete('diagnostics')
   @ApiOperation({
@@ -236,7 +251,7 @@ export class AskController {
   })
   @ApiNotFoundResponse({
     description:
-      'AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`).',
+      'No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on.',
   })
   stopDiagnostics(
     @CurrentChapterId() chapterId: string,

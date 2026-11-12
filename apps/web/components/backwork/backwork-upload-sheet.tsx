@@ -20,23 +20,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
+import { Slot } from "@radix-ui/react-slot";
 import {
   UPLOAD_FIELD_CLASS,
   UPLOAD_SHEET_BUTTON_CLASS,
   UploadField,
   UploadFileField,
-  UploadSheetBody,
-  UploadSheetContent,
-  UploadSheetFooter,
-  UploadSheetTitle,
 } from "@/components/shared/upload-sheet";
+import {
+  Panel,
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import {
   useGatedDialog,
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { asArray, getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 import type {
   BackworkCourse,
   BackworkDepartment,
@@ -182,7 +190,11 @@ export function BackworkUploadSheet({
       setUploadError("Choose a file to upload.");
       return;
     }
-    const inspected = inspectUploadFile("document", file, MAX_BACKWORK_UPLOAD_BYTES);
+    const inspected = inspectUploadFile(
+      "document",
+      file,
+      MAX_BACKWORK_UPLOAD_BYTES,
+    );
     if (!inspected.ok) {
       setUploadError(uploadRejectionDescription(inspected.reason));
       return;
@@ -202,7 +214,11 @@ export function BackworkUploadSheet({
         );
         return;
       }
-      stageBulkUpload({ files: [file], skipped: 0, fields: draftFields(uploadDraft) });
+      stageBulkUpload({
+        files: [file],
+        skipped: 0,
+        fields: draftFields(uploadDraft),
+      });
       uploadDialog.setOpen(false);
       router.push("/backwork/upload");
       return;
@@ -289,51 +305,55 @@ export function BackworkUploadSheet({
     }
   }
 
+  function openPanel() {
+    setUploadError(null);
+    uploadDialog.setOpen(true);
+  }
+
   return (
     <>
-          {/*
-              Cleared on OPEN, not on close. Cancel calls
-              `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
-              effect calls its own `setOpenState(false)`; both only change the
-              controlled prop, and Radix's `useControllableState` fires
-              `onOpenChange` for its own setter alone — so clearing on close
-              missed two of the three ways this sheet shuts, and a spent
-              rejection survived a Cancel into the next open. Every open is a
-              `DialogTrigger` press (nothing calls `setOpen(true)`), which
-              does reach the handler. Same reasoning as `/documents`, written
-              out there.
-
-              The draft survives on purpose: a half-typed course number is
-              worth keeping, a spent error is not.
-            */}
-          <Dialog
-            {...uploadDialog.dialogProps}
-            onOpenChange={(next) => {
-              if (next) setUploadError(null);
-              uploadDialog.dialogProps.onOpenChange(next);
-            }}
+      {/*
+        Every open goes through `openPanel`, which clears a spent rejection:
+        a half-typed course number is worth keeping, a spent error is not.
+        Cancel, the back arrow, Escape and the gate's revoke only close.
+      */}
+      <Slot onClick={openPanel}>{children}</Slot>
+      <Panel
+        open={uploadDialog.dialogProps.open}
+        onOpenChange={(next) => {
+          if (next) {
+            openPanel();
+            return;
+          }
+          uploadDialog.dialogProps.onOpenChange(false);
+        }}
+        docked
+        backLabel="Back to backwork"
+      >
+        <PanelContent
+          {...uploadDialog.contentProps}
+          aria-describedby={undefined}
+        >
+          <PanelHeader>Upload backwork</PanelHeader>
+          <PanelBody
+            as="form"
+            id="backwork-upload-form"
+            onSubmit={handleUpload}
           >
-            <DialogTrigger asChild>{children}</DialogTrigger>
-            <UploadSheetContent {...uploadDialog.contentProps}>
-              <UploadSheetTitle>Upload backwork</UploadSheetTitle>
-              <UploadSheetBody
-                id="backwork-upload-form"
-                onSubmit={handleUpload}
-              >
-                <UploadFileField
-                  id="bw-file"
-                  label="File"
-                  hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
-                  accept={acceptAttribute("document")}
-                  file={uploadDraft.file}
-                  error={uploadError}
-                  disabled={uploading}
-                  onSelect={(file) => {
-                    setUploadError(null);
-                    setUploadDraft((prev) => ({ ...prev, file }));
-                  }}
-                />
-                {/*
+            <UploadFileField
+              id="bw-file"
+              label="File"
+              hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
+              accept={acceptAttribute("document")}
+              file={uploadDraft.file}
+              error={uploadError}
+              disabled={uploading}
+              onSelect={(file) => {
+                setUploadError(null);
+                setUploadDraft((prev) => ({ ...prev, file }));
+              }}
+            />
+            {/*
                     The dialog's instructional paragraph is deleted with the
                     rest of the page's narration, and the one fact in it that
                     a member could act on is now field help where it applies:
@@ -342,224 +362,226 @@ export function BackworkUploadSheet({
                     metadata field except the file itself is optional" is what
                     the field labels already say by not being marked required.
                   */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <UploadField id="bw-title" label="Title">
-                    <Input
-                      id="bw-title"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.title}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          title: event.target.value,
-                        }))
-                      }
-                      placeholder="CS 3320 Midterm"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-department" label="Department code">
-                    <Input
-                      id="bw-department"
-                      aria-describedby="bw-taxonomy-note"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.department_code}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          department_code: event.target.value,
-                        }))
-                      }
-                      placeholder="CS, MATH, ECON"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-course" label="Course number">
-                    <Input
-                      id="bw-course"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.course_number}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          course_number: event.target.value,
-                        }))
-                      }
-                      placeholder="3320"
-                      aria-describedby={
-                        courseState.kind === "named" ? "bw-course-caption" : undefined
-                      }
-                    />
-                    {courseState.kind === "named" ? (
-                      <p id="bw-course-caption" className="text-caption text-muted-foreground">
-                        {courseState.label} ·{" "}
-                        <span className="font-semibold text-foreground">
-                          {courseState.name}
-                        </span>
-                      </p>
-                    ) : null}
-                  </UploadField>
-                  {courseState.kind === "new" ? (
-                    <UploadField
-                      id="bw-course-name"
-                      label="Course name (optional)"
-                      className="sm:col-span-2"
-                    >
-                      <Input
-                        id="bw-course-name"
-                        className={UPLOAD_FIELD_CLASS}
-                        aria-describedby="bw-course-name-note"
-                        value={courseName}
-                        maxLength={MAX_COURSE_NAME_LENGTH}
-                        onChange={(event) => setCourseName(event.target.value)}
-                        placeholder="Calculus I"
-                      />
-                      <p id="bw-course-name-note" className="text-caption text-muted">
-                        New course. Name it once and everyone can find it by name.
-                      </p>
-                    </UploadField>
-                  ) : null}
-                  <UploadField id="bw-professor" label="Professor">
-                    <Input
-                      id="bw-professor"
-                      aria-describedby="bw-taxonomy-note"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.professor_name}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          professor_name: event.target.value,
-                        }))
-                      }
-                      placeholder="Dr. Lastname"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-year" label="Year">
-                    <Input
-                      id="bw-year"
-                      type="number"
-                      min={2000}
-                      max={2100}
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.year}
-                      onChange={(event) => {
-                        // Its floor waits for submit: a guard at 1900
-                        // would refuse the "2" of "2026".
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setUploadDraft((prev) => ({ ...prev, year: next }));
-                      }}
-                    />
-                  </UploadField>
-                  <UploadField id="bw-semester" label="Semester">
-                    <Select
-                      value={uploadDraft.semester}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          semester: value,
-                        }))
-                      }
-                    >
-                      {/*
+            <div className="grid gap-3 sm:grid-cols-2">
+              <UploadField id="bw-title" label="Title">
+                <Input
+                  id="bw-title"
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.title}
+                  onChange={(event) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      title: event.target.value,
+                    }))
+                  }
+                  placeholder="CS 3320 Midterm"
+                />
+              </UploadField>
+              <UploadField id="bw-department" label="Department code">
+                <Input
+                  id="bw-department"
+                  aria-describedby="bw-taxonomy-note"
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.department_code}
+                  onChange={(event) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      department_code: event.target.value,
+                    }))
+                  }
+                  placeholder="CS, MATH, ECON"
+                />
+              </UploadField>
+              <UploadField id="bw-course" label="Course number">
+                <Input
+                  id="bw-course"
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.course_number}
+                  onChange={(event) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      course_number: event.target.value,
+                    }))
+                  }
+                  placeholder="3320"
+                  aria-describedby={
+                    courseState.kind === "named"
+                      ? "bw-course-caption"
+                      : undefined
+                  }
+                />
+                {courseState.kind === "named" ? (
+                  <p
+                    id="bw-course-caption"
+                    className="text-caption text-muted-foreground"
+                  >
+                    {courseState.label} ·{" "}
+                    <span className="font-semibold text-foreground">
+                      {courseState.name}
+                    </span>
+                  </p>
+                ) : null}
+              </UploadField>
+              {courseState.kind === "new" ? (
+                <UploadField
+                  id="bw-course-name"
+                  label="Course name (optional)"
+                  className="sm:col-span-2"
+                >
+                  <Input
+                    id="bw-course-name"
+                    className={UPLOAD_FIELD_CLASS}
+                    aria-describedby="bw-course-name-note"
+                    value={courseName}
+                    maxLength={MAX_COURSE_NAME_LENGTH}
+                    onChange={(event) => setCourseName(event.target.value)}
+                    placeholder="Calculus I"
+                  />
+                  <p
+                    id="bw-course-name-note"
+                    className="text-caption text-muted"
+                  >
+                    New course. Name it once and everyone can find it by name.
+                  </p>
+                </UploadField>
+              ) : null}
+              <UploadField id="bw-professor" label="Professor">
+                <Input
+                  id="bw-professor"
+                  aria-describedby="bw-taxonomy-note"
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.professor_name}
+                  onChange={(event) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      professor_name: event.target.value,
+                    }))
+                  }
+                  placeholder="Dr. Lastname"
+                />
+              </UploadField>
+              <UploadField id="bw-year" label="Year">
+                <Input
+                  id="bw-year"
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.year}
+                  onChange={(event) => {
+                    // Its floor waits for submit: a guard at 1900
+                    // would refuse the "2" of "2026".
+                    const next = guardIntDraft(event.target.value);
+                    if (next === undefined) return;
+                    setUploadDraft((prev) => ({ ...prev, year: next }));
+                  }}
+                />
+              </UploadField>
+              <UploadField id="bw-semester" label="Semester">
+                <Select
+                  value={uploadDraft.semester}
+                  onValueChange={(value) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      semester: value,
+                    }))
+                  }
+                >
+                  {/*
                           "Pick one" is the board's own unset-value copy
                           (`1j`). It replaces a bare em dash, which the
                           greenfield brand lock bans in product copy and which
                           a screen reader announced as nothing at all.
                         */}
-                      <SelectTrigger
-                        id="bw-semester"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SEMESTERS.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                  <UploadField id="bw-assignment-type" label="Assignment type">
-                    <Select
-                      value={uploadDraft.assignment_type}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          assignment_type: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger
-                        id="bw-assignment-type"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ASSIGNMENT_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                  <UploadField
-                    id="bw-assignment-number"
-                    label="Assignment number"
+                  <SelectTrigger
+                    id="bw-semester"
+                    className={UPLOAD_FIELD_CLASS}
                   >
-                    <Input
-                      id="bw-assignment-number"
-                      type="number"
-                      min={1}
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.assignment_number}
-                      onChange={(event) => {
-                        // Its floor of 1 waits for submit, so deleting
-                        // the 1 of "10" isn't refused mid-edit.
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          assignment_number: next,
-                        }));
-                      }}
-                    />
-                  </UploadField>
-                  <UploadField id="bw-variant" label="Document variant">
-                    <Select
-                      value={uploadDraft.document_variant}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          document_variant: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger
-                        id="bw-variant"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DOCUMENT_VARIANTS.map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                </div>
-                {uploadDraft.document_variant === STUDENT_COPY ? (
-                  <p id="bw-student-copy-note" className="text-caption text-muted">
-                    A Student Copy opens in bulk upload, where you black out
-                    names on your device before anything uploads.
-                  </p>
-                ) : null}
-                {/*
+                    <SelectValue placeholder="Pick one" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEMESTERS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </UploadField>
+              <UploadField id="bw-assignment-type" label="Assignment type">
+                <Select
+                  value={uploadDraft.assignment_type}
+                  onValueChange={(value) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      assignment_type: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    id="bw-assignment-type"
+                    className={UPLOAD_FIELD_CLASS}
+                  >
+                    <SelectValue placeholder="Pick one" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASSIGNMENT_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </UploadField>
+              <UploadField id="bw-assignment-number" label="Assignment number">
+                <Input
+                  id="bw-assignment-number"
+                  type="number"
+                  min={1}
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.assignment_number}
+                  onChange={(event) => {
+                    // Its floor of 1 waits for submit, so deleting
+                    // the 1 of "10" isn't refused mid-edit.
+                    const next = guardIntDraft(event.target.value);
+                    if (next === undefined) return;
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      assignment_number: next,
+                    }));
+                  }}
+                />
+              </UploadField>
+              <UploadField id="bw-variant" label="Document variant">
+                <Select
+                  value={uploadDraft.document_variant}
+                  onValueChange={(value) =>
+                    setUploadDraft((prev) => ({
+                      ...prev,
+                      document_variant: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="bw-variant" className={UPLOAD_FIELD_CLASS}>
+                    <SelectValue placeholder="Pick one" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOCUMENT_VARIANTS.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </UploadField>
+            </div>
+            {uploadDraft.document_variant === STUDENT_COPY ? (
+              <p id="bw-student-copy-note" className="text-caption text-muted">
+                A Student Copy opens in bulk upload, where you black out names
+                on your device before anything uploads.
+              </p>
+            ) : null}
+            {/*
                     Carries an id and is referenced by the two fields it is
                     about. Field help that is only positioned near a control
                     reaches sighted users and nobody else — and this sentence
@@ -567,59 +589,57 @@ export function BackworkUploadSheet({
                     description, where Radix had wired it to the dialog for
                     free.
                   */}
-                <p id="bw-taxonomy-note" className="text-caption text-muted">
-                  A department code or professor the chapter has not used before
-                  is created for this chapter on upload.
-                </p>
-                <UploadField id="bw-tags" label="Tags (comma-separated)">
-                  <Input
-                    id="bw-tags"
-                    className={UPLOAD_FIELD_CLASS}
-                    value={uploadDraft.tags}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        tags: event.target.value,
-                      }))
-                    }
-                    placeholder="curved, rubric-provided"
-                  />
-                </UploadField>
-              </UploadSheetBody>
-              <UploadSheetFooter>
-                {/*
+            <p id="bw-taxonomy-note" className="text-caption text-muted">
+              A department code or professor the chapter has not used before is
+              created for this chapter on upload.
+            </p>
+            <UploadField id="bw-tags" label="Tags (comma-separated)">
+              <Input
+                id="bw-tags"
+                className={UPLOAD_FIELD_CLASS}
+                value={uploadDraft.tags}
+                onChange={(event) =>
+                  setUploadDraft((prev) => ({
+                    ...prev,
+                    tags: event.target.value,
+                  }))
+                }
+                placeholder="curved, rubric-provided"
+              />
+            </UploadField>
+          </PanelBody>
+          <PanelFooter>
+            {/*
                   Cancel is not gated: it closes the dialog rather than writing,
                   and a revoked subscription must still leave a way out.
                 */}
-                <Button
-                  variant="secondary"
-                  className={UPLOAD_SHEET_BUTTON_CLASS}
-                  onClick={() => uploadDialog.setOpen(false)}
-                  disabled={uploading}
-                >
-                  Cancel
-                </Button>
-                {/*
+            <Button
+              variant="secondary"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              onClick={() => uploadDialog.setOpen(false)}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+            {/*
                     Enabled with no file chosen, per the board. The gate still
                     disables it — that is a verdict about the chapter, not
                     about this form.
                   */}
-                <Button
-                  form="backwork-upload-form"
-                  type="submit"
-                  className={UPLOAD_SHEET_BUTTON_CLASS}
-                  {...gate.controlProps(uploading)}
-                >
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  {uploadDraft.document_variant === STUDENT_COPY
-                    ? "Redact and upload"
-                    : "Upload"}
-                </Button>
-              </UploadSheetFooter>
-            </UploadSheetContent>
-          </Dialog>
+            <Button
+              form="backwork-upload-form"
+              type="submit"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              {...gate.controlProps(uploading)}
+            >
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {uploadDraft.document_variant === STUDENT_COPY
+                ? "Redact and upload"
+                : "Upload"}
+            </Button>
+          </PanelFooter>
+        </PanelContent>
+      </Panel>
     </>
   );
 }
@@ -638,7 +658,7 @@ type CourseState =
  * trimmed and case-insensitively. The label keeps the department's stored
  * spelling.
  */
-export function describeCourse(
+function describeCourse(
   departmentCode: string,
   courseNumber: string,
   departments: readonly BackworkDepartment[],
@@ -651,13 +671,21 @@ export function describeCourse(
   const key = number.toLowerCase();
   const department = findDepartmentByCode(departments, code);
   if (!department) return { kind: "new" };
-  const course = courses.find((c) => c.department_id === department.id && c.course_key === key);
+  const course = courses.find(
+    (c) => c.department_id === department.id && c.course_key === key,
+  );
   if (course?.name) {
-    return { kind: "named", label: `${department.code.trim()} ${number}`, name: course.name };
+    return {
+      kind: "named",
+      label: `${department.code.trim()} ${number}`,
+      name: course.name,
+    };
   }
   if (course) return { kind: "none" };
   const hasFiles = resources.some(
-    (r) => r.department_id === department.id && r.course_number?.trim().toLowerCase() === key,
+    (r) =>
+      r.department_id === department.id &&
+      r.course_number?.trim().toLowerCase() === key,
   );
   return hasFiles ? { kind: "none" } : { kind: "new" };
 }

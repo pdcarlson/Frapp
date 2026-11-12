@@ -32,12 +32,9 @@ let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
-/** `GET /v1/activity`: `undefined` is "not answered yet". */
-let activity: { needs_you_count: number; unavailable: string[] } | undefined;
-const activityReread = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/activity/use-activity-reread", () => ({
-  useActivityReread: activityReread,
-}));
+/** The member's weekly study goal in minutes (#1062), from `useMyGoals`. */
+let studyGoal: number | null = null;
+const goalReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 /** True while `/v1/users/me/permissions` hasn't answered. */
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
@@ -61,6 +58,10 @@ afterEach(() => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useOwnAvatarTint: () => null,
+  useMyGoals: (options?: { enabled?: boolean }) => {
+    goalReadOptions.push(options);
+    return { data: { points: null, service: null, study: studyGoal } };
+  },
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({
@@ -71,7 +72,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     hiddenFeatureCalls.push(args);
     return hiddenFeatures;
   },
-  useActivity: () => ({ data: activity }),
   useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
@@ -223,6 +223,37 @@ describe("More hub clock (#2101)", () => {
     expect(screenText(tree)).toContain("0.0 hrs");
     expect(screenText(tree)).not.toContain("2.0 hrs");
   });
+
+  it("reads the week against the member's study goal when the chapter sets one (#1062)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    studyGoal = 360;
+    sessions = [
+      {
+        id: "session-1",
+        status: "COMPLETED",
+        start_time: new Date(2026, 9, 3, 10, 0).toISOString(),
+        end_time: new Date(2026, 9, 3, 14, 0).toISOString(),
+        total_foreground_minutes: 240,
+      },
+    ];
+    try {
+      expect(screenText(render())).toContain("4.0 / 6.0 hrs");
+    } finally {
+      studyGoal = null;
+    }
+  });
+
+  it("doesn't read the study goal when Study is hidden", () => {
+    hiddenFeatures = new Set(["study"]);
+    goalReadOptions.length = 0;
+    try {
+      render();
+      expect(goalReadOptions.length).toBeGreaterThan(0);
+      expect(goalReadOptions.every((o) => o?.enabled === false)).toBe(true);
+    } finally {
+      hiddenFeatures = new Set();
+    }
+  });
 });
 
 describe("More hub anatomy (#1048)", () => {
@@ -320,7 +351,6 @@ describe("More hub anatomy (#1048)", () => {
       );
     expect(sections).toEqual([
       [
-        "Activity",
         "Study hours",
         "Service hours",
         "Dues",
@@ -480,7 +510,6 @@ describe("More hub anatomy (#1048)", () => {
     const labels = buttons.map((node) => node.props.accessibilityLabel);
     expect(labels).toEqual([
       "Paul Carlson",
-      "Activity",
       "Study hours",
       "Service hours",
       "Dues",
@@ -599,62 +628,6 @@ describe("More hub anatomy (#1048)", () => {
   it("draws no Invite members row for a role that can't invite", () => {
     permissions = ["members:view", "events:update"];
     expect(screenText(render())).not.toContain("Invite members");
-  });
-
-  describe("the Activity row (#3897)", () => {
-    afterEach(() => {
-      activity = undefined;
-    });
-
-    const activityRow = (tree: ReactTestRenderer) =>
-      tree.root
-        .findAllByType(ListRow)
-        .find((row) => row.props.label === "Activity")!;
-
-    it("opens the Activity screen", () => {
-      const tree = render();
-      const push = vi.mocked(useRouter().push);
-      push.mockClear();
-      act(() => {
-        activityRow(tree).props.onPress();
-      });
-      expect(push).toHaveBeenCalledWith("/activity");
-    });
-
-    it("carries the count of what is waiting on the member", () => {
-      activity = { needs_you_count: 3, unavailable: [] };
-      const row = activityRow(render());
-      expect(row.props.accessibilityValue).toBe("3 waiting on you");
-      expect(screenText(render())).toMatch(/(^|\n)3(\n|$)/);
-    });
-
-    it("says at least when a section it counts couldn't be read", () => {
-      activity = { needs_you_count: 2, unavailable: ["tasks"] };
-      const tree = render();
-      expect(activityRow(tree).props.accessibilityValue).toBe(
-        "at least 2 waiting on you",
-      );
-      expect(screenText(tree)).toMatch(/(^|\n)2\+(\n|$)/);
-    });
-
-    it("reads the count again on every return to the tab", () => {
-      activityReread.mockClear();
-      render();
-      // The hook that re-reads on focus (`use-activity-reread.spec.tsx`).
-      expect(activityReread).toHaveBeenCalled();
-    });
-
-    it("draws no count while nothing waits, or before the read answers", () => {
-      for (const value of [
-        undefined,
-        { needs_you_count: 0, unavailable: [] },
-      ]) {
-        activity = value;
-        const row = activityRow(render());
-        expect(row.props.trailing).toBeUndefined();
-        expect(row.props.accessibilityValue).toBeUndefined();
-      }
-    });
   });
 
   it("tells the chapter picker that More opened it, so it draws ‹ More", () => {

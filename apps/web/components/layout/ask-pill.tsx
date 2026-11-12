@@ -17,6 +17,7 @@ import {
 import { ASK_COPY, can } from "@repo/validation";
 import { AskPanel } from "@/components/ask/ask-panel";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -87,6 +88,7 @@ export function AskPill({ className }: { className?: string }) {
   const permissions = useMyPermissions().data?.permissions;
   const [panelOpen, setPanelOpen] = useState(false);
   const pill = useRef<HTMLButtonElement>(null);
+  const previewing = useIsRolePreviewActive();
 
   // No AI on this server, or it could not be asked: the shell it has been.
   if (available === false || consent.isError) {
@@ -106,6 +108,10 @@ export function AskPill({ className }: { className?: string }) {
     );
   }
   if (!settings.data?.ask || !can("ai:use", permissions ?? [])) return null;
+  // Viewing as a role (#4072): asking is a POST, which the preview refuses,
+  // so the pill (and Do, inside its panel) stays off rather than failing on
+  // the first question (#4504).
+  if (previewing) return null;
   return (
     <>
       <PillButton

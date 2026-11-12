@@ -39,7 +39,7 @@ import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
  * The forms the phone's + offers, in the menu's order. Points waits for a
  * phone form (#3865).
  */
-export const PHONE_PLUS_COMMANDS = [
+const PHONE_PLUS_COMMANDS = [
   "poll",
   "signup",
   "event",

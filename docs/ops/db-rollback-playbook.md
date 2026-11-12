@@ -4292,6 +4292,21 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
+## Rollback the study-session finish (20261113040001)
+
+* **Migration**: `20261113040001_finish_study_session_rpc.sql`
+
+Adds `finish_study_session(...)` and the unique index `idx_study_sessions_one_active`. Nothing is backfilled and no row changes, so there is no data to restore.
+
+**Roll the API back first.** The API from this change finishes every awarded session through the function, so dropping it under that API turns every Stop into a 500. Once the API is back before this change:
+
+```sql
+drop index if exists public.idx_study_sessions_one_active;
+drop function if exists public.finish_study_session(uuid, uuid, timestamptz, timestamptz, text, timestamptz, timestamptz, integer, integer, text);
+```
+
+Revert forward and keep the migration file ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping the index alone is safe under either API if it ever blocks something unexpected; the double-Start lockout it prevents comes back with it.
+
 ## Rollback reaction removal policy (20261112280000)
 
 - **Migration**: `20261112280000_chat_message_actions_client_writes.sql`

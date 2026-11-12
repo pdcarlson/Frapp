@@ -6,18 +6,28 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { AttendanceService } from './attendance.service';
+import {
+  AttendanceService,
+  CHECK_IN_NEEDS_CODE,
+  CHECK_IN_NEEDS_LOCATION,
+  CHECK_IN_TOO_FAR,
+} from './attendance.service';
+import { SERVER_MESSAGE_COPY } from '@repo/validation';
 import {
   CHECK_IN_TOKEN_WINDOW_MS,
   mintCheckInToken,
 } from '#domain/utils/check-in-token';
 import { RbacService } from './rbac.service';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
+import type { EventCheckInScreen } from '#domain/entities/event-check-in-screen.entity';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
 import type { Event } from '#domain/entities/event.entity';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
@@ -28,6 +38,11 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockExcuseRepo: {
+    findUserIdsByEventAndStatus: jest.Mock;
+    withdrawAtomic: jest.Mock;
+  };
+  let mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository>;
   let mockRbac: {
     isAlumni: jest.Mock;
     getAlumniRoleId: jest.Mock;
@@ -74,6 +89,7 @@ describe('AttendanceService', () => {
     mockAttendanceRepo = {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
+      findByUserForEvents: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
       checkInAtomic: jest.fn(),
@@ -106,6 +122,19 @@ describe('AttendanceService', () => {
       claimPresidencyAtomic: jest.fn(),
     };
 
+    // Default: nobody holds an excuse.
+    mockExcuseRepo = {
+      findUserIdsByEventAndStatus: jest.fn().mockResolvedValue([]),
+      withdrawAtomic: jest.fn().mockResolvedValue(null),
+    };
+
+    // No screen has shown the code unless a test says so.
+    mockScreenRepo = {
+      findLive: jest.fn().mockResolvedValue([]),
+      recordShown: jest.fn(),
+      deleteExpired: jest.fn(),
+    };
+
     // Default to an active (non-alumni) member so existing cases are unaffected.
     mockRbac = {
       isAlumni: jest.fn().mockResolvedValue(false),
@@ -119,6 +148,11 @@ describe('AttendanceService', () => {
         { provide: ATTENDANCE_REPOSITORY, useValue: mockAttendanceRepo },
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: EVENT_EXCUSE_REPOSITORY, useValue: mockExcuseRepo },
+        {
+          provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
+          useValue: mockScreenRepo,
+        },
         { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
@@ -434,6 +468,29 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
       mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
 
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it('drops a pending excuse once the member checks in (#3735)', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T18:30:00.000Z'));
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await service.checkIn('evt-1', 'user-1', 'ch-1');
+
+      expect(mockExcuseRepo.withdrawAtomic).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        'user-1',
+      );
+
+      // And a failure there doesn't undo the check-in.
+      mockExcuseRepo.withdrawAtomic.mockRejectedValueOnce(new Error('down'));
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
         baseAttendance,
       );
@@ -914,6 +971,24 @@ describe('AttendanceService', () => {
       expect(payload.map((r) => r.user_id)).not.toContain('user-2');
     });
 
+    it('skips members with a pending or approved excuse (#3735)', async () => {
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockExcuseRepo.findUserIdsByEventAndStatus.mockResolvedValue(['user-2']);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(2);
+      expect(mockExcuseRepo.findUserIdsByEventAndStatus).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        ['PENDING', 'APPROVED'],
+      );
+      const payload = mockAttendanceRepo.createMany.mock.calls[0][0];
+      expect(payload.map((r) => r.user_id)).toEqual(['user-1', 'user-3']);
+    });
+
     it('should reject if called before grace period ends', async () => {
       const futureEvent: Event = {
         ...baseEvent,
@@ -1060,11 +1135,10 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
-    // The documented design: `patterns.md` says the code raises effort while the
-    // geofence enforces presence, and `events.md` keeps the chat event card as a
-    // token-less check-in surface. This test pins that deliberate behavior so a
-    // future change to it is a visible decision, not a silent regression.
-    it('still allows a check-in that supplies no token at all', async () => {
+    // `events.md` keeps the chat event card as a token-less check-in surface
+    // until an officer's screen shows the code (#4532, covered below). This
+    // pins the first half, so a change to it is a visible decision.
+    it('still allows a check-in with no token while no screen has shown the code', async () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
         baseAttendance,
       );
@@ -1207,6 +1281,422 @@ describe('AttendanceService', () => {
       await expect(
         service.checkIn('evt-1', 'user-1', 'ch-1', { lat: 0, lng: 0 }),
       ).resolves.toEqual(baseAttendance);
+    });
+  });
+
+  describe('requiresMember', () => {
+    it('is true for a member a mandatory event requires by default', async () => {
+      await expect(
+        service.requiresMember('ch-1', { ...baseEvent, is_mandatory: true }, [
+          'role-member',
+        ]),
+      ).resolves.toBe(true);
+    });
+
+    it('is false on an optional event', async () => {
+      await expect(
+        service.requiresMember('ch-1', baseEvent, ['role-member']),
+      ).resolves.toBe(false);
+    });
+
+    it('leaves out an alumnus required only by the default, as the sweep does', async () => {
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      await expect(
+        service.requiresMember('ch-1', { ...baseEvent, is_mandatory: true }, [
+          'role-alumni',
+        ]),
+      ).resolves.toBe(false);
+    });
+
+    it('holds an alumnus whose role the event names as required', async () => {
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      await expect(
+        service.requiresMember(
+          'ch-1',
+          { ...baseEvent, required_role_ids: ['role-alumni'] },
+          ['role-alumni'],
+        ),
+      ).resolves.toBe(true);
+    });
+  });
+
+  // ── Near the QR screen (#4532) ──────────────────────────────────────
+  //
+  // The officer's phone showing the code is the zone: a member must be within
+  // 100 yards of it (plus each phone's accuracy, capped at 50 m), and once it
+  // has shown the code, the code is required.
+  describe('Check-in near the QR screen', () => {
+    const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+    const SECRET = 'spec-check-in-secret';
+    let previousSecret: string | undefined;
+
+    // The front steps of a plausible chapter house.
+    const house = { lat: 42.7298, lng: -73.678 };
+    const locatedScreen: EventCheckInScreen = {
+      event_id: 'evt-1',
+      reported_by: 'officer-1',
+      chapter_id: 'ch-1',
+      lat: house.lat,
+      lng: house.lng,
+      accuracy_m: 10,
+      located_at: duringEvent.toISOString(),
+      shown_at: duringEvent.toISOString(),
+      expires_at: '2026-02-26T19:15:00.000Z',
+    };
+    const unlocatedScreen: EventCheckInScreen = {
+      ...locatedScreen,
+      lat: null,
+      lng: null,
+      accuracy_m: null,
+      located_at: null,
+    };
+    // One degree of latitude is about 111,195 m.
+    const north = (meters: number) => ({
+      lat: house.lat + meters / 111_195,
+      lng: house.lng,
+    });
+    const freshToken = () =>
+      mintCheckInToken('evt-1', SECRET, duringEvent.getTime()).token;
+
+    beforeEach(() => {
+      previousSecret = process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+      process.env.EVENT_CHECK_IN_TOKEN_SECRET = SECRET;
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockRbac.isAlumni.mockResolvedValue(false);
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      if (previousSecret === undefined) {
+        delete process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+      } else {
+        process.env.EVENT_CHECK_IN_TOKEN_SECRET = previousSecret;
+      }
+    });
+
+    it('words each refusal through the shared error map', () => {
+      // The clients show these through `SERVER_MESSAGE_COPY`, keyed by the
+      // exact sentence: a rewording here without the map would fall back to
+      // a generic refusal.
+      for (const sentence of [
+        CHECK_IN_NEEDS_CODE,
+        CHECK_IN_NEEDS_LOCATION,
+        CHECK_IN_TOO_FAR,
+      ]) {
+        expect(SERVER_MESSAGE_COPY[sentence]).toEqual(expect.any(String));
+      }
+    });
+
+    it('reads only live screen rows', async () => {
+      await service.checkIn('evt-1', 'user-1', 'ch-1');
+      expect(mockScreenRepo.findLive).toHaveBeenCalledWith(
+        'evt-1',
+        'ch-1',
+        duringEvent.toISOString(),
+      );
+    });
+
+    it('checks in a member standing in the room', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(30),
+          accuracyMeters: 20,
+        }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    it('refuses a member 300 yards away holding a fresh code, before any write', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(274),
+          accuracyMeters: 20,
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('widens the radius by each phone accuracy, and caps it', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([
+        { ...locatedScreen, accuracy_m: 40 },
+      ]);
+
+      // 91 m + 40 m + 30 m = 161 m allowed: 150 m passes.
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(150),
+          accuracyMeters: 30,
+        }),
+      ).resolves.toEqual(baseAttendance);
+
+      // A 2 km circle adds only 50 m: 91 + 40 + 50 = 181 m, so 200 m fails.
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(200),
+          accuracyMeters: 2000,
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+    });
+
+    it('asks for the member location when the screen has one', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token: freshToken() }),
+      ).rejects.toThrow(CHECK_IN_NEEDS_LOCATION);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('requires the code once a screen has shown it', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+
+      // The chat event card's bare body, even from inside the room.
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', north(10)),
+      ).rejects.toThrow(CHECK_IN_NEEDS_CODE);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('requires the code for an event with a drawn zone too', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        check_in_zone: [
+          { lat: 42.729, lng: -73.679 },
+          { lat: 42.729, lng: -73.677 },
+          { lat: 42.731, lng: -73.677 },
+          { lat: 42.731, lng: -73.679 },
+        ],
+      });
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', house),
+      ).rejects.toThrow(CHECK_IN_NEEDS_CODE);
+    });
+
+    it('tells a member already checked in so, before asking for the code', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(baseAttendance);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('passes a member near any located screen, and ignores one that has none', async () => {
+      // A second door 400 m north, and a laptop that can't tell where it is.
+      mockScreenRepo.findLive.mockResolvedValue([
+        locatedScreen,
+        {
+          ...locatedScreen,
+          reported_by: 'officer-2',
+          ...north(400),
+        },
+        { ...unlocatedScreen, reported_by: 'officer-3' },
+      ]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(420),
+          accuracyMeters: 10,
+        }),
+      ).resolves.toEqual(baseAttendance);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...north(250),
+          accuracyMeters: 10,
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+    });
+
+    it('checks the typed code against the screen too', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      const { manualCode } = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime(),
+      );
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          manualCode,
+          ...north(500),
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+    });
+
+    it('requires the code but checks no distance when no screen could tell where it is', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        CHECK_IN_NEEDS_CODE,
+      );
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token: freshToken() }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    it('lets a drawn zone win over the screen', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        // A box around a building 1 km north of the screen.
+        check_in_zone: [
+          { lat: 42.738, lng: -73.6785 },
+          { lat: 42.738, lng: -73.6775 },
+          { lat: 42.7387, lng: -73.6775 },
+          { lat: 42.7387, lng: -73.6785 },
+        ],
+      });
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          lat: 42.7383,
+          lng: -73.678,
+        }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    describe('reportCheckInScreen', () => {
+      beforeEach(() => {
+        mockScreenRepo.recordShown.mockImplementation(async (input) => ({
+          ...unlocatedScreen,
+          reported_by: input.reportedBy,
+          ...(input.location
+            ? {
+                lat: input.location.lat,
+                lng: input.location.lng,
+                accuracy_m: input.location.accuracy_m,
+                located_at: input.nowIso,
+              }
+            : {}),
+          expires_at: input.expiresAt,
+        }));
+      });
+
+      it('stores a precise fix until check-in closes', async () => {
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
+            ...house,
+            accuracyMeters: 12,
+          }),
+        ).resolves.toEqual({ check: 'screen' });
+        expect(mockScreenRepo.recordShown).toHaveBeenCalledWith({
+          eventId: 'evt-1',
+          reportedBy: 'officer-1',
+          chapterId: 'ch-1',
+          nowIso: duringEvent.toISOString(),
+          // 19:00 end plus the 15-minute grace.
+          expiresAt: '2026-02-26T19:15:00.000Z',
+          location: { ...house, accuracy_m: 12 },
+        });
+      });
+
+      it('stores no location from a fix worse than 100 m, or with no accuracy', async () => {
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
+            ...house,
+            accuracyMeters: 450,
+          }),
+        ).resolves.toEqual({ check: 'no_location' });
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', house),
+        ).resolves.toEqual({ check: 'no_location' });
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {}),
+        ).resolves.toEqual({ check: 'no_location' });
+        for (const [input] of mockScreenRepo.recordShown.mock.calls) {
+          expect(input.location).toBeNull();
+        }
+      });
+
+      it("tells a screen with no fix when another officer's screen is checking distance", async () => {
+        mockScreenRepo.findLive.mockResolvedValue([
+          { ...unlocatedScreen, reported_by: 'officer-2' },
+          { ...locatedScreen, reported_by: 'officer-3' },
+        ]);
+
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-2', {}),
+        ).resolves.toEqual({ check: 'other_screen' });
+        // This officer's own row is replaced with no location, so their old
+        // spot never lingers.
+        expect(mockScreenRepo.recordShown.mock.calls[0][0]).toMatchObject({
+          reportedBy: 'officer-2',
+          location: null,
+        });
+      });
+
+      it('stores no location for an event with a drawn zone', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          ...baseEvent,
+          check_in_zone: [
+            { lat: 1, lng: 1 },
+            { lat: 1, lng: 2 },
+            { lat: 2, lng: 2 },
+          ],
+        });
+
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
+            ...house,
+            accuracyMeters: 5,
+          }),
+        ).resolves.toEqual({ check: 'zone' });
+        expect(mockScreenRepo.recordShown.mock.calls[0][0].location).toBeNull();
+      });
+
+      it('stores nothing before check-in opens or after it closes', async () => {
+        jest.setSystemTime(new Date('2026-02-26T17:30:00.000Z'));
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
+            ...house,
+            accuracyMeters: 5,
+          }),
+        ).resolves.toEqual({ check: 'not_open' });
+
+        jest.setSystemTime(new Date('2026-02-26T19:20:00.000Z'));
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {
+            ...house,
+            accuracyMeters: 5,
+          }),
+        ).resolves.toEqual({ check: 'closed' });
+
+        expect(mockScreenRepo.recordShown).not.toHaveBeenCalled();
+      });
+
+      it('sweeps closed rows through the repository', async () => {
+        mockScreenRepo.deleteExpired.mockResolvedValue(3);
+
+        await expect(service.deleteExpiredCheckInScreens()).resolves.toBe(3);
+        expect(mockScreenRepo.deleteExpired).toHaveBeenCalledWith(
+          duringEvent.toISOString(),
+        );
+      });
+
+      it('404s an event outside the caller chapter', async () => {
+        mockEventRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.reportCheckInScreen('evt-1', 'ch-1', 'officer-1', {}),
+        ).rejects.toThrow(NotFoundException);
+      });
     });
   });
 });

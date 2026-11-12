@@ -20,7 +20,7 @@ export const AUTH_CALLBACK_PATH = "/auth/callback";
  * Anything else is rejected before the client call so a crafted `type` cannot
  * be forwarded.
  */
-export const EMAIL_OTP_TYPES = [
+const EMAIL_OTP_TYPES = [
   "signup",
   "invite",
   "magiclink",
