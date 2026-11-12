@@ -8,6 +8,7 @@ import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleto
 import { PermissionSwitchList } from "@/components/roles/permission-switch-list";
 import { useTierPermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { useRolesData } from "@/components/roles/use-roles-data";
+import { CANT_GIVE, lockedReasonFor } from "@repo/hooks/use-roles-data";
 import { byDisplayOrder, mayGrant, reachesTier } from "@repo/hooks/role-tiers";
 
 /**
@@ -82,13 +83,11 @@ export function TierPermissionsPage({
 
   const held = permissionsOf(tier);
   const editable = canManage && reachesTier(reach, tier);
-  const lockedReason = !canManage
-    ? "Your role can't change permissions."
-    : !reach.known
-      ? "Checking what your role can change."
-      : !editable
-        ? `This ${words.singular} ranks at or above yours, so your role can't change it.`
-        : null;
+  const lockedReason = lockedReasonFor(
+    { canManage, reach },
+    editable,
+    words.singular,
+  );
 
   return (
     <div className="space-y-8">
@@ -134,7 +133,7 @@ export function TierPermissionsPage({
         lockedReason={lockedReason}
         rowLockedReason={(permission, on) =>
           !on && !mayGrant(reach, permission)
-            ? "You can't give this, because your role doesn't have it."
+            ? CANT_GIVE
             : null
         }
         pendingPermission={pending?.id === tier.id ? pending.permission : null}

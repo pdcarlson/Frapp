@@ -74,6 +74,18 @@ describe('SupabaseStudySessionRepository — tenant scope', () => {
     expect(sessions.map((s) => s.id)).toEqual([SESSION_B]);
   });
 
+  it('findByUserAndChapter keeps only sessions started at or after startedSince', async () => {
+    const started = (since: string) =>
+      repo.findByUserAndChapter(USER_SHARED, CHAPTER_B, {
+        startedSince: new Date(since),
+      });
+
+    expect(
+      (await started('2026-05-01T10:00:00.000Z')).map((s) => s.id),
+    ).toEqual([SESSION_B]);
+    expect(await started('2026-05-01T10:00:00.001Z')).toEqual([]);
+  });
+
   it('findActiveByUserAndChapter does not return the same user session in another chapter', async () => {
     // The same member studying in two chapters is exactly the state that makes
     // an unscoped "active session" lookup return the wrong row, and every

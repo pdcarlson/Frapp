@@ -12,9 +12,11 @@ import * as Location from "expo-location";
  * `requestForegroundPermissionsAsync`; the "Always" variant appears nowhere in
  * the app, and centralising the call is what keeps it that way.
  *
- * Accuracy is `Balanced` for the same reason at both call sites: the server
- * checks a building-scale polygon, so `High` buys precision nobody reads and
- * costs battery a five-minute heartbeat cannot afford.
+ * Accuracy defaults to `Balanced`: study sessions and drawn event zones are
+ * building-scale polygons, so `High` buys precision nobody reads and costs
+ * battery a five-minute heartbeat cannot afford. Event check-in asks for
+ * `High` (see {@link FixPrecision}), because it may be checked against the
+ * officer's phone at a 91 m radius.
  */
 
 export type LocationFix = {
@@ -22,9 +24,10 @@ export type LocationFix = {
   lng: number;
   /**
    * Device-reported GPS accuracy in meters. Present only when the provider
-   * gave a usable reading. Heartbeat is the only study DTO that declares this
-   * field; start, resume, and event check-in must send `latLngOf(fix)` because
-   * the API ValidationPipe forbids undeclared keys.
+   * gave a usable reading. The study heartbeat and event check-in (s18, for
+   * the QR screen's accuracy allowance) declare this field; study start and
+   * resume, and the chat card's check-in, send `latLngOf(fix)` because the
+   * API ValidationPipe forbids undeclared keys on theirs.
    */
   accuracy_meters?: number;
 };
@@ -90,11 +93,43 @@ export async function requestForegroundPermission(): Promise<ForegroundPermissio
   return { granted: permission.granted, canAskAgain: permission.canAskAgain };
 }
 
-/** One position fix. Assumes permission is already granted. */
-export async function readForegroundFix(): Promise<LocationFix> {
-  const position = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Balanced,
+/**
+ * How hard to try for a fix. `balanced` is the default: the drawn-zone and
+ * study checks are building-scale. `high` is for a check against another
+ * phone's position (check-in near the QR screen, #4532): on iOS `Balanced`
+ * means "within 100 m", which is the whole radius, so the screen and the
+ * member each ask for one GPS fix instead.
+ */
+export type FixPrecision = "balanced" | "high";
+
+/**
+ * One position fix. Assumes permission is already granted. With `timeoutMs`,
+ * rejects when no fix comes in that long: a GPS fix indoors can take tens of
+ * seconds, and a scanned check-in code expires while it waits.
+ */
+export async function readForegroundFix(
+  precision: FixPrecision = "balanced",
+  timeoutMs?: number,
+): Promise<LocationFix> {
+  const reading = Location.getCurrentPositionAsync({
+    accuracy:
+      precision === "high"
+        ? Location.Accuracy.High
+        : Location.Accuracy.Balanced,
   });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const position =
+    timeoutMs === undefined
+      ? await reading
+      : await Promise.race([
+          reading,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("No location fix in time")),
+              timeoutMs,
+            );
+          }),
+        ]).finally(() => clearTimeout(timer));
   const accuracy_meters = accuracyMetersOf(position.coords.accuracy);
   return accuracy_meters === undefined
     ? { lat: position.coords.latitude, lng: position.coords.longitude }
@@ -118,14 +153,41 @@ const LOCATION_UNAVAILABLE =
 
 export async function requireForegroundFix(
   deniedMessage: string,
+  precision: FixPrecision = "balanced",
+  timeoutMs?: number,
 ): Promise<LocationFix> {
   const permission = await requestForegroundPermission();
   if (!permission.granted) throw new MemberFacingError(deniedMessage);
   try {
-    return await readForegroundFix();
+    return await readForegroundFix(precision, timeoutMs);
   } catch {
     // Location services off, or no fix in time: the platform's own error
     // names neither, and the member's fix is the same for both.
     throw new MemberFacingError(LOCATION_UNAVAILABLE);
+  }
+}
+
+/**
+ * A fix if the phone will give one, without insisting: prompts for While-Using
+ * permission the first time, and resolves to `null` when it is refused or no
+ * fix comes. For checks the server decides on its own (the QR screen's
+ * distance check, #4532): the member's scan still goes, and the server says
+ * whether a location was needed.
+ */
+export async function tryForegroundFix(
+  precision: FixPrecision = "balanced",
+  timeoutMs?: number,
+): Promise<{ fix: LocationFix | null; permission: ForegroundPermission }> {
+  let permission: ForegroundPermission;
+  try {
+    permission = await requestForegroundPermission();
+  } catch {
+    return { fix: null, permission: { granted: false, canAskAgain: false } };
+  }
+  if (!permission.granted) return { fix: null, permission };
+  try {
+    return { fix: await readForegroundFix(precision, timeoutMs), permission };
+  } catch {
+    return { fix: null, permission };
   }
 }

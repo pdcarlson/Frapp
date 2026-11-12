@@ -79,3 +79,20 @@ describe("StartMinutesPanel, a meeting not on the calendar", () => {
     expect(mocks.start).not.toHaveBeenCalled();
   });
 });
+
+describe("StartMinutesPanel docked (#4593)", () => {
+  it("opens in place of the Meetings page beside chat, and goes back with the arrow", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="" />
+        <StartMinutesPanel open onOpenChange={onOpenChange} />
+      </div>,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "New minutes" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    fireEvent.click(screen.getByRole("button", { name: "Back to meetings" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});

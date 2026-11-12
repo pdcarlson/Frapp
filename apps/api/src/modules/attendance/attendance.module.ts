@@ -14,6 +14,9 @@ import { EventExcuseService } from '../../application/services/event-excuse.serv
 import { EventExcuseController } from '../../interface/controllers/event-excuse.controller';
 import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
 import { SupabaseEventExcuseRepository } from '../../infrastructure/supabase/repositories/supabase-event-excuse.repository';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import { SupabaseEventCheckInScreenRepository } from '../../infrastructure/supabase/repositories/supabase-event-check-in-screen.repository';
+import { CheckInScreenSweepService } from '../../application/workers/check-in-screen-sweep.service';
 
 // Imports `RbacModule` so `AttendanceService` can resolve the Alumni lifecycle
 // role and deny event check-in (`spec/behavior/alumni.md`). Excuses (#3735)
@@ -32,6 +35,11 @@ import { SupabaseEventExcuseRepository } from '../../infrastructure/supabase/rep
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
     { provide: EVENT_REPOSITORY, useClass: SupabaseEventRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    {
+      provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
+      useClass: SupabaseEventCheckInScreenRepository,
+    },
+    CheckInScreenSweepService,
   ],
   exports: [AttendanceService, EventExcuseService],
 })

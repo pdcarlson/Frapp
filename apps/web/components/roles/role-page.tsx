@@ -29,6 +29,7 @@ import { PermissionSwitchList } from "@/components/roles/permission-switch-list"
 import { RoleOverrideList } from "@/components/roles/role-override-list";
 import { useRolePermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { useRolesData } from "@/components/roles/use-roles-data";
+import { CANT_GIVE, lockedReasonFor } from "@repo/hooks/use-roles-data";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -256,13 +257,7 @@ function RoleBody({
   const count = memberCounts?.get(role.id) ?? (memberCounts ? 0 : null);
   const lockedReason = wildcard
     ? "This role can do everything. That only moves through Transfer presidency."
-    : !canManage
-      ? "Your role can't change permissions."
-      : !reach.known
-        ? "Checking what your role can change."
-        : !editable
-          ? "This role ranks at or above yours, so your role can't change it."
-          : null;
+    : lockedReasonFor({ canManage, reach }, editable, "role");
 
   return (
     <div className="space-y-10">
@@ -403,7 +398,7 @@ function RoleBody({
             <div className="grid gap-1">
               <Label htmlFor="role-mentionable">
                 {everyone
-                  ? "Anyone can use @everyone"
+                  ? "Anyone can use @everyone and @here"
                   : "Anyone can @mention this role"}
               </Label>
               <p
@@ -411,7 +406,7 @@ function RoleBody({
                 className="text-sm text-muted-foreground"
               >
                 {everyone
-                  ? "@everyone pings the whole chapter. When off, only officers who manage channels or roles can use it."
+                  ? "@everyone pings everyone in a channel, @here only those online. When off, only officers who manage channels or roles can use them."
                   : "When off, only officers who manage channels or roles can ping everyone in it."}
               </p>
             </div>
@@ -477,7 +472,7 @@ function RoleBody({
             lockedReason={lockedReason}
             rowLockedReason={(permission, on) =>
               !on && !mayGrant(reach, permission)
-                ? "You can't give this, because your role doesn't have it."
+                ? CANT_GIVE
                 : null
             }
             pendingPermission={

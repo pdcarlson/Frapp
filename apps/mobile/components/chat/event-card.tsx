@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import type { EventPayload } from "@repo/chat-core/cards";
 import {
   countCheckedIn,
@@ -19,6 +20,7 @@ import {
   CHECK_IN_LOCATION_DENIED_COPY,
   checkInFailure,
   checkInSuccess,
+  needsScannedCode,
   type CheckInOutcome,
 } from "@/lib/events/check-in-outcome";
 import { formatEventWindow, resolveCheckInWindow } from "@/lib/events/format";
@@ -100,7 +102,8 @@ export function EventCard({
   // Until the read answers, the card can't tell whether to send a position,
   // and sending none to a zoned event is a guaranteed refusal. A failed read
   // stops waiting: the server's answer then explains itself.
-  const zoneUnknown = open && eventQuery.data === undefined && !eventQuery.isError;
+  const zoneUnknown =
+    open && eventQuery.data === undefined && !eventQuery.isError;
 
   // The member view the module gate reads, as the poll card's does. Hidden
   // only once the read says Events is off; the server refuses either way.
@@ -122,6 +125,10 @@ export function EventCard({
   const { writeBlockedReason } = useConnection();
   const checkIn = useCheckIn();
   const [outcome, setOutcome] = useState<CheckInOutcome | null>(null);
+  // Once an officer's screen has shown the code, the server wants it (#4532):
+  // the card's Check in turns into Scan code, which opens s18 on this event.
+  const [scanInstead, setScanInstead] = useState(false);
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   // Two taps in one frame both see `submitting` false; the ref doesn't.
   const inFlight = useRef(false);
@@ -139,7 +146,9 @@ export function EventCard({
         ? (selectEventDetail((await eventQuery.refetch()).data)
             ?.hasCheckInZone ?? false)
         : needsLocation;
-      // The check-in DTO takes lat/lng only; spreading accuracy would 400.
+      // Coordinates only: the drawn zone is a polygon and reads no accuracy,
+      // and an API from before #4532 refuses an `accuracy_meters` it doesn't
+      // declare.
       const position = zoned
         ? latLngOf(await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY))
         : {};
@@ -147,6 +156,7 @@ export function EventCard({
       setOutcome(checkInSuccess(payload.point_value));
     } catch (error) {
       setOutcome(checkInFailure(error));
+      setScanInstead(needsScannedCode(error));
     } finally {
       inFlight.current = false;
       setSubmitting(false);
@@ -194,7 +204,9 @@ export function EventCard({
           />
           <CardTitle>{payload.name}</CardTitle>
           <CardMeta
-            items={[formatEventWindow(payload.start_time, payload.end_time, now)]}
+            items={[
+              formatEventWindow(payload.start_time, payload.end_time, now),
+            ]}
           />
           <CardMeta
             items={[
@@ -237,6 +249,18 @@ export function EventCard({
                 onPress={() => undefined}
                 disabled
                 icon={(color) => <CheckGlyph color={color} />}
+              />
+            ) : scanInstead ? (
+              <CardButton
+                label="Scan code"
+                variant="primary"
+                onPress={() =>
+                  router.push({
+                    pathname: "/check-in",
+                    params: { eventId: payload.event_id },
+                  })
+                }
+                disabled={blockedReason !== null}
               />
             ) : (
               <CardButton
