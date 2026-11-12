@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import {
@@ -23,11 +30,12 @@ import {
   type ThreadMeta,
 } from "@repo/chat-core/threads";
 import {
+  chatMessagesKey,
   normalizeRow,
   type ChannelCache,
   type ChatMessage,
 } from "@repo/chat-core/types";
-import { emptyCache } from "@repo/chat-core/cache";
+import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
 
 /**
  * One open message thread (#3785): its parent, its replies, the viewer's
@@ -165,10 +173,15 @@ export function useMessageThread(
       .catch(() => undefined);
   }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);
 
-  const root = useMemo<ChatMessage | null>(
-    () => (meta.data ? normalizeRow(meta.data.root) : null),
-    [meta.data],
-  );
+  // The parent with its reactions folded in, as web's (#4297, slice 5): the
+  // thread draws them now that its rows are full.
+  const root = useMemo<ChatMessage | null>(() => {
+    if (!meta.data) return null;
+    const { root: raw, root_actions: actions } = meta.data;
+    if (!actions?.length) return normalizeRow(raw);
+    const folded = cacheFromPage([raw], actions);
+    return folded.byId[raw.id] ?? normalizeRow(raw);
+  }, [meta.data]);
 
   const loadOlder = useCallback(async () => {
     const oldest = messages.find((message) => message._status === "confirmed");
@@ -228,6 +241,17 @@ export function useMessageThread(
     [viewerId, queryClient, api, channelId, rootId, meta.data, patchFollow],
   );
 
+  const retry = useCallback(
+    (clientMessageId: string) => {
+      const row = messages.find(
+        (message) => message.client_message_id === clientMessageId,
+      );
+      if (!row) return Promise.resolve({ error: null as string | null });
+      return send(row.content, clientMessageId);
+    },
+    [messages, send],
+  );
+
   const discard = useCallback(
     (clientMessageId: string) =>
       discardThreadReply(queryClient, channelId, rootId, clientMessageId),
@@ -251,6 +275,10 @@ export function useMessageThread(
       void meta.refetch();
       void replies.refetch();
     },
+    /** Reads the parent again, after a write the channel's cache didn't hold. */
+    refreshRoot: () => {
+      void meta.refetch();
+    },
     messages,
     hasOlder,
     isLoadingOlder,
@@ -258,7 +286,38 @@ export function useMessageThread(
     typingUsers,
     setFollow,
     send,
+    retry,
     discard,
     emitTyping,
   };
+}
+
+/**
+ * The channel cache's copy of a message, or `null` while it doesn't hold it
+ * (#4297, slice 5): a thread's parent as the channel under the thread keeps
+ * it, live through the channel's realtime, which the thread draws in
+ * preference to its own read, as web's panel does (`heldRoot`). Reads the
+ * cache only; it never fetches.
+ */
+export function useHeldChannelMessage(
+  channelId: string,
+  messageId: string,
+): ChatMessage | null {
+  const queryClient = useQueryClient();
+  const subscribe = useCallback(
+    (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
+    [queryClient],
+  );
+  const read = useCallback(() => {
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey(channelId),
+    );
+    if (!cache) return null;
+    for (const key of cache.order) {
+      const row = cache.byId[key];
+      if (row?.id === messageId) return row;
+    }
+    return null;
+  }, [queryClient, channelId, messageId]);
+  return useSyncExternalStore(subscribe, read, read);
 }
