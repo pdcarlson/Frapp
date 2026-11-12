@@ -5,7 +5,13 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
-import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import {
+  TASK_CONFIRM_FAILURE,
+  taskStatusGateRefusal,
+} from "@/lib/tasks/status-refusal";
+
+/** Where a row's one-press write stands (#4437): none yet, sending, or landed. */
+export type ActivityRowActionState = "idle" | "busy" | "done";
 
 /**
  * Whether Activity's rows carry their one-press asks (Confirm, Approve;
@@ -35,14 +41,27 @@ export function activityRowActionsAllowed(
   }).allowed;
 }
 
-/** A refused confirm, in the task card's words. */
-export const TASK_CONFIRM_FALLBACK = "Couldn't confirm the task.";
-
-/** Why a confirm failed, as the task card says it (`useCardWrite`). */
-export function taskConfirmFailure(error: unknown): string {
-  return (
-    taskStatusGateRefusal(error) ?? errorCopy(error, TASK_CONFIRM_FALLBACK)
-  );
+/**
+ * Why a row's Confirm or Approve failed (#4437), in the words its sheet
+ * uses: the task card's for a confirm (`useCardWrite` over
+ * `taskStatusGateRefusal`), the hours sheet's for an approval. `gate` marks
+ * a refusal from the plan or the module gate, which a retry can't win, so
+ * the screen withdraws the buttons as the card withdraws its controls.
+ */
+export function rowActionFailure(
+  action: "confirm" | "approve",
+  error: unknown,
+): { text: string; gate: boolean } {
+  const gate =
+    subscriptionRefusalOf(error) !== null || moduleRefusalOf(error) !== null;
+  return {
+    text:
+      action === "confirm"
+        ? (taskStatusGateRefusal(error) ??
+          errorCopy(error, TASK_CONFIRM_FAILURE))
+        : hoursReviewFailure(error, "APPROVED"),
+    gate,
+  };
 }
 
 /**

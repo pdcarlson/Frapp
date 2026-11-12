@@ -107,13 +107,16 @@ the way Slack and Linear mark their inboxes (#4173; Shawn picked "unread until o
 since your last visit", 2026-11-11). Web and the phone draw the dots (#4405, 2026-11-12; how each
 draws one is [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)
 and [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). Opening a row from Activity (its panel
-or sheet, or on web the link itself) records the open, and the dot clears at once. A client that
+or sheet, or on web the link itself) records the open, and the dot clears at once; so does acting
+on it from its row (Confirm or Approve, [#4426](https://github.com/pdcarlson/Frapp/issues/4426) on
+web, [#4437](https://github.com/pdcarlson/Frapp/issues/4437) on the phone). A client that
 gets `unread_since: null` begins the member's dots (below).
 
 - **Which rows.** Everything in Needs you, Coming up and Links. Nothing in Made by you: the member
   made it, so it never waited on them. For the same reason a task they assigned to themselves and
   an event they made (`created_by`, served on each event row) are never unread.
-- **Until opened.** A row stays unread until the member opens that item from Activity: the client
+- **Until opened.** A row stays unread until the member opens that item from Activity, or acts on
+  it from its row (Confirm, Approve): the client
   records it with `POST /v1/activity/reads`, naming the item's kind and id (`task`, `hours_entry`,
   `poll` by its message id, `event`, `link`), up to 100 at a time. Scrolling past a row doesn't
   clear it, and neither does opening the same item elsewhere in Frapp (voting on the poll in its

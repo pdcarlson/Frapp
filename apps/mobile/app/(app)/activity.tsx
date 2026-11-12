@@ -31,6 +31,7 @@ import {
 } from "@/components/activity/activity-row";
 import {
   ActivityRowItem,
+  useActivityRowActions,
   type ActivityRowActions,
 } from "@/components/activity/activity-row-action";
 import {
@@ -179,17 +180,15 @@ export default function ActivityScreen() {
   // Confirm and Approve on the row (#4437), while the chapter's plan allows
   // them; acting there reads the item, as opening it does, and re-reads so
   // the row leaves Needs you.
-  const rowActions: ActivityRowActions | null = activityRowActionsAllowed(
-    chapter,
-  )
-    ? {
-        chapterPending: chapterRead.isPending === true,
-        onActed: (row) => {
-          if (row.unread) markRead([row.readRef]);
-          reread();
-        },
-      }
-    : null;
+  const { actions: rowActions, stateOf: rowActionStateOf } =
+    useActivityRowActions({
+      allowed: activityRowActionsAllowed(chapter),
+      chapterPending: chapterRead.isPending === true,
+      onActed: (row) => {
+        if (row.unread) markRead([row.readRef]);
+        reread();
+      },
+    });
 
   function renderBody() {
     if (activity.isPending) {
@@ -272,6 +271,7 @@ export default function ActivityScreen() {
         <ActivitySheet
           row={sheetRow}
           viewerId={viewerId}
+          rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
           onActed={reread}
           onClosed={() => {
             setOpenedKey(null);

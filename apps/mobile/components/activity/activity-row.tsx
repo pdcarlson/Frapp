@@ -92,7 +92,9 @@ export function ActivityListRow({
       accessibilityLabel={row.unread ? `Unread: ${row.title}` : row.title}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
-      accessibilityHint={listRowHint(row.detail || null, undefined)}
+      // Offline, why its button is held, after the detail: the button is no
+      // focus stop of its own, so the row says it.
+      accessibilityHint={listRowHint(row.detail || null, action?.hint)}
       // The button's press as a named action, one swipe up on VoiceOver and
       // in TalkBack's actions menu, as the Tasks row offers its checkbox;
       // the row's own tap still opens the sheet. Left off while the button

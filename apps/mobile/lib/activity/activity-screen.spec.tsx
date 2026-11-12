@@ -165,6 +165,7 @@ const sheet = vi.hoisted(() => ({
   props: null as null | {
     row: { key: string } | null;
     viewerId: string | null;
+    rowActionState?: string;
     onClosed: () => void;
     onActed: () => void;
     linkActions: import("@/components/activity/activity-sheet").LinkSheetActions;
@@ -803,24 +804,124 @@ describe("Activity screen (#3897)", () => {
       expect(writes.review).toHaveBeenCalledTimes(1);
     });
 
-    it("says a refusal in the sheet's words, naming the item, and can be pressed again", async () => {
+    it("says any other refusal in the sheet's words, naming the item, and can be pressed again", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      writes.review.mockRejectedValueOnce({
-        statusCode: 403,
-        error: "Forbidden",
-        message:
-          "Chapter subscription is not active; complete checkout to use this feature.",
-      });
+      writes.review.mockRejectedValueOnce(new Error("boom"));
       const tree = render();
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
       expect(alert).toHaveBeenCalledWith(
         "Food bank",
-        SUBSCRIPTION_REFUSAL_COPY.serviceReview,
+        "Only a pending entry someone else submitted can be approved.",
       );
       expect(button(tree, "Food bank").props.disabled).toBe(false);
       alert.mockRestore();
+    });
+
+    it("withdraws the buttons after a refusal from the plan, until the member comes back", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.confirm.mockRejectedValueOnce({
+        statusCode: 403,
+        error: "Forbidden",
+        message:
+          "Chapter subscription is not active; complete checkout to use this feature.",
+      });
+      activity.value = { ...activity.value, data: confirmRead() };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Sweep the porch").props.onPress();
+      });
+      // The confirm says it in the task card's words, never the server's
+      // purchase path (lib/subscription-refusal.ts).
+      expect(alert).toHaveBeenCalledWith(
+        "Sweep the porch",
+        SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+      );
+      // Pressing again would only fetch the same refusal: every row is its
+      // plain ask again, and opens its sheet.
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(0);
+      expect(row(tree, "Food bank").findByType(ActivityAsk).props.label).toBe(
+        "Approve",
+      );
+      act(() => {
+        refocus();
+      });
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(2);
+      alert.mockRestore();
+    });
+
+    it("says Approved once the write lands", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(row(tree, "Food bank").props.action.label).toBe("Approved");
+    });
+
+    it("keeps a landed write across the row being drawn again, and tells the sheet", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      // Narrowing to one chip and back draws every row afresh.
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("hours");
+      });
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect(null);
+      });
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+      // The sheet opened from the same row records the approval rather than
+      // offering it again.
+      act(() => {
+        rowPress(tree, "Food bank").props.onPress();
+      });
+      expect(sheet.props?.rowActionState).toBe("done");
+    });
+
+    it("leaves Vote and Check in as the row's ask, which opens the sheet", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            polls: [
+              {
+                ...myPoll("p-ask", "Formal theme"),
+                sender_id: "officer",
+                has_voted: false,
+              },
+            ],
+          },
+          coming_up: [
+            {
+              id: "ev-1",
+              name: "Chapter",
+              start_time: new Date(Date.now() + 3_600_000).toISOString(),
+              end_time: null,
+              location: "Great Hall",
+              attendance: "required",
+              check_in_open: true,
+              checked_in: false,
+            },
+          ],
+        }),
+      };
+      const tree = render();
+      for (const [label, ask] of [
+        ["Formal theme", "Vote"],
+        ["Chapter", "Check in"],
+      ] as const) {
+        expect(row(tree, label).findAllByType(ActivityAskButton)).toHaveLength(
+          0,
+        );
+        expect(row(tree, label).findByType(ActivityAsk).props.label).toBe(ask);
+      }
     });
 
     it("is offered to a screen reader as the row's named action", async () => {
@@ -843,7 +944,10 @@ describe("Activity screen (#3897)", () => {
       writes.writeBlockedReason = "You're offline.";
       const tree = render();
       expect(button(tree, "Food bank").props.disabled).toBe(true);
-      expect(row(tree, "Food bank").props.action.hint).toBe("You're offline.");
+      // The button is no focus stop of its own, so the row says why.
+      expect(rowPress(tree, "Food bank").props.accessibilityHint).toBe(
+        "Sam Hill · 1h 30m. You're offline.",
+      );
       act(() => {
         rowPress(tree, "Food bank").props.onPress();
       });

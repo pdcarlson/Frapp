@@ -22,7 +22,10 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
 import { formatDueDate, formatDueSubtitle } from "@/lib/tasks/format";
-import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import {
+  TASK_CONFIRM_FAILURE,
+  taskStatusGateRefusal,
+} from "@/lib/tasks/status-refusal";
 import { useFrappTheme } from "@/lib/theme";
 import {
   CardActions,
@@ -194,7 +197,7 @@ export function TaskCard({
               onPress={() =>
                 void act(
                   () => confirmTask.mutateAsync(payload.task_id),
-                  "Couldn't confirm the task.",
+                  TASK_CONFIRM_FAILURE,
                 )
               }
             />

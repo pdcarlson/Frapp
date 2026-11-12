@@ -39,7 +39,10 @@ import {
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
-import { hoursReviewFailure } from "@/lib/activity/row-action";
+import {
+  hoursReviewFailure,
+  type ActivityRowActionState,
+} from "@/lib/activity/row-action";
 import { useActivityPoll } from "@/lib/activity/use-activity-poll";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -111,12 +114,18 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 export function ActivitySheet({
   row,
   viewerId,
+  rowActionState = "idle",
   onClosed,
   onActed,
   linkActions,
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
+  /**
+   * Where the row's own Confirm or Approve stands (#4437), so the sheet
+   * opened from that row doesn't offer the same approval a second time.
+   */
+  rowActionState?: ActivityRowActionState;
   onClosed: () => void;
   onActed: () => void;
   linkActions: LinkSheetActions;
@@ -165,6 +174,7 @@ export function ActivitySheet({
                 key={row.key}
                 row={row}
                 viewerId={viewerId}
+                rowActionState={rowActionState}
                 onActed={onActed}
                 onNavigate={closeSheet}
                 linkActions={linkActions}
@@ -184,12 +194,14 @@ export function ActivitySheet({
 function SheetCard({
   row,
   viewerId,
+  rowActionState,
   onActed,
   onNavigate,
   linkActions,
 }: {
   row: ActivityRow;
   viewerId: string;
+  rowActionState: ActivityRowActionState;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
@@ -207,7 +219,14 @@ function SheetCard({
         <PollSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
       );
     case "hours":
-      return <HoursSheet row={row} viewerId={viewerId} onActed={onActed} />;
+      return (
+        <HoursSheet
+          row={row}
+          viewerId={viewerId}
+          rowActionState={rowActionState}
+          onActed={onActed}
+        />
+      );
     case "link":
       return (
         <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
@@ -421,10 +440,13 @@ const REVIEWED_NOTE = {
 function HoursSheet({
   row,
   viewerId,
+  rowActionState,
   onActed,
 }: {
   row: RowOf<"hours">;
   viewerId: string;
+  /** The row's own Approve (#4437): sending holds these buttons, landed records it. */
+  rowActionState: ActivityRowActionState;
   onActed: () => void;
 }) {
   const message = useMemo(() => activityHoursMessage(row.entry), [row.entry]);
@@ -459,16 +481,24 @@ function HoursSheet({
     }
   };
 
-  const disabled = reviewEntry.isPending || writeBlockedReason !== null;
+  const disabled =
+    reviewEntry.isPending ||
+    rowActionState === "busy" ||
+    writeBlockedReason !== null;
   const hint = writeBlockedReason ?? undefined;
+  // Approved from its row while the list hadn't re-read yet: the same line
+  // the sheet's own Approve leaves, rather than a second Approve the server
+  // would refuse.
+  const shownReview =
+    reviewed ?? (rowActionState === "done" ? "APPROVED" : null);
 
   return (
     <>
       {payload ? (
         <HoursCard {...frameFor(message, viewerId)} payload={payload} />
       ) : null}
-      {reviewed ? (
-        <CardNote tone="success" text={REVIEWED_NOTE[reviewed]} />
+      {shownReview ? (
+        <CardNote tone="success" text={REVIEWED_NOTE[shownReview]} />
       ) : (
         <CardActions>
           <CardButton
