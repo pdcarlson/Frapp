@@ -342,7 +342,7 @@ describe("unticked, a run is what it was", () => {
       assert.equal(j.keys.has("environment"), false, `deploy-production.yml job "${j.jobId}" names an environment`);
     }
     const jobs = workflowJobs(CALLED);
-    assert.deepEqual(jobs.map((j) => j.jobId), ["snapshot", "build", "record", "confirm"]);
+    assert.deepEqual(jobs.map((j) => j.jobId), ["snapshot", "build", "record", "confirm", "merge-record"]);
     for (const j of jobs) {
       const env = j.keys.get("environment");
       assert.ok(env instanceof Map, `${j.jobId} must name its environment in block form`);
@@ -750,6 +750,7 @@ describe("EXPO_TOKEN reaches only the steps that run eas", () => {
     assert.doesNotMatch(text("confirm"), /PR_BASE_SYNC_APP_/);
     assert.doesNotMatch(text("build"), /PR_BASE_SYNC_APP_/);
     assert.doesNotMatch(text("snapshot"), /secrets\./);
+    assert.doesNotMatch(text("merge-record"), /EXPO_TOKEN/);
   });
 });
 
@@ -1290,6 +1291,30 @@ describe("the confirm job", () => {
     assert.ok(Number(poll.stepEnv.get("DEADLINE_MINUTES")) < step, "the poll's deadline must end before its step's ceiling");
     assert.ok(step + 5 <= job, "the step's ceiling, plus checkout and setup, must fit the job's");
     assert.ok(job <= 360, "a hosted job runs at most 360 minutes");
+  });
+});
+
+// Paul, 2026-11-12: the record PR merges itself, but only once `confirm` saw
+// every upload finish, so a failed upload never lands on `main`.
+describe("the merge-record job", () => {
+  it("runs after record and confirm, only for an opened PR, and acts on confirm's result", () => {
+    const job = jobOf(CALLED, "merge-record");
+    assert.equal(job.keys.get("needs"), "[record, confirm]");
+    assert.equal(job.if, "${{ !cancelled() && needs.record.outputs.pr != '' && needs.confirm.result != 'skipped' }}");
+    assert.equal(jobOf(CALLED, "record").keys.get("outputs").get("pr"), "${{ steps.record.outputs.pr }}");
+    const step = stepNamed(CALLED, "merge-record", "Turn on auto-merge, or say why not");
+    assert.equal(step.stepEnv.get("PR"), "${{ needs.record.outputs.pr }}");
+    assert.equal(step.stepEnv.get("CONFIRMED"), "${{ needs.confirm.result }}");
+    assert.equal(step.stepEnv.get("GH_TOKEN"), "${{ steps.app-token.outputs.token }}");
+    const script = scriptOf(step);
+    assert.match(script, /if \[ "\$AUTO_MERGE" != "true" \]; then/);
+    assert.match(script, /if \[ "\$CONFIRMED" = "success" \]; then/);
+    assert.match(script, /gh pr merge "\$PR" --repo "\$GITHUB_REPOSITORY" --auto --squash/);
+    // A failed or unfinished upload: auto-merge stays off, and the PR says so.
+    const [onSuccess, otherwise] = script.split(/\n\s*else\n/);
+    assert.match(onSuccess, /gh pr merge/);
+    assert.doesNotMatch(otherwise, /gh pr merge/);
+    assert.match(otherwise, /gh pr comment "\$PR"/);
   });
 });
 
