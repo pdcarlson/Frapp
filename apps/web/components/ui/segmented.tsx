@@ -24,7 +24,16 @@ export function SegmentedChoice<T extends string>({
   className,
 }: {
   label: string;
-  options: readonly { value: T; label: string }[];
+  /**
+   * `disabled` on one option greys out that answer alone (a Roles override a
+   * caller may not grant), and `title` gives it a hover hint saying why.
+   */
+  options: readonly {
+    value: T;
+    label: string;
+    disabled?: boolean;
+    title?: string;
+  }[];
   value: T;
   onChange: (next: T) => void;
   disabled?: boolean;
@@ -43,13 +52,15 @@ export function SegmentedChoice<T extends string>({
     >
       {options.map((option) => {
         const held = option.value === value;
+        const off = disabled || Boolean(option.disabled);
         return (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={held}
-            disabled={disabled}
+            disabled={off}
+            title={option.title}
             onClick={() => {
               if (!held) onChange(option.value);
             }}
@@ -60,7 +71,7 @@ export function SegmentedChoice<T extends string>({
               held
                 ? "bg-accent-subtle text-accent-text"
                 : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
-              disabled && "pointer-events-none text-disabled",
+              off && "pointer-events-none text-disabled",
               FOCUS_RING,
             )}
           >

@@ -1,4 +1,5 @@
 export * from "./use-frapp-client";
+export * from "./permission-preview";
 export * from "./use-now";
 export * from "./display-names";
 export * from "./channel-members";
