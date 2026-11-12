@@ -28,8 +28,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chatRecordKindForCommand,
-  invalidateAfterChatWrite,
   useFrappClient,
+  withChatRecordRefresh,
 } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
@@ -666,11 +666,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const retryUnconfirmed = useCallback(
-    async (replay: ReplayRequest) => {
-      const result = await retryPointsDispatch(ctx, replay);
-      invalidateAfterChatWrite(queryClient, "points", result);
-      return result;
-    },
+    async (replay: ReplayRequest) =>
+      withChatRecordRefresh(queryClient, "points", () =>
+        retryPointsDispatch(ctx, replay),
+      ),
     [ctx, queryClient],
   );
 
@@ -703,18 +702,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (!channelId) {
         return { ok: false, error: "No active channel" };
       }
-      const result = await dispatchSlashCommand(ctx, {
-        command,
-        args,
-        channelId,
-        announcementsChannelId,
-        resolveMember,
-      });
       // Chat-core writes through the API client, so the page a record lands
-      // on (Tasks, Service, Points, Events) never hears of it (#3912).
-      const kind = chatRecordKindForCommand(command.name);
-      if (kind) invalidateAfterChatWrite(queryClient, kind, result);
-      return result;
+      // on (Tasks, Service, Points) never hears of it (#3912).
+      return withChatRecordRefresh(
+        queryClient,
+        chatRecordKindForCommand(command.name),
+        () =>
+          dispatchSlashCommand(ctx, {
+            command,
+            args,
+            channelId,
+            announcementsChannelId,
+            resolveMember,
+          }),
+      );
     },
     [channelId, ctx, queryClient],
   );
@@ -748,35 +749,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   // The + menu's forms (#3865). Each names its channel, as `sendPoll` does.
   const postEventCb = useCallback(
-    async (targetChannelId: string, input: EventInput) => {
-      const result = await postEvent(ctx, targetChannelId, input);
-      invalidateAfterChatWrite(queryClient, "event", result);
-      return result;
-    },
-    [ctx, queryClient],
+    (targetChannelId: string, input: EventInput) =>
+      postEvent(ctx, targetChannelId, input),
+    [ctx],
   );
   const postTaskCb = useCallback(
-    async (targetChannelId: string, input: TaskInput) => {
-      const result = await postTask(ctx, targetChannelId, input);
-      invalidateAfterChatWrite(queryClient, "task", result);
-      return result;
-    },
+    (targetChannelId: string, input: TaskInput) =>
+      withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, targetChannelId, input),
+      ),
     [ctx, queryClient],
   );
   const postHoursCb = useCallback(
-    async (targetChannelId: string, input: HoursInput) => {
-      const result = await postHours(ctx, targetChannelId, input);
-      invalidateAfterChatWrite(queryClient, "hours", result);
-      return result;
-    },
+    (targetChannelId: string, input: HoursInput) =>
+      withChatRecordRefresh(queryClient, "hours", () =>
+        postHours(ctx, targetChannelId, input),
+      ),
     [ctx, queryClient],
   );
   const postPointsCb = useCallback(
-    async (targetChannelId: string, input: PointsAdjustmentInput) => {
-      const result = await postPointsAdjustment(ctx, targetChannelId, input);
-      invalidateAfterChatWrite(queryClient, "points", result);
-      return result;
-    },
+    (targetChannelId: string, input: PointsAdjustmentInput) =>
+      withChatRecordRefresh(queryClient, "points", () =>
+        postPointsAdjustment(ctx, targetChannelId, input),
+      ),
     [ctx, queryClient],
   );
 

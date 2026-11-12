@@ -1078,6 +1078,66 @@ describe("useChatChannel — a record written from chat refreshes its page (#391
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
   });
 
+  it("refreshes the Points page after the + menu's Points form", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(CREATED);
+
+    await act(async () => {
+      await result.current.postPointsAdjustment(CHANNEL_ID, {
+        target_user_id: "user-2",
+        amount: 10,
+        category: "MANUAL",
+        reason: "Rush help",
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
+
+  it("refreshes the Points page after Retry on an unconfirmed /points", async () => {
+    const { result } = await mountChannel();
+    await grantLostResponse(() => result.current);
+    const row = await parkedRow(() => result.current);
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
+
+    await act(async () => {
+      await result.current.retryUnconfirmed(row._replay!);
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
+
+  it("refreshes the Tasks board after a typed /task", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(CREATED);
+
+    let outcome: Awaited<ReturnType<Channel["dispatchSlash"]>> | undefined;
+    await act(async () => {
+      outcome = await result.current.dispatchSlash(
+        {
+          name: "task",
+          description: "Create a task card and assign it",
+          requiredModule: "tasks",
+          implemented: true,
+        } as SlashCommand,
+        `"Sweep the porch" @bobby 2099-03-15 10`,
+        null,
+        () => ({ user_id: "user-2", display_name: "Bobby Member" }),
+      );
+    });
+
+    expect(outcome).toMatchObject({ ok: true });
+    expect(mocks.POST).toHaveBeenCalledWith("/v1/tasks", expect.anything());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["tasks"] });
+  });
+
   it("refreshes nothing after a refusal", async () => {
     const { result } = await mountChannel();
     const invalidate = vi.spyOn(client!, "invalidateQueries");
