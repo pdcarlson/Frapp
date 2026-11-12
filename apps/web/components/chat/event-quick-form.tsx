@@ -104,8 +104,9 @@ export interface EventQuickFormProps {
  * The + card's Event form (#3983): the four fields every event needs, name,
  * date, start and end, as Google Calendar's quick create asks for. The event
  * is created as the one-liner creates it (10 points unless typed, not
- * required, everyone invited), and More options opens the full editor for
- * everything else.
+ * required, everyone invited; a member without `events:update` gets no
+ * points, which the API decides, #3709), and More options opens the full
+ * editor for everything else.
  */
 export function EventQuickForm({
   initialDraft,

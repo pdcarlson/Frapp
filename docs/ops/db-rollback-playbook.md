@@ -3790,3 +3790,22 @@ alter table public.chat_messages drop column if exists thread_last_reply;
 Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an imported row, cut down to `source` and `author_username`. **It cannot be reverted by a migration**: the cleared values are gone from the database. Once #4421 is live nothing needs them back: no API read serves a deleted message's payload, and there is no undelete.
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
+## Rollback member defaults for existing chapters (20261112140000)
+
+* **Migration**: `20261112140000_member_social_trust_defaults.sql`
+
+Adds `events:create` and `backwork:upload` to the tier holding each chapter's Member role and every tier above it, or as "on" overrides on a Member role outside the tiers (#3709). The tier trigger rewrites `roles.permissions` for every role in those tiers.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The keys can't be told apart from ones an officer added by hand after the push, so check the chapter first. To take them back off a chapter's tiers in a later migration, or by hand on one chapter (`<chapter>`):
+
+```sql
+update public.role_tiers
+   set permissions = array_remove(array_remove(permissions, 'events:create'), 'backwork:upload')
+ where chapter_id = '<chapter>';
+update public.roles
+   set permission_overrides = permission_overrides - 'events:create' - 'backwork:upload'
+ where chapter_id = '<chapter>' and system_key = 'MEMBER' and tier_id is null;
+```
+
+Removing them from a tier also removes them from every role in it that holds them only through the tier; a role with its own "on" override keeps them. The older API is unaffected either way: `events:create` and `backwork:upload` were already permissions it checked.

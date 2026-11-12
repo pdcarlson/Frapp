@@ -559,6 +559,32 @@ describe('ChapterService', () => {
       );
     });
 
+    // #3709 (Paul's tester): a Vice President invited straight into the role
+    // could not create an event. Every member can now, officers included.
+    it('lets every seeded role but New Member and Alumni create events', async () => {
+      const { role } = await createChapter();
+
+      for (const key of [
+        SystemRoleKeys.VICE_PRESIDENT,
+        SystemRoleKeys.SECRETARY,
+        SystemRoleKeys.TREASURER,
+        SystemRoleKeys.MEMBER,
+      ]) {
+        expect(role(key).permissions).toEqual(
+          expect.arrayContaining([
+            SystemPermissions.EVENTS_CREATE,
+            SystemPermissions.BACKWORK_UPLOAD,
+          ]),
+        );
+      }
+      expect(role(SystemRoleKeys.NEW_MEMBER).permissions).not.toContain(
+        SystemPermissions.EVENTS_CREATE,
+      );
+      expect(role(SystemRoleKeys.MEMBER).permissions).not.toContain(
+        SystemPermissions.EVENTS_UPDATE,
+      );
+    });
+
     it('keeps what a seeded role held before tiers as overrides on that role', async () => {
       const { role } = await createChapter();
       const treasurer = role(SystemRoleKeys.TREASURER);
@@ -569,7 +595,6 @@ describe('ChapterService', () => {
         [SystemPermissions.POINTS_ADJUST]: true,
         [SystemPermissions.POINTS_VIEW_ALL]: true,
         [SystemPermissions.REPORTS_EXPORT]: true,
-        [SystemPermissions.EVENTS_CREATE]: true,
         [SystemPermissions.EVENTS_UPDATE]: true,
       });
       expect(role(SystemRoleKeys.PRESIDENT).permission_overrides).toEqual({

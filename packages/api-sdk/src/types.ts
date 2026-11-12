@@ -5582,9 +5582,15 @@ export interface components {
             location?: string;
             start_time: string;
             end_time: string;
-            /** @default 10 */
+            /**
+             * @description Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709).
+             * @default 10
+             */
             point_value: number;
-            /** @default false */
+            /**
+             * @description Whether everyone the event invites must attend. On create, true (or a non-empty `required_role_ids`) is a 403 unless the caller holds `events:update` (#3709).
+             * @default false
+             */
             is_mandatory: boolean;
             /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
             recurrence_rule?: string;

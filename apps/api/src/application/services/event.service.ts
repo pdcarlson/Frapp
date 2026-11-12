@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
@@ -221,6 +222,14 @@ export class EventService {
     // foreign key's 500.
     await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
 
+    const setsRequirements = await this.canSetRequirements(input);
+    if (!setsRequirements && makesAnyoneRequired(input)) {
+      throw new ForbiddenException(
+        'Only members who can edit events can make an event required. ' +
+          'Create it as optional for everyone, or ask an officer.',
+      );
+    }
+
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -228,7 +237,11 @@ export class EventService {
       location: input.location ?? null,
       start_time: input.start_time,
       end_time: input.end_time,
-      point_value: input.point_value ?? 10,
+      // Every client sends a point value (the forms and `/event` default to
+      // 10), so a member's is dropped rather than refused: refusing would
+      // break every build already installed. The forms hide the field for
+      // them.
+      point_value: setsRequirements ? (input.point_value ?? 10) : 0,
       is_mandatory: input.is_mandatory ?? false,
       recurrence_rule: input.recurrence_rule ?? null,
       parent_event_id: null,
@@ -302,6 +315,26 @@ export class EventService {
     return cardPosted === undefined
       ? parent
       : { ...parent, card_posted: cardPosted };
+  }
+
+  /**
+   * `spec/behavior/events.md` § Who creates events (#3709): any member with
+   * `events:create` makes an event, but only an `events:update` holder (the
+   * officers who edit any event and take attendance, and the President's
+   * `*`) makes anyone required or attaches points. Editing an event already
+   * takes `events:update`, so what a create may set never exceeds what its
+   * maker could later edit in.
+   *
+   * A create with no maker (no caller passes none today) is held to the
+   * member rule, so a new internal caller can't grant points by omission.
+   */
+  private async canSetRequirements(input: CreateEventInput): Promise<boolean> {
+    if (!input.created_by) return false;
+    return this.rbac.memberHasAnyPermission(
+      input.chapter_id,
+      input.created_by,
+      [SystemPermissions.EVENTS_UPDATE],
+    );
   }
 
   async update(
@@ -390,4 +423,15 @@ export class EventService {
 
     await this.eventRepo.delete(id, chapterId);
   }
+}
+
+/**
+ * Whether a create asks anyone to attend: everyone by default
+ * (`is_mandatory`), or the holders of a listed role. Either one lets the
+ * auto-absent sweep mark members absent (`eventRequiresAnyone`).
+ */
+function makesAnyoneRequired(input: CreateEventInput): boolean {
+  return (
+    input.is_mandatory === true || (input.required_role_ids?.length ?? 0) > 0
+  );
 }

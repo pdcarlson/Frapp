@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Members create events and upload backwork by default (#3709)
+
+### 20261112140000_member_social_trust_defaults.sql
+
+- **Purpose**: Data-only permission backfill. In each chapter, the tier holding the seeded Member role (`system_key` MEMBER) and every tier ranked above it gain whichever of `events:create` and `backwork:upload` they lack; `trg_role_tiers_sync_roles` rewrites `roles.permissions` for every role in them, each keeping its own "off" overrides. A Member role outside the tiers gets the keys as "on" overrides instead, unless it already has an override for the key. Tiers ranked below the Member role's, roles outside the tiers, and chapters with no Member role are untouched. New chapters get the same from `STARTING_ROLE_TIERS`. The rule: [`spec/behavior/rbac.md` § Member defaults for chapters that already existed](../../../spec/behavior/rbac.md#member-defaults-for-chapters-that-already-existed). Verified in PGlite (`scripts/pglite/tiers/member-social-trust-defaults.mjs`), including a second run changing nothing.
+- **Checks**: After `db push`, `select c.name, t.position, t.name, t.permissions @> array['events:create','backwork:upload'] as has_both from role_tiers t join chapters c on c.id = t.chapter_id order by c.name, t.position;` shows `has_both` true for the Member role's tier and every tier above it, and `select count(*) from roles where system_key = 'MEMBER' and not (permissions @> array['events:create','backwork:upload']);` counts only Member roles with an "off" override for one of the keys.
+- **Promoter notes**: **Production is Paul's call.** Staging applies it on merge, and production gets it on the next Deploy production of any later commit, with no separate gate: on production it gives every member of Paul's chapter and the Apple reviewer chapter the two keys (#3709 asked for it, and #4068 decision 9 otherwise keeps new grants opt-in per existing chapter). Ship it with or after the API from the same PR, which is what keeps a member's event optional and worth no points; the older API would let a member who gains `events:create` make a required event worth points. Two `update` statements; idempotent. No audit row is written. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-member-defaults-for-existing-chapters-20261112140000) § Rollback member defaults for existing chapters.
+
 ## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
 
 ### 20261112131300_chat_search_filter_only.sql

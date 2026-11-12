@@ -118,23 +118,30 @@ export interface EventTypeChoice {
  * one sets its points, whether everyone must attend (roles already set apart
  * stay set apart, and a draft that invites only some roles keeps doing so),
  * and its name when the name is blank or still the last pick's.
+ *
+ * For a member who can't make anyone required or attach points
+ * (`setsRequirements` false, #3709), the type only names the event: its
+ * points and its required default are left out.
  */
 export function applyEventType(
   draft: NewEventDraft,
   type: EventTypeChoice,
+  setsRequirements = true,
 ): Partial<NewEventDraft> {
   if (draft.eventTypeId === type.id) return { eventTypeId: null };
-  const patch: Partial<NewEventDraft> = {
-    eventTypeId: type.id,
-    pointsInput: String(type.point_value),
-    attendance:
-      draft.attendance.everyone === "not_invited"
-        ? draft.attendance
-        : withEveryone(
-            draft.attendance,
-            type.is_mandatory ? "required" : "optional",
-          ),
-  };
+  const patch: Partial<NewEventDraft> = setsRequirements
+    ? {
+        eventTypeId: type.id,
+        pointsInput: String(type.point_value),
+        attendance:
+          draft.attendance.everyone === "not_invited"
+            ? draft.attendance
+            : withEveryone(
+                draft.attendance,
+                type.is_mandatory ? "required" : "optional",
+              ),
+      }
+    : { eventTypeId: type.id };
   if (draft.name.trim() === "" || draft.name === draft.typeFilledName) {
     patch.name = type.name;
     patch.typeFilledName = type.name;
@@ -245,10 +252,16 @@ export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPEN
  * after it ended would vanish from the Events list on save, and a mandatory
  * one would have the auto-absent sweep mark the whole chapter absent. A blank
  * points field sends 0, as the web editor does.
+ *
+ * `setsRequirements` is whether the maker holds `events:update` (#3709). A
+ * member without it makes an event worth no points (its points field is
+ * hidden and ignored) and can't make anyone required, which the API refuses
+ * too (`EventService.create`).
  */
 export function validateNewEvent(
   draft: NewEventDraft,
   now: Date,
+  setsRequirements = true,
 ):
   | { ok: true; body: ValidatedNewEvent }
   | { ok: false; errors: NewEventErrors } {
@@ -260,7 +273,9 @@ export function validateNewEvent(
   if (start < now) errors.start = "That start time has already passed.";
   if (end <= start) errors.end = "The event has to end after it starts.";
 
-  const points = parsePointReward(draft.pointsInput);
+  const points = setsRequirements
+    ? parsePointReward(draft.pointsInput)
+    : ({ kind: "omit" } as const);
   if (points.kind === "invalid") {
     errors.points = "Points must be a whole number, up to 100,000.";
   }
@@ -270,6 +285,12 @@ export function validateNewEvent(
   const wire = attendanceToWire(draft.attendance);
   if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
+  } else if (
+    !setsRequirements &&
+    (wire.is_mandatory || wire.required_role_ids.length > 0)
+  ) {
+    errors.attendance =
+      "Only officers can make an event required. Set it to optional.";
   }
 
   if (Object.keys(errors).length > 0 || opens === null) {
@@ -336,10 +357,13 @@ export function moreOptionsSummary(
     "pointsInput" | "attendance" | "recurrenceRule" | "checkInOpensInput"
   >,
   roleName: (roleId: string) => string | undefined,
+  /** False hides points, for a member who can't attach them (#3709). */
+  setsRequirements = true,
 ): string {
   const points = parsePointReward(draft.pointsInput);
-  const pointsText =
-    points.kind === "value"
+  const pointsText = !setsRequirements
+    ? null
+    : points.kind === "value"
       ? `${points.points} pts`
       : points.kind === "omit"
         ? "0 pts"

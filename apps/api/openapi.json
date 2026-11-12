@@ -17779,11 +17779,13 @@
           },
           "point_value": {
             "type": "number",
-            "default": 10
+            "default": 10,
+            "description": "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709)."
           },
           "is_mandatory": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Whether everyone the event invites must attend. On create, true (or a non-empty `required_role_ids`) is a 403 unless the caller holds `events:update` (#3709)."
           },
           "recurrence_rule": {
             "type": "string",

@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import {
   baseEvent,
@@ -310,12 +314,15 @@ describe('EventService', () => {
 
   it('should create an event with valid times', async () => {
     mockEventRepo.create.mockResolvedValue(baseEvent);
+    // An officer (`events:update`): the spec's default of 10 points applies.
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
 
     const result = await service.create({
       chapter_id: 'ch-1',
       name: 'Chapter Meeting',
       start_time: baseEvent.start_time,
       end_time: baseEvent.end_time,
+      created_by: 'user-officer',
     });
 
     expect(mockEventRepo.create).toHaveBeenCalledWith({
@@ -341,10 +348,114 @@ describe('EventService', () => {
       check_in_opens_minutes: 10,
       // No type picked.
       event_type_id: null,
-      // No caller named: no creator recorded.
-      created_by: null,
+      created_by: 'user-officer',
     });
+    expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+      'ch-1',
+      'user-officer',
+      ['events:update'],
+    );
     expect(result).toEqual(baseEvent);
+  });
+
+  // #3709: any member with `events:create` makes an event, but making anyone
+  // required and attaching points stay with `events:update` holders.
+  describe('a member who cannot edit events', () => {
+    const create = (extra: Record<string, unknown> = {}) =>
+      service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        created_by: 'user-member',
+        ...extra,
+      });
+
+    beforeEach(() => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockRbacService.memberHasAnyPermission.mockResolvedValue(false);
+    });
+
+    it('creates an optional event that carries no points', async () => {
+      await create({ point_value: 10, is_mandatory: false });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          point_value: 0,
+          is_mandatory: false,
+          created_by: 'user-member',
+        }),
+      );
+    });
+
+    it('stores no points when none are sent either', async () => {
+      await create();
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+
+    it('may still set roles optional or not invited', async () => {
+      await create({
+        optional_role_ids: ['role-seniors'],
+        excluded_role_ids: ['role-new'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          optional_role_ids: ['role-seniors'],
+          excluded_role_ids: ['role-new'],
+        }),
+      );
+    });
+
+    it.each([
+      ['required for everyone', { is_mandatory: true }],
+      ['required for a role', { required_role_ids: ['role-officers'] }],
+    ])('is refused an event %s, and nothing is written', async (_, extra) => {
+      await expect(create(extra)).rejects.toThrow(ForbiddenException);
+      expect(mockEventRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('treats a create with no maker as a member', async () => {
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        point_value: 25,
+      });
+
+      expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+  });
+
+  it('lets an events:update holder make an event required with points', async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+    await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-officer',
+      point_value: 25,
+      is_mandatory: true,
+      required_role_ids: ['role-officers'],
+    });
+
+    expect(mockEventRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        point_value: 25,
+        is_mandatory: true,
+        required_role_ids: ['role-officers'],
+      }),
+    );
   });
 
   it('records who made the event (#3897)', async () => {

@@ -20,20 +20,34 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
 // #4071: what a new chapter's seeded roles hold, spelled out so that a change
 // to a starting tier or a seeded role fails here and has to be meant. The
 // exec roles carry the officer defaults Paul set on 2026-11-10 (#4068
-// decision 9) on top of what they held before tiers; Member, New Member and
-// Alumni are unchanged.
+// decision 9). Since #3709 (social trust) every tier but New members also
+// carries what any member can do, events:create among it, so an officer can
+// do what the members they lead can.
+const MEMBER = [
+  'backwork:upload',
+  'events:create',
+  'members:view',
+  'polls:create',
+  'rush:add',
+  'rush:bid',
+  'rush:notes',
+  'rush:view',
+  'rush:view_results',
+  'rush:vote',
+  'service:log',
+];
 const EXEC_BOARD = [
+  ...MEMBER,
   'announcements:post',
   'channels:create',
   'channels:manage',
   'chapter-config:manage',
   'chapter-config:view',
-  'members:view',
   'polls:view_all',
   'roles:manage',
   'service:approve',
   'tasks:manage',
-];
+].sort();
 
 describe('DEFAULT_SYSTEM_ROLES permissions', () => {
   it('gives each seeded role its tier plus its own', () => {
@@ -50,7 +64,6 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         ...EXEC_BOARD,
         'billing:manage',
         'billing:view',
-        'events:create',
         'events:update',
         'points:adjust',
         'points:view_all',
@@ -58,18 +71,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       ].sort(),
       VICE_PRESIDENT: EXEC_BOARD,
       SECRETARY: EXEC_BOARD,
-      MEMBER: [
-        'backwork:upload',
-        'members:view',
-        'polls:create',
-        'rush:add',
-        'rush:bid',
-        'rush:notes',
-        'rush:view',
-        'rush:view_results',
-        'rush:vote',
-        'service:log',
-      ],
+      MEMBER,
       NEW_MEMBER: ['backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
     });
@@ -103,6 +105,23 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       expect(exec.has(permission)).toBe(true);
       expect(chairs.has(permission)).toBe(false);
     }
+  });
+
+  // #3709: every member can create an event and upload backwork, whatever
+  // tier their role sits in, but only an events:update holder makes anyone
+  // required or attaches points; no starting tier but the President's `*`
+  // and the Treasurer's override carries it.
+  it('lets every tier but New members create events, and none edit them', () => {
+    const [exec, chairs, members, newMembers] = STARTING_ROLE_TIERS.map(
+      (tier) => new Set<string>(tier.permissions),
+    );
+    for (const tier of [exec, chairs, members]) {
+      expect(tier.has('events:create')).toBe(true);
+      expect(tier.has('backwork:upload')).toBe(true);
+      expect(tier.has('events:update')).toBe(false);
+    }
+    expect(newMembers.has('events:create')).toBe(false);
+    expect(newMembers.has('backwork:upload')).toBe(true);
   });
 
   it('never puts the wildcard on a starting tier', () => {
