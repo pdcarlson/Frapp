@@ -17,7 +17,11 @@ import { SkeletonLines } from "@/components/state-block";
 import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
 import { SessionCard } from "@/components/study/session-card";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
-import { readForegroundPermission } from "@/lib/location";
+import {
+  readForegroundFix,
+  readForegroundPermission,
+  requestForegroundPermission,
+} from "@/lib/location";
 
 /**
  * s10's refusal wiring (#2297, and the module gate #2393), rendered (#2416).
@@ -203,6 +207,7 @@ function appStateListener(): (state: string) => void {
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
+  vi.mocked(readForegroundFix).mockResolvedValue({ lat: 42.73, lng: -73.68 });
   sessions = NO_SESSIONS;
   zones = ZONES;
   isLoading = false;
@@ -925,6 +930,104 @@ describe("Study's default zone", () => {
   });
 });
 
+describe("Study says where you are before Start", () => {
+  /** A square about 110 m on a side, south-west corner at (lat, lng). */
+  const square = (lat: number, lng: number) => [
+    { lat, lng },
+    { lat: lat + 0.001, lng },
+    { lat: lat + 0.001, lng: lng + 0.001 },
+    { lat, lng: lng + 0.001 },
+  ];
+  /** Library is alphabetically second, and about 1 km north of Commons. */
+  const MAPPED = [
+    { id: "zone-1", name: "Library", is_active: true, coordinates: square(42.74, -73.68) },
+    { id: "zone-2", name: "Commons", is_active: true, coordinates: square(42.73, -73.68) },
+  ];
+  const IN_LIBRARY = { lat: 42.7405, lng: -73.6795 };
+
+  async function settle() {
+    await act(async () => {});
+  }
+
+  it("picks the zone the member is standing in and says so", async () => {
+    zones = MAPPED;
+    vi.mocked(readForegroundFix).mockResolvedValue(IN_LIBRARY);
+    const tree = render();
+    await settle();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library, You're here");
+    expect(drawnText(tree.root.findByType(StartCard))).toContain("You're here");
+    act(() => tree.unmount());
+  });
+
+  it("shows the distance on the card before the tap", async () => {
+    zones = MAPPED;
+    // Just south of Commons, so Commons is nearest.
+    vi.mocked(readForegroundFix).mockResolvedValue({ lat: 42.7295, lng: -73.6795 });
+    const tree = render();
+    await settle();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons, 200 ft away");
+    act(() => tree.unmount());
+  });
+
+  it("lists the zones nearest first in the picker", async () => {
+    zones = MAPPED;
+    vi.mocked(readForegroundFix).mockResolvedValue(IN_LIBRARY);
+    const tree = render();
+    await settle();
+
+    const radios = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.type === ("Pressable" as never),
+    );
+    expect(radios.map((node) => node.props.accessibilityLabel)).toEqual([
+      "Library, You're here",
+      "Commons, 0.7 mi away",
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("keeps a zone picked by hand when the next fix lands", async () => {
+    vi.useFakeTimers();
+    try {
+      zones = MAPPED;
+      vi.mocked(readForegroundFix).mockResolvedValue(IN_LIBRARY);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      act(() => tree.root.findByType(ZonePickerSheet).props.onSelect("zone-2"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+
+      expect(selectedZoneLabel(tree)).toMatch(/^Study zone: Commons/);
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never asks for location on arrival", async () => {
+    zones = MAPPED;
+    vi.mocked(requestForegroundPermission).mockClear();
+    vi.mocked(readForegroundFix).mockClear();
+    vi.mocked(readForegroundPermission).mockResolvedValueOnce({
+      granted: false,
+      canAskAgain: true,
+    });
+    const tree = render();
+    await settle();
+
+    expect(requestForegroundPermission).not.toHaveBeenCalled();
+    expect(readForegroundFix).not.toHaveBeenCalled();
+    expect(drawnText(tree.root.findByType(StartCard))).not.toContain("away");
+    act(() => tree.unmount());
+  });
+});
+
 describe("Study loading and empty states", () => {
   it("loads as the card and the list it becomes, not one card of bars", () => {
     isLoading = true;
@@ -982,10 +1085,13 @@ describe("Study when location can't be read", () => {
   async function failedLocationLine(on: string, osVersion: string | number) {
     platform.OS = on;
     platform.Version = osVersion;
+    const tree = render();
+    // After the mount: opening the screen reads the permission too, to say
+    // how far each zone is, and that read must not take the Start tap's.
+    await act(async () => {});
     vi.mocked(readForegroundPermission).mockRejectedValueOnce(
       new Error("location unavailable"),
     );
-    const tree = render();
     await tapStart(tree);
     const text = drawnText(tree.root.findByType(StartCard));
     act(() => tree.unmount());

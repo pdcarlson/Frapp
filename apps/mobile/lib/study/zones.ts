@@ -10,6 +10,12 @@
 import { studyZoneRulesLine } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
 
+/** One corner of a zone's outline, as `study_geofences.coordinates` stores it. */
+export interface ZoneCorner {
+  lat: number;
+  lng: number;
+}
+
 export interface StudyZoneModel {
   id: string;
   name: string;
@@ -18,6 +24,25 @@ export interface StudyZoneModel {
   pointsPerInterval: number;
   minSessionMinutes: number;
   pauseGraceMinutes: number;
+  /**
+   * The polygon the server checks a fix against, or empty when the row's
+   * outline is unreadable. Only used to say where the member is before they
+   * tap Start (`lib/study/proximity.ts`); the server stays the judge.
+   */
+  outline: ZoneCorner[];
+}
+
+function toOutline(value: unknown): ZoneCorner[] {
+  if (!Array.isArray(value)) return [];
+  const corners: ZoneCorner[] = [];
+  for (const point of value) {
+    if (!point || typeof point !== "object") return [];
+    const { lat, lng } = point as Record<string, unknown>;
+    if (typeof lat !== "number" || typeof lng !== "number") return [];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+    corners.push({ lat, lng });
+  }
+  return corners.length >= 3 ? corners : [];
 }
 
 /** Server defaults, mirrored so a zone row missing a field still reads honestly. */
@@ -47,6 +72,7 @@ function toZone(row: Record<string, unknown>): StudyZoneModel | null {
       num(row, "min_session_minutes") ?? DEFAULTS.minSessionMinutes,
     pauseGraceMinutes:
       num(row, "pause_grace_minutes") ?? DEFAULTS.pauseGraceMinutes,
+    outline: toOutline(row.coordinates),
   };
 }
 

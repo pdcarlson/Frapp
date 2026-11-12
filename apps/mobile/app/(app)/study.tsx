@@ -71,6 +71,11 @@ import {
   type StudyZoneModel,
 } from "@/lib/study/zones";
 import { useFrappTheme } from "@/lib/theme";
+import {
+  bestZoneId,
+  measureZones,
+  type ProximityMap,
+} from "@/lib/study/proximity";
 
 /**
  * s10 — Study hours (`canvas-screens.dc.html`, `id="s10"`).
@@ -105,6 +110,14 @@ import { useFrappTheme } from "@/lib/theme";
  * response (or a 404 from one) ends a session. That is also what
  * `patterns.md` means by "the client never needs cleanup logic of its own".
  */
+
+/**
+ * How often to re-read the member's position while the Start card is up, so
+ * "0.2 mi away" turns into "You're here" as they walk in. Only while the
+ * screen is focused, foregrounded and idle, and only with location already
+ * allowed: it never prompts (the primer belongs to the Start tap).
+ */
+const PROXIMITY_REFRESH_MS = 30 * 1000;
 
 /** `spec/behavior/study-sessions.md`: the client heartbeats every 5 minutes. */
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -176,6 +189,17 @@ export default function StudyScreen() {
 
   const [session, setSession] = useState<StudySessionModel | null>(null);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  /**
+   * Where the member is relative to each zone, from the last fix this screen
+   * read. Null until one lands. It informs the card and the picker; it never
+   * gates Start, since the server checks the fix Start sends.
+   */
+  const [proximity, setProximity] = useState<ProximityMap | null>(null);
+  /**
+   * The member chose a zone by hand on this visit, so a fix no longer moves
+   * the selection. Cleared when they come back to the screen.
+   */
+  const pickedByHandRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   /**
@@ -400,6 +424,62 @@ export default function StudyScreen() {
   const paused = session !== null && sessionIsPaused(session);
   const running = session !== null && !paused;
   const reportingStale = session !== null && isReportingStale(session, now);
+
+  /** The zones, readable from the location read without re-creating it. */
+  const zonesRef = useRef(zones);
+  useEffect(() => {
+    zonesRef.current = zones;
+  }, [zones]);
+
+  /**
+   * Read a fix and measure every zone from it, if location is already
+   * allowed. Never asks: a member who hasn't allowed it yet meets the primer
+   * on Start, as `patterns.md` § Study sessions requires. A failure is
+   * silent; the card simply carries no distance.
+   */
+  const proximityReadRef = useRef(false);
+  const refreshProximity = useCallback(async () => {
+    if (proximityReadRef.current || zonesRef.current.length === 0) return;
+    proximityReadRef.current = true;
+    try {
+      const permission = await readForegroundPermission();
+      if (!permission.granted) return;
+      const fix = await readForegroundFix();
+      setProximity(measureZones(zonesRef.current, fix));
+    } catch {
+      // No fix this time; the next refresh or the Start tap tries again.
+    } finally {
+      proximityReadRef.current = false;
+    }
+  }, []);
+
+  const idle = session === null;
+  const hasZones = zones.length > 0;
+  useFocusEffect(
+    useCallback(() => {
+      // A new visit: where the member is now picks the zone again.
+      pickedByHandRef.current = false;
+      if (!idle || !hasZones || !isForeground || !hoursEnabled) return undefined;
+      void refreshProximity();
+      const interval = setInterval(
+        () => void refreshProximity(),
+        PROXIMITY_REFRESH_MS,
+      );
+      return () => clearInterval(interval);
+    }, [idle, hasZones, isForeground, hoursEnabled, refreshProximity]),
+  );
+
+  /**
+   * Offer the zone the member is standing in, or else the nearest, as soon as
+   * a fix says which, the way a check-in app pre-fills the likeliest place.
+   * A zone picked by hand on this visit stays picked.
+   */
+  useEffect(() => {
+    if (!proximity || pickedByHandRef.current) return;
+    const best = bestZoneId(zones, proximity);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the member's position until they choose by hand
+    if (best) setSelectedZoneId(best);
+  }, [proximity, zones]);
 
   /**
    * A session write just succeeded, so nothing about the refusal still holds.
@@ -683,6 +763,9 @@ export default function StudyScreen() {
     setIsStarting(true);
     try {
       const fix = await readForegroundFix();
+      // The same fix tells the card where the member is, so a refused start
+      // leaves the distance on screen beside the reason.
+      setProximity(measureZones(zonesRef.current, fix));
       requestSeqRef.current += 1;
       const response = await apiRef.current.start({
         geofence_id: selectedZoneId,
@@ -945,13 +1028,19 @@ export default function StudyScreen() {
         ) : (
           <StartCard
             zone={selectedZone}
+            proximity={
+              selectedZoneId ? (proximity?.get(selectedZoneId) ?? null) : null
+            }
             canChooseZone={zones.length > 1}
             isStarting={isStarting}
             isBlocked={writeRefused}
             graceCopy={graceWindowCopy(selectedZone)}
             notice={notice}
             failure={failure}
-            onChooseZone={() => zoneSheetRef.current?.present()}
+            onChooseZone={() => {
+              void refreshProximity();
+              zoneSheetRef.current?.present();
+            }}
             onStart={handleStartPress}
           />
         )}
@@ -994,7 +1083,9 @@ export default function StudyScreen() {
         ref={zoneSheetRef}
         zones={zones}
         selectedZoneId={selectedZoneId}
+        proximity={proximity}
         onSelect={(zoneId) => {
+          pickedByHandRef.current = true;
           setSelectedZoneId(zoneId);
           zoneSheetRef.current?.dismiss();
         }}
