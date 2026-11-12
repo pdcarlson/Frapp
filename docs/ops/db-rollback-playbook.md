@@ -4070,6 +4070,8 @@ alter table public.ai_suggestions drop constraint if exists ai_suggestions_sourc
 alter table public.ai_suggestions
   add constraint ai_suggestions_source_type_check
     check (source_type in ('meeting', 'event', 'channel', 'task'));
+```
+
 ## Rollback deleted chat messages take their notifications (20261112140000)
 
 * **Migration**: `20261112140000_notifications_chat_message_id.sql`
