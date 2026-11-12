@@ -298,8 +298,18 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     trackSelf(channelRef.current);
   }, [trackSelf]);
 
-  // Leaving the page leaves the room.
-  useEffect(() => () => teardown(), [teardown]);
+  // Leaving the page leaves the room. `pagehide` untracks at once, so the
+  // others don't keep seeing you until presence notices the socket is gone.
+  useEffect(() => {
+    const onPageHide = () => {
+      if (joinedRef.current) void channelRef.current?.untrack();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      teardown();
+    };
+  }, [teardown]);
 
   // Who is talking: sample every stream's loudness a few times a second.
   useEffect(() => {
