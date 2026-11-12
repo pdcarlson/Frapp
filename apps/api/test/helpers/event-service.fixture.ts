@@ -52,6 +52,7 @@ export async function createEventServiceFixture() {
   const mockEventRepo: jest.Mocked<IEventRepository> = {
     findById: jest.fn(),
     findByChapter: jest.fn(),
+    findByIds: jest.fn(),
     findCreatedBy: jest.fn(),
     findChildren: jest.fn().mockResolvedValue([]),
     create: jest.fn(),

@@ -631,6 +631,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 3,
     entries: [MEMBER_TEXT],
   },
+  // "Minutes posted" names the meeting's event (#4312): the event's name an
+  // officer wrote. The minutes' own text is never in the notification.
+  'application/services/meeting.service.ts': {
+    calls: 2,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/points.service.ts': {
     calls: 1,
     entries: [MEMBER_TEXT],

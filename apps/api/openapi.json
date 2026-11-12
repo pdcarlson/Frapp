@@ -6920,6 +6920,377 @@
         ]
       }
     },
+    "/v1/meetings": {
+      "get": {
+        "operationId": "MeetingController_list_v1",
+        "parameters": [
+          {
+            "name": "event_id",
+            "required": false,
+            "in": "query",
+            "description": "Only the minutes of this event.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingController_start_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/template": {
+      "get": {
+        "operationId": "MeetingController_getTemplate_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTemplateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The sections the chapter’s minutes show",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "put": {
+        "operationId": "MeetingController_setTemplate_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTemplateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Choose the sections the chapter’s minutes show",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}": {
+      "get": {
+        "operationId": "MeetingController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One meeting’s minutes",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "patch": {
+        "operationId": "MeetingController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save minutes: their author, or someone who can edit any minutes. 409 `meeting.stale` when someone saved since",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete minutes: someone who can delete minutes, or the author of an unposted draft",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/post": {
+      "post": {
+        "operationId": "MeetingController_post_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post minutes to the members their event invites, who are each told once",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
@@ -15140,6 +15511,7 @@
               "announcements",
               "events",
               "tasks",
+              "meetings",
               "points",
               "hours",
               "polls",
@@ -18413,6 +18785,532 @@
             "type": "boolean"
           }
         }
+      },
+      "MeetingSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "other_label",
+          "status",
+          "created_by",
+          "posted_at",
+          "updated_at"
+        ]
+      },
+      "MeetingTemplateDto": {
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "array",
+            "description": "The sections the chapter’s minutes show, in order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attendees",
+                "summary",
+                "announcements",
+                "decisions",
+                "action_items",
+                "officer_reports",
+                "old_business",
+                "new_business",
+                "discussion_log"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sections"
+        ]
+      },
+      "MeetingVoteDto": {
+        "type": "object",
+        "properties": {
+          "for": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "against": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "abstain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "for",
+          "against",
+          "abstain"
+        ]
+      },
+      "MeetingDecisionDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "vote": {
+            "nullable": true,
+            "description": "The count, when the meeting recorded one. Never a guess.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingVoteDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text",
+          "vote"
+        ]
+      },
+      "MeetingActionItemDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Only when someone was named for it."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "A calendar day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "text",
+          "owner_user_id",
+          "due_date"
+        ]
+      },
+      "MeetingContentDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "announcements": {
+            "type": "string"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDecisionDto"
+            }
+          },
+          "action_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "officer_reports": {
+            "type": "string"
+          },
+          "old_business": {
+            "type": "string"
+          },
+          "new_business": {
+            "type": "string"
+          },
+          "discussion_log": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "announcements",
+          "decisions",
+          "action_items",
+          "officer_reports",
+          "old_business",
+          "new_business",
+          "discussion_log"
+        ]
+      },
+      "MeetingAttendeesDto": {
+        "type": "object",
+        "properties": {
+          "present": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "late": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excused": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "present",
+          "late",
+          "excused"
+        ]
+      },
+      "MeetingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "content": {
+            "$ref": "#/components/schemas/MeetingContentDto"
+          },
+          "sections": {
+            "type": "array",
+            "description": "The chapter’s template, in order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attendees",
+                "summary",
+                "announcements",
+                "decisions",
+                "action_items",
+                "officer_reports",
+                "old_business",
+                "new_business",
+                "discussion_log"
+              ]
+            }
+          },
+          "attendees": {
+            "nullable": true,
+            "description": "The event’s check-ins; null when the event is gone.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingAttendeesDto"
+              }
+            ]
+          },
+          "updated_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "other_label",
+          "status",
+          "created_by",
+          "posted_at",
+          "updated_at",
+          "event_end_time",
+          "content",
+          "sections",
+          "attendees",
+          "updated_by",
+          "posted_by",
+          "created_at",
+          "can_edit",
+          "can_delete"
+        ]
+      },
+      "NewMeetingEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "role_ids": {
+            "maxItems": 200,
+            "description": "Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "StartMeetingDto": {
+        "type": "object",
+        "properties": {
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other",
+              "standards"
+            ],
+            "description": "The meeting type. `standards` is refused with a 400: a Standards meeting is never kept in Frapp."
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 60,
+            "description": "A name for an Other meeting."
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The meeting’s event. Send this or new_event."
+          },
+          "new_event": {
+            "description": "Make an event for a meeting that has none: nobody required, no points, and no new-event push.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewMeetingEventDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "meeting_type"
+        ]
+      },
+      "MeetingContentPatchDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "announcements": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "decisions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDecisionDto"
+            }
+          },
+          "action_items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "officer_reports": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "old_business": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "new_business": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "discussion_log": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        }
+      },
+      "UpdateMeetingDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The `updated_at` the editor loaded. A save over newer minutes answers 409 `meeting.stale`."
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other",
+              "standards"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 60
+          },
+          "content": {
+            "$ref": "#/components/schemas/MeetingContentPatchDto"
+          }
+        },
+        "required": [
+          "expected_updated_at"
+        ]
+      },
+      "PostMeetingDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expected_updated_at"
+        ]
       },
       "CheckInDto": {
         "type": "object",

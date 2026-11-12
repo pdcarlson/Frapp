@@ -2033,6 +2033,78 @@ export interface paths {
         patch: operations["EventTypeController_update_v1"];
         trace?: never;
     };
+    "/v1/meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
+        get: operations["MeetingController_list_v1"];
+        put?: never;
+        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The sections the chapter’s minutes show */
+        get: operations["MeetingController_getTemplate_v1"];
+        /** Choose the sections the chapter’s minutes show */
+        put: operations["MeetingController_setTemplate_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One meeting’s minutes */
+        get: operations["MeetingController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Delete minutes: someone who can delete minutes, or the author of an unposted draft */
+        delete: operations["MeetingController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Save minutes: their author, or someone who can edit any minutes. 409 `meeting.stale` when someone saved since */
+        patch: operations["MeetingController_update_v1"];
+        trace?: never;
+    };
+    "/v1/meetings/{id}/post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post minutes to the members their event invites, who are each told once */
+        post: operations["MeetingController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -4655,7 +4727,7 @@ export interface components {
              * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
              * @enum {string}
              */
-            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "meetings" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
             /** @description The module's display name. */
             module_label: string;
             /** @description What the permission lets a role do. */
@@ -5812,6 +5884,153 @@ export interface components {
             name?: string;
             point_value?: number;
             is_mandatory?: boolean;
+        };
+        MeetingSummaryDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MeetingTemplateDto: {
+            /** @description The sections the chapter’s minutes show, in order. */
+            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+        };
+        MeetingVoteDto: {
+            for: number;
+            against: number;
+            abstain: number;
+        };
+        MeetingDecisionDto: {
+            text: string;
+            /** @description The count, when the meeting recorded one. Never a guess. */
+            vote: components["schemas"]["MeetingVoteDto"] | null;
+        };
+        MeetingActionItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description Only when someone was named for it.
+             */
+            owner_user_id: string | null;
+            /**
+             * Format: date
+             * @description A calendar day, YYYY-MM-DD.
+             */
+            due_date: string | null;
+        };
+        MeetingContentDto: {
+            summary: string;
+            announcements: string;
+            decisions: components["schemas"]["MeetingDecisionDto"][];
+            action_items: components["schemas"]["MeetingActionItemDto"][];
+            officer_reports: string;
+            old_business: string;
+            new_business: string;
+            discussion_log: string;
+        };
+        MeetingAttendeesDto: {
+            present: string[];
+            late: string[];
+            excused: string[];
+        };
+        MeetingDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            event_end_time: string | null;
+            content: components["schemas"]["MeetingContentDto"];
+            /** @description The chapter’s template, in order. */
+            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            /** @description The event’s check-ins; null when the event is gone. */
+            attendees: components["schemas"]["MeetingAttendeesDto"] | null;
+            /** Format: uuid */
+            updated_by: string | null;
+            /** Format: uuid */
+            posted_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            can_edit: boolean;
+            can_delete: boolean;
+        };
+        NewMeetingEventDto: {
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone. */
+            role_ids?: string[];
+        };
+        StartMeetingDto: {
+            /**
+             * @description The meeting type. `standards` is refused with a 400: a Standards meeting is never kept in Frapp.
+             * @enum {string}
+             */
+            meeting_type: "chapter" | "exec" | "committee" | "other" | "standards";
+            /** @description A name for an Other meeting. */
+            other_label?: string | null;
+            /**
+             * Format: uuid
+             * @description The meeting’s event. Send this or new_event.
+             */
+            event_id?: string;
+            /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
+            new_event?: components["schemas"]["NewMeetingEventDto"];
+        };
+        MeetingContentPatchDto: {
+            summary?: string;
+            announcements?: string;
+            decisions?: components["schemas"]["MeetingDecisionDto"][];
+            action_items?: components["schemas"]["MeetingActionItemDto"][];
+            officer_reports?: string;
+            old_business?: string;
+            new_business?: string;
+            discussion_log?: string;
+        };
+        UpdateMeetingDto: {
+            /**
+             * Format: date-time
+             * @description The `updated_at` the editor loaded. A save over newer minutes answers 409 `meeting.stale`.
+             */
+            expected_updated_at: string;
+            /** @enum {string} */
+            meeting_type?: "chapter" | "exec" | "committee" | "other" | "standards";
+            other_label?: string | null;
+            content?: components["schemas"]["MeetingContentPatchDto"];
+        };
+        PostMeetingDto: {
+            /** Format: date-time */
+            expected_updated_at: string;
         };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
@@ -12033,6 +12252,255 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only the minutes of this event. */
+                event_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingSummaryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_setTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingTemplateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
                 };
             };
             /** @description Error */

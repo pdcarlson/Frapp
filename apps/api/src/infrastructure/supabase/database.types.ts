@@ -73,6 +73,8 @@ import type {
   TaskSubtask,
   PledgeClass,
   EventType,
+  Meeting,
+  MeetingTemplate,
   PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
@@ -172,6 +174,8 @@ export interface Database {
       task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
+      meetings: TableDefinition<Meeting>;
+      meeting_templates: TableDefinition<MeetingTemplate>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;

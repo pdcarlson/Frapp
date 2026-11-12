@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Meeting minutes written by hand (#4312)
+
+### 20261112120400_meetings.sql
+
+- **Purpose**: Adds `meetings` (one set of minutes per event, `event_id` unique where set and `on delete set null`, so deleting an event keeps its minutes) and `meeting_templates` (a chapter's minutes sections; no row reads the defaults). `meeting_type` is checked to chapter, exec, committee or other, so a Standards meeting can't be stored even past the API. RLS on with no policies; the API uses the service role. Backfills `meetings:record` onto every chapter's top role tier (position 1), and the tier trigger rewrites `roles.permissions` for the roles in it. Writes no other row.
+- **Checks**: After `db push`, `select count(*) from public.meetings;` returns 0, `select count(*) from public.role_tiers where position = 1 and not ('meetings:record' = any(permissions));` returns 0, and `select relrowsecurity from pg_class where relname in ('meetings', 'meeting_templates');` returns two `true`.
+- **Promoter notes**: Ship it with or before the API that reads it: `MeetingModule` queries both tables, and every route sits behind the `meetings` module, which `BETA_OFF_MODULES` keeps off for every chapter until it is removed from that list. The backfill only adds a permission nothing uses while the module is off. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-meeting-minutes-20261112120400) § Rollback meeting minutes.
+
 ## 2026-11-12: The AI run queue (#4310)
 
 ### 20261112020000_ai_runs.sql

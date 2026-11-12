@@ -46,6 +46,8 @@ type Notification = {
       channelId?: string;
       messageId?: string;
       eventId?: string;
+      /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
+      meetingId?: string;
       taskId?: string;
       invoiceId?: string;
     };
@@ -75,7 +77,7 @@ function deepLinkFor(notification: Notification): string {
     case "chat":
       return chatDeepLink({ channelId: target.channelId });
     case "events":
-      return "/events";
+      return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
     case "points":
       return "/points";
     case "billing":
