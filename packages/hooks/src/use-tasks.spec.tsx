@@ -16,8 +16,10 @@ import {
   useRejectTask,
   useSetSubtaskDone,
   useTasks,
+  useUpdateTask,
   useUpdateTaskStatus,
 } from "./use-tasks";
+import { activityKeys } from "./use-activity";
 
 /**
  * These cover #560 — promoting the optimistic task writes out of
@@ -814,5 +816,22 @@ describe("readAllTaskPages", () => {
       .mockResolvedValueOnce({ data: undefined, error: failure });
 
     await expect(readAllTaskPages({ GET } as never)).rejects.toBe(failure);
+  });
+});
+
+describe("useUpdateTask", () => {
+  it("refreshes Activity, which draws the edited task's card (#4512)", async () => {
+    const queryClient = makeQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const PATCH = vi.fn().mockResolvedValue({ data: {}, error: undefined });
+    const { result } = renderHook(() => useUpdateTask(), {
+      wrapper: createWrapper({ PATCH }, queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ id: TASK, body: { title: "Mop" } });
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityKeys.chapter(CHAPTER),
+    });
   });
 });

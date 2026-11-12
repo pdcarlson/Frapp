@@ -6,6 +6,7 @@ import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { invalidatePointReads } from "./use-points";
+import { activityKeys } from "./use-activity";
 
 /**
  * Query keys for this module.
@@ -490,6 +491,14 @@ export function useUpdateTask() {
           queryKey: taskKeys.detail(chapterId, id),
         }),
         queryClient.invalidateQueries({ queryKey: taskKeys.lists(chapterId) }),
+        // Activity draws a task's card from its own read, not the task's: an
+        // edit from that card (#4512) would otherwise come back showing the
+        // old title, assignee and points.
+        chapterId
+          ? queryClient.invalidateQueries({
+              queryKey: activityKeys.chapter(chapterId),
+            })
+          : undefined,
       ]),
   });
 }
