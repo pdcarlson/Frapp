@@ -174,7 +174,14 @@ vi.mock("@/components/directory/actives-filter-sheet", () => ({
   ActivesFilterSheet: () => null,
 }));
 
+import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 import DirectoryScreen, {
+  GridLineView,
+  isGridLine,
+  memberPressLabel,
+  MemberTile,
+  toGridLines,
+  type GridLine,
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
@@ -305,6 +312,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
+  resetListLayoutsForTests();
   state.chapterId = "c-1";
   state.search = [];
   state.pending = false;
@@ -1080,5 +1088,99 @@ describe("s13's Invite members button", () => {
     const withButton = render();
     expect(bottom(withButton)).toBeGreaterThan(plain);
     withButton.unmount();
+  });
+});
+
+/**
+ * #4175: the List/Grid toggle in the title row. Grid hands the same rows to the
+ * list two to a line; the pick is kept on this phone (`lib/list-layout.ts`).
+ */
+describe("s13 as a grid (#4175)", () => {
+  const row = (n: number): DirectoryRow => ({
+    memberId: `m-${n}`,
+    userId: `u-${n}`,
+    displayName: `Member ${n}`,
+    initials: "M",
+    meta: n === 1 ? "Treasurer · CS '27" : null,
+    avatarUrl: null,
+    pledgeClassId: null,
+    orderNumber: null,
+  });
+
+  function renderNode(node: React.ReactElement): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<FrappThemeProvider>{node}</FrappThemeProvider>);
+    });
+    return tree;
+  }
+
+  const pressables = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Pressable");
+
+  it("offers List and Grid in the title row, on List until picked", () => {
+    const tree = render();
+    expect(
+      inHeader(tree, (element) => element.props.screen === "directory"),
+    ).toBeTruthy();
+    expect(list(tree).props.numColumns).toBeUndefined();
+    expect(listed(tree).length).toBeGreaterThan(0);
+  });
+
+  it("switches on the mounted list without changing its column count", () => {
+    const tree = render();
+    const names = listed(tree);
+    act(() => setListLayout("directory", "grid"));
+    // Same list, never re-keyed: `numColumns` stays unset (a real FlatList
+    // throws when it changes), and the data becomes lines of members.
+    expect(list(tree).props.numColumns).toBeUndefined();
+    const lines = list(tree).props.data as GridLine[];
+    expect(lines.every(isGridLine)).toBe(true);
+    expect(
+      lines.flatMap((line) => line.rows.map((r) => r.displayName)),
+    ).toEqual(names);
+  });
+
+  it("renders a line as tiles, padding a short last line to keep its width", () => {
+    act(() => setListLayout("directory", "grid"));
+    const tree = render();
+    const renderItem = list(tree).props.renderItem as (info: {
+      item: GridLine;
+      index: number;
+    }) => React.ReactElement;
+    const line = renderNode(
+      renderItem({ item: { key: "u-1", rows: [row(1)] }, index: 0 }),
+    );
+    expect(line.root.findAllByType(MemberTile)).toHaveLength(1);
+    expect(line.root.findAllByType(MemberRow)).toHaveLength(0);
+    // One tile and one empty cell, so the lone tile is half a line wide.
+    const gridLine = line.root.findByType(GridLineView);
+    expect(gridLine.props.line.rows).toHaveLength(1);
+    expect(
+      line.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.style?.flex === 1 &&
+          node.children.length === 0,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("splits rows into lines of two", () => {
+    const lines = toGridLines([row(1), row(2), row(3)]);
+    expect(lines.map((line) => line.rows.length)).toEqual([2, 1]);
+  });
+
+  it("names a tile with the row's own words, and shows them", () => {
+    const tile = renderNode(<MemberTile row={row(1)} onPress={vi.fn()} />);
+    const rowTree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+    expect(pressables(tile)[0]!.props.accessibilityLabel).toBe(
+      pressables(rowTree)[0]!.props.accessibilityLabel,
+    );
+    expect(pressables(tile)[0]!.props.accessibilityLabel).toBe(
+      memberPressLabel(row(1)),
+    );
+    expect(screenText(tile)).toContain("Member 1");
+    expect(screenText(tile)).toContain("Treasurer · CS '27");
   });
 });

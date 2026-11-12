@@ -434,6 +434,11 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = Object.freeze([
     subFeatures: Object.freeze([]),
   },
   {
+    key: "meetings", label: "Meetings", icon: "notebook", tier: "paid", alwaysOn: false,
+    description: "Minutes for chapter, exec and committee meetings, read by the members each meeting's event invites.",
+    subFeatures: Object.freeze([]),
+  },
+  {
     key: "reports", label: "Reports", icon: "chart", tier: "paid", alwaysOn: false,
     description: "Chapter health: attendance, dues, hours, retention.",
     subFeatures: Object.freeze([

@@ -67,7 +67,7 @@ only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or r
 
 ## dependency-cruiser — architectural boundaries
 
-Enforces three things the codebase already asserted in prose and nothing checked:
+Enforces four things the codebase already asserted in prose and nothing checked:
 
 - **The API's layer direction.** Interface → Application → Infrastructure → Domain; outer may import
   inner, never the reverse ([`api-development` skill](../../.claude/skills/api-development/SKILL.md)).
@@ -77,6 +77,11 @@ Enforces three things the codebase already asserted in prose and nothing checked
   a `*.module.ts` (or its spec) fails `api-modules-wiring-only`, in one of three forms, because the
   gate judges edges rather than files: the base rule through the file's own imports, `-target` through an
   import of it, `-orphan` when it has neither (#3219). Workers go in `application/workers/`.
+- **A model provider's SDK stays in its adapter.** `@anthropic-ai/sdk` and `@google/genai` may be
+  imported only under `apps/api/src/infrastructure/ai/`, type-only imports included
+  (`ai-provider-sdks-only-in-adapters`, ADR-28 decision 1). Everything else calls the AI gateway,
+  which is where consent, the spend caps, the citation check and the usage record happen. The rule
+  runs in every workspace's cruise, and `check:dep-cruiser:rules` proves it fires.
 - **Monorepo separation.** A package must not import an app; apps share code through `packages/`,
   never directly.
 

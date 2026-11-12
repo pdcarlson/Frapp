@@ -17,6 +17,7 @@ import {
   type TierRow,
 } from "@repo/hooks/role-tiers";
 import { groupPermissionsByModule } from "@repo/validation";
+import { useIsPermissionHidden } from "@/lib/roles/hidden-permissions";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_ROLES } from "@/components/back-row";
@@ -266,16 +267,20 @@ function OverrideList({
     (error, permission) =>
       setFailure({ permission, message: describeError(role.name, error) }),
   );
+  const isHidden = useIsPermissionHidden();
   const groups = useMemo(
     () =>
       groupPermissionsByModule(
-        permissionRows([
-          ...tier.permissions,
-          ...role.permissions,
-          ...Object.keys(role.permission_overrides),
-        ]),
+        permissionRows(
+          [
+            ...tier.permissions,
+            ...role.permissions,
+            ...Object.keys(role.permission_overrides),
+          ],
+          isHidden,
+        ),
       ),
-    [tier.permissions, role.permissions, role.permission_overrides],
+    [tier.permissions, role.permissions, role.permission_overrides, isHidden],
   );
 
   return (

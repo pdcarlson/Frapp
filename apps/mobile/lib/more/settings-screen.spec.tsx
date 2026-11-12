@@ -43,6 +43,11 @@ const state = vi.hoisted(() => ({
   isPushChannelBlocked: (async () => false) as () => Promise<boolean>,
   requestPushPermission: vi.fn<() => Promise<boolean>>(async () => true),
   openSettings: vi.fn(async () => undefined),
+  // The member's AI consent read: `null` is a server with AI off.
+  aiConsent: null as null | {
+    answer: "yes" | "no" | null;
+    sheet_changed: boolean;
+  },
 }));
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
@@ -72,6 +77,11 @@ vi.mock("react-native", async () => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
+  useAiConsent: () => ({
+    data: state.aiConsent,
+    isPending: false,
+    isError: false,
+  }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -135,6 +145,19 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
 vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
+
+// The AI consent sheet as a stand-in whose `present` a spec can see; the
+// sheet itself has its own spec (`components/ai/ai-consent-sheet.spec.tsx`).
+const aiSheet = vi.hoisted(() => ({ present: vi.fn() }));
+vi.mock("@/components/ai/ai-consent-sheet", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    AiConsentSheet: forwardRef(function AiConsentSheet(_props, ref) {
+      useImperativeHandle(ref, () => aiSheet);
+      return null;
+    }),
+  };
+});
 
 // The density sheet as a stand-in whose `present` a spec can see.
 const densitySheet = vi.hoisted(() => ({ present: vi.fn() }));
@@ -370,6 +393,51 @@ describe("Settings copy", () => {
     );
     act(() => row.props.onPress());
     expect(densitySheet.present).toHaveBeenCalled();
+  });
+
+  describe("the AI row", () => {
+    const aiRow = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Shows what AI features use, and lets you change your answer." &&
+          typeof node.props.onPress === "function",
+      );
+    afterEach(() => {
+      state.aiConsent = null;
+    });
+
+    it("isn't drawn where the server has no AI", () => {
+      state.aiConsent = null;
+      const tree = render();
+      expect(aiRow(tree)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("Use AI features");
+    });
+
+    it.each([
+      [{ answer: "yes" as const, sheet_changed: false }, "Yes"],
+      [{ answer: "no" as const, sheet_changed: false }, "No"],
+      [{ answer: null, sheet_changed: false }, "Not answered"],
+      // A changed sheet voids the earlier yes (silence is no).
+      [{ answer: "yes" as const, sheet_changed: true }, "Not answered"],
+    ])("states the member's answer %o as %s", (consent, value) => {
+      state.aiConsent = consent;
+      const tree = render();
+      const row = aiRow(tree)[0];
+      const text = row
+        .findAll((node) => (node.type as unknown) === "Text")
+        .map((node) => [node.props.children].flat().join(""));
+      expect(text).toContain("Use AI features");
+      expect(text).toContain(value);
+    });
+
+    it("opens the consent sheet", () => {
+      aiSheet.present.mockClear();
+      state.aiConsent = { answer: "no", sheet_changed: false };
+      const tree = render();
+      act(() => aiRow(tree)[0].props.onPress());
+      expect(aiSheet.present).toHaveBeenCalled();
+    });
   });
 
   it("marks the What's new row while another device showed the newest entry first (#4043)", async () => {

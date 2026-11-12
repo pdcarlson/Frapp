@@ -9,7 +9,7 @@
 //      bundle would call `http://localhost:3001` and tag Sentry `development`. Whatever the
 //      publisher's shell holds under `EXPO_PUBLIC_*` would be inlined too.
 //   2. It sets no `EAS_BUILD_PROFILE`, so `apps/mobile/app.config.js` skips every production
-//      fence (API origin, Supabase project and key, app URL, Ask).
+//      fence (API origin, Supabase project and key, app URL).
 //   3. `runtimeVersion` is the `appVersion` policy: an update reaches every binary whose
 //      `expo.version` matches. If native code changed since that binary was built without a
 //      version bump, the update calls a native module the binary doesn't have and crashes.

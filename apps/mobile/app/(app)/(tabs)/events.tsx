@@ -1,7 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
 import {
   useActiveChapterId,
@@ -35,7 +34,6 @@ import {
 } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { Segmented } from "@/components/segmented";
-import { AskSheet } from "@/components/ask/ask-sheet";
 import { useCanCreateEvents } from "@/components/events/new-event-sheet";
 import {
   createEventRowStyles,
@@ -43,9 +41,8 @@ import {
   EventRowFlat,
 } from "@/components/events/event-rows";
 import { EventsCalendar } from "@/components/events/events-calendar";
+import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry";
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
-import { AskPill } from "@/components/chat/ask-pill";
-import { isAskAvailable } from "@/lib/ask/flag";
 import {
   selectAllEventRows,
   selectEventList,
@@ -77,12 +74,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The List | Calendar switch opens on whichever the member used last on this
  * phone (`lib/events/events-view.ts`; per device, #3823).
  *
- * The ✦ Ask pill in the header is the s06 half of the global Ask entry.
- * `spec/ui/mobile/navigation.md` § Global entries puts it "in the top bar of
- * Chat home and Events", and only in a build that has Ask (#2259). The sheet
- * it opens is hosted here rather than routed to, per
- * `spec/ui/mobile/patterns.md` § Bottom sheets.
- *
  * A member who can create events (`events:create`, every member by default
  * since #3709) adds one from the tab
  * bar's quick-actions + (New event, `components/quick-actions/`); the
@@ -106,7 +97,6 @@ export default function EventsScreen() {
   const chapterId = useActiveChapterId();
   const router = useRouter();
   const eventsQuery = useEvents();
-  const askSheetRef = useRef<BottomSheetModal>(null);
   const canCreateEvents = useCanCreateEvents();
   const view = useEventsView();
   const { tokens } = useFrappTheme();
@@ -351,12 +341,6 @@ export default function EventsScreen() {
     <ScreenShell
       title="Events"
       refresh={refresh}
-      headerAction={
-        // No pill in a build without Ask (#2259) — see `app/(app)/(tabs)/index.tsx`.
-        isAskAvailable() ? (
-          <AskPill onPress={() => askSheetRef.current?.present()} />
-        ) : undefined
-      }
     >
       {chapterId ? (
         <Segmented
@@ -369,7 +353,7 @@ export default function EventsScreen() {
 
       {renderBody()}
 
-      <AskSheet ref={askSheetRef} />
+      {chapterId ? <SuggestedEventsEntry /> : null}
     </ScreenShell>
   );
 }

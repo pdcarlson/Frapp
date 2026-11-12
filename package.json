@@ -87,6 +87,9 @@
     "@expo/plist": {
       "@xmldom/xmldom": "^0.8.15"
     },
+    "mammoth": {
+      "@xmldom/xmldom": "^0.8.15"
+    },
     "@nestjs/swagger": {
       "js-yaml": "^5.4.1"
     },

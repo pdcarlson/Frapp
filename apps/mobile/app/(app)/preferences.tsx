@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
+  useAiConsent,
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
@@ -13,11 +14,13 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_CONSENT_COPY,
   chatChapterLevelLabel,
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { chatDensityLabel } from "@repo/chat-core/density";
+import { AiConsentSheet } from "@/components/ai/ai-consent-sheet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
@@ -195,6 +198,8 @@ export default function PreferencesScreen() {
   // only stated off a confirmed read: "None" from a failed one would claim
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
+  const aiConsentSheetRef = useRef<BottomSheetModal>(null);
+  const aiConsent = useAiConsent();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
@@ -446,6 +451,23 @@ export default function PreferencesScreen() {
         {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
+        {/* Only where the server has AI (`AI_ENABLED`): with it off this
+            row, like every AI entry, isn't drawn. Opens the same sheet the
+            first AI action does, to change the answer any time. */}
+        {aiConsent.data ? (
+          <ListRow
+            label={AI_CONSENT_COPY.settingsSwitch}
+            value={
+              aiConsent.data.sheet_changed || !aiConsent.data.answer
+                ? "Not answered"
+                : aiConsent.data.answer === "yes"
+                  ? "Yes"
+                  : "No"
+            }
+            accessibilityHint="Shows what AI features use, and lets you change your answer."
+            onPress={() => aiConsentSheetRef.current?.present()}
+          />
+        ) : null}
         <ListRow
           label="What's new"
           accessibilityHint="Shows the latest changes to the app."
@@ -504,6 +526,9 @@ export default function PreferencesScreen() {
         </Text>
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
+      {aiConsent.data ? (
+        <AiConsentSheet ref={aiConsentSheetRef} consent={aiConsent.data} />
+      ) : null}
       <ChatDensitySheet ref={chatDensitySheetRef} />
       <ChatLevelSheet
         ref={chatLevelSheetRef}

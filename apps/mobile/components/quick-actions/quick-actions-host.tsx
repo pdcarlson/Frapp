@@ -12,6 +12,7 @@ import { AccessibilityInfo, AppState } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
+import { AskSheet } from "@/components/ask/ask-sheet";
 import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
@@ -25,7 +26,7 @@ import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
 import type { QuickActionKey } from "@/lib/quick-actions";
 
-type SheetKey = "newEvent" | "newTask" | "logHours" | "upload";
+type SheetKey = "newEvent" | "newTask" | "logHours" | "upload" | "ask";
 
 const NONE: ReadonlySet<SheetKey> = new Set();
 
@@ -54,6 +55,8 @@ export function useQuickActionsHost({
   events: boolean;
 }): {
   run: (key: QuickActionKey) => void;
+  /** Opens Ask Frapp, for a member who has it (the panel's bar). */
+  ask: () => void;
   sheets: ReactNode;
   /** The last create's confirmation, for a few seconds, or `null`. */
   notice: string | null;
@@ -66,12 +69,14 @@ export function useQuickActionsHost({
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
   const uploadRef = useRef<BottomSheetModal>(null);
+  const askRef = useRef<BottomSheetModal>(null);
   const refs: Record<SheetKey, RefObject<BottomSheetModal | null>> = useMemo(
     () => ({
       newEvent: eventRef,
       newTask: taskRef,
       logHours: hoursRef,
       upload: uploadRef,
+      ask: askRef,
     }),
     [],
   );
@@ -211,8 +216,18 @@ export function useQuickActionsHost({
     [eventsQuery.data, openSheet, router],
   );
 
+  const ask = useCallback(() => openSheet("ask"), [openSheet]);
+
   const sheets = (
     <>
+      {mounted.has("ask") ? (
+        <SheetBoundary
+          key={`ask-${chapterId ?? "none"}`}
+          onError={() => dropSheet("ask")}
+        >
+          <AskSheet ref={askRef} />
+        </SheetBoundary>
+      ) : null}
       {mounted.has("newEvent") ? (
         <SheetBoundary
           key={`event-${chapterId ?? "none"}`}
@@ -279,7 +294,7 @@ export function useQuickActionsHost({
     </>
   );
 
-  return { run, sheets, notice: notice?.text ?? null };
+  return { run, ask, sheets, notice: notice?.text ?? null };
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */

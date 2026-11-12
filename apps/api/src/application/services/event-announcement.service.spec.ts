@@ -248,6 +248,21 @@ describe('EventAnnouncementService', () => {
       });
     });
 
+    it('stays quiet for an event created silently (minutes for a meeting not on the calendar)', async () => {
+      mockEventRepo.create.mockResolvedValue(thanksgiving);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        created_by: 'user-creator',
+        silent: true,
+      });
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    });
+
     it('stays quiet for a save that round-trips the same time and place', async () => {
       mockEventRepo.findById.mockResolvedValue({
         ...thanksgiving,

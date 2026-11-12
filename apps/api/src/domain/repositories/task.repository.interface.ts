@@ -56,6 +56,15 @@ export interface ITaskRepository {
   findByChapter(chapterId: string, query?: TaskListQuery): Promise<Task[]>;
   /** How many of the chapter's tasks match `query`, counted in SQL. */
   countByChapter(chapterId: string, query?: TaskListFilter): Promise<number>;
+  /**
+   * The chapter's tasks due on or after `dueFrom` (`YYYY-MM-DD`), or made at
+   * or after `createdFrom`, every row of them: read in pages, so a chapter
+   * with more rows than one response holds loses none.
+   */
+  findSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<Task[]>;
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;
   /**

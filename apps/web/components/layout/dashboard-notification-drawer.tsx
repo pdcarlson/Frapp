@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
+  AI_SUGGESTIONS_NOTIFICATION_SCREEN,
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   DISCORD_IMPORT_NOTIFICATION_SCREEN,
   useInvalidateChatReports,
@@ -70,8 +71,13 @@ type Notification = {
       channelId?: string;
       messageId?: string;
       eventId?: string;
+      /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
+      meetingId?: string;
       taskId?: string;
       invoiceId?: string;
+      /** "Suggested tasks to review" names what they were drawn from. */
+      sourceType?: string;
+      sourceId?: string;
     };
     priority?: "URGENT" | "NORMAL" | "SILENT";
     senderId?: string;
@@ -103,13 +109,21 @@ function deepLinkFor(notification: Notification): string {
     case "chat":
       return chatDeepLink({ channelId: target.channelId });
     case "events":
-      return "/events";
+      return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
     case "points":
       return "/points";
     case "billing":
       return "/billing";
     case "tasks":
       return "/tasks";
+    // Suggested tasks to review (#4313): on the minutes they came from, where
+    // the action items are; from any other source, the board's Suggested list.
+    // One drawn from last year's event (#3930) is reviewed on Events.
+    case AI_SUGGESTIONS_NOTIFICATION_SCREEN:
+      if (target.sourceType === "event") return "/events";
+      return target.sourceType === "meeting" && target.sourceId
+        ? `/meetings/${target.sourceId}`
+        : "/tasks";
     case "service":
       return "/service";
     case "profile":

@@ -23,8 +23,10 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
 // decision 9). Since #3709 (social trust) every tier but New members also
 // carries what any member can do, events:create among it, so an officer can
 // do what the members they lead can, and the Exec board edits and deletes any
-// event, which is what makes one required or worth points.
+// event, which is what makes one required or worth points. Every tier also
+// gives `ai:use` (#4308).
 const MEMBER = [
+  'ai:use',
   'backwork:upload',
   'events:create',
   'members:view',
@@ -46,6 +48,7 @@ const EXEC_BOARD = [
   'chapter-config:view',
   'events:delete',
   'events:update',
+  'meetings:record',
   'polls:view_all',
   'roles:manage',
   'service:approve',
@@ -74,7 +77,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       VICE_PRESIDENT: EXEC_BOARD,
       SECRETARY: EXEC_BOARD,
       MEMBER,
-      NEW_MEMBER: ['backwork:upload', 'members:view'],
+      NEW_MEMBER: ['ai:use', 'backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
     });
   });
@@ -107,6 +110,20 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       expect(exec.has(permission)).toBe(true);
       expect(chairs.has(permission)).toBe(false);
     }
+  });
+
+  // #4308: every active member may use the AI features a president turns on,
+  // once they say yes on the AI sheet. Alumni sit outside the tiers and do
+  // not; nobody is seeded `ai:act`.
+  it('gives ai:use to every starting tier, and ai:act to none', () => {
+    for (const tier of STARTING_ROLE_TIERS) {
+      expect(tier.permissions).toContain(SystemPermissions.AI_USE);
+      expect(tier.permissions).not.toContain(SystemPermissions.AI_ACT);
+    }
+    const alumni = DEFAULT_SYSTEM_ROLES.find(
+      (role) => role.system_key === 'ALUMNI',
+    );
+    expect(alumni?.permissions).not.toContain(SystemPermissions.AI_USE);
   });
 
   // #3709: every member can create an event and upload backwork, whatever

@@ -51,6 +51,17 @@ import {
 import { can } from "@repo/validation";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_MIN_MESSAGES,
+  CHAT_CATCH_UP_OFFER_AT,
+  chatCatchUpThreadOfferLine,
+  type ChatCatchUpPoint,
+} from "@repo/validation";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
+import { useAiSurfaces } from "@/lib/ai/availability";
+import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
+import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import {
   MessageActionsSheet,
@@ -72,6 +83,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  isDirectChannel,
   selectPostCapability,
   threadChannel,
   threadTitleFor,
@@ -111,6 +123,11 @@ export const THREAD_NO_REPLY_HINT = "You can't reply in this channel.";
 export interface MessageThreadScreenProps {
   channelId: string;
   rootId: string;
+  /**
+   * A reply to open the thread on: the one a summary's line rests on
+   * (#3946). Scrolled to once, when the replies are on screen.
+   */
+  focusMessageId?: string | null;
 }
 
 /**
@@ -145,6 +162,7 @@ export interface MessageThreadScreenProps {
 export function MessageThreadScreen({
   channelId,
   rootId,
+  focusMessageId = null,
 }: MessageThreadScreenProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -351,6 +369,64 @@ export function MessageThreadScreen({
     void loadOlder().then(({ error }) => setOlderError(error));
   }, [loadOlder]);
 
+  const inverted = useMemo(() => [...rows].reverse(), [rows]);
+  // A line of a summary opens its reply (#3946), paging earlier replies for
+  // it when it isn't loaded, as the channel's jump does. The parent is not a
+  // row: it heads the list, so its line scrolls to the top.
+  const {
+    listRef,
+    jumpToMessage,
+    onScrollToIndexFailed,
+  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, rootId);
+  const { jumpToImportant: jumpToReply } = useJumpToImportant({
+    rows: inverted,
+    resetKey: rootId,
+    hasOlder: thread.hasOlder,
+    isLoadingOlder: thread.isLoadingOlder,
+    olderError: olderError !== null,
+    loadOlder: onLoadOlder,
+    jumpToMessage,
+  });
+  const openPoint = useCallback(
+    (point: ChatCatchUpPoint) => {
+      if (point.message_id === rootId) {
+        listRef.current?.scrollToEnd({ animated: true });
+        return;
+      }
+      jumpToReply(point.message_id);
+    },
+    [rootId, listRef, jumpToReply],
+  );
+  const listReady = !thread.isLoading && !!rootRow && !!viewerId;
+  const focusedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!listReady || !focusMessageId || focusedOn.current === focusMessageId) {
+      return;
+    }
+    focusedOn.current = focusMessageId;
+    if (focusMessageId !== rootId) jumpToReply(focusMessageId);
+  }, [listReady, focusMessageId, rootId, jumpToReply]);
+
+  // Catch me up on this thread (#3946), on the channel's terms: the server,
+  // the president's switches and `ai:use` (`useAiSurfaces`), and never a DM,
+  // a group DM or the audit log.
+  const canCatchUp =
+    useAiSurfaces().catchUp &&
+    !!openChannel &&
+    !isDirectChannel(openChannel.channel) &&
+    !postCapability.isAuditLog;
+  const catchUp = useCatchUp({ channelId, nameFor, onOpenPoint: openPoint });
+  const startCatchUp = catchUp.start;
+  const summarizeThread = useCallback(() => {
+    startCatchUp({
+      kind: "thread",
+      channelId,
+      channelName: openChannel?.channel.name ?? null,
+      rootId,
+    });
+  }, [startCatchUp, channelId, openChannel, rootId]);
+  const [offerDismissed, setOfferDismissed] = useState(false);
+
   // Unblock from a tombstone, as s05 offers it; the thread is read again so
   // the member's replies come back unmasked.
   const { unblock } = useBlockActions();
@@ -416,24 +492,17 @@ export function MessageThreadScreen({
   );
 
   // A quote's tap scrolls to the message it quotes when the thread holds it.
-  const listRef = useRef<FlatList<ThreadRow>>(null);
-  const inverted = useMemo(() => [...rows].reverse(), [rows]);
   const onJumpToMessage = useCallback(
     (messageId: string) => {
       if (messageId === rootId) {
         listRef.current?.scrollToEnd({ animated: true });
         return;
       }
-      const index = inverted.findIndex((row) => row.message.id === messageId);
-      if (index >= 0) {
-        listRef.current?.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.5,
-        });
-      }
+      // Through the hook, so a reply outside the rendered window is reached
+      // by its one retry, and an earlier jump's target can't be replayed.
+      jumpToMessage(messageId);
     },
-    [rootId, inverted],
+    [rootId, listRef, jumpToMessage],
   );
 
   // Members a block attempt proved are not in this chapter, as the channel
@@ -608,6 +677,10 @@ export function MessageThreadScreen({
     confirmedReplies,
     thread.root?.thread?.reply_count ?? 0,
   );
+  const canSummarize =
+    canCatchUp && replyCount + 1 >= CHAT_CATCH_UP_MIN_MESSAGES;
+  // A long thread opens at its newest reply, a screen or more below the
+  // divider's action, so it is offered under the header too.
   // Drawn at the top of the inverted list: the parent, then the divider.
   const head = rootRow ? (
     <View>
@@ -617,6 +690,20 @@ export function MessageThreadScreen({
           {replyCount === 1 ? "1 reply" : `${replyCount} replies`}
         </Text>
         <View style={styles.dividerRule} />
+        {/* Only for a thread long enough to be worth shortening. */}
+        {canSummarize ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={CHAT_CATCH_UP_COPY.thread_action}
+            hitSlop={12}
+            onPress={summarizeThread}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          >
+            <Text style={[styles.dividerAction, { color: brand.accent }]}>
+              {CHAT_CATCH_UP_COPY.thread_action}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       {thread.hasOlder ? (
         <Pressable
@@ -655,6 +742,7 @@ export function MessageThreadScreen({
     ) : (
       <FlatList
         ref={listRef}
+        onScrollToIndexFailed={onScrollToIndexFailed}
         data={inverted}
         inverted
         keyExtractor={(row) => row.message.client_message_id}
@@ -664,12 +752,6 @@ export function MessageThreadScreen({
             layout.get(item.message.client_message_id) ?? ROOT_PLACEMENT,
           )
         }
-        // A quote's jump to a reply not yet measured: let it land next frame.
-        onScrollToIndexFailed={({ index }) => {
-          requestAnimationFrame(() =>
-            listRef.current?.scrollToIndex({ index, viewPosition: 0.5 }),
-          );
-        }}
         // Inverted, so the footer draws at the top, over the oldest reply.
         ListFooterComponent={head}
         contentContainerStyle={styles.listContent}
@@ -727,6 +809,28 @@ export function MessageThreadScreen({
             />
           ) : null}
         </View>
+
+        {catchUp.waiting ? (
+          <CatchUpStrip
+            line={CHAT_CATCH_UP_COPY.resume_line}
+            action={CHAT_CATCH_UP_COPY.resume_action}
+            onAction={catchUp.resume}
+            onDismiss={catchUp.drop}
+          />
+        ) : canSummarize &&
+          !catchUp.active &&
+          !offerDismissed &&
+          replyCount >= CHAT_CATCH_UP_OFFER_AT ? (
+          <CatchUpStrip
+            line={chatCatchUpThreadOfferLine(replyCount)}
+            action={CHAT_CATCH_UP_COPY.thread_action}
+            onAction={() => {
+              setOfferDismissed(true);
+              summarizeThread();
+            }}
+            onDismiss={() => setOfferDismissed(true)}
+          />
+        ) : null}
 
         <View style={styles.flex}>
           {/* The channel's chat background (#3973), as behind its list. */}
@@ -799,6 +903,7 @@ export function MessageThreadScreen({
           }
         />
       </KeyboardAvoidingArea>
+      {catchUp.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
@@ -856,6 +961,9 @@ function createStyles(tokens: SignetTokens) {
     dividerText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    dividerAction: {
+      ...typeRole(tokens.typography.role.caption),
     },
     dividerRule: {
       flex: 1,

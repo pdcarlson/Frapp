@@ -161,6 +161,19 @@ export class TaskService {
     return view;
   }
 
+  /**
+   * The chapter's tasks due or made since the given days, whole and without
+   * their subtasks: for a background read of the record (#3930), never a
+   * member's list.
+   */
+  async listSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<TaskView[]> {
+    const tasks = await this.taskRepo.findSince(chapterId, since);
+    return tasks.map((task) => toDisplayStatus(task));
+  }
+
   /** Each task with its subtasks, in order (#4003). */
   private async withSubtasks(
     chapterId: string,

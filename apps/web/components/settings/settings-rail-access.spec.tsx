@@ -26,7 +26,13 @@ afterEach(() => {
  * rules; this pins that the page renders by them.
  */
 
-const { permissions, search, currentChapter } = vi.hoisted(() => ({
+afterEach(() => {
+  ai.available = false;
+});
+
+const { permissions, search, currentChapter, ai } = vi.hoisted(() => ({
+  // Whether the server has AI (`aiAvailableFrom(useAiConsent())`).
+  ai: { available: false },
   permissions: {
     current: undefined as string[] | undefined,
     failed: false,
@@ -45,6 +51,9 @@ const { permissions, search, currentChapter } = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // A server with AI off: no AI row (#4308).
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => ai.available,
   useCurrentChapter: () => ({
     data: currentChapter.current,
     isPending: false,
@@ -166,6 +175,7 @@ const MODULE_ROWS = [
   "Study zones",
   "Tasks",
   "Polls",
+  "Meetings",
   "Documents",
   "Backwork",
   "Reports",
@@ -205,6 +215,19 @@ describe("Settings shows each viewer what they can use", () => {
     expect(
       screen.queryByRole("navigation", { name: "Officer tools" }),
     ).toBeNull();
+  });
+
+  it("adds the AI row under Chapter only while the server has AI (#4308)", () => {
+    permissions.current = ["*"];
+    ai.available = true;
+    render(<SettingsPage />);
+    expect(tabNames().slice(0, 5)).toEqual([
+      "Chapter",
+      "Semester",
+      "Privacy",
+      "AI",
+      "Plan and billing",
+    ]);
   });
 
   it("puts Chat admin and Discord import on the Chat page", () => {

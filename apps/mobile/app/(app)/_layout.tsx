@@ -115,8 +115,18 @@ export default function AppLayout() {
         options={{ title: SCREEN_TITLES.directory }}
       />
       <Stack.Screen name="invite" options={{ title: SCREEN_TITLES.invite }} />
-      {/* A redirect to Chat home, kept for old `frapp://ask` links. */}
+      {/* Presents the Ask sheet for a `frapp://ask` link, or pops to Chat
+          home for a member without Ask. */}
       <Stack.Screen name="ask" options={{ title: "Ask" }} />
+      <Stack.Screen name="minutes" options={{ title: SCREEN_TITLES.minutes }} />
+      <Stack.Screen
+        name="minutes-details"
+        options={{ title: SCREEN_TITLES["minutes-details"] }}
+      />
+      <Stack.Screen
+        name="suggested-tasks"
+        options={{ title: SCREEN_TITLES["suggested-tasks"] }}
+      />
       <Stack.Screen
         name="check-in"
         options={{ title: SCREEN_TITLES["check-in"] }}

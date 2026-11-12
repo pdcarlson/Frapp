@@ -44,6 +44,11 @@ export const SCREEN_TITLES = {
   "check-in": "Check in",
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
+  minutes: "Minutes",
+  // One meeting's minutes: the capsule over it says where back goes.
+  "minutes-details": "Minutes",
+  // Tasks and, since #3930, events: `AI_SUGGESTION_COPY.listHeading`.
+  "suggested-tasks": "Suggested",
   "arrange-channels": "Arrange channels",
   "chapter-settings": "Chapter settings",
   "chapter-roles": "Roles",

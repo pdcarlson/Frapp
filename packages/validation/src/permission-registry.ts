@@ -32,6 +32,7 @@ export const PERMISSION_MODULES = [
   { key: "announcements", label: "Announcements" },
   { key: "events", label: "Events" },
   { key: "tasks", label: "Tasks" },
+  { key: "meetings", label: "Meetings" },
   { key: "points", label: "Points" },
   { key: "hours", label: "Service hours" },
   { key: "polls", label: "Polls" },
@@ -95,6 +96,22 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "chapter",
     "Start a new semester",
     "Close the current semester and start the next one.",
+  ),
+  // AI (ADR-28). The API leaves these two out of the catalog it serves while
+  // its AI switch is off, and the web role and tier pages, which draw from
+  // this registry, leave them out the same way
+  // (`apps/web/components/roles/hidden-permissions.ts`).
+  chapterPermission(
+    "ai:use",
+    "chapter",
+    "Use AI",
+    "Ask for AI drafts and answers, once the chapter has turned AI on.",
+  ),
+  chapterPermission(
+    "ai:act",
+    "chapter",
+    "Let AI take actions",
+    "Have AI carry out things the member could do themselves, after they confirm each one.",
   ),
 
   chapterPermission(
@@ -166,6 +183,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "tasks",
     "Manage tasks",
     "Create and assign tasks, and confirm them done.",
+  ),
+
+  chapterPermission(
+    "meetings:record",
+    "meetings",
+    "Write meeting minutes",
+    "Start minutes for a meeting, and edit and post the ones they started.",
+  ),
+  chapterPermission(
+    "meetings:edit",
+    "meetings",
+    "Edit anyone's minutes",
+    "Edit and post minutes another officer started, before or after they are posted.",
+  ),
+  chapterPermission(
+    "meetings:delete",
+    "meetings",
+    "Delete minutes",
+    "Delete a meeting's minutes for good.",
   ),
 
   chapterPermission(

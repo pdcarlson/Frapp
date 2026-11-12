@@ -615,8 +615,20 @@ vi.mock("@repo/hooks", async () => ({
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
   useDeleteChannel: () => ({ mutateAsync: mockDeleteChannel }),
+  useChatCatchUpAvailable: () => catchUpState.available,
+  useChatCatchUp: () => ({
+    current: null,
+    run: catchUpState.run,
+    reset: vi.fn(),
+  }),
   useChannelUnreadCounts: () => ({
-    data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
+    data: [
+      {
+        channel_id: "chan-general",
+        unread_count: catchUpState.unread,
+        mention_count: 1,
+      },
+    ],
     isError: sidebarState.unreadError,
   }),
   // Direct messages' order and last lines (#3774).
@@ -968,6 +980,19 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+// Catch me up (#3946): off by default, as it is for a chapter that has not
+// turned it on. `unread` is #general's count when the channel opens.
+const catchUpState = vi.hoisted(() => ({
+  available: false,
+  unread: 2,
+  run: vi.fn(async () => undefined),
+}));
+vi.mock("@/components/ai/ai-consent-sheet", () => ({
+  useAiConsentGate: () => ({
+    ensureConsent: async () => true,
+    consentDialog: null,
+  }),
+}));
 // The Important strip (#4186): the hook is the server's answer, so the shell
 // test drives it directly.
 const importantState = vi.hoisted(() => ({
@@ -1221,6 +1246,7 @@ vi.mock("./channel-menu", () => ({
     onJumpToBookmark,
     hideConversation,
     pinToTop,
+    catchUp,
     displayLock,
     searchChannels,
     searchMembers,
@@ -1231,6 +1257,7 @@ vi.mock("./channel-menu", () => ({
     searchChannels: Array<{ id: string; label: string }>;
     searchMembers: Array<{ id: string; label: string }>;
     pinToTop?: { pinned: boolean; onToggle: () => void };
+    catchUp?: { onStart: () => void };
     messages: Array<{ id: string }>;
     hiddenPins: { blocked: number; held: number };
     onJumpToSearchHit: (hit: {
@@ -1257,6 +1284,15 @@ vi.mock("./channel-menu", () => ({
       <span data-testid="menu-hidden-pins">
         {`${hiddenPins.blocked}/${hiddenPins.held}`}
       </span>
+      {catchUp ? (
+        <button
+          type="button"
+          data-testid="menu-catch-up"
+          onClick={catchUp.onStart}
+        >
+          catch up
+        </button>
+      ) : null}
       {pinToTop ? (
         <button
           type="button"
@@ -1411,6 +1447,7 @@ vi.mock("./thread-panel", () => ({
     canReply,
     canPost,
     onClose,
+    onCatchUp,
     beside,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
@@ -1418,6 +1455,11 @@ vi.mock("./thread-panel", () => ({
       data-testid="thread-panel"
       data-beside={String(!!beside)}
     >
+      {onCatchUp ? (
+        <button data-testid="thread-catch-up" onClick={onCatchUp}>
+          summarize thread
+        </button>
+      ) : null}
       <span data-testid="thread-root">{rootId}</span>
       <span data-testid="thread-held-root">{heldRoot?.content ?? "none"}</span>
       <span data-testid="thread-can-reply">{String(canReply)}</span>
@@ -1775,6 +1817,87 @@ describe("ChatShell sidebar arrangement (#2877)", () => {
       channelId: "chan-general",
       pinned: false,
     });
+  });
+});
+
+describe("ChatShell catch me up (#3946)", () => {
+  beforeEach(() => {
+    catchUpState.run.mockClear();
+  });
+  afterEach(() => {
+    catchUpState.available = false;
+    catchUpState.unread = 2;
+  });
+
+  it("offers nothing where summaries are off", () => {
+    catchUpState.unread = 140;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByTestId("menu-catch-up")).toBeNull();
+    expect(
+      screen.queryByText("140 new messages since you were last here."),
+    ).toBeNull();
+  });
+
+  it("offers it in the channel menu, and never on the audit log", () => {
+    catchUpState.available = true;
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("menu-catch-up")).toBeInTheDocument();
+    unmount();
+
+    render(<ChatShell initialChannelId="chan-audit" />);
+    expect(screen.queryByTestId("menu-catch-up")).toBeNull();
+  });
+
+  it("shows no strip for a handful of new messages", () => {
+    catchUpState.available = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByRole("button", { name: "Catch me up" })).toBeNull();
+  });
+
+  it("offers a strip on a channel opened with many new messages, and asks for that stretch", async () => {
+    catchUpState.available = true;
+    catchUpState.unread = 140;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      screen.getByText("140 new messages since you were last here."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Catch me up" }));
+    await waitFor(() =>
+      expect(catchUpState.run).toHaveBeenCalledWith("chan-general", {
+        unread: { count: 140, as_of: expect.any(String) },
+      }),
+    );
+    // The panel is up and the strip has made way for it.
+    expect(
+      screen.getByRole("complementary", { name: "Catch me up" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("140 new messages since you were last here."),
+    ).toBeNull();
+  });
+
+  it("puts the strip away on Dismiss, without asking for anything", () => {
+    catchUpState.available = true;
+    catchUpState.unread = 140;
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(
+      screen.queryByText("140 new messages since you were last here."),
+    ).toBeNull();
+    expect(catchUpState.run).not.toHaveBeenCalled();
+  });
+
+  it("asks for the last 24 hours from the menu when nothing was new", async () => {
+    catchUpState.available = true;
+    catchUpState.unread = 0;
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("menu-catch-up"));
+    await waitFor(() =>
+      expect(catchUpState.run).toHaveBeenCalledWith("chan-general", {
+        since: expect.any(String),
+      }),
+    );
   });
 });
 

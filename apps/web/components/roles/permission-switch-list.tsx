@@ -5,6 +5,7 @@ import { groupPermissionsByModule } from "@repo/validation";
 import { permissionRows } from "@repo/hooks/role-tiers";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useIsPermissionHidden } from "./hidden-permissions";
 
 /**
  * The page of switches a tier or a role is edited on (#3990): one group per
@@ -45,9 +46,10 @@ export function PermissionSwitchList({
   /** The permission whose write is in flight, if any. */
   pendingPermission?: string | null;
 }) {
+  const isHidden = useIsPermissionHidden();
   const groups = useMemo(
-    () => groupPermissionsByModule(permissionRows(extraPermissions)),
-    [extraPermissions],
+    () => groupPermissionsByModule(permissionRows(extraPermissions, isHidden)),
+    [extraPermissions, isHidden],
   );
 
   return (
