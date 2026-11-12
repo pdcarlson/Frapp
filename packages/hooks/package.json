@@ -26,7 +26,8 @@
     "./presence-topics": "./src/presence-topics.ts",
     "./use-chapter-presence": "./src/use-chapter-presence.ts",
     "./role-tiers": "./src/role-tiers.ts",
-    "./permission-overlay": "./src/permission-overlay.ts"
+    "./permission-overlay": "./src/permission-overlay.ts",
+    "./channel-access": "./src/channel-access.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
@@ -41,14 +42,13 @@
     "@repo/org-archetypes": "*",
     "@repo/theme": "*",
     "@repo/validation": "*",
-    "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-query": "^5.107.1",
     "react": "19.2.3"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^26.6.6",
     "jsdom": "^30.1.3",
     "react-dom": "19.2.3",

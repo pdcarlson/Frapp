@@ -29,9 +29,9 @@ import type {
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
  * to the chapter's configured `default_invite_role_id`, then to the seeded
- * Member role — so a caller that never learned about roles still issues a
- * sensible invite, and a chapter that set a default does not have to restate
- * it on every call. Naming a role still wins, so no existing caller changes
+ * Everyone role (once Member, #4191), so a caller that never learned about
+ * roles still issues a sensible invite, and a chapter that set a default does
+ * not have to restate it on every call. Naming a role still wins, so no existing caller changes
  * behaviour.
  */
 const ROLE_DESCRIPTION =
@@ -149,7 +149,7 @@ export class InvitePreviewResponseDto implements InvitePreview {
     nullable: true,
     type: String,
     description:
-      'The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)',
+      'The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to',
   })
   role: string | null;
 

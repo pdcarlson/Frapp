@@ -21,19 +21,18 @@ export const DASHBOARD_ROUTES = [
   // `AlumniDirectory`.
   //
   // `/roles` likewise redirects into Settings → Roles (Chunk 07b, #538). That
-  // surface is covered by `/settings`.
+  // surface is covered by `/settings`, and so are `/geofences`, `/reports`,
+  // `/discord-import` and `/chat-admin`, which redirect to their pages in
+  // Chapter settings (#3837).
   "/activity",
   "/events",
   "/tasks",
   "/service",
   "/documents",
   "/backwork",
-  "/discord-import",
-  "/geofences",
   "/study",
   "/chat",
   "/points",
-  "/reports",
   "/profile",
   "/preferences",
   "/settings",

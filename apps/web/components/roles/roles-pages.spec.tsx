@@ -409,7 +409,7 @@ describe("a tier's permissions", () => {
     expect(screen.queryByRole("switch", { name: /everything/i })).toBeNull();
   });
 
-  it("leaves out the AI and Meetings switches while those features are off", () => {
+  it("leaves out the AI switches while the server has AI off", () => {
     h.aiConsent = null;
     render(
       <TierPermissionsPage tierId="t1" onBack={vi.fn()} onOpenRole={vi.fn()} />,
@@ -417,10 +417,6 @@ describe("a tier's permissions", () => {
     expect(screen.queryByRole("switch", { name: /use ai/i })).toBeNull();
     expect(
       screen.queryByRole("switch", { name: /let ai take actions/i }),
-    ).toBeNull();
-    // Meetings is held off for the beta (`BETA_OFF_MODULES`).
-    expect(
-      screen.queryByRole("switch", { name: /write meeting minutes/i }),
     ).toBeNull();
   });
 

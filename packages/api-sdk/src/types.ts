@@ -3653,7 +3653,7 @@ export interface paths {
         };
         /**
          * List polls across the chapter
-         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Everyone role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
          */
         get: operations["PollController_listPolls_v1"];
         put?: never;
@@ -4931,7 +4931,7 @@ export interface components {
             analytics_opt_out?: boolean;
             /**
              * Format: uuid
-             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
         };
@@ -5258,7 +5258,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
         };
@@ -5275,7 +5275,7 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
             /** @description The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller. */
@@ -5436,6 +5436,8 @@ export interface components {
             tier_id: string | null;
             /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
             user_ids: string[];
+            /** @description True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option. */
+            hidden: boolean;
         };
         MentionRoleDto: {
             /** Format: uuid */
@@ -7186,9 +7188,18 @@ export interface components {
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
+        GeofenceCircleDto: {
+            lat: number;
+            lng: number;
+            /** @description Radius in meters. */
+            radius_m: number;
+        };
         CreateGeofenceDto: {
             name: string;
-            coordinates: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             /** @default true */
             is_active: boolean;
             /** @default 30 */
@@ -7205,7 +7216,10 @@ export interface components {
         };
         UpdateGeofenceDto: {
             name?: string;
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
             coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             is_active?: boolean;
             minutes_per_point?: number;
             points_per_interval?: number;
@@ -7348,7 +7362,7 @@ export interface components {
              */
             end_date: string;
             /**
-             * @description Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @description Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.
              * @default false
              */
             promote_new_members: boolean;

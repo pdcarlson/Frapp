@@ -1,5 +1,11 @@
 import { can, canAny, isBetaOffModule } from "@repo/validation";
 import { isModuleSettingsTab } from "@/components/settings/settings-modules";
+import {
+  CHAT_SETTINGS_PATH,
+  DISCORD_IMPORT_SETTINGS_PATH,
+  REPORTS_SETTINGS_PATH,
+  STUDY_ZONES_SETTINGS_PATH,
+} from "@/components/settings/settings-paths";
 
 /**
  * Who Settings is for, and what each viewer finds in it.
@@ -8,9 +14,10 @@ import { isModuleSettingsTab } from "@/components/settings/settings-modules";
  * sidebar used to carry a six-row Admin group (Roles, Study Zones, Reports,
  * Chat Admin, Discord Import, Settings). That group is what pushed an admin's
  * nav past a 768px window, so it folded into a single Settings row. Roles was
- * already a Settings tab. The other four keep their own full-width pages, and
- * since #4073 each is opened from its module's page in Chapter settings
- * (`page`), not from a Tools group of the rail.
+ * already a Settings tab. The other four kept full-width pages of their own
+ * until #3837: each now opens inside its module's page in Chapter settings
+ * (`page`), so the rail stays on screen and chat does not come back beside it
+ * (Paul, 2026-11-12: "I want to phase those out").
  *
  * The nav's Settings row (`nav-config.ts`), the chapter switcher's "Chapter
  * settings" link, the Settings rail and the page's "nothing here for you" state
@@ -19,18 +26,27 @@ import { isModuleSettingsTab } from "@/components/settings/settings-modules";
  * `spec/behavior/settings/README.md` § Who sees what.
  */
 
-/** Officer pages that live behind Settings but keep their own routes. */
+/** Officer tools, each inside the module page of Chapter settings it belongs to. */
 export type SettingsTool = {
   id: string;
   label: string;
-  /** Shown where a viewer's Settings holds tools and no setup tabs. */
+  /** Shown on its row, and where a viewer's Settings holds tools and no setup tabs. */
   description: string;
+  /** Where the tool opens: always a Chapter settings address (`settings-paths.ts`). */
   href: string;
   permission: string;
   /** `enabled_modules` key; the tool hides when the chapter switches it off. */
   module?: string;
-  /** The module page in Chapter settings that lists it (`?tab=`). */
+  /** The module page in Chapter settings that holds it (`?tab=`). */
   page: string;
+  /**
+   * The tool is drawn on its module page itself (Study zones' zone list, the
+   * Reports form, Chat's channels and report queue), so `href` is that page
+   * and the page lists no row for it. A tool without it (Discord import) is a
+   * row on its module page that opens it in place of the page, with a way
+   * back, still inside Chapter settings.
+   */
+  embedded?: boolean;
 };
 
 export const SETTINGS_TOOLS: readonly SettingsTool[] = [
@@ -39,9 +55,10 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     label: "Chat admin",
     description:
       "Create, edit and delete channels, manage categories and pins, and work the report queue.",
-    href: "/chat-admin",
+    href: CHAT_SETTINGS_PATH,
     permission: "channels:manage",
     page: "chat",
+    embedded: true,
   },
   {
     // `channels:manage`, like Chat admin: an import creates channels, writes
@@ -49,7 +66,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     id: "discord-import",
     label: "Discord import",
     description: "Bring a Discord server's history in as a read-only archive.",
-    href: "/discord-import",
+    href: DISCORD_IMPORT_SETTINGS_PATH,
     permission: "channels:manage",
     page: "chat",
   },
@@ -57,19 +74,21 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     id: "study-zones",
     label: "Study zones",
     description: "Draw study areas and set their reward rates.",
-    href: "/geofences",
+    href: STUDY_ZONES_SETTINGS_PATH,
     permission: "geofences:manage",
     page: "geofences",
     module: "geofences",
+    embedded: true,
   },
   {
     id: "reports",
     label: "Reports",
     description: "Export attendance, points, roster and service data.",
-    href: "/reports",
+    href: REPORTS_SETTINGS_PATH,
     permission: "reports:export",
     page: "reports",
     module: "reports",
+    embedded: true,
   },
 ];
 
@@ -124,11 +143,6 @@ export const SETTINGS_ENTRY_PERMISSIONS: readonly string[] = Array.from(
     ...Object.values(TAB_ONLY_PERMISSIONS).flat(),
     ...SETTINGS_TOOLS.map((tool) => tool.permission),
   ]),
-);
-
-/** Every route that sits under the nav's Settings row. */
-export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
-  (tool) => tool.href,
 );
 
 /**

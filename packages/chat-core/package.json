@@ -37,7 +37,8 @@
     "./attachments": "./src/attachments.ts",
     "./threads": "./src/threads.ts",
     "./typing-label": "./src/typing-label.ts",
-    "./flags": "./src/flags.ts"
+    "./flags": "./src/flags.ts",
+    "./jump-to-latest": "./src/jump-to-latest.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
@@ -51,7 +52,7 @@
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.119.0",
-    "@tanstack/react-query": "^5.105.0"
+    "@tanstack/react-query": "^5.107.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

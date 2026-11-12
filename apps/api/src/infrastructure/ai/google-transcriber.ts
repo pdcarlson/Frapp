@@ -119,6 +119,8 @@ export class GoogleTranscriber implements ITranscriber {
       }
       return {
         utterances,
+        // `request.maxSeconds` cannot be honoured: the audio goes inline and
+        // Google has no stop-at. Its 30-minute limit is the bound here.
         // Billed by the audio sent, so the stated length stands unless the
         // model's own offsets run past it.
         durationSeconds: Math.max(

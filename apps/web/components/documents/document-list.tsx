@@ -15,6 +15,12 @@ import {
 } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentRow } from "@/components/documents/document-row";
+import {
+  DocumentTile,
+  documentGridClassName,
+} from "@/components/documents/document-tile";
+import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
+import { useListLayout } from "@/lib/list-layout";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import {
   FilterChip,
@@ -121,6 +127,9 @@ export function DocumentList({
   // Starring a file inside a folder or a search moves its row to the head of
   // the list; this keeps focus on the Star that moved it (#3934).
   const { rootRef, remember } = useKeepFocus<HTMLElement>();
+  // List or Grid (#4175), kept per person on this browser; the toggle sits at
+  // the toolbar's end, where Google Drive keeps its own.
+  const [layout] = useListLayout("documents");
   return (
     // Its own container (#4022): the rows break on the list's width, which
     // the folder rail and, beside chat, the chat panel both take from.
@@ -234,6 +243,7 @@ export function DocumentList({
             Starred
           </ToggleChip>
           <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
+          <ListLayoutToggle screen="documents" />
         </div>
       </div>
       {/*
@@ -357,34 +367,46 @@ export function DocumentList({
             `denseListClassName`; the Directory lane extracted them when it
             became the third and fourth copy of the same string.
           */
-          <ul className={denseListClassName}>
-            {visible.map(({ doc, uploader }) => (
-              <DocumentRow
-                key={doc.id}
-                doc={doc}
-                uploader={uploader}
-                gate={gate}
-                deleting={deletingIds.has(doc.id)}
-                starred={marks.isStarred({ kind: "document", id: doc.id })}
-                pinBusy={marks.pinBusy}
-                onOpen={onOpen}
-                onDelete={onDelete}
-                onToggleStar={(row) => {
-                  onHoldRow?.(row.id);
-                  remember(`star:${row.id}`);
-                  marks.toggleStar({ kind: "document", id: row.id }, row.title);
-                }}
-                onTogglePin={(row) => {
-                  onHoldRow?.(row.id);
-                  remember(`pin:${row.id}`);
-                  void marks.setPinned(
-                    { kind: "document", id: row.id },
-                    row.title,
-                    !row.pinned_at,
-                  );
-                }}
-              />
-            ))}
+          <ul
+            className={
+              layout === "grid" ? documentGridClassName : denseListClassName
+            }
+          >
+            {visible.map(({ doc, uploader }) => {
+              // One set of handlers for both layouts: a tile's Star and Pin
+              // keep focus and hold the file under a mark filter as a row's do.
+              const File = layout === "grid" ? DocumentTile : DocumentRow;
+              return (
+                <File
+                  key={doc.id}
+                  doc={doc}
+                  uploader={uploader}
+                  gate={gate}
+                  deleting={deletingIds.has(doc.id)}
+                  starred={marks.isStarred({ kind: "document", id: doc.id })}
+                  pinBusy={marks.pinBusy}
+                  onOpen={onOpen}
+                  onDelete={onDelete}
+                  onToggleStar={(row) => {
+                    onHoldRow?.(row.id);
+                    remember(`star:${row.id}`);
+                    marks.toggleStar(
+                      { kind: "document", id: row.id },
+                      row.title,
+                    );
+                  }}
+                  onTogglePin={(row) => {
+                    onHoldRow?.(row.id);
+                    remember(`pin:${row.id}`);
+                    void marks.setPinned(
+                      { kind: "document", id: row.id },
+                      row.title,
+                      !row.pinned_at,
+                    );
+                  }}
+                />
+              );
+            })}
           </ul>
         )}
       </div>

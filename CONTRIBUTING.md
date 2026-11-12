@@ -301,14 +301,14 @@ was made from, such as removing a route it may call:
 
 When you change the database schema:
 
-1. Create a migration: `npm run supabase -- migration new my_change_name`
+1. Create a migration: `npm run migration:new -- my_change_name` (the SQL file and its ledger page)
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npm run supabase -- db push --local`
 4. Test locally.
-5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`db-rollback-playbook.md` § Every migration owes a recipe here](docs/ops/db-rollback-playbook.md#every-migration-owes-a-recipe-here) and [`promotion-log.md`](docs/ops/database/promotion-log.md).
-6. Commit the migration file and both entries together.
+5. Fill in its ledger page's `## Promotion` and `## Rollback` sections ([`docs/ops/database/migrations/`](docs/ops/database/migrations/README.md)).
+6. Commit the migration file and its page together. If `main` gets a newer migration first, `npm run migration:renumber`.
 
-CI validates migration filenames, and `check:migration-safety` fails a new migration missing either entry. Migrations are applied automatically in the deploy pipeline.
+CI validates migration filenames, and `check:migration-safety` fails a new migration with no ledger entry. Migrations are applied automatically in the deploy pipeline.
 
 ---
 

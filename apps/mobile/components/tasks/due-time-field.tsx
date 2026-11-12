@@ -14,7 +14,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { localClock } from "@repo/formatting";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { formatDueTimeLabel } from "@/lib/tasks/create-task";
+import { formatDueTimeLabel } from "@repo/formatting";
 
 /**
  * The New task sheet's optional time of day (#4003). Most tasks are due by a

@@ -18,7 +18,7 @@ export class RolloverDto {
 
   @ApiPropertyOptional({
     description:
-      'Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.',
+      'Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.',
     default: false,
   })
   @IsOptional()

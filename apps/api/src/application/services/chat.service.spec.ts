@@ -5017,7 +5017,8 @@ describe('ChatService', () => {
         seedRoster();
         mockRbac.findByChapter.mockResolvedValue([
           role('r-officers', 'Officers'),
-          role('r-member', 'Member', {
+          // The Everyone role (#4191): pinged as @everyone, off by default.
+          role('r-member', 'Everyone', {
             system_key: 'MEMBER',
             display_order: 9,
             mentionable: false,
@@ -5049,7 +5050,7 @@ describe('ChatService', () => {
 
       it('lets a member ping nobody through a role an officer switched off', async () => {
         mockRbac.getEffectivePermissions.mockResolvedValue(['members:view']);
-        await expect(send('@Member read this')).resolves.toEqual([]);
+        await expect(send('@everyone read this')).resolves.toEqual([]);
         expect(mockRbac.getEffectivePermissions).toHaveBeenCalledWith(
           'ch-1',
           'user-1',
@@ -5058,7 +5059,7 @@ describe('ChatService', () => {
 
       it('lets an officer ping a role that is switched off', async () => {
         mockRbac.getEffectivePermissions.mockResolvedValue(['channels:manage']);
-        await expect(send('@Member read this')).resolves.toEqual([
+        await expect(send('@everyone read this')).resolves.toEqual([
           'user-1',
           'user-2',
           'user-3',

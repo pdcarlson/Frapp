@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Post,
+  Req,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,6 +20,8 @@ import { ContentFreePropertyError } from '@repo/validation';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { requestAppVersion } from '../http/request-app';
+import type { RequestContext } from '../types/request-context.types';
 import {
   CurrentUser,
   OptionalChapterId,
@@ -70,12 +73,14 @@ export class AnalyticsController {
   async track(
     @CurrentUser('id') userId: string,
     @Body() dto: TrackEventDto,
+    @Req() request: RequestContext,
   ): Promise<TrackEventResponseDto> {
     try {
       await this.analytics.trackFromClient(dto.name, userId, {
         chapterId: dto.chapter_id,
         properties: dto.properties,
         app: dto.app,
+        appVersion: requestAppVersion(request),
       });
     } catch (error) {
       // Only a content/PII payload, or one setting a reserved key, is a caller

@@ -25,6 +25,12 @@ type Props = {
   onToggle: (enabled: boolean) => void;
   /** The tools this viewer holds that live on this page. */
   tools: readonly SettingsTool[];
+  /**
+   * The embedded tool's own body (Study zones' zone list, Chat admin, the
+   * Reports form), drawn where its link row would be. Embedded tools get no
+   * link row.
+   */
+  toolBody?: ReactNode;
   /** The module's stored rules, or nothing when it has none to set. */
   rules?: ReactNode;
   /** Whether the viewer can read roles (`members:view`) for "Who can". */
@@ -61,6 +67,7 @@ export function ModuleSettingsPage({
   switchPending,
   onToggle,
   tools,
+  toolBody,
   rules,
   canSeeWhoCan,
   canEditRoles = false,
@@ -80,6 +87,7 @@ export function ModuleSettingsPage({
   }, [focusSwitch, onSwitchFocused, module.key]);
 
   const switchId = `settings-module-${module.key}-switch`;
+  const linkedTools = tools.filter((tool) => !tool.embedded);
 
   return (
     <div className="space-y-10">
@@ -130,12 +138,14 @@ export function ModuleSettingsPage({
         </p>
       ) : null}
 
-      {tools.length > 0 ? (
+      {toolBody}
+
+      {linkedTools.length > 0 ? (
         <ProfileSection
           id={`settings-module-${module.key}-tools`}
           title="Tools"
         >
-          <SettingsToolList tools={tools} />
+          <SettingsToolList tools={linkedTools} />
         </ProfileSection>
       ) : null}
 

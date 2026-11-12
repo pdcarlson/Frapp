@@ -12541,7 +12541,7 @@
     },
     "/v1/polls": {
       "get": {
-        "description": "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+        "description": "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Everyone role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
         "operationId": "PollController_listPolls_v1",
         "parameters": [
           {
@@ -16449,7 +16449,7 @@
             "type": "string",
             "format": "uuid",
             "nullable": true,
-            "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise)."
+            "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise)."
           }
         }
       },
@@ -17477,7 +17477,7 @@
           "role": {
             "type": "string",
             "nullable": true,
-            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+            "description": "The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to"
           },
           "expires_at": {
             "type": "string"
@@ -17534,7 +17534,7 @@
           "role": {
             "type": "string",
             "nullable": true,
-            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+            "description": "The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to"
           },
           "expires_at": {
             "type": "string"
@@ -17872,6 +17872,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option."
           }
         },
         "required": [
@@ -17881,7 +17885,8 @@
           "name",
           "color",
           "tier_id",
-          "user_ids"
+          "user_ids",
+          "hidden"
         ]
       },
       "MentionRoleDto": {
@@ -22960,6 +22965,32 @@
           "created_at"
         ]
       },
+      "GeofenceCircleDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "radius_m": {
+            "type": "number",
+            "minimum": 25,
+            "maximum": 5000,
+            "description": "Radius in meters."
+          }
+        },
+        "required": [
+          "lat",
+          "lng",
+          "radius_m"
+        ]
+      },
       "CreateGeofenceDto": {
         "type": "object",
         "properties": {
@@ -22967,10 +22998,19 @@
             "type": "string"
           },
           "coordinates": {
+            "description": "An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GeofenceCoordinateDto"
             }
+          },
+          "circle": {
+            "description": "A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeofenceCircleDto"
+              }
+            ]
           },
           "is_active": {
             "type": "boolean",
@@ -22998,8 +23038,7 @@
           }
         },
         "required": [
-          "name",
-          "coordinates"
+          "name"
         ]
       },
       "UpdateGeofenceDto": {
@@ -23009,10 +23048,19 @@
             "type": "string"
           },
           "coordinates": {
+            "description": "An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GeofenceCoordinateDto"
             }
+          },
+          "circle": {
+            "description": "A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeofenceCircleDto"
+              }
+            ]
           },
           "is_active": {
             "type": "boolean"
@@ -23400,7 +23448,7 @@
           },
           "promote_new_members": {
             "type": "boolean",
-            "description": "Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.",
+            "description": "Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.",
             "default": false
           }
         },

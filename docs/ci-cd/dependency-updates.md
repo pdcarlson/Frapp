@@ -35,6 +35,18 @@ version-update lane only. See
 [The vitest 5 major is held on jest-dom's matcher types](#the-vitest-5-major-is-held-on-jest-doms-matcher-types)
 below for the measured trees and why one of the two PRs went green anyway.
 
+**The `pglite` group** has the vitest group's shape for the same reason:
+`@electric-sql/pglite-pgvector` peer-requires `@electric-sql/pglite` at an exact version, so both
+are grouped at every update type and excluded from `npm-minor-and-patch`. Here the half-move fails
+loudly instead: Dependabot resolves with `--force` (see the next section), so it writes a lockfile
+that `npm ci` then refuses with `ERESOLVE` in every job that installs. #4522 was a lone pglite patch
+that went red that way (2026-11-12).
+
+**`@sentry/react-native` is excluded from `npm-minor-and-patch`**, so it arrives as its own PR. Any
+bump of it fails `apps/mobile/lib/sentry/options.spec.ts` until its native breadcrumbs are re-read
+([why](#the-ignore-list-is-a-runtime-constraint-not-a-preference)), which is real work, and inside
+the weekly group it held every other update red with it (#4520, 2026-11-12).
+
 The limit went 5 → 6 with that group, and the 6th slot is *its*, not new headroom: the group fires
 on every week vitest ships, and Dependabot drops overflow past the cap **silently** — no error, no
 comment, nothing saying a PR was withheld. Security PRs are exempt from the limit and never counted

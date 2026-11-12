@@ -44,11 +44,7 @@ export type ChatGlyphProps = DuotoneGlyphProps;
 export function PinGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>
-      <path
-        d={MARK_GLYPH_PATHS.pin.body}
-        {...stroke}
-        {...fillProps(active)}
-      />
+      <path d={MARK_GLYPH_PATHS.pin.body} {...stroke} {...fillProps(active)} />
       <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
     </Svg>
   );
@@ -129,14 +125,23 @@ export function PlusGlyph({ className }: ChatGlyphProps) {
  * only and heavier than the family's 1.6, because it is drawn at 16px on a
  * filled accent circle where the thin stroke disappears.
  */
+const SEND_ARROW = (
+  <path d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5" {...detail} strokeWidth={2.4} />
+);
+
 export function SendArrowGlyph({ className }: ChatGlyphProps) {
+  return <Svg className={className}>{SEND_ARROW}</Svg>;
+}
+
+/**
+ * Jump to latest — a down arrow, the web face of mobile's `↓` over the thread
+ * (`jump-to-latest-button.tsx`). `SendArrowGlyph` turned over, at its weight,
+ * since it is drawn at 16px on a small round control too.
+ */
+export function JumpToLatestGlyph({ className }: ChatGlyphProps) {
   return (
     <Svg className={className}>
-      <path
-        d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5"
-        {...detail}
-        strokeWidth={2.4}
-      />
+      <g transform="rotate(180 12 12)">{SEND_ARROW}</g>
     </Svg>
   );
 }

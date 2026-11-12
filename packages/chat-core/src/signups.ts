@@ -295,10 +295,7 @@ export function tallySignups(
 }
 
 /** Whether nobody else can take this slot: it has a limit and is at it. */
-export function isSignupSlotFull(
-  slot: SignupSlot,
-  tally: SignupTally,
-): boolean {
+function isSignupSlotFull(slot: SignupSlot, tally: SignupTally): boolean {
   return (
     slot.capacity !== null &&
     (tally.bySlot[slot.id]?.length ?? 0) >= slot.capacity
@@ -613,7 +610,7 @@ export type SignupDraftCheck =
   | { ok: false; problem: string | null; slotKey?: string };
 
 export const SIGNUP_SPOTS_PROBLEM = `Spots is a whole number from 1 to ${SIGNUP_SLOT_CAPACITY_MAX}, or blank for no limit.`;
-export const DUPLICATE_SLOT_PROBLEM =
+const DUPLICATE_SLOT_PROBLEM =
   "Two slots have the same name. Change one, or remove it.";
 export const SIGNUP_END_PASSED_PROBLEM =
   "That end time has passed. Pick a later one, or none.";

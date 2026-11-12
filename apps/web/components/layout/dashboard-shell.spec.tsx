@@ -324,9 +324,9 @@ describe("DashboardShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("gives a page under Settings its parent as a link back", () => {
-    mockPathname.value = "/geofences";
-    mockPermissions.value = ["geofences:manage"];
+  it("gives a page under a nav row its parent as a link back", () => {
+    mockPathname.value = "/backwork/upload";
+    mockPermissions.value = ["members:view", "backwork:admin"];
     render(
       <DashboardShell>
         <p>route content</p>
@@ -334,18 +334,18 @@ describe("DashboardShell", () => {
     );
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Study zones",
+      "Bulk upload",
     );
-    // Back to the module page the tool lives on (#4073), not the Settings root.
     expect(
-      within(banner).getByRole("link", { name: "Chapter settings" }),
-    ).toHaveAttribute("href", "/settings?tab=geofences");
+      within(banner).getByRole("link", { name: "Backwork" }),
+    ).toHaveAttribute("href", "/backwork");
   });
 
-  it("offers no Settings crumb to a member the nav hides Settings from", () => {
-    // The parent follows the Settings row's own gates: a member holding none of
-    // Settings' permissions sees the tool's title, and no door the nav closed.
-    mockPathname.value = "/reports";
+  it("offers no crumb to a member the nav hides the parent row from", () => {
+    // The parent follows its row's own gates: a member holding none of its
+    // permissions sees the page's title, and no door the nav closed.
+    mockPathname.value = "/backwork/upload";
+    mockPermissions.value = ["members:view"];
     render(
       <DashboardShell>
         <p>route content</p>
@@ -353,17 +353,17 @@ describe("DashboardShell", () => {
     );
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Reports",
+      "Bulk upload",
     );
     expect(
-      within(banner).queryByRole("link", { name: "Chapter settings" }),
+      within(banner).queryByRole("link", { name: "Backwork" }),
     ).not.toBeInTheDocument();
   });
 
-  it("offers no Settings crumb while permissions are still loading (#3854)", () => {
+  it("offers no crumb while permissions are still loading (#3854)", () => {
     // An officer's crumb arrives with the answer; a member must never get a
     // door to click before it.
-    mockPathname.value = "/reports";
+    mockPathname.value = "/backwork/upload";
     mockPermissions.value = undefined;
     const { rerender } = render(
       <DashboardShell>
@@ -372,16 +372,16 @@ describe("DashboardShell", () => {
     );
     const banner = screen.getByRole("banner");
     expect(
-      within(banner).queryByRole("link", { name: "Chapter settings" }),
+      within(banner).queryByRole("link", { name: "Backwork" }),
     ).not.toBeInTheDocument();
-    mockPermissions.value = ["reports:export"];
+    mockPermissions.value = ["members:view", "backwork:admin"];
     rerender(
       <DashboardShell>
         <p>route content</p>
       </DashboardShell>,
     );
     expect(
-      within(screen.getByRole("banner")).getByRole("link", { name: "Chapter settings" }),
+      within(screen.getByRole("banner")).getByRole("link", { name: "Backwork" }),
     ).toBeInTheDocument();
   });
 
@@ -834,10 +834,9 @@ describe("DashboardShell", () => {
     describe("closing the tool page from the page itself (Paul, 2026-11-11)", () => {
       it("gives every tool page a close button and its title in its own header", () => {
         setWindowWidth(1440);
-        // Chat admin has no nav row of its own to click closed.
-        mockPathname.value = "/chat-admin";
-        mockPermissions.value = ["chat:manage"];
-        const { container } = render(<DashboardShell>admin</DashboardShell>);
+        // Profile has no nav row of its own to click closed.
+        mockPathname.value = "/profile";
+        const { container } = render(<DashboardShell>profile</DashboardShell>);
         const header = container.querySelector(
           "[data-tool-page-header]",
         ) as HTMLElement;
@@ -846,10 +845,10 @@ describe("DashboardShell", () => {
         const headings = screen.getAllByRole("heading", { level: 1 });
         expect(headings).toHaveLength(1);
         expect(header).toContainElement(headings[0]!);
-        expect(headings[0]).toHaveTextContent("Chat admin");
+        expect(headings[0]).toHaveTextContent("Profile");
         // The top bar's copy steps aside at the same width, by CSS.
         const barCopy = within(screen.getByRole("banner")).getByText(
-          "Chat admin",
+          "Profile",
         );
         expect(barCopy.tagName).toBe("P");
         expect(barCopy.parentElement).toHaveClass("min-[1056px]:hidden");
@@ -858,10 +857,10 @@ describe("DashboardShell", () => {
         // chat's X in the same place).
         expect(header).toHaveClass("sm:px-6");
         expect(
-          within(header).getByRole("button", { name: "Close Chat admin" }),
+          within(header).getByRole("button", { name: "Close Profile" }),
         ).toHaveClass("-mr-2");
         fireEvent.click(
-          within(header).getByRole("button", { name: "Close Chat admin" }),
+          within(header).getByRole("button", { name: "Close Profile" }),
         );
         expect(routerPush).toHaveBeenCalledWith("/chat");
       });
@@ -1191,19 +1190,6 @@ describe("DashboardShell", () => {
       fireEvent.click(within(nav()).getByRole("button", { name: "Chat" }));
       expect(column(container)).toBe(before);
       expect(before).toHaveClass("w-14");
-    });
-
-    it("leaves the Settings row a link back to Settings on a Settings tool's page", () => {
-      setWindowWidth(1440);
-      mockPathname.value = "/reports";
-      mockPermissions.value = ["reports:view", "chapter-config:view"];
-      render(<DashboardShell>reports</DashboardShell>);
-      expect(
-        within(nav()).getByRole("link", { name: "Chapter settings" }),
-      ).toHaveAttribute("href", "/settings");
-      expect(
-        within(nav()).queryByRole("button", { name: "Chapter settings" }),
-      ).not.toBeInTheDocument();
     });
 
     it("remembers where the divider was left, in its cookie", () => {

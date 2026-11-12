@@ -18,6 +18,27 @@ import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { cn, labelled } from "@/lib/utils";
 
+/**
+ * What a file row says about a file, in the row's order: when and by whom,
+ * then where and what, then the description. The grid's tile shows the same
+ * facts (#4175), split over its own lines, so both read from here and a fact
+ * added for one reaches the other.
+ */
+export function documentFacts(
+  doc: ChapterDocument,
+  uploader: string | null,
+): { uploaded: string | null; filed: string[]; description: string | null } {
+  return {
+    uploaded: uploadedLine(formatDay(doc.created_at), uploader),
+    filed: [
+      doc.folder,
+      doc.document_type,
+      labelled("Effective", formatDay(doc.effective_date)),
+    ].filter((part): part is string => !!part),
+    description: doc.description || null,
+  };
+}
+
 function DownloadButton({ id, title }: { id: string; title: string }) {
   const { download, fetchingId } = useDocumentDownload();
   const isFetching = fetchingId === id;
@@ -67,7 +88,7 @@ export function DocumentRow({
   onToggleStar: (doc: ChapterDocument) => void;
   onTogglePin: (doc: ChapterDocument) => void;
 }) {
-  const pinned = !!doc.pinned_at;
+  const facts = documentFacts(doc, uploader);
   return (
     /*
     Two lines, not three, and 8px of padding rather than 12. The
@@ -86,8 +107,11 @@ export function DocumentRow({
       {/*
       s12 draws a leading file glyph on every document row —
       the accent duotone on its pinned cards, the neutral one
-      on the recent list. Web has no pin field, so every row
-      takes the neutral variant.
+      on the recent list. The row keeps the neutral one even
+      for a pinned file: its lit Pin control already says so,
+      and a 16px accent glyph beside it would say it twice.
+      The grid's tile has no Pin beside its name, so its
+      preview glyph takes the accent (`document-tile.tsx`).
     */}
       {/*
         The glyph and both lines are one button that opens the document
@@ -123,82 +147,118 @@ export function DocumentRow({
           ellipsis.
         */}
           <span className="block truncate text-caption text-muted">
-            {[
-              uploadedLine(formatDay(doc.created_at), uploader),
-              doc.folder,
-              doc.document_type,
-              labelled("Effective", formatDay(doc.effective_date)),
-              doc.description,
-            ]
+            {[facts.uploaded, ...facts.filed, facts.description]
               .filter(Boolean)
               .join(" · ")}
           </span>
         </span>
       </button>
-      <div className="flex shrink-0 items-center gap-1 @md:ml-auto">
-        {/*
-          Star for everyone, Pin for whoever manages documents (#3934). Each
-          stays lit while on, so a pinned or starred row says so in its
-          controls rather than in another badge on the meta line. A member
-          without `chapter_docs:manage` sees a pinned row's pin as a mark
-          only, since they can't change it.
-        */}
-        <IconButton
-          label={starred ? `Unstar ${doc.title}` : `Star ${doc.title}`}
-          aria-pressed={starred}
-          className={starred ? "text-accent-text" : undefined}
-          {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${doc.id}` }}
-          onClick={() => onToggleStar(doc)}
-          {...gate.controlProps()}
-        >
-          <StarGlyph active={starred} />
-        </IconButton>
-        <Can
-          permission="chapter_docs:manage"
-          deniedFallback={
-            pinned ? (
-              <span
-                className="inline-flex h-9 w-9 items-center justify-center text-accent-text"
-                title="Pinned for the chapter"
-              >
-                <PinGlyph className="h-4 w-4" active />
-                <span className="sr-only">Pinned for the chapter</span>
-              </span>
-            ) : null
-          }
-        >
-          <IconButton
-            label={
-              pinned
-                ? `Unpin ${doc.title} for the chapter`
-                : `Pin ${doc.title} for the chapter`
-            }
-            aria-pressed={pinned}
-            className={pinned ? "text-accent-text" : undefined}
-            {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${doc.id}` }}
-            onClick={() => onTogglePin(doc)}
-            {...gate.controlProps(pinBusy)}
-          >
-            <PinGlyph active={pinned} />
-          </IconButton>
-        </Can>
-        <DownloadButton id={doc.id} title={doc.title} />
-        <Can permission="chapter_docs:manage">
-          {/*
-          `DELETE /v1/documents/:id` sits behind the same guard
-          as upload, so gating only the upload trigger would
-          have the page claim writes are blocked while still
-          offering one per row.
-        */}
-          <IconButton
-            label={`Delete ${doc.title}`}
-            onClick={() => onDelete(doc)}
-            {...gate.controlProps(deleting)}
-          >
-            <Trash2 />
-          </IconButton>
-        </Can>
-      </div>
+      <DocumentControls
+        doc={doc}
+        gate={gate}
+        deleting={deleting}
+        starred={starred}
+        pinBusy={pinBusy}
+        onDelete={onDelete}
+        onToggleStar={onToggleStar}
+        onTogglePin={onTogglePin}
+        className="shrink-0 @md:ml-auto"
+      />
     </li>
+  );
+}
+
+/**
+ * A file's own controls: Star, Pin, Download and Delete, shared by the list's
+ * row and the grid's tile (#4175) so the two layouts offer the same actions
+ * under the same names and gates.
+ */
+export function DocumentControls({
+  doc,
+  gate,
+  deleting,
+  starred,
+  pinBusy,
+  onDelete,
+  onToggleStar,
+  onTogglePin,
+  className,
+}: {
+  doc: ChapterDocument;
+  gate: SubscriptionGate;
+  deleting: boolean;
+  starred: boolean;
+  pinBusy: boolean;
+  onDelete: (doc: ChapterDocument) => void;
+  onToggleStar: (doc: ChapterDocument) => void;
+  onTogglePin: (doc: ChapterDocument) => void;
+  className?: string;
+}) {
+  const pinned = !!doc.pinned_at;
+  return (
+    <div className={cn("flex items-center gap-1", className)}>
+      {/*
+        Star for everyone, Pin for whoever manages documents (#3934). Each
+        stays lit while on, so a pinned or starred row says so in its
+        controls rather than in another badge on the meta line. A member
+        without `chapter_docs:manage` sees a pinned row's pin as a mark
+        only, since they can't change it.
+      */}
+      <IconButton
+        label={starred ? `Unstar ${doc.title}` : `Star ${doc.title}`}
+        aria-pressed={starred}
+        className={starred ? "text-accent-text" : undefined}
+        {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${doc.id}` }}
+        onClick={() => onToggleStar(doc)}
+        {...gate.controlProps()}
+      >
+        <StarGlyph active={starred} />
+      </IconButton>
+      <Can
+        permission="chapter_docs:manage"
+        deniedFallback={
+          pinned ? (
+            <span
+              className="inline-flex h-9 w-9 items-center justify-center text-accent-text"
+              title="Pinned for the chapter"
+            >
+              <PinGlyph className="h-4 w-4" active />
+              <span className="sr-only">Pinned for the chapter</span>
+            </span>
+          ) : null
+        }
+      >
+        <IconButton
+          label={
+            pinned
+              ? `Unpin ${doc.title} for the chapter`
+              : `Pin ${doc.title} for the chapter`
+          }
+          aria-pressed={pinned}
+          className={pinned ? "text-accent-text" : undefined}
+          {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${doc.id}` }}
+          onClick={() => onTogglePin(doc)}
+          {...gate.controlProps(pinBusy)}
+        >
+          <PinGlyph active={pinned} />
+        </IconButton>
+      </Can>
+      <DownloadButton id={doc.id} title={doc.title} />
+      <Can permission="chapter_docs:manage">
+        {/*
+        `DELETE /v1/documents/:id` sits behind the same guard
+        as upload, so gating only the upload trigger would
+        have the page claim writes are blocked while still
+        offering one per row.
+      */}
+        <IconButton
+          label={`Delete ${doc.title}`}
+          onClick={() => onDelete(doc)}
+          {...gate.controlProps(deleting)}
+        >
+          <Trash2 />
+        </IconButton>
+      </Can>
+    </div>
   );
 }

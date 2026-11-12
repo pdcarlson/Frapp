@@ -1,9 +1,16 @@
 # DB Rollback Playbook
 
+**A migration created since 2026-11-12 has its rollback recipe on its own page** in
+[`database/migrations/`](database/migrations/README.md), named after the migration. The recipes
+below are for older migrations, and the procedure sections (decision matrix, backups, undo one
+migration) apply to all of them.
+
 ## Every migration owes a recipe here
 
-`check:migration-safety` asserts **per-migration** coverage in this file *and*
-in [`database/promotion-log.md`](database/promotion-log.md) — both, not either. It
+For a migration created before 2026-11-12, `check:migration-safety` asserts
+**per-migration** coverage in this file *and* in
+[`database/promotion-log.md`](database/promotion-log.md) (both, not either), unless
+the migration has a ledger page. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
 Any of these counts, anywhere in the file:
 
@@ -61,7 +68,7 @@ Use when:
 - service can stay online.
 
 Action:
-1. Create new migration: `npm run supabase -- migration new <hotfix_name>`
+1. Create new migration: `npm run migration:new -- <hotfix_name>` (the SQL file and its ledger page)
 2. Apply to staging first.
 3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
@@ -157,10 +164,9 @@ migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npm run supabase -- migration new rollback_<what>`),
-and give it its own entries here and in
-[`database/promotion-log.md`](database/promotion-log.md) (`check:migration-safety`
-requires both). Make every statement idempotent, so the migration also applies
+recipe's SQL as a new migration (`npm run migration:new -- rollback_<what>`),
+and fill in its own [ledger page](database/migrations/README.md)
+(`check:migration-safety` requires it). Make every statement idempotent, so the migration also applies
 where someone already ran it by hand (below): `if exists` where Postgres has it,
 and a guarded `do` block where it doesn't. `alter publication … drop table` has
 no `if exists`, so check `pg_publication_tables` first, as the original
@@ -4149,9 +4155,9 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-## Rollback sign-up headcounts and closing (20261112260000)
+## Rollback sign-up headcounts and closing (20261112280000)
 
-* **Migration**: `20261112260000_signup_headcount_close.sql`
+* **Migration**: `20261112280000_signup_headcount_close.sql`
 
 Replaces the one function sign-up taps call (#3926 step 2). It changes no table. **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The step 1 API calls the function with three arguments, which this version still takes. Leaving the function in place is the safe rollback: a closed card keeps refusing claims, so nobody's name moves on a card its creator closed. Two things change while the API is on step 1. A tap on a closed or past-end card is refused as a **500**, not a 400, because the step 1 API doesn't know the function's `signup_closed` refusal: expect those taps in Sentry, and expect the older clients to draw such a card as open. And a step 1 claim sends no note, so a member who changes a headcount answer then loses the note on it.
 
@@ -4177,6 +4183,22 @@ To remove the function, do it in a later forward migration:
 
 ```sql
 drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
+```
+
+## Rollback AI deleted-account gaps (20261112260000)
+
+* **Migration**: `20261112260000_ai_deleted_account_gaps.sql`
+
+One nullable column on `meeting_drafts` (`recording_uploaded_by`), a trigger that stamps it, and two function bodies replaced (#4504). `meeting_recordings_drop_for_deleted_user` also deletes the drafts stamped with the deleted account; `ai_reports_refuse_deleted_users` locks the users it reads `for share`.
+
+**There is rarely a reason to revert it, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). No API code reads the column or depends on either body. Reverting reopens both gaps: a transcript can stay in another officer's draft after its uploader deletes their account, and a report can outlive a quoted member who deletes theirs in the same instant.
+
+To remove the schema, in a later forward migration, restore the earlier bodies first by copying them from `20261112210000_meeting_recordings.sql` and `20261112220000_ai_reports.sql` (the current `meeting_recordings_drop_for_deleted_user` names the column), then:
+
+```sql
+drop trigger if exists meeting_drafts_stamp_recording_uploader on public.meeting_drafts;
+drop function if exists public.meeting_drafts_stamp_recording_uploader();
+alter table public.meeting_drafts drop column if exists recording_uploaded_by;
 ```
 
 ## Rollback merge Backwork department case variants (20261112154000)
@@ -4226,6 +4248,19 @@ alter table public.users
   drop column if exists phone;
 ```
 
+## Rollback the Everyone role (20261112251000)
+
+- **Migration**: `20261112251000_everyone_role.sql`
+
+Renames each chapter's seeded Member role to Everyone and switches off its mentions, renames any other role reading as `@everyone` to "<name> (role)" (its pending invites following it), and points pending invites for the Member role at "Everyone". No permission, tier, holder or id changes, so there is nothing to restore for access. The API from #4191 on refuses to rename Everyone, so a rollback is only needed together with an API rollback past #4191.
+
+To undo it, from the rows the promoter saved before the push (promotion log § The Member role becomes Everyone):
+
+1. `update roles set name = <saved name>, mentionable = <saved mentionable> where id = <saved id>;` for each saved role, the Member role (`system_key` MEMBER) first: it holds "Everyone", which a renamed role's old name may be, and the renamed roles' current "<name> (role)" names never block it. A role created since under the Member role's old name blocks that chapter's restore (`unique (chapter_id, name)`); rename one of them by hand.
+2. `update invites set role = <saved role> where id = <saved id>;` for each saved invite still unused.
+
+Without the saved rows, `update roles m set name = 'Member' where m.system_key = 'MEMBER' and not exists (select 1 from roles x where x.chapter_id = m.chapter_id and x.name = 'Member');` restores the seeded name in every chapter where it is still free (every chapter but one that renamed its Member role had it). It leaves the `@everyone` switch off, the renamed roles' "(role)" suffix and the invites as they are, since nothing records what they were. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
 ## Rollback member defaults for existing chapters (20261112152000)
 
 * **Migration**: `20261112152000_member_social_trust_defaults.sql`
@@ -4256,3 +4291,18 @@ update public.roles r
 ```
 
 Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), restore a backup taken before the push into a scratch project ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) and copy the rows from it.
+
+## Rollback study zone circles (20261112270000)
+
+* **Migration**: `20261112270000_study_zone_circle.sql`
+
+Adds the nullable `study_geofences.circle` column and its shape check. `coordinates` stays the polygon every reader checks, and the API writes it for a circle too, so dropping the column loses only the editor's memory that a zone was drawn as a circle: such a zone then reopens as an outline of 64 corners, and studying in it works exactly as before. An API rolled back past #2239 never reads or writes the column, so a code revert needs no SQL, but roll the web app back with it: the newer web editor sends a circle with no `coordinates`, which the older API refuses with a 400. A zone retraced by the older editor during the revert keeps its stale `circle`; the newer editor shows the outline whenever `coordinates` no longer matches the circle (`zoneCircle` in `apps/web/components/geofences/zone-shape.ts`), so nothing needs clearing.
+
+To remove the schema, revert the API first, then in a later forward migration ([§ 3) Undo one migration](#3-undo-one-migration)):
+
+```sql
+alter table public.study_geofences
+  drop constraint if exists study_geofences_circle_shape,
+  drop column if exists circle;
+```
+

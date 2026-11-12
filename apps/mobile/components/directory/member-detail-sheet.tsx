@@ -603,7 +603,8 @@ export const MemberDetailSheet = forwardRef<
                     ))}
                   </View>
                 ) : (
-                  <Text style={styles.meta}>No roles yet</Text>
+                  // Everyone draws no chip (#4191): as Discord says it.
+                  <Text style={styles.meta}>No roles</Text>
                 )}
               </View>
 

@@ -299,7 +299,7 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
     mockRoles.current = undefined;
     rolesState.isError = true;
     renderProfile({ ...baseMember, role_ids: ["r-pres"] });
-    expect(screen.queryByText("No roles yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("No roles")).not.toBeInTheDocument();
     expect(screen.getByText("Couldn't load roles.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(rolesState.refetch).toHaveBeenCalled();
@@ -307,7 +307,7 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
 
   it("says so when the member holds no role", () => {
     renderProfile();
-    expect(screen.getByText("No roles yet")).toBeInTheDocument();
+    expect(screen.getByText("No roles")).toBeInTheDocument();
   });
 
   it("links the email", () => {

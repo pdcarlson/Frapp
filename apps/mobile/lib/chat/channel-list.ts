@@ -71,6 +71,14 @@ export interface ChannelSummary {
    * Present, and `true`, only when the row says exactly `true`.
    */
   is_audit_log?: boolean;
+  /**
+   * Who can see and who can post (#3722): `null` is everyone (who can post:
+   * everyone who can see it), a list names `tier:` and `role:` entries.
+   * Absent when the row doesn't say, so the Edit channel sheet (#3702) never
+   * mistakes an older API's row for "everyone".
+   */
+  who_can_see?: string[] | null;
+  who_can_post?: string[] | null;
 }
 
 /**
@@ -81,10 +89,34 @@ export interface ChannelSummary {
 export interface ChannelCategorySummary {
   id: string;
   name: string;
+  /** The category's two answers, which a new or matching channel takes; as on `ChannelSummary`. */
+  who_can_see?: string[] | null;
+  who_can_post?: string[] | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
+}
+
+/**
+ * A row's `who_can_see` or `who_can_post`: present (a list, or `null` for
+ * everyone) only when the row carries the column.
+ */
+function accessLists(
+  row: Record<string, unknown>,
+): Pick<ChannelSummary, "who_can_see" | "who_can_post"> {
+  const read = (value: unknown): string[] | null | undefined =>
+    value === null
+      ? null
+      : Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === "string")
+        : undefined;
+  const see = read(row.who_can_see);
+  const post = read(row.who_can_post);
+  return {
+    ...(see !== undefined ? { who_can_see: see } : {}),
+    ...(post !== undefined ? { who_can_post: post } : {}),
+  };
 }
 
 export function selectChannels(data: unknown): ChannelSummary[] {
@@ -123,6 +155,7 @@ export function selectChannels(data: unknown): ChannelSummary[] {
           ? { display_order: row.display_order }
           : {}),
         ...(row.is_audit_log === true ? { is_audit_log: true } : {}),
+        ...accessLists(row),
       },
     ];
   });
@@ -137,7 +170,7 @@ export function selectCategories(data: unknown): ChannelCategorySummary[] {
   return data.filter(isRecord).flatMap((row) => {
     const { id, name } = row;
     if (typeof id !== "string" || typeof name !== "string") return [];
-    return [{ id, name }];
+    return [{ id, name, ...accessLists(row) }];
   });
 }
 

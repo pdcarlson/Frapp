@@ -35,12 +35,15 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // or contract drift between a shipped build and the API.
   "request.validation_failed",
   // An invite with no role named, no default invite role configured, and no
-  // seeded Member role: the chapter's rows are missing what every chapter is
+  // seeded Everyone role (once Member): the chapter's rows are missing what every chapter is
   // created with.
   "invite.role_unresolved",
   // A config PATCH switching off an always-on module. Chapter settings draws
   // those locked and never sends it (#4073).
   "chapter.config.module_always_on",
+  // Renaming the Everyone role or moving it out of its tier (#4191). Its role
+  // page draws both locked and never sends a change.
+  "role.everyone_fixed",
   // Changes for one kind of suggestion sent to accept another kind. The
   // review screen sends a suggestion's edits under its own kind (#4309).
   "ai.suggestion.edits_kind",
@@ -67,6 +70,8 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.subscription.invite_blocked",
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
+  // An officer named a role so it reads as @everyone (#4191).
+  "role.everyone_name",
   "chat.since_not_found",
   // An AI route while `AI_ENABLED` is off on the server (#4310, and
   // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a

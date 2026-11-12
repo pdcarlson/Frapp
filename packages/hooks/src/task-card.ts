@@ -1,6 +1,6 @@
 import { formatDueLabel, formatDueOn, isDueOverdue } from "@repo/formatting";
 import { STATUS_LABELS } from "@repo/validation";
-import type { TaskStatus } from "./use-tasks";
+import type { TaskStatus, TaskSubtask } from "./use-tasks";
 
 /**
  * The task rules a chat task card applies, shared by web's
@@ -275,4 +275,63 @@ export function viewerIsCardAssignee(
 ): boolean {
   if (!viewerId) return false;
   return viewerId === (live?.assignee_id ?? snapshotAssigneeId);
+}
+
+/**
+ * Whether a task card offers its viewer Edit (#4512): a `tasks:manage`
+ * holder, once the live task is read, until the task is confirmed. The same
+ * rule as the Tasks board's Edit (#4296): a confirmed task's points were paid
+ * on it as it stood, so it has none. The card is how Activity and chat show a
+ * task, so this is what puts Edit wherever a task is shown.
+ */
+export function canEditCardTask(input: {
+  live: LiveTask | null;
+  canManage: boolean;
+}): boolean {
+  return input.canManage && !!input.live && !input.live.points_awarded;
+}
+
+/** A task as an edit form opens it: the fields it shows and compares. */
+export interface EditableCardTask {
+  id: string;
+  title: string;
+  description: string | null;
+  assignee_id: string;
+  due_date: string;
+  due_at: string | null;
+  point_reward: number | null;
+  status: TaskStatus;
+  stored_status: TaskStatus | undefined;
+  subtasks: TaskSubtask[];
+}
+
+/**
+ * `useTask`'s data as what an edit form opens on, or `null` while it can't
+ * be edited from (not read yet, or missing a field the form needs).
+ */
+export function readEditableCardTask(data: unknown): EditableCardTask | null {
+  const live = readLiveTask(data);
+  if (!live) return null;
+  const r = data as Record<string, unknown>;
+  if (
+    typeof r.title !== "string" ||
+    typeof r.assignee_id !== "string" ||
+    r.assignee_id === "" ||
+    typeof r.due_date !== "string" ||
+    r.due_date === ""
+  ) {
+    return null;
+  }
+  return {
+    id: live.id,
+    title: r.title,
+    description: typeof r.description === "string" ? r.description : null,
+    assignee_id: r.assignee_id,
+    due_date: r.due_date,
+    due_at: typeof r.due_at === "string" && r.due_at !== "" ? r.due_at : null,
+    point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
+    status: live.status,
+    stored_status: live.stored_status,
+    subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
+  };
 }

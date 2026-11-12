@@ -173,11 +173,13 @@ npm run generate -w packages/api-sdk
 ### Migration safety (`check:migration-safety`)
 
 This check validates migration filenames (`{14-digit-timestamp}_{snake_case}.sql`) and unique
-version prefixes. It also checks that every migration has an entry, in the documented shape, in
-both [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
-[`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), across the whole
-tree on every run. With `--base`/`--head` it also requires a migration change to touch one of
-those docs, and refuses a change to the executable SQL of a migration already on the base, or its
+version prefixes. It also checks that every migration has a promotion entry and a rollback
+recipe, across the whole tree on every run: a ledger page in
+[`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md) with both
+`## Promotion` and `## Rollback` (new migrations), or entries in the documented shape in
+[`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
+[`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md) (older ones). With
+`--base`/`--head` it also requires a migration change to touch a ledger, and refuses a change to the executable SQL of a migration already on the base, or its
 removal: `supabase db push` skips an applied version, so the change would reach no hosted database
 (#2751). Put the change in a new migration; a comment-only edit passes, and a reviewed exception
 goes in `EDITED_MIGRATION_EXCEPTIONS`. Without a range it skips both and says so, which is why the

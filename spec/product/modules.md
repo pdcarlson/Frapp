@@ -90,7 +90,7 @@
 ## Location & Study Hours
 
 - **Mode:** Active, opt-in tracking only.
-- **Geofences:** Admin draws polygon coordinates for approved study locations (e.g. campus library).
+- **Geofences:** An officer finds the place on a map (search or click) and draws the zone as a circle (a pin and a radius) or traces its outline, for approved study locations (e.g. campus library). Either way the server checks a polygon: a circle is stored with the polygon it derives from it.
 - **Session flow:**
   1. User selects a geofence and taps "Start Studying."
   2. API validates that the user's GPS coordinates are inside the polygon.
@@ -168,7 +168,7 @@
 
 - Admins archive the current leaderboard period with a label (e.g. "Fall 2025") and start a new one.
 - Points continue to accumulate (no data deleted). Leaderboard defaults to the new period; historical periods remain selectable.
-- Optional bulk role promotion (e.g. "New Member" → "Member").
+- Optional bulk role promotion (e.g. "New Member" → Everyone, the role once called Member).
 - Study session configs carry forward.
 
 ## Reports & Export
@@ -267,7 +267,7 @@ A line shows only to an officer who can do it, and only while the module the ser
 
 Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
 
-- **Study hours** with no active study zone hides from everyone. Zones are made in the web app's Study zones tool (`/geofences`), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to the tool instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
+- **Study hours** with no active study zone hides from everyone. Zones are made on the web app's Chapter settings Study zones page (`/settings?tab=geofences`; `/geofences` redirects there), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to that page instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
 - **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.
 
 The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), and it reads a feature's list only for a viewer it could hide the feature from, and only while the list's module is on. Nothing hides while the viewer's permissions, the chapter's modules or the list are still loading, or after the list's read fails: a row hides on a read that answers "none", or on its list's module being off. Only the entry points hide: the routes stay open, so a link into one still lands.
@@ -291,14 +291,14 @@ Free always-on modules (chat, members, announcements, audit-log, chapter-setting
 
 ### Beta-off modules
 
-A module in `BETA_OFF_MODULES` (`@repo/validation`) is off for **every** chapter, whatever its `enabled_modules` holds, until the key is removed from that list. Today that is `dues` (Paul, 2026-11-06: the beta chapter doesn't collect dues in Frapp) and `meetings`, which is built on the AI integration branch and stays off until that work ships ([ADR-28](../architecture/adr/adr-28.md)). `isModuleEnabled` answers `false` for it, so every gate above treats it as switched off, and it answers so before any chapter has loaded. On top of the ordinary disabled behavior:
+A module in `BETA_OFF_MODULES` (`@repo/validation`) is off for **every** chapter, whatever its `enabled_modules` holds, until the key is removed from that list. Today that is `dues` (Paul, 2026-11-06: the beta chapter doesn't collect dues in Frapp). `meetings` was held here until the AI build-out ([ADR-28](../architecture/adr/adr-28.md)) reached `main`, and left on 2026-11-12 (Paul). `isModuleEnabled` answers `false` for it, so every gate above treats it as switched off, and it answers so before any chapter has loaded. On top of the ordinary disabled behavior:
 
 - Settings → Modules leaves it out, and the plan matrix on `/billing` has no row for it, rather than offering what can't be turned on. No ops-setup nudge asks to enable it, and a slash command typed out in full says it is off for the beta rather than pointing at Settings → Modules.
 - For dues, its own surfaces read `isBetaOffModule` directly, because a chapter's ordinary dues switch must not hide them (the paragraph above): `/billing` drops the member invoice list, Settings drops the Dues tab and the dues grace workflow, mobile More drops the Dues row (the Dues screen sends a stray deep link back to More), copy that promises dues reminders drops them, the officer setup checklist has no dues line (it follows `isModuleEnabled`), the Billing notification switch is hidden on mobile Settings and web Profile (URGENT subscription alerts bypass it, so it would govern nothing; the stored preference is kept), and the API sends no invoice due or overdue reminders. The member-invoice routes stay ungated, per the paragraph above.
 
 Nothing is deleted. Removing the key turns the module back on with each chapter's own setting, configuration and invoices as they were. Reminders are skipped, not queued: once dues returns, the sweep reminds only about invoices still inside its windows ([`billing.md`](../behavior/billing.md)), so one that came due during the beta gets none.
 
-> The toggle UI lists the modules present in `MODULE_CATALOG` today. `vault` and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship. `meetings` is in the catalog (2026-11-12, #4312) and gets its Settings page once it leaves the beta-off list.
+> The toggle UI lists the modules present in `MODULE_CATALOG` today. `vault` and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship. `meetings` is in the catalog (2026-11-12, #4312) and has its Settings page since it left the beta-off list (2026-11-12).
 
 ## AI feature pricing
 

@@ -4,9 +4,9 @@ import { isModuleEnabled } from "@repo/validation";
 
 /**
  * Whether the chapter keeps minutes in Frapp, once the chapter has loaded
- * (`spec/behavior/meetings.md`). False while it loads, and false for every
- * chapter while `meetings` is switched off for the beta (`BETA_OFF_MODULES`):
- * with it off no minutes row, screen or entry is drawn anywhere on the phone.
+ * (`spec/behavior/meetings.md`). False while it loads, and false while the
+ * chapter has `meetings` switched off: then no minutes row, screen or entry is
+ * drawn anywhere on the phone.
  */
 export function useMeetingsOn(): boolean {
   const chapter = useCurrentChapter().data;

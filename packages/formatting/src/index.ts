@@ -56,3 +56,10 @@ export {
   neutralizeFormulaCell,
   toCsvCell,
 } from "./spreadsheet-cell";
+export {
+  type DueDayAndTime,
+  dueTimePassed,
+  formatDueTimeLabel,
+  splitDueEntry,
+  suggestedDueTime,
+} from "./due-time";

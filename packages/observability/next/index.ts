@@ -34,7 +34,6 @@ export type {
 } from "./sentry-correlation";
 
 export {
-  ANONYMOUS_POSTHOG_SESSION_RECORDING,
   POSTHOG_PROPERTY_DENYLIST,
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,

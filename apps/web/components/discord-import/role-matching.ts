@@ -1,3 +1,4 @@
+import { isEveryoneRoleName } from "@repo/validation";
 import type { StagedChannel, StagedRole } from "./upload-step";
 
 /**
@@ -64,8 +65,10 @@ function words(name: string): string[] {
  * educator, not a pledge, and matching it to New Member would let every
  * pledge read the officer channels.
  *
- * Member is the exception, matched only as the WHOLE name. It is the widest
- * role a chapter has, and "member" ends too many officer titles ("Board
+ * The Everyone role (`MEMBER`, once called Member, #4191) is the exception,
+ * matched only as the WHOLE name: a Discord "Brothers" role still lands on
+ * it, so its channels open to the chapter's members. It is the widest role a
+ * chapter has, and "member" ends too many officer titles ("Board
  * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
  * opens an exec channel to everyone.
  */
@@ -259,6 +262,12 @@ export function roleIssues(
       issues.push({
         roleId: role.roleId,
         message: `The new role for ${role.roleName} needs a shorter name (at most ${maxNameLength} characters).`,
+      });
+    } else if (isEveryoneRoleName(name)) {
+      // `@everyone` names the chapter's Everyone role, and no other (#4191).
+      issues.push({
+        roleId: role.roleId,
+        message: `"${name}" is what @everyone reads as. Give the new role for ${role.roleName} another name.`,
       });
     } else if (clash) {
       issues.push({

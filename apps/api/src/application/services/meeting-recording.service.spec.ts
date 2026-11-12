@@ -552,6 +552,8 @@ describe('MeetingRecordingService', () => {
       const [task, input, call] =
         harness.transcription.transcribe.mock.calls[0];
       expect(task).toBe('meetings.transcribe');
+      // The two-hour limit, whatever length the upload stated (#4504).
+      expect(input.maxSeconds).toBe(7200);
       expect(call).toEqual({
         chapterId: CHAPTER,
         actingUserId: SECRETARY,

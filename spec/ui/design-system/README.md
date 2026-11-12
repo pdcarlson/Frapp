@@ -173,7 +173,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `semester-rollover` | 1 | `components/settings/settings-semester-tab.tsx` (rollover only) |
 | `service-entry` | 4 | `components/service/service-page.tsx` · `components/activity/activity-panel.tsx` (Approve and Reject on a pending entry, #3897; the review itself is `components/service/use-service-review.tsx`, shared by both) · `components/service/log-hours-dialog.tsx` (the log form, opened by the Service page and by `components/chat/chat-shell.tsx` from the composer's + or a bare `/hours`, #3865; each host passes its own `useSubscriptionGate`) · the `/hours` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
-| `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
+| `study` → `StudyGeofenceController` | 3 | `components/geofences/study-zones-manager.tsx` |
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
 | `task` | 5 | `components/tasks/tasks-board.tsx` · `components/chat/renderers/task-card.tsx` · `components/tasks/task-form.tsx` (the composer's + card form, rendered by `components/chat/chat-shell.tsx` from the + or a `/task` the one-liner can't read, #3865, #3983; gated by its own `useSubscriptionGate`) · the `/task` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 

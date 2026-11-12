@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolvePageTitle } from "./page-title";
 import { DASHBOARD_NAV_ITEMS } from "./nav-config";
-import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 
 describe("resolvePageTitle", () => {
   it("titles every nav row with the row's own label, and no parent", () => {
@@ -12,28 +11,16 @@ describe("resolvePageTitle", () => {
     }
   });
 
-  it("puts every Settings tool under a link back to its module page (#4073)", () => {
-    for (const tool of SETTINGS_TOOLS) {
-      expect(resolvePageTitle(tool.href)).toEqual({
-        title: tool.label,
-        parent: {
-          label: "Chapter settings",
-          href: `/settings?tab=${tool.page}`,
-        },
-      });
-    }
-    expect(resolvePageTitle("/geofences")?.parent?.href).toBe(
-      "/settings?tab=geofences",
-    );
-  });
-
-  it("drops the Settings parent when the nav hides the Settings row", () => {
-    // The crumb follows its row's gates, so a member the nav hides Settings
-    // from is not handed a link to it from the top bar.
-    for (const tool of SETTINGS_TOOLS) {
-      expect(
-        resolvePageTitle(tool.href, (item) => item.id !== "settings"),
-      ).toEqual({ title: tool.label });
+  it("titles no officer tool apart from Chapter settings (#3837)", () => {
+    // The tools open inside Chapter settings, whose rail names them; their
+    // old routes only redirect there and name nothing.
+    for (const route of [
+      "/chat-admin",
+      "/discord-import",
+      "/reports",
+      "/geofences",
+    ]) {
+      expect(resolvePageTitle(route), route).toBeNull();
     }
   });
 

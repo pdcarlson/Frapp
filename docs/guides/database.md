@@ -71,7 +71,7 @@ Hosted projects never ran either script, so their table stayed empty until
 as a migration — the one path that reaches staging and production. A changed CSV
 ships the same way: `node scripts/load-chapter-directory.mjs --migration` into a new
 migration (`--migration` leaves out the `begin`/`commit` that `db push` already
-supplies), with promotion-log and rollback-playbook entries; the local bootstrap's
+supplies), with its ledger page (`npm run migration:new`); the local bootstrap's
 own run then finds nothing left to do.
 
 Three things about it are load-bearing:
@@ -168,8 +168,13 @@ Examples:
 1. Create a new migration:
 
 ```bash
-npm run supabase -- migration new add_polls
+npm run migration:new -- add_polls
 ```
+
+This writes the SQL file and its ledger page in
+[`docs/ops/database/migrations/`](../ops/database/migrations/README.md), with a version after
+everything on `main`. If another migration reaches `main` first, `npm run migration:renumber`
+moves yours after it.
 
 2. Edit the generated SQL file in `supabase/migrations/`:
 

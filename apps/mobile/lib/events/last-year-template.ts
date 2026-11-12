@@ -1,4 +1,5 @@
 import { nameForThisYear, sameWeekdayThisYear } from "@repo/formatting";
+import { noRepeatDraft } from "@repo/validation";
 import type { NewEventDraft } from "@/lib/events/create-event";
 import { draftFromEvent } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
@@ -34,6 +35,6 @@ export function lastYearTemplate(
     name: nameForThisYear(event.name, event.start_time, start),
     start,
     end,
-    recurrenceRule: null,
+    repeat: noRepeatDraft(),
   };
 }

@@ -2837,7 +2837,7 @@ describe("ChatShell channel description and start", () => {
     const start = await screen.findByTestId("channel-start");
     expect(
       within(start).getByRole("link", { name: "Edit channel", hidden: true }),
-    ).toHaveAttribute("href", "/chat-admin?channel=chan-general");
+    ).toHaveAttribute("href", "/settings?tab=chat&channel=chan-general");
     unmount();
 
     mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
@@ -3713,7 +3713,7 @@ describe("ChatShell greenfield grammar (#2142)", () => {
 
     expect(screen.getByText("Chat isn't open to you yet")).toBeInTheDocument();
     expect(
-      screen.getByText(/Ask an officer to give you the Member role/),
+      screen.getByText(/Ask an officer to check your roles/),
     ).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
   });
@@ -5311,7 +5311,7 @@ describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
     render(<ChatShell initialChannelId="chan-general" />);
     railRowActions.value!.onEdit("chan-random");
     expect(mockRouterPush).toHaveBeenCalledWith(
-      "/chat-admin?channel=chan-random",
+      "/settings?tab=chat&channel=chan-random",
     );
   });
 

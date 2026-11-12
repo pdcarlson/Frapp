@@ -28,6 +28,10 @@ import {
   useUpdateChannel,
   resolveAuthorLabel,
 } from "@repo/hooks";
+import {
+  isEmptyChannelAccessChoice,
+  matchesCategoryAccess,
+} from "@repo/hooks/channel-access";
 import { formatClock } from "@repo/formatting";
 import {
   builtInChannelDefault,
@@ -79,6 +83,11 @@ import {
 } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
 import { CreateChannelSheet } from "./create-channel-sheet";
+import {
+  CHAT_SETTINGS_PATH,
+  channelSettingsPath,
+} from "@/components/settings/settings-paths";
+import { SettingsBackLink } from "@/components/settings/settings-subpage";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -153,11 +162,6 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
-/** A chosen list with nothing on it: the API refuses it, so the form does. */
-function isEmptyChoice(list: readonly string[] | null): boolean {
-  return list !== null && list.length === 0;
-}
-
 /** A category's two answers in one line, for its row in the list. */
 function categoryAccessSummary(
   category: AdminCategory,
@@ -175,32 +179,24 @@ function categoryAccessSummary(
   return `Seen by ${seen}. Posts: ${posters}`;
 }
 
-/** Whether a channel's two lists equal its category's (it "matches" and follows it). */
-function matchesCategory(
-  see: readonly string[] | null,
-  post: readonly string[] | null,
-  category: AdminCategory | null | undefined,
-): boolean {
-  if (!category) return false;
-  return (
-    sameChannelAccessList(see, category.who_can_see ?? null) &&
-    sameChannelAccessList(post, category.who_can_post ?? null)
-  );
-}
-
 /**
- * Two pages on one route, the way Discord splits channel settings from server
- * settings (Paul, 2026-11-11: "scope the chat admin panel to whatever channel
- * you're editing"):
+ * Chat admin, inside Chapter settings' Chat page (#3837). Two views, the way
+ * Discord splits channel settings from server settings (Paul, 2026-11-11:
+ * "scope the chat admin panel to whatever channel you're editing"):
  *
- * - **`?channel=<id>`: that channel's settings, and nothing else.** The
- *   channel start's Edit channel shortcut (`components/chat/channel-start.tsx`)
- *   and the chat rail's right-click Edit channel (`chat-shell.tsx`) open it.
- *   Its settings first, then its pins, then the reports filed in it. No list
- *   of every channel: the chat rail beside the page already is one.
- * - **No channel: the chapter's chat settings.** New channel, a picker to open
- *   one channel's settings, categories, the chapter's chat background, and the
- *   whole report queue last (the only place a report about a DM shows).
+ * - **`?channel=<id>`: that channel's settings, and nothing else**, drawn in
+ *   place of the Chat page. The channel start's Edit channel shortcut
+ *   (`components/chat/channel-start.tsx`) and the chat rail's right-click
+ *   Edit channel (`chat-shell.tsx`) open it, as Discord's Edit Channel opens
+ *   its full-screen settings. Its settings first, then its pins, then the
+ *   reports filed in it, and a way back to all chat settings.
+ * - **No channel: the chapter's chat settings**, the body of the Chat page.
+ *   New channel, a picker to open one channel's settings, categories, the
+ *   chapter's chat background, and the whole report queue last (the only
+ *   place a report about a DM shows).
+ *
+ * It used to be its own route, `/chat-admin`, beside chat; that route only
+ * redirects here now.
  */
 export function ChatAdminPage({
   initialChannelId = null,
@@ -255,7 +251,7 @@ export function ChatAdminPage({
         down. The card carries its own gate (`CHAT_REPORT_QUEUE_PERMISSIONS`,
         which includes channels:manage) and renders nothing for an officer it
         refuses. The new-report notification links to its anchor
-        (`/chat-admin#reported-messages`).
+        (`CHAT_REPORTS_SETTINGS_PATH`).
       */}
       <div className="mt-10">
         <ChatReportsCard channelId={initialChannelId ?? undefined} />
@@ -338,7 +334,10 @@ function ChatAdminBody({
   }
 
   async function handleSaveCategoryAccess(category: AdminCategory) {
-    if (isEmptyChoice(categorySeeDraft) || isEmptyChoice(categoryPostDraft)) {
+    if (
+      isEmptyChannelAccessChoice(categorySeeDraft) ||
+      isEmptyChannelAccessChoice(categoryPostDraft)
+    ) {
       return;
     }
     // Only the lists the officer changed go out, so a list another officer
@@ -530,8 +529,8 @@ function ChatAdminBody({
   // doesn't block saving its name.
   const accessIncomplete =
     selectedTakesLists &&
-    ((seeChanged && isEmptyChoice(seeDraft)) ||
-      (postChanged && isEmptyChoice(postDraft)));
+    ((seeChanged && isEmptyChannelAccessChoice(seeDraft)) ||
+      (postChanged && isEmptyChannelAccessChoice(postDraft)));
   /** A private channel made read-only before #3722, which can be opened up. */
   const clearsPrivatePosters =
     selectedChannel?.type === "PRIVATE" && postChanged && postDraft === null;
@@ -617,7 +616,7 @@ function ChatAdminBody({
     await deleteChannelFlow(channel, () => {
       if (selectedChannelId === channel.id) setSelectedChannelId(null);
       // The page was this channel's; back to the chapter's chat settings.
-      if (channelMode) router.replace("/chat-admin");
+      if (channelMode) router.replace(CHAT_SETTINGS_PATH);
     });
   }
 
@@ -712,32 +711,29 @@ function ChatAdminBody({
           {selectedChannel ? (
             // Its own container: the form's fields count the page's width.
             <div className="@container">
-              <section aria-labelledby="ca-edit-label" className="space-y-4">
-                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
-                  <h2
-                    id="ca-edit-label"
-                    className="min-w-0 truncate text-lg font-bold"
-                  >
-                    #{selectedChannel.name}
-                  </h2>
-                  <Badge variant="outline">
-                    {CHANNEL_TYPE_LABEL[selectedChannel.type]}
-                  </Badge>
-                  {selectedChannel.is_default ? (
-                    <Badge variant="secondary">Default</Badge>
-                  ) : null}
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="ml-auto gap-1.5 text-muted-foreground"
-                  >
-                    <Link href="/chat-admin">
-                      <ArrowLeft className="h-4 w-4" />
-                      All chat settings
-                    </Link>
-                  </Button>
-                </div>
+              <section aria-labelledby="ca-edit-label" className="space-y-6">
+                {/*
+                  Drawn in place of the Chat page of Chapter settings, so it
+                  heads itself the way that page does, with the way back to
+                  it above (`SettingsSubpage`'s shape, plus the badges).
+                */}
+                <header className="space-y-1 border-b border-border pb-6">
+                  <SettingsBackLink href={CHAT_SETTINGS_PATH} label="Chat" />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2
+                      id="ca-edit-label"
+                      className="min-w-0 truncate text-title text-foreground"
+                    >
+                      #{selectedChannel.name}
+                    </h2>
+                    <Badge variant="outline">
+                      {CHANNEL_TYPE_LABEL[selectedChannel.type]}
+                    </Badge>
+                    {selectedChannel.is_default ? (
+                      <Badge variant="secondary">Default</Badge>
+                    ) : null}
+                  </div>
+                </header>
                 <div className="grid gap-3 @md:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="ca-name">Name</Label>
@@ -1016,7 +1012,7 @@ function ChatAdminBody({
                 This channel isn&apos;t here anymore. It may have been deleted.
               </InlineNote>
               <Button asChild variant="secondary" size="sm" className="gap-1.5">
-                <Link href="/chat-admin">
+                <Link href={CHAT_SETTINGS_PATH}>
                   <ArrowLeft className="h-4 w-4" />
                   All chat settings
                 </Link>
@@ -1049,11 +1045,7 @@ function ChatAdminBody({
                 {channels.length > 0 ? (
                   <Select
                     value=""
-                    onValueChange={(id) =>
-                      router.push(
-                        `/chat-admin?channel=${encodeURIComponent(id)}`,
-                      )
-                    }
+                    onValueChange={(id) => router.push(channelSettingsPath(id))}
                   >
                     <SelectTrigger
                       aria-label="Edit a channel"
@@ -1310,7 +1302,7 @@ function ChannelAccessSection({
       </InlineNote>
     );
   }
-  const matches = matching || matchesCategory(see, post, category);
+  const matches = matching || matchesCategoryAccess(see, post, category);
   return (
     <section
       aria-labelledby="ca-access-label"
@@ -1403,14 +1395,15 @@ function CategoryAccessEditor({
       channel.is_audit_log !== true,
   );
   const following = inCategory.filter((channel) =>
-    matchesCategory(
+    matchesCategoryAccess(
       channel.who_can_see ?? null,
       channel.who_can_post ?? null,
       category,
     ),
   );
   const custom = inCategory.length - following.length;
-  const incomplete = isEmptyChoice(see) || isEmptyChoice(post);
+  const incomplete =
+    isEmptyChannelAccessChoice(see) || isEmptyChannelAccessChoice(post);
   return (
     <div className="mb-2 mt-1 grid gap-4 rounded-md border border-border p-3">
       <ChannelAccessField

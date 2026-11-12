@@ -202,7 +202,10 @@ describe("DashboardNotificationDrawer — report queue freshness", () => {
     mockInvalidateReports.mockClear();
 
     const link = screen.getByRole("link", { name: /Message Reported/ });
-    expect(link).toHaveAttribute("href", "/chat-admin#reported-messages");
+    expect(link).toHaveAttribute(
+      "href",
+      "/settings?tab=chat#reported-messages",
+    );
     await user.click(link);
 
     expect(mockInvalidateReports).toHaveBeenCalledTimes(1);
@@ -319,7 +322,7 @@ describe("DashboardNotificationDrawer — a Discord import that ended", () => {
     renderDrawer();
     expect(
       screen.getByRole("link", { name: /Discord import finished/ }),
-    ).toHaveAttribute("href", "/discord-import");
+    ).toHaveAttribute("href", "/settings?tab=chat&tool=discord-import");
   });
 });
 

@@ -10,6 +10,7 @@ import {
   normalizeChannelAccessList,
   parseChannelAccessEntry,
 } from '@repo/validation';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
@@ -33,6 +34,12 @@ export interface ChannelAccessOption {
   tier_id: string | null;
   /** The `users.id` of every member it names, so the editor can count who a list reaches. */
   user_ids: string[];
+  /**
+   * The Everyone role (#4191): not offered to add, since it names only the
+   * members whose rows hold it, not everyone; a list that already names it
+   * still shows it. `false` for every other option.
+   */
+  hidden: boolean;
 }
 
 /** Both lists, as a write sends them: `undefined` leaves one alone, `null` is everyone. */
@@ -252,6 +259,7 @@ export class ChannelAccessListService {
           color: null,
           tier_id: null,
           user_ids: usersOf(entry),
+          hidden: false,
         };
       });
     const roleOptions: ChannelAccessOption[] = [...chapterRoles]
@@ -269,6 +277,7 @@ export class ChannelAccessListService {
           color: role.color ?? null,
           tier_id: role.tier_id ?? null,
           user_ids: usersOf(entry),
+          hidden: role.system_key === SystemRoleKeys.MEMBER,
         };
       });
     return [...tierOptions, ...roleOptions];

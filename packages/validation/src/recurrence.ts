@@ -26,14 +26,16 @@
  *   included) or `UNTIL` (`YYYYMMDD`, the last day a meeting may fall on, in
  *   the rule's zone), and `TZID` (the zone whose wall clock the series keeps,
  *   so a 7 PM meeting stays at 7 PM across a DST change). Chapters keep no
- *   zone of their own, so the zone will be the creating officer's, which is
+ *   zone of their own, so the zone is the creating officer's, which is
  *   the chapter's in practice. A monthly rule without `BYDAY` meets on its
  *   `BYMONTHDAY` (1-31; the 31st falls back to a short month's last day), so
  *   a head clamped to Feb 28 still hands on the 31st; without either, on the
  *   first meeting's day of the month. A weekly rule must name its days.
  *
- * The API accepts and steps a structured rule today; the Repeat controls send
- * one from #4488's UI PR. Until then every client writes a legacy token.
+ * Both Repeat controls send a structured rule, except where a token makes
+ * exactly the same meetings (one of the three patterns at its own length, on
+ * a run no DST change moves), because shipped phone builds read only tokens
+ * (`legacyTokenFor` in `repeat-draft.ts`).
  *
  * The head row is always the series' first meeting; the rule makes the
  * meetings after it.
@@ -42,8 +44,10 @@
 import { isSupportedTimeZone } from "./time-zone";
 
 /**
- * The legacy tokens. Shipped phone builds send these, so the API keeps
- * accepting them; new clients write a structured rule instead.
+ * The legacy tokens. Shipped phone builds send and read only these, so the
+ * API keeps accepting them, and the current Repeat controls still send one
+ * where it makes exactly the meetings the structured rule would
+ * (`legacyTokenFor` in `repeat-draft.ts`).
  */
 export const RECURRENCE_RULES = ["WEEKLY", "BIWEEKLY", "MONTHLY"] as const;
 
@@ -754,6 +758,56 @@ function nthWeekdayAt(
   return { n, day: WEEKDAY_CODES[weekday]! };
 }
 
+/**
+ * Weekdays moved `days` later (earlier when negative), in week order: what a
+ * weekly rule's days become when its first meeting moves. The one place the
+ * API's `shiftRepeatRule` and the editors' Repeat control shift days.
+ */
+export function shiftWeekdays(
+  days: readonly WeekdayCode[],
+  by: number,
+): WeekdayCode[] {
+  const moved = new Set(
+    days.map(
+      (code) =>
+        WEEKDAY_CODES[(((WEEKDAY_CODES.indexOf(code) + by) % 7) + 7) % 7]!,
+    ),
+  );
+  return WEEKDAY_CODES.filter((code) => moved.has(code));
+}
+
+/** A calendar day as a wall clock in some zone reads it. */
+export interface ZonedCalendarDay {
+  year: number;
+  month: number;
+  day: number;
+  weekday: WeekdayCode;
+  /** Days since 1970-01-01, for day arithmetic. */
+  dayNumber: number;
+  daysInMonth: number;
+}
+
+/**
+ * The calendar day `at` falls on in `timeZone`, through the cached formatter
+ * the series stepping uses, so a Repeat control reading it on every render
+ * builds no formatter of its own.
+ */
+export function zonedCalendarDay(
+  at: Date | number,
+  timeZone: string,
+): ZonedCalendarDay {
+  const clock = wallClockAt(new Date(at).getTime(), timeZone);
+  const n = dayNumber(clock.year, clock.month, clock.day);
+  return {
+    year: clock.year,
+    month: clock.month,
+    day: clock.day,
+    weekday: WEEKDAY_CODES[weekdayOf(n)]!,
+    dayNumber: n,
+    daysInMonth: daysInMonth(clock.year, clock.month),
+  };
+}
+
 /** The day number of `instant` on the wall clock of `timeZone`. */
 function zonedDayNumber(instant: number, timeZone: string): number {
   const clock = wallClockAt(instant, timeZone);
@@ -901,13 +955,7 @@ export function shiftRepeatRule(
   if (days === 0) return rule;
   let next: RepeatRule = parsed;
   if (parsed.freq === "WEEKLY") {
-    const moved = new Set(
-      parsed.byDay.map(
-        (code) =>
-          WEEKDAY_CODES[(((WEEKDAY_CODES.indexOf(code) + days) % 7) + 7) % 7]!,
-      ),
-    );
-    next = { ...next, byDay: WEEKDAY_CODES.filter((code) => moved.has(code)) };
+    next = { ...next, byDay: shiftWeekdays(parsed.byDay, days) };
   } else if (parsed.freq === "MONTHLY") {
     if (parsed.nthWeekday) {
       next = {
