@@ -13,7 +13,7 @@ export const MAX_TITLE_LENGTH = 200;
  * run to the read's 512 KB cap, and the checks below are not linear in it, so
  * a form author's enormous title must not cost the API seconds of CPU.
  */
-export const MAX_RAW_TITLE_LENGTH = 2_000;
+const MAX_RAW_TITLE_LENGTH = 2_000;
 
 /** The product's name after the page's own (`Dues - Google Sheets`). */
 const PRODUCT_SUFFIX =

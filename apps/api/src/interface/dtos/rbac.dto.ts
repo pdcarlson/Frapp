@@ -29,7 +29,7 @@ import {
 } from '#domain/constants/field-limits';
 
 /** `role_tiers_name_len` (migration `20261111140000`). */
-export const ROLE_TIER_NAME_MAX_LENGTH = 80;
+const ROLE_TIER_NAME_MAX_LENGTH = 80;
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**
