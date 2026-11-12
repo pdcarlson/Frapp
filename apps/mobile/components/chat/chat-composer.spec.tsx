@@ -584,3 +584,151 @@ describe("ChatComposer @-mention picker", () => {
     expect(props.onChangeText).toHaveBeenCalledWith("@SamVP how are you");
   });
 });
+
+/**
+ * Winston, 2026-11-12: he sent a message and it stayed in the box, ready to
+ * send again. A send's clear reaches the native field as a command stamped
+ * with the last event count JS has read, and the field drops one that is
+ * behind, so a keyboard event still in flight at the tap kept the text there.
+ */
+describe("ChatComposer clears the box on send", () => {
+  function sendFrom(text: string) {
+    const clear = vi.fn();
+    const props: ChatComposerProps = {
+      value: text,
+      onChangeText: vi.fn(),
+      onSend: vi.fn(),
+      canSend: true,
+      placeholder: "Message",
+    };
+    const node = (value: string) => (
+      <FrappThemeProvider>
+        <ChatComposer {...props} value={value} />
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(node(text), {
+        createNodeMock: (el) =>
+          el.type === "TextInput"
+            ? { clear, focus: vi.fn(), setSelection: vi.fn() }
+            : null,
+      });
+    });
+    const input = () => tree.root.findByType("TextInput" as never);
+    const rerender = (value: string) => act(() => tree.update(node(value)));
+    // The tap, then the send empties the draft, as the screen's does.
+    act(() => byLabel(tree, "Send message")!.props.onPress());
+    rerender("");
+    const type = (next: string) =>
+      act(() => input().props.onChangeText?.(next));
+    return { props, clear, type, rerender };
+  }
+
+  it("turns away the field's late copy of the text just sent", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("You should have to submitproof");
+      expect(props.onSend).toHaveBeenCalledTimes(1);
+      type("You should have to submitproof");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the next message, typed from its first letter", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      type("h");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("h");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away only the first change after the send", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("ok");
+      type("o");
+      type("ok");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("ok");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the same text typed again once the moment has passed", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      act(() => vi.advanceTimersByTime(1500));
+      type("hello");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hello");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the field again once the draft is empty, in case the first clear was dropped", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear } = sendFrom("hello");
+      act(() => vi.advanceTimersByTime(400));
+      expect(clear).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the field alone once the member is typing the next message", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear, rerender } = sendFrom("hello");
+      rerender("n");
+      act(() => vi.advanceTimersByTime(400));
+      expect(clear).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does nothing extra when a send was refused and the text stayed", () => {
+    vi.useFakeTimers();
+    try {
+      const clear = vi.fn();
+      const props: ChatComposerProps = {
+        value: "hello",
+        onChangeText: vi.fn(),
+        onSend: vi.fn(),
+        canSend: true,
+        placeholder: "Message",
+      };
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <ChatComposer {...props} />
+          </FrappThemeProvider>,
+          {
+            createNodeMock: (el) =>
+              el.type === "TextInput" ? { clear, focus: vi.fn() } : null,
+          },
+        );
+      });
+      act(() => byLabel(tree, "Send message")!.props.onPress());
+      act(() => vi.advanceTimersByTime(400));
+      expect(clear).not.toHaveBeenCalled();
+      act(() =>
+        tree.root
+          .findByType("TextInput" as never)
+          .props.onChangeText?.("hello!"),
+      );
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hello!");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

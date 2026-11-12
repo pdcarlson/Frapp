@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -208,6 +215,7 @@ export function ChatComposer({
     mentionCandidates,
     mentionRoles,
   );
+  const sendClear = useClearedOnSend(inputRef, value);
 
   // An empty or whitespace-only body is not a send — unless a photo is
   // staged. A photo-only message is a real message, uploaded or still
@@ -368,7 +376,10 @@ export function ChatComposer({
           accessibilityLabel={placeholder}
           editable={canSend}
           multiline
-          onChangeText={mention.onChangeText}
+          onChangeText={(next) => {
+            if (sendClear.isStaleEcho(next)) return;
+            mention.onChangeText(next);
+          }}
           onSelectionChange={mention.onSelectionChange}
           onFocus={mention.onFocus}
           onBlur={mention.onBlur}
@@ -400,7 +411,10 @@ export function ChatComposer({
           }
           accessibilityState={{ disabled: !isSendable }}
           disabled={!isSendable}
-          onPress={onSend}
+          onPress={() => {
+            sendClear.markSent();
+            onSend();
+          }}
           style={({ pressed }) => [
             styles.send,
             !isSendable ? styles.sendDisabled : null,
@@ -419,6 +433,91 @@ export function ChatComposer({
       </View>
     </View>
   );
+}
+
+/**
+ * How long after Send the native box's leftover copy of the sent text can
+ * still arrive. It is one event the JS thread had not read yet when Send
+ * landed, so it comes within a frame or two, or a few hundred milliseconds on
+ * a busy thread.
+ */
+const SENT_ECHO_MS = 1000;
+/** When the clear is retried once the JS thread has caught up. */
+const CLEAR_RETRY_MS = 300;
+
+/**
+ * Makes the box on screen actually empty after a send, not only the draft.
+ *
+ * A send empties the draft, and React Native passes that to the native field
+ * as a `setTextAndSelection` command stamped with the last event count JS has
+ * seen. The native field drops a command whose count is behind its own, so if
+ * the keyboard had sent an event JS hadn't caught up with when Send was tapped
+ * (the last keystroke, an autocorrect or a prediction settling), the clear is
+ * thrown away and the sent text stays in the box. The draft then reads empty
+ * while the box doesn't, the next keystroke reports the whole old text plus
+ * the new letter, and the member can send it again (Winston, 2026-11-12;
+ * react-native#37722, Expensify's same composer bug in Expensify/App#37896).
+ *
+ * Two ways that event shows up, and one fix for each:
+ *
+ * - It arrives after the send, as a change carrying the sent text. Taking it
+ *   would put the text back in the draft, so `isStaleEcho` turns it away. The
+ *   input then sees its text differ from `value` and sends the clear again,
+ *   stamped with the newer count, which the field accepts.
+ * - It was read before the send but not yet rendered, so the dropped clear
+ *   never retries and no change ever comes. The clear is retried here once
+ *   React has rendered the newer count, while the draft is still empty. A
+ *   retry against a field the member has typed into since is dropped by the
+ *   same count check, so it can't take their new letters.
+ *
+ * Only the first change after a send, within `SENT_ECHO_MS`, and only one
+ * that is exactly the sent text, counts as the echo: typing the next message
+ * starts from one letter.
+ */
+function useClearedOnSend(
+  inputRef: RefObject<TextInput | null>,
+  value: string,
+) {
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const sent = useRef<{ text: string; at: number; echoOpen: boolean } | null>(
+    null,
+  );
+
+  const markSent = useCallback(() => {
+    sent.current = { text: valueRef.current, at: Date.now(), echoOpen: true };
+  }, []);
+
+  useEffect(() => {
+    const last = sent.current;
+    if (value !== "" || !last || last.text === "") return;
+    if (Date.now() - last.at > SENT_ECHO_MS) return;
+    const clear = () => {
+      if (valueRef.current === "") inputRef.current?.clear();
+    };
+    const frame = requestAnimationFrame(clear);
+    const timer = setTimeout(clear, CLEAR_RETRY_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [inputRef, value]);
+
+  const isStaleEcho = useCallback((next: string) => {
+    const last = sent.current;
+    if (!last || !last.echoOpen) return false;
+    last.echoOpen = false;
+    return (
+      valueRef.current === "" &&
+      next !== "" &&
+      next === last.text &&
+      Date.now() - last.at <= SENT_ECHO_MS
+    );
+  }, []);
+
+  return { markSent, isStaleEcho };
 }
 
 /** The picker's state, read off the draft and where the caret sits in it. */
