@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: get_request_context (20261112140000, #3583) ────────────────
+// ─── Functional: get_request_context (20261112151000, #3583) ────────────────
 //
 // The chapter guards' prefetch reads the caller's user id, the chapter's
 // subscription state, the caller's membership and its roles in this one call,
@@ -17,7 +17,7 @@ import { db, miss } from "../harness.mjs";
 //   - nobody but `service_role` may call it.
 //
 // The rows are deleted at the end.
-console.log("\n=== Functional: get_request_context (20261112140000) ===");
+console.log("\n=== Functional: get_request_context (20261112151000) ===");
 try {
   const CH = "c3583000-0000-4000-8000-00000000000a";
   const OTHER = "c3583000-0000-4000-8000-00000000000b";

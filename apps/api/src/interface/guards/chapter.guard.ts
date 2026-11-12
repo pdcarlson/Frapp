@@ -177,7 +177,7 @@ function foundRow<T>(row: T | null): PostgrestMaybeSingleResponse<T> {
 }
 
 /**
- * `get_request_context`'s answer (migration `20261112140000`): the rows this
+ * `get_request_context`'s answer (migration `20261112151000`): the rows this
  * guard, `PermissionsGuard` and the handler's access checks would otherwise
  * read one after another, from one call.
  */

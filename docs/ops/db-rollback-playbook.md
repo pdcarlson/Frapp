@@ -3791,9 +3791,9 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-## Rollback request context lookup (20261112140000)
+## Rollback request context lookup (20261112151000)
 
-* **Migration**: `20261112140000_request_context_lookup.sql`
+* **Migration**: `20261112151000_request_context_lookup.sql`
 
 One function, `get_request_context(uuid, uuid)`, which the chapter guards' prefetch calls. It writes nothing on apply and changes no table.
 

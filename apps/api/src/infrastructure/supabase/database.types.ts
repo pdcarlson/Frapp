@@ -195,7 +195,7 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       /**
-       * `20261112140000` (#3583). The caller's `users.id`, the chapter's
+       * `20261112151000` (#3583). The caller's `users.id`, the chapter's
        * subscription state and module toggles, the caller's membership row
        * in it and the roles that row names, in one round trip, for the
        * chapter guards' prefetch. Service role only. Each part is `null`
