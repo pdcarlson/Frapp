@@ -162,6 +162,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The emoji picker on the web opens faster, and on both the web and your phone it starts with the emoji you used last.",
       "A sign-up sheet in chat can now be a quick headcount, where people answer Going or Can't make it and add a short note, and any sign-up can end at a set time or be closed early by whoever posted it, on the web and on your phone.",
       "If a required event clashes with something, tap Can't make it on the event to send an excuse, and whoever runs it can approve or decline it right there.",
+      "Officers can now make groups like Third floor or Live-ins on the web, and anyone can @mention a group or a tier to reach everyone in it.",
+      "Study sessions on your phone have a focus timer (25 minutes on, a short break) and a switch to keep the screen on while you study.",
+      "Study hours on your phone now says how far you are from each study zone before you start, and picks the one you're in.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
