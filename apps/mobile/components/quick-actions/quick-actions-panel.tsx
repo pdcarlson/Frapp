@@ -41,6 +41,15 @@ const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
   upload: NAV_GLYPHS.documents,
 };
 
+/**
+ * The remove badge's neutral fill. No ladder token fits: it sits on a disc over
+ * glass, and the ladder's lightest step (`popover`, `#313131`) would barely
+ * part from the disc, while `text.disabled` would say "unavailable". It is a
+ * measured literal instead: the foreground minus on it reads 6.33:1, and the
+ * badge's 2px `surface1` ring separates it from whatever is under the disc.
+ */
+export const REMOVE_BADGE_FILL = "#5A5A5A";
+
 /** The round tile each action sits on. */
 export const QUICK_ACTION_DISC = 58;
 const GLYPH_SIZE = 26;
@@ -213,11 +222,11 @@ function ActionFace({
             onPress={onBadge}
             style={[styles.badge, styles.badgeRemove]}
           >
-            <BadgeGlyph kind="remove" />
+            <BadgeGlyph kind="remove" color={tokens.color.text.foreground} />
           </Pressable>
         ) : badge === "add" ? (
           <View style={[styles.badge, styles.badgeAdd]}>
-            <BadgeGlyph kind="add" />
+            <BadgeGlyph kind="add" color={tokens.color.semantic.onSemantic} />
           </View>
         ) : null}
       </View>
@@ -228,12 +237,24 @@ function ActionFace({
   );
 }
 
-function BadgeGlyph({ kind }: { kind: "remove" | "add" }) {
+/**
+ * The edit-mode badge's minus or plus. Its ink is chosen for its fill: near-black
+ * on the success add badge (8.67:1; white there was 2.28:1, under WCAG 1.4.11's
+ * 3:1 for a meaningful glyph, #4393), foreground on the neutral remove badge
+ * (6.33:1). `quick-actions-panel.spec.tsx` measures both.
+ */
+function BadgeGlyph({
+  kind,
+  color,
+}: {
+  kind: "remove" | "add";
+  color: string;
+}) {
   return (
     <Svg width={10} height={10} viewBox="0 0 10 10">
       <Path
         d={kind === "remove" ? "M2 5h6" : "M5 2v6M2 5h6"}
-        stroke="#FFFFFF"
+        stroke={color}
         strokeWidth={1.8}
         strokeLinecap="round"
       />
@@ -553,7 +574,7 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 2,
       borderColor: tokens.color.surface.surface1,
     },
-    badgeRemove: { backgroundColor: "#5A5A5A" },
+    badgeRemove: { backgroundColor: REMOVE_BADGE_FILL },
     badgeAdd: { backgroundColor: tokens.color.semantic.success },
     editHead: {
       flexDirection: "row",
