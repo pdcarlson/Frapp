@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
+import { isRecord, str } from "../more/narrow";
 import { chatChannelIdFrom, isThreadChatPush } from "./targets";
 import type {
   NotificationsModule,
@@ -343,6 +344,39 @@ export async function clearReadChatNotifications(
 }
 
 /**
+ * Takes non-chat pushes (events, tasks, dues, and the rest) out of the tray
+ * once the member has read their in-app row (`spec/behavior/notifications.md`
+ * § Badge Count, #4011). Every push the server sends carries its row's
+ * `notificationId`, so a push is matched to exactly the row it announced.
+ *
+ * Chat pushes are never touched here: `clearReadChatNotifications` is the only
+ * thing that removes them, by the channel counts. A push whose row isn't in
+ * `readNotificationIds` (unread, past the first page, a local notification
+ * with no row) is left alone, so a stale list can only fail to clear.
+ */
+export async function clearReadNonChatNotifications(
+  readNotificationIds: ReadonlySet<string>,
+): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod || readNotificationIds.size === 0) return;
+  try {
+    const presented = await mod.getPresentedNotificationsAsync();
+    await Promise.allSettled(
+      presented
+        .filter((n) => {
+          const data = n.request.content.data;
+          if (chatChannelIdFrom(data) !== null) return false;
+          const id = isRecord(data) ? str(data, "notificationId") : null;
+          return id !== null && readNotificationIds.has(id);
+        })
+        .map((n) => mod.dismissNotificationAsync(n.request.identifier)),
+    );
+  } catch {
+    // As in `clearReadChatNotifications`: leave the tray as it is.
+  }
+}
+
+/**
  * The channels whose chat pushes are still in the tray: what the phone was
  * told about and the member hasn't opened here. `lib/chat/unread-first-paint.ts`
  * lights those channels before `GET /v1/channels/unread` answers (#4006).
@@ -390,9 +424,20 @@ export function configureForegroundPresentation(): void {
  * module, never the EAS `projectId` — the badge is a device-local OS call, not
  * a remote push, so it works in a plain dev build with no project provisioned.
  * A no-op wherever the module can't load (web, Expo Go).
+ *
+ * On Android a count of 0 makes no native call (#4011). expo-notifications'
+ * Android `BadgeHelper.setBadgeCount` (57.0.15) answers 0 with
+ * `NotificationManager.cancelAll()`, not with a badge update, so zeroing the
+ * badge there would dismiss every notification the app has in the tray —
+ * unread chat pushes, events, tasks, dues — on every launch. Android's own
+ * launcher dot is drawn from the tray, so it already clears as the tray does
+ * (`clearReadChatNotifications` for chat). A non-zero count still goes to
+ * ShortcutBadger for the launchers that read it. iOS only ever sets the number.
  */
 export async function setBadgeCount(count: number): Promise<void> {
   const mod = localOnlyModule();
   if (!mod) return;
-  await mod.setBadgeCountAsync(Math.max(0, count));
+  const next = Math.max(0, count);
+  if (next === 0 && Platform.OS === "android") return;
+  await mod.setBadgeCountAsync(next);
 }
