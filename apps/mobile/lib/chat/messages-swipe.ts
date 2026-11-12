@@ -15,7 +15,12 @@
 
 /** Points left before the pan takes over; rightward never does. */
 export const MESSAGES_SWIPE_ACTIVATE_X = -24;
-/** Points up or down that hand the move to the list's scroll instead. */
+/**
+ * Points up or down that hand the move to the list's scroll instead. On
+ * Android a channel list long enough to scroll takes a vertical move sooner,
+ * at its own touch slop (about 8dp), which cancels the pan first: the swipe
+ * there wants a straighter slide.
+ */
 export const MESSAGES_SWIPE_FAIL_Y = 14;
 
 /** Far enough left to open Messages on release. */
