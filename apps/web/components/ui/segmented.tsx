@@ -26,6 +26,7 @@ export function SegmentedChoice<T extends string>({
   disabled = false,
   fill = false,
   quiet = false,
+  dense = false,
   className,
 }: {
   label: string;
@@ -35,6 +36,8 @@ export function SegmentedChoice<T extends string>({
   disabled?: boolean;
   fill?: boolean;
   quiet?: boolean;
+  /** Caption-size labels and tighter padding, for a control beside a name in a list row. */
+  dense?: boolean;
   className?: string;
 }) {
   return (
@@ -60,7 +63,8 @@ export function SegmentedChoice<T extends string>({
               if (!held) onChange(option.value);
             }}
             className={cn(
-              "flex min-h-8 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-semibold transition-colors pointer-coarse:min-h-11",
+              "flex min-h-8 items-center justify-center whitespace-nowrap rounded-sm font-semibold transition-colors pointer-coarse:min-h-11",
+              dense ? "px-2 text-caption" : "px-3 text-sm",
               fill && "flex-1",
               // The held answer as chat search's filter radios draw theirs.
               held

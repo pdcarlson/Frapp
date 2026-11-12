@@ -27,6 +27,7 @@ export function Segmented<T extends string>({
   accessibilityLabel,
   disabled = false,
   quiet = false,
+  dense = false,
 }: {
   options: readonly SegmentedOption<T>[];
   value: T;
@@ -34,6 +35,8 @@ export function Segmented<T extends string>({
   accessibilityLabel: string;
   disabled?: boolean;
   quiet?: boolean;
+  /** Tighter segment padding, for a row that sets the control beside a name. */
+  dense?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -59,6 +62,7 @@ export function Segmented<T extends string>({
             hitSlop={{ top: 6, bottom: 6 }}
             style={[
               styles.segment,
+              dense ? styles.dense : null,
               held
                 ? quiet
                   ? styles.quietHeld
@@ -110,6 +114,12 @@ function createStyles(tokens: SignetTokens) {
     label: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    // Each segment takes its label's width plus an equal share of the rest,
+    // so the longest answer ("Not invited") is never cut short.
+    dense: {
+      flexBasis: "auto",
+      paddingHorizontal: tokens.spacing.xs,
     },
     quietHeld: {
       backgroundColor: tokens.color.surface.card,

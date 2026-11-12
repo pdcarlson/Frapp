@@ -81,6 +81,7 @@ export function AttendanceEditor({
       <div className="rounded-md border border-border">
         <AttendanceRow name="Everyone else" strong>
           <SegmentedChoice
+            dense
             label="Attendance for everyone else"
             options={options}
             value={value.everyone}
@@ -107,6 +108,7 @@ export function AttendanceEditor({
               <li key={role.id} className="border-t border-border">
                 <AttendanceRow name={role.name} muted={!setApart}>
                   <SegmentedChoice
+                    dense
                     label={`Attendance for ${role.name}`}
                     options={options}
                     value={attendanceOfRole(value, role.id)}
@@ -153,7 +155,7 @@ function AttendanceRow({
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
       <span
         className={cn(
-          "min-w-[7rem] flex-1 truncate text-sm",
+          "min-w-[6rem] flex-1 truncate text-sm",
           strong && "font-semibold",
           muted ? "text-muted-foreground" : "text-foreground",
         )}

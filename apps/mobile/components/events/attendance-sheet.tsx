@@ -174,6 +174,7 @@ function AttendanceBody({
               onChange(withEveryone(value, everyone))
             }
             accessibilityLabel="Attendance for everyone else"
+            dense
           />
         </View>
       </View>
@@ -231,6 +232,7 @@ function AttendanceBody({
                   onChange(withRole(value, item.id, next))
                 }
                 quiet={!setApart}
+                dense
                 accessibilityLabel={`Attendance for ${item.name}`}
               />
             </View>
@@ -295,8 +297,9 @@ function createStyles(tokens: SignetTokens, accent: string) {
     following: {
       color: tokens.color.text.mutedForeground,
     },
+    // Wide enough for "Not invited" in full at the caption size.
     choice: {
-      width: 216,
+      width: 228,
     },
   });
 }

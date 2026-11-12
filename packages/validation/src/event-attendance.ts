@@ -242,7 +242,9 @@ export function describeAttendance(
     const names = entries
       .filter(([, s]) => s === status)
       .map(([id]) => roleName(id) ?? "a role")
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      .sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }),
+      );
     if (names.length > 0) {
       parts.push(
         `${list(names)} ${EVENT_ATTENDANCE_LABELS[status].toLowerCase()}`,
@@ -284,7 +286,10 @@ export function attendanceRows<T extends { id: string; name: string }>(
   const matches = (name: string) =>
     words.every((word) => name.toLowerCase().includes(word));
   const byName = (a: { name: string }, b: { name: string }) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    a.name.localeCompare(b.name, undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
   const known = new Map(options.map((role) => [role.id, role]));
   const pinnedSet = new Set(pinned);
   const top = pinned
