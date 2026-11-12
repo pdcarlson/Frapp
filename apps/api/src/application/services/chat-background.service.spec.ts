@@ -334,9 +334,32 @@ describe('ChatBackgroundService (#3973)', () => {
       );
     });
 
+    it('announces a default photo in the oldest open public channel when there is no default or #general (a Discord import)', async () => {
+      const { service, messageRepo, chapterRepo } = setup({
+        channels: [
+          channel({ id: 'gated', name: 'announcements', type: 'ROLE_GATED' }),
+          channel({ id: 'ro', name: 'rules', is_read_only: true }),
+          channel({ id: 'officers', name: 'notes', who_can_post: ['role-1'] }),
+          channel({ id: 'academics', name: 'academics' }),
+          channel({ id: 'anyone', name: 'anyone' }),
+        ],
+      });
+      await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
+      expect(messageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channel_id: 'academics' }),
+      );
+      expect(chapterRepo.update).toHaveBeenCalledWith(
+        CHAPTER,
+        expect.objectContaining({ chat_background: 'photo' }),
+      );
+    });
+
     it('refuses a default photo when there is nowhere to announce it', async () => {
       const { service, chapterRepo } = setup({
-        channels: [channel({ name: 'house' })],
+        channels: [
+          channel({ name: 'house', type: 'ROLE_GATED' }),
+          channel({ id: 'ro', name: 'rules', is_read_only: true }),
+        ],
       });
       await expect(
         service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
