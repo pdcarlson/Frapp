@@ -297,8 +297,17 @@ vi.mock("react-native-gesture-handler", () => {
       "minDistance",
       "activeOffsetX",
       "failOffsetY",
+      "enabled",
     ]) {
-      gesture[method] = () => gesture;
+      // The argument is kept under `config`, so a spec can pin a gesture's
+      // activation (the swipe to Messages starts only leftward, #3774).
+      gesture[method] = (value: unknown) => {
+        gesture.config = {
+          ...(gesture.config as Record<string, unknown> | undefined),
+          [method]: value,
+        };
+        return gesture;
+      };
     }
     return gesture;
   };

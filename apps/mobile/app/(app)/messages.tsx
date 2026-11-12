@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import {
   canHideConversation,
+  compareLatestFirst,
   HIDDEN_CONVERSATIONS_LABEL,
   otherMemberId,
   resolveAuthorLabel,
@@ -125,17 +126,15 @@ export default function MessagesScreen() {
   // rest newest first; a conversation with no message yet sorts last, by name.
   const { pinnedIds } = useSidebarPreferences();
   const listed = useMemo(() => {
-    const at = (channel: ChannelSummary) =>
-      latestById.get(channel.id)?.created_at ?? "";
     const pinRank = (channel: ChannelSummary) =>
       pinnedIds.has(channel.id) ? 0 : 1;
+    // The newest-first rule web's Direct messages list shares (#3774).
+    const newestFirst = compareLatestFirst<ChannelSummary>(
+      (channel) => latestById.get(channel.id)?.created_at,
+      (channel) => displayChannelName(channel, viewerId, memberNames),
+    );
     return [...listedChannels(direct)].sort(
-      (a, b) =>
-        pinRank(a) - pinRank(b) ||
-        at(b).localeCompare(at(a)) ||
-        displayChannelName(a, viewerId, memberNames).localeCompare(
-          displayChannelName(b, viewerId, memberNames),
-        ),
+      (a, b) => pinRank(a) - pinRank(b) || newestFirst(a, b),
     );
   }, [direct, latestById, pinnedIds, viewerId, memberNames]);
   const hidden = useMemo(() => hiddenChannels(direct), [direct]);

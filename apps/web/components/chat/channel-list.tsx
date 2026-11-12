@@ -15,6 +15,7 @@ import {
   arrangeChannelSidebar,
   canHideConversation,
   compareChannelOrder,
+  compareLatestFirst,
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
@@ -236,6 +237,9 @@ export function unreadAnnouncement(
   return plural(unreadCount, "unread message");
 }
 
+/** Sorts an open hidden DM, which has no latest row, ahead of any real time. */
+const OPEN_HIDDEN_FIRST = "9999-12-31T23:59:59.999Z";
+
 export interface ChannelListProps {
   /**
    * Which list this is (#3774). `direct` is the Direct messages panel, given
@@ -244,6 +248,19 @@ export interface ChannelListProps {
    * the header, with Pinned above them and Hidden conversations below.
    */
   kind?: "channels" | "direct";
+  /**
+   * Direct messages only: each conversation's latest message time
+   * (`GET /v1/channels/latest`), which orders the list newest first, as the
+   * phone's Messages screen does. Absent until that read answers, when the
+   * list keeps its A–Z order rather than reordering under the pointer twice.
+   */
+  latestAt?: ReadonlyMap<string, string>;
+  /**
+   * Direct messages only: each conversation's last line, worded by
+   * `channelPreviewLine` (`@repo/chat-core/channel-preview`). Rows hold a blank
+   * line until it answers, so none changes height when the lines land.
+   */
+  previews?: ReadonlyMap<string, string>;
   channels: ChatChannel[];
   activeChannelId: string | null;
   /** Viewer's `users.id`, subtracted when naming a DM by its other participant. */
@@ -387,8 +404,9 @@ function HeldCopy({
  * s04 also draws a message preview and a timestamp per row, which mobile
  * has drawn since 2026-11-06 from `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
  * `channelPreviewLine` in `@repo/chat-core/channel-preview`;
- * spec/behavior/chat/README.md § Channel list previews). The rail doesn't yet:
- * #1191.
+ * spec/behavior/chat/README.md § Channel list previews). On web the Direct
+ * messages list draws that line too (`previews`, #3774); the channels rail
+ * doesn't yet: #1191.
  *
  * **Red means one thing.** A mention or a DM takes the fixed `#E5484D` badge and
  * nothing else does — a plain unread channel carries no badge, only its bold name (2026-11-07),
@@ -397,6 +415,8 @@ function HeldCopy({
  */
 export function ChannelList({
   kind = "channels",
+  latestAt,
+  previews,
   channels,
   activeChannelId,
   viewerId,
@@ -503,7 +523,7 @@ export function ChannelList({
         sectionOrder.set(section.key, [...section.channels].sort(byOrder));
       }
     }
-    const arranged = arrangeChannelSidebar({
+    let arranged = arrangeChannelSidebar({
       sections: inputSections,
       pinnedIds,
       // The Direct messages panel draws no heading for its one section, so
@@ -520,9 +540,32 @@ export function ChannelList({
       mutedChannelIds,
     });
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
+    // Direct messages run newest first, pinned ones still on top (#3774):
+    // the order the phone's Messages screen uses (`compareLatestFirst`, one
+    // rule for both), and the one a member reads conversations by. An open
+    // hidden DM has no latest row, since the server leaves hidden ones out,
+    // so it leads: it is the conversation on screen.
+    if (kind === "direct" && latestAt) {
+      const newestFirst = compareLatestFirst<ChatChannel>(
+        (channel) =>
+          latestAt.get(channel.id) ??
+          (channel.hidden && channel.id === activeChannelId
+            ? OPEN_HIDDEN_FIRST
+            : undefined),
+        titleFor,
+      );
+      arranged = {
+        ...arranged,
+        sections: arranged.sections.map((section) => ({
+          ...section,
+          rows: [...section.rows].sort(newestFirst),
+        })),
+      };
+    }
     return { arranged, hiddenDms, inputSections, sectionOrder };
   }, [
     kind,
+    latestAt,
     channels,
     titleFor,
     categories,
@@ -673,6 +716,7 @@ export function ChannelList({
 
   const renderRow = (channel: ChatChannel, sectionKey?: string) => {
     const isActive = channel.id === activeChannelId;
+    const twoLine = kind === "direct" && (!channel.hidden || isActive);
     const countsKnown = unreadByChannelId !== undefined;
     const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
     // Red is "you were addressed", and foundations §5 spells that
@@ -743,7 +787,11 @@ export function ChannelList({
             // `ChannelRow` matches). A muted channel's plain unread stays
             // grey; a mention gets past the mute.
             className={cn(
-              "relative flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+              "relative flex w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+              // Two lines in Direct messages: the name, then the last line.
+              // A row in Hidden conversations has no line (the server keeps
+              // no preview for it), so it stays one line.
+              twoLine ? "h-12" : "h-8",
               isActive
                 ? "bg-accent-subtle font-semibold text-accent-text"
                 : looksUnread
@@ -775,7 +823,24 @@ export function ChannelList({
                     : "text-muted"
               }
             />
-            <span className="truncate">{titleFor(channel)}</span>
+            {twoLine ? (
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{titleFor(channel)}</span>
+                {/*
+                  Caption, muted, never bold: the name carries the unread
+                  weight, as on the phone. A non-breaking space holds the line
+                  while the previews load.
+                */}
+                <span
+                  data-preview=""
+                  className="truncate text-caption font-normal text-muted-foreground"
+                >
+                  {previews?.get(channel.id) ?? "\u00a0"}
+                </span>
+              </span>
+            ) : (
+              <span className="truncate">{titleFor(channel)}</span>
+            )}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {/*
               The glyphs below are `aria-hidden` (every duotone
