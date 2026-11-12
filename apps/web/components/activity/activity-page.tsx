@@ -11,6 +11,10 @@ import {
 } from "@/components/shared/async-states";
 import { FILTER_CHIP_CLASS } from "@/components/shared/filter-chip";
 import { InlineNote } from "@/components/shared/inline-note";
+import {
+  useSubscriptionGate,
+  type SubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +32,10 @@ import {
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
 import {
+  ActivityRowActionButton,
+  activityRowActionGate,
+} from "./activity-row-action";
+import {
   ActivityAsk,
   ActivityRowLead,
   ActivityUnreadDot,
@@ -38,6 +46,7 @@ import {
   ACTIVITY_SECTION_NAMES,
   activityBadgeIsAsk,
   activityGroups,
+  activityRowAction,
   activityKeys,
   activitySummary,
   useActiveChapterId,
@@ -57,7 +66,14 @@ import { ActivityPageSkeleton } from "./activity-skeleton";
  * its badge, shared by the button and the link form. A badge that asks the
  * member to act draws as the action (`ActivityAsk`); any other is a status.
  */
-function RowContent({ row }: { row: ActivityRow }) {
+function RowContent({
+  row,
+  askOnRow = false,
+}: {
+  row: ActivityRow;
+  /** The ask is a button beside the row (`ActivityRowActionButton`). */
+  askOnRow?: boolean;
+}) {
   return (
     <>
       <ActivityUnreadDot unread={row.unread} />
@@ -72,7 +88,7 @@ function RowContent({ row }: { row: ActivityRow }) {
           </span>
         ) : null}
       </span>
-      {row.badge ? (
+      {row.badge && !askOnRow ? (
         activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} />
         ) : (
@@ -96,17 +112,63 @@ const ROW_CLASS = cn(
   FOCUS_RING,
 );
 
+/** What a row needs to act on its ask in place (#4402). */
+interface RowActions {
+  /** `null` when the chapter's plan refuses the writes: rows open their panel. */
+  gate: SubscriptionGate | null;
+  onActed: () => void;
+}
+
+/**
+ * A row that opens its record in the panel. One whose ask is a single press
+ * (Confirm, Approve, Check in; `activityRowAction`) carries it as a button
+ * beside the row, as a link row carries Done, so the common case takes one
+ * click and the row still opens the panel for the rest.
+ */
+function PanelRow({
+  row,
+  rowActions,
+  onOpen,
+}: {
+  row: ActivityRow;
+  rowActions: RowActions;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const action = rowActions.gate ? activityRowAction(row) : null;
+  return (
+    <li className={action ? "flex items-center gap-1" : undefined}>
+      <button
+        type="button"
+        className={action ? cn(ROW_CLASS, "min-w-0 flex-1") : ROW_CLASS}
+        onClick={() => onOpen(row)}
+      >
+        <RowContent row={row} askOnRow={action !== null} />
+      </button>
+      {action && rowActions.gate ? (
+        <ActivityRowActionButton
+          row={row}
+          action={action}
+          gate={rowActions.gate}
+          onActed={rowActions.onActed}
+        />
+      ) : null}
+    </li>
+  );
+}
+
 function GroupSection({
   group,
   filtered,
   canRemoveLinks,
   linkActions,
+  rowActions,
   onOpen,
 }: {
   group: ActivityGroup;
   filtered: boolean;
   canRemoveLinks: boolean;
   linkActions: ActivityLinkActions;
+  rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }) {
   const labelId = `activity-${group.id}`;
@@ -140,6 +202,7 @@ function GroupSection({
             part={part}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
+            rowActions={rowActions}
             onOpen={onOpen}
           />
         ))
@@ -217,12 +280,14 @@ function GroupPart({
   part,
   canRemoveLinks,
   linkActions,
+  rowActions,
   onOpen,
 }: {
   groupId: ActivityGroup["id"];
   part: ActivityPart;
   canRemoveLinks: boolean;
   linkActions: ActivityLinkActions;
+  rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -259,15 +324,12 @@ function GroupPart({
               onOpen={onOpen}
             />
           ) : (
-            <li key={row.key}>
-              <button
-                type="button"
-                className={ROW_CLASS}
-                onClick={() => onOpen(row)}
-              >
-                <RowContent row={row} />
-              </button>
-            </li>
+            <PanelRow
+              key={row.key}
+              row={row}
+              rowActions={rowActions}
+              onOpen={onOpen}
+            />
           ),
         )}
       </ul>
@@ -324,6 +386,7 @@ export function ActivityPage() {
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
+  const actionGate = activityRowActionGate(useSubscriptionGate());
   const isModuleEnabled = useChapterModuleGate();
 
   const groups = useMemo(
@@ -442,6 +505,7 @@ export function ActivityPage() {
             filtered={filter !== "all"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
+            rowActions={{ gate: actionGate, onActed: refresh }}
             onOpen={openFromList}
           />
         ),

@@ -123,6 +123,22 @@ export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
   return row.badge?.variant === "warning";
 }
 
+/**
+ * What a row's ask does on the row itself (#4402): the asks that are one
+ * press with nothing to choose. `Vote` is not one, since a poll asks which
+ * option, so it opens the record as before; neither is anything that isn't
+ * an ask. The client acts through the same route and hook its panel uses.
+ */
+export type ActivityRowAction = "confirm" | "approve" | "check-in";
+
+export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
+  if (!activityBadgeIsAsk(row)) return null;
+  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  if (row.kind === "hours") return "approve";
+  if (row.kind === "event") return "check-in";
+  return null;
+}
+
 /** One row of the page: what it shows, and the record it opens. */
 export type ActivityRow = RowBase &
   (
