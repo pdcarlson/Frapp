@@ -19,6 +19,7 @@ import {
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
   PLEDGE_CLASSES_MAX,
+  parseOrderNumber,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -46,7 +47,6 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import {
   classAssignments,
   nextOrderNumber,
-  parseOrderNumber,
   renumberRows,
   type ClassEditorRow,
 } from "@/lib/pledge-classes";

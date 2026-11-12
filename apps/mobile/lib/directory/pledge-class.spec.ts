@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classNamesById, pledgeClassRows } from "./pledge-class";
+import { ORDER_NUMBER_INVALID_MESSAGE } from "@repo/validation";
+import {
+  classEditorDraft,
+  classEditorResult,
+  classNamesById,
+  NOT_SET,
+  pledgeClassRows,
+} from "./pledge-class";
 
 const TERMS = { classTerm: "Line", orderTerm: "Line number" };
 const NAMES = classNamesById([
@@ -56,5 +63,86 @@ describe("pledgeClassRows (#3939)", () => {
       rows({ pledgeClassId: "pc-1", classNames: classNamesById(undefined) })[0]
         ?.value,
     ).toBe("Not available");
+  });
+});
+
+describe("pledgeClassRows for an officer who can set them (#3991)", () => {
+  it("draws both rows, an unset one as Not set", () => {
+    expect(
+      pledgeClassRows({
+        pledgeClassId: null,
+        orderNumber: null,
+        classNames: NAMES,
+        classesPending: false,
+        ...TERMS,
+        showUnset: true,
+      }),
+    ).toEqual([
+      { key: "class", label: "Line", value: NOT_SET },
+      { key: "order", label: "Line number", value: NOT_SET },
+    ]);
+  });
+
+  it("draws set values as everyone sees them", () => {
+    expect(
+      pledgeClassRows({
+        pledgeClassId: "pc-1",
+        orderNumber: null,
+        classNames: NAMES,
+        classesPending: false,
+        ...TERMS,
+        showUnset: true,
+      }).map((row) => row.value),
+    ).toEqual(["Alpha", NOT_SET]);
+  });
+});
+
+describe("classEditorResult (#3991)", () => {
+  const saved = { pledgeClassId: "pc-1", orderNumber: 4 };
+
+  it("opens on the saved values, unchanged", () => {
+    expect(classEditorResult(saved, classEditorDraft(saved))).toEqual({
+      ok: true,
+      changed: false,
+      pledge_class_id: "pc-1",
+      order_number: 4,
+    });
+  });
+
+  it("sends both values together when either changes", () => {
+    expect(
+      classEditorResult(saved, { pledgeClassId: "pc-2", numberText: "4" }),
+    ).toEqual({
+      ok: true,
+      changed: true,
+      pledge_class_id: "pc-2",
+      order_number: 4,
+    });
+    expect(
+      classEditorResult(saved, { pledgeClassId: "pc-1", numberText: " 12 " }),
+    ).toMatchObject({ changed: true, order_number: 12 });
+  });
+
+  it("clears both: no class and a blank number", () => {
+    expect(
+      classEditorResult(saved, { pledgeClassId: null, numberText: "" }),
+    ).toEqual({
+      ok: true,
+      changed: true,
+      pledge_class_id: null,
+      order_number: null,
+    });
+  });
+
+  it.each(["0", "1.5", "abc", "-3"])("refuses the number %s", (text) => {
+    expect(
+      classEditorResult(saved, { pledgeClassId: "pc-1", numberText: text }),
+    ).toEqual({ ok: false, message: ORDER_NUMBER_INVALID_MESSAGE });
+  });
+
+  it("opens a member with no number on a blank field", () => {
+    expect(
+      classEditorDraft({ pledgeClassId: null, orderNumber: null }),
+    ).toEqual({ pledgeClassId: null, numberText: "" });
   });
 });

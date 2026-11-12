@@ -1,4 +1,4 @@
-import { MEMBER_ORDER_NUMBER_MAX } from "@repo/validation";
+import { MEMBER_ORDER_NUMBER_MAX, parseOrderNumber } from "@repo/validation";
 import type { PledgeClassAssignment } from "@repo/hooks";
 
 /** One member in the class editor: who, and the number as it is being typed. */
@@ -8,18 +8,6 @@ export type ClassEditorRow = {
   /** The order number's text, or "" for none. */
   number: string;
 };
-
-/**
- * An order number from its text: an integer from 1 to the column's bound,
- * `null` for a blank field, and `undefined` for anything else.
- */
-export function parseOrderNumber(text: string): number | null | undefined {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (!/^\d+$/.test(trimmed)) return undefined;
-  const value = Number(trimmed);
-  return value >= 1 && value <= MEMBER_ORDER_NUMBER_MAX ? value : undefined;
-}
 
 /**
  * The rows' numbers after the rows were put in a new order.
