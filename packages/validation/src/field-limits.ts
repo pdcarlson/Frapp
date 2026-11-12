@@ -109,6 +109,14 @@ export const MAJOR_MAX_LENGTH = 100;
 export const PHONE_MAX_LENGTH = 32;
 
 /**
+ * A member's name as an officer corrects it (`PATCH /v1/members/{id}/profile`,
+ * #4367): the API's cap and both correction forms' `maxLength`. The member's
+ * own `PATCH /v1/users/me` has no cap yet, so an officer fixing a longer name
+ * must shorten it.
+ */
+export const DISPLAY_NAME_MAX_LENGTH = 100;
+
+/**
  * A chapter document's title (`chapter_documents.title`), set by whoever
  * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
  * the phone's field stops at it.

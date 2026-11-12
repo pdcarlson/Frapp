@@ -1473,6 +1473,18 @@ describe('MemberService', () => {
       expect(second.viewer_can_edit_profile).toBe(false);
     });
 
+    it('reads the rank context once when both removal and correction need it', async () => {
+      mockRbacService.getRankContext.mockClear();
+      const profile = await profileAs(
+        TIERED_MEMBER.brother,
+        USER.vicePresident,
+        ['members:view', 'roles:manage', 'members:remove'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(true);
+      expect(profile.viewer_can_remove).toBe(true);
+      expect(mockRbacService.getRankContext).toHaveBeenCalledTimes(1);
+    });
+
     it('carries the phone the member set', async () => {
       mockRepo.findById.mockResolvedValue(memberRow(TIERED_MEMBER.brother));
       mockUserRepo.findById.mockResolvedValue(

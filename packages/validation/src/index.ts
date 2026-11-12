@@ -759,6 +759,7 @@ export {
   GRADUATION_YEAR_MIN,
   MAJOR_MAX_LENGTH,
   PHONE_MAX_LENGTH,
+  DISPLAY_NAME_MAX_LENGTH,
   POLL_OPTION_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
@@ -776,10 +777,7 @@ export {
   YEAR_MAX,
 } from "./field-limits";
 
-export {
-  ORDER_NUMBER_INVALID_MESSAGE,
-  parseOrderNumber,
-} from "./order-number";
+export { ORDER_NUMBER_INVALID_MESSAGE, parseOrderNumber } from "./order-number";
 
 export {
   isPhoneNumber,
@@ -791,7 +789,8 @@ export {
 export {
   CORRECTION_MENU_LABEL,
   CORRECTION_NAME_REQUIRED_MESSAGE,
-  CORRECTION_YEAR_MESSAGE,
+  GRADUATION_YEAR_MESSAGE,
+  parseGraduationYear,
   correctionDraft,
   correctionPatch,
   type ProfileCorrectionDraft,

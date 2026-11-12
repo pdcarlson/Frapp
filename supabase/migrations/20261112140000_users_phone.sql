@@ -14,9 +14,10 @@
 --
 -- Nullable, no backfill. The check is a backstop at the API's length limit
 -- (`PHONE_MAX_LENGTH` in `@repo/validation`); the API also refuses characters
--- a phone number doesn't have. `users` has RLS on with no policies, so the
--- column is read only through the API, which shows it to members who can
--- see the directory.
+-- a phone number doesn't have. RLS on `users` gives signed-in members no
+-- read policy (its one policy, `auth_admin_can_read_users`, is for the auth
+-- hook), so the column is read only through the API, which shows it to
+-- members who can see the directory.
 alter table public.users
   add column if not exists phone text;
 

@@ -1,9 +1,9 @@
 import type { components } from "@repo/api-sdk";
 import {
-  GRADUATION_YEAR_MAX,
-  GRADUATION_YEAR_MIN,
+  GRADUATION_YEAR_MESSAGE,
   isPhoneNumber,
   MAJOR_MAX_LENGTH,
+  parseGraduationYear,
   PHONE_INVALID_MESSAGE,
 } from "@repo/validation";
 import type { ViewerProfile } from "@/lib/more/profile";
@@ -39,7 +39,8 @@ export type ProfilePatchResult =
   | { ok: false; field: ProfileDraftField; message: string };
 
 export const NAME_REQUIRED_MESSAGE = "Your name can't be empty.";
-export const GRADUATION_YEAR_MESSAGE = `Use a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+// The year refusal is `@repo/validation`'s, shared with an officer's correction.
+export { GRADUATION_YEAR_MESSAGE };
 export const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} characters.`;
 
 /** What the sheet opens on: the profile as it stands, blanks for unset. */
@@ -97,25 +98,16 @@ export function profilePatch(
     patch.phone = phone.length > 0 ? phone : null;
   }
 
-  const year = draft.graduationYear.trim();
-  if (year !== original.graduationYear.trim()) {
-    if (year.length === 0) {
-      patch.graduation_year = null;
-    } else {
-      const parsed = /^\d{4}$/.test(year) ? Number(year) : NaN;
-      if (
-        !Number.isInteger(parsed) ||
-        parsed < GRADUATION_YEAR_MIN ||
-        parsed > GRADUATION_YEAR_MAX
-      ) {
-        return {
-          ok: false,
-          field: "graduationYear",
-          message: GRADUATION_YEAR_MESSAGE,
-        };
-      }
-      patch.graduation_year = parsed;
+  if (draft.graduationYear.trim() !== original.graduationYear.trim()) {
+    const year = parseGraduationYear(draft.graduationYear);
+    if (year === undefined) {
+      return {
+        ok: false,
+        field: "graduationYear",
+        message: GRADUATION_YEAR_MESSAGE,
+      };
     }
+    patch.graduation_year = year;
   }
 
   const major = draft.major.trim();

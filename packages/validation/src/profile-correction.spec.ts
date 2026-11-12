@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CORRECTION_NAME_REQUIRED_MESSAGE,
-  CORRECTION_YEAR_MESSAGE,
+  GRADUATION_YEAR_MESSAGE,
   correctionDraft,
   correctionPatch,
+  parseGraduationYear,
 } from "./profile-correction";
 
 const original = correctionDraft({
@@ -14,7 +15,10 @@ const original = correctionDraft({
 describe("correctionPatch", () => {
   it("sends only what changed, trimmed", () => {
     expect(
-      correctionPatch(original, { name: " John Smith ", graduationYear: "2026" }),
+      correctionPatch(original, {
+        name: " John Smith ",
+        graduationYear: "2026",
+      }),
     ).toEqual({ ok: true, patch: { display_name: "John Smith" } });
     expect(
       correctionPatch(original, { name: "Jonh Smith", graduationYear: "2027" }),
@@ -22,7 +26,10 @@ describe("correctionPatch", () => {
   });
 
   it("sends nothing when nothing changed", () => {
-    expect(correctionPatch(original, original)).toEqual({ ok: true, patch: {} });
+    expect(correctionPatch(original, original)).toEqual({
+      ok: true,
+      patch: {},
+    });
   });
 
   it("clears a blank year", () => {
@@ -47,7 +54,7 @@ describe("correctionPatch", () => {
     ).toEqual({
       ok: false,
       field: "graduationYear",
-      message: CORRECTION_YEAR_MESSAGE,
+      message: GRADUATION_YEAR_MESSAGE,
     });
   });
 
@@ -55,5 +62,19 @@ describe("correctionPatch", () => {
     expect(
       correctionDraft({ displayName: null, graduationYear: null }),
     ).toEqual({ name: "", graduationYear: "" });
+  });
+});
+
+describe("parseGraduationYear", () => {
+  it("reads blank as clearing the year", () => {
+    expect(parseGraduationYear("  ")).toBeNull();
+  });
+
+  it("takes four digits in range", () => {
+    expect(parseGraduationYear(" 2027 ")).toBe(2027);
+  });
+
+  it.each(["27", "'27", "1899", "2101", "20x7"])("refuses %s", (text) => {
+    expect(parseGraduationYear(text)).toBeUndefined();
   });
 });

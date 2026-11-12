@@ -6,6 +6,7 @@ import { useCorrectMemberProfile } from "@repo/hooks";
 import {
   correctionDraft,
   correctionPatch,
+  DISPLAY_NAME_MAX_LENGTH,
   PROFILE_FIELD_COPY,
   type ProfileCorrectionDraft,
 } from "@repo/validation";
@@ -27,6 +28,9 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   memberId: string;
+  /** How the profile names them, for the title and the toast. */
+  label: string;
+  /** Their stored name, `""` when none is set: what the field opens on. */
   displayName: string;
   graduationYear: number | null;
 };
@@ -37,7 +41,7 @@ type Props = {
  * profile sheet's `⋯`, only where the profile read says
  * `viewer_can_edit_profile`. The rest of the profile (photo, phone, bio,
  * major) is the member's own and has no officer editor
- * (`spec/behavior/members.md` § Officer corrections).
+ * (`spec/behavior/members.md` § Profiles, Officer corrections).
  *
  * Mobile's `MemberCorrectionSheet` is the same form; both read their rules
  * from `correctionPatch` in `@repo/validation`.
@@ -57,6 +61,7 @@ export function MemberCorrectionDialog(props: Props) {
 function CorrectionForm({
   onOpenChange,
   memberId,
+  label,
   displayName,
   graduationYear,
 }: Props) {
@@ -91,7 +96,7 @@ function CorrectionForm({
       await correct.mutateAsync({ id: memberId, ...result.patch });
       toast({
         title: "Saved",
-        description: `${result.patch.display_name ?? displayName}'s profile was updated.`,
+        description: `${result.patch.display_name ?? label}'s profile was updated.`,
       });
       onOpenChange(false);
     } catch (caught) {
@@ -111,7 +116,7 @@ function CorrectionForm({
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <DialogHeader>
           <DialogTitle className="break-words">
-            Edit {displayName}&apos;s profile
+            Edit {label}&apos;s profile
           </DialogTitle>
           <DialogDescription>
             Fix their name or graduation year. The rest of their profile is
@@ -123,7 +128,7 @@ function CorrectionForm({
           <Input
             id={nameId}
             value={draft.name}
-            maxLength={100}
+            maxLength={DISPLAY_NAME_MAX_LENGTH}
             autoComplete="off"
             disabled={correct.isPending}
             aria-invalid={error?.field === "name" || undefined}

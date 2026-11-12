@@ -374,6 +374,7 @@ export function MemberDetailSheet({
   const email = stringField(member, "email");
   const phone = stringField(member, "phone");
   const phoneLink = phoneHref(phone, "call");
+  const textLink = phoneHref(phone, "text");
   const joined = formatDay(member?.created_at);
   const bio = stringField(member, "bio");
   const onboardingPending = member?.has_completed_onboarding === false;
@@ -684,6 +685,21 @@ export function MemberDetailSheet({
                     ) : (
                       phone
                     )}
+                    {textLink ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={textLink}
+                          aria-label={`Text ${displayName}`}
+                          className={cn(
+                            "rounded-sm underline-offset-2 hover:underline",
+                            FOCUS_RING_OFFSET,
+                          )}
+                        >
+                          Text
+                        </a>
+                      </>
+                    ) : null}
                   </DetailRow>
                 ) : null}
                 {email ? (
@@ -810,7 +826,6 @@ export function MemberDetailSheet({
                 }
               />
 
-
               {customFields.length > 0 ? (
                 <section className="mt-6 space-y-2">
                   <button
@@ -887,7 +902,10 @@ export function MemberDetailSheet({
             open={correcting}
             onOpenChange={setCorrecting}
             memberId={memberId}
-            displayName={displayName}
+            label={displayName}
+            // The stored name, not the "Member 1a2b3c4d" label an unnamed
+            // member shows as: the field opens blank for them.
+            displayName={(stringField(member, "display_name") ?? "").trim()}
             graduationYear={graduationYear}
           />
         ) : null}

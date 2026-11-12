@@ -31,7 +31,7 @@ import {
   SystemRoleKeys,
 } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
-import { RbacService } from './rbac.service';
+import { RbacService, type RankContext } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { allowedVisibilities } from './custom-field-visibility';
@@ -113,8 +113,8 @@ export interface MemberProfile {
  * The fields an officer may fix on another member's profile (#4367): the two
  * a chapter keeps its records by, and the two a member most often gets wrong
  * or never fills in. Everything else on the profile (photo, phone, bio, major,
- * city, company) is the member's own. `spec/behavior/members.md` § Officer
- * corrections.
+ * city, company) is the member's own. `spec/behavior/members.md` § Profiles
+ * (Officer corrections).
  */
 export interface MemberProfileCorrection {
   display_name?: string;
@@ -640,25 +640,42 @@ export class MemberService {
   private async removalRefusal(
     member: Member,
     actorUserId: string,
-  ): Promise<string | null> {
-    if (member.user_id === actorUserId) {
-      return "You can't remove yourself from the chapter.";
-    }
-    const { reach, roles, positions } = await this.rbacService.getRankContext(
-      member.chapter_id,
+    rankContext: () => Promise<RankContext> = this.rankContextFor(
+      member,
       actorUserId,
-    );
-    if (reach.memberId === member.id) {
-      return "You can't remove yourself from the chapter.";
+    ),
+  ): Promise<string | null> {
+    switch (
+      rankBlock(
+        member,
+        actorUserId,
+        await rankContextOrSkip(member, actorUserId, rankContext),
+      )
+    ) {
+      case 'self':
+        return "You can't remove yourself from the chapter.";
+      case 'not-below':
+        return 'You can only remove members ranked below you.';
+      default:
+        return null;
     }
-    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
-    const held = member.role_ids
-      .map((id) => byId.get(id.toLowerCase()))
-      .filter((role): role is Role => role !== undefined);
-    if (!canReach(reach, holderRank(held, positions))) {
-      return 'You can only remove members ranked below you.';
-    }
-    return null;
+  }
+
+  /**
+   * One read of `actorUserId`'s rank context in `member`'s chapter, shared by
+   * every check that asks for it. A profile read checks both removal and
+   * correction for the same viewer, so it reads the context once.
+   */
+  private rankContextFor(
+    member: Member,
+    actorUserId: string,
+  ): () => Promise<RankContext> {
+    let pending: Promise<RankContext> | undefined;
+    return () =>
+      (pending ??= this.rbacService.getRankContext(
+        member.chapter_id,
+        actorUserId,
+      ));
   }
 
   private async assertRemovable(
@@ -687,23 +704,20 @@ export class MemberService {
   private async profileEditRefusal(
     member: Member,
     actorUserId: string,
+    rankContext: () => Promise<RankContext> = this.rankContextFor(
+      member,
+      actorUserId,
+    ),
   ): Promise<string | null> {
-    if (member.user_id === actorUserId) {
-      return 'Change your own name and graduation year from your profile.';
-    }
-    const [{ reach, roles, positions }, inAnotherChapter] = await Promise.all([
-      this.rbacService.getRankContext(member.chapter_id, actorUserId),
+    const [context, inAnotherChapter] = await Promise.all([
+      rankContextOrSkip(member, actorUserId, rankContext),
       this.isInAnotherChapter(member),
     ]);
-    if (reach.memberId === member.id) {
-      return 'Change your own name and graduation year from your profile.';
-    }
-    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
-    const held = member.role_ids
-      .map((id) => byId.get(id.toLowerCase()))
-      .filter((role): role is Role => role !== undefined);
-    if (!canReach(reach, holderRank(held, positions))) {
-      return 'You can only edit the profiles of members ranked below you.';
+    switch (rankBlock(member, actorUserId, context)) {
+      case 'self':
+        return 'Change your own name and graduation year from your profile.';
+      case 'not-below':
+        return 'You can only edit the profiles of members ranked below you.';
     }
     if (inAnotherChapter) return IN_ANOTHER_CHAPTER_REFUSAL;
     return null;
@@ -724,6 +738,7 @@ export class MemberService {
     member: Member,
     viewerUserId: string,
     permissions: readonly string[],
+    rankContext: () => Promise<RankContext>,
   ): Promise<boolean> {
     if (member.user_id === viewerUserId) return false;
     const wildcard = permissions.includes(SystemPermissions.WILDCARD);
@@ -734,7 +749,10 @@ export class MemberService {
       // A `*` holder outranks everyone but themselves, so only the
       // other-chapter rule is left to read.
       if (wildcard) return !(await this.isInAnotherChapter(member));
-      return (await this.profileEditRefusal(member, viewerUserId)) === null;
+      return (
+        (await this.profileEditRefusal(member, viewerUserId, rankContext)) ===
+        null
+      );
     } catch (error) {
       logThrowable(
         this.logger,
@@ -836,12 +854,15 @@ export class MemberService {
     member: Member,
     viewerUserId: string,
     permissions: readonly string[],
+    rankContext: () => Promise<RankContext>,
   ): Promise<boolean> {
     if (member.user_id === viewerUserId) return false;
     if (permissions.includes(SystemPermissions.WILDCARD)) return true;
     if (!permissions.includes(SystemPermissions.MEMBERS_REMOVE)) return false;
     try {
-      return (await this.removalRefusal(member, viewerUserId)) === null;
+      return (
+        (await this.removalRefusal(member, viewerUserId, rankContext)) === null
+      );
     } catch (error) {
       logThrowable(
         this.logger,
@@ -876,6 +897,7 @@ export class MemberService {
       permissions,
       member.user_id === viewerUserId,
     );
+    const rankContext = this.rankContextFor(member, viewerUserId);
     const [customFields, viewerCanRemove, viewerCanEditProfile] =
       await Promise.all([
         this.customFieldService.findVisibleValuesForMember(
@@ -883,8 +905,13 @@ export class MemberService {
           member.id,
           allowed,
         ),
-        this.viewerCanRemove(member, viewerUserId, permissions),
-        this.viewerCanEditProfile(member, viewerUserId, permissions),
+        this.viewerCanRemove(member, viewerUserId, permissions, rankContext),
+        this.viewerCanEditProfile(
+          member,
+          viewerUserId,
+          permissions,
+          rankContext,
+        ),
       ]);
 
     return this.photoUrls.signRow(
@@ -1092,4 +1119,35 @@ export class MemberService {
       phone: user.phone ?? null,
     };
   }
+}
+
+/**
+ * Whether the rank rules (#4071, `spec/behavior/rbac.md` § Rank) let
+ * `actorUserId` act on `member`: `'self'` for their own membership,
+ * `'not-below'` when `member` doesn't rank below them, `null` when they may.
+ * Removal and correction share it, so they never disagree on who ranks below
+ * whom. A `null` context means the self check already answered.
+ */
+function rankBlock(
+  member: Member,
+  actorUserId: string,
+  context: RankContext | null,
+): 'self' | 'not-below' | null {
+  if (!context || member.user_id === actorUserId) return 'self';
+  const { reach, roles, positions } = context;
+  if (reach.memberId === member.id) return 'self';
+  const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+  const held = member.role_ids
+    .map((id) => byId.get(id.toLowerCase()))
+    .filter((role): role is Role => role !== undefined);
+  return canReach(reach, holderRank(held, positions)) ? null : 'not-below';
+}
+
+/** The rank context, or `null` without a read when `member` is the actor. */
+function rankContextOrSkip(
+  member: Member,
+  actorUserId: string,
+  rankContext: () => Promise<RankContext>,
+): Promise<RankContext | null> {
+  return member.user_id === actorUserId ? Promise.resolve(null) : rankContext();
 }

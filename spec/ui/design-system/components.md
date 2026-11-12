@@ -125,7 +125,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 > **Owner decision, 2026-11-05 (Paul, UI audit).** A button whose icon already says what it does draws the icon alone, on web and mobile. "Download" beside a download arrow, "Dismiss" beside an ×, and "Muted" beside a muted speaker said the same thing twice and made secondary controls louder than the content they act on.
 
-**Which buttons lose their words.** Secondary and row actions with a glyph everyone reads: download, dismiss or close, copy, edit, delete or remove, enable or disable, mark all read. A bare word with no icon counts too when such a glyph exists (mobile Profile's "Edit" is a pencil now, in the back-row slot where Documents already drew its upload glyph).
+**Which buttons lose their words.** Secondary and row actions with a glyph everyone reads: download, dismiss or close, copy, edit, delete or remove, enable or disable, mark all read. A bare word with no icon counts too when such a glyph exists (mobile Profile's "Edit" was a pencil in the back-row slot until #3711, 2026-11-12, made every field its own control and dropped it).
 
 **Which keep them.**
 

@@ -18,27 +18,30 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   MEMBER_DISMISSAL_KEYS,
+  DISPLAY_NAME_MAX_LENGTH,
 } from '@repo/validation';
 
 /**
  * An officer's fix to another member's profile (#4367,
  * `PATCH /v1/members/{id}/profile`): their name and graduation year only. The
  * rest of a profile is the member's own (`spec/behavior/members.md`
- * § Officer corrections).
+ * § Profiles).
  */
 export class CorrectMemberProfileDto {
   @ApiPropertyOptional({
     description:
       "The member's name as the chapter knows them. Trimmed; it may not be blank.",
-    maxLength: 100,
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
   })
-  @IsOptional()
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach a NOT NULL column as a 500: only an absent name is skipped.
+  @ValidateIf((_obj, value) => value !== undefined)
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty({ message: 'Enter a name.' })
-  @MaxLength(100)
+  @MaxLength(DISPLAY_NAME_MAX_LENGTH)
   display_name?: string;
 
   @ApiPropertyOptional({

@@ -234,6 +234,9 @@ export const MemberDetailSheet = forwardRef<
   // in place, so the custom fields start folded on every one.
   const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
   const detailsOpen = userId !== null && detailsUserId === userId;
+  // Closing the sheet clears its member; fold the details then, so reopening
+  // the same member starts folded too.
+  if (userId === null && detailsUserId !== null) setDetailsUserId(null);
   // Distinct from "no role" (`[]` once the read has settled): while it is
   // still in flight, an empty list would otherwise flash a wrong "—" that
   // then flips to the real value a moment later.
@@ -272,7 +275,8 @@ export const MemberDetailSheet = forwardRef<
       if (action === "edit" && target.memberId) {
         setCorrectionSession({
           memberId: target.memberId,
-          name: target.displayName,
+          label: target.displayName,
+          name: target.storedName,
           graduationYear: target.graduationYear,
         });
         correctionSheetRef.current?.present();
@@ -605,32 +609,34 @@ export const MemberDetailSheet = forwardRef<
 
               {classRows.length > 0 ? (
                 <ListSection>
-                {classRows.map((row) => (
-                  <ListRow
-                    key={row.key}
-                    variant="detail"
-                    label={row.label}
-                    value={row.value}
-                    accessibilityHint={
-                      canEditClass ? `Edits ${detail.displayName}'s ${row.label}` : undefined
-                    }
-                    // Held while a DM opens, as the roles Edit is (#3790).
-                    disabled={canEditClass && dmPending.has(detail.userId)}
-                    onPress={
-                      canEditClass
-                        ? () => {
-                            setClassSession({
-                              memberId: detail.memberId ?? "",
-                              name: detail.displayName,
-                              pledgeClassId: detail.pledgeClassId,
-                              orderNumber: detail.orderNumber,
-                            });
-                            classSheetRef.current?.present();
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
+                  {classRows.map((row) => (
+                    <ListRow
+                      key={row.key}
+                      variant="detail"
+                      label={row.label}
+                      value={row.value}
+                      accessibilityHint={
+                        canEditClass
+                          ? `Edits ${detail.displayName}'s ${row.label}`
+                          : undefined
+                      }
+                      // Held while a DM opens, as the roles Edit is (#3790).
+                      disabled={canEditClass && dmPending.has(detail.userId)}
+                      onPress={
+                        canEditClass
+                          ? () => {
+                              setClassSession({
+                                memberId: detail.memberId ?? "",
+                                name: detail.displayName,
+                                pledgeClassId: detail.pledgeClassId,
+                                orderNumber: detail.orderNumber,
+                              });
+                              classSheetRef.current?.present();
+                            }
+                          : undefined
+                      }
+                    />
+                  ))}
                 </ListSection>
               ) : null}
 

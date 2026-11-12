@@ -45,6 +45,16 @@ describe('CorrectMemberProfileDto', () => {
     ]);
   });
 
+  it('refuses a null name, which would reach a NOT NULL column', async () => {
+    expect((await check({ display_name: null })).failing).toEqual([
+      'display_name',
+    ]);
+  });
+
+  it('skips an absent name', async () => {
+    expect((await check({ graduation_year: 2027 })).failing).toEqual([]);
+  });
+
   it.each([2027, null])('accepts graduation_year %s', async (year) => {
     expect((await check({ graduation_year: year })).failing).toEqual([]);
   });

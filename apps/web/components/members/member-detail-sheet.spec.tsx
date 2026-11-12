@@ -1,4 +1,11 @@
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 
@@ -59,8 +66,14 @@ vi.mock("@repo/hooks", () => ({
     refetch: rolesState.refetch,
   }),
   useRemoveMember: () => ({ mutateAsync: removeMutateAsync, isPending: false }),
-  useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
-  useCorrectMemberProfile: () => ({ mutateAsync: correctMutateAsync, isPending: false }),
+  useUpdateMemberRoles: () => ({
+    mutateAsync: updateRolesMutateAsync,
+    isPending: false,
+  }),
+  useCorrectMemberProfile: () => ({
+    mutateAsync: correctMutateAsync,
+    isPending: false,
+  }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
   // The pledge class section (#3939) has its own spec; here it only has to
@@ -109,7 +122,10 @@ const baseMember = {
 /** The sheet as chat opens it: a user id, and the profile read answering. */
 function renderProfile(
   member: Record<string, unknown> = baseMember,
-  props: { points?: number | null; onOpenChange?: (open: boolean) => void } = {},
+  props: {
+    points?: number | null;
+    onOpenChange?: (open: boolean) => void;
+  } = {},
 ) {
   memberQueryState.data = member;
   return render(
@@ -123,7 +139,9 @@ function renderProfile(
 }
 
 function openRoleEditor() {
-  fireEvent.click(screen.getByRole("button", { name: "Edit Jane Smith's roles" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Edit Jane Smith's roles" }),
+  );
 }
 
 beforeEach(() => {
@@ -145,7 +163,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
   it("reads the profile by the user id it was opened with", () => {
     renderProfile();
     expect(memberByUserId).toHaveBeenCalledWith("u1");
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
   });
 
   it("draws the directory row it was opened from while the read is in flight", () => {
@@ -158,7 +178,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
         initialMember={baseMember}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("jane@example.com")).toBeInTheDocument();
   });
 
@@ -172,7 +194,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
         identity={{ name: "Jane Smith", avatarUrl: null }}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
   });
 
   it("ignores a seed row that belongs to someone else", () => {
@@ -221,7 +245,13 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       bio: "Loves a good algorithm.",
       role_ids: ["r-member", "r-pres"],
       custom_fields: [
-        { field_id: "f1", label: "Hometown", type: "text", visibility: "chapter", value: "Boston" },
+        {
+          field_id: "f1",
+          label: "Hometown",
+          type: "text",
+          visibility: "chapter",
+          value: "Boston",
+        },
       ],
     });
 
@@ -282,10 +312,9 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
 
   it("links the email", () => {
     renderProfile();
-    expect(screen.getByRole("link", { name: "jane@example.com" })).toHaveAttribute(
-      "href",
-      "mailto:jane@example.com",
-    );
+    expect(
+      screen.getByRole("link", { name: "jane@example.com" }),
+    ).toHaveAttribute("href", "mailto:jane@example.com");
   });
 
   it("draws points only where the opener has them", () => {
@@ -297,7 +326,10 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
   });
 
   it("flags an unfinished onboarding, and says nothing about a finished one", () => {
-    const { unmount } = renderProfile({ ...baseMember, has_completed_onboarding: false });
+    const { unmount } = renderProfile({
+      ...baseMember,
+      has_completed_onboarding: false,
+    });
     expect(screen.getByText("Pending")).toBeInTheDocument();
     unmount();
     renderProfile();
@@ -314,15 +346,23 @@ describe("MemberDetailSheet pledge class (#3939)", () => {
   });
 
   it("shows the member's class and order number under the roles", () => {
-    renderProfile({ ...baseMember, pledge_class_id: "alpha", order_number: 12 });
-    const section = screen.getByRole("region", { name: "Pledge class · Fraternal order" });
+    renderProfile({
+      ...baseMember,
+      pledge_class_id: "alpha",
+      order_number: 12,
+    });
+    const section = screen.getByRole("region", {
+      name: "Pledge class · Fraternal order",
+    });
     expect(within(section).getByText("Alpha")).toBeInTheDocument();
     expect(within(section).getByText("12")).toBeInTheDocument();
   });
 
   it("draws no section for a member with neither", () => {
     renderProfile();
-    expect(screen.queryByRole("region", { name: "Pledge class · Fraternal order" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Pledge class · Fraternal order" }),
+    ).toBeNull();
   });
 
   it("gives Edit to a roles:manage holder, and to nobody else", () => {
@@ -356,9 +396,30 @@ describe("MemberDetailSheet custom fields", () => {
     renderProfile({
       ...baseMember,
       custom_fields: [
-        { field_id: "f1", key: "major", label: "Major", type: "text", visibility: "chapter", value: "Computer Science" },
-        { field_id: "f2", key: "hometown", label: "Hometown", type: "text", visibility: "chapter", value: null },
-        { field_id: "f3", key: "dues_paid", label: "Dues Paid", type: "boolean", visibility: "exec", value: "true" },
+        {
+          field_id: "f1",
+          key: "major",
+          label: "Major",
+          type: "text",
+          visibility: "chapter",
+          value: "Computer Science",
+        },
+        {
+          field_id: "f2",
+          key: "hometown",
+          label: "Hometown",
+          type: "text",
+          visibility: "chapter",
+          value: null,
+        },
+        {
+          field_id: "f3",
+          key: "dues_paid",
+          label: "Dues Paid",
+          type: "boolean",
+          visibility: "exec",
+          value: "true",
+        },
       ],
     });
 
@@ -437,7 +498,10 @@ describe("MemberDetailSheet role editor", () => {
     openRoleEditor();
 
     const checkbox = (name: string) =>
-      screen.getByText(name, { selector: "p" }).closest("label")!.querySelector("input")!;
+      screen
+        .getByText(name, { selector: "p" })
+        .closest("label")!
+        .querySelector("input")!;
     expect(checkbox("Member").checked).toBe(true);
     expect(checkbox("Cabinet").checked).toBe(false);
 
@@ -456,19 +520,26 @@ describe("MemberDetailSheet role editor", () => {
     );
     openRoleEditor();
     fireEvent.click(
-      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!,
+      screen
+        .getByText("Member", { selector: "p" })
+        .closest("label")!
+        .querySelector("input")!,
     );
 
-    rerender(<MemberDetailSheet open={false} onOpenChange={() => {}} userId="u1" />);
+    rerender(
+      <MemberDetailSheet open={false} onOpenChange={() => {}} userId="u1" />,
+    );
     rerender(<MemberDetailSheet open onOpenChange={() => {}} userId="u1" />);
 
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     openRoleEditor();
     expect(
-      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!.checked,
+      screen
+        .getByText("Member", { selector: "p" })
+        .closest("label")!
+        .querySelector("input")!.checked,
     ).toBe(true);
   });
-
 });
 
 describe("MemberDetailSheet save payload", () => {
@@ -481,18 +552,22 @@ describe("MemberDetailSheet save payload", () => {
     openRoleEditor();
 
     fireEvent.click(
-      screen.getByText("Cabinet", { selector: "p" }).closest("label")!.querySelector("input")!,
+      screen
+        .getByText("Cabinet", { selector: "p" })
+        .closest("label")!
+        .querySelector("input")!,
     );
     fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
 
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1),
+    );
     // Never custom_role_ids: custom roles are ordinary roles now (#4075).
     expect(updateRolesMutateAsync).toHaveBeenCalledWith({
       id: "m1",
       role_ids: ["r-deleted", "r-cabinet"],
     });
   });
-
 
   it("closes the editor once the save lands", async () => {
     renderProfile();
@@ -512,7 +587,11 @@ describe("MemberDetailSheet member-access warning", () => {
   beforeEach(() => {
     mockRoles.current = [
       { id: "r-member", name: "Member", permissions: ["members:view"] },
-      { id: "r-cabinet", name: "Cabinet", permissions: ["channels:read:cabinet"] },
+      {
+        id: "r-cabinet",
+        name: "Cabinet",
+        permissions: ["channels:read:cabinet"],
+      },
     ];
   });
 
@@ -541,7 +620,9 @@ describe("MemberDetailSheet member-access warning", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
-      expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText("Take away Jane Smith's access?"),
+      ).not.toBeInTheDocument(),
     );
     expect(updateRolesMutateAsync).not.toHaveBeenCalled();
   });
@@ -554,21 +635,26 @@ describe("MemberDetailSheet member-access warning", () => {
       await screen.findByRole("button", { name: "Take away access" }),
     );
 
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1),
+    );
     expect(updateRolesMutateAsync).toHaveBeenCalledWith({
       id: "m1",
       role_ids: ["r-cabinet"],
     });
   });
 
-
   it("saves without asking when the member keeps access", async () => {
     renderHolding(["r-member", "r-cabinet"]);
     untick("Cabinet");
     fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
 
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1),
+    );
+    expect(
+      screen.queryByText("Take away Jane Smith's access?"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -747,6 +833,13 @@ describe("MemberDetailSheet phone", () => {
     ).toHaveAttribute("href", "tel:+15185550142");
   });
 
+  it("offers to text the same number", () => {
+    renderProfile({ ...baseMember, phone: "+1 (518) 555-0142" });
+    expect(
+      screen.getByRole("link", { name: "Text Jane Smith" }),
+    ).toHaveAttribute("href", "sms:+15185550142");
+  });
+
   it("draws no Phone row when the member hasn't set one", () => {
     renderProfile({ ...baseMember, phone: null });
     expect(screen.queryByText("Phone")).not.toBeInTheDocument();
@@ -812,6 +905,27 @@ describe("MemberDetailSheet Edit name and graduation year", () => {
         graduation_year: 2027,
       }),
     );
+  });
+
+  it("opens a member with no name on a blank field, not their label", async () => {
+    const user = userEvent.setup();
+    renderProfile({
+      ...baseMember,
+      display_name: "",
+      viewer_can_edit_profile: true,
+    });
+    await user.click(
+      await screen.findByRole("button", { name: /^More for Member / }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /^Edit Member .*'s profile$/,
+    });
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("");
   });
 
   it("refuses a blank name before sending", async () => {

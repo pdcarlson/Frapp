@@ -158,10 +158,7 @@ const sheetRef =
 function sheet(userId: string | null) {
   return (
     <FrappThemeProvider>
-      <MemberDetailSheet
-        ref={sheetRef}
-        member={userId ? { userId } : null}
-      />
+      <MemberDetailSheet ref={sheetRef} member={userId ? { userId } : null} />
     </FrappThemeProvider>
   );
 }
@@ -253,7 +250,9 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     // The member's name heads the sheet (components.md § Chrome weight). The
     // first modal is the profile; the editors stacked after it have their own.
-    const profileModal = tree.root.findAllByType("BottomSheetModal" as never)[0];
+    const profileModal = tree.root.findAllByType(
+      "BottomSheetModal" as never,
+    )[0];
     expect(profileModal.findAllByType(SheetHeader)).toHaveLength(0);
     // The role editor's list header is a React element prop, which links
     // back to its fiber; skip those links.
@@ -526,8 +525,7 @@ describe("MemberDetailSheet ⋯ menu", () => {
     return {
       labels: options.options.slice(0, -1),
       options,
-      pick: (label: string) =>
-        act(() => pick(options.options.indexOf(label))),
+      pick: (label: string) => act(() => pick(options.options.indexOf(label))),
     };
   }
 
@@ -595,6 +593,7 @@ describe("MemberDetailSheet ⋯ menu", () => {
     const editor = tree.root.findByType(MemberCorrectionSheet);
     expect(editor.props.session).toEqual({
       memberId: `m-${ADA}`,
+      label: "Ada",
       name: "Ada",
       graduationYear: null,
     });
@@ -712,6 +711,11 @@ describe("MemberDetailSheet fact rows", () => {
     expect(rowOf("More details")?.props.value).toBe("Hide");
     expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
     expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
+    // Closed and reopened on the same member: folded again.
+    act(() => tree.update(sheet(null)));
+    act(() => tree.update(sheet(CARA)));
+    expect(rowOf("More details")?.props.value).toBe("Show");
+    expect(rowOf(LONG_LABEL)).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -722,9 +726,7 @@ describe("MemberDetailSheet fact rows", () => {
       .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
       .mockImplementation(() => {});
     const tree = render(CARA);
-    const rows = tree.root
-      .findAllByType(ListRow)
-      .map((row) => row.props.label);
+    const rows = tree.root.findAllByType(ListRow).map((row) => row.props.label);
     expect(rows.slice(0, 2)).toEqual(["Phone", "Email"]);
     const phoneRow = tree.root
       .findAllByType(ListRow)
@@ -793,8 +795,9 @@ describe("MemberDetailSheet fact rows", () => {
     const tree = render(CARA);
 
     expect(
-      tree.root.findAllByType(ListRow).find((r) => r.props.label === "Pledge class")
-        ?.props.value,
+      tree.root
+        .findAllByType(ListRow)
+        .find((r) => r.props.label === "Pledge class")?.props.value,
     ).toBe("Not available");
     act(() => tree.unmount());
   });
@@ -954,7 +957,10 @@ describe("MemberDetailSheet roles", () => {
       { id: "r-b", name: "Brothers", color: "#5CC8F0", display_order: 5 },
       { id: "r-p", name: "President", color: "#F2994A", display_order: 1 },
     ];
-    PROFILES[ADA] = { ...profile(ADA, "Ada"), role_ids: ["r-b", "r-p"] as never[] };
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      role_ids: ["r-b", "r-p"] as never[],
+    };
     const tree = render(ADA);
     const text = tree.root
       .findAllByType("Text" as never)

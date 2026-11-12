@@ -11,6 +11,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import {
   correctionDraft,
   correctionPatch,
+  DISPLAY_NAME_MAX_LENGTH,
   PROFILE_FIELD_COPY,
   type ProfileCorrectionDraft,
 } from "@repo/validation";
@@ -34,8 +35,8 @@ import {
  * the profile's `⋯` where the API says `viewer_can_edit_profile`. The mobile
  * half of web's `MemberCorrectionDialog`; both take their rules and wording
  * from `correctionPatch` in `@repo/validation`. Nothing else on someone's
- * profile is an officer's to change (`spec/behavior/members.md` § Officer
- * corrections).
+ * profile is an officer's to change (`spec/behavior/members.md` § Profiles,
+ * Officer corrections).
  *
  * Stacked over the profile, as {@link MemberClassSheet} is: nothing saves
  * until Save, only what changed is sent, and a refusal shows once Save is
@@ -43,6 +44,9 @@ import {
  */
 export interface MemberCorrectionSession {
   memberId: string;
+  /** How the profile names them, for the title. */
+  label: string;
+  /** Their stored name, `""` when none is set: what the field opens on. */
   name: string;
   graduationYear: number | null;
 }
@@ -159,7 +163,7 @@ export const MemberCorrectionSheet = forwardRef<
         keyboardShouldPersistTaps="handled"
       >
         <SheetHeader
-          title={session ? `Edit ${session.name}'s profile` : "Edit profile"}
+          title={session ? `Edit ${session.label}'s profile` : "Edit profile"}
           onCancel={dismiss}
         />
 
@@ -173,7 +177,7 @@ export const MemberCorrectionSheet = forwardRef<
             editable={!correct.isPending}
             onFocus={() => setFocused("name")}
             onBlur={() => setFocused(null)}
-            maxLength={100}
+            maxLength={DISPLAY_NAME_MAX_LENGTH}
             autoCapitalize="words"
             autoCorrect={false}
             accessibilityLabel={PROFILE_FIELD_COPY.displayName.label}

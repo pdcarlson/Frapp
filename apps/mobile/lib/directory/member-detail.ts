@@ -39,6 +39,12 @@ export interface MemberDetail {
   /** Signed photo URL, or `null` for initials. */
   avatarUrl: string | null;
   displayName: string;
+  /**
+   * The stored name, trimmed, or `""` when none is set: what an officer's
+   * correction opens on, where {@link displayName} would put the "Member
+   * 1a2b3c4d" fallback label in the field.
+   */
+  storedName: string;
   initials: string;
   email: string | null;
   /** The member's own phone (#3711), as they typed it, or `null`. */
@@ -87,6 +93,7 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
     // same "no name set" case — matches `DirectoryRow`'s fallback.
     displayName: memberLabel(rawDisplayName, userId),
+    storedName: rawDisplayName?.trim() ?? "",
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
     phone: str(data, "phone"),

@@ -25,7 +25,25 @@ export type ProfileCorrectionResult =
 export const CORRECTION_MENU_LABEL = "Edit name and graduation year";
 
 export const CORRECTION_NAME_REQUIRED_MESSAGE = "Enter their name.";
-export const CORRECTION_YEAR_MESSAGE = `Use a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+/** The refusal for a graduation year the API won't take, on every form that sets one. */
+export const GRADUATION_YEAR_MESSAGE = `Use a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+
+/**
+ * A typed graduation year as the API takes it: `null` for blank (it clears
+ * the year), the year for four digits in `GRADUATION_YEAR_MIN`–`MAX`, and
+ * `undefined` for anything it would refuse. The member's own edit and an
+ * officer's correction both read it, so they refuse the same input.
+ */
+export function parseGraduationYear(text: string): number | null | undefined {
+  const year = text.trim();
+  if (year.length === 0) return null;
+  const parsed = /^\d{4}$/.test(year) ? Number(year) : NaN;
+  return Number.isInteger(parsed) &&
+    parsed >= GRADUATION_YEAR_MIN &&
+    parsed <= GRADUATION_YEAR_MAX
+    ? parsed
+    : undefined;
+}
 
 /** The editor's opening draft: the profile as it stands, blank for unset. */
 export function correctionDraft(profile: {
@@ -61,25 +79,16 @@ export function correctionPatch(
   }
   if (name !== original.name.trim()) patch.display_name = name;
 
-  const year = draft.graduationYear.trim();
-  if (year !== original.graduationYear.trim()) {
-    if (year.length === 0) {
-      patch.graduation_year = null;
-    } else {
-      const parsed = /^\d{4}$/.test(year) ? Number(year) : NaN;
-      if (
-        !Number.isInteger(parsed) ||
-        parsed < GRADUATION_YEAR_MIN ||
-        parsed > GRADUATION_YEAR_MAX
-      ) {
-        return {
-          ok: false,
-          field: "graduationYear",
-          message: CORRECTION_YEAR_MESSAGE,
-        };
-      }
-      patch.graduation_year = parsed;
+  if (draft.graduationYear.trim() !== original.graduationYear.trim()) {
+    const year = parseGraduationYear(draft.graduationYear);
+    if (year === undefined) {
+      return {
+        ok: false,
+        field: "graduationYear",
+        message: GRADUATION_YEAR_MESSAGE,
+      };
     }
+    patch.graduation_year = year;
   }
   return { ok: true, patch };
 }
