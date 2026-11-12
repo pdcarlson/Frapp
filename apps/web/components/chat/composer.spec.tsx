@@ -2645,3 +2645,60 @@ describe("Composer takes files dropped on the chat column (#4143)", () => {
     expect(mockRequestUploadUrl).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #3781 — typing `/` opens the palette, and further typing goes into its
+ * search box. Escape closed it with the `/` still in the composer, and Enter
+ * then posted a message whose whole body was `/`.
+ */
+describe("Composer never posts the bare `/` the palette opened on (#3781)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  function mount(text: string) {
+    const editor = fakeEditor(text);
+    editorDouble.current = editor;
+    const onSend = vi.fn();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <Composer {...baseProps({ draft: text, onSend, onSlashDispatch })} />,
+    );
+    return { editor, onSend, onSlashDispatch };
+  }
+
+  it("sends nothing for a lone `/`", () => {
+    const { editor, onSend, onSlashDispatch } = mount("/");
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    // Nothing happened, so nothing was cleared either.
+    expect(editor.getText()).toBe("/");
+  });
+
+  it("still sends text that only starts with a slash", () => {
+    const { onSend } = mount("/ shrug");
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).toHaveBeenCalledWith("/ shrug", []);
+  });
+
+  it("takes the `/` back when the palette is closed with Escape", async () => {
+    const user = userEvent.setup();
+    const { editor } = mount("/");
+    await openPalette(user);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(editor.getText()).toBe("");
+  });
+
+  it("leaves more than the `/` alone when the palette closes", async () => {
+    const user = userEvent.setup();
+    const { editor } = mount("/not a command, just text");
+    await openPalette(user);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(editor.getText()).toBe("/not a command, just text");
+  });
+});

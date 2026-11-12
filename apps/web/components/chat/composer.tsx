@@ -1333,6 +1333,10 @@ export function Composer({
     // file travels beside the body it would silently swallow the send.
     if (text.length === 0 && pending.length === 0) return;
     if (uploading.length > 0) return;
+    // A lone `/` is the palette's trigger, not a message: Escape closes the
+    // palette and leaves it in the box, and Enter used to post it (#3781).
+    // Only the bare slash: `/ hello` has no command either, and is text.
+    if (text === "/") return;
     // If the message begins with an implemented slash command and a dispatch
     // is wired, route through dispatch instead of sending as plain text — so
     // Enter on `/poll "Q?" A B` posts a poll card, not a text message.
@@ -2044,13 +2048,18 @@ export function Composer({
           status={slashCommandsStatus}
           onRetry={onRetrySlashCommands}
           onSelect={onPaletteSelect}
-          onOpenChange={(open) =>
+          onOpenChange={(open) => {
             setPalette((prev) => ({
               ...prev,
               open,
               query: open ? prev.query : "",
-            }))
-          }
+            }));
+            // Backing out of the palette takes back the `/` that opened it
+            // (#3781). Anything more in the box is the member's, and stays.
+            if (!open && editor && chatText(editor).trim() === "/") {
+              editor.commands.clearContent(true);
+            }
+          }}
         />
       ) : null}
     </div>
