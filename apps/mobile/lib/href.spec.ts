@@ -12,7 +12,7 @@ const router = () => ({
   navigate: vi.fn(),
   dismissTo: vi.fn(),
 });
-const TABS = ["/", "/events", "/tasks", "/more", "/tasks?focus=1"];
+const TABS = ["/", "/activity", "/events", "/more", "/events?focus=1"];
 
 describe("openHref", () => {
   it.each(TABS)("pops down to the tab %s", (href) => {
@@ -42,8 +42,16 @@ describe("openHref", () => {
     expect(r.push).toHaveBeenCalledTimes(1);
   });
 
+  it("pushes the task board, a screen since it left the tab bar (#4610)", () => {
+    const r = router();
+    openHref(r, "/tasks?focus=1" as never);
+    expect(r.push).toHaveBeenCalledWith("/tasks?focus=1");
+    expect(r.dismissTo).not.toHaveBeenCalled();
+  });
+
   it("reads the object form's pathname", () => {
-    expect(isTabHref({ pathname: "/tasks" } as never)).toBe(true);
+    expect(isTabHref({ pathname: "/activity" } as never)).toBe(true);
+    expect(isTabHref({ pathname: "/tasks" } as never)).toBe(false);
     expect(isTabHref({ pathname: "/chat-thread" } as never)).toBe(false);
   });
 });

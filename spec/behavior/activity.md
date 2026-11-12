@@ -8,7 +8,7 @@ This file owns the reads behind the page, `GET /v1/activity` and its
 [standing](#standing), `GET /v1/activity/standing`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
-the phone's screen, reached from the More hub, is in
+the phone's screen, the Activity tab (#4610), is in
 [`../ui/mobile/screens.md`](../ui/mobile/screens.md) (supporting routes).
 
 Not to be confused with two other things that use the word:

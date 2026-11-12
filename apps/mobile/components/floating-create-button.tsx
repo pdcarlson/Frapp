@@ -26,9 +26,10 @@ export type CreateAction = {
  * The screen's one create action, a glass "+" floating bottom right just above
  * the tab bar, where the thumb already is (owner ask 2026-11-05;
  * `spec/ui/mobile/patterns.md` § Create actions). Service hours' Log service
- * hours and Documents' upload sit here, in the same spot, so a member learns
- * it once. It is for pushed screens only: on the four tabs that spot holds the
- * tab bar's quick-actions + (`GlassTabBar`), which took Tasks' New task. It
+ * hours, Documents' upload and the task board's New task (#4610) sit here, in
+ * the same spot, so a member learns it once. It is for pushed screens only: on
+ * the four tabs that spot holds the tab bar's quick-actions + (`GlassTabBar`).
+ * It
  * replaced the accent "+" tile in the title row (`HeaderAddButton`), which sat
  * at the far top corner.
  *
