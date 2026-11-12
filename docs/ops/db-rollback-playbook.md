@@ -4271,3 +4271,18 @@ update public.roles r
 ```
 
 Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), restore a backup taken before the push into a scratch project ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) and copy the rows from it.
+
+## Rollback study zone circles (20261112270000)
+
+* **Migration**: `20261112270000_study_zone_circle.sql`
+
+Adds the nullable `study_geofences.circle` column and its shape check. `coordinates` stays the polygon every reader checks, and the API writes it for a circle too, so dropping the column loses only the editor's memory that a zone was drawn as a circle: such a zone then reopens as an outline of 64 corners, and studying in it works exactly as before. An API rolled back past #2239 never reads or writes the column, so a code revert needs no SQL, but roll the web app back with it: the newer web editor sends a circle with no `coordinates`, which the older API refuses with a 400. A zone retraced by the older editor during the revert keeps its stale `circle`; the newer editor shows the outline whenever `coordinates` no longer matches the circle (`zoneCircle` in `apps/web/components/geofences/zone-shape.ts`), so nothing needs clearing.
+
+To remove the schema, revert the API first, then in a later forward migration ([§ 3) Undo one migration](#3-undo-one-migration)):
+
+```sql
+alter table public.study_geofences
+  drop constraint if exists study_geofences_circle_shape,
+  drop column if exists circle;
+```
+

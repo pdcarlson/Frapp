@@ -53,7 +53,7 @@ const ROUTES = [
   ["study", "/study", "Study hours"],
   ["documents", "/documents", "Document library"],
   ["reports", "/reports", "Reports"],
-  ["geofences", "/geofences", "Study geofences"],
+  ["geofences", "/settings?tab=geofences", "Study zones"],
   ["backwork", "/backwork", "Backwork archive"],
   ["settings", "/settings", "Chapter settings"],
   ["profile", "/profile", "Member profile"],

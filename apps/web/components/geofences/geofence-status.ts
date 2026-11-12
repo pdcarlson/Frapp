@@ -3,7 +3,7 @@ import type { BadgeKind } from "@/components/ui/badge";
 /**
  * Study-zone enabled state → the §5 badge kind that states it.
  *
- * `geofences-admin-page.tsx` rendered this as `is_active ? "default" :
+ * The zone list (then `geofences-admin-page.tsx`) rendered this as `is_active ? "default" :
  * "outline"`, and `default` is the chapter accent — the same defect #1202 names
  * for attendance, reached by an inline ternary rather than a mapper.
  * `writing.md` §5 lists `ACTIVE` in the status vocabulary the rule governs, so

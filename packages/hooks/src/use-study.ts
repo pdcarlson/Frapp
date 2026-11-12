@@ -69,7 +69,9 @@ export function useCreateGeofence() {
     mutationKey: ["geofences", "create-geofence"],
     mutationFn: async (body: {
       name: string;
-      coordinates: { lat: number; lng: number }[];
+      /** An outline's corners or a circle, never both (the API refuses both). */
+      coordinates?: { lat: number; lng: number }[];
+      circle?: { lat: number; lng: number; radius_m: number };
       is_active: boolean;
       minutes_per_point: number;
       points_per_interval: number;
@@ -99,6 +101,7 @@ export function useUpdateGeofence() {
       body: {
         name?: string;
         coordinates?: { lat: number; lng: number }[];
+        circle?: { lat: number; lng: number; radius_m: number };
         is_active?: boolean;
         minutes_per_point?: number;
         points_per_interval?: number;

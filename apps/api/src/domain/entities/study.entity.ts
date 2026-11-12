@@ -3,11 +3,28 @@ export interface GeofenceCoordinate {
   lng: number;
 }
 
+/** A circle zone as the officer drew it: center and radius in meters. */
+export interface GeofenceCircle {
+  lat: number;
+  lng: number;
+  radius_m: number;
+}
+
 export interface StudyGeofence {
   id: string;
   chapter_id: string;
   name: string;
+  /**
+   * The polygon containment is checked against. For a circle zone it is the
+   * polygon `circleToPolygon` derived from `circle`, written by the API, never
+   * by a client.
+   */
   coordinates: GeofenceCoordinate[];
+  /**
+   * Set when the zone was drawn as a circle, so the editor reopens it as one;
+   * null for an outline.
+   */
+  circle: GeofenceCircle | null;
   is_active: boolean;
   minutes_per_point: number;
   points_per_interval: number;
