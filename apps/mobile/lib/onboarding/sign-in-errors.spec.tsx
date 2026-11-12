@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  EMAIL_SEND_CAPPED_COPY,
   UNCONFIRMED_EMAIL_COPY,
   WRONG_CREDENTIALS_COPY,
   cooldownCopy,
@@ -173,6 +174,32 @@ describe("sign-in refusals in Frapp's words", () => {
     expect(texts(tree.root)).toContain(cooldownCopy(44));
     expect(texts(tree.root).join(" ")).not.toMatch(/For security purposes/);
   });
+
+  it("says the hourly cap sent nothing, not GoTrue's sentence", async () => {
+    auth.sendMagicLink.mockRejectedValue(
+      gotrue("Email rate limit exceeded", 429, "over_email_send_rate_limit"),
+    );
+    const tree = render();
+    await sendLink(tree);
+
+    expect(texts(tree.root)).toContain(EMAIL_SEND_CAPPED_COPY);
+    expect(texts(tree.root)).not.toContain("Email rate limit exceeded");
+  });
+
+  it("maps the email minute on the password form too", async () => {
+    auth.signInWithPassword.mockRejectedValue(
+      gotrue(
+        "For security purposes, you can only request this after 12 seconds.",
+        429,
+        "over_email_send_rate_limit",
+      ),
+    );
+    const tree = render();
+    await signIn(tree);
+
+    expect(texts(tree.root)).toContain(cooldownCopy(12));
+    expect(texts(tree.root).join(" ")).not.toMatch(/For security purposes/);
+  });
 });
 
 describe("an address that was never confirmed", () => {
@@ -230,6 +257,67 @@ describe("an address that was never confirmed", () => {
 
     expect(texts(tree.root)).toContain(cooldownCopy(30));
     expect(pressableLabelled(tree.root, "Resend email in 30s").props.disabled).toBe(true);
+  });
+
+  it("says a refused resend in Frapp's words", async () => {
+    auth.signInWithPassword.mockRejectedValue(unconfirmed());
+    auth.resendConfirmation.mockRejectedValue(
+      gotrue("Email rate limit exceeded", 429, "over_email_send_rate_limit"),
+    );
+    const tree = render();
+    await signIn(tree);
+
+    await act(async () => {
+      pressableLabelled(tree.root, "Resend email").props.onPress();
+    });
+
+    expect(texts(tree.root)).toContain(EMAIL_SEND_CAPPED_COPY);
+    expect(texts(tree.root)).not.toContain("Email rate limit exceeded");
+  });
+
+  it("drops the offer on the next sign-in, whatever it answers", async () => {
+    auth.signInWithPassword.mockRejectedValueOnce(unconfirmed());
+    auth.signInWithPassword.mockRejectedValueOnce(
+      gotrue("Invalid login credentials", 400, "invalid_credentials"),
+    );
+    const tree = render();
+    await signIn(tree);
+    expect(findPressable(tree.root, "Resend email")).toBeDefined();
+
+    await signIn(tree);
+
+    expect(texts(tree.root)).toContain(WRONG_CREDENTIALS_COPY);
+    expect(findPressable(tree.root, "Resend email")).toBeUndefined();
+  });
+
+  it("counts the minute for the address it was sent to only", async () => {
+    vi.useFakeTimers();
+    auth.signInWithPassword.mockRejectedValue(unconfirmed());
+    auth.resendConfirmation.mockResolvedValue(undefined);
+    const tree = render();
+    await signIn(tree);
+    await act(async () => {
+      pressableLabelled(tree.root, "Resend email").props.onPress();
+    });
+    expect(findPressable(tree.root, "Resend email in 60s")).toBeDefined();
+
+    await signIn(tree, "other@westfield.edu");
+
+    expect(pressableLabelled(tree.root, "Resend email").props.disabled).toBe(false);
+  });
+
+  it("holds the form open while a resend is in flight", async () => {
+    auth.signInWithPassword.mockRejectedValue(unconfirmed());
+    auth.resendConfirmation.mockReturnValue(new Promise(() => {}));
+    const tree = render();
+    await signIn(tree);
+
+    await act(async () => {
+      pressableLabelled(tree.root, "Resend email").props.onPress();
+    });
+
+    expect(pressableLabelled(tree.root, "Back to sign-in options").props.disabled).toBe(true);
+    expect(pressableLabelled(tree.root, "Sign in").props.disabled).toBe(true);
   });
 
   it("drops the offer once the email is edited", async () => {

@@ -1,5 +1,9 @@
 import { describeOAuthError } from "@repo/hooks/auth-error-copy";
-import { type AuthCallbackIntent, buildAuthCallbackUrl } from "@/lib/auth/redirect";
+import {
+  type AuthCallbackIntent,
+  buildAuthCallbackUrl,
+  describeAuthError,
+} from "@/lib/auth/redirect";
 
 export const OAUTH_PROVIDERS = ["apple", "google"] as const;
 export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
@@ -47,7 +51,7 @@ export function describeOAuthKickoffError(error: unknown): string {
   return describeOAuthError(error, {
     identityCollision: IDENTITY_COLLISION_COPY,
     providerUnavailable: OAUTH_UNAVAILABLE_COPY,
-    deadLink: "The link has expired. Request a new one below.",
+    deadLink: describeAuthError("otp_expired"),
     fallback: "Unable to start sign-in. Retry in a moment.",
   });
 }

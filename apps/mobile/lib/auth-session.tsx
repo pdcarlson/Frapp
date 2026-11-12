@@ -20,6 +20,7 @@ import {
   describeAuthReturnError,
   describeOAuthKickoffError,
   FINISH_FAILED_COPY,
+  START_FAILED_COPY,
   type OAuthProvider,
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
@@ -164,18 +165,13 @@ function readAuthParams(url: string): {
 }
 
 /**
- * Where an email link (magic link, or the confirmation resend) sends the
- * member back. The hosted Magic Link template appends
- * `&token_hash=…&type=magiclink` onto `{{ .RedirectTo }}`. Web's callback
- * already has `?next=`; this URL must also carry `?` or the `&` produces
- * `frapp:///&token_hash=`.
+ * Where an email link (magic link, the confirmation resend) or a provider
+ * return sends the member back into the app. The hosted Magic Link template
+ * appends `&token_hash=…&type=magiclink` onto `{{ .RedirectTo }}`. Web's
+ * callback already has `?next=`; this URL must also carry `?` or the `&`
+ * produces `frapp:///&token_hash=`.
  */
-function emailLinkRedirectTo(): string {
-  const redirectTo = Linking.createURL("/");
-  return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
-}
-
-function oauthRedirectTo(): string {
+function appRedirectTo(): string {
   const redirectTo = Linking.createURL("/");
   return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
@@ -236,7 +232,7 @@ async function createSessionFromUrl(
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
         reportCallback(undefined, "verify_failed");
-        return "That sign-in link could not be used. Request a new one.";
+        return FINISH_FAILED_COPY;
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
@@ -562,7 +558,7 @@ export function AuthSessionProvider({
       setCallbackError(null);
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: emailLinkRedirectTo() },
+        options: { emailRedirectTo: appRedirectTo() },
       });
       if (error) {
         reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
@@ -579,7 +575,7 @@ export function AuthSessionProvider({
       const { error } = await supabase.auth.resend({
         type: "signup",
         email,
-        options: { emailRedirectTo: emailLinkRedirectTo() },
+        options: { emailRedirectTo: appRedirectTo() },
       });
       if (error) {
         reportAuthFailure({
@@ -620,7 +616,7 @@ export function AuthSessionProvider({
         throw startFailed(error);
       }
 
-      const redirectTo = oauthRedirectTo();
+      const redirectTo = appRedirectTo();
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -639,7 +635,7 @@ export function AuthSessionProvider({
       }
       if (!data.url) {
         throw startFailed(
-          new MemberFacingError("Unable to start sign-in. Retry in a moment."),
+          new MemberFacingError(START_FAILED_COPY),
         );
       }
 

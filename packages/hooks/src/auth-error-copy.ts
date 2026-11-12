@@ -73,6 +73,12 @@ export function isEmailSendCapped(error: unknown): boolean {
   );
 }
 
+/**
+ * GoTrue's one-email-a-minute window. A Resend waits it out after a send, so
+ * the member never meets the refusal by tapping again right away.
+ */
+export const EMAIL_RESEND_COOLDOWN_SECONDS = 60;
+
 export const EMAIL_SEND_CAPPED_COPY =
   "We can't send email right now. Too many went out in the last hour. Try again in a few minutes.";
 
@@ -89,6 +95,10 @@ export function describePasswordSignInError(error: unknown): string {
   return describeEmailSendError(error);
 }
 
+/** Email links are switched off for the project: retrying can't help. */
+export const EMAIL_LINKS_OFF_COPY =
+  "Email links are switched off right now. Sign in with your password.";
+
 export function cooldownCopy(seconds: number): string {
   const wait =
     seconds > 0
@@ -102,9 +112,9 @@ export function describeEmailSendError(error: unknown): string {
   const cooldown = emailCooldownSeconds(error);
   if (cooldown !== undefined) return cooldownCopy(cooldown);
   if (isEmailSendCapped(error)) return EMAIL_SEND_CAPPED_COPY;
-  if (authCodeOf(error) === "email_address_invalid") {
-    return "Enter a valid email address.";
-  }
+  const code = authCodeOf(error);
+  if (code === "email_address_invalid") return "Enter a valid email address.";
+  if (code === "otp_disabled") return EMAIL_LINKS_OFF_COPY;
   return authFallbackCopy(error);
 }
 
@@ -216,8 +226,9 @@ export function describeOAuthError(
  * alone: its status lines are the API's ("Your role can't do this", "You've
  * been signed out"), and a GoTrue 401 or 403 before sign-in means neither.
  *
- * - No answer from GoTrue (auth-js's `AuthRetryableFetchError`, status 0, or
- *   a `fetch` failure with no status) is a dropped connection.
+ * - No answer from GoTrue (auth-js's `AuthRetryableFetchError` with status 0,
+ *   or a `fetch` failure with no status) is a dropped connection. A gateway
+ *   5xx is not.
  * - A 429 is too many tries, whichever limit it was.
  * - Anything else with no status goes through `errorCopy`, which shows a
  *   {@link MemberFacingError} and drops everything else.
@@ -227,9 +238,13 @@ export function authFallbackCopy(
   fallback: string = AUTH_FALLBACK_COPY,
 ): string {
   const status = statusOf(error);
+  // auth-js also throws `AuthRetryableFetchError` for a GoTrue 502, 503 or
+  // 504 with that status: GoTrue's fault, not the member's connection.
   if (
     status === 0 ||
-    (error instanceof Error && error.name === "AuthRetryableFetchError")
+    (status === undefined &&
+      error instanceof Error &&
+      error.name === "AuthRetryableFetchError")
   ) {
     return OFFLINE_COPY;
   }

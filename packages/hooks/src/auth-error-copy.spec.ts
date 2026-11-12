@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OFFLINE_COPY, STATUS_ERROR_COPY } from "@repo/validation";
 import {
   AUTH_FALLBACK_COPY,
+  EMAIL_LINKS_OFF_COPY,
   EMAIL_SEND_CAPPED_COPY,
   UNCONFIRMED_EMAIL_COPY,
   WRONG_CREDENTIALS_COPY,
@@ -87,6 +88,14 @@ describe("the one-email-a-minute limit", () => {
     expect(cooldownCopy(44)).toContain("in 44 seconds");
     expect(cooldownCopy(1)).toContain("in 1 second.");
     expect(cooldownCopy(0)).toContain("in a moment");
+  });
+});
+
+describe("email links switched off", () => {
+  it("says so instead of asking to retry", () => {
+    expect(
+      describeEmailSendError(authApiError("Signups not allowed for otp", 422, "otp_disabled")),
+    ).toBe(EMAIL_LINKS_OFF_COPY);
   });
 });
 
@@ -200,6 +209,14 @@ describe("authFallbackCopy", () => {
     });
     expect(authFallbackCopy(unreachable)).toBe(OFFLINE_COPY);
     expect(authFallbackCopy(new TypeError("Network request failed"))).toBe(OFFLINE_COPY);
+  });
+
+  it("doesn't blame the member's connection for a GoTrue outage", () => {
+    const outage = Object.assign(new Error("Service unavailable"), {
+      name: "AuthRetryableFetchError",
+      status: 503,
+    });
+    expect(authFallbackCopy(outage)).toBe(AUTH_FALLBACK_COPY);
   });
 
   it("says too many tries for any 429", () => {

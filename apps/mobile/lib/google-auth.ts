@@ -101,9 +101,6 @@ async function iosBinaryHasUrlScheme(iosClientId: string): Promise<boolean> {
   }
 }
 
-/** Same copy as the browser path's "did not finish" error in auth-session.tsx. */
-const FINISH_FAILED_MESSAGE = FINISH_FAILED_COPY;
-
 export type NativeGoogleResult = "completed" | "cancelled" | "unavailable";
 
 export async function signInWithNativeGoogle(
@@ -149,7 +146,7 @@ export async function signInWithNativeGoogle(
     // ApiException) are not member copy, and the sign-in screen shows what
     // this throws.
     console.warn("Native Google sign-in failed.", error);
-    throw Object.assign(new MemberFacingError(FINISH_FAILED_MESSAGE), {
+    throw Object.assign(new MemberFacingError(FINISH_FAILED_COPY), {
       cause: error,
     });
   }

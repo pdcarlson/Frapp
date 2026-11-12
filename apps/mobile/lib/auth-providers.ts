@@ -41,7 +41,7 @@ export function isApplePrivateRelayEmail(
 export const DEAD_LINK_COPY =
   "That sign-in link has expired or was already used. Tap Continue with email to get a new one.";
 
-const START_FAILED_COPY = "Unable to start sign-in. Retry in a moment.";
+export const START_FAILED_COPY = "Unable to start sign-in. Retry in a moment.";
 export const FINISH_FAILED_COPY = "Unable to finish sign-in. Retry in a moment.";
 
 const OAUTH_COPY = {

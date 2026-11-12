@@ -16,6 +16,7 @@ import {
   cooldownCopy,
   describeEmailSendError,
   describePasswordSignInError,
+  EMAIL_RESEND_COOLDOWN_SECONDS,
   emailCooldownSeconds,
   isEmailNotConfirmed,
   UNCONFIRMED_EMAIL_COPY,
@@ -39,12 +40,6 @@ import { OnboardingPressable } from "@/components/onboarding/onboarding-pressabl
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-
-/**
- * GoTrue sends one address one auth email a minute, so Resend waits that
- * minute out after a send instead of meeting the refusal.
- */
-const RESEND_COOLDOWN_SECONDS = 60;
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
   apple: "Continue with Apple",
@@ -88,28 +83,41 @@ export default function SignIn() {
     null,
   );
   const [resending, setResending] = useState(false);
-  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
+  /**
+   * GoTrue's email minute is per address, so the count belongs to the
+   * address it was started for; another unconfirmed address can send now.
+   */
+  const [resendWait, setResendWait] = useState<{
+    email: string;
+    seconds: number;
+  } | null>(null);
   const passwordRef = useRef<TextInput>(null);
+  // A sign-in, a link or a resend in flight: nothing new starts, and the
+  // form can't close under a late result.
+  const busy = submitting || resending;
 
-  // Android's back button and back gesture close the email form, as its
-  // `‹ Back` row does, instead of leaving s01 (the `(auth)` anchor) and
-  // backgrounding the app. While a sign-in is in flight both are held, so a
-  // late result can't land on the provider view.
   useEffect(() => {
-    if (resendSecondsLeft <= 0) return undefined;
+    if (!resendWait || resendWait.seconds <= 0) return undefined;
     const timer = setTimeout(
-      () => setResendSecondsLeft((left) => left - 1),
+      () =>
+        setResendWait((wait) =>
+          wait ? { ...wait, seconds: wait.seconds - 1 } : wait,
+        ),
       1000,
     );
     return () => clearTimeout(timer);
-  }, [resendSecondsLeft]);
+  }, [resendWait]);
 
+  // Android's back button and back gesture close the email form, as its
+  // `‹ Back` row does, instead of leaving s01 (the `(auth)` anchor) and
+  // backgrounding the app. While a sign-in or a resend is in flight both are
+  // held, so a late result can't land on the provider view.
   useEffect(() => {
     if (!emailOpen) return undefined;
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        if (!submitting) {
+        if (!busy) {
           setEmailOpen(false);
           clearMessages();
         }
@@ -117,7 +125,7 @@ export default function SignIn() {
       },
     );
     return () => subscription.remove();
-  }, [emailOpen, submitting]);
+  }, [emailOpen, busy]);
 
   function clearMessages() {
     setAuthError(null);
@@ -145,6 +153,7 @@ export default function SignIn() {
 
   async function handleSignIn(method: AuthMethod) {
     const normalizedEmail = email.trim().toLowerCase();
+    clearMessages();
 
     if (!isValidEmailAddress(normalizedEmail)) {
       setAuthError("Enter a valid chapter email before continuing.");
@@ -156,7 +165,6 @@ export default function SignIn() {
     }
 
     setSubmitting(true);
-    clearMessages();
 
     try {
       if (method === "password") {
@@ -188,21 +196,30 @@ export default function SignIn() {
     }
   }
 
+  const resendSecondsLeft =
+    resendWait && resendWait.email === unconfirmedEmail ? resendWait.seconds : 0;
+
   async function handleResend() {
-    if (!unconfirmedEmail || resending || resendSecondsLeft > 0) return;
+    if (!unconfirmedEmail || busy || resendSecondsLeft > 0) return;
     setResending(true);
     setAuthError(null);
     setNotice(null);
     try {
       await resendConfirmation({ email: unconfirmedEmail });
-      setResendSecondsLeft(RESEND_COOLDOWN_SECONDS);
+      setResendWait({
+        email: unconfirmedEmail,
+        seconds: EMAIL_RESEND_COOLDOWN_SECONDS,
+      });
       setNotice(
         `We sent a new link to ${unconfirmedEmail}. Open it on this phone to finish signing in.`,
       );
     } catch (error) {
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
-        setResendSecondsLeft(Math.max(cooldown, 1));
+        setResendWait({
+          email: unconfirmedEmail,
+          seconds: Math.max(cooldown, 1),
+        });
         setNotice(cooldownCopy(cooldown));
       } else {
         setAuthError(describeEmailSendError(error));
@@ -219,7 +236,7 @@ export default function SignIn() {
    * nothing either.
    */
   function submit() {
-    if (submitting) return;
+    if (busy) return;
     void handleSignIn(authMode);
   }
 
@@ -240,7 +257,7 @@ export default function SignIn() {
   }
 
   function closeEmail() {
-    if (submitting) return;
+    if (busy) return;
     setEmailOpen(false);
     clearMessages();
   }
@@ -264,7 +281,7 @@ export default function SignIn() {
           key={provider}
           label={label}
           leading={mark}
-          disabled={submitting}
+          disabled={busy}
           onPress={() => {
             void handleOAuth(provider);
           }}
@@ -278,8 +295,8 @@ export default function SignIn() {
       <OnboardingPressable
         key={provider}
         accessibilityRole="button"
-        accessibilityState={{ disabled: submitting }}
-        disabled={submitting}
+        accessibilityState={{ disabled: busy }}
+        disabled={busy}
         onPress={() => {
           void handleOAuth(provider);
         }}
@@ -360,7 +377,7 @@ export default function SignIn() {
                 house
                 label="Back"
                 accessibilityLabel="Back to sign-in options"
-                disabled={submitting}
+                disabled={busy}
                 onPress={closeEmail}
               />
               <Text style={styles.emailTitle}>Sign in with email</Text>
@@ -468,7 +485,7 @@ export default function SignIn() {
                         ? `Resend email in ${resendSecondsLeft}s`
                         : "Resend email"
                   }
-                  disabled={submitting || resending || resendSecondsLeft > 0}
+                  disabled={busy || resendSecondsLeft > 0}
                   onPress={() => {
                     void handleResend();
                   }}
@@ -495,7 +512,7 @@ export default function SignIn() {
                         ? "Sending link…"
                         : "Email me a link"
                   }
-                  disabled={submitting}
+                  disabled={busy}
                   busy={submitting}
                   onPress={submit}
                 />
@@ -535,7 +552,7 @@ export default function SignIn() {
                   : null}
                 <OnboardingSecondaryButton
                   label="Continue with email"
-                  disabled={submitting}
+                  disabled={busy}
                   onPress={() => {
                     clearMessages();
                     setEmailOpen(true);
