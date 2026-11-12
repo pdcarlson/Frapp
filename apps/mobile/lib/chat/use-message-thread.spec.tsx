@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
+const SUPABASE = { from: () => ({}) };
+vi.mock("@/lib/supabase", () => ({ getSupabaseClient: () => SUPABASE }));
 vi.mock("@repo/chat-core/realtime-manager", () => ({
   NO_TYPING_USERS: Object.freeze([]),
   POLL_INTERVAL_MS: 5_000,
@@ -190,5 +192,36 @@ describe("useMessageThread's parent and retry on the phone", () => {
       );
     });
     expect(result.current?.content).toBe("Edited");
+  });
+});
+
+describe("useMessageThread's reads on the phone (#4297, slice 5)", () => {
+  it("reads the parent's and the replies' reactions with the Supabase client, as web's does", async () => {
+    mocks.fetchThread.mockResolvedValue({
+      root: ROOT,
+      follow_state: null,
+      last_read_at: null,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    renderHook(() => useMessageThread("c1", "root", "me"), { wrapper });
+    // Without it chat-core reads no actions, and every reply opened bare.
+    await waitFor(() =>
+      expect(mocks.fetchThread).toHaveBeenCalledWith({}, "c1", "root", SUPABASE),
+    );
+    await waitFor(() =>
+      expect(mocks.loadThreadReplies).toHaveBeenCalledWith(
+        queryClient,
+        {},
+        "c1",
+        "root",
+        undefined,
+        SUPABASE,
+      ),
+    );
   });
 });

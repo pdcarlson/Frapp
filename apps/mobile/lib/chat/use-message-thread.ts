@@ -36,6 +36,7 @@ import {
   type ChatMessage,
 } from "@repo/chat-core/types";
 import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
+import { getSupabaseClient } from "@/lib/supabase";
 
 /**
  * One open message thread (#3785): its parent, its replies, the viewer's
@@ -61,6 +62,10 @@ export function useMessageThread(
 ) {
   const queryClient = useQueryClient();
   const api = useFrappClient();
+  // Reactions and card responses are read straight from the table, as the
+  // channel's history reads them; without the client a reply opened its
+  // thread with none of the ones it already had (#4297, slice 5).
+  const supabase = useMemo(() => getSupabaseClient(), []);
   const repliesKey = useMemo(
     () => chatThreadRepliesKey(channelId, rootId),
     [channelId, rootId],
@@ -77,7 +82,7 @@ export function useMessageThread(
 
   const meta = useQuery({
     queryKey: metaKey,
-    queryFn: () => fetchThread(api, channelId, rootId),
+    queryFn: () => fetchThread(api, channelId, rootId, supabase),
     // Every open reads afresh: nothing feeds a closed thread's cache.
     staleTime: 0,
   });
@@ -98,10 +103,18 @@ export function useMessageThread(
           api,
           channelId,
           rootId,
+          undefined,
+          supabase,
         );
         setHasOlder(page.hasMore);
       } else {
-        await backfillThreadReplies(queryClient, api, channelId, rootId);
+        await backfillThreadReplies(
+          queryClient,
+          api,
+          channelId,
+          rootId,
+          supabase,
+        );
         // Reopened over a cache this mount didn't page: older replies may
         // remain, and one read of them settles it.
         if (first) setHasOlder(true);
@@ -196,6 +209,7 @@ export function useMessageThread(
         channelId,
         rootId,
         oldest.created_at,
+        supabase,
       );
       setHasOlder(page.hasMore);
       return { error: null as string | null };
@@ -206,7 +220,15 @@ export function useMessageThread(
     } finally {
       setIsLoadingOlder(false);
     }
-  }, [messages, isLoadingOlder, queryClient, api, channelId, rootId]);
+  }, [
+    messages,
+    isLoadingOlder,
+    queryClient,
+    api,
+    channelId,
+    rootId,
+    supabase,
+  ]);
 
   const patchFollow = useCallback(
     (state: ThreadMeta["follow_state"]) =>
