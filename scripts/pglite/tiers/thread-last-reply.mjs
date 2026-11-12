@@ -5,7 +5,7 @@ import { REPO_ROOT, db, miss } from "../harness.mjs";
 // ─── The thread card's latest-reply preview (#4297) ──────────────────────────
 //
 // `chat_messages.thread_last_reply` is kept by two triggers that the Jest
-// suites never run (`20261112020000_chat_thread_last_reply.sql`). What each
+// suites never run (`20261112121000_chat_thread_last_reply.sql`). What each
 // scenario pins:
 // - a reply sets it, an older one landing late doesn't replace a newer one;
 // - `attachment_count` is the reply's number, else 0;
@@ -96,7 +96,7 @@ try {
   const backfill = readFileSync(
     join(
       REPO_ROOT,
-      "supabase/migrations/20261112020000_chat_thread_last_reply.sql",
+      "supabase/migrations/20261112121000_chat_thread_last_reply.sql",
     ),
     "utf8",
   )

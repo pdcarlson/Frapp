@@ -971,3 +971,57 @@ describe("row tone, matching mobile's channel-row (#3777, #4147)", () => {
     expect(rowFor("loud")).toHaveClass("font-bold", "text-foreground");
   });
 });
+
+describe("ChannelList as the Direct messages list (#3774)", () => {
+  const group: ChatChannel = {
+    id: "c-group",
+    name: "Rush planning",
+    type: "GROUP_DM",
+    member_ids: [VIEWER, OTHER, "third"],
+  };
+
+  it("draws its rows straight under the column title, with no Direct messages heading", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Direct messages/ }),
+    ).not.toBeInTheDocument();
+    const rows = screen.getByRole("list", { name: "Direct messages" });
+    expect(rows).toHaveTextContent("Rush planning");
+    expect(rows.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("ignores a fold left from when DMs were a section of the channel list", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(),
+            collapsed: new Set(["direct"]),
+            filters: { unreadOnly: false, hideMuted: false },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("list", { name: "Direct messages" }).querySelectorAll(
+        "li",
+      ),
+    ).toHaveLength(2);
+  });
+});

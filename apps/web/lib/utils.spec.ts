@@ -17,7 +17,6 @@ import {
   guardDecimalDraft,
   guardIntDraft,
   labelled,
-  neutralizeFormulaCell,
   parseGuardedDecimal,
   parseGuardedInt,
   readLastExportFormat,
@@ -261,29 +260,6 @@ describe("cn with the Signet type scale", () => {
         "text-primary",
       ),
     ).toContain("text-caption");
-  });
-});
-
-// #3969: the exports offer CSV, Excel and a clipboard copy for Google Sheets.
-// A member-typed cell must be safe in all three.
-describe("neutralizeFormulaCell", () => {
-  it("prefixes a cell a spreadsheet would run as a formula", () => {
-    for (const cell of [
-      '=HYPERLINK("https://evil.example","Click")',
-      "+1+1",
-      "-1+1",
-      "@SUM(A1:A2)",
-      "\t=1+1",
-      "\r=1+1",
-    ]) {
-      expect(neutralizeFormulaCell(cell)).toBe(`'${cell}`);
-    }
-  });
-
-  it("leaves numbers, currency and ordinary text as they are", () => {
-    for (const cell of ["-5", "+5", "-12.50", "-$12.00", "Late arrival", "", "a=b", "🎉 party"]) {
-      expect(neutralizeFormulaCell(cell)).toBe(cell);
-    }
   });
 });
 

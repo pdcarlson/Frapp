@@ -18,7 +18,6 @@ jest.mock('@repo/org-archetypes', () => ({
     },
     customFields: [],
     workflows: [],
-    dues: {},
   })),
   getArchetype: jest.fn((key: string) => ({ key, label: key })),
 }));
@@ -570,7 +569,6 @@ describe('ChapterOnboardingService', () => {
         vocabulary: { recruitment: 'Rush', pledge: 'NM', class: 'Class' },
         customFields,
         workflows: [],
-        dues: {},
       });
     }
 
