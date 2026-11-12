@@ -20,14 +20,18 @@
  */
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { createEvalGateway } from '../harness/eval-gateway';
-import { candidateRegistry, type MeteredCall } from './candidate-registry';
+import {
+  candidateRegistry,
+  type CandidateRegistry,
+  type MeteredCall,
+} from './candidate-registry';
 import {
   costUsd,
   findCandidate,
   priceOn,
   type BakeOffCandidate,
 } from './candidates';
-import { findTask, type CaseOutcome } from './tasks';
+import { findTask, type BakeOffTask, type CaseOutcome } from './tasks';
 
 export interface CandidateResult {
   candidate: BakeOffCandidate;
@@ -74,17 +78,11 @@ function percentile(values: number[], fraction: number): number | null {
 }
 
 async function runCandidate(
-  taskName: string,
+  task: BakeOffTask,
   candidate: BakeOffCandidate,
+  { registry, calls }: CandidateRegistry,
   date: string,
-  env: Record<string, string | undefined>,
 ): Promise<CandidateResult> {
-  const task = findTask(taskName);
-  const { registry, calls } = candidateRegistry(
-    candidate,
-    { [task.name]: task.scripted },
-    env,
-  );
   const { gateway, usage } = createEvalGateway(registry);
 
   const outcomes: CaseOutcome[] = [];
@@ -150,12 +148,17 @@ async function runCandidate(
 export async function runBakeOff(options: RunOptions): Promise<BakeOffRun> {
   const env = options.env ?? process.env;
   const date = options.date ?? new Date().toISOString().slice(0, 10);
-  // Resolve every name first, so a typo fails before anything is spent.
+  // Resolve every name and build every model before the first call, so a
+  // typo, a missing key or the paid-run switch left off fails before
+  // anything is spent, not after an earlier candidate's paid calls.
+  const task = findTask(options.task);
   const candidates = options.models.map(findCandidate);
-  findTask(options.task);
+  const registries = candidates.map((candidate) =>
+    candidateRegistry(candidate, { [task.name]: task.scripted }, env),
+  );
   const results: CandidateResult[] = [];
-  for (const candidate of candidates) {
-    results.push(await runCandidate(options.task, candidate, date, env));
+  for (const [index, candidate] of candidates.entries()) {
+    results.push(await runCandidate(task, candidate, registries[index], date));
   }
   return { task: options.task, date, results };
 }

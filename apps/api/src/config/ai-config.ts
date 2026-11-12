@@ -38,12 +38,14 @@ export function aiProviderMode(env: Env = process.env): AiProviderMode {
 export interface GoogleVertexEnvSettings {
   project: string;
   location: string;
+  /** A service account's key file, parsed. Never an API key. */
   credentials: Record<string, unknown>;
 }
 
 export const GOOGLE_VERTEX_DEFAULT_LOCATION = 'global';
 
-function setting(env: Env, name: string): string | null {
+/** A variable's trimmed value, or null when it is unset or blank. */
+export function envSetting(env: Env, name: string): string | null {
   const value = env[name];
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
@@ -71,15 +73,16 @@ function parseServiceAccount(json: string): Record<string, unknown> | null {
 export function googleVertexSettings(
   env: Env = process.env,
 ): GoogleVertexEnvSettings | null {
-  const project = setting(env, 'GOOGLE_VERTEX_PROJECT');
-  const json = setting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
+  const project = envSetting(env, 'GOOGLE_VERTEX_PROJECT');
+  const json = envSetting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
   if (!project || !json) return null;
   const credentials = parseServiceAccount(json);
   if (!credentials) return null;
   return {
     project,
     location:
-      setting(env, 'GOOGLE_VERTEX_LOCATION') ?? GOOGLE_VERTEX_DEFAULT_LOCATION,
+      envSetting(env, 'GOOGLE_VERTEX_LOCATION') ??
+      GOOGLE_VERTEX_DEFAULT_LOCATION,
     credentials,
   };
 }
@@ -108,8 +111,8 @@ export function validateAiEnv(env: Env): string[] {
   ) {
     problems.push('AI_PROVIDER must be "live" or "scripted" when set.');
   }
-  const vertexProject = setting(env, 'GOOGLE_VERTEX_PROJECT');
-  const vertexJson = setting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
+  const vertexProject = envSetting(env, 'GOOGLE_VERTEX_PROJECT');
+  const vertexJson = envSetting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
   if (Boolean(vertexProject) !== Boolean(vertexJson)) {
     problems.push(
       'GOOGLE_VERTEX_PROJECT and GOOGLE_VERTEX_CREDENTIALS_JSON are set together or not at all.',

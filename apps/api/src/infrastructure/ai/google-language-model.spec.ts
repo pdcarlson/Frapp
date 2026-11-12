@@ -224,6 +224,36 @@ describe('GoogleLanguageModel', () => {
       expect(result).toMatchObject({ text: 'Hello.', citations: [] });
     });
 
+    it('keeps the answer so far when the reply is cut off at the ceiling', async () => {
+      const generateContent = jest.fn().mockResolvedValue(
+        response({
+          candidates: textCandidate(
+            '{"answer":"Formal is \\"April\\" 12, and the',
+            FinishReason.MAX_TOKENS,
+          ),
+        }),
+      );
+      await expect(
+        clientWith({ generateContent }).generate(cited),
+      ).resolves.toMatchObject({
+        outcome: 'completed',
+        text: 'Formal is "April" 12, and the',
+        citations: [],
+        truncated: true,
+      });
+    });
+
+    it('treats a reply cut off before the answer began as invalid output', async () => {
+      const generateContent = jest.fn().mockResolvedValue(
+        response({
+          candidates: textCandidate('{"ans', FinishReason.MAX_TOKENS),
+        }),
+      );
+      await expect(
+        clientWith({ generateContent }).generate(cited),
+      ).rejects.toMatchObject({ kind: 'invalid_output' });
+    });
+
     it('treats a reply that is not the answer shape as invalid output', async () => {
       const generateContent = jest
         .fn()
@@ -315,6 +345,20 @@ describe('GoogleLanguageModel', () => {
             .mockRejectedValue(new TypeError('fetch failed')),
         }).generate(structured),
       ).rejects.toMatchObject({ kind: 'connection' });
+    });
+
+    it('does not call a TypeError from a bug a connection error', async () => {
+      await expect(
+        clientWith({
+          generateContent: jest
+            .fn()
+            .mockRejectedValue(
+              new TypeError(
+                "Cannot read properties of undefined (reading 'x')",
+              ),
+            ),
+        }).generate(structured),
+      ).rejects.toMatchObject({ kind: 'unknown', retryable: false });
     });
   });
 
@@ -433,6 +477,41 @@ describe('GoogleLanguageModel', () => {
           dimensions: 1536,
         }),
       ).rejects.toMatchObject({ kind: 'invalid_output', provider: 'google' });
+    });
+
+    it('stops sending texts after one fails, and keeps what the rest cost', async () => {
+      const embedContent = jest
+        .fn()
+        .mockImplementation(({ contents }: { contents: string }) =>
+          contents === 'fails'
+            ? Promise.reject(new ApiError({ message: 'busy', status: 503 }))
+            : Promise.resolve({
+                embeddings: [
+                  { values: [1, 0, 0], statistics: { tokenCount: 5 } },
+                ],
+              }),
+        );
+      const texts = ['a', 'fails', ...Array.from({ length: 40 }, () => 'b')];
+      const error = await clientWith({ embedContent })
+        .embed({
+          task: 'corpus.embed',
+          model: 'gemini-embedding-001',
+          texts,
+          dimensions: 3,
+        })
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ kind: 'overloaded', retryable: true });
+      expect((error as LanguageModelError).details).toMatchObject({
+        status: 503,
+        usage: { outputTokens: 0, cachedInputTokens: 0 },
+      });
+      const { usage } = (error as LanguageModelError).details;
+      const embedded = (
+        embedContent.mock.calls as Array<[{ contents: string }]>
+      ).filter(([params]) => params.contents !== 'fails').length;
+      expect(usage?.inputTokens).toBe(5 * embedded);
+      // Only the workers already mid-call finish; nobody starts a new text.
+      expect(embedContent.mock.calls.length).toBeLessThan(8);
     });
   });
 });

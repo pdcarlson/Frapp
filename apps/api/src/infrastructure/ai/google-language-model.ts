@@ -9,6 +9,7 @@ import {
   type GenerateContentParameters,
   type GenerateContentResponse,
 } from '@google/genai';
+import type { GoogleVertexEnvSettings } from '../../config/ai-config';
 import {
   LanguageModelError,
   type EmbeddingRequest,
@@ -31,14 +32,6 @@ export type GoogleModelsClient = {
   >;
 };
 
-/** Where the adapter's calls go and as whom. Every field comes from the environment. */
-export interface GoogleVertexSettings {
-  project: string;
-  location: string;
-  /** A service account's key file, parsed. Never an API key. */
-  credentials: Record<string, unknown>;
-}
-
 /**
  * How many single-text embedding requests run at once. Each request carries
  * one text, because Google documents a one-input limit per request for the
@@ -50,8 +43,9 @@ const EMBED_CONCURRENCY = 4;
 
 /**
  * Gemini on Google Cloud's paid platform (Vertex AI, which Google now calls
- * the Gemini Enterprise Agent Platform). One of two files that may import
- * `@google/genai` (the other is its spec); dependency-cruiser enforces it.
+ * the Gemini Enterprise Agent Platform). Only `src/infrastructure/ai/` may
+ * import `@google/genai`; dependency-cruiser enforces that directory, and
+ * today this adapter and its spec are the only importers.
  *
  * It never reaches the free tier or an AI Studio key, whose terms allow
  * training on what they receive (ADR-28 decision 3): the client is built in
@@ -80,7 +74,7 @@ export class GoogleLanguageModel implements ILanguageModel {
 
   constructor(private readonly client: GoogleModelsClient) {}
 
-  static fromSettings(settings: GoogleVertexSettings): GoogleLanguageModel {
+  static fromSettings(settings: GoogleVertexEnvSettings): GoogleLanguageModel {
     return new GoogleLanguageModel(
       new GoogleGenAI({
         enterprise: true,
@@ -148,13 +142,16 @@ export class GoogleLanguageModel implements ILanguageModel {
   }
 
   async embed(request: EmbeddingRequest): Promise<EmbeddingResult> {
-    try {
-      const vectors: number[][] = new Array<number[]>(request.texts.length);
-      let inputTokens = 0;
-      let next = 0;
-      const worker = async (): Promise<void> => {
-        while (next < request.texts.length) {
-          const index = next++;
+    const vectors: number[][] = new Array<number[]>(request.texts.length);
+    let inputTokens = 0;
+    let next = 0;
+    // The first failure stops the other workers taking new texts, so a
+    // failed batch doesn't go on paying for vectors nobody will read.
+    let failed = false;
+    const worker = async (): Promise<void> => {
+      while (!failed && next < request.texts.length) {
+        const index = next++;
+        try {
           const response = await this.client.models.embedContent({
             model: request.model,
             contents: request.texts[index],
@@ -164,24 +161,36 @@ export class GoogleLanguageModel implements ILanguageModel {
             },
           });
           const embedding = response.embeddings?.[0];
+          inputTokens += embedding?.statistics?.tokenCount ?? 0;
           const values = embedding?.values;
           if (!values || values.length !== request.dimensions) {
             throw new LanguageModelError('invalid_output', 'google');
           }
           vectors[index] = normalized(values);
-          inputTokens += embedding.statistics?.tokenCount ?? 0;
+        } catch (error) {
+          failed = true;
+          throw error;
         }
-      };
-      await Promise.all(
-        Array.from(
-          { length: Math.min(EMBED_CONCURRENCY, request.texts.length) },
-          worker,
-        ),
-      );
-      return { vectors, inputTokens };
-    } catch (error) {
-      throw toLanguageModelError(error);
+      }
+    };
+    const workers = Array.from(
+      { length: Math.min(EMBED_CONCURRENCY, request.texts.length) },
+      worker,
+    );
+    const settled = await Promise.allSettled(workers);
+    const rejected = settled.find(
+      (outcome): outcome is PromiseRejectedResult =>
+        outcome.status === 'rejected',
+    );
+    if (rejected) {
+      // What the texts that did embed were billed, so the ledger keeps it.
+      const error = toLanguageModelError(rejected.reason);
+      throw new LanguageModelError(error.kind, 'google', {
+        ...error.details,
+        usage: { inputTokens, outputTokens: 0, cachedInputTokens: 0 },
+      });
     }
+    return { vectors, inputTokens };
   }
 
   private params(request: LanguageModelRequest): GenerateContentParameters {
@@ -371,6 +380,19 @@ function toResult(
   try {
     answer = JSON.parse(text);
   } catch {
+    // Cut off at the output ceiling, the JSON is unfinished. Keep the
+    // answer written so far, without citations, as Claude's adapter keeps a
+    // truncated answer, rather than turning the overrun into an error.
+    const partial = truncated ? partialAnswer(text) : null;
+    if (partial !== null) {
+      return {
+        outcome: 'completed',
+        text: partial,
+        citations: [],
+        truncated,
+        usage,
+      };
+    }
     throw new LanguageModelError('invalid_output', 'google', { usage });
   }
   const parsed = readCitedAnswer(answer, request.sources);
@@ -383,6 +405,34 @@ function toResult(
     truncated,
     usage,
   };
+}
+
+/**
+ * The `answer` string of a cited reply cut off mid-JSON, as far as it got.
+ * Null when the reply stopped before the answer began.
+ */
+function partialAnswer(text: string): string | null {
+  const start = /"answer"\s*:\s*"/.exec(text);
+  if (!start) return null;
+  let body = '';
+  for (let i = start.index + start[0].length; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') break;
+    if (char === '\\') {
+      const escape = /^\\(?:u[0-9a-fA-F]{4}|[^u])/.exec(text.slice(i));
+      // An escape the cut split in two is dropped.
+      if (!escape) break;
+      body += escape[0];
+      i += escape[0].length - 1;
+      continue;
+    }
+    body += char;
+  }
+  try {
+    return JSON.parse(`"${body}"`) as string;
+  } catch {
+    return null;
+  }
 }
 
 function readCitedAnswer(
@@ -449,8 +499,13 @@ function toLanguageModelError(error: unknown): LanguageModelError {
   if (error instanceof Error && error.name === 'AbortError') {
     return new LanguageModelError('aborted', 'google');
   }
-  // `fetch` reports a refused or dropped connection as a TypeError.
-  if (error instanceof TypeError) {
+  // `fetch` reports a refused or dropped connection as a TypeError whose
+  // message is "fetch failed" and whose cause is the socket error. Any other
+  // TypeError is a bug, not the network, so it is not called retryable.
+  if (
+    error instanceof TypeError &&
+    (error.message === 'fetch failed' || error.cause !== undefined)
+  ) {
     return new LanguageModelError('connection', 'google');
   }
   return new LanguageModelError('unknown', 'google');

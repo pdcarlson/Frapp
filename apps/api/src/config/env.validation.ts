@@ -89,6 +89,10 @@ const REQUIRED_ENV_VARS = [
 //   - AI_ENABLED         the server switch; on is exactly "true"
 //   - AI_PROVIDER        "live" (default) or "scripted" (canned, no network)
 //   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
+//   - GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON  enable the Google
+//                        adapter; both or neither, and the JSON must be a
+//                        service account's key file (checked at boot)
+//   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
 //
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is

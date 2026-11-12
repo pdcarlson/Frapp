@@ -3,20 +3,17 @@ import type {
   ILanguageModel,
   ILanguageModelRegistry,
 } from '#domain/adapters/language-model.interface';
-import { aiProviderMode, googleVertexSettings } from '../../config/ai-config';
+import {
+  aiProviderMode,
+  envSetting,
+  googleVertexSettings,
+} from '../../config/ai-config';
 import { AnthropicLanguageModel } from './anthropic-language-model';
 import { GoogleLanguageModel } from './google-language-model';
 import { ScriptedLanguageModel } from './scripted-language-model';
 import { SCRIPTED_REPLIES } from './scripted-replies';
 
 type Env = Record<string, unknown>;
-
-function credential(env: Env, name: string): string | null {
-  const value = env[name];
-  return typeof value === 'string' && value.trim().length > 0
-    ? value.trim()
-    : null;
-}
 
 /**
  * Build the adapters this process can use.
@@ -39,7 +36,7 @@ export function buildLanguageModelRegistry(
   }
 
   const adapters = new Map<AiProvider, ILanguageModel>();
-  const anthropicKey = credential(env, 'ANTHROPIC_API_KEY');
+  const anthropicKey = envSetting(env, 'ANTHROPIC_API_KEY');
   if (anthropicKey) {
     adapters.set('anthropic', AnthropicLanguageModel.fromApiKey(anthropicKey));
   }

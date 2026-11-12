@@ -16,6 +16,13 @@
  * paid run, and correct this file if they differ.
  */
 import type { AiProvider } from '#domain/adapters/language-model.interface';
+import { AI_MODEL_CATALOG } from '#domain/constants/ai-model-catalog';
+
+/**
+ * The incumbent's price is the catalog's, so the gateway's spend estimate
+ * and the bake-off's cost column can't disagree.
+ */
+const INCUMBENT = AI_MODEL_CATALOG['minutes.draft'];
 
 export interface CandidatePrice {
   /** First day this price applies, `YYYY-MM-DD`. */
@@ -40,17 +47,18 @@ export interface BakeOffCandidate {
 
 export const BAKE_OFF_CANDIDATES: readonly BakeOffCandidate[] = [
   {
-    id: 'claude-sonnet-5-5',
-    provider: 'anthropic',
-    model: 'claude-sonnet-5-5',
+    id: INCUMBENT.model,
+    provider: INCUMBENT.provider,
+    model: INCUMBENT.model,
     prices: [
       {
         from: '2026-01-01',
-        inputUsdPerMillionTokens: 2,
-        outputUsdPerMillionTokens: 10,
+        inputUsdPerMillionTokens: INCUMBENT.inputUsdPerMillionTokens,
+        outputUsdPerMillionTokens: INCUMBENT.outputUsdPerMillionTokens,
       },
     ],
-    priceSource: "Anthropic's model table, read 2026-11-11 (ADR-28)",
+    priceSource:
+      "The model catalog's price (Anthropic's model table, read 2026-11-11, ADR-28)",
     paid: true,
   },
   {
