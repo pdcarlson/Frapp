@@ -41,6 +41,7 @@ import {
   EMPTY_TASK_PHOTO_DRAFT,
   TaskPhotoFields,
   taskPhotoProblem,
+  uploadFailureMessage,
   useUploadTaskPhoto,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
@@ -210,10 +211,7 @@ export function TaskForm({
         } catch (error) {
           setMissing((prev) => ({
             ...prev,
-            photo:
-              error instanceof Error && error.message
-                ? error.message
-                : "The photo didn't upload. Try again.",
+            photo: uploadFailureMessage(error),
           }));
           edit({ showMore: true });
           return;

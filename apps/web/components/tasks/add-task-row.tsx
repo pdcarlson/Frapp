@@ -26,6 +26,7 @@ import {
   EMPTY_TASK_PHOTO_DRAFT,
   TaskPhotoFields,
   taskPhotoProblem,
+  uploadFailureMessage,
   useUploadTaskPhoto,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
@@ -144,10 +145,7 @@ export function AddTaskRow({
       } catch (error) {
         setMissing((prev) => ({
           ...prev,
-          photo:
-            error instanceof Error && error.message
-              ? error.message
-              : "The photo didn't upload. Try again.",
+          photo: uploadFailureMessage(error),
         }));
         return;
       } finally {

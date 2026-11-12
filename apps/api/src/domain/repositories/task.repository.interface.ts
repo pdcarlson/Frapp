@@ -88,6 +88,12 @@ export interface ITaskRepository {
     id: string,
     chapterId: string,
     sentBackAt?: string,
+    /**
+     * The proof the caller read (#4565): the write matches only while the row
+     * still holds it, so a newer completion's proof is never cleared by a
+     * reopen meant for an older one.
+     */
+    expectedProofPath?: string | null,
   ): Promise<Task | null>;
   /**
    * An officer's edit (#4296), only while the task is unconfirmed

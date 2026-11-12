@@ -14,6 +14,18 @@ alter table public.tasks
   add column if not exists proof_photo_path text,
   add column if not exists photo_required boolean not null default false;
 
+-- One stored object belongs to one task (#4565): deleting a task's photo must
+-- never take one another task still shows. The API also refuses a path either
+-- column of any task holds; these indexes make a racing second write of the
+-- same path fail rather than pass that check too. Partial, so the many nulls
+-- cost nothing; built plainly, since both columns are new and all null.
+create unique index if not exists tasks_reference_photo_path_key
+  on public.tasks (reference_photo_path)
+  where reference_photo_path is not null;
+create unique index if not exists tasks_proof_photo_path_key
+  on public.tasks (proof_photo_path)
+  where proof_photo_path is not null;
+
 -- The bucket mirrors `service` (20260803231500_service_proof_bucket.sql):
 -- private, no storage RLS policies (every read and write goes through
 -- API-signed URLs), and allowed_mime_types / file_size_limit pinned because a

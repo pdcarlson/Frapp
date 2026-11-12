@@ -24,6 +24,7 @@ export function FilePicker({
   chooseLabel = "Choose file",
   emptyLabel = "No file chosen",
   testId,
+  disabled,
 }: {
   /** The Choose button: what the label names and what an error focuses. */
   inputRef?: React.RefObject<HTMLButtonElement | null>;
@@ -36,6 +37,8 @@ export function FilePicker({
   chooseLabel?: string;
   emptyLabel?: string;
   testId?: string;
+  /** Held while a write that already read the file runs. */
+  disabled?: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const nameId = `${id}-name`;
@@ -64,6 +67,7 @@ export function FilePicker({
         className="shrink-0 aria-[invalid=true]:border-destructive"
         aria-invalid={invalid || undefined}
         aria-describedby={nameId}
+        disabled={disabled}
         onClick={() => fileInput.current?.click()}
       >
         {file ? "Change" : chooseLabel}
@@ -81,6 +85,7 @@ export function FilePicker({
           size="sm"
           className="shrink-0"
           aria-label={`Remove ${file.name}`}
+          disabled={disabled}
           onClick={() => onPick(null)}
         >
           Remove

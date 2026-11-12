@@ -54,7 +54,10 @@ import {
 } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { checkboxSequence } from "@/lib/tasks/transitions";
-import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import {
+  taskProofRequiredRefusal,
+  taskStatusGateRefusal,
+} from "@/lib/tasks/status-refusal";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -281,6 +284,9 @@ export default function TasksScreen() {
         // revert it always was.
         const gate = taskStatusGateRefusal(error);
         if (gate) setRefusal(gate);
+        // A task that needs a proof photo the phone can't attach yet (#4565).
+        const proof = taskProofRequiredRefusal(error);
+        if (proof) setNotice(proof);
         return gate ? "gate" : "failed";
       } finally {
         inFlight.current.delete(id);

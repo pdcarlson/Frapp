@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import {
+  MemberFacingError,
   putSignedUpload,
   useRequestTaskPhotoUploadUrl,
   useTaskPhotoUrl,
@@ -19,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { FilePicker } from "@/components/shared/file-picker";
 import { FieldError } from "@/components/shared/short-form";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
  * Task photos on web (#4565, `spec/behavior/tasks.md` § Photos): the
@@ -40,6 +41,19 @@ export function taskPhotoProblem(file: File): string | null {
 }
 
 /**
+ * What to say when a photo didn't upload: the API's own sentence for a
+ * refused upload URL (a 400 or 429 arrives as the parsed body, not an
+ * `Error`), the client's for a refused file, else a plain retry line.
+ */
+export function uploadFailureMessage(error: unknown): string {
+  // The upload-URL route's refusals are written for members ("File exceeds
+  // the 25 MB upload limit"), so they may reach the screen.
+  return getErrorMessage(error, "The photo didn't upload. Try again.", {
+    serverWritesForMembers: true,
+  });
+}
+
+/**
  * Upload one photo and resolve its `storage_path`. Rejects with a sentence
  * to show when the file is refused or the upload fails.
  */
@@ -48,7 +62,7 @@ export function useUploadTaskPhoto() {
   return async (file: File): Promise<string> => {
     const inspected = inspectUploadFile("task_photo", file);
     if (!inspected.ok) {
-      throw new Error(taskPhotoProblem(file) ?? TASK_PHOTO_HINT);
+      throw new MemberFacingError(taskPhotoProblem(file) ?? TASK_PHOTO_HINT);
     }
     const signed = await requestUrl.mutateAsync({
       filename: file.name,
@@ -214,6 +228,7 @@ export function TaskPhotoFields({
             chooseLabel="Add a photo"
             emptyLabel="What the job looks like (optional)"
             file={draft.photoFile}
+            disabled={disabled}
             invalid={!!problem}
             onPick={(file) => onChange({ photoFile: file })}
           />
@@ -274,11 +289,7 @@ export function MarkDoneControl({
       const path = await upload(file);
       await onComplete(path);
     } catch (error) {
-      onUploadError(
-        error instanceof Error && error.message
-          ? error.message
-          : "The photo didn't upload. Try again.",
-      );
+      onUploadError(uploadFailureMessage(error));
     } finally {
       setUploading(false);
     }
@@ -323,8 +334,14 @@ export function MarkDoneControl({
           variant="ghost"
           className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
           aria-label={`Add a photo of the finished job: ${title}`}
-          title="Add a photo of the finished job"
           {...controlProps}
+          // After the spread: the gate's props carry `title` (undefined while
+          // online), which would otherwise wipe the icon's only visible name.
+          title={
+            typeof controlProps.title === "string"
+              ? controlProps.title
+              : "Add a photo of the finished job"
+          }
           disabled={disabled}
           onClick={() => fileInput.current?.click()}
         >

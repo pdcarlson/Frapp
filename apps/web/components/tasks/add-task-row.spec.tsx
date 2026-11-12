@@ -60,7 +60,7 @@ describe("AddTaskRow's due time (#4512)", () => {
 });
 
 describe("AddTaskRow's photo (#4565)", () => {
-  it("uploads the photo first and creates the task with its path and the switch", async () => {
+  it("uploads nothing while the task still lacks an assignee and a due date", async () => {
     photo.requestUrl.mockResolvedValue({
       upload_url: "https://upload",
       storage_path: "chapters/c/tasks/p/mess.jpg",

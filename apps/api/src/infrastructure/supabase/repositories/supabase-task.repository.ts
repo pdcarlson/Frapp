@@ -185,11 +185,12 @@ export class SupabaseTaskRepository implements ITaskRepository {
     id: string,
     chapterId: string,
     sentBackAt?: string,
+    expectedProofPath?: string | null,
   ): Promise<Task | null> {
     // The filters are the compare-and-set: a confirm that lands first sets
     // `points_awarded`, and then this matches no row rather than leaving a
     // confirmed, point-awarded task back in progress.
-    const { data, error } = await this.supabase
+    const query = this.supabase
       .from('tasks')
       .update({
         status: TaskStatus.IN_PROGRESS,
@@ -201,9 +202,16 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', TaskStatus.COMPLETED)
-      .eq('points_awarded', false)
-      .select()
-      .maybeSingle();
+      .eq('points_awarded', false);
+    // A take-back or send-back racing a newer completion must not clear (and
+    // the caller then not delete) that completion's proof (#4565).
+    const guarded =
+      expectedProofPath === undefined
+        ? query
+        : expectedProofPath === null
+          ? query.is('proof_photo_path', null)
+          : query.eq('proof_photo_path', expectedProofPath);
+    const { data, error } = await guarded.select().maybeSingle();
 
     if (error) throw new SupabaseQueryError(error);
     return data;

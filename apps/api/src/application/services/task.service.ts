@@ -933,7 +933,12 @@ export class TaskService {
         'An officer already confirmed this task, so it stays done',
       );
     }
-    const updated = await this.taskRepo.reopenCompletion(task.id, chapterId);
+    const updated = await this.taskRepo.reopenCompletion(
+      task.id,
+      chapterId,
+      undefined,
+      task.proof_photo_path,
+    );
     if (!updated) {
       // Null is any write that moved it first: an officer's confirm, their
       // reject, or this member's own take-back from another device.
@@ -1101,6 +1106,7 @@ export class TaskService {
       id,
       chapterId,
       new Date().toISOString(),
+      task.proof_photo_path,
     );
     if (!updated) {
       throw new BadRequestException(

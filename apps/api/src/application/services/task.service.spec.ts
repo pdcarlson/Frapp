@@ -542,6 +542,8 @@ describe('TaskService', () => {
         expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
           'task-1',
           'ch-1',
+          undefined,
+          null,
         );
         expect(mockTaskRepo.update).not.toHaveBeenCalled();
         expect(result.status).toBe(TaskStatus.IN_PROGRESS);
@@ -895,6 +897,7 @@ describe('TaskService', () => {
         'task-1',
         'ch-1',
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        null,
       );
       expect(result.status).toBe(TaskStatus.IN_PROGRESS);
     });
@@ -1868,6 +1871,90 @@ describe('TaskService', () => {
           proof_photo_path: PROOF,
         }),
       );
+    });
+
+    it.each([
+      ['another chapter', 'chapters/ch-2/tasks/p2/done.jpg', true],
+      ['nothing uploaded', PROOF, false],
+    ])(
+      'refuses a proof photo from %s at Mark done',
+      async (_, path, uploadedIt) => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+          photo_required: true,
+        });
+        uploaded(...(uploadedIt ? [path] : []));
+        await expect(
+          service.updateStatus(
+            'task-1',
+            'ch-1',
+            'user-1',
+            false,
+            TaskStatus.COMPLETED,
+            path,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses as proof a photo another task holds', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+      });
+      uploaded(PROOF);
+      mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
+      await expect(
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+          PROOF,
+        ),
+      ).rejects.toThrow('already attached');
+    });
+
+    it('signs nothing outside the chapter', async () => {
+      await expect(
+        service.getPhotoDownloadUrl(
+          { ...baseTask, proof_photo_path: 'chapters/ch-2/tasks/p/x.jpg' },
+          'ch-1',
+          'proof',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('reopens only the completion whose proof it read', async () => {
+      const done = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        proof_photo_path: PROOF,
+      };
+      mockTaskRepo.findById.mockResolvedValue(done);
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...done,
+        status: TaskStatus.IN_PROGRESS,
+        proof_photo_path: null,
+      });
+      await service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.IN_PROGRESS,
+      );
+      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        undefined,
+        PROOF,
+      );
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
     });
 
     it('marks done without proof when no photo is required', async () => {

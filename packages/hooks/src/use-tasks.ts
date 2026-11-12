@@ -638,10 +638,17 @@ export function useTaskPhotoUrl(
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: [...taskKeys.detail(chapterId, taskId), "photo", photo, path],
+    // Its own root, not under `["tasks"]`: a task write invalidates the
+    // task keys, and a photo link refetched with them would be signed anew,
+    // change its `src` and send the browser for the whole image again. The
+    // stored path in the key is what changes when the photo does.
+    queryKey: ["task-photo-url", chapterId, taskId, photo, path],
     enabled: Boolean(path && taskId),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    // Under the link's hour (`getSignedDownloadUrl`'s default), so a cached
+    // link is never handed out expired.
+    staleTime: 45 * 60 * 1000,
+    gcTime: 50 * 60 * 1000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/tasks/{id}/photo-url", {
         params: { path: { id: taskId }, query: { photo } },
