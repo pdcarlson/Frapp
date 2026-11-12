@@ -90,6 +90,12 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// The minutes entry has its own spec (`event-minutes.spec.tsx`).
+vi.mock("@/components/meetings/event-minutes", () => ({
+  EventMinutes: () => null,
+  useMeetingsModuleOn: () => false,
+}));
+
 vi.mock("@/components/events/attendance-panel", () => ({
   AttendancePanel: () => <div data-testid="attendance-roster" />,
 }));

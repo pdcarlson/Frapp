@@ -98,6 +98,7 @@ export const TREASURER: EvalCaller = {
     'roles:manage',
     'service:approve',
     'tasks:manage',
+    'meetings:record',
     'billing:view',
     'billing:manage',
     'points:adjust',
@@ -131,6 +132,7 @@ export const PRESIDENT: EvalCaller = {
     'roles:manage',
     'service:approve',
     'tasks:manage',
+    'meetings:record',
     '*',
   ],
 };

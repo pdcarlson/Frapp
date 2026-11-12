@@ -23,6 +23,44 @@ type Case = readonly [
 
 /** `Controller.method` → event → cases. */
 const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
+  'MeetingController.start': {
+    'meeting-started': [
+      [
+        'from an event on the calendar',
+        { body: { event_id: 'e1' }, result: { meeting_type: 'exec' } },
+        { meeting_type: 'exec', from_new_event: false },
+      ],
+      [
+        'for a meeting that was not on the calendar',
+        {
+          body: { new_event: { name: 'Retreat' } },
+          result: { meeting_type: 'other' },
+        },
+        { meeting_type: 'other', from_new_event: true },
+      ],
+    ],
+  },
+  'MeetingController.post': {
+    'meeting-posted': [
+      [
+        'minutes with a decision and no action items',
+        {
+          result: {
+            meeting_type: 'chapter',
+            content: {
+              decisions: [{ text: 'd', vote: null }],
+              action_items: [],
+            },
+          },
+        },
+        {
+          meeting_type: 'chapter',
+          has_decisions: true,
+          has_action_items: false,
+        },
+      ],
+    ],
+  },
   'AttendanceController.checkIn': {
     'attendance-checked-in': [
       [
