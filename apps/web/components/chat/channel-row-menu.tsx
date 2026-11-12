@@ -37,7 +37,10 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-popover";
+import {
+  NOTIFICATION_LEVEL_OPTIONS,
+  YOUR_DEFAULT_SUFFIX,
+} from "./notification-level-popover";
 
 const DESTRUCTIVE_ITEM_CLASS =
   "text-destructive-text focus:bg-destructive-tint focus:text-destructive-text";
@@ -59,6 +62,11 @@ export interface ChannelRowActions {
   notificationLevelFor: (
     channelId: string,
   ) => ChatNotificationLevel | undefined;
+  /**
+   * The level came from Settings → Chat messages (#3840), so the checked
+   * option reads "(your default)" (#4124). Optional: absent reads as false.
+   */
+  notificationFromChapterLevel?: (channelId: string) => boolean;
   onSetNotificationLevel: (
     channelId: string,
     level: ChatNotificationLevel,
@@ -124,6 +132,8 @@ export function ChannelRowMenu({
   if (member.length === 0 && officer.length === 0) return children;
 
   const level = actions?.notificationLevelFor(channel.id);
+  const fromChapterLevel =
+    actions?.notificationFromChapterLevel?.(channel.id) ?? false;
 
   const item = (key: ChannelRowActionKey) => {
     switch (key) {
@@ -177,6 +187,9 @@ export function ChannelRowMenu({
                 {NOTIFICATION_LEVEL_OPTIONS.map((option) => (
                   <ContextMenuRadioItem key={option.level} value={option.level}>
                     {option.label}
+                    {option.level === level && fromChapterLevel
+                      ? YOUR_DEFAULT_SUFFIX
+                      : null}
                   </ContextMenuRadioItem>
                 ))}
               </ContextMenuRadioGroup>
