@@ -104,8 +104,10 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 Each row that waits on the member carries `unread`, so a client can mark what is new with a dot,
 the way Slack and Linear mark their inboxes (#4173; Shawn picked "unread until opened" over "new
-since your last visit", 2026-11-11). **Status 2026-11-11: the API serves it; the web and phone
-dots are follow-up steps of #4173.**
+since your last visit", 2026-11-11). Web and the phone draw the dots (#4402, 2026-11-12): a
+neutral dot before the row's lead, the notification list's own, and opening the row from Activity
+(its panel or sheet, or on web the link itself) records the open and clears the dot at once. A
+client that gets `unread_since: null` begins the member's dots (below).
 
 - **Which rows.** Everything in Needs you, Coming up and Links. Nothing in Made by you: the member
   made it, so it never waited on them. For the same reason a task they assigned to themselves and
