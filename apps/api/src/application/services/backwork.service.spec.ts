@@ -527,6 +527,53 @@ describe('BackworkService', () => {
       );
     });
 
+    // #3918: a new department is stored by its matching key, so the next
+    // upload typing any case of it finds this row.
+    it('stores a new department code trimmed and upper-cased', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockResolvedValue({
+        id: 'dept-new',
+        chapter_id: 'ch-1',
+        code: 'MATH',
+        name: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-case',
+        department_code: ' math ',
+      });
+
+      expect(mockDepartmentRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        code: 'MATH',
+      });
+    });
+
+    it('files no department for a code that is only spaces', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-blank',
+        department_code: '   ',
+      });
+
+      expect(mockDepartmentRepo.findByCode).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.create).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: null }),
+      );
+    });
+
     it('should auto-vivify a new professor', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockProfessorRepo.findByName.mockResolvedValue(null);

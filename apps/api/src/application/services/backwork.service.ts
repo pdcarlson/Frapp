@@ -16,6 +16,7 @@ import {
   MAX_COURSE_NICKNAMES,
   collapseCourseText,
   courseTextTooLong,
+  departmentCodeKey,
   normalizeCourseNicknames,
 } from '@repo/validation';
 import {
@@ -189,7 +190,7 @@ export class BackworkService {
     }
 
     let departmentId: string | null = null;
-    if (input.department_code) {
+    if (input.department_code?.trim()) {
       departmentId = await this.resolveOrCreateDepartment(
         input.chapter_id,
         input.department_code,
@@ -624,12 +625,15 @@ export class BackworkService {
     chapterId: string,
     code: string,
   ): Promise<string> {
+    // Matched trimmed and case-insensitively, and a new one stored that way
+    // (`departmentCodeKey`, #3918), so "math" files under an existing "MATH"
+    // rather than starting a second department.
     const existing = await this.departmentRepo.findByCode(chapterId, code);
     if (existing) return existing.id;
 
     const created = await this.departmentRepo.create({
       chapter_id: chapterId,
-      code,
+      code: departmentCodeKey(code),
     });
     return created.id;
   }

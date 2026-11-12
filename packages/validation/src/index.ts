@@ -804,6 +804,8 @@ export {
   courseTextLength,
   courseTextTooLong,
   normalizeCourseNicknames,
+  departmentCodeKey,
+  findDepartmentByCode,
 } from "./backwork-courses";
 
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
