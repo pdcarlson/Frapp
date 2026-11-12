@@ -74,6 +74,7 @@ describe('AttendanceService', () => {
     mockAttendanceRepo = {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
+      findByUserForEvents: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
       checkInAtomic: jest.fn(),

@@ -17,6 +17,7 @@ import {
   type PollOption,
 } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
+import { meterStyles } from "@/components/meter";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useMyPermissions, useNow } from "@repo/hooks";
@@ -292,16 +293,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       fontVariant: ["tabular-nums"],
     },
     meterTrack: {
+      ...meterStyles(tokens).track,
       marginTop: tokens.spacing.xs - 2,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: tokens.color.surface.background,
-      overflow: "hidden",
     },
-    meterFill: {
-      height: "100%",
-      borderRadius: 2,
-    },
+    meterFill: meterStyles(tokens).fill,
     footer: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
