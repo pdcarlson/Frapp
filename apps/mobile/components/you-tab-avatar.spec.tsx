@@ -77,10 +77,45 @@ describe("YouTabAvatar", () => {
     );
   });
 
-  it("rings the avatar in the accent only while the tab is active", () => {
+  it("rings the avatar in the accent only while the tab is active, 1.5pt wide with a 1.5pt gap", () => {
     expect(byTestId(render(false), "you-tab-ring")).toHaveLength(0);
     const [ring] = byTestId(render(true), "you-tab-ring");
-    expect(flatten(ring!.props.style).borderColor).toBe(ACCENT);
+    const style = flatten(ring!.props.style);
+    expect(style.borderColor).toBe(ACCENT);
+    expect(style.borderWidth).toBe(1.5);
+    // The ring's inner edge sits 1.5pt off the 24pt avatar on every side.
+    expect(style.top).toBe(-3);
+    expect(style.left).toBe(-3);
+    expect(style.width).toBe(30);
+    expect(style.height).toBe(30);
+  });
+
+  it("draws the member's photo, and falls back to initials when it fails to load", () => {
+    state.user = {
+      display_name: "Paul Carlson",
+      avatar_url: "https://example.test/a.jpg",
+    };
+    const tree = render(false);
+    const [photo] = tree.root.findAll(
+      (node) => (node.type as unknown) === "Image",
+    );
+    expect(photo!.props.source).toEqual({ uri: "https://example.test/a.jpg" });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "PC",
+      ),
+    ).toHaveLength(0);
+    act(() => photo!.props.onError());
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Image"),
+    ).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "PC",
+      ),
+    ).toHaveLength(1);
   });
 
   it("draws no status dot while Online, or before the status is known", () => {

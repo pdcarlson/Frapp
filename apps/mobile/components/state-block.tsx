@@ -464,7 +464,7 @@ export function ErrorState({
  * disabled. A spinner there would hang forever and an error would blame
  * the network for a missing chapter context.
  *
- * Points at the Switch chapter row on More, which is the only entry to the picker
+ * Points at the Switch chapter row on You, which is the only entry to the picker
  * (`spec/ui/mobile/navigation.md`).
  */
 export function NoChapterState({ noun }: { noun: string }) {

@@ -59,13 +59,13 @@ Paul, 2026-11-06: "I couldn't find a way to invite new members or get my invite 
 One screen, the You tab (`(app)/(tabs)/you.tsx`, #3839), holds what were the More hub (s09) and Profile (s15). From the top:
 
 1. **The profile's head**, s15's: the photo (it edits in place, #732), the name, a line of major, company and class year, and the points and service-hours cards (`components/you/profile-sections.tsx`). While the profile loads the head is its skeleton; if it fails with nothing cached, an error with Retry stands in its place. The rows below never wait on it.
-2. **Status** (#3845), one row with the picked status's dot, its name and its end time or custom line, opening the status sheet ([§ Status](#status)). It moved here from the avatar menu Chat home had, as Discord and Slack keep status on the member's own screen.
+2. **Status** (#3845), one row labelled Status with the picked status's dot and its name as the trailing value, and its end time or custom line as a second line when there is one, opening the status sheet ([§ Status](#status)). It moved here from the avatar menu Chat home had, as Discord and Slack keep status on the member's own screen.
 3. **The hub's rows**, in the groups below.
 4. **Details and Bio**, s15's, drawn once the profile has loaded. They close the screen because they are set once and read rarely; the rows above are what a member opens the tab for most days.
 
 **Editing is a tap on what you want to change** (#3711, Paul 2026-11-07: "The pencil button isn't obvious; drop it"): the name, the bio and every Details row that is the member's to set open the edit sheet. #3839's text asked for a pencil; Paul's later rule wins, so there is none.
 
-Row anatomy, as drawn: duotone glyph, label, trailing status, chevron. No row carries a description line.
+Row anatomy, as drawn: duotone glyph, label, trailing status, chevron. No row carries a description line, except Status's end time or custom line.
 
 The app groups the rows differently from the board, by owner decision on 2026-11-04 (#1048): the board draws one group from Study hours to Settings, while the app splits it into chapter tools and then your own settings and chapter switcher, so the two rows the board never drew sit with their kind instead of trailing the list.
 
@@ -73,7 +73,7 @@ The board's Notifications row is not here: the inbox opens from the bell on Chat
 
 | Group | Row | Destination | Trailing status |
 | ----- | --- | ----------- | --------------- |
-| — | Status | the status sheet | the picked status's end time or custom line |
+| — | Status | the status sheet | the picked status's name, with its end time or custom line under the label |
 | Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
 | | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
 | | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |

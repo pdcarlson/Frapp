@@ -161,7 +161,7 @@ export function ProfileHead({
         // a membership exists (and during a hook-off incident), so this is
         // the empty-prod case rather than an edge one.
         <Text style={styles.statNote}>
-          Choose a chapter from Switch chapter below to see your points.
+          Your points show here once you&apos;re in a chapter.
         </Text>
       ) : pointsQuery.isError || serviceQuery.isError ? (
         <Text style={styles.statNote}>

@@ -189,7 +189,7 @@ second, filled variant to swap to.
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
 | Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
 | Calendar tab (the `events` route) | `events`, `calendar-dots` | Named Events until #4610. |
-| You tab | — | The member's own avatar, not a glyph (#3839, `components/you-tab-avatar.tsx`): their photo, else their initials in their member tint, never the accent; active, a 1.5pt accent ring with a gap ([`navigation.md` § Tab bar](../mobile/navigation.md#tab-bar--4-tabs-locked)). The More tab drew `more` (`squares-four`, a 2×2 grid) until then; the shape stays in the nav set for web. |
+| You tab | — | The member's own avatar, not a glyph (#3839, `components/you-tab-avatar.tsx`): their photo, else their initials in their member tint, never the accent; active, a 1.5pt accent ring with a gap ([`navigation.md` § Tab bar](../mobile/navigation.md#tab-bar--4-tabs-locked)). The More tab drew `more` (`squares-four`, a 2×2 grid) until then; nothing else drew it, so it left the nav set. |
 | Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and

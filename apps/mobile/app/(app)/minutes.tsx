@@ -21,7 +21,7 @@ import { ErrorState, SkeletonRegion } from "@/components/state-block";
 
 /**
  * The chapter's minutes a member may read (`spec/behavior/meetings.md`;
- * #4312), reached from More. Drafts the member may open sit first, then
+ * #4312), reached from You. Drafts the member may open sit first, then
  * posted minutes, newest first, as web's Meetings page lists them.
  *
  * A compact list: the event's name, and under it what kind of meeting and

@@ -288,7 +288,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
         node.type === ListRow ? node.props.label : String(node.type),
       );
     expect(order[0]).toBe("ProfileHead");
-    expect(order[1]).toBe("Online");
+    expect(order[1]).toBe("Status");
     expect(order[2]).toBe("Study hours");
     expect(order.at(-1)).toBe("ProfileDetails");
     expect(screenText(tree)).toMatch(/^You/);
@@ -340,7 +340,9 @@ describe("You tab anatomy (#1048, #3839)", () => {
     });
     mounted.push(tree);
     const row = tree.root.findAllByType(ListRow)[0]!;
-    expect(row.props.label).toBe("Do Not Disturb");
+    // Read out as "Status, Do Not Disturb": the row names what it sets.
+    expect(row.props.label).toBe("Status");
+    expect(row.props.value).toBe("Do Not Disturb");
     expect(row.props.description).toMatch(/3:00/);
     act(() => row.props.onPress());
     expect(present).toHaveBeenCalledTimes(1);
@@ -376,7 +378,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
         section.findAllByType(ListRow).map((row) => row.props.label),
       );
     expect(sections).toEqual([
-      ["Online"],
+      ["Status"],
       [
         "Study hours",
         "Service hours",
@@ -508,7 +510,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     );
     const labels = buttons.map((node) => node.props.accessibilityLabel);
     expect(labels).toEqual([
-      "Online",
+      "Status",
       "Study hours",
       "Service hours",
       "Dues",

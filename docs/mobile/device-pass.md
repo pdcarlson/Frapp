@@ -75,7 +75,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 17 | iPhone | Directory: switch to Grid, filter by a role | The grid holds faces and names. The filter narrows it | #4509, #4130 |
 | 18 | iPhone | You: open each row, and leave each by its back row | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something) | smoke checklist §§ 2-3 |
 | 19 | iPhone | A channel's ⋯, Edit channel, Who can see. Then Chapter settings, any module, Who can | Each sheet opens over the one before and closes back to it. On the iPhone, swipe back from Chapter settings works | #4526, #4502 |
-| 20 | Both | Profile: change your photo, then put the old one back | The new photo shows on Profile and on your chat messages without a restart | #808 row 8, #4486 |
+| 20 | Both | You: change your photo, then put the old one back | The new photo shows at the top of You, on the You tab itself and on your chat messages without a restart | #808 row 8, #4486 |
 | 21 | iPhone | Settings: switch chat density, open a channel, then switch it back. Then change the quiet-hours end time, leave Settings, come back, and set it back | The open channel redraws in the new density. The new end time is still there when you come back | #3640, #808 row 14 |
 
 ## 6. Offline and push (2 minutes)

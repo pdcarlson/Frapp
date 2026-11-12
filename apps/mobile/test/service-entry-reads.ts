@@ -12,7 +12,7 @@ import { expect } from "vitest";
  * which is exactly the unscoped read.
  *
  * Shared by `lib/more/service-hours-screen.spec.tsx` and
- * `lib/more/profile-screen.spec.tsx`, so the rule is stated once. Web's
+ * `lib/more/you-profile.spec.tsx`, so the rule is stated once. Web's
  * approval queue is the one deliberate unscoped caller
  * (`apps/web/components/service/service-page.spec.tsx`).
  */

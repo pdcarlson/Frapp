@@ -20,7 +20,7 @@ const RING = 1.5;
  * avatar in the app.
  *
  * A photo can't take the chapter accent, so the active state is a ring in the
- * accent with a background-coloured gap, and the bold accent label and the
+ * accent with a 1.5pt gap, and the bold accent label and the
  * capsule the bar draws for every active tab. The avatar itself is never
  * filled with the accent (foundations.md §6, "Where the accent goes").
  *

@@ -274,8 +274,9 @@ export default function YouScreen() {
         {/* Status first under the head, as Discord and Slack put it at the
             top of the member's own screen: it opens the status sheet. */}
         <ListRow
-          label={MEMBER_STATUS_LABEL[status]}
+          label="Status"
           leading={<StatusDot status={status} />}
+          value={MEMBER_STATUS_LABEL[status]}
           description={statusSub ?? undefined}
           accessibilityHint="Opens your status and custom status."
           onPress={() => statusSheetRef.current?.present()}

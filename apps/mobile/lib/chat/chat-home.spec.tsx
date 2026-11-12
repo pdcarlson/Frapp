@@ -1512,10 +1512,9 @@ describe("Chat home's title (#2485)", () => {
 });
 
 /**
- * The header's right-hand pair (owner, 2026-11-07, option B): a door to
- * Messages and the member's avatar, which opens Profile / Notifications /
- * Settings. The notification bell (#3362) folded into the avatar: its unread
- * dot moved there and the menu's Notifications row carries the count.
+ * The header's right-hand pair: a door to Messages (owner, 2026-11-07, option
+ * B) and the inbox's bell (#3362), back since #3839 in place of the member's
+ * avatar and its menu, which became the You tab.
  */
 describe("Chat home header: Messages and the bell (#3839)", () => {
   const push = () => vi.mocked(useRouter)().push;
