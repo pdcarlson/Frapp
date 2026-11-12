@@ -335,6 +335,58 @@ describe("push isolation module", () => {
     await expect(push.setBadgeCount(3)).resolves.toBeUndefined();
   });
 
+  describe("setBadgeCount on Android (#4011)", () => {
+    async function onAndroid<T>(run: () => Promise<T>): Promise<T> {
+      const { Platform } = await import("react-native");
+      const platform = Platform as { OS: string };
+      const original = platform.OS;
+      platform.OS = "android";
+      try {
+        return await run();
+      } finally {
+        platform.OS = original;
+      }
+    }
+
+    it("makes no native call for a zero badge, which would cancel the whole tray", async () => {
+      // expo-notifications' Android BadgeHelper answers 0 with
+      // NotificationManager.cancelAll(): unread pushes would vanish on launch.
+      const push = await importPush();
+      const mod = fakeModule();
+      push.setPushLoaderForTests(() => mod);
+
+      await onAndroid(() => push.setBadgeCount(0));
+      await onAndroid(() => push.setBadgeCount(-2));
+      expect(mod.setBadgeCountAsync).not.toHaveBeenCalled();
+    });
+
+    it("still sets a non-zero badge", async () => {
+      const push = await importPush();
+      const mod = fakeModule();
+      push.setPushLoaderForTests(() => mod);
+
+      await onAndroid(() => push.setBadgeCount(3));
+      expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(3);
+    });
+
+    it("still zeroes the badge on iOS, where it only sets the number", async () => {
+      const { Platform } = await import("react-native");
+      const platform = Platform as { OS: string };
+      const original = platform.OS;
+      platform.OS = "ios";
+      try {
+        const push = await importPush();
+        const mod = fakeModule();
+        push.setPushLoaderForTests(() => mod);
+
+        await push.setBadgeCount(0);
+        expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(0);
+      } finally {
+        platform.OS = original;
+      }
+    });
+  });
+
   it("push.ts never imports the package statically, and never reaches for the device token", () => {
     // The suite-wide vi.mock of expo-notifications would make a static ESM
     // import invisible to every test while crashing Expo Go at launch, so pin

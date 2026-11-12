@@ -78,7 +78,9 @@ export function useBadgeSyncRuntime(): void {
   const channels = useChannels({ enabled: !!chapterId });
 
   useEffect(() => {
-    // No active chapter (signed out, or between chapters): nothing to badge.
+    // No active chapter (signed out, between chapters, or a cold start before
+    // the chapter loads): nothing to badge. On Android `setBadgeCount` sends
+    // no native call for 0, so this leaves the tray alone (#4011).
     if (!chapterId) {
       void setBadgeCount(0);
       return;

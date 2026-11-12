@@ -390,9 +390,20 @@ export function configureForegroundPresentation(): void {
  * module, never the EAS `projectId` — the badge is a device-local OS call, not
  * a remote push, so it works in a plain dev build with no project provisioned.
  * A no-op wherever the module can't load (web, Expo Go).
+ *
+ * On Android a count of 0 makes no native call (#4011). expo-notifications'
+ * Android `BadgeHelper.setBadgeCount` (57.0.15) answers 0 with
+ * `NotificationManager.cancelAll()`, not with a badge update, so zeroing the
+ * badge there would dismiss every notification the app has in the tray —
+ * unread chat pushes, events, tasks, dues — on every launch. Android's own
+ * launcher dot is drawn from the tray, so it already clears as the tray does
+ * (`clearReadChatNotifications` for chat). A non-zero count still goes to
+ * ShortcutBadger for the launchers that read it. iOS only ever sets the number.
  */
 export async function setBadgeCount(count: number): Promise<void> {
   const mod = localOnlyModule();
   if (!mod) return;
-  await mod.setBadgeCountAsync(Math.max(0, count));
+  const next = Math.max(0, count);
+  if (next === 0 && Platform.OS === "android") return;
+  await mod.setBadgeCountAsync(next);
 }
