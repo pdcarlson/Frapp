@@ -132,6 +132,14 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Remove members",
     "Remove a member from the chapter.",
   ),
+  // Groups (#4076) carry no permissions, so keeping one current needs less
+  // trust than `roles:manage`: a house manager can keep "Third floor" right.
+  chapterPermission(
+    "groups:manage",
+    "members",
+    "Manage groups",
+    "Create, rename and delete groups like Third floor or Live-ins, choose who is in them, and choose which can be pinged.",
+  ),
 
   chapterPermission(
     "channels:create",

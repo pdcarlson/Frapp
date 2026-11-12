@@ -21,7 +21,9 @@ import {
   useDeleteEvent,
   useEvent,
   useMyPermissions,
+  useRequiredOfViewer,
   useRoles,
+  useViewerUserId,
 } from "@repo/hooks";
 import { statusOf } from "@repo/api-sdk";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
@@ -47,6 +49,7 @@ import {
 } from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { MyCheckIn } from "@/components/events/my-check-in";
+import { ExcuseReview, MyExcuse } from "@/components/events/event-excuses";
 import { Can } from "@/components/shared/can";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { normalizeRoleOptions } from "@/lib/roles";
@@ -201,6 +204,14 @@ export function EventDetailSheet({
     attendanceFieldsOf(resolvedEvent ?? {}),
   );
   const isMandatory = attendance.everyone === "required";
+  // Excuses (`spec/behavior/events.md` § Excuses): offered to a member the
+  // event requires, by their roles; received by its creator, and decided by
+  // them or any `events:update` holder.
+  const requiredOf = useRequiredOfViewer();
+  const requiredOfViewer = requiredOf(attendanceFieldsOf(resolvedEvent ?? {}));
+  const viewerId = useViewerUserId();
+  const createdByViewer =
+    viewerId !== null && resolvedEvent?.created_by === viewerId;
   // `null` for a one-time event, which then shows no cadence badge at all.
   // The head's rule when the caller knows the series: a generated meeting
   // carries none of its own, and would otherwise read as one-time.
@@ -431,6 +442,29 @@ export function EventDetailSheet({
                       ? "malformed"
                       : "none"
                 }
+              />
+            ) : null}
+            {/* Keyed by event: the sheet switches series occurrences in
+                place, and a half-typed reason must not carry over. */}
+            {eventId && !usingPreviewData && !eventUnavailable ? (
+              <MyExcuse
+                key={`excuse-${eventId}`}
+                eventId={eventId}
+                required={requiredOfViewer}
+                start={resolvedEvent?.start_time}
+                end={resolvedEvent?.end_time}
+                opensMinutes={resolvedEvent?.check_in_opens_minutes}
+              />
+            ) : null}
+            {eventId &&
+            !usingPreviewData &&
+            !eventUnavailable &&
+            (createdByViewer || can("events:update", permissions)) ? (
+              <ExcuseReview
+                key={`excuses-${eventId}`}
+                eventId={eventId}
+                viewerId={viewerId}
+                canUpdateEvents={can("events:update", permissions)}
               />
             ) : null}
             <div className="rounded-lg border border-border p-3">

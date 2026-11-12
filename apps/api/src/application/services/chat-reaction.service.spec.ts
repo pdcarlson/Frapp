@@ -244,6 +244,7 @@ describe('ChatReactionService', () => {
           signupMessage.id,
           'user-1',
           ['fri'],
+          null,
         );
         expect(mockActionRepo.create).not.toHaveBeenCalled();
         expect(result).toEqual({ action: claimRow, deduplicated: false });
@@ -305,6 +306,82 @@ describe('ChatReactionService', () => {
         );
         expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
         expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      describe('headcount and closing (step 2)', () => {
+        const headcount: ChatMessage = {
+          ...baseMessage,
+          kind: 'signup',
+          payload: {
+            title: 'Formal',
+            format: 'headcount',
+            slots: [
+              { id: 'going', label: 'Going', capacity: null },
+              { id: 'not_going', label: 'Can’t make it', capacity: null },
+            ],
+          },
+        };
+
+        it('passes a headcount answer’s note, trimmed', async () => {
+          mockMessageRepo.findById.mockResolvedValue(headcount);
+          mockActionRepo.claimSignupSlots.mockResolvedValue({
+            action: claimRow,
+            updated: false,
+          });
+
+          await claim({ slot_ids: ['going'], note: '  late  ' });
+
+          expect(mockActionRepo.claimSignupSlots).toHaveBeenCalledWith(
+            headcount.id,
+            'user-1',
+            ['going'],
+            'late',
+          );
+        });
+
+        it('refuses both answers at once on a headcount', async () => {
+          mockMessageRepo.findById.mockResolvedValue(headcount);
+
+          await expect(
+            claim({ slot_ids: ['going', 'not_going'] }),
+          ).rejects.toThrow('A headcount takes one answer');
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('refuses a note on a sheet of slots', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupMessage);
+
+          await expect(
+            claim({ slot_ids: ['fri'], note: 'hi' }),
+          ).rejects.toThrow('Only a headcount answer takes a note');
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it.each([
+          ['closed early', { closed_at: '2026-01-01T00:00:00.000Z' }],
+          ['past its end time', { closes_at: '2000-01-01T00:00:00.000Z' }],
+        ])('refuses a claim on a card %s', async (_, extra) => {
+          mockMessageRepo.findById.mockResolvedValue({
+            ...signupMessage,
+            payload: { ...signupMessage.payload, ...extra },
+          });
+
+          await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+            'Sign-ups are closed',
+          );
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('is a 400 when the card closed between the read and the lock', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupMessage);
+          mockActionRepo.claimSignupSlots.mockRejectedValue(
+            new SignupClaimRefusedError('closed', null),
+          );
+
+          await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+            'Sign-ups are closed',
+          );
+        });
       });
 
       it('refuses a claim on a deleted card', async () => {

@@ -67,6 +67,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
   closePoll as closePollAction,
+  closeSignup as closeSignupAction,
   setMessageFlag as setMessageFlagAction,
   deleteMessage,
   discardOutboxRow,
@@ -328,6 +329,8 @@ export interface UseChatChannelResult {
    * member-facing message on failure, and changes nothing.
    */
   closePoll: (messageId: string) => Promise<void>;
+  /** Closes a sign-up card early (#3926), pessimistic like `closePoll`. */
+  closeSignup: (messageId: string) => Promise<void>;
   /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
    * Pessimistic like `closePoll`: the row draws the flag when the server's
@@ -1132,6 +1135,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const closeSignup = useCallback(
+    async (messageId: string) => {
+      if (!channelId || !ctx) {
+        throw new MemberFacingError("Couldn't close sign-ups. Try again.");
+      }
+      await withFailureMessage(
+        (onError) =>
+          closeSignupAction({ ...ctx, onError }, { channelId, messageId }),
+        "Couldn't close sign-ups. Try again.",
+      );
+    },
+    [channelId, ctx],
+  );
+
   const flag = useCallback(
     async (messageId: string, next: ChatMessageFlag | null) => {
       const failure = next
@@ -1384,6 +1401,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     edit,
     remove,
     closePoll,
+    closeSignup,
     flag,
     react,
     unreact,

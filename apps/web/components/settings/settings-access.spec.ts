@@ -39,6 +39,7 @@ describe("SETTINGS_ENTRY_PERMISSIONS", () => {
         "chapter-config:view",
         "channels:manage",
         "geofences:manage",
+        "groups:manage",
         "reports:export",
         "roles:manage",
         "semester:rollover",
@@ -54,6 +55,13 @@ describe("SETTINGS_ENTRY_PERMISSIONS", () => {
 });
 
 describe("isSettingsTabVisible", () => {
+  // #4076: a chair who keeps groups current needs no chapter config.
+  it("shows Groups to a groups:manage holder, and not to a config viewer without it", () => {
+    expect(isSettingsTabVisible("groups", ["groups:manage"])).toBe(true);
+    expect(isSettingsTabVisible("groups", ["chapter-config:view"])).toBe(false);
+    expect(isSettingsTabVisible("groups", ["*"])).toBe(true);
+  });
+
   it("shows every tab to the President's wildcard", () => {
     for (const tab of ["org", "theme", "roles", "billing"]) {
       expect(isSettingsTabVisible(tab, ["*"])).toBe(true);

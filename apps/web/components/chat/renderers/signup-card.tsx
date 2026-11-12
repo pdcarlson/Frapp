@@ -1,8 +1,9 @@
 "use client";
 
-import { useId, useMemo, useRef } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import {
   meterFillClassName,
@@ -12,9 +13,17 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { PendingPollPicks } from "@repo/chat-core/polls";
 import {
+  CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
+  canCloseSignup,
   castSignupClaim,
+  headcountAnswerPayload,
+  headcountNotePayload,
+  type PendingHeadcount,
+  isHeadcountSignup,
+  isSignupClosed,
   readSignupPayload,
+  signupDeadlineLine,
   signupCardEyebrow,
   signupCardFooter,
   signupHoldersLine,
@@ -24,7 +33,13 @@ import {
   signupSlotStatus,
   tallySignups,
 } from "@repo/chat-core/signups";
-import { actorLabel, type NameResolver } from "@repo/hooks";
+import {
+  actorLabel,
+  useMyPermissions,
+  useNow,
+  type NameResolver,
+} from "@repo/hooks";
+import { can, SIGNUP_ANSWER_NOTE_MAX_LENGTH } from "@repo/validation";
 
 interface SignupCardProps {
   message: ChatMessage;
@@ -39,6 +54,11 @@ interface SignupCardProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /**
+   * Close sign-ups, offered to the card's creator or a `channels:manage`
+   * holder (`canCloseSignup`). The caller confirms first (`ChatShell`).
+   */
+  onCloseSignup?: (messageId: string) => void;
 }
 
 /**
@@ -51,6 +71,11 @@ interface SignupCardProps {
  * channel's card-action error path shows in the API's words
  * (`SERVER_MESSAGE_COPY` in `@repo/validation`). Reading, counting and the words are
  * `@repo/chat-core/signups`, shared with the phone's card.
+ *
+ * A headcount (step 2) draws its two answers, Going and Can't make it, as
+ * the same rows, and the viewer may add a short note to theirs, shown after
+ * their name. A closed card (its end time passed, or closed early) keeps its
+ * names and takes no taps.
  */
 export function SignupCard({
   message,
@@ -58,6 +83,7 @@ export function SignupCard({
   nameFor,
   isConfirmed,
   onClaim,
+  onCloseSignup,
 }: SignupCardProps) {
   const payload = useMemo(() => readSignupPayload(message), [message]);
   const tally = useMemo(
@@ -66,6 +92,15 @@ export function SignupCard({
   );
   const pending = useRef<PendingPollPicks | null>(null);
   const countId = useId();
+  // The last headcount tap, until the card catches up (`PendingHeadcount`).
+  const pendingAnswer = useRef<PendingHeadcount | null>(null);
+  const now = useNow();
+  const canManageChannels = can(
+    "channels:manage",
+    useMyPermissions().data?.permissions,
+  );
+  // The note being typed, or `null` while the editor is shut.
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
 
   if (!payload || !tally) {
     return (
@@ -76,14 +111,35 @@ export function SignupCard({
   }
 
   // `!viewerId`, not `!== null`, for the reason the poll card gives.
-  const canClaim = isConfirmed && !!viewerId;
+  const closed = isSignupClosed(payload, now);
+  const headcount = isHeadcountSignup(payload);
+  const canClaim = isConfirmed && !!viewerId && !closed;
+  const showClose =
+    !!onCloseSignup &&
+    canCloseSignup(message, payload, viewerId, now, canManageChannels);
+  const deadline = signupDeadlineLine(payload, now);
+  const myNote = tally.notes[viewerId] ?? "";
   const claim = (slotId: string) => {
     if (!canClaim) return;
     onClaim(
       message.id,
       SIGNUP_CLAIM_ACTION_TYPE,
-      castSignupClaim(payload, tally, pending, slotId),
+      headcount
+        ? headcountAnswerPayload(tally, viewerId, pendingAnswer, slotId)
+        : castSignupClaim(payload, tally, pending, slotId),
     );
+  };
+  const saveNote = () => {
+    if (noteDraft === null) return;
+    const next = headcountNotePayload(
+      tally,
+      viewerId,
+      pendingAnswer,
+      noteDraft,
+    );
+    setNoteDraft(null);
+    if (!canClaim || !next) return;
+    onClaim(message.id, SIGNUP_CLAIM_ACTION_TYPE, next);
   };
 
   return (
@@ -91,7 +147,7 @@ export function SignupCard({
       className={cn(MESSAGE_CARD, "w-full min-w-[min(20rem,100%)] max-w-md")}
     >
       <p className={cn(EYEBROW, "text-muted-foreground")}>
-        {signupCardEyebrow(payload, tally)}
+        {signupCardEyebrow(payload, tally, now)}
       </p>
       <div className="mt-2 text-base font-bold">{payload.title}</div>
       {payload.note ? (
@@ -108,6 +164,8 @@ export function SignupCard({
             holders,
             viewerId,
             (userId) => actorLabel(userId, nameFor) ?? "A member",
+            3,
+            tally.notes,
           );
           return (
             <li key={slot.id}>
@@ -151,9 +209,68 @@ export function SignupCard({
           );
         })}
       </ul>
-      <p className="mt-3 text-caption text-muted-foreground">
-        {signupCardFooter(payload, tally)}
-      </p>
+      {headcount && canClaim && tally.mine.length > 0 ? (
+        noteDraft === null ? (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="mt-2 h-auto px-0"
+            onClick={() => setNoteDraft(myNote)}
+          >
+            {myNote ? "Edit your note" : "Add a note"}
+          </Button>
+        ) : (
+          <form
+            className="mt-2 flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveNote();
+            }}
+          >
+            <Input
+              autoFocus
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setNoteDraft(null);
+              }}
+              maxLength={SIGNUP_ANSWER_NOTE_MAX_LENGTH}
+              placeholder="Running late, bringing a friend…"
+              aria-label="Note on your answer"
+              className="h-8 min-w-0 flex-1"
+            />
+            <Button type="submit" size="sm">
+              Save
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setNoteDraft(null)}
+            >
+              Cancel
+            </Button>
+          </form>
+        )
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <p className="text-caption text-muted-foreground">
+          {signupCardFooter(payload, tally)}
+          {deadline ? ` · ${deadline}` : ""}
+        </p>
+        {showClose ? (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto px-0"
+            onClick={() => onCloseSignup?.(message.id)}
+          >
+            {CLOSE_SIGNUP_LABEL}
+          </Button>
+        ) : null}
+      </div>
     </Card>
   );
 }

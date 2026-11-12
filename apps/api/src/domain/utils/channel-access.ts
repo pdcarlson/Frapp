@@ -30,7 +30,8 @@ export interface ChannelAccessRecord {
   /**
    * Who can see a PUBLIC or ROLE_GATED channel (#3722): `null` is everyone in
    * the chapter, a list admits members holding any entry in it
-   * (`tier:<id>`, `role:<id>`). An empty list admits nobody but `*`.
+   * (`tier:<id>`, `role:<id>`, `group:<id>`). An empty list admits nobody
+   * but `*`.
    * Ignored for PRIVATE / DM / GROUP_DM, which `member_ids` decides.
    */
   who_can_see: string[] | null;
@@ -82,7 +83,10 @@ export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread' | 'close';
  * or `getChapterMemberAccess` for a whole chapter).
  */
 export interface ChannelAccessHolder {
-  /** `role:<id>` for each role they hold here and `tier:<id>` for its tier. */
+  /**
+   * `role:<id>` for each role they hold here, `tier:<id>` for its tier, and
+   * `group:<id>` for each group they are in (#4076) when those were read.
+   */
   entries: ReadonlySet<string>;
   /**
    * Holds `*` (the President). Passes every list, so a chapter can't lock
@@ -112,11 +116,19 @@ export const EMPTY_ACCESS_HOLDER: ChannelAccessHolder = {
  * `*` comes from a role's own `permissions`; custom roles never carry it
  * (`flattenPermissionSets`), so they are not read. The Alumni role is the one
  * with `system_key` `ALUMNI`, as `RbacService.getAlumniRoleId` resolves it.
+ *
+ * `groupIds` are the groups they are in (#4076), read from
+ * `chapter_group_memberships` only when a list can name one
+ * ({@link listsNameGroups}). A group carries no permissions and is never the
+ * Alumni role, so it adds entries and nothing else.
  */
 export function accessHolderFromRoles(
   roles: readonly Pick<Role, 'id' | 'tier_id' | 'permissions' | 'system_key'>[],
+  groupIds: readonly string[] = [],
 ): ChannelAccessHolder {
-  const entries = new Set<string>();
+  const entries = new Set<string>(
+    groupIds.map((groupId) => channelAccessEntry('group', groupId)),
+  );
   let wildcard = false;
   let alumniEntries: Set<string> | null = null;
   for (const role of roles) {
@@ -189,6 +201,20 @@ export function isAlumniPostableChannel(
   const named = channel.who_can_post ?? channel.who_can_see;
   if (named === null) return false;
   return named.some((entry) => alumniEntries.has(entry));
+}
+
+/**
+ * Whether either of a channel's lists names a group (#4076), so a holder for
+ * it must carry the member's groups. Groups cost a read of their own, so the
+ * chat hot path makes it only for a channel where one can decide; on any
+ * other channel a holder without them decides exactly the same.
+ */
+export function listsNameGroups(
+  channel: Pick<ChannelAccessRecord, 'who_can_see' | 'who_can_post'>,
+): boolean {
+  const named = (list: readonly string[] | null) =>
+    (list ?? []).some((entry) => entry.startsWith('group:'));
+  return named(channel.who_can_see) || named(channel.who_can_post);
 }
 
 /**

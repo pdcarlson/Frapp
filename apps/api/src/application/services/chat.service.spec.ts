@@ -537,7 +537,7 @@ describe('ChatService', () => {
 
         await expect(
           service.updateChannel('chan-1', 'ch-1', { who_can_see: [] }),
-        ).rejects.toThrow('Pick at least one tier or role');
+        ).rejects.toThrow('Pick at least one tier, role or group');
         expect(mockChannelRepo.update).not.toHaveBeenCalled();
         expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
       });
@@ -4276,6 +4276,127 @@ describe('ChatService', () => {
           flagged_at: null,
         }),
       );
+    });
+  });
+
+  describe('closeSignup (#3926 step 2)', () => {
+    const card: ChatMessage = {
+      ...baseMessage,
+      kind: 'signup',
+      sender_id: 'user-1',
+      payload: {
+        title: 'Sober drivers',
+        slots: [{ id: 'fri', label: 'Friday', capacity: 2 }],
+      },
+    };
+
+    it('stamps closed_at and closed_by on the creator’s card, only while it is live', async () => {
+      mockMessageRepo.findById.mockResolvedValue(card);
+      mockMessageRepo.updateIfLive.mockImplementation(
+        async (_id: string, data: Partial<ChatMessage>) => ({
+          ...card,
+          ...data,
+        }),
+      );
+
+      const closed = await service.closeSignup('msg-1', 'ch-1', 'user-1');
+
+      expect(mockMessageRepo.updateIfLive).toHaveBeenCalledWith(card.id, {
+        payload: {
+          ...card.payload,
+          closed_at: expect.any(String),
+          closed_by: 'user-1',
+        },
+      });
+      expect(closed.payload).toMatchObject({ closed_by: 'user-1' });
+    });
+
+    it('checks the caller may close in the card’s channel before anything else', async () => {
+      mockMessageRepo.findById.mockResolvedValue(card);
+      const access = (
+        service as unknown as {
+          channelAccess: {
+            assertChannelAccess: (...a: unknown[]) => Promise<unknown>;
+          };
+        }
+      ).channelAccess;
+      const refusal = new ForbiddenException('No access');
+      const spy = jest
+        .spyOn(access, 'assertChannelAccess')
+        .mockRejectedValue(refusal);
+
+      await expect(service.closeSignup('msg-1', 'ch-1', 'user-1')).rejects.toBe(
+        refusal,
+      );
+      // 'close', not 'post': a creator who lost post rights can still close.
+      expect(spy).toHaveBeenCalledWith(
+        card.channel_id,
+        'ch-1',
+        'user-1',
+        'close',
+      );
+      expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('lets a channels:manage holder close someone else’s card, and nobody else', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...card,
+        sender_id: 'other',
+      });
+      mockMessageRepo.updateIfLive.mockResolvedValue(card);
+
+      await expect(
+        service.closeSignup('msg-1', 'ch-1', 'user-1', async () => false),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+
+      await service.closeSignup('msg-1', 'ch-1', 'user-1', async () => true);
+      expect(mockMessageRepo.updateIfLive).toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'a card already closed',
+        { closed_at: '2026-01-01T00:00:00.000Z' },
+        'Sign-ups are already closed',
+      ],
+      [
+        'a card past its end time',
+        { closes_at: '2000-01-01T00:00:00.000Z' },
+        'Sign-ups are already closed',
+      ],
+    ])('refuses %s', async (_, extra, message) => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...card,
+        payload: { ...card.payload, ...extra },
+      });
+
+      await expect(
+        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(message);
+      expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+    });
+
+    it('refuses a message that is not a sign-up card, and a deleted one', async () => {
+      mockMessageRepo.findById.mockResolvedValue({ ...card, kind: 'poll' });
+      await expect(
+        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Message is not a sign-up card');
+
+      mockMessageRepo.findById.mockResolvedValue({ ...card, is_deleted: true });
+      await expect(
+        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Cannot close a deleted sign-up');
+    });
+
+    it('refuses when a delete lands between the read and the write', async () => {
+      mockMessageRepo.findById.mockResolvedValue(card);
+      mockMessageRepo.updateIfLive.mockResolvedValue(null);
+
+      await expect(
+        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Cannot close a deleted sign-up');
     });
   });
 

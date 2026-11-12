@@ -177,6 +177,34 @@ export const SIGNUP_NOTE_MAX_LENGTH = 1_000;
 export const SIGNUP_SLOTS_MAX = 20;
 export const SIGNUP_SLOT_LABEL_MAX_LENGTH = 120;
 export const SIGNUP_SLOT_CAPACITY_MAX = 100;
+/**
+ * The note a member may add to their answer on a headcount (a sign-up card
+ * with `format: 'headcount'`, #3926 step 2): "running 10 minutes late".
+ */
+export const SIGNUP_ANSWER_NOTE_MAX_LENGTH = 140;
+/**
+ * A headcount's format and its two fixed slots, which the API writes onto
+ * the card whatever a client sent (`normalizeSignupCard`) and both clients
+ * draw and answer by (`@repo/chat-core/signups`). One copy, so a client can
+ * never key its Answer buttons on ids the server doesn't write.
+ */
+export const SIGNUP_HEADCOUNT_FORMAT = "headcount";
+export const HEADCOUNT_GOING_SLOT_ID = "going";
+export const HEADCOUNT_NOT_GOING_SLOT_ID = "not_going";
+export const HEADCOUNT_SLOTS: readonly {
+  id: string;
+  label: string;
+  capacity: null;
+}[] = [
+  { id: HEADCOUNT_GOING_SLOT_ID, label: "Going", capacity: null },
+  { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
+];
+/**
+ * How far ahead a sign-up's end time may be set. The API refuses later ones
+ * outright; the forms stop a day short of it, so a draft that passes in the
+ * form isn't refused by a clock a little ahead on the server.
+ */
+export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
 
 /**
  * Pledge classes and a member's order number (#3939). The name and number
@@ -191,6 +219,15 @@ export const PLEDGE_CLASSES_MAX = 200;
 export const MEMBER_ORDER_NUMBER_MAX = 1_000_000;
 /** Members one `PUT /v1/pledge-classes/assignments` may carry. */
 export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
+
+/**
+ * Groups (#4076). The name bound mirrors the CHECK constraint in
+ * `20261113040007_chapter_groups.sql`; the counts are API-side caps on one
+ * chapter's manual groups and one `PUT /v1/groups/:id/members`.
+ */
+export const GROUP_NAME_MAX_LENGTH = 80;
+export const GROUPS_MAX = 200;
+export const GROUP_MEMBERS_MAX = 2_000;
 
 /**
  * Event types (#3730). The name bound mirrors the CHECK constraint in

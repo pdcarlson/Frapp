@@ -148,6 +148,7 @@ import {
 } from "@/components/chat/channel-member-sheet";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
+import { confirmCloseSignup } from "@/lib/chat/confirm-close-signup";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -322,6 +323,7 @@ function ChannelThreadScreen() {
     edit,
     remove,
     closePoll,
+    closeSignup,
     flag,
     react,
     unreact,
@@ -951,6 +953,11 @@ function ChannelThreadScreen() {
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
     [closePoll],
   );
+  // A sign-up card's Close sign-ups (#3926), asked first like Close poll.
+  const handleCloseSignup = useCallback(
+    (messageId: string) => confirmCloseSignup(() => closeSignup(messageId)),
+    [closeSignup],
+  );
 
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
   // picker would have written.
@@ -1175,6 +1182,7 @@ function ChannelThreadScreen() {
             void act(id, actionType, payload)
           }
           onClosePoll={handleClosePoll}
+          onCloseSignup={handleCloseSignup}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -1205,6 +1213,7 @@ function ChannelThreadScreen() {
       handleUnreact,
       act,
       handleClosePoll,
+      handleCloseSignup,
       byId,
       layout,
       blockState,

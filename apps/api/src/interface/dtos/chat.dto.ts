@@ -54,13 +54,13 @@ import {
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
 const ENTRY_MESSAGE =
-  'each entry must be tier:<id> or role:<id>, as GET /v1/channels/access-options lists them';
+  'each entry must be tier:<id>, role:<id> or group:<id>, as GET /v1/channels/access-options lists them';
 
 const WHO_CAN_SEE_DESCRIPTION =
-  "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).";
+  "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).";
 
 const WHO_CAN_POST_DESCRIPTION =
-  "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.";
+  "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.";
 
 const LEGACY_FIELD_DESCRIPTION =
   'Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.';
@@ -351,7 +351,7 @@ export class CreateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.',
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it.',
   })
   @IsOptional()
   @IsArray()
@@ -365,7 +365,7 @@ export class CreateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.',
   })
   @IsOptional()
   @IsArray()
@@ -394,7 +394,7 @@ export class UpdateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.',
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those.',
   })
   @IsOptional()
   @IsArray()
@@ -408,7 +408,7 @@ export class UpdateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.',
   })
   @IsOptional()
   @IsArray()
@@ -755,10 +755,20 @@ export class ChatUploadUrlResponseDto {
  * caller may ping it, and the server expands the role when the message lands.
  */
 export class MentionRoleDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({
+    format: 'uuid',
+    description: "The role's id, or the tier's or group's (`kind`).",
+  })
   role_id: string;
 
-  @ApiProperty({ description: 'The role name; the picker inserts it folded.' })
+  @ApiProperty({
+    enum: ['role', 'tier', 'group'],
+    description:
+      'What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them.',
+  })
+  kind: 'role' | 'tier' | 'group';
+
+  @ApiProperty({ description: 'The name; the picker inserts it folded.' })
   name: string;
 
   @ApiProperty({
@@ -771,7 +781,7 @@ export class MentionRoleDto {
   @ApiProperty({
     type: Boolean,
     description:
-      'Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody.',
+      'Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody.',
   })
   mentionable: boolean;
 }
@@ -780,14 +790,14 @@ export class MentionRoleDto {
 export class ChannelAccessOptionDto {
   @ApiProperty({
     description:
-      'The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`.',
+      'The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`.',
   })
   entry: string;
 
   @ApiProperty({
-    enum: ['tier', 'role'],
+    enum: ['tier', 'role', 'group'],
     description:
-      'What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.',
+      'What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading.',
   })
   kind: string;
 

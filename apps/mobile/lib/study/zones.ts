@@ -7,8 +7,14 @@
  * `geofences: false` while still enabling `hours` — a chapter that never
  * administers zones from the app still has members who study in them.
  */
-import { studyZoneRulesLine } from "@repo/validation";
+import { isValidZoneOutline, studyZoneRulesLine } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
+
+/** One corner of a zone's outline, as `study_geofences.coordinates` stores it. */
+export interface ZoneCorner {
+  lat: number;
+  lng: number;
+}
 
 export interface StudyZoneModel {
   id: string;
@@ -18,6 +24,20 @@ export interface StudyZoneModel {
   pointsPerInterval: number;
   minSessionMinutes: number;
   pauseGraceMinutes: number;
+  /**
+   * The polygon the server checks a fix against, or empty when the row's
+   * outline is unreadable. Only used to say where the member is before they
+   * tap Start (`lib/study/proximity.ts`); the server stays the judge.
+   */
+  outline: ZoneCorner[];
+}
+
+function toOutline(value: unknown): ZoneCorner[] {
+  // The API's own validity rule, so the phone measures exactly the zones the
+  // server can check.
+  return isValidZoneOutline(value)
+    ? value.map((point) => ({ lat: point.lat, lng: point.lng }))
+    : [];
 }
 
 /** Server defaults, mirrored so a zone row missing a field still reads honestly. */
@@ -47,6 +67,7 @@ function toZone(row: Record<string, unknown>): StudyZoneModel | null {
       num(row, "min_session_minutes") ?? DEFAULTS.minSessionMinutes,
     pauseGraceMinutes:
       num(row, "pause_grace_minutes") ?? DEFAULTS.pauseGraceMinutes,
+    outline: toOutline(row.coordinates),
   };
 }
 

@@ -69,6 +69,7 @@ import {
   DETAIL_LIST,
   DetailRow,
 } from "@/components/members/member-detail-rows";
+import { MemberGroupsSection } from "@/components/members/member-groups-section";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { MemberCorrectionDialog } from "@/components/members/member-correction-dialog";
 
@@ -853,6 +854,8 @@ export function MemberDetailSheet({
                   can("roles:manage", myPermissions)
                 }
               />
+
+              <MemberGroupsSection userId={userId} open={open} />
 
               {customFields.length > 0 ? (
                 <section className="mt-6 space-y-2">

@@ -48,6 +48,12 @@ export interface RoleTier {
   name: string;
   /** What every role in the tier gets, before the role's own overrides. */
   permissions: string[];
+  /**
+   * Whether any member may `@` the tier, which reaches every member holding
+   * a role in it (#4076). On by default; while off, only a member who can
+   * manage channels or roles can ping it, as for a role.
+   */
+  mentionable: boolean;
   created_at: string;
   updated_at: string;
 }

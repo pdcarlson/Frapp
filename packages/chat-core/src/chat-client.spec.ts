@@ -6,6 +6,7 @@ import {
   classifyChatError,
   definitiveRefusalMessage,
   closePoll,
+  closeSignup,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -592,6 +593,91 @@ describe("closePoll (#3794)", () => {
     await closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" });
 
     expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeSignup (#3926)", () => {
+  it("posts the close and merges the closed card before any Realtime echo", async () => {
+    const card = {
+      title: "Formal",
+      format: "headcount",
+      slots: [
+        { id: "going", label: "Going", capacity: null },
+        { id: "not_going", label: "Can’t make it", capacity: null },
+      ],
+    };
+    const row = {
+      id: "msg-1",
+      channel_id: "chan-1",
+      sender_id: "user-1",
+      content: "Formal",
+      kind: "signup",
+      payload: card,
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [row]),
+    );
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          ...row,
+          payload: {
+            ...card,
+            closed_at: "2026-06-01T00:00:00.000Z",
+            closed_by: "user-1",
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const toast = vi.fn() as ToastFn;
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+    });
+
+    await closeSignup(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(apiClient.POST).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}/close",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(toast).not.toHaveBeenCalled();
+    const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
+      ReturnType<typeof emptyCache> | undefined;
+    expect(
+      (cache?.byId["msg-1"]?.payload as { closed_at?: string })?.closed_at,
+    ).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("says a card that already closed has closed, rather than to try again", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Sign-ups are already closed" },
+        response: { status: 400 },
+      }),
+    };
+    const onError = vi.fn() as ChatErrorFn;
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      onError,
+    });
+
+    await expect(
+      closeSignup(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+    ).rejects.toThrow();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't close sign-ups",
+        description: "Sign-ups for this have closed.",
+      }),
+    );
   });
 });
 

@@ -40,6 +40,7 @@ import {
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
   type ChannelAccessHolder,
 } from '#domain/utils/channel-access';
@@ -671,7 +672,10 @@ export class ChatPushWorkerService
 
     let holders: Map<string, ChannelAccessHolder>;
     try {
-      const access = await this.rbac.getChapterMemberAccess(channel.chapter_id);
+      const access = await this.rbac.getChapterMemberAccess(
+        channel.chapter_id,
+        listsNameGroups(shape),
+      );
       holders = new Map(
         access.map((member) => [member.user_id, member.channel_access]),
       );

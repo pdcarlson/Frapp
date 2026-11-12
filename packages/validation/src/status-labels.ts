@@ -33,6 +33,12 @@ export const STATUS_LABELS = {
     ABSENT: "Absent",
     UNRECORDED: "Unrecorded",
   },
+  /** `event_excuses.status`: an approved excuse is what the roster calls Excused. */
+  eventExcuse: {
+    PENDING: "Pending",
+    APPROVED: "Excused",
+    DECLINED: "Declined",
+  },
   /** `study_sessions.status`. */
   studySession: {
     ACTIVE: "Active",

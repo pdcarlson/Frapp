@@ -253,6 +253,15 @@ export class UpdateRoleTierDto {
   name?: string;
 
   @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  mentionable?: boolean;
+
+  @ApiPropertyOptional({
     type: [String],
     description:
       "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
@@ -296,6 +305,12 @@ export class RoleTierDto {
     description: 'What every role in the tier gets before its own overrides.',
   })
   permissions: string[];
+
+  @ApiProperty({
+    description:
+      'Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it.',
+  })
+  mentionable: boolean;
 
   @ApiProperty()
   created_at: string;

@@ -141,6 +141,7 @@ describe('ChapterService', () => {
             position: tier.position!,
             name: tier.name!,
             permissions: tier.permissions ?? [],
+            mentionable: true,
             created_at: '2026-11-10T00:00:00.000Z',
             updated_at: '2026-11-10T00:00:00.000Z',
           })),

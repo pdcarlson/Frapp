@@ -11,12 +11,17 @@ import {
   canAddSignupSlot,
   canRemoveSignupSlot,
   checkSignupDraft,
+  SIGNUP_END_PASSED_PROBLEM,
+  defaultSignupEnd,
   emptySignupDraft,
+  SIGNUP_FORMAT_CHOICES,
   removeSignupSlot,
   setSignupSlot,
   type SignupDraft,
+  type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
+import { localClock, localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SIGNUP_NOTE_MAX_LENGTH,
@@ -42,13 +47,19 @@ import {
   useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { IconButton } from "@/components/icon-button";
+import { Segmented } from "@/components/segmented";
+import { Toggle } from "@/components/toggle";
+import { DueDateField } from "@/components/tasks/due-date-field";
+import { DueTimeField } from "@/components/tasks/due-time-field";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
 
 /**
  * The New sign-up sheet (#3926), opened from the composer's +: a title,
- * optional details, and up to twenty slots, each a name and how many spots it
- * has (blank is no limit). The phone's twin of web's + card form
+ * optional details, and either up to twenty slots, each a name and how many
+ * spots it has (blank is no limit), or a headcount (Going / Can't make it,
+ * step 2). Either may end at a set time, picked with the New task sheet's
+ * platform date and time fields. The phone's twin of web's + card form
  * (`apps/web/components/chat/signup-form.tsx`): one draft model and one card
  * builder (`@repo/chat-core/signups`), on the New poll sheet's chrome.
  *
@@ -114,11 +125,19 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
 
     const post = useCallback(() => {
       if (!check.ok || sending.current) return;
+      // Checked again now, not at the last edit: an end time can pass while the
+      // form sits open, and the server keeps a past one, so the card would post
+      // already closed.
+      const fresh = checkSignupDraft(draft);
+      if (!fresh.ok) {
+        setFailure(fresh.problem ?? SIGNUP_END_PASSED_PROBLEM);
+        return;
+      }
       sending.current = true;
       setPosting(true);
       setFailure(null);
       const sentFrom = visit();
-      void onPost(buildSignupMessage(check.input))
+      void onPost(buildSignupMessage(fresh.input))
         .catch((): { ok: false; error: string } => ({
           ok: false,
           error: "Couldn't post that sign-up sheet. Try again.",
@@ -134,7 +153,7 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
           }
           if (isSameVisit(sentFrom)) setFailure(result.error);
         });
-    }, [check, onPost, reset, dismiss, visit, isSameVisit]);
+    }, [check, draft, onPost, reset, dismiss, visit, isSameVisit]);
 
     const field = (key: string, multiline = false) => [
       styles.field,
@@ -171,6 +190,17 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
             cancelDisabled={posting}
           />
 
+          <Segmented<SignupDraftFormat>
+            options={SIGNUP_FORMAT_CHOICES.map((choice) => ({
+              value: choice.id,
+              label: choice.label,
+            }))}
+            value={draft.format}
+            onChange={(format) => edit((current) => ({ ...current, format }))}
+            accessibilityLabel="Kind of sign-up"
+            disabled={posting}
+          />
+
           <View style={ring("title")}>
             <BottomSheetTextInput
               value={draft.title}
@@ -180,7 +210,11 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
               onFocus={() => setFocused("title")}
               onBlur={() => setFocused(null)}
               editable={!posting}
-              placeholder="Title, like Sober drivers this weekend"
+              placeholder={
+                draft.format === "headcount"
+                  ? "Title, like Formal on Saturday"
+                  : "Title, like Sober drivers this weekend"
+              }
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Title"
               maxLength={SIGNUP_TITLE_MAX_LENGTH}
@@ -204,93 +238,153 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
             />
           </View>
 
-          <Text style={styles.groupLabel}>Slots</Text>
-          <Text style={styles.caption}>Leave Spots blank for no limit.</Text>
-          {draft.slots.map((slot, index) => {
-            const name = `Slot ${index + 1}`;
-            const invalid = problemRow === slot.key;
-            return (
-              <View key={slot.key} style={styles.slotRow}>
-                <View
-                  style={[
-                    ...ring(`${slot.key}:label`, invalid),
-                    styles.slotName,
-                  ]}
-                >
-                  <BottomSheetTextInput
-                    value={slot.label}
-                    onChangeText={(label) =>
-                      edit((current) =>
-                        setSignupSlot(current, slot.key, { label }),
-                      )
-                    }
-                    onFocus={() => setFocused(`${slot.key}:label`)}
-                    onBlur={() => setFocused(null)}
-                    editable={!posting}
-                    placeholder={index === 0 ? "Friday" : name}
-                    placeholderTextColor={tokens.color.text.muted}
-                    accessibilityLabel={`${name} name`}
-                    maxLength={SIGNUP_SLOT_LABEL_MAX_LENGTH}
-                    style={field(`${slot.key}:label`)}
-                  />
-                </View>
-                <View
-                  style={[
-                    ...ring(`${slot.key}:spots`, invalid),
-                    styles.slotSpots,
-                  ]}
-                >
-                  <BottomSheetTextInput
-                    value={slot.capacity}
-                    onChangeText={(capacity) =>
-                      edit((current) =>
-                        setSignupSlot(current, slot.key, { capacity }),
-                      )
-                    }
-                    onFocus={() => setFocused(`${slot.key}:spots`)}
-                    onBlur={() => setFocused(null)}
-                    editable={!posting}
-                    placeholder="Spots"
-                    placeholderTextColor={tokens.color.text.muted}
-                    accessibilityLabel={`${name} spots`}
-                    keyboardType="number-pad"
-                    maxLength={3}
-                    style={[...field(`${slot.key}:spots`), styles.spotsText]}
-                  />
-                </View>
-                <View style={styles.slotControl}>
-                  {canRemoveSignupSlot(draft) ? (
-                    <IconButton
-                      label={`Remove ${name.toLowerCase()}`}
-                      onPress={() =>
-                        edit((current) => removeSignupSlot(current, slot.key))
-                      }
-                      disabled={posting}
-                    >
-                      <CloseGlyph color={tokens.color.text.mutedForeground} />
-                    </IconButton>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
-
-          {canAddSignupSlot(draft) ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add a slot"
-              accessibilityState={{ disabled: posting }}
-              disabled={posting}
-              onPress={() => edit(addSignupSlot)}
-              style={styles.addRow}
-            >
-              <Text style={styles.addLabel}>+ Add a slot</Text>
-            </Pressable>
-          ) : (
+          {draft.format === "headcount" ? (
             <Text style={styles.caption}>
-              A sign-up sheet can have up to {SIGNUP_SLOTS_MAX} slots.
+              Members answer Going or Can’t make it, and can add a short note.
             </Text>
+          ) : (
+            <>
+              <Text style={styles.groupLabel}>Slots</Text>
+              <Text style={styles.caption}>
+                Leave Spots blank for no limit.
+              </Text>
+              {draft.slots.map((slot, index) => {
+                const name = `Slot ${index + 1}`;
+                const invalid = problemRow === slot.key;
+                return (
+                  <View key={slot.key} style={styles.slotRow}>
+                    <View
+                      style={[
+                        ...ring(`${slot.key}:label`, invalid),
+                        styles.slotName,
+                      ]}
+                    >
+                      <BottomSheetTextInput
+                        value={slot.label}
+                        onChangeText={(label) =>
+                          edit((current) =>
+                            setSignupSlot(current, slot.key, { label }),
+                          )
+                        }
+                        onFocus={() => setFocused(`${slot.key}:label`)}
+                        onBlur={() => setFocused(null)}
+                        editable={!posting}
+                        placeholder={index === 0 ? "Friday" : name}
+                        placeholderTextColor={tokens.color.text.muted}
+                        accessibilityLabel={`${name} name`}
+                        maxLength={SIGNUP_SLOT_LABEL_MAX_LENGTH}
+                        style={field(`${slot.key}:label`)}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        ...ring(`${slot.key}:spots`, invalid),
+                        styles.slotSpots,
+                      ]}
+                    >
+                      <BottomSheetTextInput
+                        value={slot.capacity}
+                        onChangeText={(capacity) =>
+                          edit((current) =>
+                            setSignupSlot(current, slot.key, { capacity }),
+                          )
+                        }
+                        onFocus={() => setFocused(`${slot.key}:spots`)}
+                        onBlur={() => setFocused(null)}
+                        editable={!posting}
+                        placeholder="Spots"
+                        placeholderTextColor={tokens.color.text.muted}
+                        accessibilityLabel={`${name} spots`}
+                        keyboardType="number-pad"
+                        maxLength={3}
+                        style={[
+                          ...field(`${slot.key}:spots`),
+                          styles.spotsText,
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.slotControl}>
+                      {canRemoveSignupSlot(draft) ? (
+                        <IconButton
+                          label={`Remove ${name.toLowerCase()}`}
+                          onPress={() =>
+                            edit((current) =>
+                              removeSignupSlot(current, slot.key),
+                            )
+                          }
+                          disabled={posting}
+                        >
+                          <CloseGlyph
+                            color={tokens.color.text.mutedForeground}
+                          />
+                        </IconButton>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {canAddSignupSlot(draft) ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add a slot"
+                  accessibilityState={{ disabled: posting }}
+                  disabled={posting}
+                  onPress={() => edit(addSignupSlot)}
+                  style={styles.addRow}
+                >
+                  <Text style={styles.addLabel}>+ Add a slot</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.caption}>
+                  A sign-up sheet can have up to {SIGNUP_SLOTS_MAX} slots.
+                </Text>
+              )}
+            </>
           )}
+
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Ends at a set time</Text>
+            <Toggle
+              value={draft.closesAt !== null}
+              accessibilityLabel="Ends at a set time"
+              onValueChange={(on) => {
+                if (posting) return;
+                edit((current) => ({
+                  ...current,
+                  closesAt: on ? defaultSignupEnd(new Date()) : null,
+                }));
+              }}
+            />
+          </View>
+          {draft.closesAt ? (
+            <View style={styles.endRow}>
+              <DueDateField
+                value={localIsoDate(draft.closesAt)}
+                today={localIsoDate(new Date())}
+                disabled={posting}
+                onChange={(day) =>
+                  edit((current) => ({
+                    ...current,
+                    closesAt: withDay(current.closesAt, day),
+                  }))
+                }
+              />
+              <DueTimeField
+                value={localClock(draft.closesAt)}
+                suggested="18:00"
+                disabled={posting}
+                onChange={(time) =>
+                  edit((current) => ({
+                    ...current,
+                    // Clearing the time takes the end time off.
+                    closesAt:
+                      time === null ? null : withTime(current.closesAt, time),
+                  }))
+                }
+              />
+            </View>
+          ) : null}
 
           {problem ? (
             <Text accessibilityLiveRegion="polite" style={styles.error}>
@@ -304,7 +398,11 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
             disabled={!canPost}
             busy={posting}
             accessibilityHint={
-              check.ok ? undefined : "Add a title and name at least one slot."
+              check.ok
+                ? undefined
+                : draft.format === "headcount"
+                  ? "Add a title."
+                  : "Add a title and name at least one slot."
             }
             accent={brand.accent}
             onAccent={tokens.color.gold.onHouse}
@@ -314,6 +412,26 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
     );
   },
 );
+
+/** The end time moved to another day (`YYYY-MM-DD`), its time kept. */
+function withDay(at: Date | null, day: string): Date | null {
+  if (!at) return at;
+  const [y, m, d] = day.split("-").map(Number);
+  if (!y || !m || !d) return at;
+  const next = new Date(at);
+  next.setFullYear(y, m - 1, d);
+  return next;
+}
+
+/** The end time moved to another time of day (`HH:MM`), its day kept. */
+function withTime(at: Date | null, time: string): Date | null {
+  if (!at) return at;
+  const [hh, mm] = time.split(":").map(Number);
+  if (hh === undefined || mm === undefined || Number.isNaN(hh + mm)) return at;
+  const next = new Date(at);
+  next.setHours(hh, mm, 0, 0);
+  return next;
+}
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
@@ -369,6 +487,22 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
+    },
+    toggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      marginTop: tokens.spacing.xs,
+    },
+    toggleLabel: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      flexShrink: 1,
+    },
+    endRow: {
+      gap: tokens.spacing.sm,
     },
   });
 }

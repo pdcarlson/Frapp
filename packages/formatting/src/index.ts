@@ -17,7 +17,7 @@ export {
 export { dayDelta, monthGrid, startOfMonth } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
 export { formatBytes } from "./bytes";
-export { localIsoDate } from "./local-date";
+export { localClock, localIsoDate } from "./local-date";
 export {
   formatDay,
   formatDayHeading,

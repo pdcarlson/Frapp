@@ -1356,6 +1356,7 @@ vi.mock("./message-timeline", async () => {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
       onClosePoll?: (messageId: string) => void;
+      onCloseSignup?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
@@ -1371,6 +1372,7 @@ vi.mock("./message-timeline", async () => {
       messages,
       onDelete,
       onClosePoll,
+      onCloseSignup,
       onReply,
       onEdit,
       canManageChannel,
@@ -1409,6 +1411,9 @@ vi.mock("./message-timeline", async () => {
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
+        </button>
+        <button onClick={() => onCloseSignup?.("signup-1")}>
+          trigger-close-signup
         </button>
         <button onClick={() => onOpenProfile?.("u-author")}>
           open-author-profile
@@ -1539,6 +1544,7 @@ function chatChannelResult(
     edit: vi.fn(),
     delete: vi.fn(),
     closePoll: vi.fn(),
+    closeSignup: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],
@@ -2973,6 +2979,41 @@ describe("ChatShell Close poll wiring (#3794)", () => {
     });
     await waitFor(() => {
       expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("ChatShell Close sign-ups wiring (#3926)", () => {
+  it("closes nothing when the confirmation is cancelled", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-signup"));
+    await waitFor(() => {
+      expect(screen.getByText("Close sign-ups?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Close sign-ups?")).not.toBeInTheDocument();
+    });
+    expect(channel.closeSignup).not.toHaveBeenCalled();
+  });
+
+  it("closes the card once the dialog is confirmed", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-signup"));
+    await waitFor(() => {
+      expect(screen.getByText("Close sign-ups?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close sign-ups" }));
+
+    await waitFor(() => {
+      expect(channel.closeSignup).toHaveBeenCalledWith("signup-1", undefined);
     });
   });
 });
