@@ -11,6 +11,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
 import { TaskRow, TaskTile } from "@/components/tasks/task-row";
+import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
@@ -216,12 +217,27 @@ describe("Tasks List / Grid", () => {
     const tiles = tree.root.findAllByType(TaskTile);
     expect(rows(tree)).toHaveLength(0);
     expect(tiles.length).toBeGreaterThan(0);
-    expect(tiles[0]!.props.onOpen).toBeInstanceOf(Function);
+    // The card's own targets, pressed as a member would: the body opens
+    // the task's detail sheet (where an officer's Edit sits)...
+    const tile = tiles[0]!;
+    const body = tile.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityRole === "button",
+    );
+    act(() => body.props.onPress());
+    expect(tree.root.findByType(TaskDetailSheet).props.row?.id).toBe(
+      tile.props.row.id,
+    );
 
-    const onToggle = tiles[0]!.props.onToggle as (() => void) | undefined;
-    expect(onToggle).toBeDefined();
+    // ...and the box completes it.
+    const box = tile.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.testID === `task-checkbox-${tile.props.row.id}`,
+    );
     await act(async () => {
-      onToggle?.();
+      box.props.onPress();
     });
     expect(mutateAsync).toHaveBeenCalled();
   });

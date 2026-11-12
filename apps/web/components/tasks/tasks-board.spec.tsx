@@ -619,11 +619,27 @@ describe("TasksBoard overdue affordances", () => {
  * with the same controls, Edit and Delete included.
  */
 describe("TasksBoard List / Grid", () => {
+  // A confirmed task, so the Confirmed list under the groups is drawn too.
+  const CONFIRMED_TASK = {
+    ...TASKS[2]!,
+    id: "task-confirmed",
+    title: "Order the composite frames",
+    points_awarded: true,
+    confirmed_at: "2026-08-12T00:00:00Z",
+  };
+
   beforeEach(() => {
     chapter.active();
     currentUserRef.current = { id: "u-admin" };
-    tasksRef.current = TASKS;
+    tasksRef.current = [...TASKS, CONFIRMED_TASK];
   });
+
+  const todoRegion = () => screen.getByRole("region", { name: /to do/i });
+  const confirmedList = () =>
+    screen.getByRole("region", { name: /confirmed/i }).querySelector("ul");
+  /** The task the specs read, by its title. */
+  const sweepItem = () =>
+    within(todoRegion()).getByText("Sweep the chapter room").closest("li");
 
   const layoutChoice = (name: "List" | "Grid") =>
     within(screen.getByRole("radiogroup", { name: "Layout" })).getByRole(
@@ -634,9 +650,11 @@ describe("TasksBoard List / Grid", () => {
   it("opens on the board, as Grid, until the person picks", () => {
     render(<TasksBoard />);
     expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
-    expect(
-      screen.getByRole("region", { name: /to do/i }).querySelector("ul"),
-    ).not.toHaveClass("divide-y");
+    // Lanes side by side, each task a framed tile, Confirmed as a grid.
+    expect(todoRegion().parentElement).toHaveClass("@4xl:grid-cols-4");
+    expect(todoRegion().querySelector("ul")).not.toHaveClass("divide-y");
+    expect(sweepItem()).toHaveClass("rounded-[14px]", "border");
+    expect(confirmedList()).toHaveClass("@4xl:grid-cols-4");
   });
 
   it("draws the same groups as rows in List, keeping Edit and Delete, and remembers it", async () => {
@@ -645,8 +663,15 @@ describe("TasksBoard List / Grid", () => {
     await user.click(layoutChoice("List"));
 
     expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
-    const todo = screen.getByRole("region", { name: /to do/i });
+    const todo = todoRegion();
+    // Groups stacked, not lanes; each task a flush row, not a framed tile;
+    // the Confirmed list rows too.
+    expect(todo.parentElement).not.toHaveClass("grid");
     expect(todo.querySelector("ul")).toHaveClass("divide-y");
+    expect(sweepItem()).toHaveClass("py-3");
+    expect(sweepItem()).not.toHaveClass("border");
+    expect(confirmedList()).toHaveClass("divide-y");
+    expect(confirmedList()).not.toHaveClass("grid");
     expect(
       within(todo).getByRole("button", {
         name: /^edit sweep the chapter room$/i,
@@ -657,8 +682,8 @@ describe("TasksBoard List / Grid", () => {
         name: /^delete sweep the chapter room$/i,
       }),
     ).toBeInTheDocument();
-    // The same four groups, and the page stays flush.
-    expect(screen.getAllByRole("region")).toHaveLength(4);
+    // The same four groups and Confirmed, and the page stays flush.
+    expect(screen.getAllByRole("region")).toHaveLength(5);
     expect(cardFilledContainers(container)).toEqual([]);
     expect(window.localStorage.getItem("frapp.tasks.layout.viewer-1")).toBe(
       "list",

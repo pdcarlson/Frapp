@@ -459,8 +459,9 @@ export function TasksBoard() {
 
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
-    // window is wide, so the lanes count the page's own width. One lane per
-    // row below `@2xl` (672px), two to `@4xl` (896px), then all four.
+    // window is wide, so the layout counts the page's own width. In Grid, one
+    // lane per row below `@2xl` (672px), two to `@4xl` (896px), then all
+    // four; List stacks the groups at every width.
     <div className="@container space-y-6">
       {/*
         For every viewer, not only `tasks:manage`: the assignee-facing Start /
@@ -486,8 +487,9 @@ export function TasksBoard() {
           Flush, not carded. Each column used to be a `<Card>` with a title,
           a description and (under the completed column) a footer explaining
           the confirm rule. A column is now a section on the page surface,
-          named by its label and count; the tiles inside keep a hairline frame,
-          because a kanban tile is a block with its own controls, not a row.
+          named by its label and count. In Grid the tiles inside keep a
+          hairline frame, because a kanban tile is a block with its own
+          controls; in List they are flush rows split by a hairline (#4175).
         */
         <>
           {/*
@@ -897,31 +899,39 @@ function TaskCard({
     </div>
   );
 
+  const subtaskList =
+    subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
+      <TaskSubtaskList
+        taskId={task.id}
+        subtasks={task.subtasks}
+        canCheck={isMine || canManage}
+        canEdit={canManage}
+        closed={task.points_awarded}
+        gate={gate}
+      />
+    ) : null;
+
   return (
     <li className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}>
       {isRow ? (
         // The row's facts lead and its controls end it, as a Linear list
-        // row's do.
-        <div className="flex items-start gap-3 @xl:gap-4">
-          {summary}
-          {controls}
-        </div>
+        // row's do; an opened checklist spans the row under both.
+        <>
+          <div className="flex items-start gap-3 @xl:gap-4">
+            {summary}
+            {controls}
+          </div>
+          {subtaskList}
+        </>
       ) : (
+        // The tile as it always was: the checklist opens under the meta line
+        // that holds its toggle, and the controls end the tile.
         <>
           {summary}
+          {subtaskList}
           {controls}
         </>
       )}
-      {subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
-        <TaskSubtaskList
-          taskId={task.id}
-          subtasks={task.subtasks}
-          canCheck={isMine || canManage}
-          canEdit={canManage}
-          closed={task.points_awarded}
-          gate={gate}
-        />
-      ) : null}
       {/*
         The one rule from the old column footer worth keeping: it explains a
         missing control, so it sits on the tile whose control is missing. Only
