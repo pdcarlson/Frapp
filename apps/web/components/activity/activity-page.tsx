@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,8 +39,11 @@ import { ActivityRowActionButton } from "./activity-row-action";
 import { activityRowActionGate } from "./activity-row-action-gate";
 import {
   ActivityAsk,
+  ActivityFaces,
+  ActivityRowDetail,
   ActivityRowLead,
   ActivityUnreadDot,
+  type ActivityFace,
 } from "./activity-row-lead";
 import { ActivitySummary } from "./activity-summary";
 import {
@@ -55,6 +58,7 @@ import {
   useActiveChapterId,
   useActivity,
   useActivityUnread,
+  useMemberDisplayNames,
   useNowDate,
   useMyPermissions,
   type ActivityFilter,
@@ -85,11 +89,7 @@ function RowContent({
         <span className="block truncate text-sm font-semibold text-foreground">
           {row.title}
         </span>
-        {row.detail ? (
-          <span className="block truncate text-caption text-muted-foreground">
-            {row.detail}
-          </span>
-        ) : null}
+        <ActivityRowDetail row={row} />
       </span>
       {row.badge ? (
         askOnRow ? (
@@ -418,6 +418,17 @@ export function ActivityPage() {
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
+  // Faces on the rows (#4402, item 4), from the roster chat already reads.
+  const { nameFor, avatarFor, avatarTintFor } = useMemberDisplayNames();
+  const faceFor = useCallback(
+    (id: string): ActivityFace | null => {
+      const name = nameFor(id);
+      return name
+        ? { name, src: avatarFor(id), tint: avatarTintFor(id) }
+        : null;
+    },
+    [nameFor, avatarFor, avatarTintFor],
+  );
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),
@@ -497,80 +508,82 @@ export function ActivityPage() {
   };
 
   return (
-    <div className="space-y-8">
-      {summary ? (
-        <ActivitySummary
-          summary={summary}
-          filter={filter}
-          onFilter={setFilter}
-        />
-      ) : null}
-      <div
-        role="group"
-        aria-label="Show"
-        className="flex flex-wrap items-center gap-2"
-      >
-        {ACTIVITY_FILTERS.filter((option) =>
-          activityFilterAvailable(option.value, isModuleEnabled),
-        ).map((option) => {
-          // The To confirm tile narrows within Tasks, so the Tasks chip
-          // stays lit under it.
-          const on =
-            filter === option.value ||
-            (filter === "confirm" && option.value === "task");
-          return (
-            <Button
-              key={option.value}
-              type="button"
-              size="toolbar"
-              variant={on ? "tinted" : "secondary"}
-              className={FILTER_CHIP_CLASS}
-              aria-pressed={on}
-              onClick={() => setFilter(option.value)}
-            >
-              {option.label}
-            </Button>
-          );
-        })}
-      </div>
-
-      {groups.map((group) =>
-        // Under a chip, a group with nothing of that kind is left out rather
-        // than drawn as three "nothing here" lines; "Needs you" always stays.
-        filter !== "all" &&
-        group.id !== "needs-you" &&
-        group.rows.length === 0 &&
-        group.archive === null &&
-        group.unavailable.length === 0 ? null : (
-          <GroupSection
-            key={group.id}
-            group={group}
-            filtered={filter !== "all" && filter !== "waiting"}
-            canRemoveLinks={canRemoveLinks}
-            linkActions={linkActions}
-            rowActions={{ gate: actionGate, onActed: actedOnRow }}
-            onOpen={openFromList}
+    <ActivityFaces.Provider value={faceFor}>
+      <div className="space-y-8">
+        {summary ? (
+          <ActivitySummary
+            summary={summary}
+            filter={filter}
+            onFilter={setFilter}
           />
-        ),
-      )}
+        ) : null}
+        <div
+          role="group"
+          aria-label="Show"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {ACTIVITY_FILTERS.filter((option) =>
+            activityFilterAvailable(option.value, isModuleEnabled),
+          ).map((option) => {
+            // The To confirm tile narrows within Tasks, so the Tasks chip
+            // stays lit under it.
+            const on =
+              filter === option.value ||
+              (filter === "confirm" && option.value === "task");
+            return (
+              <Button
+                key={option.value}
+                type="button"
+                size="toolbar"
+                variant={on ? "tinted" : "secondary"}
+                className={FILTER_CHIP_CLASS}
+                aria-pressed={on}
+                onClick={() => setFilter(option.value)}
+              >
+                {option.label}
+              </Button>
+            );
+          })}
+        </div>
 
-      <ActivityPanel
-        row={openRow}
-        viewerId={userId}
-        onClose={(key) => {
-          // A late answer from one row's action must not close another row
-          // the member has since opened.
-          setOpened((current) =>
-            key === undefined || current?.key === key ? null : current,
-          );
-          // The cards write through their own hooks (a task's status, a
-          // check-in), which this page's read does not hear about, so it is
-          // re-read when the panel closes by hand. An action's own close
-          // (`key` given) has already re-read through `onActed`.
-          if (key === undefined) refresh();
-        }}
-        onActed={refresh}
-      />
-    </div>
+        {groups.map((group) =>
+          // Under a chip, a group with nothing of that kind is left out rather
+          // than drawn as three "nothing here" lines; "Needs you" always stays.
+          filter !== "all" &&
+          group.id !== "needs-you" &&
+          group.rows.length === 0 &&
+          group.archive === null &&
+          group.unavailable.length === 0 ? null : (
+            <GroupSection
+              key={group.id}
+              group={group}
+              filtered={filter !== "all" && filter !== "waiting"}
+              canRemoveLinks={canRemoveLinks}
+              linkActions={linkActions}
+              rowActions={{ gate: actionGate, onActed: actedOnRow }}
+              onOpen={openFromList}
+            />
+          ),
+        )}
+
+        <ActivityPanel
+          row={openRow}
+          viewerId={userId}
+          onClose={(key) => {
+            // A late answer from one row's action must not close another row
+            // the member has since opened.
+            setOpened((current) =>
+              key === undefined || current?.key === key ? null : current,
+            );
+            // The cards write through their own hooks (a task's status, a
+            // check-in), which this page's read does not hear about, so it is
+            // re-read when the panel closes by hand. An action's own close
+            // (`key` given) has already re-read through `onActed`.
+            if (key === undefined) refresh();
+          }}
+          onActed={refresh}
+        />
+      </div>
+    </ActivityFaces.Provider>
   );
 }

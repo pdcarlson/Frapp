@@ -18,6 +18,7 @@ import {
   useRestoreActivityLink,
   useSetActivityLinkState,
   useViewerUserId,
+  useMemberDisplayNames,
   type ActivityFilter,
   type ActivityGroup,
   type ActivityPart,
@@ -26,8 +27,10 @@ import {
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
 import { can, isModuleEnabled } from "@repo/validation";
 import {
+  ActivityFaces,
   ActivityListRow,
   ActivityRowSkeleton,
+  type ActivityFace,
 } from "@/components/activity/activity-row";
 import {
   ActivityRowItem,
@@ -95,6 +98,17 @@ export default function ActivityScreen() {
   // Later and Next up stay current while the page is open.
   const now = useNowDate();
   const viewerId = useViewerUserId();
+  // Faces on the rows (#4402, item 4), from the roster chat already reads.
+  const { nameFor, avatarFor, avatarTintFor } = useMemberDisplayNames();
+  const faceFor = useCallback(
+    (id: string): ActivityFace | null => {
+      const name = nameFor(id);
+      return name
+        ? { name, uri: avatarFor(id), tint: avatarTintFor(id) }
+        : null;
+    },
+    [nameFor, avatarFor, avatarTintFor],
+  );
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();
@@ -265,7 +279,7 @@ export default function ActivityScreen() {
   }
 
   return (
-    <>
+    <ActivityFaces.Provider value={faceFor}>
       <ScreenShell back={BACK_TO_MORE} title="Activity" refresh={refresh}>
         {renderBody()}
         <ActivitySheet
@@ -283,7 +297,7 @@ export default function ActivityScreen() {
       {undo ? (
         <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
       ) : null}
-    </>
+    </ActivityFaces.Provider>
   );
 }
 

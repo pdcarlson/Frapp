@@ -1,13 +1,36 @@
+"use client";
+
+import { createContext, useContext } from "react";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-// The pure row model, not the hooks barrel: nothing here reads the API.
+// The pure row model, not the hooks barrel: nothing here reads the API. The
+// roster is read by the page, which hands faces down (`ActivityFaces`).
 import {
   ACTIVITY_GLYPH_NAV,
+  activityDetailParts,
   type ActivityRow,
 } from "@repo/hooks/activity-rows";
+import type { MemberAvatarTint } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
-import { cn } from "@/lib/utils";
+import { cn, initials } from "@/lib/utils";
+
+/** A member's face as a row draws it: their photo, else initials on their tint. */
+export interface ActivityFace {
+  name: string;
+  src: string | null;
+  tint: MemberAvatarTint | null;
+}
+
+/**
+ * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The page
+ * provides it from `useMemberDisplayNames`; without a provider, and for an id
+ * the roster doesn't hold (a member who left), a row leads with its glyph.
+ */
+export const ActivityFaces = createContext<
+  (userId: string) => ActivityFace | null
+>(() => null);
 
 /** The tile both leads share: 40px, so a row with either is the same height. */
 const LEAD_TILE =
@@ -15,12 +38,40 @@ const LEAD_TILE =
 
 /**
  * What leads an Activity row (#4173): the date for an event, month over day
- * as a calendar draws it, else its kind's glyph (`ACTIVITY_GLYPH_NAV`, from the
- * shared nav set), the way Teams' Activity marks each row.
- * Both are neutral: colour on this page is for what asks something of the
- * member (`ActivityAsk`) and for status, never for a kind.
+ * as a calendar draws it; the face of who the row is from, with its kind's
+ * glyph small on the corner, as Teams' and Slack's Activity draw the actor
+ * (#4402, item 4); else the kind's glyph alone (`ACTIVITY_GLYPH_NAV`, from
+ * the shared nav set). All are neutral apart from the member's own tint:
+ * colour on this page is for what asks something of the member
+ * (`ActivityAsk`) and for status, never for a kind. Decoration only: the
+ * detail names the person, and the title says what the row is.
  */
 export function ActivityRowLead({ row }: { row: ActivityRow }) {
+  const faceFor = useContext(ActivityFaces);
+  const face = !row.dateBlock && row.faceId ? faceFor(row.faceId) : null;
+  if (face) {
+    return (
+      <span
+        className="relative h-10 w-10 shrink-0"
+        aria-hidden="true"
+        data-glyph={row.glyph}
+        data-testid="activity-face"
+      >
+        <Avatar className="h-10 w-10">
+          {face.src ? <AvatarImage src={face.src} alt="" /> : null}
+          <AvatarFallback tint={face.tint}>
+            {initials(face.name)}
+          </AvatarFallback>
+        </Avatar>
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground">
+          <NavGlyph
+            paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
+            className="h-3 w-3"
+          />
+        </span>
+      </span>
+    );
+  }
   if (row.dateBlock) {
     return (
       <span
@@ -85,5 +136,29 @@ export function ActivityUnreadDot({ unread }: { unread: boolean }) {
       <UnreadDot unread={unread} />
       {unread ? <span className="sr-only">Unread: </span> : null}
     </>
+  );
+}
+
+/**
+ * A row's second line. A closing time or due time less than a day away
+ * (`row.soon`, "closes in 2 hours") is drawn in the warning tone, so what
+ * runs out soon reads apart from what runs out next week (#4402, item 4).
+ */
+export function ActivityRowDetail({ row }: { row: ActivityRow }) {
+  if (!row.detail) return null;
+  const { lead, soon } = activityDetailParts(row);
+  return (
+    <span className="block truncate text-caption text-muted-foreground">
+      {lead}
+      {lead && soon ? " · " : null}
+      {soon ? (
+        <span
+          className="font-semibold text-warning"
+          data-testid="activity-soon"
+        >
+          {soon}
+        </span>
+      ) : null}
+    </span>
   );
 }

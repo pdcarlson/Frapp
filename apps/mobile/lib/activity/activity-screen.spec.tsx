@@ -158,6 +158,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useClearActivityLinkState: () => ({ mutateAsync: links.clear }),
   useRemoveActivityLink: () => ({ mutateAsync: links.remove }),
   useRestoreActivityLink: () => ({ mutateAsync: links.restore }),
+  // The roster knows the officer only: anyone else has left (#4402, faces).
+  useMemberDisplayNames: () => ({
+    nameFor: (id: string) => (id === "officer" ? "Olive Officer" : null),
+    avatarFor: () => null,
+    avatarTintFor: () => null,
+  }),
 }));
 
 /** The props the screen last handed its sheet. */
@@ -359,7 +365,7 @@ describe("Activity screen (#3897)", () => {
     expect(task.findAllByType(ActivityAsk)).toHaveLength(0);
   });
 
-  it("leads a row with its kind's glyph, and an event with its date", () => {
+  it("leads a row with the face of who it is from, its kind on the corner, else its glyph", () => {
     activity.value = {
       ...activity.value,
       data: read({
@@ -380,10 +386,14 @@ describe("Activity screen (#3897)", () => {
     const tree = render();
     const lead = (label: string, id: string) =>
       row(tree, label).findAll((node) => node.props.testID === id);
+    // Sam has left the roster, so their hours lead with the glyph alone.
     expect(lead("Food bank", "activity-glyph-hours").length).toBeGreaterThan(0);
-    expect(
-      lead("Book the venue", "activity-glyph-task").length,
-    ).toBeGreaterThan(0);
+    // Olive assigned the task: her face, with the task glyph on its corner.
+    const face = lead("Book the venue", "activity-face-task");
+    expect(face.length).toBeGreaterThan(0);
+    expect(drawnText(face[0]!)).toContain("OO");
+    expect(face[0]!.props.accessibilityElementsHidden).toBe(true);
+    // A poll the member made shows no face of their own.
     expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
     const block = row(tree, "Chapter").findAll(
       (node) =>
@@ -394,6 +404,36 @@ describe("Activity screen (#3897)", () => {
     // The block is decoration; the detail still says the day in words.
     expect(block[0]!.props.accessibilityElementsHidden).toBe(true);
     expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
+  });
+
+  it("says a closing time less than a day away relatively, in the warning hue (#4402)", () => {
+    const base = read();
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: {
+          ...base.needs_you,
+          polls: [
+            {
+              ...myPoll("p-soon", "Formal venue?"),
+              sender_id: "officer",
+              has_voted: false,
+              closes_at: new Date(Date.now() + 150 * 60_000).toISOString(),
+            },
+          ],
+        },
+      }),
+    };
+    const tree = render();
+    const [phrase] = row(tree, "Formal venue?").findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.testID === "activity-soon",
+    );
+    expect(drawnText(phrase!)).toBe("closes in 2 hours");
+    expect(StyleSheet.flatten(phrase!.props.style).color).toBe(
+      getSignetTokens("dark").color.semantic.warning,
+    );
   });
 
   describe("summary", () => {

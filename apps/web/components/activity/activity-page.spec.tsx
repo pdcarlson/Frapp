@@ -32,6 +32,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useActivity: () => mockActivity(),
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
+    activityDetailParts: actual.activityDetailParts,
+    // The roster knows the officer only: anyone else has left.
+    useMemberDisplayNames: () => ({
+      nameFor: (id: string) => (id === "officer" ? "Olive Officer" : null),
+      avatarFor: () => null,
+      avatarTintFor: () => null,
+    }),
   };
 });
 // The chapter's module switch, unknown here: every tile shows.
@@ -874,6 +881,50 @@ describe("ActivityPage", () => {
     expect(
       within(part).getByRole("button", { name: "Show fewer" }),
     ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("leads a row with the face of who it is from, and the glyph alone for someone who has left (#4402)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [
+            task,
+            { ...task, id: "t2", title: "Gone", created_by: "left" },
+          ],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const needs = screen.getByRole("region", { name: "Needs you" });
+    const faces = within(needs).getAllByTestId("activity-face");
+    expect(faces).toHaveLength(1);
+    expect(faces[0]).toHaveTextContent("OO");
+    // The kind still shows, on the face's corner.
+    expect(faces[0]).toHaveAttribute("data-glyph", "task");
+  });
+
+  it("draws a closing time less than a day away relatively, in the warning tone (#4402)", () => {
+    const soon = new Date(Date.now() + 150 * 60_000).toISOString();
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [{ ...poll, closes_at: soon }],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const phrase = screen.getByTestId("activity-soon");
+    expect(phrase).toHaveTextContent("closes in 2 hours");
+    expect(phrase).toHaveClass("text-warning");
+    expect(phrase.parentElement).toHaveTextContent(
+      "#general · closes in 2 hours",
+    );
   });
 
   it("draws an event with its date beside it", () => {
