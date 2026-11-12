@@ -100,17 +100,16 @@ begin
   if 'image' = any (v_has) then
     v_where := v_where || ' and m.id in (select a.message_id'
       || ' from public.chat_message_attachments a'
-      || ' where a.channel_id = c.id and a.content_type like ''image/%'')';
+      || ' where a.channel_id = m.channel_id and a.content_type like ''image/%'')';
   elsif 'file' = any (v_has) then
     v_where := v_where || ' and m.id in (select a.message_id'
-      || ' from public.chat_message_attachments a where a.channel_id = c.id)';
+      || ' from public.chat_message_attachments a where a.channel_id = m.channel_id)';
   end if;
 
   -- A sender narrows by `idx_chat_messages_sender` to that member's own
   -- messages, so one flat query over the channel list stays bounded by them;
   -- a per-channel walk would probe every channel for a member who may have
-  -- posted in few. The attachment conditions name `c.id`, the channel of the
-  -- walk, so here they name the message's own channel instead.
+  -- posted in few.
   if p_sender_id is not null then
     return query execute
       'select m.* from public.chat_messages m'
@@ -119,7 +118,7 @@ begin
       || '   and m.is_deleted = false'
       || '   and m.thread_root_id is null'
       || '   and m.created_at >= $3 and m.created_at < $4'
-      || replace(v_where, 'a.channel_id = c.id', 'a.channel_id = m.channel_id')
+      || v_where
       || ' order by m.created_at desc, m.id desc'
       || ' limit $5'
     using

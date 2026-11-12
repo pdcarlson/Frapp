@@ -451,6 +451,37 @@ describe('SupabaseSearchRepository — query shape', () => {
       );
     });
 
+    it('has:file joins attachments without a content-type condition, and strips the embed', async () => {
+      const { client, chains } = recordingClient({
+        data: [{ id: 'm-1', chat_message_attachments: [{ id: 'a-1' }] }],
+        error: null,
+      });
+      const repo = new SupabaseSearchRepository(client);
+
+      const hits = await repo.searchMessages(['c-1'], 'budget', 10, {
+        has: ['file'],
+      });
+
+      expect(String(chains.chat_messages.select.mock.calls[0][0])).toContain(
+        'chat_message_attachments!inner(id)',
+      );
+      // A file is any attachment, one with a null content type included.
+      expect(chains.chat_messages.like).not.toHaveBeenCalled();
+      // The embed filters; it is not returned as part of a message.
+      expect(hits).toEqual([{ id: 'm-1' }]);
+    });
+
+    it('joins nothing unasked on the text path', async () => {
+      const { client, chains } = recordingClient();
+      const repo = new SupabaseSearchRepository(client);
+
+      await repo.searchMessages(['c-1'], 'budget', 10, { fromUserId: SENDER });
+
+      expect(String(chains.chat_messages.select.mock.calls[0][0])).not.toContain(
+        'chat_message_attachments',
+      );
+    });
+
     it('with no text, asks the filter function once for every channel, never the table (#3965)', async () => {
       const { client, from, rpc, chains } = recordingClient();
       const repo = new SupabaseSearchRepository(client);

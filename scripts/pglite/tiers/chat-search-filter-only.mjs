@@ -46,7 +46,9 @@ try {
       ('${M(202)}', '${C.two}', '${U.b}', '', 'poll', ${at(101)}),
       ('${M(203)}', '${C.two}', '${U.b}', 'two files', 'text', ${at(102)}),
       ('${M(204)}', '${C.two}', '${U.b}', 'a photo', 'text', ${at(103)}),
-      ('${M(205)}', '${C.two}', '${U.b}', 'untyped file', 'text', ${at(104)});
+      ('${M(205)}', '${C.two}', '${U.b}', 'untyped file', 'text', ${at(104)}),
+      -- newer than most of channel one, so a correct merge interleaves them
+      ('${M(206)}', '${C.two}', '${U.b}', 'mid', 'text', ${at(6.5)});
     -- never returned: deleted, a thread reply, and the channel not handed over
     insert into chat_messages (id, channel_id, sender_id, content, is_deleted, created_at) values
       ('${M(301)}', '${C.two}', '${U.b}', 'gone https://example.com', true, ${at(0)});
@@ -62,7 +64,9 @@ try {
       ('${M(303)}', '${C.hidden}', 'chat', 'p/303', 'e.png', 'image/png');
   `);
 
-  const handed = `array['${C.one}', '${C.two}']::uuid[]`;
+  // Channel two (mostly older) goes first, so a merge that kept the handed
+  // order instead of sorting by time would return its rows first.
+  const handed = `array['${C.two}', '${C.one}']::uuid[]`;
   const ids = async (sender, after, before, has, limit = 10) =>
     (
       await db.query(
@@ -77,12 +81,12 @@ try {
     {
       name: "a date-only search returns the overall newest 10 across channels, deleted and thread rows excluded (#3965)",
       got: await ids(null, "2000-01-01T00:00:00Z", null, []),
-      want: "101,102,103,104,105,106,107,108,109,110",
+      want: "101,102,103,104,105,106,206,107,108,109",
     },
     {
-      name: "the merge reaches an older channel once the newer one is exhausted (#3965)",
-      got: await ids(null, null, "2026-11-01T11:00:00Z", []),
-      want: "201,202,203,204,205",
+      name: "the merge interleaves both channels by time and reaches the older one (#3965)",
+      got: await ids(null, null, "2026-11-01T11:55:00Z", []),
+      want: "106,206,107,108,109,110,111,112,201,202",
     },
     {
       name: "has=link finds only the live, top-level link in a handed channel (#3965)",
@@ -107,7 +111,7 @@ try {
     {
       name: "a sender narrows within the handed channels (#3965)",
       got: await ids(U.b, null, null, []),
-      want: "201,202,203,204,205",
+      want: "206,201,202,203,204,205",
     },
     {
       name: "a sender with a trait narrows by both, through the flat sender path (#3965)",
@@ -120,6 +124,36 @@ try {
       want: "102,103",
     },
   ];
+
+  // The cost fix itself, pinned: both partial indexes exist with the
+  // predicates the trait conditions must match, and the function walks each
+  // channel with its own limit. An answer-only test passes without them.
+  const idx = (
+    await db.query(
+      `select indexname, indexdef from pg_indexes
+        where indexname in ('idx_chat_messages_search_poll', 'idx_chat_messages_search_link')
+        order by indexname`,
+    )
+  ).rows;
+  const def = (
+    await db.query(
+      `select pg_get_functiondef('public.search_chat_messages_filtered(uuid[], uuid, timestamptz, timestamptz, text[], integer)'::regprocedure) as d`,
+    )
+  ).rows[0]?.d ?? "";
+  SCENARIOS.push(
+    {
+      name: "the poll and link partial indexes exist, keyed by channel then time (#3965)",
+      got: idx
+        .map((r) => `${r.indexname}:${/\(channel_id, created_at DESC, id DESC\)/.test(r.indexdef)}:${/kind = 'poll'|~~\* '%http%:\/\/%'/.test(r.indexdef)}`)
+        .join(","),
+      want: "idx_chat_messages_search_link:true:true,idx_chat_messages_search_poll:true:true",
+    },
+    {
+      name: "the function walks each channel with its own limit, then merges (#3965)",
+      got: `${/cross join lateral/i.test(def)}:${(def.match(/limit \$5/g) ?? []).length >= 2}`,
+      want: "true:true",
+    },
+  );
 
   let unknown;
   try {
