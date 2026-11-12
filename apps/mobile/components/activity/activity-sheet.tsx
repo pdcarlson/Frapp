@@ -18,7 +18,6 @@ import {
 } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useReviewServiceEntry, type ActivityRow } from "@repo/hooks";
-import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   CardActions,
@@ -40,14 +39,10 @@ import {
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
+import { hoursReviewFailure } from "@/lib/activity/row-action";
 import { useActivityPoll } from "@/lib/activity/use-activity-poll";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { useConnection } from "@/lib/connection/use-connection";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
@@ -458,22 +453,7 @@ function HoursSheet({
       setReviewed(status);
       onActed();
     } catch (error) {
-      // The two refusals a retry can't win, in a member's words, as the
-      // phone's other paid-ops writes say them.
-      const gate = subscriptionRefusalOf(error)
-        ? SUBSCRIPTION_REFUSAL_COPY.serviceReview
-        : moduleRefusalOf(error)
-          ? MODULE_REFUSAL_COPY.serviceReview
-          : null;
-      setFailure(
-        gate ??
-          errorCopy(
-            error,
-            status === "APPROVED"
-              ? "Only a pending entry someone else submitted can be approved."
-              : "Couldn't reject this entry. Try again in a moment.",
-          ),
-      );
+      setFailure(hoursReviewFailure(error, status));
     } finally {
       inFlight.current = false;
     }

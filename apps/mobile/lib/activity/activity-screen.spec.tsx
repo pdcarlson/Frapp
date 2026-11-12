@@ -102,9 +102,29 @@ const activity = vi.hoisted(() => ({
   },
 }));
 
-/** The chapter read: its module switches, which hide a module's tile. */
+/**
+ * The chapter read: its module switches, which hide a module's tile, and its
+ * plan, which decides whether rows carry Confirm and Approve (#4437).
+ */
 const chapter = vi.hoisted(() => ({
-  data: undefined as undefined | { enabled_modules: Record<string, boolean> },
+  data: undefined as
+    | undefined
+    | {
+        enabled_modules: Record<string, boolean>;
+        subscription_status?: string;
+        past_due_since?: string | null;
+      },
+  isPending: false,
+}));
+
+/** The row actions' writes (#4437) and the connection they are held on. */
+const writes = vi.hoisted(() => ({
+  confirm: vi.fn(),
+  review: vi.fn(),
+  writeBlockedReason: null as string | null,
+}));
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: writes.writeBlockedReason }),
 }));
 
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
@@ -125,7 +145,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActiveChapterId: () => "chapter-1",
   useActivityUnread: () => ({ markRead: links.markRead }),
   // Read by the back row and the chips for the chapter's accent.
-  useCurrentChapter: () => ({ data: chapter.data }),
+  useCurrentChapter: () => ({
+    data: chapter.data,
+    isPending: chapter.isPending,
+  }),
+  useConfirmTask: () => ({ mutateAsync: writes.confirm }),
+  useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
@@ -160,8 +185,10 @@ import ActivityScreen from "@/app/(app)/activity";
 import { resetActivityFilterForTests } from "@/lib/activity/activity-filter";
 import {
   ActivityAsk,
+  ActivityAskButton,
   ActivityListRow,
 } from "@/components/activity/activity-row";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
@@ -247,6 +274,10 @@ describe("Activity screen (#3897)", () => {
     // next one rendering as an officer.
     links.permissions = [];
     chapter.data = undefined;
+    chapter.isPending = false;
+    writes.confirm.mockReset().mockResolvedValue(undefined);
+    writes.review.mockReset().mockResolvedValue(undefined);
+    writes.writeBlockedReason = null;
     activity.value = {
       data: read(),
       isPending: false,
@@ -309,10 +340,15 @@ describe("Activity screen (#3897)", () => {
   it("names what a row asks of the member as the action, for the eye and for a screen reader", () => {
     const tree = render();
     const approval = row(tree, "Food bank");
-    expect(approval.findByType(ActivityAsk).props.label).toBe("Approve");
+    // A one-press ask is the button (#4437), drawn in the ask's place.
+    expect(approval.findByType(ActivityAskButton).props.action.label).toBe(
+      "Approve",
+    );
     expect(approval.findAllByType(StatusChip)).toHaveLength(0);
     const pressable = approval.find(
-      (node) => (node.type as unknown) === "Pressable",
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
     );
     expect(pressable.props.accessibilityValue).toEqual({ text: "Approve" });
     expect(pressable.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
@@ -679,6 +715,165 @@ describe("Activity screen (#3897)", () => {
       exact: true,
     });
     expect(sheet.props?.row).toBeNull();
+  });
+
+  describe("Confirm and Approve on the row (#4437)", () => {
+    const confirmRead = () =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          task_confirmations: [
+            task({
+              id: "task-2",
+              title: "Sweep the porch",
+              status: "COMPLETED",
+              unread: true,
+            }),
+          ],
+        },
+      });
+    const button = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.testID === "activity-row-action",
+      );
+    const rowPress = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+
+    it("confirms a completed task in one press, reads it, and re-reads", async () => {
+      activity.value = { ...activity.value, data: confirmRead() };
+      links.markRead.mockClear();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      expect(row(tree, "Sweep the porch").props.action.label).toBe("Confirm");
+      await act(async () => {
+        button(tree, "Sweep the porch").props.onPress();
+      });
+      expect(writes.confirm).toHaveBeenCalledWith("task-2");
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "task", item_id: "task-2" },
+      ]);
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: activityKeys.chapter("chapter-1"),
+        exact: true,
+      });
+      // Pressing it never opened the sheet.
+      expect(sheet.props?.row).toBeNull();
+    });
+
+    it("approves pending hours with the sheet's write", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledWith({
+        id: "entry-1",
+        body: { status: "APPROVED" },
+      });
+    });
+
+    it("stays disabled once the write lands, so a second press can't repeat it", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      // Nor is it offered to a screen reader any more.
+      expect(rowPress(tree, "Food bank").props.accessibilityActions).toBe(
+        undefined,
+      );
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends once for two taps in the same frame", async () => {
+      const tree = render();
+      await act(async () => {
+        const press = button(tree, "Food bank").props.onPress;
+        press();
+        press();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("says a refusal in the sheet's words, naming the item, and can be pressed again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.review.mockRejectedValueOnce({
+        statusCode: 403,
+        error: "Forbidden",
+        message:
+          "Chapter subscription is not active; complete checkout to use this feature.",
+      });
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledWith(
+        "Food bank",
+        SUBSCRIPTION_REFUSAL_COPY.serviceReview,
+      );
+      expect(button(tree, "Food bank").props.disabled).toBe(false);
+      alert.mockRestore();
+    });
+
+    it("is offered to a screen reader as the row's named action", async () => {
+      const tree = render();
+      const press = rowPress(tree, "Food bank");
+      expect(press.props.accessibilityActions).toEqual([
+        { name: "rowAction", label: "Approve" },
+      ]);
+      // The button itself is no second focus stop inside the row's.
+      expect(button(tree, "Food bank").props.accessible).toBe(false);
+      await act(async () => {
+        press.props.onAccessibilityAction({
+          nativeEvent: { actionName: "rowAction" },
+        });
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("is disabled offline, with the reason as its hint, and the row still opens the sheet", () => {
+      writes.writeBlockedReason = "You're offline.";
+      const tree = render();
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      expect(row(tree, "Food bank").props.action.hint).toBe("You're offline.");
+      act(() => {
+        rowPress(tree, "Food bank").props.onPress();
+      });
+      expect(sheet.props?.row?.key).toBe("needs:hours:entry-1");
+    });
+
+    it("is disabled while the chapter loads", () => {
+      chapter.isPending = true;
+      const tree = render();
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+    });
+
+    it("draws no button while the chapter's plan refuses those writes, so the row opens its sheet", () => {
+      chapter.data = { enabled_modules: {}, subscription_status: "canceled" };
+      const tree = render();
+      expect(
+        row(tree, "Food bank").findAllByType(ActivityAskButton),
+      ).toHaveLength(0);
+      expect(row(tree, "Food bank").findByType(ActivityAsk).props.label).toBe(
+        "Approve",
+      );
+    });
+
+    it("draws the button for an active plan", () => {
+      chapter.data = { enabled_modules: {}, subscription_status: "active" };
+      const tree = render();
+      expect(
+        row(tree, "Food bank").findAllByType(ActivityAskButton),
+      ).toHaveLength(1);
+    });
   });
 
   it("keeps a closed poll behind Archived polls, which opens its card (#4258)", () => {
