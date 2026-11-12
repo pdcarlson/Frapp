@@ -45,7 +45,7 @@ const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
  * value, so a client holding only `status` cannot tell which transition is
  * legal — and therefore cannot offer the assignee any action at all (#1051).
  */
-export function toDisplayStatus(task: Task, now: Date = new Date()): TaskView {
+function toDisplayStatus(task: Task, now: Date = new Date()): TaskView {
   const displayStatus =
     (task.status === TaskStatus.TODO ||
       task.status === TaskStatus.IN_PROGRESS) &&

@@ -147,7 +147,7 @@ const HELMET_OPTIONS = {
  * character can take three bytes. Each DTO still caps its own fields; this is
  * only the ceiling the parser enforces before any of them is read.
  */
-export const JSON_BODY_LIMIT = '1mb';
+const JSON_BODY_LIMIT = '1mb';
 
 /**
  * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to

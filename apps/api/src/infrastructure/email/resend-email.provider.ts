@@ -33,7 +33,7 @@ function clipName(value: string | null | undefined): string | null {
  * leaves the inviter out: their display name is free text, and the subject
  * line is what a phishing attempt would borrow. Exported for its spec.
  */
-export function inviteSubject(params: SendInviteEmailParams): string {
+function inviteSubject(params: SendInviteEmailParams): string {
   return `You're invited to join ${clipName(params.chapterName) ?? 'a chapter'} on Frapp`;
 }
 
@@ -41,7 +41,7 @@ export function inviteSubject(params: SendInviteEmailParams): string {
  * "Paul Carlson invited you to join Phi Gamma Delta Tau Nu on Frapp", with
  * either name left out when it is unknown. Exported for its spec.
  */
-export function inviteHeadline(params: SendInviteEmailParams): string {
+function inviteHeadline(params: SendInviteEmailParams): string {
   const chapter = clipName(params.chapterName) ?? 'a chapter';
   const inviter = clipName(params.inviterName);
   return inviter

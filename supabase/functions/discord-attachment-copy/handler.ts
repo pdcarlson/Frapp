@@ -16,7 +16,7 @@
  */
 
 /** The only bucket this function writes to. */
-export const ALLOWED_BUCKETS: ReadonlySet<string> = new Set(["chat-archive"]);
+const ALLOWED_BUCKETS: ReadonlySet<string> = new Set(["chat-archive"]);
 
 /**
  * The largest object this function copies: the `chat-archive` bucket's own
@@ -30,7 +30,7 @@ export const MAX_OBJECT_BYTES = 100 * 1024 * 1024;
 export const MAX_ITEMS = 100;
 
 /** Transfers in flight at once within one request. */
-export const COPY_CONCURRENCY = 6;
+const COPY_CONCURRENCY = 6;
 
 /**
  * No new transfer starts this long after the request arrived.
@@ -42,21 +42,21 @@ export const COPY_CONCURRENCY = 6;
  * back `deferred` and the API sends them again (as do transfers the hard
  * deadline cuts short, see `FAIR_TRANSFER_WINDOW_MS`).
  */
-export const START_BUDGET_MS = 60_000;
+const START_BUDGET_MS = 60_000;
 
 /**
  * In-flight transfers are aborted at this point, and the request answers.
  * Leaves 30 s between it and the 150 s idle timeout for the abort to settle and
  * the response to go out.
  */
-export const HARD_DEADLINE_MS = 120_000;
+const HARD_DEADLINE_MS = 120_000;
 
 /**
  * How long the CDN gets to answer with headers, per attachment. Only the
  * headers: the timer is cleared once they arrive, so a large file still
  * streaming is bounded by the hard deadline, never by this.
  */
-export const CDN_RESPONSE_TIMEOUT_MS = 30_000;
+const CDN_RESPONSE_TIMEOUT_MS = 30_000;
 
 /**
  * A transfer the hard deadline cuts off comes back `deferred`, not `failed`,
@@ -66,7 +66,7 @@ export const CDN_RESPONSE_TIMEOUT_MS = 30_000;
  * still didn't finish is `failed`, so a file too slow for any request can't be
  * re-sent forever.
  */
-export const FAIR_TRANSFER_WINDOW_MS = 90_000;
+const FAIR_TRANSFER_WINDOW_MS = 90_000;
 
 /**
  * Bytes one request may START. Each item reserves its declared size before
@@ -81,14 +81,14 @@ export const FAIR_TRANSFER_WINDOW_MS = 90_000;
  * figure does not include, hence the margin. Past this, remaining items are
  * deferred to the next request.
  */
-export const START_BYTE_BUDGET = 256 * 1024 * 1024;
+const START_BYTE_BUDGET = 256 * 1024 * 1024;
 
 /**
  * How long Auth gets to vouch for a caller whose key the function doesn't hold
  * byte for byte ({@link callerVerdict}). Past it the request answers 503, which
  * the API retries, rather than 401, which would stop the import.
  */
-export const AUTH_CHECK_TIMEOUT_MS = 10_000;
+const AUTH_CHECK_TIMEOUT_MS = 10_000;
 
 /** One attachment to copy. */
 export interface CopyItem {
@@ -211,7 +211,7 @@ export function isSafeObjectPath(path: string): boolean {
  * SHA-256 digests, byte by byte, so the comparison takes the same time
  * wherever the strings first differ.
  */
-export async function isServiceCredential(
+async function isServiceCredential(
   presented: string,
   env: HandlerDeps["env"],
 ): Promise<boolean> {
@@ -246,7 +246,7 @@ export async function isServiceCredential(
  * too. The function still writes to Storage with its own key
  * (`storageHeaders`), never the caller's.
  */
-export async function callerVerdict(
+async function callerVerdict(
   presented: string,
   deps: HandlerDeps,
   timeoutMs: number,

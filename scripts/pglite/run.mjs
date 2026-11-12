@@ -49,6 +49,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { REPO_ROOT, db, missing } from "./harness.mjs";
+import { runTiers } from "./tier-list.mjs";
 
 const MIGRATIONS_DIR = join(REPO_ROOT, "supabase", "migrations");
 
@@ -171,71 +172,10 @@ if (failed.length > 0) {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 //
-// Each tier is a module under `tiers/` whose body runs when it is imported.
-// They share one database and run in this order, each awaited before the next
-// starts: two sibling static imports with top-level `await` are not
-// guaranteed to finish in order, so the order lives here, as awaited dynamic
-// imports. Several tiers open and roll back their own transaction, and the
-// chat read-enforcement fixtures stay seeded across the two chat tiers, so
-// reordering them is a behaviour change, not a tidy-up.
-await import("./tiers/schema-and-rls-smoke.mjs");
-await import("./tiers/policy-inventory.mjs");
-await import("./tiers/anonymize-user.mjs");
-await import("./tiers/chat-read-enforcement.mjs");
-await import("./tiers/chat-black-box.mjs");
-await import("./tiers/attachment-backfill.mjs");
-await import("./tiers/chapter-directory-seed.mjs");
-await import("./tiers/demo-seed.mjs");
-await import("./tiers/security-definer-search-path.mjs");
-await import("./tiers/points-leaderboard.mjs");
-await import("./tiers/subscription-webhook-cas.mjs");
-await import("./tiers/hide-direct-message.mjs");
-await import("./tiers/private-channel-members.mjs");
-await import("./tiers/sidebar-section-fold.mjs");
-await import("./tiers/unread-counts-blocked-sender.mjs");
-await import("./tiers/unread-counts-skip-audit-mirror.mjs");
-await import("./tiers/unread-counts-filters.mjs");
-await import("./tiers/channel-latest-messages.mjs");
-await import("./tiers/message-threads.mjs");
-await import("./tiers/thread-last-reply.mjs");
-await import("./tiers/discord-author-links.mjs");
-await import("./tiers/discord-import-purge.mjs");
-await import("./tiers/discord-import-merge-target.mjs");
-await import("./tiers/discord-import-channel-groups.mjs");
-await import("./tiers/discord-import-category-progress.mjs");
-await import("./tiers/dm-one-per-pair.mjs");
-await import("./tiers/document-one-row-per-object.mjs");
-await import("./tiers/default-channel-descriptions.mjs");
-await import("./tiers/backwork-search.mjs");
-await import("./tiers/chat-search-filter-only.mjs");
-await import("./tiers/members-keep-base-role.mjs");
-await import("./tiers/transfer-presidency-keeps-member-access.mjs");
-await import("./tiers/check-in-once.mjs");
-await import("./tiers/activity-links.mjs");
-await import("./tiers/role-tiers.mjs");
-await import("./tiers/fold-custom-roles.mjs");
-await import("./tiers/document-stars.mjs");
-await import("./tiers/channel-order.mjs");
-await import("./tiers/event-types.mjs");
-await import("./tiers/activity-item-reads.mjs");
-await import("./tiers/chat-channel-access-lists.mjs");
-await import("./tiers/role-tier-reorder.mjs");
-await import("./tiers/ai-runs.mjs");
-await import("./tiers/ai-usage-ledger.mjs");
-await import("./tiers/ai-suggestions.mjs");
-await import("./tiers/ai-corpus.mjs");
-await import("./tiers/ai-corpus-chat.mjs");
-await import("./tiers/ai-ask-diagnostics.mjs");
-await import("./tiers/ai-reports.mjs");
-await import("./tiers/request-context.mjs");
-await import("./tiers/member-social-trust-defaults.mjs");
-await import("./tiers/everyone-role.mjs");
-await import("./tiers/clear-deleted-message-payloads.mjs");
-await import("./tiers/merge-backwork-department-case-variants.mjs");
-await import("./tiers/notifications-forget-deleted-message.mjs");
-await import("./tiers/service-awarded-points.mjs");
-await import("./tiers/signup-card-claims.mjs");
-await import("./tiers/calendar-feeds.mjs");
+// Every file in `tiers/`, in filename order, each awaited before the next
+// starts. Adding a tier is adding its file. How the order is set, and what a
+// tier that needs a place in it does: `tier-list.mjs`.
+await runTiers();
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

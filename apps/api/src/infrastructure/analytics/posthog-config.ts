@@ -8,10 +8,10 @@
  * #709's deleted-users automation is a dashboard workflow, not this client.
  */
 
-export const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
+const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 
 /** Project API keys only. Personal keys (`phx_`) are rejected as malformed. */
-export const POSTHOG_PROJECT_KEY_RE = /^phc_[A-Za-z0-9_-]+$/;
+const POSTHOG_PROJECT_KEY_RE = /^phc_[A-Za-z0-9_-]+$/;
 
 export type PosthogConfigReason =
   'ok' | 'missing' | 'empty' | 'malformed_key' | 'malformed_host';
