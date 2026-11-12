@@ -16,7 +16,6 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
-import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
 import {
   isSignupCardClosed,
   normalizeSignupCard,
