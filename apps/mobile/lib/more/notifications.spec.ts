@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   selectNotificationGroups,
   selectUnreadIds,
+  selectReadNonChatIds,
   selectUnreadNonChatCount,
 } from "./notifications";
 
@@ -176,5 +177,24 @@ describe("selectUnreadNonChatCount", () => {
       ]),
     ).toBe(0);
     expect(selectUnreadNonChatCount(undefined)).toBe(0);
+  });
+});
+
+describe("selectReadNonChatIds", () => {
+  it("names read rows that don't target chat, and nothing else (#4011)", () => {
+    const read = iso(at(2026, 8, 17, 19));
+    expect(
+      selectReadNonChatIds([
+        row({ id: "read-event", read_at: read }),
+        row({ id: "unread-event", read_at: null }),
+        row({
+          id: "read-chat",
+          read_at: read,
+          data: { target: { screen: "chat" } },
+        }),
+        row({ id: "read-no-target", read_at: read, data: null }),
+      ]),
+    ).toEqual(new Set(["read-event", "read-no-target"]));
+    expect(selectReadNonChatIds(undefined).size).toBe(0);
   });
 });

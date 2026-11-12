@@ -17,6 +17,8 @@ export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivitySection = Activity["unavailable"][number];
+/** What `POST /v1/activity/reads` names: an item's kind and id. */
+export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
 
 /** The filter chips: everything, or one kind of thing. */
 export const ACTIVITY_FILTERS = [
@@ -106,11 +108,37 @@ interface RowBase {
   glyph: ActivityGlyph;
   /** Set on an event row only. */
   dateBlock: ActivityDateBlock | null;
+  /**
+   * Whether the member hasn't opened it from Activity since it started
+   * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
+   * dot. Never on a Made by you row.
+   */
+  unread: boolean;
+  /** The item `POST /v1/activity/reads` records when the row is opened. */
+  readRef: ActivityItemRef;
 }
 
 /** Whether a row's badge asks the member to act, rather than naming a state. */
 export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
   return row.badge?.variant === "warning";
+}
+
+/**
+ * What a row's ask does on the row itself (#4402): the asks that are one
+ * press with nothing to choose. `Vote` is not one, since a poll asks which
+ * option, so it opens the record as before. Neither is `Check in` yet: an
+ * event can require the member's location (`check_in_zone`), which the read
+ * doesn't say and the web can't supply, so a one-press check-in would fail
+ * there (#4427). The client acts through the same route and hook its panel
+ * uses.
+ */
+export type ActivityRowAction = "confirm" | "approve";
+
+export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
+  if (!activityBadgeIsAsk(row)) return null;
+  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  if (row.kind === "hours") return "approve";
+  return null;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -269,6 +297,8 @@ function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
         : { label: "Vote", variant: "warning" },
     glyph: "poll",
     dateBlock: null,
+    unread: group !== "made" && poll.unread,
+    readRef: { kind: "poll", item_id: poll.message_id },
   };
 }
 
@@ -315,6 +345,8 @@ function taskRow(
     badge,
     glyph: role === "confirm" ? "confirm" : "task",
     dateBlock: null,
+    unread: role !== "assigned" && task.unread,
+    readRef: { kind: "task", item_id: task.id },
   };
 }
 
@@ -333,6 +365,8 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     badge: { label: "Approve", variant: "warning" },
     glyph: "hours",
     dateBlock: null,
+    unread: entry.unread,
+    readRef: { kind: "hours_entry", item_id: entry.id },
   };
 }
 
@@ -364,6 +398,8 @@ function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
           : null,
     glyph: "event",
     dateBlock: dateBlock(event),
+    unread: group !== "made" && event.unread,
+    readRef: { kind: "event", item_id: event.id },
   };
 }
 
@@ -391,6 +427,8 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     badge: null,
     glyph: "link",
     dateBlock: null,
+    unread: link.unread,
+    readRef: { kind: "link", item_id: link.id },
   };
 }
 

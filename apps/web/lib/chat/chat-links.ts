@@ -9,6 +9,14 @@
  */
 export const CHAT_CHANNEL_PARAM = "channel";
 export const CHAT_MESSAGE_PARAM = "message";
+/**
+ * Which list the chat panel opens on (#3774): `channels` or `direct`. The
+ * nav's Direct messages row links to `/chat?view=direct` below the
+ * side-by-side width. A link that names a channel needs no view: the panel
+ * follows the channel's kind, so a notification for a DM opens on Direct
+ * messages without knowing it is one.
+ */
+export const CHAT_VIEW_PARAM = "view";
 
 export interface ChatLinkTarget {
   channelId?: string | null;

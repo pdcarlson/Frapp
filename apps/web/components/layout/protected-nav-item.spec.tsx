@@ -221,10 +221,13 @@ describe("DASHBOARD_NAV structure", () => {
     }
   });
 
-  it("leads with Chat as an anchor that renders no heading", async () => {
+  it("leads with Chat, then Direct messages, as an anchor that renders no heading (#3774)", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     expect(DASHBOARD_NAV[0]?.anchor).toBe(true);
-    expect(DASHBOARD_NAV[0]?.items.map((i) => i.href)).toEqual(["/chat"]);
+    expect(DASHBOARD_NAV[0]?.items.map((i) => i.href)).toEqual([
+      "/chat",
+      "/chat?view=direct",
+    ]);
   });
 
   it("keeps Profile out of the chapter nav — it lives in the account menu", async () => {

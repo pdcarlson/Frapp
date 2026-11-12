@@ -17,6 +17,9 @@ export { useHydrated, useMediaQueryState } from "@/lib/use-media-query";
  * - **The open tool is the URL** (`/events`), so links and Back work as they
  *   always did. `/chat` is "no tool": chat alone, or the home view when chat
  *   is closed.
+ * - **Which list chat shows is a cookie too** (#3774): the chapter's
+ *   channels, or the member's direct messages. The nav's Chat and Direct
+ *   messages rows switch the one panel between them.
  * - **Chat open or closed is a cookie**, and so is the split (the tool page's
  *   share of the width left after the channels column), both read by the
  *   dashboard layout on the server so the first paint is right. They live in

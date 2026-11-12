@@ -54,6 +54,15 @@ export const STATUS_BADGE: Record<
 };
 
 /**
+ * What a refused confirm says, wherever a card's Confirm runs: the task card
+ * here and an Activity row's Confirm (#4402).
+ */
+export const TASK_CONFIRM_FAILURE = {
+  title: "Couldn't confirm task",
+  fallback: "Only admins with tasks:manage can confirm completions.",
+} as const;
+
+/**
  * Task assignment card. The chat message is an immutable creation-time snapshot
  * (`actor → assignee`, title, due date, point reward); the *live* status is read
  * back from the task query so the card reflects lifecycle changes without ever
@@ -262,8 +271,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                     confirmTask.mutate(
                       payload.task_id,
                       onFailure(
-                        "Couldn't confirm task",
-                        "Only admins with tasks:manage can confirm completions.",
+                        TASK_CONFIRM_FAILURE.title,
+                        TASK_CONFIRM_FAILURE.fallback,
                       ),
                     )
                   }

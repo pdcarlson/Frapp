@@ -3747,3 +3747,11 @@ The new index is harmless to keep, and nothing needs the dropped one back. To re
 drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
+
+## Rollback clear deleted chat card payloads (20261112060000)
+
+* **Migration**: `20261112060000_clear_deleted_message_payloads.sql`
+
+Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an imported row, cut down to `source` and `author_username`. **It cannot be reverted by a migration**: the cleared values are gone from the database. Once #4421 is live nothing needs them back: no API read serves a deleted message's payload, and there is no undelete.
+
+If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
