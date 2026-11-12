@@ -11,10 +11,12 @@ const NOW = new Date(2026, 10, 9, 12);
 function Harness({
   initial = "",
   lean,
+  withTime,
   onValue,
 }: {
   initial?: string;
   lean?: DateLean;
+  withTime?: boolean;
   onValue?: (value: string) => void;
 }) {
   const [value, setValue] = useState(initial);
@@ -23,6 +25,7 @@ function Harness({
       aria-label="Date"
       now={NOW}
       lean={lean}
+      withTime={withTime}
       value={value}
       onChange={(next) => {
         setValue(next);
@@ -64,6 +67,17 @@ describe("DateField (#3937)", () => {
     expect(onValue).toHaveBeenLastCalledWith("2026-11-20");
     expect(field()).toHaveValue("November 20");
     expect(screen.queryByRole("grid")).toBeNull();
+  });
+
+  it("keeps a held time when a day is picked from the month", () => {
+    const onValue = vi.fn();
+    render(<Harness withTime initial="2026-11-13T17:00" onValue={onValue} />);
+    fireEvent.pointerDown(field());
+    fireEvent.click(
+      screen.getByRole("gridcell", { name: "Friday, November 20, 2026" }),
+    );
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-20T17:00");
+    expect(field()).toHaveValue("November 20 · 5 PM");
   });
 
   it("steps between months", () => {

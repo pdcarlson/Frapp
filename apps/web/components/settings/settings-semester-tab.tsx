@@ -103,7 +103,17 @@ export function SettingsSemesterTab({
 
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!semesterLabel || !semesterStart || !semesterEnd) return;
+    if (!semesterLabel) return;
+    // The date fields hold "" while their text is not a date (`DateField`),
+    // and `required` on a text input lets any text through.
+    if (!semesterStart || !semesterEnd) {
+      toast({
+        title: "Pick a start and end date",
+        description: "Try a date like January 12 or May 8.",
+        variant: "destructive",
+      });
+      return;
+    }
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
       description: promoteNewMembers

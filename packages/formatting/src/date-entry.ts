@@ -1,4 +1,5 @@
 import { parseBareDateLocalNoon } from "./bare-date";
+import { dayDelta } from "./calendar-days";
 import { localIsoDate } from "./local-date";
 
 /**
@@ -7,9 +8,10 @@ import { localIsoDate } from "./local-date";
  * - `ahead`: the next time it comes round, today included. A task's due date
  *   or an event: almost always in the next days or weeks (#3928).
  * - `back`: the last time it came round, today included. A day already
- *   worked, a document's date, where an import starts.
- * - `nearest`: whichever of the two is closer. A semester's start and end,
- *   and a range filter, sit on either side of today.
+ *   worked, a document's date, where an import starts, and a range filter
+ *   over what already happened (reports, documents, chat search).
+ * - `nearest`: whichever of the two is closer. A semester's start and end
+ *   sit on either side of today.
  */
 export type DateLean = "ahead" | "back" | "nearest";
 
@@ -167,9 +169,7 @@ export function formatDateEntry(
 function formatDateDay(isoDate: string, now: Date, lean: DateLean): string {
   const at = parseBareDateLocalNoon(isoDate);
   if (!at) return isoDate;
-  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate());
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const offset = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  const offset = dayDelta(now, at);
   if (offset === 0) return "Today";
   if (offset === 1) return "Tomorrow";
   if (offset === -1) return "Yesterday";

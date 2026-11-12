@@ -6,7 +6,9 @@ import {
   type DateLean,
   formatDateEntry,
   localIsoDate,
+  monthGrid,
   parseBareDateLocalNoon,
+  startOfMonth,
   parseDateEntry,
   parseDateEntryWithTime,
 } from "@repo/formatting";
@@ -285,17 +287,9 @@ function MonthPicker({
   onPick: (isoDate: string) => void;
 }) {
   const start = parseBareDateLocalNoon(selected) ?? now;
-  const [month, setMonth] = useState(
-    () => new Date(start.getFullYear(), start.getMonth(), 1),
-  );
+  const [month, setMonth] = useState(() => startOfMonth(start));
   const today = localIsoDate(now);
-  const gridStart = new Date(month);
-  gridStart.setDate(1 - month.getDay());
-  const days = Array.from({ length: 42 }, (_, index) => {
-    const day = new Date(gridStart);
-    day.setDate(gridStart.getDate() + index);
-    return day;
-  });
+  const days = monthGrid(month);
   const step = (by: number) =>
     setMonth(new Date(month.getFullYear(), month.getMonth() + by, 1));
   const title = `${MONTH_NAMES[month.getMonth()]} ${month.getFullYear()}`;

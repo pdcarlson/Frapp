@@ -1,4 +1,4 @@
-import { formatDateEntry } from "@repo/formatting";
+import { formatDateEntry, parseDateEntry } from "@repo/formatting";
 import type React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
@@ -771,6 +771,25 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     });
     expect(screen.getByLabelText("Ends, day")).toHaveValue(
       formatDateEntry("2026-11-13", new Date()),
+    );
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
+  });
+
+  it("carries the end through a start typed a key at a time", () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    // "11/1" on the way reads as some other November 1, and "1" as nothing:
+    // the end follows the whole move, not each keystroke.
+    for (const typed of ["1", "11", "11/", "11/1", "11/14"]) {
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: typed },
+      });
+    }
+    const start = parseDateEntry("11/14", new Date())!;
+    expect(screen.getByLabelText("Ends, day")).toHaveValue(
+      formatDateEntry(start, new Date()),
     );
     expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
   });

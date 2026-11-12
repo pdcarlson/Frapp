@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -353,12 +353,19 @@ export function EventEditorDialog({
    * A new start carries the end with it, keeping the event's length, the way
    * Google Calendar moves both: moving a meeting a day on shouldn't leave its
    * end behind, before its start.
+   *
+   * The day field reports every keystroke, through text it can't read yet
+   * (`""`) and partial readings (`11/1` on the way to `11/15`). So the shift is
+   * measured from the last start that was a whole date and time, not from the
+   * previous keystroke: the partial steps then add up to the real move.
    */
+  const lastWholeStart = useRef<Date | null>(null);
   const moveStart = (next: string) => {
-    const before = parseInstant(localInputToIso(startAt));
+    const before = lastWholeStart.current;
     const after = parseInstant(localInputToIso(next));
     const end = parseInstant(localInputToIso(endAt));
     setStartAt(next);
+    if (after) lastWholeStart.current = after;
     if (before && after && end) {
       setEndAt(
         isoToLocalInput(
@@ -427,6 +434,7 @@ export function EventEditorDialog({
       );
       setLocation(typeof event.location === "string" ? event.location : "");
       setStartAt(isoToLocalInput(event.start_time));
+      lastWholeStart.current = parseInstant(event.start_time);
       setEndAt(isoToLocalInput(event.end_time));
       setPointValue(
         String(typeof event.point_value === "number" ? event.point_value : 10),
@@ -458,6 +466,9 @@ export function EventEditorDialog({
     setDescription("");
     setLocation(initialLocation ?? "");
     setStartAt(initialStartAt ?? "");
+    lastWholeStart.current = parseInstant(
+      localInputToIso(initialStartAt ?? ""),
+    );
     setEndAt(initialEndAt ?? "");
     setPointValue(String(initialPointValue ?? 10));
     setAttendance(emptyAttendanceDraft());
