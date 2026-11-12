@@ -13,8 +13,9 @@
 // that did would suspend on ADR-19's required-reviewer gate and expire without
 // probing (#1435).
 //
-// This is the in-repo monitor. A Sentry 60s check is finer-grained and still
-// human (quota + dashboard). Do not create that from an agent session.
+// This is the in-repo backup monitor. The Sentry 60s check on the same URL
+// exists since 2026-11-12 (`10936567`, created at the owner's request); it uses
+// the free plan's one uptime monitor. See docs/ops/alert-routing.md § API uptime.
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-uptime.test.mjs`.
