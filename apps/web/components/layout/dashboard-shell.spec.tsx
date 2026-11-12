@@ -325,8 +325,8 @@ describe("DashboardShell", () => {
   });
 
   it("gives a page under Settings its parent as a link back", () => {
-    mockPathname.value = "/geofences";
-    mockPermissions.value = ["geofences:manage"];
+    mockPathname.value = "/chat-admin";
+    mockPermissions.value = ["channels:manage"];
     render(
       <DashboardShell>
         <p>route content</p>
@@ -334,12 +334,12 @@ describe("DashboardShell", () => {
     );
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Study zones",
+      "Chat admin",
     );
     // Back to the module page the tool lives on (#4073), not the Settings root.
     expect(
       within(banner).getByRole("link", { name: "Chapter settings" }),
-    ).toHaveAttribute("href", "/settings?tab=geofences");
+    ).toHaveAttribute("href", "/settings?tab=chat");
   });
 
   it("offers no Settings crumb to a member the nav hides Settings from", () => {

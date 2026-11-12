@@ -157,10 +157,12 @@ describe("eligibleSetupLines", () => {
 });
 
 describe("SETUP_CHECKLIST_WEB_PATH", () => {
-  it("names a web screen for every line, zones on the geofences tool", () => {
+  it("names a web screen for every line, zones on their Settings page", () => {
     expect(Object.keys(SETUP_CHECKLIST_WEB_PATH).sort()).toEqual(
       SETUP_CHECKLIST_LINES.map((line) => line.key).sort(),
     );
-    expect(SETUP_CHECKLIST_WEB_PATH["study-zone"]).toBe("/geofences");
+    expect(SETUP_CHECKLIST_WEB_PATH["study-zone"]).toBe(
+      "/settings?tab=geofences",
+    );
   });
 });

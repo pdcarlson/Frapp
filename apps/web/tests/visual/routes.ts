@@ -21,7 +21,8 @@ export const DASHBOARD_ROUTES = [
   // `AlumniDirectory`.
   //
   // `/roles` likewise redirects into Settings → Roles (Chunk 07b, #538). That
-  // surface is covered by `/settings`.
+  // surface is covered by `/settings`, and so is `/geofences`, which
+  // redirects to Settings' Study zones page.
   "/activity",
   "/events",
   "/tasks",
@@ -29,7 +30,6 @@ export const DASHBOARD_ROUTES = [
   "/documents",
   "/backwork",
   "/discord-import",
-  "/geofences",
   "/study",
   "/chat",
   "/points",

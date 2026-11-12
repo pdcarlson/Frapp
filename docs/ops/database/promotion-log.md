@@ -33,11 +33,21 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ### 20261112293700_event_check_in_screens.sql
 
-- **Purpose**: Adds `event_check_in_screens`, one row per event recording where the officer's phone showing the check-in code is (`lat`, `lng`, `accuracy_m`, `located_at`, all set or all null), when it last reported (`shown_at`), and `expires_at`, the close of the event's check-in window. Foreign keys to `events` and `chapters` cascade on delete. Row-level security on with no policies (API only). Indexes on `expires_at` (the sweep) and `chapter_id`. Nothing is written on apply.
+- **Purpose**: Adds `event_check_in_screens`, one row per event and officer (`reported_by`, the primary key with `event_id`) recording where that officer's phone showing the check-in code is (`lat`, `lng`, `accuracy_m`, `located_at`, all set or all null), when it last reported (`shown_at`), and `expires_at`, the close of the event's check-in window. Foreign keys to `events`, `users` and `chapters` cascade on delete. Row-level security on with no policies (API only). Indexes on `expires_at` (the sweep), `chapter_id` and `reported_by`. Nothing is written on apply.
 - **Checks**: After `db push`, `select count(*) from information_schema.tables where table_name = 'event_check_in_screens';` returns 1 and `select relrowsecurity from pg_class where relname = 'event_check_in_screens';` returns `true`.
 - **Promoter notes**: Must land before the API that reads it, which reads the table on every check-in (an API deployed first fails check-in with a missing-relation error until it lands). Deploy applies migrations before it deploys the API (`_deploy.yml`), so the order holds by itself. The mobile half rides an OTA, which Deploy production sends after the API. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-check-in-screens-20261112293700) § Rollback event check-in screens.
+
+## 2026-11-12: Study zones drawn on a map (#2239)
+
+### 20261112270000_study_zone_circle.sql
+
+- **Purpose**: Adds the nullable column `study_geofences.circle jsonb` (`{lat, lng, radius_m}`) and the check `study_geofences_circle_shape` (null, or an object whose three keys are numbers). The web editor now draws a zone as a circle or a traced outline; for a circle the API stores the circle and writes `coordinates` itself as a 64-corner polygon around it, so containment (`pointInPolygon` on `coordinates`) is unchanged for every reader. An outline save sets `circle` to null. No existing row changes: every zone written before this is an outline, which null means.
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'study_geofences' and column_name = 'circle';` returns `1`, `select conname from pg_constraint where conname = 'study_geofences_circle_shape';` returns 1 row, and `select count(*) from study_geofences where circle is not null;` returns `0` until an officer saves a circle.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads zones with `select('*')` and ignores the column. The newer API against an unmigrated database fails every zone create and every shape edit, outlines included, because it writes `circle` (null for an outline) on each (unknown column); only a rename, a rate change or Enable/Disable still saves. So a failed migration must hold the API. Adding a nullable column with no default is metadata-only, under a brief lock; the check constraint validates the existing rows, all null. `if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-study-zone-circles-20261112270000) § Rollback study zone circles.
 
 ## 2026-11-12: What a deleted account takes with it, two AI gaps (#4504)
 
