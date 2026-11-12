@@ -96,6 +96,14 @@ const MODULE_COPY: readonly ModuleCopy[] = [
     offNote: "No one can post a new poll in chat.",
   },
   {
+    key: "meetings",
+    label: "Meetings",
+    description:
+      "Minutes for chapter, exec and committee meetings, posted to the members each meeting invites.",
+    offNote:
+      "Members don't see Meetings in the sidebar, and no minutes can be started or posted. Minutes already written are kept.",
+  },
+  {
     key: "documents",
     label: "Documents",
     description: "The chapter's files: bylaws, minutes, forms.",

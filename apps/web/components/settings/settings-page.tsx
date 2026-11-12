@@ -55,6 +55,7 @@ import {
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
+import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
   PointsRules,
@@ -516,6 +517,9 @@ function SettingsPageContent() {
           />
         </div>,
       );
+    }
+    if (key === "meetings") {
+      return <MeetingSectionsRules canManage={canManage} />;
     }
     return undefined;
   }

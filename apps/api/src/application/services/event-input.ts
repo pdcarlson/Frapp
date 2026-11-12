@@ -31,6 +31,13 @@ export interface CreateEventInput {
    */
   channel_id?: string;
   client_message_id?: string;
+  /**
+   * Skip the new-event push. Only an internal caller sets it: starting minutes
+   * for a meeting that had no event makes one after the fact
+   * (`MeetingService.start`), and "New event" for a meeting that already
+   * happened would be noise. The DTO has no such field.
+   */
+  silent?: boolean;
 }
 
 /**
