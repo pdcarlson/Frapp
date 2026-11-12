@@ -4683,6 +4683,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Calendar is offered here, and the caller's connection. */
+        get: operations["GoogleCalendarController_status_v1"];
+        put?: never;
+        post?: never;
+        /** Disconnect Google Calendar: removes Frapp's calendar from the member's Google account and revokes Frapp's access. */
+        delete: operations["GoogleCalendarController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start connecting Google Calendar: a single-use sign-in, and Google’s consent page to send the member to. */
+        post: operations["GoogleCalendarController_connect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish connecting with the code Google returned. Only the member who started the sign-in, in the same chapter, can finish it. */
+        post: operations["GoogleCalendarController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -8586,6 +8638,49 @@ export interface components {
              * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
              */
             webcal_url: string;
+        };
+        GoogleCalendarStatusDto: {
+            /** @description Whether this server offers Google Calendar. False until its Google settings are set; clients then hide the option. */
+            available: boolean;
+            /** @description Whether the caller has connected Google. */
+            connected: boolean;
+            /**
+             * @description `needs_reconnect` once Google refused the sign-in (access removed in Google, or a password change); nothing syncs until the member connects again. Null when not connected.
+             * @enum {string|null}
+             */
+            status: "active" | "needs_reconnect" | null;
+            /**
+             * @description The Google account connected, when Google shared it.
+             * @example member@gmail.com
+             */
+            google_email: string | null;
+            /**
+             * Format: date-time
+             * @description When the calendar last finished syncing. Null before the first.
+             */
+            last_synced_at: string | null;
+        };
+        StartGoogleCalendarConnectDto: {
+            /**
+             * @description Where the sign-in finishes: the web Events page, or the phone app at `return_url`.
+             * @enum {string}
+             */
+            client: "web" | "mobile";
+            /**
+             * @description For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.
+             * @example frapp://google-calendar
+             */
+            return_url?: string;
+        };
+        GoogleCalendarConnectDto: {
+            /** @description Google’s consent page for this sign-in. Good for ten minutes. */
+            authorize_url: string;
+        };
+        ConfirmGoogleCalendarConnectDto: {
+            /** @description The `gcal_state` the sign-in returned with. */
+            state: string;
+            /** @description The `gcal_code` the sign-in returned with. */
+            code: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -19412,6 +19507,124 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarConnectDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
             };
             /** @description Error */
             default: {

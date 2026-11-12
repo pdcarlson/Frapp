@@ -38,7 +38,9 @@ export const FreeTier = () => SetMetadata(SUBSCRIPTION_FREE_TIER_KEY, true);
  *   `canceled`. Resetting a calendar subscription link
  *   (`CalendarFeedController.reset`, #3322) is the same kind: the link's
  *   fetch has no subscription check, so one that got out must be cut off
- *   while the chapter is locked.
+ *   while the chapter is locked. Disconnecting Google Calendar
+ *   (`GoogleCalendarController.disconnect`) likewise: the sync has no
+ *   subscription check either.
  *
  * Nothing else. A route that is merely important is not exempt; the bar is that
  * refusing it while a chapter is locked would be either unrecoverable or unsafe.

@@ -39,7 +39,7 @@ export interface CalendarFeedLink {
  * calendar (a member checks what they went to); not the chapter's whole
  * history, which a calendar app would re-read on every fetch.
  */
-const PAST_DAYS = 60;
+export const CALENDAR_PAST_DAYS = 60;
 /** How far ahead: a full year, so a recurring series' months ahead show. */
 const FUTURE_DAYS = 366;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -169,7 +169,22 @@ export class CalendarFeedService {
     now: Date,
   ): Promise<IcsItem[]> {
     if (feed.revoked_at) return [];
-    const { chapter_id: chapterId, user_id: userId } = feed;
+    return this.memberItems(chapter, feed.user_id, now);
+  }
+
+  /**
+   * What a member's calendar holds in a chapter: the events they may see from
+   * {@link CALENDAR_PAST_DAYS} back to {@link FUTURE_DAYS} ahead, and their open
+   * tasks. Empty when they left the chapter or lost `members:view`. The
+   * subscription link serves it, and the Google Calendar sync writes it
+   * (`GoogleCalendarSyncService`), so the two always agree.
+   */
+  async memberItems(
+    chapter: Chapter,
+    userId: string,
+    now: Date,
+  ): Promise<IcsItem[]> {
+    const chapterId = chapter.id;
     const member = await this.members.findByUserAndChapter(userId, chapterId);
     if (!member) return [];
     const canRead = await this.rbac.memberHasAnyPermission(chapterId, userId, [
@@ -182,7 +197,7 @@ export class CalendarFeedService {
       isModuleEnabled(modules, 'events')
         ? this.events.findByChapter(chapterId, userId, {
             endsAfter: new Date(
-              now.getTime() - PAST_DAYS * DAY_MS,
+              now.getTime() - CALENDAR_PAST_DAYS * DAY_MS,
             ).toISOString(),
             startsBefore: new Date(
               now.getTime() + FUTURE_DAYS * DAY_MS,
