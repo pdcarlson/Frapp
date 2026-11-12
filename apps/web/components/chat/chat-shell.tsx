@@ -112,6 +112,7 @@ import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { channelSettingsPath } from "@/components/settings/settings-paths";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
@@ -1940,8 +1941,7 @@ export function ChatShell({
           }
         })();
       },
-      onEdit: (channelId) =>
-        router.push(`/chat-admin?channel=${encodeURIComponent(channelId)}`),
+      onEdit: (channelId) => router.push(channelSettingsPath(channelId)),
       onDelete: (channelId) => {
         const name =
           channels.find((c) => c.id === channelId)?.name ?? "this channel";

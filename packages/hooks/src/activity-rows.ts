@@ -79,10 +79,10 @@ export function parseActivityFilter(raw: unknown): ActivityFilter | null {
 }
 
 /** How many rows each list of the read carries at most (`activity.md`). */
-export const ACTIVITY_LIST_LIMIT = 25;
+const ACTIVITY_LIST_LIMIT = 25;
 
 /** Whether the member can check in to an event right now and hasn't. */
-export function activityEventNeedsCheckIn(
+function activityEventNeedsCheckIn(
   event: Pick<ActivityEvent, "check_in_open" | "checked_in">,
 ): boolean {
   return event.check_in_open && !event.checked_in;
@@ -553,9 +553,9 @@ export function activityDetailParts(
 }
 
 /** How many rows a part of Needs you draws before "Show all". */
-export const ACTIVITY_NEEDS_YOU_LIMIT = 5;
+const ACTIVITY_NEEDS_YOU_LIMIT = 5;
 /** How many of each kind Made by you draws before "Show all". */
-export const ACTIVITY_MADE_BY_YOU_LIMIT = 3;
+const ACTIVITY_MADE_BY_YOU_LIMIT = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

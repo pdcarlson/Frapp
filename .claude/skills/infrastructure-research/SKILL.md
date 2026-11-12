@@ -341,8 +341,9 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:
      [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
   3. Steps 1-2 are the answer.
-     [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) is not a status record: a
-     migration's entry lands with its PR, before any promotion. Read it only for that migration's
+     A migration's ledger page ([`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md),
+     or [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) before 2026-11-12) is not a
+     status record: it lands with its PR, before any promotion. Read it only for that migration's
      promoter notes and post-apply checks.
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.

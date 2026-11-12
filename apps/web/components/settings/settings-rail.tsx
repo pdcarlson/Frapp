@@ -145,8 +145,15 @@ export function resolveSettingsTabParam(
  */
 export function SettingsRail({
   visibleTabs,
+  onRowClick,
 }: {
   visibleTabs: readonly SettingsTab[];
+  /**
+   * Every click on a row, the lit one included, which Radix's
+   * `onValueChange` skips: the lit row is the way back from a page opened
+   * inside it (#3837), as a lit row in Discord's settings rail is.
+   */
+  onRowClick?: (value: string) => void;
 }) {
   const groups = (Object.keys(SETTINGS_TAB_GROUP_LABELS) as SettingsTabGroup[])
     .map((group) => ({
@@ -174,6 +181,7 @@ export function SettingsRail({
                 key={tab.value}
                 value={tab.value}
                 className={RAIL_TRIGGER_CLASS}
+                onClick={onRowClick ? () => onRowClick(tab.value) : undefined}
               >
                 <span className="min-w-0 truncate">{tab.label}</span>
                 {tab.off ? (

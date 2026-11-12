@@ -57,7 +57,7 @@ export function messageCacheKey(
 }
 
 /** Prefix that marks a `chat_message_actions.action_type` as an emoji reaction. */
-export const REACTION_ACTION_PREFIX = "reaction:";
+const REACTION_ACTION_PREFIX = "reaction:";
 
 export function reactionActionType(emoji: string): string {
   return `${REACTION_ACTION_PREFIX}${emoji}`;
@@ -506,7 +506,7 @@ function threadLastReplyOf(
  * The parent's thread summary, or `null` when it has no replies. Defensive
  * like `attachmentCount`: an absent or malformed count is no thread.
  */
-export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
+function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
   const count = row.thread_reply_count;
   if (typeof count !== "number" || !Number.isFinite(count) || count < 1) {
     return null;

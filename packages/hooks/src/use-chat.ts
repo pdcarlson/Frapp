@@ -364,8 +364,7 @@ export function useSetChannelNotificationLevel() {
  * the chapter now shown (`chapter-query-keys.ts` says why `clear()` is not
  * enough).
  */
-export const chapterChatLevelKeys =
-  createChapterQueryKeys("chapter-chat-level");
+const chapterChatLevelKeys = createChapterQueryKeys("chapter-chat-level");
 
 /**
  * The member's chapter-wide chat level (#3840): `all` (each channel at its own

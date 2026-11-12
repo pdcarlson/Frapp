@@ -6,10 +6,9 @@ import { type SettingsTool } from "@/components/settings/settings-access";
 
 /**
  * Officer tools as a rounded list of link rows: the tool's name, what it does,
- * and a chevron, since a row leaves Chapter settings for the tool's own
- * full-width page. A module page lists its own tools this way (#4073), and a
- * viewer whose Chapter settings holds tools and nothing else gets them as the
- * whole page.
+ * and a chevron, since a row opens the tool in place of the module page, still
+ * inside Chapter settings (#3837; Discord import on Chat is the one left). A
+ * module page lists its own tools this way (#4073).
  */
 export function SettingsToolList({
   tools,

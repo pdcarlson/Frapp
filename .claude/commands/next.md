@@ -510,7 +510,8 @@ for the suffixed branch. Never branch B from A.
   `/diff-review` scopes and records the intended HEAD.
 - Commit WIP before every branch switch, so a babysit fix on PR A never carries B's half-built work
   into a dirty-tree review or lands on the wrong branch.
-- Migrations in both PRs: pick non-colliding version prefixes up front. A PR need not be up to date
+- Migrations in both PRs: create each with `npm run migration:new`, and run
+  `npm run migration:renumber` after merging `origin/main` if the other landed first. A PR need not be up to date
   to merge (2026-11-11), so nothing re-runs the surviving PR's checks after the first merges: merge
   `origin/main` into it yourself once the first lands, so its migration checks run against the
   other's migrations. That merge needs no review of its own, and `/diff-review` reviews only your

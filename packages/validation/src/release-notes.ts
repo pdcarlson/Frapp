@@ -107,6 +107,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now write up meeting minutes from an event, and members are told when they're posted.",
       "Officers can now choose who can see and post in a channel, and move whole categories, from your phone.",
       "On the web, an Add a time button under a task's due date now sets the time it's due, and an × takes it off.",
+      "On the web, officers now draw study zones on a map, as a circle around a building or a traced outline, right inside Chapter settings.",
+      "Your points total and the leaderboard now update right after you check in, have service hours approved, or finish a study session, and on your phone the chat event card shows when you are already checked in.",
+      "Officers can now edit a task from its card in chat and in Activity, not only from the Tasks page, on the web and on your phone.",
+      "On the web, Chat admin, Discord import and Reports now open right inside Chapter settings, so you never lose your place.",
+      "On the web, a message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
     ],
   },
   {

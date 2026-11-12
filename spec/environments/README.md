@@ -413,7 +413,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Migrations are version-controlled and applied in order.
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
-- Every migration should have a documented rollback strategy in `docs/ops/db-rollback-playbook.md`.
+- Every migration should have a documented rollback strategy: on its ledger page in `docs/ops/database/migrations/` (from 2026-11-12), or in `docs/ops/db-rollback-playbook.md` (older ones).
 - See `docs/ops/deployment/` for the full migration deployment workflow.
 
 ## Claude Code web

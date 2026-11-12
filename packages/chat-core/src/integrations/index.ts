@@ -113,17 +113,13 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
 ]);
 
 /** Vocab aliases that dispatch as the canonical `rush` command. */
-export const RUSH_COMMAND_ALIASES = [
-  "recruitment",
-  "intake",
-  "induction",
-] as const;
+const RUSH_COMMAND_ALIASES = ["recruitment", "intake", "induction"] as const;
 
 /**
  * Slash token for the chapter's recruitment vocabulary. `"Intake"` →
  * `"intake"`; empty / punctuation-only falls back to `"rush"`.
  */
-export function recruitmentCommandSlug(label?: string | null): string {
+function recruitmentCommandSlug(label?: string | null): string {
   const slug = (label ?? "rush")
     .trim()
     .toLowerCase()
@@ -132,7 +128,7 @@ export function recruitmentCommandSlug(label?: string | null): string {
   return slug.length > 0 ? slug : "rush";
 }
 
-export function isRushCommandToken(
+function isRushCommandToken(
   token: string,
   recruitment?: string | null,
 ): boolean {

@@ -29,6 +29,23 @@
         "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "staging"
       }
     },
+    "e2e": {
+      "environment": "preview",
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "e2e",
+      "distribution": "internal",
+      "withoutCredentials": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api-staging.frapp.live",
+        "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "e2e"
+      }
+    },
     "production": {
       "environment": "production",
       "ios": {

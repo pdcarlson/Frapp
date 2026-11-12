@@ -284,6 +284,34 @@ describe('AnalyticsService', () => {
       );
     });
 
+    it('stamps the mobile build as $app_version and $app_build', async () => {
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.track('opened-app', USER_ID, {
+        app: 'mobile',
+        appVersion: { version: '0.11.0', build: '19' },
+      });
+      await service.track('opened-app', USER_ID, {
+        appVersion: { version: '0.11.0', build: null },
+      });
+
+      expect(provider.capture).toHaveBeenNthCalledWith(1, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: {
+          app: 'mobile',
+          $app_version: '0.11.0',
+          $app_build: '19',
+        },
+      });
+      expect(provider.capture).toHaveBeenNthCalledWith(2, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { $app_version: '0.11.0' },
+      });
+    });
+
     it('sends no group without a chapter, and no app when none is named', async () => {
       const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({ salt: SALT, chapters, provider });

@@ -46,7 +46,7 @@ interface UnsetFeatureDefinition {
   module: string;
 }
 
-export const UNSET_FEATURES: Readonly<
+const UNSET_FEATURES: Readonly<
   Record<UnsetFeatureKey, UnsetFeatureDefinition>
 > = {
   // Study hours needs an active zone to study in, made in the web zones tool.
@@ -88,7 +88,7 @@ function canSetUp(key: UnsetFeatureKey, permissions: readonly string[]) {
 }
 
 /** Whether a feature's list has to be read to decide: the viewer can't set it up, and its module is on. */
-export function needsUnsetFeatureRead(
+function needsUnsetFeatureRead(
   key: UnsetFeatureKey,
   permissions: UnsetFeatureInput["permissions"],
   isModuleEnabled: UnsetFeatureInput["isModuleEnabled"],

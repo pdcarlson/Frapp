@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
+import { invalidatePointReads } from "./use-points";
 
 /**
  * `GET /v1/semesters` declares no OpenAPI response schema, so
@@ -66,6 +67,9 @@ export function useSemesterRollover() {
       // Promotion rewrites members.role_ids across the chapter, so any cached
       // roster or permission-derived view is stale once this succeeds.
       queryClient.invalidateQueries({ queryKey: ["members"] });
+      // "This semester" totals are measured from the latest archive, which
+      // the rollover just wrote.
+      void invalidatePointReads(queryClient);
     },
   });
 }

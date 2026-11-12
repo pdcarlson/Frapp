@@ -608,7 +608,7 @@ describe("membership writes refetch the alumni list", () => {
     expect(keys()).not.toContainEqual(["user", "me"]);
   });
 
-  it("useRemoveMember invalidates members and alumni", async () => {
+  it("useRemoveMember invalidates members, alumni and the leaderboard", async () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);
     mockUseFrappClient.mockReturnValue({
@@ -625,6 +625,7 @@ describe("membership writes refetch the alumni list", () => {
         expect.arrayContaining([
           ["members", CHAPTER_ID],
           ["alumni", CHAPTER_ID],
+          ["points"],
         ]),
       ),
     );

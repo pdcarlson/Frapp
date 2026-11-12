@@ -570,9 +570,10 @@ export function ReportsPage() {
   return (
     <>
       {/*
-        No heading of its own: the top bar names the route (`top-bar.tsx`). The
-        two `<CardTitle>Reports & Export</CardTitle>` copies and the body's
-        `<h2>` that used to sit here were the same title said again.
+        No heading of its own: it is the body of Chapter settings' Reports
+        page (#3837), whose header names it. The two
+        `<CardTitle>Reports & Export</CardTitle>` copies and the body's `<h2>`
+        that used to sit here were the same title said again.
       */}
       <Can
         permission="reports:export"

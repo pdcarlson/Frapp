@@ -9,6 +9,7 @@ import {
   parseInstantOrBareLocalNoon,
   isDueOverdue,
 } from "@repo/formatting";
+import { useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
@@ -238,9 +239,13 @@ export function UpNextStrip({
   const styles = createStyles(tokens);
   const router = useRouter();
 
-  // `now` is read once per render rather than per row, so the two rows cannot
-  // straddle a tick and disagree about what "today" means.
-  const at = useMemo(() => now ?? new Date(), [now]);
+  // One clock for both rows, so they cannot straddle a tick and disagree about
+  // what "today" means. It is the shared ticking clock, not a time read once:
+  // chat home is a tab that never unmounts, and a memoised `new Date()` froze
+  // the strip at the moment it first mounted, so an event that had started
+  // stayed UP NEXT and "Today" kept meaning that day until the app was killed.
+  const clock = useNowDate();
+  const at = now ?? clock;
   const event = useMemo(() => selectNextEvent(events, at), [events, at]);
   const task = useMemo(
     () => selectNextTask(tasks, viewerUserId),
