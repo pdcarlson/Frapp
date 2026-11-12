@@ -342,14 +342,14 @@ function dateBlock(event: ActivityEvent): ActivityDateBlock | null {
   };
 }
 
-function eventRow(event: ActivityEvent, group: string): ActivityRow {
+function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
   const needsCheckIn = activityEventNeedsCheckIn(event);
   return {
     kind: "event",
     key: `${group}:event:${event.id}`,
     event,
     title: event.name,
-    detail: [formatRelativeDayTime(event.start_time), event.location]
+    detail: [formatRelativeDayTime(event.start_time, now), event.location]
       .filter(Boolean)
       .join(" · "),
     badge: needsCheckIn
@@ -479,7 +479,7 @@ export function activityGroups(
   );
 
   const needs = keep([
-    ...checkInNow.map((event) => eventRow(event, "needs")),
+    ...checkInNow.map((event) => eventRow(event, "needs", now)),
     ...activity.needs_you.tasks.map((task) => taskRow(task, "needs", "mine")),
     ...activity.needs_you.task_confirmations.map((task) =>
       taskRow(task, "needs-confirm", "confirm"),
@@ -493,7 +493,7 @@ export function activityGroups(
   const needsNow = needs.filter((row) => activityRowIsNow(row, now));
   const needsLater = needs.filter((row) => !activityRowIsNow(row, now));
 
-  const coming = keep(later.map((event) => eventRow(event, "coming")));
+  const coming = keep(later.map((event) => eventRow(event, "coming", now)));
   const links = keep(activity.links.map(linkRow));
 
   // A closed poll, by time or by hand, leaves the list for the archive.
@@ -513,7 +513,7 @@ export function activityGroups(
       ),
   );
   const madeEvents = keep(
-    activity.made_by_you.events.map((event) => eventRow(event, "made")),
+    activity.made_by_you.events.map((event) => eventRow(event, "made", now)),
   );
   const madeTasks = keep(
     activity.made_by_you.tasks.map((task) => taskRow(task, "made", "assigned")),
