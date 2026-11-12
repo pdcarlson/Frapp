@@ -387,7 +387,7 @@ URL:
 | `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images |
 | `documents`, `backwork`, `chat` | same | per-bucket |
 | `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
-| `tasks` (task photos) | `20261113040004_task_photos.sql` | images |
+| `tasks` (task photos) | `20261113040005_task_photos.sql` | images |
 | `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
 | `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
 | `meeting-audio` (a meeting's recording, until it is transcribed) | `20261112210000_meeting_recordings.sql` | audio |

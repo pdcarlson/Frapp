@@ -250,7 +250,7 @@ function freezeKind(bindings: readonly MimeBinding[]): KindTable {
 const KINDS: Record<UploadKind, KindTable> = {
   image: freezeKind(IMAGE_BINDINGS),
   proof: freezeKind([...IMAGE_BINDINGS, PDF_BINDING]),
-  // Mirrored by the `tasks` bucket (20261113040004_task_photos.sql).
+  // Mirrored by the `tasks` bucket (20261113040005_task_photos.sql).
   task_photo: freezeKind(IMAGE_BINDINGS),
   document: freezeKind([
     ...IMAGE_BINDINGS,
