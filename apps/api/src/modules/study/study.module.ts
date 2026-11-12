@@ -24,5 +24,7 @@ import { RbacModule } from '../rbac/rbac.module';
       useClass: SupabaseStudySessionRepository,
     },
   ],
+  // Activity's standing reads a member's own sessions through it.
+  exports: [StudyService],
 })
 export class StudyModule {}

@@ -152,6 +152,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now edit a task from its card in chat and in Activity, not only from the Tasks page.",
       "Taking back a reaction now sticks, so it no longer comes back after you reload.",
       "Tasks can now show as a list or as a grid of cards, and it remembers which one you picked.",
+      "You can now put your chapter's events and your tasks on Apple Calendar, Google Calendar or Outlook from the Events page, and they stay up to date.",
+      "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
+      "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
@@ -173,6 +176,10 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers now draw study zones on a map, as a circle around a building or a traced outline, right inside Chapter settings.",
       "Chat admin, Discord import and Reports now open right inside Chapter settings, so you never lose your place.",
       "A message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
+      "A member's profile and Invite members now open right inside the Directory instead of sliding over the whole screen.",
+      "When you start minutes for a meeting that isn't on the calendar, you can type the day it met in words, like yesterday or Nov 4.",
+      "Study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
+      "Changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
     ],
     phone: [
       "Officers who manage roles can now set a member's pledge class and number from their profile.",

@@ -23,11 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  AttachGlyph,
-  ReactionGlyph,
-  SendArrowGlyph,
-} from "./chat-glyphs";
+import { AttachGlyph, ReactionGlyph, SendArrowGlyph } from "./chat-glyphs";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
@@ -40,10 +36,7 @@ import {
   pasteAsLines,
   useMentionSourceRefs,
 } from "./chat-editor";
-import {
-  useRequestChatUploadUrl,
-  useUploadSignedUrl,
-} from "@repo/hooks";
+import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
@@ -522,6 +515,13 @@ interface ComposerBaseProps {
    */
   recruitmentVocab?: string;
   /**
+   * Whether this member may post in the announcements channel, from that
+   * channel's `can_post`. `false` hides `/announce` in the palette and
+   * refuses it typed out in full; the server refuses the send too (#3414).
+   * Absent reads as allowed, and the server decides.
+   */
+  canAnnounce?: boolean;
+  /**
    * Status of the read behind `isModuleEnabled`. `"loading"`, `"offline"`
    * and `"error"` surface explicit states inside the slash palette instead of
    * an empty filter, and refuse a typed module command with their own copy;
@@ -969,6 +969,7 @@ export function Composer({
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
+  canAnnounce,
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
@@ -1289,6 +1290,15 @@ export function Composer({
         isModuleEnabled,
       );
       if (moduleRefusal) return moduleRefusal;
+      // The palette hides `/announce` from a member who can't post in the
+      // announcements channel; this is the same gate for the typed path.
+      if (command.name === "announce" && canAnnounce === false) {
+        return {
+          title: "You can't post announcements",
+          description:
+            "Only the people your chapter lets post in the announcements channel can send one. Your text is still here.",
+        };
+      }
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {
@@ -1307,7 +1317,14 @@ export function Composer({
       }
       return null;
     },
-    [isOffline, pending.length, replyTo, slashCommandsStatus, isModuleEnabled],
+    [
+      isOffline,
+      pending.length,
+      replyTo,
+      slashCommandsStatus,
+      isModuleEnabled,
+      canAnnounce,
+    ],
   );
 
   // The + card (#3983): open or closed, and the form it shows (`null` is
@@ -1789,7 +1806,7 @@ export function Composer({
         toast({ ...refusal, variant: "destructive" });
         return;
       }
-      const text = (editor ? chatText(editor) : "");
+      const text = editor ? chatText(editor) : "";
       const parsed = parseSlashInput(text);
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
@@ -2060,6 +2077,7 @@ export function Composer({
           onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
           isModuleEnabled={isModuleEnabled}
           recruitmentVocab={recruitmentVocab}
+          canAnnounce={canAnnounce}
           status={slashCommandsStatus}
           onRetry={onRetrySlashCommands}
           onSelect={onPaletteSelect}

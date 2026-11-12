@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
+import { ActivityStandingService } from '../../application/services/activity-standing.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
 import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
@@ -24,8 +25,10 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
 import { EventModule } from '../event/event.module';
+import { PointsModule } from '../points/points.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ServiceEntryModule } from '../service-entry/service-entry.module';
+import { StudyModule } from '../study/study.module';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -44,11 +47,16 @@ import { TaskModule } from '../task/task.module';
     ChannelAccessModule,
     RbacModule,
     AuthModule,
+    // The standing (`GET /v1/activity/standing`): the semester's points and
+    // board, and the member's own study sessions.
+    PointsModule,
+    StudyModule,
   ],
   controllers: [ActivityController],
   providers: [
     ActivityService,
     ActivityLinkService,
+    ActivityStandingService,
     // Links on Activity (#3897): this module is the table's only reader. The
     // database's triggers on `chat_messages` write its rows; the title sweep
     // below writes only their page titles.

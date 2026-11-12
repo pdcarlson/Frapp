@@ -693,10 +693,14 @@ export {
   EVERYONE_MENTION_NAME,
   EVERYONE_ROLE_NAME,
   EVERYONE_ROLE_SYSTEM_KEY,
+  HERE_MENTION_NAME,
   isEveryoneRole,
-  isEveryoneRoleName,
+  mentionRoleHint,
+  reservedMentionName,
   rolesAfterSave,
+  withHereMention,
 } from "./everyone-role";
+export type { HereMentionSource } from "./everyone-role";
 
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read

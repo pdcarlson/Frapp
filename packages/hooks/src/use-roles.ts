@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { withHereMention } from "@repo/validation";
 
 /**
  * Role write bodies, read from the contract rather than restated: `color` is a
@@ -208,6 +209,10 @@ export type ChatMentionRole = components["schemas"]["MentionRoleDto"];
  * `@Role` reaches, so the picker never offers a ping that would land on
  * nobody. Membership is not sent; the server expands the role on send.
  *
+ * `@here` rides after `@everyone` (`withHereMention`, 2026-11-12): it is no
+ * role, so the API leaves it out, and it follows `@everyone`'s switch, which
+ * is the rule the server applies when the message lands.
+ *
  * Keyed under `["roles", chapterId, …]` so the role mutations, which
  * invalidate `["roles", chapterId]`, refresh it. A member's role changing
  * elsewhere is caught by the minute's staleness, as the roster is.
@@ -220,7 +225,7 @@ export function useMentionRoles() {
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels/mention-roles");
       if (error) throw error;
-      return data;
+      return withHereMention(data);
     },
     staleTime: 60_000,
     enabled: !!chapterId,
