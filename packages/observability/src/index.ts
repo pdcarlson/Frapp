@@ -96,6 +96,7 @@ export {
 export { createReportOnce } from "./report-once";
 export {
   AUTH_FAILURE_REPORT_INTERVAL_MS,
+  EMAIL_SEND_CAPPED_CODE,
   EXPECTED_AUTH_ERROR_CODES,
   buildAuthFailureReport,
   createAuthFailureReporter,

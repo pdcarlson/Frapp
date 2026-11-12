@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTH_FAILURE_REPORT_INTERVAL_MS,
+  EMAIL_SEND_CAPPED_CODE,
   buildAuthFailureReport,
   createAuthFailureReporter,
   type AuthFailureReport,
@@ -64,14 +65,14 @@ describe("buildAuthFailureReport", () => {
   });
 
   it("reports launch day's two refusals at info", () => {
-    for (const [code, status] of [
-      ["email_not_confirmed", 400],
-      ["over_email_send_rate_limit", 429],
+    for (const [code, status, message] of [
+      ["email_not_confirmed", 400, "Email not confirmed"],
+      ["over_email_send_rate_limit", 429, "you can only request this after 52 seconds."],
     ] as const) {
       const r = buildAuthFailureReport({
         flow: "password_sign_in",
         screen: "/sign-in",
-        error: authApiError(code, status),
+        error: authApiError(code, status, message),
       });
       expect(r!.level).toBe("info");
       expect(r!.tags.auth_error_code).toBe(code);
@@ -82,7 +83,7 @@ describe("buildAuthFailureReport", () => {
     const r = buildAuthFailureReport({
       flow: "magic_link_send",
       screen: "/sign-in",
-      error: authApiError("over_email_send_rate_limit", 500),
+      error: authApiError("over_email_send_rate_limit", 500, "after 3 seconds"),
     });
     expect(r!.level).toBe("error");
     expect(r!.error.name).toBe("AuthFailure");
@@ -130,6 +131,58 @@ describe("buildAuthFailureReport", () => {
     expect(
       buildAuthFailureReport({ flow: "password_sign_in", screen: "/sign-in", error: dead }, false),
     ).toBeNull();
+  });
+
+  it("splits the project's hourly email cap from the per-address cooldown", () => {
+    const cooldown = buildAuthFailureReport({
+      flow: "magic_link_send",
+      screen: "/sign-in",
+      error: authApiError(
+        "over_email_send_rate_limit",
+        429,
+        "For security purposes, you can only request this after 44 seconds.",
+      ),
+    });
+    expect(cooldown!.level).toBe("info");
+    expect(cooldown!.tags.auth_error_code).toBe("over_email_send_rate_limit");
+
+    const capped = buildAuthFailureReport({
+      flow: "magic_link_send",
+      screen: "/sign-in",
+      error: authApiError("over_email_send_rate_limit", 429, "Email rate limit exceeded"),
+    });
+    expect(capped!.level).toBe("error");
+    expect(capped!.tags.auth_error_code).toBe(EMAIL_SEND_CAPPED_CODE);
+    expect(capped!.fingerprint).toEqual(["signed-out-auth", "magic_link_send", EMAIL_SEND_CAPPED_CODE]);
+    // The sentence decided the split and is still never sent.
+    expect(JSON.stringify(capped)).not.toContain("rate limit exceeded");
+  });
+
+  it("reads a bare TypeError as a bug, not a dead request", () => {
+    const r = buildAuthFailureReport({
+      flow: "oauth_start",
+      screen: "/sign-in",
+      error: new TypeError("Cannot read properties of undefined (reading 'signIn')"),
+    });
+    expect(r!.tags.auth_failure_kind).toBe("unknown");
+    expect(r!.fingerprint).toEqual(["signed-out-auth", "oauth_start", "unknown"]);
+  });
+
+  it("reports nothing for a code-less failure while offline (a native SDK giving out)", () => {
+    const nativeGaveOut = new Error("Unable to finish sign-in. Retry in a moment.");
+    expect(
+      buildAuthFailureReport({ flow: "oauth_start", screen: "/sign-in", error: nativeGaveOut }, false),
+    ).toBeNull();
+    expect(
+      buildAuthFailureReport({ flow: "oauth_start", screen: "/sign-in", error: nativeGaveOut }, true)!.level,
+    ).toBe("error");
+    // A refusal with a code is still counted offline: Auth answered.
+    expect(
+      buildAuthFailureReport(
+        { flow: "password_sign_in", screen: "/sign-in", error: authApiError("invalid_credentials", 400) },
+        false,
+      ),
+    ).not.toBeNull();
   });
 
   it("names an unidentifiable failure unknown, at error", () => {
@@ -268,7 +321,7 @@ describe("createAuthFailureReporter", () => {
     c.report({
       flow: "sign_up",
       screen: "/sign-up",
-      error: Object.assign(new TypeError("Load failed"), { status: 0 }),
+      error: Object.assign(new TypeError("Load failed"), { name: "AuthRetryableFetchError", status: 0 }),
     });
     expect(c.reports).toHaveLength(0);
   });

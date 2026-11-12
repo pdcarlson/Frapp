@@ -972,6 +972,23 @@ describe("AuthSessionProvider — magic-link callback", () => {
     expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("frapp:");
   });
 
+  it("reports a provider's bare `error` identifier when the link has no error_code", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl =
+      "frapp://#error=access_denied&error_description=User+denied+access";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: undefined,
+      code: "access_denied",
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("denied access");
+  });
+
   it("reports a code exchange Auth refused, with nothing from the link", async () => {
     reportAuthFailure.mockClear();
     mockState.deepLinkUrl = "frapp:///?code=single-use-secret";
@@ -1122,6 +1139,64 @@ describe("AuthSessionProvider — OAuth", () => {
     });
     const WebBrowser = await import("expo-web-browser");
     expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider refusal once, as oauth_start with its code (#3832)", async () => {
+    reportAuthFailure.mockClear();
+    const refusal = {
+      message: "A user with this email address has already been registered",
+      code: "identity_already_exists",
+    };
+    mockState.signInWithOAuthResult = { data: { url: null }, error: refusal };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "oauth_start",
+      screen: "/sign-in",
+      error: refusal,
+    });
+  });
+
+  it("reports a browser return that didn't become a session once, as auth_callback, not again as oauth_start", async () => {
+    reportAuthFailure.mockClear();
+    mockState.authSessionResult = {
+      type: "success",
+      url: "frapp:///#error=access_denied&error_code=otp_expired&error_description=Expired",
+    };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "auth_callback",
+      code: "otp_expired",
+    });
+  });
+
+  it("reports the browser session giving out as oauth_start, and a cancel not at all", async () => {
+    reportAuthFailure.mockClear();
+    mockState.authSessionResult = { type: "cancel" };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google");
+    });
+    expect(reportAuthFailure).not.toHaveBeenCalled();
+
+    mockState.authSessionResult = { type: "locked" };
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({ flow: "oauth_start" });
   });
 
   it("does not exchange a single-use code twice when the deep link repeats", async () => {

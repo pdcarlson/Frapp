@@ -1,3 +1,5 @@
+import { createKeyedRateLimiter } from "./rate-limit";
+
 /**
  * What web and mobile report when a signed-out auth flow fails (#3832).
  * `spec/behavior/observability.md` § Error Tracking ("Signed-out auth
@@ -17,10 +19,13 @@
  *   expired link, a rate limit) at `info`. It is counted, never paged: the
  *   production alert rule pages on `error` and above
  *   (`docs/ops/alert-routing.md` § Signed-out auth failures);
- * - **anything else** at `error`: a 5xx, a dead request while online, a code
- *   this list doesn't know (a misconfigured provider or template, a PKCE
- *   exchange that fails for everyone). Its first event is a new `error` issue,
- *   which pages.
+ * - **anything else** at `error`: a 5xx, a dead request while online, a
+ *   failure with no code at all, the project's hourly email cap
+ *   ({@link EMAIL_SEND_CAPPED_CODE}), or a code this list doesn't know (a
+ *   disabled provider, a broken template). Its first event is a new `error`
+ *   issue, which pages. An expected code failing for everyone at once (every
+ *   link refused as `bad_code_verifier`) stays `info`; Beta Watch reads the
+ *   daily counts for that.
  *
  * **What the event carries.** Identifiers only, never the error the SDK
  * returned. GoTrue's sentences can name the address (`Email address
@@ -161,34 +166,41 @@ const CODE_RE = /^[a-z][a-z0-9_]{1,63}$/;
 const SCREEN_SEGMENT_RE = /^(?:[a-z]+(?:-[a-z]+)*|\([a-z]+(?:-[a-z]+)*\))$/;
 const UNKNOWN_SCREEN = "unknown";
 
-/** supabase-js's names for a request that got no answer. */
+/**
+ * supabase-js's name for a request that got no answer (it wraps the runtime's
+ * `TypeError: Failed to fetch`), and a timed-out one. A bare `TypeError` is
+ * not here: supabase-js never lets one out, so one reaching the reporter is a
+ * bug in the calling code, and it is reported as `unknown`.
+ */
 const NETWORK_ERROR_NAMES: ReadonlySet<string> = new Set([
   "AuthRetryableFetchError",
-  "TypeError",
   "AbortError",
 ]);
+
+/**
+ * GoTrue refuses both the one-email-a-minute cooldown for an address and the
+ * project's hourly email cap with `429 over_email_send_rate_limit`; only the
+ * cooldown's sentence names seconds (`apps/web/lib/auth/email-auth-errors.ts`).
+ * The cap means no auth email goes out to anyone, so it is reported under its
+ * own code, which is not expected and so arrives at `error`. The sentence is
+ * read for this one test and never sent.
+ */
+export const EMAIL_SEND_CAPPED_CODE = "email_send_capped";
+const EMAIL_COOLDOWN_RE = /after \d+ seconds?/i;
 
 export function createAuthFailureReporter(
   options: AuthFailureReporterOptions,
 ): AuthFailureReporter {
-  const now = options.now ?? (() => Date.now());
-  const lastReportedAt = new Map<string, number>();
+  const allow = createKeyedRateLimiter({
+    intervalMs: AUTH_FAILURE_REPORT_INTERVAL_MS,
+    maxKeys: MAX_REMEMBERED_FINGERPRINTS,
+    now: options.now ?? (() => Date.now()),
+  });
   return (input) => {
     try {
       const report = buildAuthFailureReport(input, options.isOnline?.() ?? true);
       if (!report) return;
-      const key = report.fingerprint.join("\u0000");
-      const at = now();
-      const last = lastReportedAt.get(key);
-      if (last !== undefined && at - last < AUTH_FAILURE_REPORT_INTERVAL_MS) {
-        return;
-      }
-      lastReportedAt.delete(key);
-      lastReportedAt.set(key, at);
-      if (lastReportedAt.size > MAX_REMEMBERED_FINGERPRINTS) {
-        const oldest = lastReportedAt.keys().next().value;
-        if (oldest !== undefined) lastReportedAt.delete(oldest);
-      }
+      if (!allow(report.fingerprint.join("\u0000"))) return;
       options.capture(report);
     } catch {
       // Reporting is a side channel; the screen already showed its copy.
@@ -204,10 +216,15 @@ export function buildAuthFailureReport(
   input: AuthFailureInput,
   online = true,
 ): AuthFailureReport | null {
-  const code = identifierOrUndefined(input.code) ?? identifierOrUndefined(fieldOf(input.error, "code"));
+  const code = emailCapSplit(
+    identifierOrUndefined(input.code) ?? identifierOrUndefined(fieldOf(input.error, "code")),
+    input.error,
+  );
   const status = statusOf(input.error);
   const kind = kindOf(input.error, code, status);
-  if (kind === "network" && !online) return null;
+  // Nothing answered (a dead request, or a native SDK that gave out with no
+  // code) while the device reads offline: the member's network, not a fault.
+  if ((kind === "network" || kind === "unknown") && !online) return null;
   const expected = code !== undefined && EXPECTED_AUTH_ERROR_CODES.has(code) && kind === "refusal";
   const flow = input.flow;
   const screen = screenOf(input.screen);
@@ -247,6 +264,13 @@ function kindOf(
   }
   if (code) return "refusal";
   return "unknown";
+}
+
+function emailCapSplit(code: string | undefined, error: unknown): string | undefined {
+  if (code !== "over_email_send_rate_limit") return code;
+  const message = fieldOf(error, "message");
+  if (typeof message !== "string") return code;
+  return EMAIL_COOLDOWN_RE.test(message) ? code : EMAIL_SEND_CAPPED_CODE;
 }
 
 function screenOf(screen: string): string {

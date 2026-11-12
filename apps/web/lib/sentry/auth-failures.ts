@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import {
+  buildAuthFailureReport,
   createAuthFailureReporter,
   type AuthFailureInput,
 } from "@repo/observability";
@@ -23,4 +24,24 @@ const report = createAuthFailureReporter({
 /** Report a signed-out auth failure. Never throws. */
 export function reportAuthFailure(input: AuthFailureInput): void {
   report(input);
+}
+
+/**
+ * The same report from a route handler (`/auth/callback`). Not rate-limited:
+ * one server process serves every member, so a limiter here would let one
+ * member's failure hide everyone else's for the interval. Each request is one
+ * link opened once, so there is no retry loop to damp. Never throws.
+ */
+export function reportServerAuthFailure(input: AuthFailureInput): void {
+  try {
+    const report = buildAuthFailureReport(input);
+    if (!report) return;
+    Sentry.captureException(report.error, {
+      level: report.level,
+      fingerprint: report.fingerprint,
+      tags: report.tags,
+    });
+  } catch {
+    // Reporting is a side channel; the redirect still happens.
+  }
 }

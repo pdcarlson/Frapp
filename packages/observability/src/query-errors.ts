@@ -1,4 +1,5 @@
 import { isClientContractErrorCode } from "./api-error-codes";
+import { createKeyedRateLimiter } from "./rate-limit";
 import { httpStatusClass } from "./sentry-http";
 
 /**
@@ -180,8 +181,11 @@ export function createQueryErrorReporter(
   options: QueryErrorReporterOptions,
 ): QueryErrorReporter {
   const intervalMs = options.intervalMs ?? DEFAULT_REPORT_INTERVAL_MS;
-  const now = options.now ?? (() => Date.now());
-  const lastReportedAt = new Map<string, number>();
+  const allow = createKeyedRateLimiter({
+    intervalMs,
+    maxKeys: MAX_REMEMBERED_RATE_KEYS,
+    now: options.now ?? (() => Date.now()),
+  });
 
   const report = (
     error: unknown,
@@ -194,18 +198,7 @@ export function createQueryErrorReporter(
       if (!failure) return;
       const root = keyRoot(key);
       const built = buildReport(failure, error, kind, root, queryHash);
-      const at = now();
-      const last = lastReportedAt.get(built.rateKey);
-      if (last !== undefined && at - last < intervalMs) return;
-      // Recorded before the capture, so a capture that throws is not retried
-      // on every refetch either. Deleted first so the newest is last in the
-      // Map's order and the oldest is the one forgotten.
-      lastReportedAt.delete(built.rateKey);
-      lastReportedAt.set(built.rateKey, at);
-      if (lastReportedAt.size > MAX_REMEMBERED_RATE_KEYS) {
-        const oldest = lastReportedAt.keys().next();
-        if (!oldest.done) lastReportedAt.delete(oldest.value);
-      }
+      if (!allow(built.rateKey)) return;
       options.capture(built.report);
     } catch {
       // Reporting is a side channel: a broken reporter loses the report, never

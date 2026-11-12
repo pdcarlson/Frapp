@@ -161,10 +161,10 @@ File (or update) an issue for:
   File when one issue's events in the window, per day, are at least three times its daily average
   over the 7 days before and at least 10: for example `email_not_confirmed` on `password_sign_in`
   (members not getting or not opening the confirmation email), `exchange_failed` or
-  `bad_code_verifier` on `auth_callback` (links failing for everyone), or
-  `over_email_send_rate_limit` with no cooldown (the project's hourly cap). Name the flow and code in
+  `bad_code_verifier` on `auth_callback` (links failing for everyone). Name the flow and code in
   the title. Below that bar, report the day's top codes in one line and file nothing. An
-  unexpected auth failure arrives at `error` and is filed under the first bullet.
+  unexpected auth failure arrives at `error` and is filed under the first bullet, including
+  `email_send_capped` (the project's hourly email cap: no auth email is going out).
 - Any crash or ANR from TestFlight or Play.
 - Tester feedback or a review describing a bug, a broken flow or confusing UI. A feature request
   is filed only when it's specific; general praise or complaint is reported, not filed.

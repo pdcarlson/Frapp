@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
 const verifyOtp = vi.fn();
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
@@ -24,6 +27,7 @@ describe("GET /auth/callback", () => {
   beforeEach(() => {
     exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
+    captureException.mockReset();
   });
 
   it("exchanges the PKCE code and sends the member on to `next`, signed in", async () => {
@@ -214,6 +218,62 @@ describe("GET /auth/callback", () => {
       expect(url.origin).toBe(ORIGIN);
       expect(url.pathname).toBe("/new-account");
       expect(url.searchParams.get("next")).toBe("/chat");
+    });
+  });
+
+  describe("reporting what failed (#3832)", () => {
+    type Captured = [Error, { level: string; fingerprint: string[]; tags: Record<string, string> }];
+    const only = (): Captured => {
+      expect(captureException).toHaveBeenCalledTimes(1);
+      return captureException.mock.calls[0] as unknown as Captured;
+    };
+    const noLinkSecrets = ([error, context]: Captured) => {
+      const payload = JSON.stringify({ message: error.message, stack: error.stack, context });
+      for (const secret of ["pkce_secret", "code-secret", "inv-1", "token"]) {
+        expect(payload, secret).not.toContain(secret);
+      }
+    };
+
+    it("reports nothing when the link signs in", async () => {
+      exchangeCodeForSession.mockResolvedValue({ error: null });
+      await callback("code=abc123");
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("reports an Auth outage on a magic link at error, with GoTrue's status, not the member's verify_failed", async () => {
+      verifyOtp.mockResolvedValue({
+        error: Object.assign(new Error("upstream"), { name: "AuthApiError", status: 503, code: "unexpected_failure" }),
+      });
+      const { url } = await callback("token_hash=pkce_secret&type=magiclink&next=%2Fjoin%3Ftoken%3Dinv-1");
+      expect(url.searchParams.get("authError")).toBe("verify_failed");
+      const captured = only();
+      expect(captured[1]).toMatchObject({
+        level: "error",
+        fingerprint: ["signed-out-auth", "auth_callback", "unexpected_failure"],
+        tags: { auth_flow: "auth_callback", auth_screen: "/auth/callback", auth_failure_kind: "server", "http.status_code": "503" },
+      });
+      noLinkSecrets(captured);
+    });
+
+    it("counts a link opened in another browser by GoTrue's code, at info", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        error: Object.assign(new Error("code verifier"), { name: "AuthApiError", status: 400, code: "bad_code_verifier" }),
+      });
+      await callback("code=code-secret&intent=confirm");
+      const captured = only();
+      expect(captured[1]).toMatchObject({ level: "info", tags: { auth_error_code: "bad_code_verifier" } });
+      noLinkSecrets(captured);
+    });
+
+    it("counts an expired link GoTrue sent back, once", async () => {
+      await callback("error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid");
+      expect(only()[1]).toMatchObject({ level: "info", tags: { auth_error_code: "otp_expired" } });
+    });
+
+    it("reports a link whose type GoTrue never sends as a template fault", async () => {
+      await callback("token_hash=pkce_secret&type=bogus");
+      expect(only()[1]).toMatchObject({ level: "error", tags: { auth_error_code: "otp_type_invalid" } });
+      expect(verifyOtp).not.toHaveBeenCalled();
     });
   });
 });

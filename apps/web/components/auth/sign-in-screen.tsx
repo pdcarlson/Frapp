@@ -99,7 +99,7 @@ function SignInPageContent() {
   // Shown once, on arrival; the parameter is not carried into the next hop.
   useEffect(() => {
     if (!authError) return;
-    reportAuthFailure({ flow: "auth_callback", screen: "/auth/callback", code: authError });
+    // Reported by `/auth/callback` itself, with GoTrue's own error (#3832).
     if (authError === EMAIL_CONFIRMED_AUTH_ERROR) {
       toast({ title: "Email confirmed", description: describeAuthError(authError) });
       return;

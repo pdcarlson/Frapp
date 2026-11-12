@@ -160,19 +160,66 @@ describe("signed-out auth failures reach Sentry", () => {
     expectNoMemberInput(captured);
   });
 
-  it("counts the code a failed link came back with, once, on arrival", () => {
-    searchParams.value = new URLSearchParams({
-      redirectTo: INVITE,
-      authError: "otp_expired",
+  it("leaves a failed link to /auth/callback, which reported it, so a reload or a typed authError counts nothing", () => {
+    for (const authError of ["otp_expired", "made_up_value"]) {
+      searchParams.value = new URLSearchParams({ redirectTo: INVITE, authError });
+      render(<SignInScreen />);
+    }
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports Google failing to start on sign-in as oauth_start", async () => {
+    auth.signInWithOAuth.mockResolvedValue({
+      data: { url: null, provider: "google" },
+      error: new AuthApiError("Unsupported provider: provider is not enabled", 400, "validation_failed"),
     });
     render(<SignInScreen />);
+    await submit(/google/i);
 
-    expect(captureException).toHaveBeenCalledTimes(1);
+    const captured = lastCapture();
+    expect(captured[1].tags).toMatchObject({
+      auth_flow: "oauth_start",
+      auth_screen: "/sign-in",
+      auth_error_code: "validation_failed",
+    });
+    expectNoMemberInput(captured);
+  });
+
+  it("reports a provider that is switched off on sign-up as an unexpected oauth_start", async () => {
+    auth.signInWithOAuth.mockResolvedValue({
+      data: { url: null, provider: "apple" },
+      error: new AuthApiError("Provider is disabled", 400, "provider_disabled"),
+    });
+    render(<SignUpPage />);
+    await submit(/apple/i);
+
     const captured = lastCapture();
     expect(captured[1]).toMatchObject({
-      level: "info",
-      fingerprint: ["signed-out-auth", "auth_callback", "otp_expired"],
-      tags: { auth_flow: "auth_callback", auth_screen: "/auth/callback" },
+      level: "error",
+      fingerprint: ["signed-out-auth", "oauth_start", "provider_disabled"],
+      tags: { auth_screen: "/sign-up" },
+    });
+  });
+
+  it("reports a refused confirmation Resend, without the address", async () => {
+    auth.signInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError("Email not confirmed", 400, "email_not_confirmed"),
+    });
+    auth.resend.mockResolvedValue({
+      data: {},
+      error: new AuthApiError(`Email address "${EMAIL}" is invalid`, 400, "email_address_invalid"),
+    });
+    render(<SignInScreen />);
+    fill(/email/i, EMAIL);
+    fill(/password/i, PASSWORD);
+    await submit(/^continue$/i);
+    await submit(/^resend email$/i);
+
+    const captured = lastCapture();
+    expect(captured[1].tags).toMatchObject({
+      auth_flow: "confirmation_resend",
+      auth_error_code: "email_address_invalid",
     });
     expectNoMemberInput(captured);
   });

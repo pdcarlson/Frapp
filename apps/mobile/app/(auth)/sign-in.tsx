@@ -31,7 +31,6 @@ import { OnboardingPressable } from "@/components/onboarding/onboarding-pressabl
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
  * Supabase auth errors are safe to show verbatim — they are deliberately
@@ -164,10 +163,7 @@ export default function SignIn() {
     try {
       await signInWithOAuthProvider(provider);
     } catch (error) {
-      // A cancel returns without throwing, so everything here is a failure:
-      // the provider refused, or native sign-in and the browser fallback both
-      // gave out (#3832).
-      reportAuthFailure({ flow: "oauth_start", screen: "/sign-in", error });
+      // Already reported by `signInWithOAuthProvider` (#3832).
       setAuthError(describeOAuthKickoffError(error));
     } finally {
       setSubmitting(false);
