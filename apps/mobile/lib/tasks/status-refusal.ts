@@ -13,6 +13,8 @@
  * card relays the server's message.
  */
 
+import { codeOf, statusOf } from "@repo/api-sdk";
+import { TASK_PROOF_REQUIRED_CODE } from "@repo/validation";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -23,6 +25,19 @@ export function taskStatusGateRefusal(error: unknown): string | null {
   if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.taskStatus;
   if (moduleRefusalOf(error)) return MODULE_REFUSAL_COPY.taskStatus;
   return null;
+}
+
+/**
+ * The board's line when Mark done is refused because the task needs a proof
+ * photo (`TASK_PROOF_REQUIRED_CODE`, #4565), or `null` for anything else.
+ * The phone can't attach one until the second half of #4565 ships, so the
+ * line says where it can be done rather than reverting the box in silence.
+ * Matched by the code, never the message.
+ */
+export function taskProofRequiredRefusal(error: unknown): string | null {
+  return statusOf(error) === 400 && codeOf(error) === TASK_PROOF_REQUIRED_CODE
+    ? "This task needs a photo of the finished job. Add it and mark it done from Frapp on the web."
+    : null;
 }
 
 /**

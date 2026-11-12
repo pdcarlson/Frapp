@@ -859,6 +859,13 @@ export interface TaskInput {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number;
+  /**
+   * A reference photo already uploaded (#4565). `null` only on an edit, to
+   * remove the task's photo; a create treats it as none.
+   */
+  reference_photo_path?: string | null;
+  /** Mark done needs a proof photo (#4565). */
+  photo_required?: boolean;
 }
 
 /**
@@ -893,6 +900,8 @@ export async function postTask(
         due_at: input.due_at,
         subtasks: input.subtasks,
         point_reward: input.point_reward,
+        reference_photo_path: input.reference_photo_path ?? undefined,
+        photo_required: input.photo_required,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },

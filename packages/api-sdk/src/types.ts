@@ -2954,6 +2954,43 @@ export interface paths {
         patch: operations["TaskController_update_v1"];
         trace?: never;
     };
+    "/v1/tasks/photo-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)
+         * @description PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
+         */
+        post: operations["TaskController_requestPhotoUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565) */
+        get: operations["TaskController_getPhotoUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/status": {
         parameters: {
             query?: never;
@@ -6950,6 +6987,24 @@ export interface components {
             /** @description Optional comment for the member (especially on rejection) */
             review_comment?: string;
         };
+        RequestTaskPhotoUploadUrlDto: {
+            /** @description Original filename (a JPEG, PNG, GIF or WebP) */
+            filename: string;
+            /** @description MIME content type (e.g. image/jpeg) */
+            content_type: string;
+            /** @description File size in bytes, if known. Rejected against the upload size ceiling when present. */
+            size_bytes?: number;
+        };
+        TaskPhotoUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done). */
+            storage_path: string;
+        };
+        TaskPhotoUrlResponseDto: {
+            /** @description Short-lived signed URL to view the photo. */
+            url: string;
+        };
         CreateTaskDto: {
             title: string;
             description?: string;
@@ -6966,6 +7021,10 @@ export interface components {
             subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
+            /** @description A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565). */
+            reference_photo_path?: string;
+            /** @description When true, the task can only be marked done with a proof photo (#4565). Default false. */
+            photo_required?: boolean;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
@@ -6999,6 +7058,12 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
              */
             sent_back_at: string | null;
+            /** @description Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`. */
+            reference_photo_path: string | null;
+            /** @description Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`. */
+            proof_photo_path: string | null;
+            /** @description When true, Mark done is refused without a proof photo. */
+            photo_required: boolean;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -7017,10 +7082,16 @@ export interface components {
              */
             due_at?: string | null;
             point_reward?: number | null;
+            /** @description A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565). */
+            reference_photo_path?: string | null;
+            /** @description Turn "Photo required" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer. */
+            photo_required?: boolean;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /** @description With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`. */
+            proof_photo_path?: string;
         };
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
@@ -15573,6 +15644,71 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_requestPhotoUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestTaskPhotoUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskPhotoUploadUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_getPhotoUrl_v1: {
+        parameters: {
+            query: {
+                /** @description Which photo: the reference photo or the proof photo. */
+                photo: "reference" | "proof";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskPhotoUrlResponseDto"];
+                };
             };
             /** @description Error */
             default: {

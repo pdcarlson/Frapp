@@ -12,11 +12,11 @@ import type { DispatchResult, HoursInput } from "@repo/chat-core/dispatch";
 import { localIsoDate } from "@repo/formatting";
 import {
   MAX_UPLOAD_LABEL,
-  acceptAttribute,
   inspectUploadFile,
   readSignedUpload,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { FilePicker } from "@/components/shared/file-picker";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
@@ -340,7 +340,9 @@ export function LogHoursForm({
       </div>
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-proof`}>{proofLabel}</Label>
-        <ProofPicker
+        <FilePicker
+          kind="proof"
+          testId="proof-file-input"
           inputRef={proofRef}
           id={`${ids}-proof`}
           file={draft.proofFile}
@@ -377,79 +379,5 @@ export function LogHoursForm({
         </Button>
       </FormFooter>
     </form>
-  );
-}
-
-/**
- * The proof field. A file input can't be given a file back, so the picked
- * file is shown by name beside a Choose button rather than by the browser's
- * own control, which would read "No file chosen" when a kept draft reopens.
- */
-function ProofPicker({
-  inputRef,
-  id,
-  file,
-  invalid,
-  layout,
-  onPick,
-}: {
-  /** The Choose button: what the label names and what an error focuses. */
-  inputRef: React.RefObject<HTMLButtonElement | null>;
-  id: string;
-  file: File | null;
-  invalid: boolean;
-  layout: FormLayout;
-  onPick: (file: File | null) => void;
-}) {
-  const fileInput = useRef<HTMLInputElement>(null);
-  const nameId = `${id}-name`;
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <input
-        ref={fileInput}
-        type="file"
-        accept={acceptAttribute("proof")}
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden="true"
-        data-testid="proof-file-input"
-        onChange={(event) => {
-          onPick(event.target.files?.[0] ?? null);
-          // Let the same file be picked again after Remove.
-          event.target.value = "";
-        }}
-      />
-      <Button
-        ref={inputRef}
-        id={id}
-        type="button"
-        variant="secondary"
-        size={layout === "card" ? "sm" : "default"}
-        className="shrink-0 aria-[invalid=true]:border-destructive"
-        aria-invalid={invalid || undefined}
-        aria-describedby={nameId}
-        onClick={() => fileInput.current?.click()}
-      >
-        {file ? "Change" : "Choose file"}
-      </Button>
-      <span
-        id={nameId}
-        className="min-w-0 flex-1 truncate text-sm text-muted-foreground"
-      >
-        {file ? file.name : "No file chosen"}
-      </span>
-      {file ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="shrink-0"
-          aria-label={`Remove ${file.name}`}
-          onClick={() => onPick(null)}
-        >
-          Remove
-        </Button>
-      ) : null}
-    </div>
   );
 }

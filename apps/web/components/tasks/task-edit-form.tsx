@@ -21,6 +21,9 @@ export interface EditableTask {
   stored_status?: string;
   status: string;
   subtasks?: TaskSubtask[];
+  /** Task photos (#4565). */
+  reference_photo_path?: string | null;
+  photo_required?: boolean;
 }
 
 /** The form's draft for a task as it stands. */
@@ -32,6 +35,9 @@ function taskDraftFromTask(task: EditableTask): TaskDraft {
     points: task.point_reward ? String(task.point_reward) : "",
     description: task.description ?? "",
     subtasks: [],
+    photoFile: null,
+    photoRemoved: false,
+    photoRequired: !!task.photo_required,
     showMore: false,
   };
 }
@@ -64,6 +70,18 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
   }
   const points = input.point_reward || null;
   if (points !== (task.point_reward || null)) body.point_reward = points;
+  // `undefined` keeps the photo; a path replaces it; null removes it (#4565).
+  if (input.reference_photo_path !== undefined) {
+    if (input.reference_photo_path !== (task.reference_photo_path ?? null)) {
+      body.reference_photo_path = input.reference_photo_path;
+    }
+  }
+  if (
+    input.photo_required !== undefined &&
+    input.photo_required !== !!task.photo_required
+  ) {
+    body.photo_required = input.photo_required;
+  }
   return body;
 }
 
@@ -106,6 +124,7 @@ export function TaskEditForm({
         }
       }}
       editing={{
+        photo: { taskId: task.id, path: task.reference_photo_path },
         steps: (
           <div className="grid gap-1">
             <p className="text-sm font-medium">Subtasks</p>

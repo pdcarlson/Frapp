@@ -591,8 +591,8 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_subtasks`, `posted_to_chat` |
-| `task-status-changed` | The assignee or an officer moves a task to a new status | `status` |
+| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `photo_required`, `posted_to_chat` |
+| `task-status-changed` | The assignee or an officer moves a task to a new status. `has_proof_photo` is whether a proof photo came with it | `status`, `has_proof_photo` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back | — |
 

@@ -103,6 +103,11 @@ export interface LiveTask {
    * countdown reads this rather than the snapshot's date (#4135).
    */
   due: string | undefined;
+  /** Task photos (#4565): storage keys, read through the photo-url route. */
+  reference_photo_path: string | null;
+  proof_photo_path: string | null;
+  /** Mark done needs a proof photo. */
+  photo_required: boolean;
 }
 
 /**
@@ -180,7 +185,14 @@ export function readLiveTask(data: unknown): LiveTask | null {
         : typeof r.due_date === "string" && r.due_date !== ""
           ? r.due_date
           : undefined,
+    reference_photo_path: nonEmptyString(r.reference_photo_path),
+    proof_photo_path: nonEmptyString(r.proof_photo_path),
+    photo_required: r.photo_required === true,
   };
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 /** The columns a task row and a chat task card both carry. */
@@ -303,6 +315,8 @@ export interface EditableCardTask {
   status: TaskStatus;
   stored_status: TaskStatus | undefined;
   subtasks: TaskSubtask[];
+  reference_photo_path: string | null;
+  photo_required: boolean;
 }
 
 /**
@@ -333,5 +347,7 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     status: live.status,
     stored_status: live.stored_status,
     subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
+    reference_photo_path: live.reference_photo_path,
+    photo_required: live.photo_required,
   };
 }
