@@ -1,7 +1,13 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { invalidatePointReads } from "./use-points";
 
 /**
  * The chapter's study zones.
@@ -35,10 +41,9 @@ export function useStudySessions() {
   // Chapter-scoped despite taking no chapter argument, for the same reason
   // `useGeofences` above is: the route resolves the chapter from the request
   // header, so a bare `["study-sessions"]` key serves one chapter's sessions
-  // under another after a switch. That matters more here than elsewhere,
-  // because `apps/mobile` has no cache clear on chapter switch the way
-  // `apps/web`'s provider does (#1042) — so on mobile the stale rows are what
-  // the member actually sees.
+  // under another after a switch. Both apps clear the whole cache on a chapter
+  // switch (web's provider, and mobile's since #1042), so the key is defense in
+  // depth, not the only guard.
   //
   // Deliberately **not** `enabled: !!chapterId`: the claim is absent with no
   // membership and during a hook-off incident, and `ChapterGuard` resolves a
@@ -47,9 +52,7 @@ export function useStudySessions() {
   //
   // Which means the scoping above is **correct but inert** whenever the claim
   // is missing: the segment is `null`, so it cannot separate two chapters.
-  // It works as soon as the token carries a claim. Do not read this key as
-  // evidence that #1042's leak is handled. On mobile it is not, and the fix
-  // for that is a cache clear on chapter switch, not a key.
+  // It works as soon as the token carries a claim.
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["study-sessions", chapterId],
@@ -69,7 +72,9 @@ export function useCreateGeofence() {
     mutationKey: ["geofences", "create-geofence"],
     mutationFn: async (body: {
       name: string;
-      coordinates: { lat: number; lng: number }[];
+      /** An outline's corners or a circle, never both (the API refuses both). */
+      coordinates?: { lat: number; lng: number }[];
+      circle?: { lat: number; lng: number; radius_m: number };
       is_active: boolean;
       minutes_per_point: number;
       points_per_interval: number;
@@ -99,6 +104,7 @@ export function useUpdateGeofence() {
       body: {
         name?: string;
         coordinates?: { lat: number; lng: number }[];
+        circle?: { lat: number; lng: number; radius_m: number };
         is_active?: boolean;
         minutes_per_point?: number;
         points_per_interval?: number;
@@ -155,12 +161,40 @@ export function useStartStudySession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+      // Start first settles a previous session left paused past its grace
+      // window, which awards its minutes; the response is the new session,
+      // so nothing in it says that happened.
+      void invalidatePointReads(queryClient);
     },
   });
 }
 
+/**
+ * True when a study write's response is a session that is over. A heartbeat,
+ * pause or resume can end the session server-side (grace elapsed, out of the
+ * zone, stale, bad GPS), and the response is the only signal: it arrives as a
+ * 2xx carrying the closed row, not as an error.
+ */
+function isEndedStudySession(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const status = (result as { status?: unknown }).status;
+  return typeof status === "string" && status !== "ACTIVE";
+}
+
+/**
+ * After a write that may have closed the session: refresh the session list so
+ * a cached ACTIVE row can't restore a dead timer on the next mount, and the
+ * points reads, since PAUSED_EXPIRED awards the foreground minutes.
+ */
+function refreshIfEnded(queryClient: QueryClient, result: unknown) {
+  if (!isEndedStudySession(result)) return;
+  void queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+  void invalidatePointReads(queryClient);
+}
+
 export function useStudyHeartbeat() {
   const client = useFrappClient();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["study-sessions", "study-heartbeat"],
     mutationFn: async (body: {
@@ -176,6 +210,9 @@ export function useStudyHeartbeat() {
       if (error) throw error;
       return data;
     },
+    // A routine heartbeat on an ACTIVE session changes nothing a list shows,
+    // so only an ended session triggers a refresh.
+    onSuccess: (data) => refreshIfEnded(queryClient, data),
   });
 }
 
@@ -194,8 +231,11 @@ export function usePauseStudySession() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+      // A pause past the grace window settles as PAUSED_EXPIRED and awards
+      // the foreground minutes.
+      if (isEndedStudySession(data)) void invalidatePointReads(queryClient);
     },
   });
 }
@@ -219,7 +259,7 @@ export function useResumeStudySession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
-      queryClient.invalidateQueries({ queryKey: ["points"] });
+      void invalidatePointReads(queryClient);
     },
   });
 }
@@ -236,7 +276,7 @@ export function useStopStudySession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
-      queryClient.invalidateQueries({ queryKey: ["points"] });
+      void invalidatePointReads(queryClient);
     },
   });
 }

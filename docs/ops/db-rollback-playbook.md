@@ -1,9 +1,16 @@
 # DB Rollback Playbook
 
+**A migration created since 2026-11-12 has its rollback recipe on its own page** in
+[`database/migrations/`](database/migrations/README.md), named after the migration. The recipes
+below are for older migrations, and the procedure sections (decision matrix, backups, undo one
+migration) apply to all of them.
+
 ## Every migration owes a recipe here
 
-`check:migration-safety` asserts **per-migration** coverage in this file *and*
-in [`database/promotion-log.md`](database/promotion-log.md) — both, not either. It
+For a migration created before 2026-11-12, `check:migration-safety` asserts
+**per-migration** coverage in this file *and* in
+[`database/promotion-log.md`](database/promotion-log.md) (both, not either), unless
+the migration has a ledger page. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
 Any of these counts, anywhere in the file:
 
@@ -61,7 +68,7 @@ Use when:
 - service can stay online.
 
 Action:
-1. Create new migration: `npm run supabase -- migration new <hotfix_name>`
+1. Create new migration: `npm run migration:new -- <hotfix_name>` (the SQL file and its ledger page)
 2. Apply to staging first.
 3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
@@ -157,10 +164,9 @@ migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npm run supabase -- migration new rollback_<what>`),
-and give it its own entries here and in
-[`database/promotion-log.md`](database/promotion-log.md) (`check:migration-safety`
-requires both). Make every statement idempotent, so the migration also applies
+recipe's SQL as a new migration (`npm run migration:new -- rollback_<what>`),
+and fill in its own [ledger page](database/migrations/README.md)
+(`check:migration-safety` requires it). Make every statement idempotent, so the migration also applies
 where someone already ran it by hand (below): `if exists` where Postgres has it,
 and a guarded `do` block where it doesn't. `alter publication … drop table` has
 no `if exists`, so check `pg_publication_tables` first, as the original
@@ -4271,3 +4277,18 @@ update public.roles r
 ```
 
 Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), restore a backup taken before the push into a scratch project ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) and copy the rows from it.
+
+## Rollback study zone circles (20261112270000)
+
+* **Migration**: `20261112270000_study_zone_circle.sql`
+
+Adds the nullable `study_geofences.circle` column and its shape check. `coordinates` stays the polygon every reader checks, and the API writes it for a circle too, so dropping the column loses only the editor's memory that a zone was drawn as a circle: such a zone then reopens as an outline of 64 corners, and studying in it works exactly as before. An API rolled back past #2239 never reads or writes the column, so a code revert needs no SQL, but roll the web app back with it: the newer web editor sends a circle with no `coordinates`, which the older API refuses with a 400. A zone retraced by the older editor during the revert keeps its stale `circle`; the newer editor shows the outline whenever `coordinates` no longer matches the circle (`zoneCircle` in `apps/web/components/geofences/zone-shape.ts`), so nothing needs clearing.
+
+To remove the schema, revert the API first, then in a later forward migration ([§ 3) Undo one migration](#3-undo-one-migration)):
+
+```sql
+alter table public.study_geofences
+  drop constraint if exists study_geofences_circle_shape,
+  drop column if exists circle;
+```
+

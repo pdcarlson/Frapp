@@ -58,6 +58,7 @@ import {
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
+import { StudyZonesManager } from "@/components/geofences/study-zones-manager";
 import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
@@ -269,7 +270,10 @@ function SettingsPageContent() {
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
     stateBanner = <SettingsBodySkeleton />;
-  } else if (chapterQuery.isError) {
+  } else if (chapterQuery.isError && chapterQuery.data === undefined) {
+    // Only a first load that failed. A background refetch that fails keeps
+    // the page it already drew: unmounting it would throw away a study zone
+    // half drawn in the map editor, or an open delete confirmation.
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
@@ -764,6 +768,12 @@ function SettingsPageContent() {
                   )
                 }
                 tools={tools.filter((tool) => tool.page === module.key)}
+                toolBody={
+                  module.key === "geofences" &&
+                  tools.some((tool) => tool.id === "study-zones") ? (
+                    <StudyZonesManager />
+                  ) : undefined
+                }
                 canSeeWhoCan={canSeeWhoCan}
                 canEditRoles={can("roles:manage", permissions)}
                 focusSwitch={focusModuleKey === module.key}

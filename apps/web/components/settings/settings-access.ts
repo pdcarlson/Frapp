@@ -31,6 +31,13 @@ export type SettingsTool = {
   module?: string;
   /** The module page in Chapter settings that lists it (`?tab=`). */
   page: string;
+  /**
+   * The tool is drawn on its module page itself, not linked from it: `href`
+   * is that page. Study zones is the first (Paul, 2026-11-12: opening a tool
+   * should not leave Chapter settings); Chat admin, Discord import and
+   * Reports still leave it for their own routes.
+   */
+  embedded?: boolean;
 };
 
 export const SETTINGS_TOOLS: readonly SettingsTool[] = [
@@ -57,10 +64,11 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     id: "study-zones",
     label: "Study zones",
     description: "Draw study areas and set their reward rates.",
-    href: "/geofences",
+    href: "/settings?tab=geofences",
     permission: "geofences:manage",
     page: "geofences",
     module: "geofences",
+    embedded: true,
   },
   {
     id: "reports",
@@ -126,10 +134,10 @@ export const SETTINGS_ENTRY_PERMISSIONS: readonly string[] = Array.from(
   ]),
 );
 
-/** Every route that sits under the nav's Settings row. */
-export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
-  (tool) => tool.href,
-);
+/** Every route of its own that sits under the nav's Settings row. */
+export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.filter(
+  (tool) => !tool.embedded,
+).map((tool) => tool.href);
 
 /**
  * Whether a Settings tab shows for this viewer.

@@ -90,7 +90,7 @@
 ## Location & Study Hours
 
 - **Mode:** Active, opt-in tracking only.
-- **Geofences:** Admin draws polygon coordinates for approved study locations (e.g. campus library).
+- **Geofences:** An officer finds the place on a map (search or click) and draws the zone as a circle (a pin and a radius) or traces its outline, for approved study locations (e.g. campus library). Either way the server checks a polygon: a circle is stored with the polygon it derives from it.
 - **Session flow:**
   1. User selects a geofence and taps "Start Studying."
   2. API validates that the user's GPS coordinates are inside the polygon.
@@ -267,7 +267,7 @@ A line shows only to an officer who can do it, and only while the module the ser
 
 Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
 
-- **Study hours** with no active study zone hides from everyone. Zones are made in the web app's Study zones tool (`/geofences`), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to the tool instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
+- **Study hours** with no active study zone hides from everyone. Zones are made on the web app's Chapter settings Study zones page (`/settings?tab=geofences`; `/geofences` redirects there), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to that page instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
 - **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.
 
 The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), and it reads a feature's list only for a viewer it could hide the feature from, and only while the list's module is on. Nothing hides while the viewer's permissions, the chapter's modules or the list are still loading, or after the list's read fails: a row hides on a read that answers "none", or on its list's module being off. Only the entry points hide: the routes stay open, so a link into one still lands.

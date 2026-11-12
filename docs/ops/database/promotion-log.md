@@ -1,5 +1,10 @@
 # Promotion log
 
+**New migrations are not ledgered here.** Since 2026-11-12 each migration has its own page in
+[`migrations/`](migrations/README.md), holding its promotion entry and rollback recipe, because
+every PR prepending to this file conflicted with every other open migration PR. This file is the
+record for older migrations, and still counts for them.
+
 Every migration below records what it does, how it was promoted, and anything a
 promoter must do by hand. How a migration gets promoted is
 [`promotion.md`](promotion.md).
@@ -28,6 +33,16 @@ That list is **shrink-only** and enforced by a version ceiling: a migration
 created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
+
+## 2026-11-12: Study zones drawn on a map (#2239)
+
+### 20261112270000_study_zone_circle.sql
+
+- **Purpose**: Adds the nullable column `study_geofences.circle jsonb` (`{lat, lng, radius_m}`) and the check `study_geofences_circle_shape` (null, or an object whose three keys are numbers). The web editor now draws a zone as a circle or a traced outline; for a circle the API stores the circle and writes `coordinates` itself as a 64-corner polygon around it, so containment (`pointInPolygon` on `coordinates`) is unchanged for every reader. An outline save sets `circle` to null. No existing row changes: every zone written before this is an outline, which null means.
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'study_geofences' and column_name = 'circle';` returns `1`, `select conname from pg_constraint where conname = 'study_geofences_circle_shape';` returns 1 row, and `select count(*) from study_geofences where circle is not null;` returns `0` until an officer saves a circle.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads zones with `select('*')` and ignores the column. The newer API against an unmigrated database fails every zone create and every shape edit, outlines included, because it writes `circle` (null for an outline) on each (unknown column); only a rename, a rate change or Enable/Disable still saves. So a failed migration must hold the API. Adding a nullable column with no default is metadata-only, under a brief lock; the check constraint validates the existing rows, all null. `if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-study-zone-circles-20261112270000) § Rollback study zone circles.
 
 ## 2026-11-12: What a deleted account takes with it, two AI gaps (#4504)
 

@@ -13,7 +13,7 @@ describe("resolvePageTitle", () => {
   });
 
   it("puts every Settings tool under a link back to its module page (#4073)", () => {
-    for (const tool of SETTINGS_TOOLS) {
+    for (const tool of SETTINGS_TOOLS.filter((t) => !t.embedded)) {
       expect(resolvePageTitle(tool.href)).toEqual({
         title: tool.label,
         parent: {
@@ -22,15 +22,15 @@ describe("resolvePageTitle", () => {
         },
       });
     }
-    expect(resolvePageTitle("/geofences")?.parent?.href).toBe(
-      "/settings?tab=geofences",
+    expect(resolvePageTitle("/reports")?.parent?.href).toBe(
+      "/settings?tab=reports",
     );
   });
 
   it("drops the Settings parent when the nav hides the Settings row", () => {
     // The crumb follows its row's gates, so a member the nav hides Settings
     // from is not handed a link to it from the top bar.
-    for (const tool of SETTINGS_TOOLS) {
+    for (const tool of SETTINGS_TOOLS.filter((t) => !t.embedded)) {
       expect(
         resolvePageTitle(tool.href, (item) => item.id !== "settings"),
       ).toEqual({ title: tool.label });

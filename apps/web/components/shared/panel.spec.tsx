@@ -8,6 +8,7 @@ import {
   PanelContent,
   PanelFooter,
   PanelHeader,
+  OWNS_ESCAPE,
 } from "./panel";
 
 /**
@@ -139,5 +140,36 @@ describe("Panel docked", () => {
       </Panel>,
     );
     expect(screen.getByRole("dialog")).toHaveAccessibleName("Create event");
+  });
+});
+
+describe("PanelContent's Escape (#4512)", () => {
+  function EscapeHarness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <Sheet open={open} onOpenChange={setOpen}>
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader>Task</PanelHeader>
+          <PanelBody>
+            <div {...{ [OWNS_ESCAPE]: "" }}>
+              <input aria-label="Inside" />
+            </div>
+            <input aria-label="Outside" />
+          </PanelBody>
+        </PanelContent>
+      </Sheet>
+    );
+  }
+
+  it("stays open for Escape pressed inside content that answers it", () => {
+    render(<EscapeHarness />);
+    fireEvent.keyDown(screen.getByLabelText("Inside"), { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("still closes on Escape anywhere else", () => {
+    render(<EscapeHarness />);
+    fireEvent.keyDown(screen.getByLabelText("Outside"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

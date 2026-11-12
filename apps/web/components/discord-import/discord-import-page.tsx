@@ -161,7 +161,7 @@ export function DiscordImportPage() {
         // "Permission check offline"). Without this the screen-level gate fell
         // back to the control-slot chip, one line of text standing in for the
         // page. The card it draws instead is the same screen-level fallback
-        // every flushed route's gate draws (`/reports`, `/geofences`).
+        // every flushed route's gate draws (`/reports`, `/chat-admin`).
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can import Discord history."

@@ -107,6 +107,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now write up meeting minutes from an event, and members are told when they're posted.",
       "Officers can now choose who can see and post in a channel, and move whole categories, from your phone.",
       "On the web, an Add a time button under a task's due date now sets the time it's due, and an × takes it off.",
+      "On the web, officers now draw study zones on a map, as a circle around a building or a traced outline, right inside Chapter settings.",
     ],
   },
   {

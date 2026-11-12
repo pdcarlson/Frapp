@@ -449,7 +449,7 @@ Changed in #3977 by shawnatomklein-eng, 2026-11-10: the Truncated description sa
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading study zones...` |
-| Empty zones | — | `No study zones yet.` then, for a viewer with `geofences:manage`, an **Add a study zone** link to `/geofences`, and for everyone else `An officer adds them.` (one line; the nav hides Study until a zone is active, so a saved link is the way here) |
+| Empty zones | — | `No study zones yet.` then, for a viewer with `geofences:manage`, an **Add a study zone** link to `/settings?tab=geofences`, and for everyone else `An officer adds them.` (one line; the nav hides Study until a zone is active, so a saved link is the way here) |
 | Empty history | — | `No sessions yet. Start one inside a study zone to earn study points.` (one line) |
 | Error | `Couldn't load study data` | the load-failure line (§ copy rules) |
 | Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
@@ -581,7 +581,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
 | Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
-| Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
+| Jump to latest (a `↓` over the thread once the reader is back in history: mobile `components/chat/jump-to-latest-button.tsx`, web `components/chat/jump-to-latest-button.tsx`; the label is `jumpToLatestLabel` in `@repo/chat-core/jump-to-latest`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
 | Setup checklist (web, top of the channel rail; mobile, chat home under UP NEXT; officers only, [`modules.md` § Setup checklist](../../product/modules.md#setup-checklist)) | `Set up your chapter` · `<done> of <total>` | One line per step: `Invite members`, `Schedule the first event`, `Add a study zone`, `Upload the bylaws`, `Send the first dues`; a done line is struck through and muted. The hide control is an icon, labelled `Hide the setup list`. On mobile (no dues line) a line the phone can't do ends in a muted `Web`, has the hint `Opens this step in the web app.`, and if the browser won't open shows `Couldn't open the web app` / `Sign in at <web host> on a computer to finish this step.` |
 | No channels | — | `No channels yet. Ask an admin to add one.` (one line, both clients). It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
 | Link to a channel the reader can't reach (web) | — | `That link points to a channel you can't reach.` then a **Browse channels** link that opens the channel list (one line) |

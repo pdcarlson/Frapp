@@ -34,10 +34,6 @@ import { cn } from "@/lib/utils";
  * second one. The close button `SheetContent` draws is a 26px box (a 16px
  * glyph, `p-1` and a 1px border) at `top-4`, so its centre sits at 29px, a
  * pixel under the 56px row's centre.
- *
- * **Not for the per-page settings drawer** (`page-settings-drawer.tsx`), which
- * is `4c`'s 400px tool drawer that sits beside the page while you change it.
- * A panel holds content; the drawer holds switches.
  */
 
 /**
@@ -184,10 +180,19 @@ function DockedPanel({
 /** The panel's one width (§ Surface size). */
 const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
 
+/**
+ * Marks content that answers Escape itself, such as a task card in edit
+ * (#4512): Escape pressed inside it is its own, so the panel stays open.
+ * Radix hears Escape on the document before any React handler, so the
+ * content could not stop it otherwise, and the panel would close and drop
+ * what was being edited.
+ */
+export const OWNS_ESCAPE = "data-owns-escape";
+
 export const PanelContent = React.forwardRef<
   React.ElementRef<typeof SheetContent>,
   Omit<React.ComponentPropsWithoutRef<typeof SheetContent>, "side">
->(({ className, ...props }, ref) => {
+>(({ className, onEscapeKeyDown, ...props }, ref) => {
   const dock = React.useContext(PanelDockContext);
   if (dock) {
     return (
@@ -205,6 +210,13 @@ export const PanelContent = React.forwardRef<
         PANEL_WIDTH_CLASS,
         className,
       )}
+      onEscapeKeyDown={(event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest(`[${OWNS_ESCAPE}]`)) {
+          event.preventDefault();
+        }
+        onEscapeKeyDown?.(event);
+      }}
       {...props}
     />
   );
