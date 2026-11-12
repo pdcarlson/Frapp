@@ -32,11 +32,12 @@ import { cn } from "@/lib/utils";
  * turning into its editor rather than a second box on top. Below `sm` it is
  * the whole viewport, which holds the 375px floor.
  *
- * **The bands are the upload sheet's** (`upload-sheet.tsx`, board `1j`): a
- * 56px title row at 18/700 with `pr-14` clearing the close button, a body at
- * the 20px inset, a right-aligned footer at the same inset. A panel is that
- * sheet at full height, so it uses the same rhythm rather than inventing a
- * second one. The close button `SheetContent` draws is a 26px box (a 16px
+ * **The bands came from the upload sheet** (board `1j`): a 56px title row at
+ * 18/700 with `pr-14` clearing the close button, a body at the 20px inset, a
+ * right-aligned footer at the same inset. A panel was that sheet at full
+ * height, so it took the same rhythm rather than inventing a second one; the
+ * sheet's own chrome is gone since both uploads moved onto `Panel` (#4593),
+ * so these bands are defined here now. The close button `SheetContent` draws is a 26px box (a 16px
  * glyph, `p-1` and a 1px border) at `top-4`, so its centre sits at 29px, a
  * pixel under the 56px row's centre.
  */
@@ -137,20 +138,38 @@ export function Panel({
  * Escape goes back, unless a field or an open popover had it first.
  */
 /**
- * The control last pressed with a pointer, and when. Safari doesn't focus a
- * clicked button, so at the moment a docked panel opens `activeElement` is
- * `<body>` (or wherever focus was before), not the button that opened it;
- * this is how the panel still finds its opener to hand focus back to.
+ * The control last pressed, and when. Safari doesn't focus a clicked button,
+ * so at the moment a docked panel opens `activeElement` is `<body>` (or
+ * wherever focus was before), not the button that opened it; this is how the
+ * panel still finds its opener to hand focus back to.
+ *
+ * A press on a menu item records the menu's trigger instead (Radix names the
+ * menu by it, `aria-labelledby`): the item is gone once the menu closes, so
+ * the button that opened the menu is where focus goes back, as it would after
+ * any other choice from that menu. Enter and Space on a focused item count as
+ * a press too, since a keyboard choice also unmounts it.
  */
 let lastPressed: { control: HTMLElement; at: number } | null = null;
 let pressListeners = 0;
-function onPress(event: PointerEvent) {
-  const target = event.target;
+function recordPress(target: EventTarget | null) {
   if (!(target instanceof Element)) return;
-  const control = target.closest<HTMLElement>(
+  let control = target.closest<HTMLElement>(
     'button, a[href], [role="button"], [role="menuitem"]',
   );
+  const menu = control?.closest('[role="menu"]');
+  const triggerId = menu?.getAttribute("aria-labelledby");
+  if (triggerId) control = document.getElementById(triggerId) ?? control;
   lastPressed = control ? { control, at: Date.now() } : null;
+}
+function onPress(event: PointerEvent) {
+  recordPress(event.target);
+}
+function onKeyPress(event: KeyboardEvent) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (!(event.target instanceof Element)) return;
+  // Only a menu item: a focused button already is `activeElement`.
+  if (!event.target.closest('[role="menu"]')) return;
+  recordPress(event.target);
 }
 /** Records presses while a docked `Panel` is on the page. */
 function useOpenerTracking(enabled: boolean) {
@@ -158,10 +177,12 @@ function useOpenerTracking(enabled: boolean) {
     if (!enabled) return;
     if (pressListeners++ === 0) {
       document.addEventListener("pointerdown", onPress, true);
+      document.addEventListener("keydown", onKeyPress, true);
     }
     return () => {
       if (--pressListeners === 0) {
         document.removeEventListener("pointerdown", onPress, true);
+        document.removeEventListener("keydown", onKeyPress, true);
         lastPressed = null;
       }
     };
@@ -529,10 +550,10 @@ export function PanelBody<T extends "div" | "form" = "div">({
 /**
  * The footer: the panel's primary action, right-aligned, outside the scroll so
  * it never scrolls away. A hairline separates it from a body that scrolls
- * under it, which the upload sheet doesn't need because its body is short.
+ * under it.
  *
  * Not `SheetFooter`, which stacks `flex-col-reverse` below `sm` and puts the
- * primary action on top: one row at every width, as `UploadSheetFooter`.
+ * primary action on top: one row at every width.
  */
 export function PanelFooter({
   className,

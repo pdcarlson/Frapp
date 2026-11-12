@@ -257,7 +257,9 @@ const AUDIT_ACTION_PHRASES: Record<string, string> = {
   presidency_claimed: "claimed the presidency",
   president_orphaned: "left the chapter without a president",
   ai_settings_updated: "changed the AI settings",
-  ai_diagnostics_started: "turned on saving Ask Frapp answers for the Frapp team",
+  chapter_goals_updated: "changed the chapter's goals",
+  ai_diagnostics_started:
+    "turned on saving Ask Frapp answers for the Frapp team",
   ai_diagnostics_stopped: "turned off saving Ask Frapp answers",
 };
 

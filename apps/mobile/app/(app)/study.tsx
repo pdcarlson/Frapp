@@ -5,6 +5,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useCurrentChapter,
   useGeofences,
+  useMyGoals,
   usePermissionList,
   usePauseStudySession,
   useResumeStudySession,
@@ -178,6 +179,10 @@ export default function StudyScreen() {
   );
   const zonesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
+  // The week's goal (#1062): THIS WEEK draws "of 6.0 hrs" and a meter when
+  // the chapter sets the member one. The minutes stay this screen's own, so a
+  // failed read only drops the goal.
+  const myGoals = useMyGoals();
   // A refetched page adopts a session and never clears one (below), so a
   // pull cannot end a live session.
   const refresh = useRefetchAll([chapterQuery, zonesQuery, sessionsQuery]);
@@ -355,7 +360,10 @@ export default function StudyScreen() {
   const hasChapterPayload = chapterQuery.data !== undefined;
   useEffect(() => {
     if (!hoursEnabled || !hasChapterPayload) return;
-    if (failure !== MODULE_OFF_COPY.start && failure !== MODULE_OFF_COPY.session)
+    if (
+      failure !== MODULE_OFF_COPY.start &&
+      failure !== MODULE_OFF_COPY.session
+    )
       return;
     void apiRef.current.refetchChapter();
   }, [failure, hoursEnabled, hasChapterPayload]);
@@ -561,53 +569,56 @@ export default function StudyScreen() {
     );
   }, []);
 
-  const applyResponse = useCallback((response: unknown, seq: number) => {
-    // Nothing held, nothing to apply. Without this an in-flight heartbeat that
-    // answers `ACTIVE` moments after the member taps End would put the ended
-    // session back on screen, ticking, beside the notice saying it ended.
-    if (sessionIdRef.current === null) return;
-    // A response older than one already applied says nothing new and can only
-    // undo it.
-    if (seq < appliedSeqRef.current) return;
+  const applyResponse = useCallback(
+    (response: unknown, seq: number) => {
+      // Nothing held, nothing to apply. Without this an in-flight heartbeat that
+      // answers `ACTIVE` moments after the member taps End would put the ended
+      // session back on screen, ticking, beside the notice saying it ended.
+      if (sessionIdRef.current === null) return;
+      // A response older than one already applied says nothing new and can only
+      // undo it.
+      if (seq < appliedSeqRef.current) return;
 
-    // A session write got through, so the module gate is passing whatever the
-    // cached payload says. If it still says `hours` is off, the screen is
-    // hiding a live session behind "can't be updated or ended" (#2718), and
-    // that payload can sit stale for as long as the app stays foregrounded.
-    if (!hoursEnabledRef.current) void apiRef.current.refetchChapter();
+      // A session write got through, so the module gate is passing whatever the
+      // cached payload says. If it still says `hours` is off, the screen is
+      // hiding a live session behind "can't be updated or ended" (#2718), and
+      // that payload can sit stale for as long as the app stays foregrounded.
+      if (!hoursEnabledRef.current) void apiRef.current.refetchChapter();
 
-    const settled = settleIfEnded(response, sessionIdRef.current);
-    if (settled.ended) {
+      const settled = settleIfEnded(response, sessionIdRef.current);
+      if (settled.ended) {
+        appliedSeqRef.current = seq;
+        setSession(null);
+        sessionIdRef.current = null;
+        setNotice(settled.notice);
+        // The in-session refusal copy describes THIS session; once it is gone
+        // the sentence is stale, and leaving it would render "that didn't save
+        // … may not be credited" right beside a re-enabled Start button —
+        // the screen offering and denying the same action at once.
+        clearRefusalState();
+        // A session that ended while paused would otherwise leave its "return to
+        // Frapp to resume" notice in the tray, inviting the member back to a
+        // session that no longer exists (#1065).
+        void clearStudyPausedNotification();
+        // The closed session belongs in the history list below, which is served
+        // by the same query.
+        void apiRef.current.refetchSessions();
+        return;
+      }
+
+      const next = narrowSession(response);
+      if (!next) return;
+      if (next.id !== sessionIdRef.current) return;
       appliedSeqRef.current = seq;
-      setSession(null);
-      sessionIdRef.current = null;
-      setNotice(settled.notice);
-      // The in-session refusal copy describes THIS session; once it is gone
-      // the sentence is stale, and leaving it would render "that didn't save
-      // … may not be credited" right beside a re-enabled Start button —
-      // the screen offering and denying the same action at once.
+      setSession(next);
+      // A write just succeeded, so a refusal message still on screen is false.
+      // Nothing else clears it: the focus reset deliberately leaves it alone
+      // (it explains a failed End on a session that is still running), so
+      // without this it survives for the life of the session.
       clearRefusalState();
-      // A session that ended while paused would otherwise leave its "return to
-      // Frapp to resume" notice in the tray, inviting the member back to a
-      // session that no longer exists (#1065).
-      void clearStudyPausedNotification();
-      // The closed session belongs in the history list below, which is served
-      // by the same query.
-      void apiRef.current.refetchSessions();
-      return;
-    }
-
-    const next = narrowSession(response);
-    if (!next) return;
-    if (next.id !== sessionIdRef.current) return;
-    appliedSeqRef.current = seq;
-    setSession(next);
-    // A write just succeeded, so a refusal message still on screen is false.
-    // Nothing else clears it: the focus reset deliberately leaves it alone
-    // (it explains a failed End on a session that is still running), so
-    // without this it survives for the life of the session.
-    clearRefusalState();
-  }, [clearRefusalState]);
+    },
+    [clearRefusalState],
+  );
 
   /** Let go of a session the server says is gone, and say so. */
   const releaseSession = useCallback(
@@ -1159,6 +1170,7 @@ export default function StudyScreen() {
         <WeekSummary
           minutes={weekTotals.minutes}
           sessionCount={weekTotals.count}
+          goalMinutes={myGoals.data?.study ?? null}
         />
 
         {history.length > 0 ? (
