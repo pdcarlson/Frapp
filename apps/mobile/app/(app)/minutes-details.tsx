@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { statusOf } from "@repo/api-sdk";
 import {
@@ -23,6 +23,7 @@ import {
   meetingWhenLabel,
   readMeetingContent,
   type MeetingType,
+  isBetaOffModule,
 } from "@repo/validation";
 import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
@@ -65,6 +66,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const BACK_TO_MINUTES: BackTarget = { label: "Minutes", href: "/minutes" };
 
 export default function MinutesDetailsScreen() {
+  // More, the event row and the push all hide while `meetings` is off for the
+  // beta; this catches a way in that skips them (a typed link), where the
+  // server would only refuse. A chapter's own switch doesn't close the
+  // screen, so minutes already posted stay readable from a notification.
+  if (isBetaOffModule("meetings")) return <Redirect href="/more" />;
+  return <MinutesDetailsScreenBody />;
+}
+
+function MinutesDetailsScreenBody() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
   const meetingQuery = useMeeting(id || null);
@@ -126,9 +136,9 @@ function LoadedMinutes({
 
   const isDraft = meeting.status === "draft";
   const finishing = isDraft && meeting.can_edit;
-  // Null when drafting from notes isn't offered here (no AI on this server).
-  // Only for a member who may also use AI on this chapter: without `ai:use`
-  // or with the president's switch off, the button would only meet a refusal.
+  // Offered where the server has AI and the president has drafting on, which
+  // is what the draft routes check; with either off the button would only
+  // meet a refusal.
   const ai = useAiSurfaces();
   const notesOffered = ai.meetingNotes;
   const draftQuery = useMeetingDraft(meeting.id, {
@@ -136,6 +146,9 @@ function LoadedMinutes({
   });
   const draftState = (notesOffered ? draftQuery.data : null) ?? null;
   const drafting = draftState?.status === "drafting";
+  // The Draft button holds its place while its read is out, so Post never
+  // moves under a thumb and the line below never says "web" and then changes.
+  const draftLoading = finishing && notesOffered && draftQuery.isPending;
 
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
@@ -237,10 +250,11 @@ function LoadedMinutes({
 
         {finishing ? (
           <View style={styles.actions}>
-            {draftState ? (
+            {draftState || draftLoading ? (
               <OnboardingSecondaryButton
                 fill
                 label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
+                disabled={!draftState}
                 onPress={() => notesRef.current?.present()}
               />
             ) : null}
@@ -262,7 +276,7 @@ function LoadedMinutes({
               style={[styles.meta, problem ? styles.problem : null]}
             >
               {problem ??
-                (empty && !draftState
+                (empty && !draftState && !draftLoading
                   ? MEETING_COPY.writeOnWeb
                   : MEETING_COPY.editOnWeb)}
             </Text>

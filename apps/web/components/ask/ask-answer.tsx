@@ -6,9 +6,8 @@ import {
   ASK_COPY,
   askAnswerSegments,
   askLeftOutLine,
-  askSourceKindLabel,
+  askSourceMetaLine,
   askUnavailableLine,
-  formatAiAnswerDate,
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -233,19 +232,6 @@ function CitationMarker({
   );
 }
 
-/** "Minutes · Budget · November 9, 2026": kind, the place inside, the date. */
-function sourceMeta(source: AskSource): string {
-  const kind = askSourceKindLabel(source.kind);
-  return [
-    // Live data's title is already its kind ("Events"), so it is said once.
-    kind === source.title ? null : kind,
-    source.detail,
-    source.date ? formatAiAnswerDate(source.date) : ASK_COPY.live,
-  ]
-    .filter((part): part is string => !!part)
-    .join(" · ");
-}
-
 function SourceRow({
   number,
   source,
@@ -269,7 +255,7 @@ function SourceRow({
           {source.title}
         </span>
         <span className="block break-words text-caption text-muted-foreground">
-          {sourceMeta(source)}
+          {askSourceMetaLine(source)}
         </span>
       </span>
     </>

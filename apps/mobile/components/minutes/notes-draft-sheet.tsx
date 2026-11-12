@@ -95,7 +95,14 @@ export const NotesDraftSheet = forwardRef<
 
   const drafting =
     state.status === "drafting" || request.isPending || use.isPending;
-  const needsConsent = state.blocked === "consent_required";
+  // The draft read's `blocked` is as old as that read. What the member just
+  // answered on the sheet, or what the server just refused, is newer.
+  const [consentNow, setConsentNow] = useState<"agreed" | "required" | null>(
+    null,
+  );
+  const needsConsent =
+    consentNow === "required" ||
+    (state.blocked === "consent_required" && consentNow !== "agreed");
 
   // Whenever a draft stops being written (put in, waiting, stopped, failed),
   // the minutes behind the sheet may be behind.
@@ -128,6 +135,7 @@ export const NotesDraftSheet = forwardRef<
       try {
         // A No leaves everything as it was: the notes stay in the box.
         if (!(await ensureConsent())) return;
+        setConsentNow("agreed");
       } catch {
         setProblem(MEETING_NOTES_COPY.consentCheckFailed);
         return;
@@ -159,8 +167,11 @@ export const NotesDraftSheet = forwardRef<
       const code = codeOf(error);
       if (code === "meeting.standards_refused")
         setProblem(STANDARDS_MEETING_NOTE);
-      else if (code === "ai.consent.required")
+      else if (code === "ai.consent.required") {
+        // Said No since the draft was read: the next press asks.
+        setConsentNow("required");
         setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
+      }
       else if (code === "ai.chapter_off")
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
       else if (code === "meeting.stale") {

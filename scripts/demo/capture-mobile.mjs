@@ -32,12 +32,13 @@
  *   google-play/       the framed set, 1242x2208 (9:16; Play caps the long
  *                      side at 2x the short, which the App Store size passes)
  *
- * No Ask shot, no reference board, and a hard stop: if any Ask surface is on
- * screen (the + panel's "Ask Frapp" bar, or the sheet), which takes an API
- * running with `AI_ENABLED` on and Ask on for the demo chapter, the run deletes
- * all three folders and exits non-zero, so such a stack can never produce a
- * store set. Run it against the default stack, where AI is off. (Until
- * 2026-11-12 the switch was a build flag, `EXPO_PUBLIC_ASK_ENABLED`.)
+ * No Ask shot, no reference board, and a hard stop: if an AI surface is in a
+ * shot (see `ASK_ON_SCREEN`), which takes an API running with `AI_ENABLED`
+ * on, the run deletes all three folders and exits non-zero. Run it against
+ * the default stack, where AI is off. Until 2026-11-12 the entry was a header
+ * pill behind a build flag, `EXPO_PUBLIC_ASK_ENABLED`, and this stop saw it on
+ * every tab; the bar that replaced it is inside the + panel, so the stop now
+ * guards the shots, not the stack.
  * The presets and the checks each file must pass live in
  * `store-screenshots.mjs`; any failed check deletes the folders, like the Ask
  * refusal. Procedure and the sizes' provenance:
@@ -384,21 +385,27 @@ const STORE_SCREENS = [
 ];
 
 /**
- * Whether any Ask surface is on screen: the + panel's bar or the sheet's
- * title ("Ask Frapp", as a label or as a leaf's whole text), plus the ✦ glyph
- * and bare "Ask" the entry used until 2026-11-12, kept so an old bundle is
- * still refused. Runs in the page.
+ * Whether an AI surface is in the shot. Since 2026-11-12 Ask's entry is a bar
+ * inside the + panel, which no shot opens, so Ask itself can't be
+ * photographed by accident; what can is a row that only exists with AI on:
+ * the Tasks tab's "N suggested tasks". Also matched: "Ask Frapp" (the bar or
+ * the sheet, should a shot ever open one) and the ✦ glyph and bare "Ask" the
+ * entry used before, so an old bundle is still refused. Runs in the page.
  */
 const ASK_ON_SCREEN = () =>
   document.body.innerText.includes("✦") ||
   Boolean(
     document.querySelector('[aria-label="Ask"], [aria-label="Ask Frapp"]'),
   ) ||
-  [...document.querySelectorAll("body *")].some(
-    (el) =>
-      el.childElementCount === 0 &&
-      ["Ask", "Ask Frapp"].includes(el.textContent.trim()),
-  );
+  [...document.querySelectorAll("body *")].some((el) => {
+    if (el.childElementCount !== 0) return false;
+    const text = el.textContent.trim();
+    return (
+      text === "Ask" ||
+      text === "Ask Frapp" ||
+      /^\d+ suggested tasks?$/.test(text)
+    );
+  });
 
 class AskOnScreenError extends Error {}
 
@@ -525,7 +532,7 @@ async function captureRunningApp(
       // checked is what is saved.
       if (noAsk && (await page.evaluate(ASK_ON_SCREEN))) {
         throw new AskOnScreenError(
-          `${slug}: an Ask surface is on screen. Production has no Ask ` +
+          `${slug}: an AI surface is on screen. Production has no AI ` +
             `(#2259), so the API behind this capture must run with ` +
             `AI_ENABLED off. Refusing to write a store set.`,
         );

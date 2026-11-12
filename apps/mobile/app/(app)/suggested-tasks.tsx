@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import {
@@ -33,6 +33,7 @@ import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
+import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { ValidatedNewTask } from "@/lib/tasks/create-task";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
@@ -94,6 +95,14 @@ export function suggestionEdits(
 }
 
 export default function SuggestedTasksScreen() {
+  // Every way in is drawn only where the server has AI; this catches one
+  // that skips them, such as an old notification after AI was turned off.
+  const available = useAiSurfaces().available;
+  if (available === false) return <Redirect href="/tasks" />;
+  return <SuggestedTasks />;
+}
+
+function SuggestedTasks() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
@@ -124,6 +133,11 @@ export default function SuggestedTasksScreen() {
   );
   // Why a row's last press didn't go through, shown under that row.
   const [problems, setProblems] = useState<Record<string, string>>({});
+  // A refusal that means the row is gone (someone else decided it, it
+  // expired, its minutes changed). The list reads again and drops the row, so
+  // the reason is said above the list, by title, where it outlives the row:
+  // a row that just vanished would read as "accepted".
+  const [gone, setGone] = useState<string | null>(null);
   const [formFor, setFormFor] = useState<Waiting | null>(null);
   const formRef = useRef<BottomSheetModal>(null);
   useEffect(() => {
@@ -146,12 +160,15 @@ export default function SuggestedTasksScreen() {
     );
   }
 
-  function fail(id: string, error: unknown) {
+  function fail(item: Waiting, error: unknown) {
+    const refusal = aiSuggestionRefusalLine(codeOf(error));
+    if (refusal) {
+      setGone(`“${item.task.title}”: ${refusal}`);
+      return;
+    }
     setProblems((previous) => ({
       ...previous,
-      [id]:
-        aiSuggestionRefusalLine(codeOf(error)) ??
-        errorCopy(error, AI_SUGGESTION_COPY.tryAgain),
+      [item.id]: errorCopy(error, AI_SUGGESTION_COPY.tryAgain),
     }));
   }
 
@@ -161,22 +178,24 @@ export default function SuggestedTasksScreen() {
       setFormFor(item);
       return;
     }
+    setGone(null);
     setBusy({ id: item.id, doing: "accept" });
     try {
       await accept.mutateAsync({ id: item.id });
     } catch (error) {
-      fail(item.id, error);
+      fail(item, error);
     } finally {
       setBusy(null);
     }
   }
 
   async function dismissRow(item: Waiting) {
+    setGone(null);
     setBusy({ id: item.id, doing: "dismiss" });
     try {
       await dismiss.mutateAsync(item.id);
     } catch (error) {
-      fail(item.id, error);
+      fail(item, error);
     } finally {
       setBusy(null);
     }
@@ -227,6 +246,7 @@ export default function SuggestedTasksScreen() {
         title={AI_SUGGESTION_COPY.heading}
         refresh={refresh}
       >
+        {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
         {suggestionsQuery.isPending ? (
           <SuggestionsSkeleton />
         ) : suggestionsQuery.isError && !suggestionsQuery.data ? (

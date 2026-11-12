@@ -206,8 +206,8 @@ choose **Agree and continue**; the App Review reviewer does the same, which
 `node scripts/demo/capture-mobile.mjs --store` is the second mode: the framed
 store sets for both stores, into `screenshots/app-store/` and
 `screenshots/google-play/`, with no Ask or Dues shot and a hard stop if any Ask
-surface is on screen, which only an API running with `AI_ENABLED` on can
-produce. The procedure, the sizes and why, and how the frames
+surface (or a suggested-tasks row) is in a shot, which only an API running
+with `AI_ENABLED` on can produce. The procedure, the sizes and why, and how the frames
 are made are in
 [`mobile.md` § 6.4](../ops/deployment/mobile.md#64-store-screenshots).
 
@@ -304,7 +304,7 @@ Ask (s17) has no client flag. The app draws it only when the API says AI is
 on for the member (`AI_ENABLED` on the server, Ask on for the chapter, and a
 role with `ai:use`), and the seeded stack runs with AI off, so neither capture
 shows Ask and the marketing run no longer shoots `02-ask-answer`. The store
-run (`--store`) refuses to write anything if it finds an Ask surface
+run (`--store`) refuses to write anything if a shot holds an AI surface
 ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)). `EXPO_PUBLIC_*`
 values are inlined when Metro transforms the bundle, so after changing one
 restart Expo with `--clear`.

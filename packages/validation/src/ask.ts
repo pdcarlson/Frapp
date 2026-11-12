@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatAiAnswerDate } from "./ai-copy";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -404,6 +405,22 @@ export function askLeftOutLine(count: number): string {
 /** The line Ask shows while the beta diagnostics window is on. */
 export function askSavedLine(endsOn: string): string {
   return `Questions and answers here are saved for the Frapp team until ${endsOn}, to fix problems during the beta.`;
+}
+
+/**
+ * "Minutes · Budget · November 9, 2026": a source's kind, the place inside
+ * it, and its date written out, as web and mobile both list it.
+ */
+export function askSourceMetaLine(source: AskSource): string {
+  const kind = askSourceKindLabel(source.kind);
+  return [
+    // Live data's title is already its kind ("Events"), so it is said once.
+    kind === source.title ? null : kind,
+    source.detail,
+    source.date ? formatAiAnswerDate(source.date) : ASK_COPY.live,
+  ]
+    .filter((part): part is string => !!part)
+    .join(" · ");
 }
 
 /** What an unavailable answer says, with a fallback for a reason this build does not know. */

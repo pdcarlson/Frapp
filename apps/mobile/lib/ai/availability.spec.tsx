@@ -97,12 +97,12 @@ describe("useAiSurfaces", () => {
     });
   });
 
-  it("offers nothing to a member whose role can't use AI", () => {
+  it("keeps Ask from a member whose role can't use AI, but not drafting, which the server gates on `meetings:record`", () => {
     state.permissions = { data: { permissions: [] }, isPending: false };
     expect(read()).toMatchObject({
       available: true,
       ask: false,
-      meetingNotes: false,
+      meetingNotes: true,
     });
   });
 

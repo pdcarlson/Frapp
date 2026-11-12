@@ -5,9 +5,8 @@ import {
   ASK_COPY,
   askAnswerSegments,
   askLeftOutLine,
-  askSourceKindLabel,
+  askSourceMetaLine,
   askUnavailableLine,
-  formatAiAnswerDate,
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -210,19 +209,6 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
   );
 }
 
-/** "Minutes · Budget · November 9, 2026": kind, the place inside, the date. */
-export function askSourceMeta(source: AskSource): string {
-  const kind = askSourceKindLabel(source.kind);
-  return [
-    // Live data's title is already its kind ("Events"), so it is said once.
-    kind === source.title ? null : kind,
-    source.detail,
-    source.date ? formatAiAnswerDate(source.date) : ASK_COPY.live,
-  ]
-    .filter((part): part is string => !!part)
-    .join(" · ");
-}
-
 function SourceRow({
   number,
   source,
@@ -238,7 +224,7 @@ function SourceRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const meta = askSourceMeta(source);
+  const meta = askSourceMetaLine(source);
   const body = (
     <>
       <Text style={styles.sourceNumber}>{number}</Text>

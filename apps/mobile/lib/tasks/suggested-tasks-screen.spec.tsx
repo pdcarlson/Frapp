@@ -45,6 +45,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
   useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
 }));
+const ai = vi.hoisted(() => ({ available: true as boolean | undefined }));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ai,
+}));
 vi.mock("@/components/screen-shell", () => ({
   ScreenShell: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -184,14 +188,34 @@ describe("Suggested tasks", () => {
     expect(state.dismiss).toHaveBeenCalledWith("s1");
   });
 
-  it("says why an accept was refused, under its row", async () => {
+  it("goes to Tasks, and asks the server nothing, where AI is off", () => {
+    ai.available = false;
+    state.source = "untouched";
+    const tree = render();
+    ai.available = true;
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Redirect")[0]
+        .props.href,
+    ).toBe("/tasks");
+    expect(state.source).toBe("untouched");
+  });
+
+  it("names the task and why it was refused, where it outlives the row", async () => {
     state.accept.mockRejectedValue({ code: "ai.suggestion.decided" });
     const tree = render();
     await act(async () =>
       byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`).props.onPress(),
     );
+    // The list reads again and drops the row, as the server no longer
+    // lists it; the reason must still be on screen.
+    state.items = [UNFINISHED];
+    act(() => tree.update(
+      <FrappThemeProvider>
+        <SuggestedTasksScreen />
+      </FrappThemeProvider>,
+    ));
     expect(screenText(tree)).toContain(
-      aiSuggestionRefusalLine("ai.suggestion.decided"),
+      `“Book the hall”: ${aiSuggestionRefusalLine("ai.suggestion.decided")}`,
     );
   });
 

@@ -27,7 +27,7 @@ export interface AiSurfaces {
   available: boolean | undefined;
   /** Ask Frapp: the chapter's switch is on and the member holds `ai:use`. */
   ask: boolean;
-  /** Minutes drafted from notes: the chapter's switch and `ai:use`. */
+  /** Minutes drafted from notes: the chapter's switch is on. */
   meetingNotes: boolean;
   /** Every read behind the answers above has settled, either way. */
   ready: boolean;
@@ -49,6 +49,9 @@ export function useAiSurfaces(): AiSurfaces {
       consent.isError ||
       (available === true && !settings.isPending && !permissionsQuery.isPending),
     ask: mayUse && settings.data?.ask === true,
-    meetingNotes: mayUse && settings.data?.meeting_notes === true,
+    // Not `ai:use`: the draft routes check `meetings:record`, the chapter's
+    // switch and the member's own yes, and web offers drafting on the same
+    // terms, so the phone does too.
+    meetingNotes: available === true && settings.data?.meeting_notes === true,
   };
 }

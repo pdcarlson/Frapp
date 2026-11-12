@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import {
   useMeetings,
   useMemberDisplayNames,
   useViewerUserId,
   type MeetingSummary,
 } from "@repo/hooks";
-import { MEETING_LIST_COPY, meetingTitleLine } from "@repo/validation";
+import { MEETING_LIST_COPY, meetingTitleLine , isBetaOffModule } from "@repo/validation";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import {
@@ -28,6 +28,15 @@ import { ErrorState, SkeletonRegion } from "@/components/state-block";
  * the day, written out. No preview of the minutes themselves.
  */
 export default function MinutesScreen() {
+  // More, the event row and the push all hide while `meetings` is off for the
+  // beta; this catches a way in that skips them (a typed link), where the
+  // server would only refuse. A chapter's own switch doesn't close the
+  // screen, so minutes already posted stay readable from a notification.
+  if (isBetaOffModule("meetings")) return <Redirect href="/more" />;
+  return <MinutesScreenBody />;
+}
+
+function MinutesScreenBody() {
   const router = useRouter();
   const meetingsQuery = useMeetings();
   const viewerId = useViewerUserId();

@@ -28,13 +28,13 @@ vi.mock("@/lib/ai/availability", () => ({
 // `onClosed` a spec can reach.
 const sheet = vi.hoisted(() => ({
   present: vi.fn(),
-  onClosed: undefined as undefined | (() => void),
+  onClosed: undefined as undefined | ((leftForSource: boolean) => void),
 }));
 vi.mock("@/components/ask/ask-sheet", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
     AskSheet: forwardRef(function AskSheet(
-      props: { onClosed?: () => void },
+      props: { onClosed?: (leftForSource: boolean) => void },
       ref,
     ) {
       useImperativeHandle(ref, () => sheet);
@@ -97,7 +97,14 @@ describe("the ask route (frapp://ask)", () => {
   it("goes to Chat home when the sheet closes, never the bare shell", () => {
     surfaces.ask = true;
     render();
-    act(() => sheet.onClosed?.());
+    act(() => sheet.onClosed?.(false));
     expect(vi.mocked(useRouter)().dismissTo).toHaveBeenCalledWith("/");
+  });
+
+  it("stays put when the sheet closed to open a source, so that screen isn't popped", () => {
+    surfaces.ask = true;
+    render();
+    act(() => sheet.onClosed?.(true));
+    expect(vi.mocked(useRouter)().dismissTo).not.toHaveBeenCalled();
   });
 });

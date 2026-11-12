@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   surfaces: { available: true as boolean | undefined, meetingNotes: true },
   draft: { status: "none" } as Record<string, unknown> | null,
   draftEnabled: undefined as boolean | undefined,
+  draftPending: false,
   suggestions: [] as unknown[],
   suggestionsEnabled: undefined as boolean | undefined,
   post: vi.fn(),
@@ -38,7 +39,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMeetingDraft: (_id: string, options: { enabled: boolean }) => {
     state.draftEnabled = options.enabled;
-    return { data: options.enabled ? state.draft : undefined, refetch: vi.fn() };
+    const pending = options.enabled && state.draftPending;
+    return {
+      data: options.enabled && !pending ? state.draft : undefined,
+      isPending: pending,
+      refetch: vi.fn(),
+    };
   },
   useAiSuggestions: (options: { enabled: boolean }) => {
     state.suggestionsEnabled = options.enabled;
@@ -81,6 +87,11 @@ vi.mock("@/components/minutes/notes-draft-sheet", async () => {
 });
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/minutes/meetings-on", () => ({ confirmAlert: confirm }));
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/validation")>()),
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
 }));
@@ -134,6 +145,7 @@ beforeEach(() => {
   state.draft = { status: "none" };
   state.suggestions = [];
   state.notesSheet = 0;
+  state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
   state.post.mockResolvedValue({});
   confirm.mockResolvedValue(true);
@@ -166,6 +178,15 @@ describe("Minutes on the phone", () => {
     expect(state.draftEnabled).toBe(false);
     // Still postable: what was written on the web can be posted from here.
     expect(button(without, MEETING_COPY.post)).toBeDefined();
+  });
+
+  it("holds Draft minutes' place while its read is out, so Post doesn't move", () => {
+    state.draftPending = true;
+    state.meeting = meeting({ content: {} });
+    const tree = render();
+    expect(button(tree, MEETING_NOTES_COPY.draft).props.disabled).toBe(true);
+    // Not "write them on the web": the phone is about to offer drafting.
+    expect(screenText(tree)).not.toContain(MEETING_COPY.writeOnWeb);
   });
 
   it("sends an editor with nothing written, and no drafting, to the web", () => {
@@ -242,6 +263,16 @@ describe("Minutes on the phone", () => {
     state.surfaces = { available: false, meetingNotes: false };
     render();
     expect(state.suggestionsEnabled).toBe(false);
+  });
+
+  it("sends a typed link to More while meetings is off for the beta", () => {
+    betaOff.keys = ["meetings"];
+    const tree = render();
+    betaOff.keys = [];
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Redirect")[0]
+        .props.href,
+    ).toBe("/more");
   });
 
   it("never asks for suggestions on a draft", () => {

@@ -7,13 +7,14 @@ import type { AskExchange } from "@repo/hooks";
 import {
   ASK_COPY,
   askLeftOutLine,
+  askSourceMetaLine,
   askUnavailableLine,
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
-import { AskExchangeCard, askSourceMeta } from "./answer-card";
+import { AskExchangeCard } from "./answer-card";
 
 /**
  * The Ask card's states (`spec/behavior/ai.md` § Ask; #450, #451). Every word
@@ -229,7 +230,7 @@ describe("AskExchangeCard", () => {
       openingSourceId: "s1",
     });
     expect(screenText(tree)).toContain("Opening");
-    expect(screenText(tree)).not.toContain(askSourceMeta(BYLAWS));
+    expect(screenText(tree)).not.toContain(askSourceMetaLine(BYLAWS));
   });
 
   it("says what the member should know before relying on the answer", () => {
@@ -254,12 +255,12 @@ describe("AskExchangeCard", () => {
   });
 });
 
-describe("askSourceMeta", () => {
+describe("askSourceMetaLine", () => {
   it("writes kind, place and the full date", () => {
-    expect(askSourceMeta(BYLAWS)).toMatch(/· Article IV · September 1, 2026$/);
+    expect(askSourceMetaLine(BYLAWS)).toMatch(/· Article IV · September 1, 2026$/);
   });
 
   it("marks live data, and says its kind once when the title is the kind", () => {
-    expect(askSourceMeta(ROSTER).endsWith(ASK_COPY.live)).toBe(true);
+    expect(askSourceMetaLine(ROSTER).endsWith(ASK_COPY.live)).toBe(true);
   });
 });

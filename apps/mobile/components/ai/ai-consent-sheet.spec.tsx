@@ -183,6 +183,32 @@ describe("useAiConsentGate", () => {
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it("counts a Yes that was still saving when the sheet was swiped away", async () => {
+    let land!: () => void;
+    mutateAsync.mockImplementation(
+      () => new Promise<void>((resolve) => (land = () => resolve())),
+    );
+    const tree = render(<Host />);
+    const asked = gate.ensureConsent();
+    act(() => button(tree, AI_CONSENT_COPY.yes).props.onPress());
+    act(() => sheetNode(tree).props.onDismiss());
+    await act(async () => land());
+    await expect(asked).resolves.toBe(true);
+  });
+
+  it("settles as no when a save that outlived the sheet fails", async () => {
+    let fail!: () => void;
+    mutateAsync.mockImplementation(
+      () => new Promise<void>((_resolve, reject) => (fail = () => reject(new Error("x")))),
+    );
+    const tree = render(<Host />);
+    const asked = gate.ensureConsent();
+    act(() => button(tree, AI_CONSENT_COPY.yes).props.onPress());
+    act(() => sheetNode(tree).props.onDismiss());
+    await act(async () => fail());
+    await expect(asked).resolves.toBe(false);
+  });
+
   it("is a no, with no sheet, where the server has no AI", async () => {
     consentQuery.data = null;
     render(<Host />);

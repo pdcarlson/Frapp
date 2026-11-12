@@ -31,10 +31,24 @@ export default function AskScreen() {
     if (ready && !ask) toChatHome();
   }, [ask, ready, toChatHome]);
 
-  return ask ? <AskRoute onClosed={toChatHome} /> : null;
+  // A source's screen is pushed over this one when the member opens it; going
+  // to Chat home then would pop that screen straight back off. Coming back
+  // from the source lands here, which presents the sheet and its answer again.
+  const onClosed = useCallback(
+    (leftForSource: boolean) => {
+      if (!leftForSource) toChatHome();
+    },
+    [toChatHome],
+  );
+
+  return ask ? <AskRoute onClosed={onClosed} /> : null;
 }
 
-function AskRoute({ onClosed }: { onClosed: () => void }) {
+function AskRoute({
+  onClosed,
+}: {
+  onClosed: (leftForSource: boolean) => void;
+}) {
   const sheetRef = useRef<BottomSheetModal>(null);
   const present = useCallback(() => sheetRef.current?.present(), []);
   // On every arrival: `present()` is a no-op on a sheet already up.

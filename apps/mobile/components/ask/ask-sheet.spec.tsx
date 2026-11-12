@@ -243,13 +243,24 @@ describe("AskSheet", () => {
     );
   });
 
+  it("tells its host when it closed for a source, and only that once", async () => {
+    const onClosed = vi.fn();
+    hooks.exchange = answered();
+    const tree = render(onClosed);
+    await act(async () => sourceRow(tree, 2).props.onPress());
+    act(() => sheet(tree).props.onDismiss());
+    expect(onClosed).toHaveBeenLastCalledWith(true);
+    act(() => sheet(tree).props.onDismiss());
+    expect(onClosed).toHaveBeenLastCalledWith(false);
+  });
+
   it("drops a question still being answered when the sheet closes, and keeps a finished one", () => {
     const onClosed = vi.fn();
     hooks.exchange = { ...answered(), phase: "working", answer: null };
     const working = render(onClosed);
     act(() => sheet(working).props.onDismiss());
     expect(hooks.reset).toHaveBeenCalledTimes(1);
-    expect(onClosed).toHaveBeenCalledTimes(1);
+    expect(onClosed).toHaveBeenCalledWith(false);
 
     hooks.reset.mockClear();
     hooks.exchange = answered();

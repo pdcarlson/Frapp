@@ -140,8 +140,12 @@ function heldExchange(
 export const AskSheet = forwardRef<
   BottomSheetModal,
   {
-    /** The sheet closed, however it closed. */
-    onClosed?: () => void;
+    /**
+     * The sheet closed. `leftForSource` is true when it closed because the
+     * member opened a source's screen, which is now on top: a host must not
+     * navigate over it.
+     */
+    onClosed?: (leftForSource: boolean) => void;
   }
 >(function AskSheet({ onClosed }, ref) {
   const closeSheet = useSheetClose(ref);
@@ -163,6 +167,7 @@ export const AskSheet = forwardRef<
   const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const presenting = useRef(false);
+  const leftForSource = useRef(false);
 
   const savedUntil = status.data?.saved_until ?? null;
   const shown = held ?? exchange;
@@ -177,7 +182,9 @@ export const AskSheet = forwardRef<
   const onDismiss = useCallback(() => {
     setShownOpen(false);
     if (workingRef.current) reset();
-    onClosed?.();
+    const left = leftForSource.current;
+    leftForSource.current = false;
+    onClosed?.(left);
   }, [onClosed, reset]);
 
   const submit = useCallback(
@@ -217,6 +224,7 @@ export const AskSheet = forwardRef<
       const opening = askSourceOpening(source);
       if (!opening) return;
       if (opening.kind === "route") {
+        leftForSource.current = true;
         closeSheet();
         openHref(router, asRoute(notificationHref(opening.target)));
         return;

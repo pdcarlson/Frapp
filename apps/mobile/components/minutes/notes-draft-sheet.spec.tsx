@@ -157,6 +157,31 @@ describe("NotesDraftSheet", () => {
     expect(field(tree).props.value).toBe("Notes");
   });
 
+  it("stops saying consent is missing once the member has said yes", async () => {
+    confirm.mockResolvedValue(false);
+    const tree = render(draftState({ blocked: "consent_required" } as never), true);
+    act(() => field(tree).props.onChangeText("Notes"));
+    // Yes on the sheet, then Cancel on "replace what's written?".
+    await press(tree, MEETING_NOTES_COPY.draft);
+    expect(screenText(tree)).not.toContain(
+      MEETING_DRAFT_FAILURE_COPY.consent_required,
+    );
+    // And the next press doesn't ask again.
+    await press(tree, MEETING_NOTES_COPY.draft);
+    expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks on the next press after the server says consent is missing", async () => {
+    hooks.request.mockRejectedValueOnce({ code: "ai.consent.required" });
+    const tree = render(draftState());
+    act(() => field(tree).props.onChangeText("Notes"));
+    await press(tree, MEETING_NOTES_COPY.draft);
+    expect(gate.ensureConsent).not.toHaveBeenCalled();
+    await press(tree, MEETING_NOTES_COPY.draft);
+    expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
+    expect(hooks.request).toHaveBeenCalledTimes(2);
+  });
+
   it("says it couldn't check consent rather than treating a failed read as No", async () => {
     gate.ensureConsent.mockRejectedValue(new Error("offline"));
     const tree = render(draftState({ blocked: "consent_required" } as never));

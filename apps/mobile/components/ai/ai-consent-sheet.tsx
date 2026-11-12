@@ -77,6 +77,12 @@ export const AiConsentSheet = forwardRef<BottomSheetModal, AiConsentSheetProps>(
     const [error, setError] = useState<string | null>(null);
     // Which button was pressed, so only that one shows it is saving.
     const [pending, setPending] = useState<Answer | null>(null);
+    // The sheet can be swiped away while an answer is saving. Its close is
+    // reported only once the save has ended, after the answer if there is
+    // one, so a Yes that was on its way is never reported as "closed, no
+    // answer".
+    const saving = useRef(false);
+    const closedWhileSaving = useRef(false);
 
     const providers = joinNames(
       consent.sheet.providers.map((provider) => provider.name),
@@ -88,6 +94,7 @@ export const AiConsentSheet = forwardRef<BottomSheetModal, AiConsentSheetProps>(
         if (pending !== null) return;
         setError(null);
         setPending(choice);
+        saving.current = true;
         const sentFrom = visit();
         try {
           await answer.mutateAsync({
@@ -103,10 +110,24 @@ export const AiConsentSheet = forwardRef<BottomSheetModal, AiConsentSheetProps>(
             setError(errorCopy(failure, AI_CONSENT_COPY.saveFailed));
           }
         } finally {
+          saving.current = false;
           setPending(null);
+          if (closedWhileSaving.current) {
+            closedWhileSaving.current = false;
+            onClosed?.();
+          }
         }
       },
-      [answer, consent.sheet.version, dismiss, isSameVisit, onAnswered, pending, visit],
+      [
+        answer,
+        consent.sheet.version,
+        dismiss,
+        isSameVisit,
+        onAnswered,
+        onClosed,
+        pending,
+        visit,
+      ],
     );
 
     return (
@@ -121,7 +142,8 @@ export const AiConsentSheet = forwardRef<BottomSheetModal, AiConsentSheetProps>(
         onDismiss={() => {
           markClosed();
           setError(null);
-          onClosed?.();
+          if (saving.current) closedWhileSaving.current = true;
+          else onClosed?.();
         }}
       >
         <SheetBackToClose onClose={closeSheet} />
