@@ -4,9 +4,13 @@ import { useId } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FILTER_CHIP_CLASS } from "@/components/shared/filter-chip";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   dateFilterLabel,
   isActiveDateFilter,
@@ -40,7 +44,10 @@ export function DateFilterChip({
     {
       key: "custom",
       label: "Custom range",
-      next: value?.preset === "custom" ? value : { preset: "custom", from: null, to: null },
+      next:
+        value?.preset === "custom"
+          ? value
+          : { preset: "custom", from: null, to: null },
     },
   ];
   const current = value === null ? "any" : value.preset;
@@ -54,7 +61,9 @@ export function DateFilterChip({
           variant={active ? "tinted" : "secondary"}
           size="toolbar"
           className={CHIP}
-          aria-label={active ? `Date added: ${dateFilterLabel(value)}` : "Date added"}
+          aria-label={
+            active ? `Date added: ${dateFilterLabel(value)}` : "Date added"
+          }
         >
           <span className="max-w-[180px] truncate">
             {active ? dateFilterLabel(value) : "Date added"}
@@ -93,28 +102,22 @@ export function DateFilterChip({
               <Label htmlFor={`${id}-from`} className="text-caption text-muted">
                 From
               </Label>
-              <Input
+              <DateField
                 id={`${id}-from`}
-                type="date"
+                lean="back"
                 value={custom.from ?? ""}
-                max={custom.to ?? undefined}
-                onChange={(event) =>
-                  onChange({ ...custom, from: event.target.value || null })
-                }
+                onChange={(from) => onChange({ ...custom, from: from || null })}
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor={`${id}-to`} className="text-caption text-muted">
                 To
               </Label>
-              <Input
+              <DateField
                 id={`${id}-to`}
-                type="date"
+                lean="back"
                 value={custom.to ?? ""}
-                min={custom.from ?? undefined}
-                onChange={(event) =>
-                  onChange({ ...custom, to: event.target.value || null })
-                }
+                onChange={(to) => onChange({ ...custom, to: to || null })}
               />
             </div>
           </div>
