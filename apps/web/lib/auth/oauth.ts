@@ -1,3 +1,4 @@
+import { describeOAuthError } from "@repo/hooks/auth-error-copy";
 import { type AuthCallbackIntent, buildAuthCallbackUrl } from "@/lib/auth/redirect";
 
 export const OAUTH_PROVIDERS = ["apple", "google"] as const;
@@ -5,12 +6,6 @@ export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
 
 export const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
 const PLACEHOLDER_EMAIL_HOST = "users.invalid";
-
-const IDENTITY_COLLISION_CODES = new Set([
-  "identity_already_exists",
-  "user_already_exists",
-  "email_exists",
-]);
 
 /**
  * Member-facing copy when GoTrue will not auto-link a new OAuth identity onto
@@ -44,39 +39,17 @@ export function isPlaceholderAuthEmail(email: string | null | undefined): boolea
   return host === PLACEHOLDER_EMAIL_HOST;
 }
 
-export function isIdentityCollisionError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const code = "code" in error ? error.code : undefined;
-  if (typeof code === "string" && IDENTITY_COLLISION_CODES.has(code)) {
-    return true;
-  }
-  const message = "message" in error ? error.message : undefined;
-  if (typeof message !== "string") return false;
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("already been registered") ||
-    lower.includes("already registered") ||
-    lower.includes("identity already exists")
-  );
-}
-
+/**
+ * A refused Google or Apple start, in the shared auth map's words
+ * (`@repo/hooks/auth-error-copy`): never the provider's or GoTrue's sentence.
+ */
 export function describeOAuthKickoffError(error: unknown): string {
-  if (isIdentityCollisionError(error)) return IDENTITY_COLLISION_COPY;
-  const message =
-    error && typeof error === "object" && "message" in error
-      ? error.message
-      : undefined;
-  if (typeof message === "string" && message.trim().length > 0) {
-    const lower = message.toLowerCase();
-    if (
-      lower.includes("provider is not enabled") ||
-      lower.includes("unsupported provider")
-    ) {
-      return OAUTH_UNAVAILABLE_COPY;
-    }
-    return message;
-  }
-  return "Unable to start sign-in. Retry in a moment.";
+  return describeOAuthError(error, {
+    identityCollision: IDENTITY_COLLISION_COPY,
+    providerUnavailable: OAUTH_UNAVAILABLE_COPY,
+    deadLink: "The link has expired. Request a new one below.",
+    fallback: "Unable to start sign-in. Retry in a moment.",
+  });
 }
 
 /**

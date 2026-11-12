@@ -39,6 +39,8 @@ const mockState = vi.hoisted(() => ({
   signInWithOtpResult: { error: null as { message: string } | null },
   signInWithPasswordCalls: [] as Array<{ email: string; password: string }>,
   signInWithOtpCalls: [] as Array<{ email: string }>,
+  resendResult: { error: null as { message: string; code?: string } | null },
+  resendCalls: [] as Array<Record<string, unknown>>,
   signInWithOAuthCalls: [] as Array<{
     provider: string;
     options?: {
@@ -157,6 +159,10 @@ vi.mock("./supabase", async () => {
         mockState.signInWithOtpCalls.push(input);
         return mockState.signInWithOtpResult;
       }),
+      resend: vi.fn(async (input: Record<string, unknown>) => {
+        mockState.resendCalls.push(input);
+        return mockState.resendResult;
+      }),
       signInWithOAuth: vi.fn(
         async (input: {
           provider: string;
@@ -190,6 +196,7 @@ vi.mock("./supabase", async () => {
 });
 
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
+import { DEAD_LINK_COPY, FINISH_FAILED_COPY } from "./auth-providers";
 import { AUTH_TOKEN_STORAGE_KEY, readAuthToken } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
@@ -351,6 +358,8 @@ beforeEach(async () => {
   mockState.signInWithOtpResult = { error: null };
   mockState.signInWithPasswordCalls = [];
   mockState.signInWithOtpCalls = [];
+  mockState.resendResult = { error: null };
+  mockState.resendCalls = [];
   mockState.signInWithOAuthCalls = [];
   mockState.signInWithOAuthResult = {
     data: { url: "https://accounts.google.com/o/oauth" },
@@ -839,6 +848,46 @@ describe("AuthSessionProvider — sign-in", () => {
   });
 });
 
+describe("AuthSessionProvider — confirmation resend (#3833)", () => {
+  it("resends the sign-up confirmation back into the app", async () => {
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.resendConfirmation({
+        email: "officer@university.edu",
+      });
+    });
+
+    // The magic link's redirect, so the link opens this app, not a browser.
+    expect(mockState.resendCalls).toEqual([
+      {
+        type: "signup",
+        email: "officer@university.edu",
+        options: { emailRedirectTo: "frapp:///?" },
+      },
+    ]);
+  });
+
+  it("reports and rethrows a refused resend", async () => {
+    mockState.resendResult = {
+      error: {
+        message: "For security purposes, you can only request this after 30 seconds.",
+        code: "over_email_send_rate_limit",
+      },
+    };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await expect(
+      result.current.resendConfirmation({ email: "officer@university.edu" }),
+    ).rejects.toMatchObject({ code: "over_email_send_rate_limit" });
+    expect(reportAuthFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: "confirmation_resend" }),
+    );
+  });
+});
+
 describe("AuthSessionProvider — magic-link callback", () => {
   it("exchanges tokens from the URL fragment", async () => {
     mockState.deepLinkUrl =
@@ -859,15 +908,15 @@ describe("AuthSessionProvider — magic-link callback", () => {
   });
 
   it("surfaces the reason an expired link failed instead of failing silently", async () => {
+    // GoTrue's redirect for a dead email link, as it sends it.
     mockState.deepLinkUrl =
-      "frapp://#error=access_denied&error_description=Email+link+is+invalid+or+has+expired";
+      "frapp://#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
+    // In Frapp's words, read from the code; never GoTrue's sentence (#3833).
     await waitFor(() =>
-      expect(result.current.callbackError).toBe(
-        "Email link is invalid or has expired",
-      ),
+      expect(result.current.callbackError).toBe(DEAD_LINK_COPY),
     );
     expect(result.current.status).toBe("unauthenticated");
 
@@ -881,7 +930,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
-      expect(result.current.callbackError).toBe("access_denied"),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
 
     await act(async () => {
@@ -891,18 +940,14 @@ describe("AuthSessionProvider — magic-link callback", () => {
     expect(result.current.callbackError).toBeNull();
   });
 
-  it("preserves an encoded '+' in the provider's message", async () => {
+  it("never shows the provider's own sentence", async () => {
     mockState.deepLinkUrl =
       "frapp://#error_description=Rate+limit+hit%3A+wait+1%2B+minutes";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    // URLSearchParams already turns '+' into a space and %2B into '+'. A second
-    // unescaping pass would render this as "1  minutes".
     await waitFor(() =>
-      expect(result.current.callbackError).toBe(
-        "Rate limit hit: wait 1+ minutes",
-      ),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
   });
 
@@ -911,7 +956,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
-      expect(result.current.callbackError).toBe("access_denied"),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
 
     await act(async () => {

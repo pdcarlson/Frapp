@@ -12,6 +12,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  cooldownCopy,
+  describeEmailSendError,
+  describePasswordSignInError,
+  emailCooldownSeconds,
+  isEmailNotConfirmed,
+  UNCONFIRMED_EMAIL_COPY,
+} from "@repo/hooks/auth-error-copy";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import {
   describeOAuthKickoffError,
@@ -33,16 +41,10 @@ import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * Supabase auth errors are safe to show verbatim — they are deliberately
- * non-enumerating ("Invalid login credentials" regardless of whether the email
- * exists). Anything without a message falls back to generic copy.
+ * GoTrue sends one address one auth email a minute, so Resend waits that
+ * minute out after a send instead of meeting the refusal.
  */
-function toAuthErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return "Sign-in failed. Retry in a moment.";
-}
+const RESEND_COOLDOWN_SECONDS = 60;
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
   apple: "Continue with Apple",
@@ -55,6 +57,7 @@ export default function SignIn() {
   const {
     callbackError,
     isConfigured,
+    resendConfirmation,
     sendMagicLink,
     signInWithOAuthProvider,
     signInWithPassword,
@@ -70,6 +73,22 @@ export default function SignIn() {
   const [oauthPending, setOauthPending] = useState<OAuthProvider | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
+  /**
+   * Refusals are told in Frapp's words (`@repo/hooks/auth-error-copy`), never
+   * GoTrue's sentence (#3833). A refusal that isn't a failure, such as a
+   * magic link asked for inside the email minute, is a notice, not an error.
+   */
+  const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * The address whose password matched but was never confirmed: a member who
+   * made a password account on web and opened the app before the email. The
+   * app has no sign-up of its own, so it offers to send the email again.
+   */
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(
+    null,
+  );
+  const [resending, setResending] = useState(false);
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const passwordRef = useRef<TextInput>(null);
 
   // Android's back button and back gesture close the email form, as its
@@ -77,20 +96,35 @@ export default function SignIn() {
   // backgrounding the app. While a sign-in is in flight both are held, so a
   // late result can't land on the provider view.
   useEffect(() => {
+    if (resendSecondsLeft <= 0) return undefined;
+    const timer = setTimeout(
+      () => setResendSecondsLeft((left) => left - 1),
+      1000,
+    );
+    return () => clearTimeout(timer);
+  }, [resendSecondsLeft]);
+
+  useEffect(() => {
     if (!emailOpen) return undefined;
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
         if (!submitting) {
           setEmailOpen(false);
-          setAuthError(null);
-          setMagicLinkSentTo(null);
+          clearMessages();
         }
         return true;
       },
     );
     return () => subscription.remove();
   }, [emailOpen, submitting]);
+
+  function clearMessages() {
+    setAuthError(null);
+    setNotice(null);
+    setMagicLinkSentTo(null);
+    setUnconfirmedEmail(null);
+  }
 
   if (status === "authenticated") {
     // The auth gate owns the next hop (join / welcome / tabs). Rendering the
@@ -122,8 +156,7 @@ export default function SignIn() {
     }
 
     setSubmitting(true);
-    setAuthError(null);
-    setMagicLinkSentTo(null);
+    clearMessages();
 
     try {
       if (method === "password") {
@@ -137,9 +170,45 @@ export default function SignIn() {
       await sendMagicLink({ email: normalizedEmail });
       setMagicLinkSentTo(normalizedEmail);
     } catch (error) {
-      setAuthError(toAuthErrorMessage(error));
+      if (method === "password") {
+        if (isEmailNotConfirmed(error)) {
+          setUnconfirmedEmail(normalizedEmail);
+          setAuthError(UNCONFIRMED_EMAIL_COPY);
+        } else {
+          setAuthError(describePasswordSignInError(error));
+        }
+        return;
+      }
+      // Inside GoTrue's one-email minute a link already went out.
+      const cooldown = emailCooldownSeconds(error);
+      if (cooldown !== undefined) setNotice(cooldownCopy(cooldown));
+      else setAuthError(describeEmailSendError(error));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResend() {
+    if (!unconfirmedEmail || resending || resendSecondsLeft > 0) return;
+    setResending(true);
+    setAuthError(null);
+    setNotice(null);
+    try {
+      await resendConfirmation({ email: unconfirmedEmail });
+      setResendSecondsLeft(RESEND_COOLDOWN_SECONDS);
+      setNotice(
+        `We sent a new link to ${unconfirmedEmail}. Open it on this phone to finish signing in.`,
+      );
+    } catch (error) {
+      const cooldown = emailCooldownSeconds(error);
+      if (cooldown !== undefined) {
+        setResendSecondsLeft(Math.max(cooldown, 1));
+        setNotice(cooldownCopy(cooldown));
+      } else {
+        setAuthError(describeEmailSendError(error));
+      }
+    } finally {
+      setResending(false);
     }
   }
 
@@ -157,8 +226,7 @@ export default function SignIn() {
   async function handleOAuth(provider: OAuthProvider) {
     setSubmitting(true);
     setOauthPending(provider);
-    setAuthError(null);
-    setMagicLinkSentTo(null);
+    clearMessages();
 
     try {
       await signInWithOAuthProvider(provider);
@@ -174,8 +242,7 @@ export default function SignIn() {
   function closeEmail() {
     if (submitting) return;
     setEmailOpen(false);
-    setAuthError(null);
-    setMagicLinkSentTo(null);
+    clearMessages();
   }
 
   function renderProvider(provider: OAuthProvider, filled: boolean) {
@@ -230,6 +297,7 @@ export default function SignIn() {
   const messages = (
     <>
       {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+      {notice ? <Text style={styles.successText}>{notice}</Text> : null}
       {/* A dead magic link lands back here; without this the member cannot
         tell a broken link from one they never tapped. */}
       {!authError && callbackError ? (
@@ -388,6 +456,24 @@ export default function SignIn() {
               )}
 
               {messages}
+              {/* Only for the address that was refused: an edited email is a
+                different account, and Sign in asks about it afresh. */}
+              {unconfirmedEmail &&
+              unconfirmedEmail === email.trim().toLowerCase() ? (
+                <OnboardingSecondaryButton
+                  label={
+                    resending
+                      ? "Sending…"
+                      : resendSecondsLeft > 0
+                        ? `Resend email in ${resendSecondsLeft}s`
+                        : "Resend email"
+                  }
+                  disabled={submitting || resending || resendSecondsLeft > 0}
+                  onPress={() => {
+                    void handleResend();
+                  }}
+                />
+              ) : null}
               {magicLinkSentTo ? (
                 <Text style={styles.successText}>
                   Link sent to {magicLinkSentTo}. Open it on this device to
@@ -451,8 +537,7 @@ export default function SignIn() {
                   label="Continue with email"
                   disabled={submitting}
                   onPress={() => {
-                    setAuthError(null);
-                    setMagicLinkSentTo(null);
+                    clearMessages();
                     setEmailOpen(true);
                   }}
                 />

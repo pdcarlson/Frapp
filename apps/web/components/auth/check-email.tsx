@@ -10,7 +10,7 @@ import {
   cooldownCopy,
   describeEmailSendError,
   emailCooldownSeconds,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**

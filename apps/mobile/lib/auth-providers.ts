@@ -1,13 +1,9 @@
+import { describeOAuthError } from "@repo/hooks/auth-error-copy";
+
 export const OAUTH_PROVIDERS = ["apple", "google"] as const;
 export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
 
 export const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
-
-const IDENTITY_COLLISION_CODES = new Set([
-  "identity_already_exists",
-  "user_already_exists",
-  "email_exists",
-]);
 
 // Mobile s01 keeps the password and magic-link form behind "Continue with
 // email" (#3349), so these name that button rather than controls that aren't
@@ -37,39 +33,40 @@ export function isApplePrivateRelayEmail(
   return host === APPLE_PRIVATE_RELAY_HOST;
 }
 
-export function isIdentityCollisionError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const code = "code" in error ? error.code : undefined;
-  if (typeof code === "string" && IDENTITY_COLLISION_CODES.has(code)) {
-    return true;
-  }
-  const message = "message" in error ? error.message : undefined;
-  if (typeof message !== "string") return false;
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("already been registered") ||
-    lower.includes("already registered") ||
-    lower.includes("identity already exists")
-  );
+/**
+ * An email link (magic link or confirmation) that was opened after it expired,
+ * or a second time. The form that asks for a new one is behind Continue with
+ * email, so this names that button.
+ */
+export const DEAD_LINK_COPY =
+  "That sign-in link has expired or was already used. Tap Continue with email to get a new one.";
+
+const START_FAILED_COPY = "Unable to start sign-in. Retry in a moment.";
+export const FINISH_FAILED_COPY = "Unable to finish sign-in. Retry in a moment.";
+
+const OAUTH_COPY = {
+  identityCollision: IDENTITY_COLLISION_COPY,
+  providerUnavailable: OAUTH_UNAVAILABLE_COPY,
+  deadLink: DEAD_LINK_COPY,
+};
+
+/**
+ * A refused Google or Apple start, in the shared auth map's words
+ * (`@repo/hooks/auth-error-copy`). Never the provider's, the OS's or GoTrue's
+ * own sentence (#3833): Apple's native sheet throws
+ * "The operation couldn't be completed. (com.apple.AuthenticationServices…)".
+ */
+export function describeOAuthKickoffError(error: unknown): string {
+  return describeOAuthError(error, { ...OAUTH_COPY, fallback: START_FAILED_COPY });
 }
 
-export function describeOAuthKickoffError(error: unknown): string {
-  if (isIdentityCollisionError(error)) return IDENTITY_COLLISION_COPY;
-  const message =
-    error && typeof error === "object" && "message" in error
-      ? error.message
-      : undefined;
-  if (typeof message === "string" && message.trim().length > 0) {
-    const lower = message.toLowerCase();
-    if (
-      lower.includes("provider is not enabled") ||
-      lower.includes("unsupported provider")
-    ) {
-      return OAUTH_UNAVAILABLE_COPY;
-    }
-    return message;
-  }
-  return "Unable to start sign-in. Retry in a moment.";
+/**
+ * A magic link, a confirmation link or a provider return that opened the app
+ * but didn't become a session. GoTrue puts a sentence in the link
+ * ("Email link is invalid or has expired"); only its code is read.
+ */
+export function describeAuthReturnError(error: unknown): string {
+  return describeOAuthError(error, { ...OAUTH_COPY, fallback: FINISH_FAILED_COPY });
 }
 
 /**
