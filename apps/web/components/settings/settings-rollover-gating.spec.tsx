@@ -301,9 +301,6 @@ describe("the accent save sends the colour the preview shows", () => {
       expect(saveButton()).toHaveAccessibleDescription(
         /enter a hex code like #5AA9E6/i,
       );
-      // The preview is the fallback gold there, which its ink clears, so the
-      // label-ink warning never promises what a save that can't happen picks.
-      expect(screen.queryByText(/saving picks a label color/i)).toBeNull();
     }
 
     await user.clear(hex);
@@ -333,9 +330,8 @@ describe("the accent save sends the colour the preview shows", () => {
 
 describe("the accent form surfaces the server's own §8 disclosure (#1183)", () => {
   /*
-   * Independent of the draft checks tested above — the preview's two contrast
-   * questions, each against one fixed backdrop and computed by
-   * `resolveChapterAccentColor`/`pickAccessibleColor`, and its format. This is the real
+   * Independent of the draft checks tested above — the preview's contrast as
+   * text on the card, computed by `resolveChapterAccentColor`, and its format. This is the real
    * Signet engine's verdict on the colour actually saved, returned by
    * `PATCH /v1/chapters/current` and disclosed rather than corrected: §8
    * forbids a runtime substitution, so a failing save still succeeds.

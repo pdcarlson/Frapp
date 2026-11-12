@@ -124,8 +124,8 @@ describe("the Accent tab says what the accent actually does", () => {
 /**
  * The draft warnings, pinned to the copy table that owns them.
  *
- * All three check the unsaved draft, not the saved palette (#2543), and the two
- * contrast ones had drifted: one said the colour "didn't meet contrast
+ * Both check the unsaved draft, not the saved palette (#2543). The contrast
+ * ones had drifted (a second, the label-ink warning, was deleted in #4388): one said the colour "didn't meet contrast
  * requirements", which read as a rejection no save makes, and the other named
  * "name tags" that no surface draws. Pinning each to its `writing.md` row means
  * the copy and its spec move together or a test fails.
