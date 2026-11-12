@@ -87,7 +87,7 @@ never reaches `main` and CI never ran.
 | ------ | -------- | ------ |
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups** (observed 2026-08-21 — see below), comments, reviews | cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | exactly three things, and it is worth being precise because most of this list is *silent* on attempts 1-2: (a) a **deliberate** cancellation — a run cancelled after some job had started, or with the jobs/runs/annotations API down so it cannot be told from an infra one or a timeout; (b) a **job that ran to its `timeout-minutes`** (verdict `timed-out`, naming the job and its limit), which GitHub concludes `cancelled` and only the job's check-run annotation tells apart (#3162), never requeued because it is usually a hang a re-run meets again, even beside an infra failure that would otherwise be; (c) an **infra failure the auto-requeue did not absorb**, i.e. the re-queue call failed or the 3-attempt cap is spent. A run-level `timed_out`, `startup_failure`, `stale`, and a cancel where no job ever started all classify as infra-failure and are requeued first, so they say nothing until that runs out | outages that kill the watchdog run itself; a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message); merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), any infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
-| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it (since 2026-11-11, while `REQUIRE_UP_TO_DATE` is off, only that), or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent); an auto-merge PR held behind while another holds the update slot (deliberately silent, so its session doesn't merge `main` and restart the race; #3599); a conflict only in the shipped-builds registry, which the sweep merges itself (#3783: the merge commit is the signal, and the CI it starts wakes the session); a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message, and the run stays green; the next push to `main` retries it, #3019) |
+| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it (since 2026-11-11, while `REQUIRE_UP_TO_DATE` is off, only that and the next case), or while its migrations no longer sort after `main`'s and the sweep can't renumber them itself (#4558), or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent); an auto-merge PR held behind while another holds the update slot (deliberately silent, so its session doesn't merge `main` and restart the race; #3599); a conflict only in the shipped-builds registry, which the sweep merges itself (#3783: the merge commit is the signal, and the CI it starts wakes the session); migrations that no longer sort after `main`'s on a clean PR, which the sweep renumbers itself (#4558, the same way); a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message, and the run stays green; the next push to `main` retries it, #3019) |
 | `PR base sync` alert issue | a missing or rejected app token — the one cause that is repo-wide rather than per-PR | anything per-PR (those comment); a sweep where nothing was behind, which proves nothing either way and deliberately leaves an open alert open |
 | Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
 
@@ -269,7 +269,8 @@ branches to be up to date before merging" is off, written by `REQUIRE_UP_TO_DATE
 restarted CI on every other open PR and PRs merged no faster than one CI run each. A PR now merges on
 the checks of its own test merge; a break that only two PRs cause together shows up on `main`'s push
 run. While the flag is off the sweep below handles **conflicts only** (the wake comment, or the
-registry merge), leaves a clean PR alone whether or not it is behind, deletes base-sync comments that
+registry merge), and migrations that no longer sort after `main`'s (the renumber, or its wake), leaves
+an otherwise clean PR alone whether or not it is behind, deletes base-sync comments that
 no longer apply, and runs no auto-merge slot: a slot run (`mode: "checks"`) exits at once. A push
 sweep first waits 60 seconds (`MERGEABLE_SETTLE_MS`), because no failed update-branch is left to
 catch a stale `mergeable: true` read just after the push. The token alert below is neither raised nor
@@ -299,6 +300,36 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   the slot like any other. Anything else the sweep refuses, and the PR gets the comment; so does a
   merge GitHub refuses (the App has no Workflows permission, and a ref whose workflows differ from
   `main`'s is refused it, which the merge's tree, being `main`'s, should avoid).
+- **Clean, but its migrations no longer sort after `main`'s** (#4558) → `main` took a later
+  migration version first, which git doesn't see as a conflict and which staging's `db push` would
+  refuse once this PR merged. For every clean PR it reaches, the sweep reads the files it changes
+  (one compare call), and when it adds a migration it reads `main`'s list once per sweep and plans the same
+  renames as `npm run migration:renumber`, with the same code
+  ([`lib/migration-versions.mjs`](../../scripts/ci/lib/migration-versions.mjs)). With the app token
+  minted it then pushes one two-parent merge commit (the PR head, then `main`) whose tree is
+  GitHub's test merge of the PR with the branch's migrations and ledger pages moved and the
+  references rewritten in the files the branch changed, never forced, and posts no comment
+  (`scripts/ci/resolve-migration-order.mjs`). It is the merge plus the command the session would
+  have run, so it brings the PR up to date too, and with the up-to-date rule on it takes the update
+  slot like an update. Whether a PR moves is judged against `main` alone; versions already handed
+  out in the same sweep only keep two PRs off the same new one. It pushes nothing, and posts a wake
+  with the exact command instead, when that can't be done safely: a fork head, a branch that
+  changes `.github/workflows` (the App has no Workflows permission), a changed file that still
+  names an old version on its own (it may be `main`'s migration of the same version, which a person
+  judges), more than 60 changed files (each costs a read of the shared `GITHUB_TOKEN` budget, again
+  on every push while it stays refused), a tree listing GitHub cut short, no app token, a branch
+  that moved since it was read, or a push GitHub refuses. It does nothing, and the next push to
+  `main` looks again, when it can't tell yet: GitHub's test merge not yet of this head and the new
+  base, or a PR of 300 or more changed files, whose compare list may be cut and hide the migration.
+  Before the ref update it reads the head again, because a non-forced update still fast-forwards
+  over a branch force-pushed back to an older commit and would restore what that push dropped; the
+  read narrows that window without closing it (#4589). A session whose next push is refused as
+  non-fast-forward should pull: the sweep's commit is on its branch. Like the command, it assumes
+  nobody applied the branch's own migration to a hosted database by hand, which it can't see. With
+  the up-to-date rule on, an auto-merge PR held behind the slot isn't checked until it takes the
+  slot, and one the slot sweep already updated (update-branch merges `main` but renumbers nothing)
+  reads as in sync and isn't checked until `main` moves again; its `migration-order` check goes red
+  in between.
 - **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
   reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
   `expected_head_sha`, **only when the base-sync app token minted**. Pushes made with the default
@@ -332,8 +363,8 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     comments on every raise, which suits `deploy-alert.mjs` (it fires per failed deploy) and not this
     sweep (it fires per merge to `main`), so raising unconditionally would relocate the fan-out from
     N PRs to one issue rather than remove it.
-  - It closes on a real `update-branch` success (a registry merge is not one, and a sweep whose
-    registry merge GitHub refused proves nothing either way), or on a sweep that held a token and blocked on
+  - It closes on a real `update-branch` success (a registry merge or a migration renumber is not
+    one, and a sweep whose registry merge or renumber GitHub refused proves nothing either way), or on a sweep that held a token and blocked on
     nothing. That second condition is deliberate: this repo merges about one PR at a time, so the
     usual sweep has no *other* open PR to update, and an alert gated on a same-sweep success would
     stay open for weeks after the fix. A sweep with **no** token and nothing behind proves nothing
@@ -515,19 +546,24 @@ this compares against a design, not against something that ran.) What makes it s
   transitively through their only imports; `pr-base-sync-workflow.test.mjs` walks the import graph
   and fails on one); all network I/O is `fetch`, and the sole other host call is `readFileSync` on
   `GITHUB_EVENT_PATH`.
-- **In these watchdogs the token reaches two code paths, and both merge a PR's base into that PR's head.**
+- **In these watchdogs the token reaches three code paths, and each merges a PR's base into that PR's head.**
   `PUT /repos/{repo}/pulls/{n}/update-branch` (`updatePrBranch` in `scripts/ci/pr-base-sync.mjs`),
   and, for a conflicted PR whose only change is new shipped-builds entries, the git data API
   writes in `pushRegistryMerge` (`scripts/ci/resolve-registry-conflict.mjs`, #3783): one tree
   (the base tip's tree with the merged registry blob), one commit whose parents are the PR head
-  and the base tip, and a **non-forced** update of `refs/heads/<that PR's head branch>`. Every read
+  and the base tip, and a **non-forced** update of `refs/heads/<that PR's head branch>`. The
+  migration renumber (`pushMigrationRenumber` in `scripts/ci/resolve-migration-order.mjs`, #4558)
+  makes the same three writes for a clean PR whose migrations sort before `main`'s, on GitHub's
+  test merge of that PR, with only the branch's own new migrations moved and its own changed files
+  rewritten. Every read
   and every other write in these watchdogs (wake comments, the alert issue) goes through the job's
   own `GITHUB_TOKEN`, not the App. So the credential's blast radius is "merge a PR's base into that
   PR's head"; **no code path writes to `main`**, and that is a property of the code, checkable by
   grepping for `updateToken` and `pushToken`, rather than a property of live settings. The only
   content a PR author can steer into the registry merge is registry entries that pass
-  `parseRegistry`, which their own branch already holds. Fork heads are skipped explicitly in both
-  paths, and the token is scoped to this repository, so it could not push to a fork either way.
+  `parseRegistry`, which their own branch already holds, and into the renumber only their own
+  branch's files, renamed and with migration names replaced. Fork heads are skipped explicitly in
+  every path, and the token is scoped to this repository, so it could not push to a fork either way.
 - Branch protection is a second layer, deliberately **not** the argument — and as of 2026-09-02 the
   reason is narrower than it was. `scripts/configure-branch-protection.mjs` declares `enforce_admins:
   true` and `restrictions: null`, and: (a) that script now reads live protection back and diffs it (`npm run

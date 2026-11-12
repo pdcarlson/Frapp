@@ -27,6 +27,16 @@ still count for older migrations and for a PR opened before this page existed.
 
 ## When `main` moves past your migration
 
+Usually the base-sync sweep has fixed it already. When `main` moves, it checks
+each clean PR from this repository that it reaches, and when the PR's
+migrations no longer sort after `main`'s it pushes one commit to the branch that
+merges `main` and renumbers them, so `git pull` before doing it yourself. It
+leaves it to you, with the command below in a wake comment, when it can't do it
+safely (a fork, a branch that changes a workflow, a bare old version left in a
+file): [`pr-babysitting.md` § Base-branch
+sync](../../../ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs).
+It can't see a migration you applied by hand, so don't apply a branch's own.
+
 `migration-order` requires every migration a PR adds to sort after everything
 on `main`. When another PR merges a newer one first, run:
 
