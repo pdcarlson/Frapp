@@ -131,6 +131,7 @@ describe('PollService', () => {
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
       compareAndSetFlag: jest.fn(),
+      updateIfLive: jest.fn(),
     };
 
     mockChannelRepo = {
@@ -656,12 +657,12 @@ describe('PollService', () => {
 
       it('lets the creator close it, stamping payload.closed_at and closed_by and keeping the card', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
-        mockMessageRepo.update.mockResolvedValue(cardPoll);
+        mockMessageRepo.updateIfLive.mockResolvedValue(cardPoll);
 
         await service.close('msg-1', 'user-1', 'ch-1');
 
-        expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
-        const [id, patch] = mockMessageRepo.update.mock.calls[0];
+        expect(mockMessageRepo.updateIfLive).toHaveBeenCalledTimes(1);
+        const [id, patch] = mockMessageRepo.updateIfLive.mock.calls[0];
         expect(id).toBe('msg-1');
         expect(patch).toEqual({
           payload: {
@@ -680,11 +681,11 @@ describe('PollService', () => {
           payload: { ...cardPoll.payload, closes_at: null },
         };
         mockMessageRepo.findById.mockResolvedValue(openEnded);
-        mockMessageRepo.update.mockResolvedValue(openEnded);
+        mockMessageRepo.updateIfLive.mockResolvedValue(openEnded);
 
         await service.close('msg-1', 'user-1', 'ch-1');
 
-        expect(mockMessageRepo.update.mock.calls[0][1]).toEqual({
+        expect(mockMessageRepo.updateIfLive.mock.calls[0][1]).toEqual({
           payload: {
             ...openEnded.payload,
             closed_at: expect.any(String),
@@ -699,7 +700,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
           ForbiddenException,
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('refuses a card already closed early', async () => {
@@ -715,7 +716,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Poll is already closed',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('refuses a card whose deadline has passed', async () => {
@@ -727,7 +728,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Poll has expired',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('refuses a deleted card', async () => {
@@ -735,6 +736,18 @@ describe('PollService', () => {
           ...cardPoll,
           is_deleted: true,
         });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Cannot close a deleted poll',
+        );
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      });
+
+      it('does not write a card deleted while the close was in flight back onto its tombstone (#1575)', async () => {
+        // Read live, deleted before the write: the conditional update matches
+        // nothing, so the cleared question and options stay cleared.
+        mockMessageRepo.findById.mockResolvedValue(cardPoll);
+        mockMessageRepo.updateIfLive.mockResolvedValue(null);
 
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Cannot close a deleted poll',
@@ -751,7 +764,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Malformed poll card',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('still refuses a card to the other poll operations, which read the REST shape', async () => {

@@ -189,6 +189,81 @@ export function maskBlockedBookmarkMessage(
 }
 
 /**
+ * What a deleted message says instead of its content. Like the block
+ * sentinel, a rendering fallback only: the machine-readable signal is
+ * `is_deleted`.
+ */
+export const DELETED_MESSAGE_CONTENT = '[message deleted]';
+
+/**
+ * What a soft-deleted message keeps of its `metadata`.
+ *
+ * Nothing, except an imported row's `discord_import_id`: it is the only key the
+ * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
+ * so wiping it would leave the tombstone behind when its import is deleted,
+ * still carrying the Discord author and an avatar path into purged storage. A
+ * linked member can delete their own imported messages (#2878), so this is
+ * reachable by any member, not only a moderator.
+ */
+export function tombstoneMetadata(
+  message: Pick<ChatMessage, 'kind' | 'metadata'>,
+): Record<string, unknown> {
+  if (message.kind !== 'imported') return {};
+  const importId: unknown = message.metadata?.discord_import_id;
+  return typeof importId === 'string' ? { discord_import_id: importId } : {};
+}
+
+/**
+ * What a soft-deleted message keeps of its `payload` (#1575).
+ *
+ * Nothing, for every card kind: the payload is the card's data (an event's
+ * name and place, a poll's question and options). An imported row's payload is
+ * not a card but the Discord archive sidecar, and keeps `source` and
+ * `author_username`: the Discord handle the operator backfills read back to
+ * name a member (`backfill-discord-mention-tokens.ts`,
+ * `backfill-discord-import-people.ts`), which the row's own `author_name`
+ * already shows. Its reactions, stickers and the rest go. The cleanup
+ * migration `20261112060000_clear_deleted_message_payloads.sql` writes the
+ * same shape, so the two must stay in step.
+ */
+export function tombstonePayload(
+  message: Pick<ChatMessage, 'kind' | 'payload'>,
+): Record<string, unknown> | null {
+  if (message.kind !== 'imported') return null;
+  const username: unknown = message.payload?.author_username;
+  return typeof username === 'string'
+    ? { source: 'discord', author_username: username }
+    : { source: 'discord' };
+}
+
+/**
+ * A deleted message as any reader is served it: the tombstone and nothing of
+ * what it said (#1575).
+ *
+ * The delete clears `content`, `metadata` and `payload` when it lands
+ * (`ChatService.softDeleteMessage`). This is the read half, for a row whose
+ * write did not: everything deleted before the delete cleared `payload` still
+ * holds a card's data in it (an event's name and place, a poll's question and
+ * options). Every read that serves message rows to a member goes through
+ * {@link maskBlockedMessages}, which applies this, and the raw answers to
+ * unpin, delete and a send's retry apply it themselves (pin refuses a deleted
+ * message). It covers the API only: until the cleanup migration runs, those
+ * rows are still readable under `chat_messages`' own read policy.
+ *
+ * Structure stays: ids, kind, timing, pins, thread counts and `is_deleted`,
+ * which the client needs to draw the tombstone in place.
+ */
+export function redactDeletedMessage<T extends ChatMessage>(message: T): T {
+  if (!message.is_deleted) return message;
+  return {
+    ...message,
+    content: DELETED_MESSAGE_CONTENT,
+    payload: tombstonePayload(message),
+    metadata: tombstoneMetadata(message),
+  };
+}
+
+/**
  * Apply `blockedUserIds` to `messages`, flagging every row.
  *
  * A message is masked when {@link isFromBlockedSender} says so.
@@ -207,7 +282,10 @@ export function maskBlockedMessages(
   return messages.map((message) =>
     isFromBlockedSender(message.sender_id, blocked)
       ? maskMessage(message)
-      : withFlaggerMasked({ ...message, sender_blocked: false }, blocked),
+      : withFlaggerMasked(
+          redactDeletedMessage({ ...message, sender_blocked: false }),
+          blocked,
+        ),
   );
 }
 

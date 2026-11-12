@@ -254,6 +254,20 @@ describe('ChatReactionService', () => {
         expect(mockActionRepo.create).not.toHaveBeenCalled();
       });
 
+      it('refuses any action on a deleted card, whose cleared payload leaves no rule to check (#1575)', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          is_deleted: true,
+          payload: null,
+        });
+
+        await expect(
+          vote({ option_ids: ['made-up-1', 'made-up-2'] }),
+        ).rejects.toThrow('Cannot act on a deleted message');
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+        expect(mockActionRepo.updateForVote).not.toHaveBeenCalled();
+      });
+
       it('records a vote while Polls is on or has no key', async () => {
         mockMessageRepo.findById.mockResolvedValue(pollMessage);
         mockActionRepo.create.mockResolvedValue({

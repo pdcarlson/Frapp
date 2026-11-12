@@ -187,6 +187,7 @@ describe('Chat hot path (e2e)', () => {
     findAuthorAvatarPaths: jest.fn(),
     insertIdempotent: jest.fn(),
     compareAndSetFlag: jest.fn(),
+    updateIfLive: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
