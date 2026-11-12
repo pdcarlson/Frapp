@@ -685,6 +685,16 @@ export {
   WILDCARD_PERMISSION,
 } from "./permissions";
 
+// The chapter's Everyone role, the Member role renamed and hidden (#4191).
+export {
+  EVERYONE_MENTION_NAME,
+  EVERYONE_ROLE_NAME,
+  EVERYONE_ROLE_SYSTEM_KEY,
+  isEveryoneRole,
+  isEveryoneRoleName,
+  rolesAfterSave,
+} from "./everyone-role";
+
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
 // the same list from here (#4069).
@@ -936,6 +946,8 @@ export {
   seriesChildStarts,
   seriesExtent,
   shiftRepeatRule,
+  shiftWeekdays,
+  zonedCalendarDay,
 } from "./recurrence";
 export type {
   NthWeek,
@@ -945,7 +957,41 @@ export type {
   RepeatFrequency,
   RepeatRule,
   WeekdayCode,
+  ZonedCalendarDay,
 } from "./recurrence";
+// The Repeat control's state, read and written the same way by the web
+// editor and the phone's New event sheet (#4488).
+export {
+  REPEAT_DAY_LETTERS,
+  REPEAT_DAY_NAMES,
+  REPEAT_DEFAULT_COUNT,
+  REPEAT_PRESETS,
+  REPEAT_PRESET_LABELS,
+  editRepeatDraft,
+  monthlyByFor,
+  monthlyChoices,
+  noRepeatDraft,
+  pickRepeatEnd,
+  pickRepeatPreset,
+  repeatCaption,
+  repeatDays,
+  repeatDraftFromRule,
+  repeatEditAnchor,
+  repeatEditDraft,
+  repeatRuleForEdit,
+  repeatRuleOf,
+  repeatSummary,
+  toggleRepeatDay,
+} from "./repeat-draft";
+export type {
+  MonthlyBy,
+  MonthlyChoice,
+  RepeatDraft,
+  RepeatEditSeries,
+  RepeatField,
+  RepeatPreset,
+  RepeatRuleResult,
+} from "./repeat-draft";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export {

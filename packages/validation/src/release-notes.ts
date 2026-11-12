@@ -101,6 +101,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Approved service hours now show how many points they earned, like 3 points, instead of only saying points were awarded.",
       "You can now post a sign-up sheet in chat from the + menu, with named slots and a limit on each, and everyone sees who signed up for what, on the web and on your phone.",
       "The Directory can now show members as a grid of faces as well as a list, and it remembers which one you picked.",
+      "The Member role is now Everyone, which nobody has to assign, and officers can ping the whole chapter with @everyone.",
+      "Repeating events can now meet on more than one day a week, every few weeks, or on a set weekday of the month, and end on a date or after a number of meetings.",
     ],
   },
   {

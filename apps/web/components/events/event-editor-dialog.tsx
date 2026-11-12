@@ -27,8 +27,6 @@ import {
   type EventType,
 } from "@repo/hooks";
 import {
-  RECURRENCE_REPEAT_LABELS,
-  RECURRENCE_RULES,
   attendanceFieldsOf,
   attendanceFromEvent,
   attendanceInvitesNobody,
@@ -40,13 +38,23 @@ import {
   emptyAttendanceDraft,
   eventLimitsAudience,
   eventRequiresAnyone,
-  isRecurrenceRule,
-  describeSeriesLength,
+  isRepeatRule,
+  noRepeatDraft,
+  REPEAT_PRESET_LABELS,
+  repeatDraftFromRule,
+  repeatEditAnchor,
+  repeatEditDraft,
+  repeatRuleForEdit,
+  repeatRuleOf,
+  repeatSummary,
   type EventAttendanceDraft,
+  type RepeatDraft,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { pointsLabel } from "@/components/events/event-labels";
+import { RepeatOptions } from "@/components/events/repeat-options";
 import {
   Panel,
   PanelBody,
@@ -58,13 +66,6 @@ import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -397,7 +398,8 @@ export function EventEditorDialog({
   // it absent, so it is a choice, not a default.
   const [attendance, setAttendance] =
     useState<EventAttendanceDraft>(emptyAttendanceDraft);
-  const [recurrenceRule, setRecurrenceRule] = useState("NONE");
+  // The Repeat section (`repeat-draft.ts` in `@repo/validation`).
+  const [repeat, setRepeat] = useState<RepeatDraft>(() => noRepeatDraft());
   const [notes, setNotes] = useState("");
   // The chapter's event type this is made as, or none (#3730). Picking one
   // only fills the form; the event keeps its own points and attendance.
@@ -423,12 +425,45 @@ export function EventEditorDialog({
   const canSetRequirements = canManageTypes;
 
   const eventId = typeof event?.id === "string" ? event.id : "";
+
+  // The series an edit's Repeat change applies to. Web edits a series only
+  // from its first meeting: a generated occurrence's own rule is empty, and
+  // a series edit from one has to go to its parent as a shift, which waits
+  // for web's "this event or all upcoming" question (#3667). The phone does
+  // both today.
+  const editSeries = useMemo(() => {
+    if (mode !== "edit" || !event) return null;
+    const headStart = parseInstant(event.start_time);
+    if (!headStart) return null;
+    return {
+      headStart,
+      headRule: isRepeatRule(event.recurrence_rule)
+        ? event.recurrence_rule
+        : null,
+      occurrence:
+        typeof event.parent_event_id === "string" &&
+        event.parent_event_id.length > 0,
+    };
+  }, [mode, event]);
+  const repeatLocked = editSeries?.occurrence ?? false;
+  const repeatSeriesAt = (
+    start: Date,
+    now: Date,
+  ): RepeatEditSeries | undefined =>
+    editSeries && !editSeries.occurrence
+      ? {
+          headStart: editSeries.headStart,
+          headRule: editSeries.headRule,
+          shiftMs: start.getTime() - editSeries.headStart.getTime(),
+          now,
+        }
+      : undefined;
   const isSubmitting =
     createEventMutation.isPending || updateEventMutation.isPending;
 
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+      normalizeRoleOptions(rolesQuery.data, "hide").sort((first, second) =>
         first.name.localeCompare(second.name),
       ),
     [rolesQuery.data],
@@ -458,11 +493,12 @@ export function EventEditorDialog({
         String(typeof event.point_value === "number" ? event.point_value : 10),
       );
       setAttendance(attendanceFromEvent(attendanceFieldsOf(event)));
-      setRecurrenceRule(
-        typeof event.recurrence_rule === "string" &&
-          event.recurrence_rule.length > 0
-          ? event.recurrence_rule
-          : "NONE",
+      setRepeat(
+        repeatDraftFromRule(
+          typeof event.recurrence_rule === "string"
+            ? event.recurrence_rule
+            : null,
+        ),
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
       setEventTypeId(
@@ -499,7 +535,7 @@ export function EventEditorDialog({
         ),
       );
       setAttendance(attendanceFromEvent(attendanceFieldsOf(template)));
-      setRecurrenceRule("NONE");
+      setRepeat(noRepeatDraft());
       setNotes(text(template.notes));
       setEventTypeId(
         typeof template.event_type_id === "string"
@@ -525,7 +561,7 @@ export function EventEditorDialog({
     setEndAt(initialEndAt ?? "");
     setPointValue(String(initialPointValue ?? 10));
     setAttendance(emptyAttendanceDraft());
-    setRecurrenceRule("NONE");
+    setRepeat(noRepeatDraft());
     setNotes("");
     setEventTypeId(null);
     setTypeFilledName(null);
@@ -693,6 +729,25 @@ export function EventEditorDialog({
       return;
     }
 
+    // On create the rule steps from the event's start. On an edit it steps
+    // from the meeting that is the series' first once the save lands
+    // (`repeatEditAnchor`); an untouched draft gives back the stored rule.
+    const editRepeatSeries = repeatSeriesAt(new Date(startIso), new Date());
+    const repeatResult = repeatLocked
+      ? ({ ok: true, rule: null } as const)
+      : editRepeatSeries
+        ? repeatRuleForEdit(repeat, editRepeatSeries)
+        : repeatRuleOf(repeat, new Date(startIso));
+    if (!repeatResult.ok) {
+      setShowMore(true);
+      toast({
+        title: "Check the repeat",
+        description: repeatResult.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload = {
       name: name.trim(),
       description: description.trim() || undefined,
@@ -701,7 +756,6 @@ export function EventEditorDialog({
       end_time: endIso,
       point_value: canSetRequirements ? pointValueNumber : 0,
       is_mandatory: wire.is_mandatory,
-      recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
     };
     // Sent on create only when one is picked, so a plain event still creates
@@ -739,6 +793,9 @@ export function EventEditorDialog({
         try {
           created = await createEventMutation.mutateAsync({
             ...payload,
+            ...(repeatResult.rule
+              ? { recurrence_rule: repeatResult.rule }
+              : {}),
             ...(typeField as { event_type_id?: string }),
             ...(card
               ? {
@@ -782,10 +839,23 @@ export function EventEditorDialog({
         }
       } else {
         if (!eventId) return;
+        // A Repeat change is about the series: sent with `series` scope, so
+        // the API rebuilds the upcoming meetings (and the rest of this save
+        // reaches them too), and "Doesn't repeat" as `null`, which ends it.
+        // An unchanged rule is sent back as stored with the instance edit,
+        // as it always was: the API checks a moved head's start against it
+        // (an UNTIL the head would pass), and writes nothing new.
+        const storedRule = editSeries?.headRule ?? null;
+        const repeatChanged = !repeatLocked && repeatResult.rule !== storedRule;
         await updateEventMutation.mutateAsync({
           id: eventId,
           body: {
             ...payload,
+            ...(repeatChanged
+              ? { recurrence_rule: repeatResult.rule, scope: "series" as const }
+              : storedRule && !repeatLocked
+                ? { recurrence_rule: storedRule }
+                : {}),
             ...typeField,
             required_role_ids: wire.required_role_ids,
             optional_role_ids: wire.optional_role_ids,
@@ -839,10 +909,12 @@ export function EventEditorDialog({
   }
 
   const repeatStart = parseInstant(localInputToIso(startAt));
-  const repeatNote =
-    repeatStart && isRecurrenceRule(recurrenceRule)
-      ? describeSeriesLength(repeatStart, recurrenceRule)
-      : null;
+  const repeatSeries = repeatStart
+    ? repeatSeriesAt(repeatStart, new Date())
+    : undefined;
+  const repeatAnchorStart = repeatSeries
+    ? repeatEditAnchor(repeatSeries)
+    : repeatStart;
   const moreSummary = [
     ...(canSetRequirements
       ? [
@@ -851,9 +923,13 @@ export function EventEditorDialog({
         ]
       : []),
     describeAttendance(attendance, roleName),
-    isRecurrenceRule(recurrenceRule)
-      ? RECURRENCE_REPEAT_LABELS[recurrenceRule]
-      : "Doesn't repeat",
+    repeatLocked
+      ? "Part of a series"
+      : repeatStart
+        ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart, repeatSeries)
+        : repeat.preset === "NONE"
+          ? REPEAT_PRESET_LABELS.NONE
+          : "Repeats",
   ].join(" · ");
 
   return (
@@ -983,54 +1059,48 @@ export function EventEditorDialog({
                   />
                 </section>
 
-                {/* Wraps by the panel's own width, not the window's: docked beside chat
-                the panel can be 375px wide on a wide screen. */}
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
-                  <div className="grid gap-1">
-                    <Label htmlFor="event-recurrence">Repeat</Label>
-                    {/*
-                      The app's Select, not a native one: /events carries no
-                      browser select (#3822).
-                    */}
-                    <Select
-                      value={recurrenceRule}
-                      onValueChange={setRecurrenceRule}
-                    >
-                      <SelectTrigger id="event-recurrence">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="NONE">
-                          Doesn&apos;t repeat
-                        </SelectItem>
-                        {RECURRENCE_RULES.map((rule) => (
-                          <SelectItem key={rule} value={rule}>
-                            {RECURRENCE_REPEAT_LABELS[rule]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {repeatNote ? (
-                      <p className="text-caption text-muted-foreground">
-                        {repeatNote}
-                      </p>
-                    ) : null}
+                {repeatLocked ? (
+                  <section className="grid gap-1" aria-label="Repeat">
+                    <span className="text-sm font-semibold leading-none">
+                      Repeat
+                    </span>
+                    <p className="text-caption text-muted-foreground">
+                      Part of a repeating series. Change how it repeats from its
+                      first meeting, or in the Frapp app.
+                    </p>
+                  </section>
+                ) : (
+                  <RepeatOptions
+                    draft={
+                      repeatSeries
+                        ? repeatEditDraft(repeat, repeatSeries)
+                        : repeat
+                    }
+                    start={repeatAnchorStart}
+                    onChange={setRepeat}
+                    disabled={usingPreviewData}
+                    // An existing series' length was set when it was made;
+                    // the line comes back once the officer changes Repeat.
+                    showLength={!(mode === "edit" && repeat.pristine)}
+                    series={repeatSeries}
+                  />
+                )}
+
+                {canSetRequirements ? (
+                  <div className="grid content-start gap-1">
+                    <Label htmlFor="event-point-value">
+                      Points for attending
+                    </Label>
+                    <Input
+                      id="event-point-value"
+                      type="number"
+                      min={0}
+                      className="max-w-[14rem]"
+                      value={pointValue}
+                      onChange={handlePointValueChange}
+                    />
                   </div>
-                  {canSetRequirements ? (
-                    <div className="grid content-start gap-1">
-                      <Label htmlFor="event-point-value">
-                        Points for attending
-                      </Label>
-                      <Input
-                        id="event-point-value"
-                        type="number"
-                        min={0}
-                        value={pointValue}
-                        onChange={handlePointValueChange}
-                      />
-                    </div>
-                  ) : null}
-                </div>
+                ) : null}
 
                 <div className="grid gap-1">
                   <Label htmlFor="event-description">Description</Label>

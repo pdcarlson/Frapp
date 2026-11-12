@@ -13,7 +13,7 @@ import {
   useUpdateRoleTier,
 } from "@repo/hooks";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
-import { roleColorOrNull } from "@repo/validation";
+import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -327,6 +327,10 @@ function TierList({
             <span className="shrink-0 text-caption text-muted-foreground">
               Can do everything
             </span>
+          ) : isEveryoneRole(role) ? (
+            <span className="shrink-0 text-caption text-muted-foreground">
+              Pinged as @everyone
+            </span>
           ) : null}
           <span className="ml-auto shrink-0 text-caption tabular-nums text-muted-foreground">
             {count === undefined
@@ -343,7 +347,10 @@ function TierList({
         {menu}
       </li>
     );
-    if (!canManage) return <RowFragment key={role.id}>{row(null)}</RowFragment>;
+    // Everyone (#4191) neither moves nor goes: its page edits the rest.
+    if (!canManage || isEveryoneRole(role)) {
+      return <RowFragment key={role.id}>{row(null)}</RowFragment>;
+    }
     return (
       <RowMenu key={role.id} entries={entries} label={`More for ${role.name}`}>
         {(menuButton) => row(menuButton)}

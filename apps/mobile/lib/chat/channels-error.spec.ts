@@ -18,7 +18,7 @@ describe("channelsErrorCopy", () => {
     const copy = channelsErrorCopy(httpError(403), "Phi Gamma Delta");
     expect(copy.title).toBe("Chat isn't open to you yet");
     expect(copy.body).toBe(
-      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to give you the Member role.",
+      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to check your roles.",
     );
   });
 

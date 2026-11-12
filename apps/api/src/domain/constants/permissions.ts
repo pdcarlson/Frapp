@@ -1,6 +1,7 @@
 import {
   ALUMNI_CHANNEL_PERMISSION,
   roleColor,
+  EVERYONE_ROLE_NAME,
   RUSH_MEMBER_PERMISSIONS,
   type PermissionDefinition,
 } from '@repo/validation';
@@ -128,6 +129,7 @@ export const SystemRoleKeys = {
   TREASURER: 'TREASURER',
   VICE_PRESIDENT: 'VICE_PRESIDENT',
   SECRETARY: 'SECRETARY',
+  /** The Everyone role, called Member until #4191; the key stayed. */
   MEMBER: 'MEMBER',
   NEW_MEMBER: 'NEW_MEMBER',
   ALUMNI: 'ALUMNI',
@@ -307,13 +309,19 @@ const SEEDED_ROLES = [
     color: roleColor('rose'),
   },
   {
-    name: 'Member',
+    // The Everyone role (#4191): the seeded Member role, renamed and hidden.
+    // It keeps the `MEMBER` key, so every lookup of "the Member role" (the
+    // invite fallback, presidency's floor, the rank rules' exemption) still
+    // finds it, and its starting tier, so plain members rank where they did.
+    // Not mentionable: `@everyone` is officers-only until a chapter opens it.
+    name: EVERYONE_ROLE_NAME,
     system_key: SystemRoleKeys.MEMBER,
     starting_tier: 2,
     extra_permissions: [],
     is_system: true,
     display_order: 5,
     color: null,
+    mentionable: false,
   },
   {
     name: 'New Member',

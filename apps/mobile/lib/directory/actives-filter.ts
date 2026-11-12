@@ -9,7 +9,7 @@
  * `GET /v1/members` takes no filter params.
  */
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
-import { roleColorOrNull } from "@repo/validation";
+import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
 
 export type ActivesStatus = "active" | "pending";
@@ -53,7 +53,11 @@ export function parseFilterRoles(rolesData: unknown): FilterRole[] {
   return records(rolesData).flatMap((row) => {
     const id = str(row, "id");
     const name = str(row, "name");
-    if (!id || !name || row.system_key === "ALUMNI") return [];
+    // Alumni: nobody on the Actives tab holds it. Everyone (#4191): no list
+    // offers it.
+    if (!id || !name || row.system_key === "ALUMNI" || isEveryoneRole(row)) {
+      return [];
+    }
     // Palette colors only, as every other role-color path paints them
     // (`roleColorOrNull`): a legacy or free-typed value paints no dot.
     return [{ id, name, color: roleColorOrNull(row.color) }];

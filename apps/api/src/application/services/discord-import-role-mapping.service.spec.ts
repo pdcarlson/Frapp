@@ -222,6 +222,26 @@ describe('DiscordImportRoleMappingService — Discord roles gate private channel
       ).rejects.toThrow(/A role named "Exec" already exists/);
     });
 
+    it('refuses a new role whose name reads as @everyone (#4191)', async () => {
+      await build(job({ source: 'bot' }));
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      await expect(
+        roleMapping.setRoleMapping(
+          IMPORT_ID,
+          CHAPTER,
+          [
+            {
+              discord_role_id: D_EXEC,
+              discord_role_name: 'every one',
+              action: 'new',
+              new_role_name: 'Every One',
+            },
+          ],
+          true,
+        ),
+      ).rejects.toThrow(/is what @everyone reads as/);
+    });
+
     it('gives each Frapp role one read permission of its own, and never takes one from the caller', async () => {
       await build(job({ source: 'bot' }));
       rbac.findByChapter.mockResolvedValue([

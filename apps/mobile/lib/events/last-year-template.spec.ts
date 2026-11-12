@@ -50,8 +50,8 @@ describe("lastYearTemplate", () => {
 
   it("is a one-time event even when last year's was a series", () => {
     expect(
-      lastYearTemplate(FORMAL, new Date("2026-11-12T12:00:00Z")).recurrenceRule,
-    ).toBeNull();
+      lastYearTemplate(FORMAL, new Date("2026-11-12T12:00:00Z")).repeat.preset,
+    ).toBe("NONE");
   });
 
   it("never opens on a day already gone: it moves on a week at a time, the end with it", () => {
@@ -84,7 +84,9 @@ describe("lastYearTemplate", () => {
       end_time: "2025-11-12T15:00:00.000Z",
     };
     const draft = lastYearTemplate(retreat, new Date("2026-11-12T12:00:00Z"));
-    expect(draft.end!.getTime() - draft.start!.getTime()).toBe(9 * 24 * 60 * 60 * 1000);
+    expect(draft.end!.getTime() - draft.start!.getTime()).toBe(
+      9 * 24 * 60 * 60 * 1000,
+    );
 
     const week = { ...retreat, end_time: "2025-11-10T15:00:00.000Z" };
     const weekDraft = lastYearTemplate(week, new Date("2026-11-12T12:00:00Z"));

@@ -42,6 +42,7 @@ import {
 } from "@/components/members/invite-composer";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
+import { EVERYONE_ROLE_NAME, isEveryoneRole } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
 /**
@@ -57,7 +58,9 @@ import { buildJoinUrl } from "@/lib/invite-link";
  * The name still covers a legacy Member role that predates the key.
  */
 const SEEDED_MEMBER_ROLE_NAME = "Member";
-const MEMBER_SYSTEM_KEY = "MEMBER";
+
+/** What the picker calls the Everyone role (#4191). */
+const NO_ROLE_LABEL = "No role";
 
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
@@ -96,24 +99,32 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
-  const roleOptions = useMemo(
+  // The Everyone role (#4191) stays in the picker as "No role", first: an
+  // invite into it joins with no role, as one with no default does.
+  const everyoneRole = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
-        first.name.localeCompare(second.name),
-      ),
+      (Array.isArray(rolesQuery.data) ? rolesQuery.data : []).find(
+        isEveryoneRole,
+      ) as Record<string, unknown> | undefined,
     [rolesQuery.data],
   );
+  const everyoneRoleId =
+    typeof everyoneRole?.id === "string" ? everyoneRole.id : undefined;
+  const roleOptions = useMemo(
+    () =>
+      normalizeRoleOptions(rolesQuery.data, "keep").sort(
+        (first, second) =>
+          Number(second.id === everyoneRoleId) -
+            Number(first.id === everyoneRoleId) ||
+          first.name.localeCompare(second.name),
+      ),
+    [rolesQuery.data, everyoneRoleId],
+  );
 
-  // The Member role's current name: by `system_key`, read defensively off the
-  // untyped payload, then by its seeded name. `undefined` when neither exists.
+  // The Everyone role's current name: by `system_key` (`isEveryoneRole`),
+  // then by the seeded Member name. `undefined` when neither exists.
   const memberRoleName = useMemo(() => {
-    const keyed = (Array.isArray(rolesQuery.data) ? rolesQuery.data : []).find(
-      (role: unknown) =>
-        !!role &&
-        typeof role === "object" &&
-        (role as Record<string, unknown>).system_key === MEMBER_SYSTEM_KEY,
-    ) as Record<string, unknown> | undefined;
-    const keyedName = keyed?.name;
+    const keyedName = everyoneRole?.name;
     if (
       typeof keyedName === "string" &&
       roleOptions.some((role) => role.name === keyedName)
@@ -122,7 +133,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     }
     return roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
       ?.name;
-  }, [rolesQuery.data, roleOptions]);
+  }, [everyoneRole, roleOptions]);
 
   // #422: the chapter's configured default invite role, resolved id → name
   // against the live catalog. `undefined` while the config query is in flight
@@ -349,7 +360,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         <SelectContent>
           {roleOptions.map((role) => (
             <SelectItem key={role.id} value={role.name}>
-              {role.name}
+              {role.id === everyoneRoleId ? NO_ROLE_LABEL : role.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -450,7 +461,9 @@ function InviteRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{name}</p>
         <p className="truncate text-caption text-muted-foreground">
-          {[invite.role, sent].filter(Boolean).join(" · ")}
+          {[invite.role === EVERYONE_ROLE_NAME ? null : invite.role, sent]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
       <span

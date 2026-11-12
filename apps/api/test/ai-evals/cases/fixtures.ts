@@ -63,13 +63,13 @@ export const ALUMNUS: EvalCaller = {
 };
 
 /**
- * Seeded Member role: members:view, ai:use (#4308), events:create (#3709), backwork:upload,
+ * Seeded Everyone role (once Member, #4191): members:view, ai:use (#4308), events:create (#3709), backwork:upload,
  * service:log, polls:create, and the six member recruitment keys (#4070).
  */
 export const MEMBER: EvalCaller = {
   memberId: 'member-rank-and-file',
   chapterId: CHAPTER,
-  roleName: 'Member',
+  roleName: 'Everyone',
   permissions: [
     'members:view',
     'ai:use',

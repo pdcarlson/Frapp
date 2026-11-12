@@ -82,7 +82,7 @@ const { SettingsPage } = await import("./settings-page");
 const chapter = chapterSubscription(mockCurrentChapter);
 
 const promoteSwitch = () =>
-  screen.getByRole("switch", { name: /promote every new member to member/i });
+  screen.getByRole("switch", { name: /make every new member a full member/i });
 
 /** Fill the three required fields and submit, leaving the confirm dialog open. */
 async function submitRollover(user: ReturnType<typeof userEvent.setup>) {
@@ -160,12 +160,14 @@ describe("semester rollover — New Member promotion (#285)", () => {
     // The officer has to be told what the extra box does at the point of
     // confirming — a bulk role change is not undoable in one step.
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent(/promoted to Member/i);
+    expect(dialog).toHaveTextContent(/becomes a full member/i);
     expect(dialog).toHaveTextContent(/keep any other roles they hold/i);
     expect(dialog).toHaveTextContent(/cannot be undone/i);
     // Case-sensitive: "New Member" title-cased to match how the role is
     // displayed everywhere else, not vocab()'s sentence-case "New member".
-    expect(dialog).toHaveTextContent("Every New Member is also promoted");
+    expect(dialog).toHaveTextContent(
+      "Every New Member also becomes a full member",
+    );
   });
 
   it("stays silent about promotion when it was not requested", async () => {
@@ -175,7 +177,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
     await submitRollover(user);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).not.toHaveTextContent(/promoted to Member/i);
+    expect(dialog).not.toHaveTextContent(/becomes a full member/i);
   });
 
   it("does not fire the rollover at all when the confirmation is dismissed", async () => {
@@ -197,7 +199,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.queryByRole("switch", { name: /promote every new member/i }),
+      screen.queryByRole("switch", { name: /make every new member/i }),
     ).not.toBeInTheDocument();
     // The rollover itself is still available — only the extra option is gated.
     expect(
@@ -225,16 +227,22 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     );
     await submitRollover(user);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent(/every aspirant is also promoted/i);
+    expect(dialog).toHaveTextContent(
+      /every aspirant also becomes a full member/i,
+    );
     expect(dialog).not.toHaveTextContent(/new member/i);
   });
 
@@ -258,7 +266,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -278,7 +288,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -293,7 +305,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every recruits to member/i }),
+      screen.getByRole("switch", {
+        name: /make every recruits a full member/i,
+      }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("switch", { name: /recruitss/i }),
