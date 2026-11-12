@@ -58,6 +58,9 @@ export * from "./error-copy";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
+// Editing or deleting an existing event: what a save sends, and whether to
+// ask "this event or all upcoming" first. Web and the phone share it (#3667).
+export * from "./event-edit";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,

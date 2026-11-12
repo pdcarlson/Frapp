@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", () => ({
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEventTypes: () => ({
     data: [
@@ -283,7 +284,9 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 
     expect(autoAbsentButton()).toBeDisabled();
     // Said in visible text, since a disabled button shows no tooltip.
-    const notice = screen.getByText(/auto-absent can run once check-in closes/i);
+    const notice = screen.getByText(
+      /auto-absent can run once check-in closes/i,
+    );
     expect(notice).toHaveTextContent(/\(Today · /);
     expect(autoAbsentButton()).toHaveAttribute("aria-describedby", notice.id);
     // The row write is not held: officers correct statuses during check-in.
