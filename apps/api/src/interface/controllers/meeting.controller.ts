@@ -33,6 +33,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -150,6 +154,13 @@ export class MeetingController {
       'Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist',
   })
   @ApiCreatedResponse({ type: MeetingDto })
+  @FeatureEvent(
+    'meeting-started',
+    ({ body, result }: FeatureEventInput<StartMeetingDto, MeetingDto>) => ({
+      meeting_type: result.meeting_type,
+      from_new_event: !!body?.new_event,
+    }),
+  )
   async start(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -180,6 +191,14 @@ export class MeetingController {
       'Post minutes to the members their event invites, who are each told once',
   })
   @ApiOkResponse({ type: MeetingDto })
+  @FeatureEvent(
+    'meeting-posted',
+    ({ result }: FeatureEventInput<PostMeetingDto, MeetingDto>) => ({
+      meeting_type: result.meeting_type,
+      has_decisions: result.content.decisions.length > 0,
+      has_action_items: result.content.action_items.length > 0,
+    }),
+  )
   async post(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

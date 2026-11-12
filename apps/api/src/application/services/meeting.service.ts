@@ -114,7 +114,8 @@ interface ViewerAccess {
 @Injectable()
 export class MeetingService {
   constructor(
-    @Inject(MEETING_REPOSITORY) private readonly meetingRepo: IMeetingRepository,
+    @Inject(MEETING_REPOSITORY)
+    private readonly meetingRepo: IMeetingRepository,
     @Inject(ATTENDANCE_REPOSITORY)
     private readonly attendanceRepo: IAttendanceRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
@@ -247,7 +248,9 @@ export class MeetingService {
     if (input.other_label !== undefined || write.meeting_type !== undefined) {
       write.other_label = otherLabelFor(
         type,
-        input.other_label !== undefined ? input.other_label : meeting.other_label,
+        input.other_label !== undefined
+          ? input.other_label
+          : meeting.other_label,
       );
     }
     if (input.content) {
@@ -311,7 +314,8 @@ export class MeetingService {
     const meeting = await this.meetingRepo.findById(chapterId, id);
     if (!meeting) return;
     const access = await this.access(chapterId, userId);
-    const ownDraft = meeting.status === 'draft' && meeting.created_by === userId;
+    const ownDraft =
+      meeting.status === 'draft' && meeting.created_by === userId;
     if (!access.canDelete && !ownDraft) {
       // A reader who can see it learns they can't delete it; anyone else
       // gets the 404 a missing id does.
@@ -487,9 +491,11 @@ export class MeetingService {
     userId: string,
     input: NonNullable<StartMeetingInput['new_event']>,
   ): Promise<Event> {
-    const canCreate = await this.rbac.memberHasAnyPermission(chapterId, userId, [
-      SystemPermissions.EVENTS_CREATE,
-    ]);
+    const canCreate = await this.rbac.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.EVENTS_CREATE],
+    );
     if (!canCreate) {
       throw new ForbiddenException(
         'Making an event for these minutes needs permission to create events. Pick the meeting’s event instead.',
@@ -500,7 +506,9 @@ export class MeetingService {
       const roles = await this.rbac.findByChapter(chapterId);
       const known = new Set(roles.map((role) => role.id));
       if (roleIds.some((id) => !known.has(id))) {
-        throw new BadRequestException('One of those roles isn’t in this chapter.');
+        throw new BadRequestException(
+          'One of those roles isn’t in this chapter.',
+        );
       }
     }
     return this.events.create({
@@ -597,7 +605,8 @@ function otherLabelFor(
 function pickContent(patch: MeetingContentPatch): MeetingContentPatch {
   const out: MeetingContentPatch = {};
   if (patch.summary !== undefined) out.summary = patch.summary;
-  if (patch.announcements !== undefined) out.announcements = patch.announcements;
+  if (patch.announcements !== undefined)
+    out.announcements = patch.announcements;
   if (patch.decisions !== undefined) out.decisions = patch.decisions;
   if (patch.action_items !== undefined) out.action_items = patch.action_items;
   if (patch.officer_reports !== undefined) {

@@ -542,6 +542,13 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back | — |
 
+**Meetings (`meetings`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `meeting-started` | An officer starts minutes ([`meetings.md`](meetings.md#writing-minutes-by-hand)). `meeting_type` is the type picked; `from_new_event` is `true` when the meeting wasn't on the calendar and got its event then | `meeting_type`, `from_new_event` |
+| `meeting-posted` | An officer posts minutes. Posting minutes that are already posted changes nothing, and still counts the request | `meeting_type`, `has_decisions`, `has_action_items` |
+
 **Polls (`polls`)**
 
 | Event | Recorded when | Properties |

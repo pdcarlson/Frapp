@@ -122,10 +122,7 @@ describe('MeetingService', () => {
   // The event read rule as `EventService` applies it (`isEventVisibleTo`).
   const sees = (userId: string, row: Event) =>
     has(userId, 'events:update') ||
-    isInvited(
-      row,
-      MEMBERS.find((m) => m.user_id === userId)?.role_ids ?? [],
-    );
+    isInvited(row, MEMBERS.find((m) => m.user_id === userId)?.role_ids ?? []);
 
   beforeEach(() => {
     events = new Map([
@@ -139,7 +136,9 @@ describe('MeetingService', () => {
         async (_chapterId, eventId) =>
           [...rows.values()].find((row) => row.event_id === eventId) ?? null,
       ),
-      findByChapter: jest.fn(async () => [...rows.values()]),
+      findByChapter: jest.fn(async (_chapterId: string, _limit: number) => [
+        ...rows.values(),
+      ]),
       create: jest.fn(async (data) => {
         const row = meeting({ ...data, id: `mtg-${rows.size + 1}` });
         rows.set(row.id, row);
@@ -152,7 +151,7 @@ describe('MeetingService', () => {
           ...row,
           ...data,
           updated_at: new Date(Date.parse(row.updated_at) + 1000).toISOString(),
-        } as Meeting;
+        };
         rows.set(id, next);
         return next;
       }),
@@ -176,18 +175,24 @@ describe('MeetingService', () => {
       ]),
     };
     eventService = {
-      findById: jest.fn(async (id: string, _chapterId: string, viewer?: string) => {
-        const row = events.get(id);
-        if (!row || (viewer && !sees(viewer, row))) {
-          throw new NotFoundException('Event not found');
-        }
-        return row;
-      }),
+      findById: jest.fn(
+        async (id: string, _chapterId: string, viewer?: string) => {
+          const row = events.get(id);
+          if (!row || (viewer && !sees(viewer, row))) {
+            throw new NotFoundException('Event not found');
+          }
+          return row;
+        },
+      ),
       findByChapter: jest.fn(async (_chapterId: string, viewer?: string) =>
         [...events.values()].filter((row) => !viewer || sees(viewer, row)),
       ),
       create: jest.fn(async (input) => {
-        const row = event({ ...input, id: 'evt-new', notes: null } as Partial<Event>);
+        const row = event({
+          ...input,
+          id: 'evt-new',
+          notes: null,
+        });
         events.set(row.id, row);
         return row;
       }),
@@ -241,10 +246,7 @@ describe('MeetingService', () => {
 
   describe('start', () => {
     it('starts a draft for the event, carrying the event notes into the summary', async () => {
-      events.set(
-        CHAPTER_EVENT.id,
-        event({ notes: 'Budget passed 30-2.' }),
-      );
+      events.set(CHAPTER_EVENT.id, event({ notes: 'Budget passed 30-2.' }));
       const view = await service.start(CHAPTER, SECRETARY, {
         meeting_type: 'chapter',
         event_id: CHAPTER_EVENT.id,
@@ -340,10 +342,16 @@ describe('MeetingService', () => {
   describe('who can read minutes', () => {
     it('keeps a draft to its author and officers who can edit any minutes', async () => {
       rows.set('mtg-1', meeting());
-      await expect(service.canRead(CHAPTER, 'mtg-1', SECRETARY)).resolves.toBe(true);
-      await expect(service.canRead(CHAPTER, 'mtg-1', PRESIDENT)).resolves.toBe(true);
+      await expect(service.canRead(CHAPTER, 'mtg-1', SECRETARY)).resolves.toBe(
+        true,
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', PRESIDENT)).resolves.toBe(
+        true,
+      );
       await expect(service.canRead(CHAPTER, 'mtg-1', VP)).resolves.toBe(false);
-      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
       await expect(service.get(CHAPTER, 'mtg-1', JAKE)).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -376,10 +384,12 @@ describe('MeetingService', () => {
           posted_at: '2026-11-10T03:00:00.000Z',
         }),
       );
-      await expect(service.get(CHAPTER, 'mtg-exec', JAKE)).rejects.toBeInstanceOf(
-        NotFoundException,
+      await expect(
+        service.get(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.canRead(CHAPTER, 'mtg-exec', JAKE)).resolves.toBe(
+        false,
       );
-      await expect(service.canRead(CHAPTER, 'mtg-exec', JAKE)).resolves.toBe(false);
       expect(await service.list(CHAPTER, JAKE)).toEqual([]);
       // Nor can he learn it exists by trying to change or delete it.
       await expect(
@@ -387,11 +397,13 @@ describe('MeetingService', () => {
           expected_updated_at: meeting().updated_at,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
-      await expect(service.delete(CHAPTER, 'mtg-exec', JAKE)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
       // The exec board reads them.
-      await expect(service.canRead(CHAPTER, 'mtg-exec', VP)).resolves.toBe(true);
+      await expect(service.canRead(CHAPTER, 'mtg-exec', VP)).resolves.toBe(
+        true,
+      );
     });
 
     it('follows the event when its audience changes', async () => {
@@ -403,7 +415,9 @@ describe('MeetingService', () => {
         CHAPTER_EVENT.id,
         event({ others_invited: false, required_role_ids: [EXEC_ROLE] }),
       );
-      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
     });
 
     it('shows minutes whose event was deleted only to officers who can edit minutes', async () => {
@@ -415,14 +429,18 @@ describe('MeetingService', () => {
           posted_at: '2026-11-10T03:00:00.000Z',
         }),
       );
-      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
       const view = await service.get(CHAPTER, 'mtg-1', PRESIDENT);
       expect(view.attendees).toBeNull();
       expect(view.event_end_time).toBeNull();
     });
 
     it('is false for an id that is not there', async () => {
-      await expect(service.canRead(CHAPTER, 'nope', PRESIDENT)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, 'nope', PRESIDENT)).resolves.toBe(
+        false,
+      );
     });
   });
 
@@ -462,7 +480,11 @@ describe('MeetingService', () => {
           expected_updated_at: meeting().updated_at,
           content: {
             action_items: [
-              { text: 'Book the bus', owner_user_id: 'user-stranger', due_date: null },
+              {
+                text: 'Book the bus',
+                owner_user_id: 'user-stranger',
+                due_date: null,
+              },
             ],
           },
         }),
@@ -515,7 +537,11 @@ describe('MeetingService', () => {
       const [, audience, payload] = notifyMembers.mock.calls[0];
       expect([...audience].sort()).toEqual([JAKE, PRESIDENT, VP].sort());
       expect(payload.data).toEqual({
-        target: { screen: 'events', eventId: CHAPTER_EVENT.id, meetingId: 'mtg-1' },
+        target: {
+          screen: 'events',
+          eventId: CHAPTER_EVENT.id,
+          meetingId: 'mtg-1',
+        },
       });
 
       // Posting again tells nobody again.
@@ -526,7 +552,11 @@ describe('MeetingService', () => {
     it('tells only the members an Exec meeting invites', async () => {
       rows.set(
         'mtg-exec',
-        meeting({ id: 'mtg-exec', event_id: EXEC_EVENT.id, meeting_type: 'exec' }),
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          meeting_type: 'exec',
+        }),
       );
       await service.post(CHAPTER, 'mtg-exec', SECRETARY, meeting().updated_at);
       const [, audience] = notifyMembers.mock.calls[0];

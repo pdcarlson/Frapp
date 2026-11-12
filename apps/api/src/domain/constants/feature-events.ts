@@ -45,6 +45,17 @@ export const FEATURE_EVENTS = {
     properties: ['status', 'has_excuse'],
   },
 
+  // Meetings (#4312): minutes written by hand. Only the type and which
+  // sections hold something, never a word of the minutes.
+  'meeting-started': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'from_new_event'],
+  },
+  'meeting-posted': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'has_decisions', 'has_action_items'],
+  },
+
   // Tasks
   'task-created': {
     feature: 'tasks',

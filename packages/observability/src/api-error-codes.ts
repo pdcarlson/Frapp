@@ -41,6 +41,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // A config PATCH switching off an always-on module. Chapter settings draws
   // those locked and never sends it (#4073).
   "chapter.config.module_always_on",
+  // Minutes typed Standards (#4312). No minutes screen offers the type, so
+  // only a client that skipped its own type list sends it.
+  "meeting.standards_refused",
 ] as const;
 
 export const MEMBER_CAUSED_ERROR_CODES = [
@@ -58,6 +61,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chat.since_not_found",
   "legal.acceptance_required",
   "service_entry.receipt_required",
+  // Two officers started minutes for one event at once, or one saved over
+  // the other's newer version (#4312).
+  "meeting.already_started",
+  "meeting.stale",
 ] as const;
 
 export type ClientContractErrorCode =

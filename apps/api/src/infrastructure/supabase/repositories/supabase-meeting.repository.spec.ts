@@ -43,8 +43,18 @@ const seed = () => ({
   ],
   // The table's key is chapter_id; the harness tracks rows by an id.
   meeting_templates: [
-    inA({ id: 'tpl-a', sections: ['summary'], updated_by: null, updated_at: UPDATED }),
-    inB({ id: 'tpl-b', sections: ['summary'], updated_by: null, updated_at: UPDATED }),
+    inA({
+      id: 'tpl-a',
+      sections: ['summary'],
+      updated_by: null,
+      updated_at: UPDATED,
+    }),
+    inB({
+      id: 'tpl-b',
+      sections: ['summary'],
+      updated_by: null,
+      updated_at: UPDATED,
+    }),
   ],
 });
 
