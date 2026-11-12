@@ -450,6 +450,12 @@ export interface MentionRole {
   mentionable: boolean;
 }
 
+/** `@everyone` and `@here`, folded; `EVERYONE_MENTION_NAME` and
+ * `HERE_MENTION_NAME` in `everyone-role.ts`, which imports this module, so
+ * they are spelled here rather than imported. */
+const EVERYONE_FOLDED = "everyone";
+const HERE_FOLDED = "here";
+
 /**
  * The role `token` names, `null` when it names a role but resolves to nobody,
  * or `undefined` when it names no role and member matching should run.
@@ -459,19 +465,23 @@ export interface MentionRole {
  * A role named in full outranks a member's shorthand (first word, prefix), but
  * not a member's own exact name: when "Rush" is both a role and a member, the
  * token is ambiguous and, like every ambiguity here, reaches nobody.
+ * `@everyone` and `@here` are the exceptions below.
  */
-/** `@everyone`, folded; `EVERYONE_MENTION_NAME` in `everyone-role.ts`, which
- * imports this module, so it is spelled here rather than imported. */
-const EVERYONE_FOLDED = "everyone";
-
 function matchMentionRole(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
   token: string,
 ): MentionRole | null | undefined {
-  if (roles.length === 0) return undefined;
   const folded = fold(token);
   if (folded.length === 0) return undefined;
+  // `@here` is reserved (2026-11-12): it is the online members the caller's
+  // `here` entry holds, and it reaches nobody when there is no entry or no one
+  // is online. It never falls through to a member, or an empty room would page
+  // whoever's name starts with "here" past their mute.
+  if (folded === HERE_FOLDED) {
+    return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;
+  }
+  if (roles.length === 0) return undefined;
   // A role nobody holds is not a target: it would reach nobody, and letting
   // it claim the token would take the name from a member it collides with.
   const hits = roles.filter(
@@ -626,8 +636,9 @@ const MAX_ROLE_SUGGESTIONS = 3;
  * given (the chapter's role order). Both pickers draw this list, so web and
  * mobile offer the same rows for the same text.
  *
- * Roles take at most three rows of the eight, and the members fill the rest.
- * A role matches as a member does (its name contains the query) and is left
+ * Roles take at most three rows of the eight, and the members fill the rest;
+ * `@everyone` and `@here` sit between them, outside the three, matched by
+ * prefix only. A role matches as a member does (its name contains the query) and is left
  * out under the same rule: its label must open on a letter to be typeable.
  */
 export function mentionPickerEntries<
@@ -640,26 +651,38 @@ export function mentionPickerEntries<
   limit: number = MAX_MENTION_SUGGESTIONS,
 ): MentionPickerEntry<M, R>[] {
   const needle = matchable(query.trim());
+  // `@everyone` and `@here` (2026-11-12): offered once a letter is typed and
+  // only by the start of their name, as Slack offers them, and outside the
+  // three role rows, so `@er` still lists the chapter's roles.
+  const reservedRows: MentionPickerEntry<M, R>[] = [];
   const roleRows: MentionPickerEntry<M, R>[] = [];
   for (const role of roles) {
-    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) break;
     if (!role.mentionable) continue;
+    const folded = fold(role.name);
+    if (folded === EVERYONE_FOLDED || folded === HERE_FOLDED) {
+      if (needle && folded.startsWith(fold(needle))) {
+        reservedRows.push({ kind: "role", role, label: folded });
+      }
+      continue;
+    }
+    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) continue;
     const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
+  const special = reservedRows.slice(0, Math.max(0, limit - roleRows.length));
   const memberRows = mentionSuggestions(
     roster,
     query,
-    limit - roleRows.length,
+    limit - roleRows.length - special.length,
   ).map(({ member, label }): MentionPickerEntry<M, R> => ({
     kind: "member",
     member,
     label,
   }));
-  return [...memberRows, ...roleRows];
+  return [...memberRows, ...special, ...roleRows];
 }
 
 /** The `@`-query a caret sits in: where its `@` is, and what follows it. */

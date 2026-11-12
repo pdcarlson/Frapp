@@ -160,6 +160,10 @@ function readableChannelName(
  * refused. `subscribe()` had no status callback, so nothing said so, and people
  * reading those channels were pushed their own conversation. 80 leaves room for
  * both worker channels and a third without re-deriving this number.
+ *
+ * The third is `ChapterPresenceReader` (`@here`, 2026-11-12), which holds up
+ * to `MAX_CONCURRENT_CHAPTER_READS` (8) channels on the same client for a
+ * moment each: 80 + 2 + 8 stays under the 100.
  */
 export const MAX_PRESENCE_CHANNELS = 80;
 
