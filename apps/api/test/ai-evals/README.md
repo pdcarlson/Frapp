@@ -18,6 +18,7 @@ It needs its own jest config: the unit project is `rootDir: "src"` and the e2e p
 | Grader enforcement           | `grader.eval-spec.ts`            | Every case is satisfiable by a compliant answer, and every injection's intended outcome is rejected                                      |
 | Agent behaviour              | `adversarial.eval-spec.ts`       | Every case, answered by the agent below and graded                                                                                       |
 | What the agent sends and runs | `ask-agent.eval-spec.ts`         | Source order and labels, what the planner is shown, and that no mutating tool is offered or run, which no answer-graded case can see     |
+| The acting agent (#718) | `act-agent.eval-spec.ts` | `ActService` and its tools against a planner that names actions it was not offered, other chapters' members and impossible amounts: what the planner is shown, that nothing runs without `ai:act` or the action's permission, and that every result is a proposal for the asker alone |
 
 The agent is `harness/ask-agent.ts`: the product's `AskService` (#450), over the product's
 `CorpusRetrievalService`, chat source (#4314) and `AiGatewayService`, with the scripted adapter as

@@ -42,15 +42,21 @@ import {
   DismissAiSuggestionDto,
   ListAiSuggestionsQueryDto,
   type EventSuggestionAcceptDto,
+  type PointsSuggestionEditsDto,
   type TaskSuggestionEditsDto,
 } from '../dtos/ai-suggestion.dto';
 
-/** A request names changes for one kind; a suggested event's come first. */
+/**
+ * A request names changes for one kind; a suggested event's come first. The
+ * service refuses changes for a kind other than the suggestion's.
+ */
 function editsOf(dto: {
   task?: TaskSuggestionEditsDto;
+  points?: PointsSuggestionEditsDto;
   event?: EventSuggestionAcceptDto;
 }): AiSuggestionEdits | undefined {
   if (dto.event) return { kind: 'event', fields: { ...dto.event } };
+  if (dto.points) return { kind: 'points', fields: { ...dto.points } };
   return dto.task ? { kind: 'task', fields: { ...dto.task } } : undefined;
 }
 

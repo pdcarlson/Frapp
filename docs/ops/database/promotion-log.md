@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Asking Frapp to do something (#718, on `ai-integration`)
+
+### 20261112240000_ai_act_suggestions.sql
+
+- **Purpose**: Widens two checks on `ai_suggestions` so the card an officer confirms after asking Frapp to do something is a row of that table. `ai_suggestions_kind_check` now allows `points` and `new_event` beside `task` and `event`, and `ai_suggestions_source_type_check` allows `request` (a member's own typed request, whose `source_id` is that member's user id) beside `meeting`, `event`, `channel` and `task`. No column, table, function or row is added. The rule is [`spec/behavior/ai.md` § Asking Frapp to do something](../../../spec/behavior/ai.md#asking-frapp-to-do-something).
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_kind_check';` names `task`, `event`, `points` and `new_event`, and `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_source_type_check';` names `meeting`, `event`, `channel`, `task` and `request`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112130001_ai_suggestions.sql`, whose table it changes, and after `20261112230000_last_year_suggestions.sql`, whose two lists it starts from. Each check is dropped and re-added in the migration's transaction; both new checks allow everything the old ones did, so no row can fail, and the table is empty when this ships. The lock is ACCESS EXCLUSIVE on `ai_suggestions` for a catalog change and one scan. An API process from before this migration never writes the new values. With `AI_ENABLED` unset nothing writes the table at all.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-act-suggestions-20261112240000) § Rollback AI act suggestions.
+
 ## 2026-11-12: Report this on a channel summary (#3946, on `ai-integration`)
 
 ### 20261112233000_ai_reports_chat_summary.sql

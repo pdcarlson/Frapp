@@ -69,7 +69,10 @@ const exchange = (overrides: Partial<AskExchange> = {}): AskExchange => ({
   ...overrides,
 });
 
-const show = (value: AskExchange, handlers: { retry?: () => void; consent?: () => void } = {}) =>
+const show = (
+  value: AskExchange,
+  handlers: { retry?: () => void; consent?: () => void } = {},
+) =>
   render(
     <AskExchangeView
       exchange={value}
@@ -81,7 +84,9 @@ const show = (value: AskExchange, handlers: { retry?: () => void; consent?: () =
 describe("askSourceHref", () => {
   it("opens each kind of source where it lives", () => {
     expect(askSourceHref(ANSWER.sources[0]!)).toBe("/documents?document=d1");
-    expect(askSourceHref(ANSWER.sources[1]!)).toBe("/chat?channel=c1&message=m1");
+    expect(askSourceHref(ANSWER.sources[1]!)).toBe(
+      "/chat?channel=c1&message=m1",
+    );
     expect(
       askSourceHref({
         ...ANSWER.sources[0]!,
@@ -128,20 +133,20 @@ describe("AskExchangeView", () => {
 
   it("marks each cited sentence with a link to its source", () => {
     show(exchange());
-    expect(screen.getByRole("link", { name: "Source 1: Bylaws" })).toHaveAttribute(
-      "href",
-      "/documents?document=d1",
-    );
-    expect(screen.getByRole("link", { name: "Source 2: #general" })).toHaveAttribute(
-      "href",
-      "/chat?channel=c1&message=m1",
-    );
+    expect(
+      screen.getByRole("link", { name: "Source 1: Bylaws" }),
+    ).toHaveAttribute("href", "/documents?document=d1");
+    expect(
+      screen.getByRole("link", { name: "Source 2: #general" }),
+    ).toHaveAttribute("href", "/chat?channel=c1&message=m1");
   });
 
   it("shows a source of a kind it does not know as plain text, with no link", () => {
     show(exchange());
     expect(screen.queryByRole("link", { name: /Something newer/ })).toBeNull();
-    expect(screen.getByLabelText("Source 3: Something newer")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Source 3: Something newer"),
+    ).toBeInTheDocument();
   });
 
   it("lists the sources with their kind, place and full date", () => {
@@ -160,7 +165,13 @@ describe("AskExchangeView", () => {
   it("says it could not find it, and shows no answer text", () => {
     show(
       exchange({
-        answer: { ...ANSWER, status: "not_found", text: "", citations: [], sources: [] },
+        answer: {
+          ...ANSWER,
+          status: "not_found",
+          text: "",
+          citations: [],
+          sources: [],
+        },
       }),
     );
     expect(screen.getByText(ASK_COPY.not_found)).toBeInTheDocument();
@@ -181,12 +192,21 @@ describe("AskExchangeView", () => {
     expect(screen.getByText(ASK_COPY.unverified)).toBeInTheDocument();
     expect(screen.getByText(ASK_COPY.truncated)).toBeInTheDocument();
     expect(
-      screen.getByText("2 messages from members who opted out aren't included."),
+      screen.getByText(
+        "2 messages from members who opted out aren't included.",
+      ),
     ).toBeInTheDocument();
   });
 
   it("shows the step under the streamed text while it works", () => {
-    show(exchange({ phase: "working", step: "reading", preview: "Quorum is", answer: null }));
+    show(
+      exchange({
+        phase: "working",
+        step: "reading",
+        preview: "Quorum is",
+        answer: null,
+      }),
+    );
     expect(screen.getByText("Quorum is")).toBeInTheDocument();
     expect(screen.getByText(ASK_COPY.steps.reading)).toBeInTheDocument();
   });
@@ -211,10 +231,12 @@ describe("AskExchangeView", () => {
       }),
       { consent },
     );
-    expect(screen.getByText(ASK_COPY.unavailable.consent_required)).toBeInTheDocument();
-    await userEvent.setup().click(
-      screen.getByRole("button", { name: ASK_COPY.consent_action }),
-    );
+    expect(
+      screen.getByText(ASK_COPY.unavailable.consent_required),
+    ).toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: ASK_COPY.consent_action }));
     expect(consent).toHaveBeenCalled();
   });
 
@@ -228,9 +250,9 @@ describe("AskExchangeView", () => {
       }),
       { retry },
     );
-    await userEvent.setup().click(
-      screen.getByRole("button", { name: ASK_COPY.try_again }),
-    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: ASK_COPY.try_again }));
     expect(retry).toHaveBeenCalled();
     unmount();
     show(
@@ -240,6 +262,8 @@ describe("AskExchangeView", () => {
         failure: { message: ASK_COPY.failed, retryable: false },
       }),
     );
-    expect(screen.queryByRole("button", { name: ASK_COPY.try_again })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: ASK_COPY.try_again }),
+    ).toBeNull();
   });
 });

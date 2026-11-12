@@ -14,6 +14,7 @@ export * from "./unset-features";
 export * from "./use-events";
 export * from "./use-event-types";
 export * from "./use-meetings";
+export * from "./use-act";
 export * from "./use-ai";
 export * from "./use-ai-suggestions";
 export * from "./use-ask";

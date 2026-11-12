@@ -5,22 +5,28 @@ import { createPortal } from "react-dom";
 import { ArrowUp, X } from "lucide-react";
 import {
   errorCopy,
+  useActStatus,
   useAsk,
   useAskStatus,
+  useMyPermissions,
   type AskExchange,
 } from "@repo/hooks";
 import {
+  ACT_COPY,
   ASK_COPY,
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
+  can,
   formatAiAnswerDate,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { ActPane, useActSession } from "@/components/ask/act-pane";
 import { AskExchangeView } from "@/components/ask/ask-answer";
 import { PanelBody } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +57,15 @@ import { cn } from "@/lib/utils";
  * and says so under the field, the way Slack's search answer does, not a
  * chat thread that would promise it remembers.
  *
+ * **Ask and Do (#718).** An officer who may have Ask take actions sees two
+ * sides under the title: Ask answers a question, Do proposes a change for
+ * them to confirm (`act-pane.tsx`). They are one panel because they are one
+ * habit, typing to Frapp, and two sides because they are two promises: a
+ * question never changes anything, and the server keeps them on separate
+ * routes. Linear's command menu and Slack's composer both keep "find" and
+ * "do" in one place the same way. A member who cannot act sees no switch,
+ * and the panel is Ask exactly as before.
+ *
  * **Consent is asked at the first question**, not when the panel opens
  * (`useAiConsentGate`; `ai.md` § Consent). The server checks again.
  *
@@ -78,6 +93,15 @@ export function AskPanel({
   const { exchange, ask, reset } = useAsk();
   const status = useAskStatus({ enabled: open });
   const { ensureConsent, consentDialog } = useAiConsentGate();
+  // No request for a member without `ai:act`: the server would answer 403.
+  const permissions = useMyPermissions().data?.permissions;
+  const mayAct = !!permissions && can("ai:act", permissions);
+  const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
+  const canAct = actions !== null && actions.length > 0;
+  const [mode, setMode] = useState<"ask" | "do">("ask");
+  // Held here so a waiting card survives a look at Ask, or a close and reopen.
+  const actSession = useActSession();
+  const doing = canAct && mode === "do";
   const [draft, setDraft] = useState("");
   // A question that never reached the server: the member has not said yes.
   const [held, setHeld] = useState<AskExchange | null>(null);
@@ -130,7 +154,10 @@ export function AskPanel({
         step: null,
         preview: "",
         answer: null,
-        failure: { message: errorCopy(error, ASK_COPY.failed), retryable: true },
+        failure: {
+          message: errorCopy(error, ASK_COPY.failed),
+          retryable: true,
+        },
       });
       return;
     }
@@ -186,69 +213,97 @@ export function AskPanel({
               <X className="h-4 w-4" aria-hidden="true" />
             </IconButton>
           </div>
-          <PanelBody>
-            {shown ? (
-              <AskExchangeView
-                exchange={shown}
-                onRetry={() => void submit(shown.question)}
-                onAnswerConsent={() => void submit(shown.question)}
-                onFollowSource={() => {
-                  if (!window.matchMedia?.(BESIDE_PAGE_QUERY).matches) close();
-                }}
+          {canAct ? (
+            <div className="shrink-0 px-5 pb-3">
+              <SegmentedChoice
+                label={ACT_COPY.mode_label}
+                fill
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "ask", label: ACT_COPY.mode_ask },
+                  { value: "do", label: ACT_COPY.mode_do },
+                ]}
               />
-            ) : (
-              <AskEmpty onPick={(example) => void submit(example)} />
-            )}
-          </PanelBody>
-          <form
-            className="shrink-0 space-y-2 border-t border-border px-5 py-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit(draft);
-            }}
-          >
-            <div className="flex items-end gap-2">
-              <Textarea
-                ref={field}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    void submit(draft);
-                  }
-                }}
-                rows={2}
-                maxLength={ASK_QUESTION_MAX_LENGTH}
-                placeholder={ASK_COPY.placeholder}
-                aria-label={ASK_COPY.placeholder}
-                className="min-h-[64px] resize-none"
-              />
-              <Button
-                type="submit"
-                size="icon"
-                className="shrink-0"
-                aria-label={ASK_COPY.send}
-                title={ASK_COPY.send}
-                disabled={working || draft.trim().length === 0}
-              >
-                <ArrowUp className="h-4 w-4" aria-hidden="true" />
-              </Button>
             </div>
-            {/*
+          ) : null}
+          {doing ? (
+            <ActPane
+              session={actSession}
+              actions={actions}
+              ensureConsent={ensureConsent}
+              onLeave={() => {
+                if (!window.matchMedia?.(BESIDE_PAGE_QUERY).matches) close();
+              }}
+            />
+          ) : (
+            <>
+              <PanelBody>
+                {shown ? (
+                  <AskExchangeView
+                    exchange={shown}
+                    onRetry={() => void submit(shown.question)}
+                    onAnswerConsent={() => void submit(shown.question)}
+                    onFollowSource={() => {
+                      if (!window.matchMedia?.(BESIDE_PAGE_QUERY).matches)
+                        close();
+                    }}
+                  />
+                ) : (
+                  <AskEmpty onPick={(example) => void submit(example)} />
+                )}
+              </PanelBody>
+              <form
+                className="shrink-0 space-y-2 border-t border-border px-5 py-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submit(draft);
+                }}
+              >
+                <div className="flex items-end gap-2">
+                  <Textarea
+                    ref={field}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey &&
+                        !event.nativeEvent.isComposing
+                      ) {
+                        event.preventDefault();
+                        void submit(draft);
+                      }
+                    }}
+                    rows={2}
+                    maxLength={ASK_QUESTION_MAX_LENGTH}
+                    placeholder={ASK_COPY.placeholder}
+                    aria-label={ASK_COPY.placeholder}
+                    className="min-h-[64px] resize-none"
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="shrink-0"
+                    aria-label={ASK_COPY.send}
+                    title={ASK_COPY.send}
+                    disabled={working || draft.trim().length === 0}
+                  >
+                    <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+                {/*
               Two lines high whichever line it holds, so the saved notice
               arriving with the status read never moves the field.
             */}
-            <p className="min-h-9 text-caption text-muted-foreground">
-              {saving && savedUntil
-                ? askSavedLine(formatAiAnswerDate(savedUntil))
-                : ASK_COPY.single_shot}
-            </p>
-          </form>
+                <p className="min-h-9 text-caption text-muted-foreground">
+                  {saving && savedUntil
+                    ? askSavedLine(formatAiAnswerDate(savedUntil))
+                    : ASK_COPY.single_shot}
+                </p>
+              </form>
+            </>
+          )}
         </aside>,
         document.body,
       )}

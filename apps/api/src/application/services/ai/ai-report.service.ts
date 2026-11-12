@@ -23,6 +23,7 @@ import {
 } from '#domain/utils/ai-report-receipt';
 import { sealAiText } from '#domain/utils/ai-text-cipher';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
+import { ACT_PLAN_PROMPT_VERSION } from '../act/act-prompt';
 import { AiSuggestionService } from '../ai-suggestion.service';
 import { MeetingDraftService } from '../meeting-draft.service';
 import type { EnabledModules } from '../module-gate';
@@ -365,6 +366,7 @@ export class AiReportService implements OnModuleInit {
     );
     if (!suggestion) throw notFound();
     if (!keepText) return NOTHING;
+    const fromRequest = suggestion.source_type === 'request';
     return {
       exchange: {
         kind: suggestion.kind,
@@ -375,9 +377,10 @@ export class AiReportService implements OnModuleInit {
         quote: suggestion.quote,
       },
       quoted: suggestion.quote_author_id ? [suggestion.quote_author_id] : [],
-      // Suggested tasks are read from posted minutes with no model call.
-      model: null,
-      promptVersion: null,
+      // Suggested tasks are read from posted minutes with no model call; a
+      // proposal a member asked for (#718) came from the acting agent's plan.
+      model: fromRequest ? aiCatalogEntry('act.plan').model : null,
+      promptVersion: fromRequest ? ACT_PLAN_PROMPT_VERSION : null,
     };
   }
 

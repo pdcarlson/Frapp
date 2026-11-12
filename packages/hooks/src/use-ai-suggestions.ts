@@ -24,6 +24,9 @@ export type AiSuggestionSourceType = AiSuggestion["source"]["type"];
 /** An officer's changes to a suggested task, sent with Accept. */
 export type TaskSuggestionEdits =
   components["schemas"]["TaskSuggestionEditsDto"];
+/** An officer's changes to a proposed points change, sent with Confirm. */
+export type PointsSuggestionEdits =
+  components["schemas"]["PointsSuggestionEditsDto"];
 /** Why a suggestion is dismissed, when the member says: `already_doing`. */
 export type AiSuggestionDismissReason = NonNullable<
   components["schemas"]["DismissAiSuggestionDto"]["reason"]
@@ -116,6 +119,9 @@ function useDropFromLists() {
     });
     if (made) {
       void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      // An accepted points change or event (#718) lands on those pages.
+      void queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
+      void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     }
   };
 }
@@ -136,10 +142,12 @@ export function useAcceptAiSuggestion() {
     mutationFn: async ({
       id,
       task,
+      points,
       eventId,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
+      points?: PointsSuggestionEdits;
       /**
        * For a suggested event (#3930): the event the officer just added
        * through the event form. The accept records it and makes nothing.
@@ -148,7 +156,9 @@ export function useAcceptAiSuggestion() {
     }): Promise<AiSuggestionDecision> => {
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },
-        body: eventId ? { event: { event_id: eventId } } : task ? { task } : {},
+        body: eventId
+          ? { event: { event_id: eventId } }
+          : { ...(task ? { task } : {}), ...(points ? { points } : {}) },
       });
       throwUnlessOk(result);
       return bodyOf(result.data);

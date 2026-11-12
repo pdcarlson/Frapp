@@ -91,6 +91,12 @@ export interface ProposeAiSuggestionsInput {
   }[];
   /** Who hears about the batch. Defaults to `requestedFor`. */
   notify?: readonly string[];
+  /**
+   * Waits at most this many days, when shorter than its kind's own wait. A
+   * proposal a member asked for a moment ago (the acting agent, #718) is
+   * stale by tomorrow, whatever its kind.
+   */
+  expiresWithinDays?: number;
 }
 
 export interface ReconcileAiSuggestionsInput {
@@ -128,7 +134,12 @@ export type AiSuggestionEdits = {
 export interface AiSuggestionDecisionResult {
   suggestion: AiSuggestion;
   /** What accepting made, when it was accepted. */
-  result: { kind: AiSuggestionKind; id: string } | null;
+  result: {
+    kind: AiSuggestionKind;
+    id: string;
+    /** Counts, for a kind that makes several changes (`AiSuggestionCommitResult`). */
+    outcome?: Readonly<Record<string, number>>;
+  } | null;
 }
 
 export type AiSuggestionDecideItem =
@@ -256,7 +267,12 @@ export class AiSuggestionService {
         dedupe_key: proposal.dedupeKey ?? null,
         required_permission: handler.requiredPermission,
         expires_at: new Date(
-          now.getTime() + handler.expiresAfterDays * DAY_MS,
+          now.getTime() +
+            Math.min(
+              handler.expiresAfterDays,
+              input.expiresWithinDays ?? handler.expiresAfterDays,
+            ) *
+              DAY_MS,
         ).toISOString(),
       });
     });
@@ -451,6 +467,42 @@ export class AiSuggestionService {
     });
   }
 
+  /**
+   * Takes back every waiting suggestion drawn from one source. For a source
+   * that holds one live proposal at a time: a member's request to the acting
+   * agent (#718), where asking again replaces what they asked before. One
+   * being accepted at that moment is left alone. Returns how many went.
+   */
+  async withdrawSource(
+    chapterId: string,
+    source: { type: AiSuggestionSourceType; id: string },
+  ): Promise<number> {
+    const rows = await this.repo.listPending(chapterId, {
+      permissions: null,
+      source,
+      now: this.now().toISOString(),
+      offset: 0,
+      limit: AI_SUGGESTION_LIST_LIMIT,
+    });
+    if (rows.length === 0) return 0;
+    const withdrawn = await this.repo.deletePending(
+      chapterId,
+      rows.map((row) => row.id),
+    );
+    if (withdrawn > 0) {
+      for (const [kind, count] of countBy(rows, (row) => row.kind)) {
+        this.emit(
+          this.analytics.trackForChapter(
+            'ai-suggestions-withdrawn',
+            chapterId,
+            { kind, count },
+          ),
+        );
+      }
+    }
+    return withdrawn;
+  }
+
   // ------------------------------------------------------------------- list
 
   /**
@@ -492,7 +544,11 @@ export class AiSuggestionService {
       const visible = await this.visibleTo(
         chapterId,
         userId,
-        rows,
+        // What a member asked the acting agent for is shown where they
+        // asked (its own source), not in the chapter's Suggested list.
+        options.source
+          ? rows
+          : rows.filter((row) => row.source_type !== 'request'),
         options.enabledModules,
         held,
       );
@@ -649,10 +705,12 @@ export class AiSuggestionService {
     }
 
     let resultId: string;
+    let outcome: Readonly<Record<string, number>> | undefined;
     try {
-      ({ resultId } = await handler.commit({
+      ({ resultId, outcome } = await handler.commit({
         chapterId,
         userId,
+        suggestionId: id,
         payload,
         source: { type: row.source_type, id: row.source_id },
       }));
@@ -695,7 +753,11 @@ export class AiSuggestionService {
         quote_author_id: null,
         result_id: resultId,
       },
-      result: { kind: row.kind, id: resultId },
+      result: {
+        kind: row.kind,
+        id: resultId,
+        ...(outcome === undefined ? {} : { outcome }),
+      },
     };
   }
 
