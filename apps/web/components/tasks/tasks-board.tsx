@@ -165,9 +165,14 @@ export function TasksBoard() {
   // Suggested tasks (#4313) sit above the columns for an officer who has
   // some. The board waits for that read with its own, so the columns are
   // drawn once and never pushed down by a list arriving late. A server with
-  // AI off answers at once with none.
+  // AI off answers at once with none. Only a read in flight holds the
+  // board: one that can't run (offline) leaves the columns to draw, as the
+  // permissions read above does.
   const suggestionsQuery = useAiSuggestions({ enabled: canManage });
-  const suggestionsLoading = canManage && suggestionsQuery.isPending;
+  const suggestionsLoading =
+    canManage &&
+    suggestionsQuery.isPending &&
+    suggestionsQuery.fetchStatus === "fetching";
   const moduleGate = useChapterModuleGateState();
   const nowTick = useNow();
   // A member with nothing assigned sees one line instead of the board, and

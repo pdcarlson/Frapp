@@ -225,6 +225,10 @@ export function useDeleteMeeting() {
     },
     onSuccess: (id) => {
       queryClient.removeQueries({ queryKey: meetingKey(chapterId, id) });
+      // Its suggested tasks went with it (#4313).
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
       return queryClient.invalidateQueries({
         queryKey: meetingsKey(chapterId),
       });

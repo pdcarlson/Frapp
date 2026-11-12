@@ -52,11 +52,13 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
     change: { reason: 'posted' | 'edited'; actorId: string },
   ): Promise<ReconcileAiSuggestionsResult | null> {
     if (meeting.status !== 'posted' || !isAiEnabled()) return null;
-    if (
-      !(await this.consent.chapterSwitchOn(meeting.chapter_id, 'meeting_notes'))
-    ) {
-      return null;
-    }
+    // With the chapter's switch off nothing is proposed, and what was
+    // waiting from before is taken back on this save: a list nobody is
+    // keeping up with the minutes shouldn't be acceptable.
+    const on = await this.consent.chapterSwitchOn(
+      meeting.chapter_id,
+      'meeting_notes',
+    );
     return this.suggestions.reconcileSource({
       chapterId: meeting.chapter_id,
       requestedFor: change.actorId,
@@ -67,8 +69,10 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
         text: actionItemsText(meeting.content),
       },
       kind: 'task',
-      proposals: taskProposalsFromMinutes(meeting.content, meeting.event_name),
-      notify: change.reason === 'posted' ? [change.actorId] : [],
+      proposals: on
+        ? taskProposalsFromMinutes(meeting.content, meeting.event_name)
+        : [],
+      notify: on && change.reason === 'posted' ? [change.actorId] : [],
     });
   }
 }

@@ -411,11 +411,13 @@ export class MeetingService {
       },
     );
     if (!saved) throw this.stale();
-    if (event) await this.notifyAudience(chapterId, saved, event, userId);
+    // Before the audience is told: a listener never fails the post, and a
+    // post that failed after this point is not run again on the retry.
     await this.tellPostedListeners(saved, {
       reason: 'posted',
       actorId: userId,
     });
+    if (event) await this.notifyAudience(chapterId, saved, event, userId);
     return this.view(chapterId, saved, event, userId, access);
   }
 

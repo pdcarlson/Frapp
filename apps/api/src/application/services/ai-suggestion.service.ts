@@ -327,10 +327,22 @@ export class AiSuggestionService {
         return !now || !samePayload(now.payload, row.payload);
       });
       const gone = new Set(stale.map((row) => row.id));
-      withdrawn += await this.repo.deletePending(
+      const takenBack = await this.repo.deletePending(
         input.chapterId,
         stale.map((row) => row.id),
       );
+      withdrawn += takenBack;
+      if (takenBack > 0) {
+        // So proposed still adds up to accepted, dismissed, expired,
+        // withdrawn and waiting: a replaced suggestion is proposed twice.
+        this.emit(
+          this.analytics.trackForChapter(
+            'ai-suggestions-withdrawn',
+            input.chapterId,
+            { kind: input.kind, count: takenBack },
+          ),
+        );
+      }
       const taken = new Set(
         existing
           .filter((row) => !gone.has(row.id))

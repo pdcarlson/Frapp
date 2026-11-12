@@ -64,7 +64,11 @@ export const AI_MODEL_CATALOG = {
     maxOutputTokens: 16_000,
     effort: 'medium',
   },
-  /** Tasks proposed from a minutes draft, each with the line it came from (#4313). */
+  /**
+   * Tasks proposed from a minutes draft, each with the line it came from.
+   * Only the bake-off runs it: suggested tasks as built (#4313) are the
+   * posted minutes' action items as written, with no model call.
+   */
   'minutes.suggest-tasks': {
     ...CLAUDE_SONNET,
     family: 'meetings',

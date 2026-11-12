@@ -54,6 +54,9 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * else. Accept with one of them missing points at it instead of failing.
  */
 
+/** `AI_SUGGESTION_DECIDE_MAX` on the API: decisions one request may carry. */
+const DECIDE_MAX = 50;
+
 type SuggestedTask = NonNullable<AiSuggestion["task"]>;
 type WaitingSuggestion = AiSuggestion & { task: SuggestedTask };
 
@@ -163,7 +166,9 @@ export function SuggestedTasks({
   if (items.length === 0) return null;
 
   const busy = busyId !== null || decide.isPending;
+  // A row open in the form is decided there, with what was typed into it.
   const ready = items.filter((item) => {
+    if (item.id === formFor) return false;
     const values = rowValues(item, edits[item.id]);
     return values.assigneeId && values.due;
   });
@@ -215,13 +220,18 @@ export function SuggestedTasks({
 
   async function acceptAllReady() {
     try {
-      const outcomes = await decide.mutateAsync(
-        ready.map((item) => ({
-          id: item.id,
-          action: "accept" as const,
-          task: editsFor(item, rowValues(item, edits[item.id])),
-        })),
-      );
+      const decisions = ready.map((item) => ({
+        id: item.id,
+        action: "accept" as const,
+        task: editsFor(item, rowValues(item, edits[item.id])),
+      }));
+      // The route takes 50 at a time.
+      const outcomes = [];
+      for (let at = 0; at < decisions.length; at += DECIDE_MAX) {
+        outcomes.push(
+          ...(await decide.mutateAsync(decisions.slice(at, at + DECIDE_MAX))),
+        );
+      }
       const made = outcomes.filter((outcome) => outcome.ok).length;
       const refused = outcomes.length - made;
       toast({

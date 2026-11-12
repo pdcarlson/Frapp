@@ -19,9 +19,6 @@ import { MeetingModule } from './meeting.module';
  * Minutes drafted from notes (#4312): the first feature on the AI gateway
  * and the AI run queue. Its own module, so the hand-written minutes
  * (`MeetingModule`) load nothing of AI.
- *
- * `MeetingDraftService` is exported for suggested tasks (#4313), which read
- * the draft's action items and the lines they came from.
  */
 @Module({
   imports: [

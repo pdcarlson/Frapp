@@ -131,12 +131,12 @@ describe('MeetingTaskSuggestionsService (#4313)', () => {
     expect(suggestions.reconcileSource).not.toHaveBeenCalled();
   });
 
-  it('does nothing while the president has meeting notes off', async () => {
+  it('proposes nothing while the president has meeting notes off, and takes back what was waiting', async () => {
     const { service, suggestions } = build(false);
-    expect(
-      await service.sync(meeting(), { reason: 'posted', actorId: OFFICER }),
-    ).toBeNull();
-    expect(suggestions.reconcileSource).not.toHaveBeenCalled();
+    await service.sync(meeting(), { reason: 'posted', actorId: OFFICER });
+    expect(suggestions.reconcileSource).toHaveBeenCalledWith(
+      expect.objectContaining({ proposals: [], notify: [] }),
+    );
   });
 
   it('does nothing for a draft', async () => {

@@ -128,6 +128,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAiSuggestions: (options?: { enabled?: boolean }) => ({
     data: suggestionsPending.current ? undefined : { items: [] },
     isPending: suggestionsPending.current && (options?.enabled ?? true),
+    fetchStatus:
+      suggestionsPending.current && (options?.enabled ?? true)
+        ? "fetching"
+        : "idle",
   }),
   useMyPermissions: () => ({
     data:
@@ -247,7 +251,9 @@ describe("TasksBoard suggested tasks (#4313)", () => {
     try {
       render(<TasksBoard />);
       expect(screen.queryByTestId("suggested-tasks")).toBeNull();
-      expect(screen.queryByRole("button", { name: /^add a task$/i })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /^add a task$/i }),
+      ).toBeNull();
     } finally {
       suggestionsPending.current = false;
     }
