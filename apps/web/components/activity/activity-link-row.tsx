@@ -16,7 +16,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
-import { ActivityRowLead } from "./activity-row-lead";
+import { ActivityRowLead, ActivityUnreadDot } from "./activity-row-lead";
 import { IconButton } from "@/components/ui/icon-button";
 import { ToastAction } from "@/components/ui/toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -134,11 +134,14 @@ export function ActivityLinkRow({
   rowClassName,
   canRemove,
   actions,
+  onOpen,
 }: {
   row: LinkRow;
   rowClassName: string;
   canRemove: boolean;
   actions: ActivityLinkActions;
+  /** The link was opened (a click, or a middle-click to a new tab). */
+  onOpen?: (row: LinkRow) => void;
 }) {
   const router = useRouter();
   const { link } = row;
@@ -183,7 +186,12 @@ export function ActivityLinkRow({
             rel="noopener noreferrer"
             title={link.url}
             className={cn(rowClassName, "min-w-0 flex-1")}
+            onClick={() => onOpen?.(row)}
+            onAuxClick={(event) => {
+              if (event.button === 1) onOpen?.(row);
+            }}
           >
+            <ActivityUnreadDot unread={row.unread} />
             <ActivityRowLead row={row} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold text-foreground">

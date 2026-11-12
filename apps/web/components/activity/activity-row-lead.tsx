@@ -71,3 +71,27 @@ export function ActivityAsk({ label }: { label: string }) {
     </span>
   );
 }
+
+/**
+ * The unread mark (#4402, `spec/behavior/activity.md` § Unread): a dot in a
+ * slot of its own before the lead, as the notification drawer's rows draw
+ * theirs and Linear's and GitHub's inboxes do. Neutral, like every unread on
+ * the dashboard: the accent belongs to the ask, never to a state. The slot
+ * stays when the row is read, so rows don't shift as their dots clear; a
+ * screen reader hears "Unread" before the title.
+ */
+export function ActivityUnreadDot({ unread }: { unread: boolean }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        data-unread-dot={unread ? "" : undefined}
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          unread ? "bg-foreground" : "bg-transparent",
+        )}
+      />
+      {unread ? <span className="sr-only">Unread: </span> : null}
+    </>
+  );
+}

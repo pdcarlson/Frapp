@@ -27,7 +27,11 @@ import {
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
-import { ActivityAsk, ActivityRowLead } from "./activity-row-lead";
+import {
+  ActivityAsk,
+  ActivityRowLead,
+  ActivityUnreadDot,
+} from "./activity-row-lead";
 import { ActivitySummary } from "./activity-summary";
 import {
   ACTIVITY_FILTERS,
@@ -38,6 +42,7 @@ import {
   activitySummary,
   useActiveChapterId,
   useActivity,
+  useActivityUnread,
   useNowDate,
   useMyPermissions,
   type ActivityFilter,
@@ -55,6 +60,7 @@ import { ActivityPageSkeleton } from "./activity-skeleton";
 function RowContent({ row }: { row: ActivityRow }) {
   return (
     <>
+      <ActivityUnreadDot unread={row.unread} />
       <ActivityRowLead row={row} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-foreground">
@@ -250,6 +256,7 @@ function GroupPart({
               rowClassName={ROW_CLASS}
               canRemove={canRemoveLinks}
               actions={linkActions}
+              onOpen={onOpen}
             />
           ) : (
             <li key={row.key}>
@@ -305,6 +312,14 @@ export function ActivityPage() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [opened, setOpened] = useState<ActivityRow | null>(null);
+  // Dots (#4402): opening a row from here is what reads it; scrolling past
+  // doesn't, and neither does acting on the item elsewhere in Frapp.
+  const { markRead } = useActivityUnread(activity.data);
+  const openFromList = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
+    // A link opens in a new tab and has no panel.
+    if (row.kind !== "link") setOpened(row);
+  };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
@@ -427,7 +442,7 @@ export function ActivityPage() {
             filtered={filter !== "all"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
-            onOpen={setOpened}
+            onOpen={openFromList}
           />
         ),
       )}

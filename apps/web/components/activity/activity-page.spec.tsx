@@ -4,6 +4,7 @@ import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
+const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
 const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
   () => undefined,
@@ -27,6 +28,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
   };
 });
@@ -327,6 +329,33 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
+  });
+
+  it("dots an unread row and records the open when it is opened (#4402)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [{ ...task, unread: false }],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [{ ...poll, unread: true }],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+
+    const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
+    const taskRow = screen.getByRole("button", { name: /Book the venue/ });
+    expect(pollRow).toHaveAccessibleName(/^Unread:\s?Formal venue\?/);
+    expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
+    expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
+
+    fireEvent.click(taskRow);
+    expect(mockMarkRead).not.toHaveBeenCalled();
+    fireEvent.click(pollRow);
+    expect(mockMarkRead).toHaveBeenCalledWith([
+      { kind: "poll", item_id: "p1" },
+    ]);
   });
 
   it("keeps the panel open when the row has left the list after an action", () => {
