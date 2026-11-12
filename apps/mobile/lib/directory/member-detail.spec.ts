@@ -36,6 +36,8 @@ describe("selectMemberDetail", () => {
       displayName: "Ada Lovelace",
       initials: "AL",
       email: "ada@example.edu",
+      phone: null,
+      graduationYear: 2027,
       bio: "Loves a good algorithm.",
       meta: "Acme Inc. · Chicago · '27",
       joinedLabel: "August 21, 2026",
@@ -47,7 +49,20 @@ describe("selectMemberDetail", () => {
       pledgeClassId: null,
       orderNumber: null,
       canRemove: false,
+      canEditProfile: false,
     });
+  });
+
+  it("carries the phone and the API's viewer_can_edit_profile (#3711, #4367)", () => {
+    const detail = selectMemberDetail(
+      profile({ phone: "(518) 555-0142", viewer_can_edit_profile: true }),
+    );
+    expect(detail?.phone).toBe("(518) 555-0142");
+    expect(detail?.canEditProfile).toBe(true);
+    expect(
+      selectMemberDetail(profile({ viewer_can_edit_profile: "true" }))
+        ?.canEditProfile,
+    ).toBe(false);
   });
 
   it("carries the API's viewer_can_remove, and only a literal true", () => {

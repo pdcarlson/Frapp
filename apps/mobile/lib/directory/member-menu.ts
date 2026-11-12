@@ -2,26 +2,32 @@
  * The member profile sheet's `⋯` menu (s13): what a viewer reaches for only
  * now and then, kept off the profile's face (Paul, 2026-11-11: nobody opens a
  * profile to remove someone, and web drew Remove member as a big red button
- * on his own profile). Block or Unblock for another member, and Remove from
- * chapter where the API says this viewer may (`viewer_can_remove`). Never on
- * your own profile: the sheet offers neither there, so the `⋯` isn't drawn.
+ * on his own profile). Edit name and graduation year where the API says this
+ * viewer may fix them (`viewer_can_edit_profile`, #4367), Block or Unblock
+ * for another member, and Remove from chapter where the API says this viewer
+ * may (`viewer_can_remove`). Never on your own profile: the sheet offers none
+ * of them there, so the `⋯` isn't drawn.
  */
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import { CORRECTION_MENU_LABEL } from "@repo/validation";
 import {
   REMOVE_CONFIRM_BODY,
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
 
-export type MemberMenuAction = "block" | "unblock" | "remove";
+export type MemberMenuAction = "edit" | "block" | "unblock" | "remove";
 
 /** The menu's rows, in order, or none when the `⋯` has nothing to hold. */
 export function memberMenuActions({
+  canEdit = false,
   canBlock,
   isBlocked,
   canRemove,
 }: {
+  /** The API's `viewer_can_edit_profile`, already false on the viewer's own profile. */
+  canEdit?: boolean;
   /** Another real member, not the viewer or the system actor. */
   canBlock: boolean;
   isBlocked: boolean;
@@ -29,6 +35,7 @@ export function memberMenuActions({
   canRemove: boolean;
 }): MemberMenuAction[] {
   const actions: MemberMenuAction[] = [];
+  if (canEdit) actions.push("edit");
   if (canBlock) actions.push(isBlocked ? "unblock" : "block");
   if (canRemove) actions.push("remove");
   return actions;
@@ -40,6 +47,8 @@ export function memberMenuLabel(
   name: string,
 ): string {
   switch (action) {
+    case "edit":
+      return CORRECTION_MENU_LABEL;
     case "block":
       return blockActionLabel(name);
     case "unblock":

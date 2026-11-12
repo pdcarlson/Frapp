@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
 const {
+  correctMutateAsync,
   dmMutateAsync,
   memberByUserId,
   memberQueryState,
@@ -18,6 +19,7 @@ const {
   removeMutateAsync,
   rolesState,
 } = vi.hoisted(() => ({
+  correctMutateAsync: vi.fn(),
   // What `useMemberByUserId` answers, per test.
   memberQueryState: {
     data: undefined as Record<string, unknown> | undefined,
@@ -58,6 +60,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useRemoveMember: () => ({ mutateAsync: removeMutateAsync, isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
+  useCorrectMemberProfile: () => ({ mutateAsync: correctMutateAsync, isPending: false }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
   // The pledge class section (#3939) has its own spec; here it only has to
@@ -205,7 +208,7 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
 });
 
 describe("MemberDetailSheet layout follows mobile's order", () => {
-  it("draws photo, name, class year, Message, roles, email, member since, then custom fields and bio", () => {
+  it("draws photo, name, class year, Message, phone, email, member since, roles, then More details and bio", () => {
     mockRoles.current = [
       { id: "r-member", name: "Member", color: null, display_order: 9 },
       { id: "r-pres", name: "President", color: "#F2994A", display_order: 1 },
@@ -214,6 +217,7 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       ...baseMember,
       graduation_year: 2027,
       major: "Economics",
+      phone: "(518) 555-0142",
       bio: "Loves a good algorithm.",
       role_ids: ["r-member", "r-pres"],
       custom_fields: [
@@ -225,10 +229,11 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       screen.getByRole("heading", { name: "Jane Smith" }),
       screen.getByText("Economics · '27"),
       screen.getByRole("button", { name: /Message/ }),
-      screen.getByText("Roles"),
+      screen.getByText("(518) 555-0142"),
       screen.getByText("jane@example.com"),
       screen.getByText("Member since"),
-      screen.getByText("Custom fields"),
+      screen.getByText("Roles"),
+      screen.getByRole("button", { name: "More details" }),
       screen.getByText("Loves a good algorithm."),
     ];
     for (let i = 1; i < sequence.length; i += 1) {
@@ -357,7 +362,12 @@ describe("MemberDetailSheet custom fields", () => {
       ],
     });
 
-    expect(screen.getByText("Custom fields")).toBeInTheDocument();
+    // Folded until asked for (#3711): logistics aren't why a profile opens.
+    expect(screen.queryByText("Computer Science")).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "More details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Computer Science")).toBeInTheDocument();
     expect(screen.getByText("Dues Paid")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
@@ -372,7 +382,9 @@ describe("MemberDetailSheet custom fields", () => {
 
   it("omits the custom-fields section when the server returns none", () => {
     renderProfile({ ...baseMember, custom_fields: [] });
-    expect(screen.queryByText("Custom fields")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More details" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -723,5 +735,104 @@ describe("MemberDetailSheet Remove from chapter", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(removeMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// #3711: the member's own phone, a tap away.
+describe("MemberDetailSheet phone", () => {
+  it("links the phone to a call", () => {
+    renderProfile({ ...baseMember, phone: "+1 (518) 555-0142" });
+    expect(
+      screen.getByRole("link", { name: "+1 (518) 555-0142" }),
+    ).toHaveAttribute("href", "tel:+15185550142");
+  });
+
+  it("draws no Phone row when the member hasn't set one", () => {
+    renderProfile({ ...baseMember, phone: null });
+    expect(screen.queryByText("Phone")).not.toBeInTheDocument();
+  });
+});
+
+// #4367: an officer fixes a member's name and graduation year from the ⋯,
+// only where the API says `viewer_can_edit_profile`.
+describe("MemberDetailSheet Edit name and graduation year", () => {
+  const moreButton = () =>
+    screen.queryByRole("button", { name: "More for Jane Smith" });
+
+  it("draws no ⋯ when the API says nothing about it", () => {
+    renderProfile({ ...baseMember, viewer_can_edit_profile: false });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("never offers it on your own profile", () => {
+    mockCurrentUserId.current = "u1";
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("offers only the edit when removal isn't allowed", async () => {
+    const user = userEvent.setup();
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    await user.click(moreButton()!);
+    expect(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Remove from chapter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves only what changed", async () => {
+    const user = userEvent.setup();
+    correctMutateAsync.mockReset().mockResolvedValue({});
+    renderProfile({
+      ...baseMember,
+      graduation_year: 2026,
+      viewer_can_edit_profile: true,
+    });
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit Jane Smith's profile",
+    });
+    const year = within(dialog).getByLabelText("Graduation year");
+    await user.clear(year);
+    await user.type(year, "2027");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(correctMutateAsync).toHaveBeenCalledWith({
+        id: "m1",
+        graduation_year: 2027,
+      }),
+    );
+  });
+
+  it("refuses a blank name before sending", async () => {
+    const user = userEvent.setup();
+    correctMutateAsync.mockReset();
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit Jane Smith's profile",
+    });
+    await user.clear(within(dialog).getByLabelText("Name"));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Enter their name.",
+    );
+    expect(correctMutateAsync).not.toHaveBeenCalled();
   });
 });

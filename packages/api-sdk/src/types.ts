@@ -696,6 +696,26 @@ export interface paths {
         patch: operations["MemberController_updateRoles_v1"];
         trace?: never;
     };
+    "/v1/members/{id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Fix a member's name or graduation year (officers)
+         * @description Needs roles:manage. Refused (403) for your own profile (use PATCH /v1/users/me), for a member ranked at or above you, and for a member who is also in another chapter. Changes are recorded in the chapter audit log as member_profile_corrected. Answers with the member's profile.
+         */
+        patch: operations["MemberController_correctProfile_v1"];
+        trace?: never;
+    };
     "/v1/members/me/onboarding": {
         parameters: {
             query?: never;
@@ -4211,6 +4231,11 @@ export interface components {
             major?: string;
             current_city?: string;
             current_company?: string;
+            /**
+             * @description The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.
+             * @example (518) 555-0142
+             */
+            phone?: string | null;
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -4678,6 +4703,8 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
+            phone: string | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -4691,6 +4718,8 @@ export interface components {
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
             /** @description Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads. */
             viewer_can_remove?: boolean;
+            /** @description Whether the requesting viewer may fix this member's name and graduation year (PATCH /v1/members/{id}/profile): they hold roles:manage, it is not their own profile, the member ranks below them, and the member is in no other chapter. Present only on single-member reads. */
+            viewer_can_edit_profile?: boolean;
         };
         MemberRosterEntryDto: {
             /** @description users.id — the id chat carries as sender_id */
@@ -4708,6 +4737,12 @@ export interface components {
              * @description Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.
              */
             custom_role_ids?: string[];
+        };
+        CorrectMemberProfileDto: {
+            /** @description The member's name as the chapter knows them. Trimmed; it may not be blank. */
+            display_name?: string;
+            /** @description The member's graduation year, or null to clear it. */
+            graduation_year?: number | null;
         };
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
@@ -8614,6 +8649,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_correctProfile_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectMemberProfileDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
             };
             /** @description Error */
             default: {

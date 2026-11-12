@@ -29,6 +29,7 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import {
+  CorrectMemberProfileDto,
   DismissOpsNudgeDto,
   UpdateMemberRolesDto,
   UpdateOnboardingDto,
@@ -142,6 +143,33 @@ export class MemberController {
       );
     }
     return this.memberService.updateRoles(id, dto.role_ids, chapterId, userId);
+  }
+
+  /**
+   * An officer fixes another member's name or graduation year (#4367). The
+   * guard is `roles:manage`, the officers who already set a member's roles
+   * and pledge class; `MemberService.correctProfile` narrows it to members
+   * ranked below the caller, never the caller, and only a member of this
+   * chapter alone, since both fields live on the shared `users` row.
+   */
+  @Patch(':id/profile')
+  @ApiOperation({
+    summary: "Fix a member's name or graduation year (officers)",
+    description:
+      "Needs roles:manage. Refused (403) for your own profile (use PATCH /v1/users/me), for a member ranked at or above you, and for a member who is also in another chapter. Changes are recorded in the chapter audit log as member_profile_corrected. Answers with the member's profile.",
+  })
+  @ApiOkResponse({ type: MemberProfileDto })
+  @RequirePermissions(SystemPermissions.ROLES_MANAGE)
+  async correctProfile(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectMemberProfileDto,
+  ) {
+    return this.memberService.correctProfile(id, chapterId, userId, {
+      display_name: dto.display_name,
+      graduation_year: dto.graduation_year,
+    });
   }
 
   @Patch('me/onboarding')

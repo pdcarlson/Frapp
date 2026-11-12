@@ -101,6 +101,14 @@ export const GRADUATION_YEAR_MAX = 2100;
 export const MAJOR_MAX_LENGTH = 100;
 
 /**
+ * A member's phone number (`users.phone`, #3711), as they typed it, trimmed.
+ * Room for an international number with its spaces and an extension; the
+ * column's check stops anything longer. {@link isPhoneNumber} is what the API
+ * and both forms accept.
+ */
+export const PHONE_MAX_LENGTH = 32;
+
+/**
  * A chapter document's title (`chapter_documents.title`), set by whoever
  * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
  * the phone's field stops at it.

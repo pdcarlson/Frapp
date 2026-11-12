@@ -40,6 +40,11 @@ const state = vi.hoisted(() => ({
   classReads: [] as ({ enabled?: boolean } | undefined)[],
   // Users whose profile read says `viewer_can_remove`.
   removable: new Set<string>(),
+  // Users whose profile read says `viewer_can_edit_profile` (#4367).
+  correctable: new Set<string>(),
+  // A phone per user id, for the reads that carry one (#3711).
+  phones: {} as Record<string, string>,
+  correctMutate: vi.fn(),
   removeMutate: vi.fn(),
   block: vi.fn(),
 }));
@@ -79,6 +84,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: PROFILES[id] && {
       ...PROFILES[id],
       viewer_can_remove: state.removable.has(id),
+      viewer_can_edit_profile: state.correctable.has(id),
+      phone: state.phones[id] ?? null,
     },
     isPending: false,
     isError: false,
@@ -100,6 +107,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAssignPledgeClasses: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveMember: () => ({ mutate: state.removeMutate, isPending: false }),
+  useCorrectMemberProfile: () => ({
+    mutate: state.correctMutate,
+    isPending: false,
+  }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
     ids: state.blocked,
@@ -129,6 +140,7 @@ import { ListRow } from "@/components/list-section";
 import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
 import { MemberClassSheet } from "./member-class-sheet";
+import { MemberCorrectionSheet } from "./member-correction-sheet";
 import { MemberRolesSheet } from "./member-roles-sheet";
 import {
   PRESENCE_NOT_READY,
@@ -493,6 +505,7 @@ describe("MemberDetailSheet ⋯ menu", () => {
     state.blocked = new Set();
     state.blockPaused = false;
     state.removable = new Set();
+    state.correctable = new Set();
   });
 
   function moreButton(tree: ReactTestRenderer) {
@@ -556,6 +569,35 @@ describe("MemberDetailSheet ⋯ menu", () => {
     const menu = openMenu(tree);
     expect(menu.labels).toEqual(["Block Ada", "Remove from chapter"]);
     expect(menu.options.destructiveButtonIndex).toEqual([0, 1]);
+    act(() => tree.unmount());
+  });
+
+  // #4367: an officer fixes the name and year from here.
+  it("offers Edit name and graduation year first where the API says this viewer may", () => {
+    state.correctable = new Set([ADA]);
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const menu = openMenu(tree);
+    expect(menu.labels).toEqual([
+      "Edit name and graduation year",
+      "Block Ada",
+      "Remove from chapter",
+    ]);
+    // Only Block and Remove are destructive.
+    expect(menu.options.destructiveButtonIndex).toEqual([1, 2]);
+    act(() => tree.unmount());
+  });
+
+  it("opens the officer's editor on this member's saved values", () => {
+    state.correctable = new Set([ADA]);
+    const tree = render(ADA);
+    openMenu(tree).pick("Edit name and graduation year");
+    const editor = tree.root.findByType(MemberCorrectionSheet);
+    expect(editor.props.session).toEqual({
+      memberId: `m-${ADA}`,
+      name: "Ada",
+      graduationYear: null,
+    });
     act(() => tree.unmount());
   });
 
@@ -653,9 +695,9 @@ describe("MemberDetailSheet fact rows", () => {
 
   it("draws Email, Member since and each custom field as detail rows", () => {
     const tree = render(CARA);
-    const rows = tree.root.findAllByType(ListRow);
+    const rows = () => tree.root.findAllByType(ListRow);
     const rowOf = (label: string) =>
-      rows.find((row) => row.props.label === label);
+      rows().find((row) => row.props.label === label);
 
     expect(rowOf("Email")?.props.variant).toBe("detail");
     // Tapping the address starts an email to them.
@@ -663,13 +705,42 @@ describe("MemberDetailSheet fact rows", () => {
     expect(rowOf("Member since")?.props.variant).toBe("detail");
     // Written out: no abbreviated month in the UI.
     expect(rowOf("Member since")?.props.value).toMatch(/August/);
+    // The chapter's fields fold under More details until asked for (#3711).
+    expect(rowOf(LONG_LABEL)).toBeUndefined();
+    expect(rowOf("More details")?.props.value).toBe("Show");
+    act(() => rowOf("More details")?.props.onPress());
+    expect(rowOf("More details")?.props.value).toBe("Hide");
     expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
     expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
     act(() => tree.unmount());
   });
 
+  // #3711: a contact card, the phone first.
+  it("draws the member's phone above Email, and a tap offers Call or Text", () => {
+    state.phones[CARA] = "(518) 555-0142";
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => {});
+    const tree = render(CARA);
+    const rows = tree.root
+      .findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(rows.slice(0, 2)).toEqual(["Phone", "Email"]);
+    const phoneRow = tree.root
+      .findAllByType(ListRow)
+      .find((row) => row.props.label === "Phone");
+    expect(phoneRow?.props.value).toBe("(518) 555-0142");
+    act(() => phoneRow?.props.onPress());
+    expect(sheet).toHaveBeenCalledWith(
+      expect.objectContaining({ options: ["Call", "Text", "Cancel"] }),
+      expect.any(Function),
+    );
+    delete state.phones[CARA];
+    act(() => tree.unmount());
+  });
+
   // #3939, read-only on mobile: each row only when an officer has set it.
-  it("draws the member's pledge class and order number between Email and Member since", () => {
+  it("draws the member's pledge class and order number after the contact rows", () => {
     PROFILES[CARA] = {
       ...profile(CARA, "Cara"),
       pledge_class_id: "pc-1",
@@ -685,9 +756,9 @@ describe("MemberDetailSheet fact rows", () => {
         .slice(0, 4),
     ).toEqual([
       ["Email", "cara@example.edu"],
+      ["Member since", "August 21, 2026"],
       ["Pledge class", "Alpha"],
       ["Fraternal order", "9"],
-      ["Member since", "August 21, 2026"],
     ]);
     act(() => tree.unmount());
   });
@@ -706,7 +777,7 @@ describe("MemberDetailSheet fact rows", () => {
       .map((row) => [row.props.label, row.props.value]);
     state.vocabulary = undefined;
 
-    expect(rows.slice(1, 3)).toEqual([
+    expect(rows.slice(2, 4)).toEqual([
       ["Line", "Alpha"],
       ["line number", "9"],
     ]);

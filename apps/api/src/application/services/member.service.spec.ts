@@ -73,7 +73,8 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
-      findByUser: jest.fn(),
+      // One chapter each unless a test says otherwise (#4367).
+      findByUser: jest.fn().mockResolvedValue([]),
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
@@ -1279,6 +1280,210 @@ describe('MemberService', () => {
         ['members:view', 'members:remove'],
       );
       expect(profile.viewer_can_remove).toBe(false);
+    });
+  });
+
+  // #4367: officers fix a member's name and graduation year.
+  describe('correctProfile', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const correctAs = (
+      memberId: string,
+      actorUserId: string,
+      changes: { display_name?: string; graduation_year?: number | null },
+    ) => {
+      const row = memberRow(memberId);
+      mockRepo.findById.mockResolvedValue(row);
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: row.user_id,
+          display_name: 'Jonh Smith',
+          graduation_year: 2026,
+        }),
+      );
+      mockUserRepo.update.mockResolvedValue(userFixture());
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(actorUserId),
+      );
+      return service.correctProfile(memberId, CHAPTER_ID, actorUserId, changes);
+    };
+
+    it("lets an officer fix a brother's name and year, and audits the change", async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+      const row = memberRow(TIERED_MEMBER.brother);
+      expect(mockUserRepo.update).toHaveBeenCalledWith(row.user_id, {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+        chapterId: CHAPTER_ID,
+        actorUserId: USER.vicePresident,
+        action: 'member_profile_corrected',
+        targetType: 'member',
+        targetId: TIERED_MEMBER.brother,
+        diff: {
+          display_name: { from: 'Jonh Smith', to: 'John Smith' },
+          graduation_year: { from: 2026, to: 2027 },
+        },
+      });
+    });
+
+    it('writes and audits only what changed', async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'Jonh Smith',
+        graduation_year: null,
+      });
+      expect(mockUserRepo.update).toHaveBeenCalledWith(expect.any(String), {
+        graduation_year: null,
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { graduation_year: { from: 2026, to: null } },
+        }),
+      );
+    });
+
+    it('writes nothing when nothing changed', async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'Jonh Smith',
+      });
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+      expect(mockAuditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses your own profile', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.vicePresident, USER.vicePresident, {
+          display_name: 'VP',
+        }),
+      ).rejects.toThrow(
+        'Change your own name and graduation year from your profile.',
+      );
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stops a chair renaming an officer', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.vicePresident, USER.riskChair, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toThrow(
+        'You can only edit the profiles of members ranked below you.',
+      );
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stops an officer renaming the President', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.president, USER.vicePresident, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses a member who is also in another chapter', async () => {
+      mockRepo.findByUser.mockResolvedValue([
+        memberRow(TIERED_MEMBER.brother),
+        memberFixture({ id: 'elsewhere', chapter_id: 'other-chapter' }),
+      ]);
+      await expect(
+        correctAs(TIERED_MEMBER.brother, USER.president, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toThrow('This member is also in another chapter');
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member of another chapter', async () => {
+      mockRepo.findById.mockResolvedValue(
+        memberFixture({ chapter_id: 'other-chapter' }),
+      );
+      await expect(
+        service.correctProfile('member-1', CHAPTER_ID, USER.president, {
+          display_name: 'X',
+        }),
+      ).rejects.toThrow('Member not in current chapter');
+    });
+  });
+
+  describe('viewer_can_edit_profile', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const profileAs = (
+      memberId: string,
+      viewerUserId: string,
+      permissions: string[],
+    ) => {
+      mockRepo.findById.mockResolvedValue(memberRow(memberId));
+      mockUserRepo.findById.mockResolvedValue(userFixture());
+      mockRbacService.getEffectivePermissions.mockResolvedValue(permissions);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(viewerUserId),
+      );
+      return service.findProfileById(memberId, CHAPTER_ID, viewerUserId);
+    };
+
+    it('is false, with no reads, for a viewer without roles:manage', async () => {
+      const profile = await profileAs(TIERED_MEMBER.brother, USER.riskChair, [
+        'members:view',
+      ]);
+      expect(profile.viewer_can_edit_profile).toBe(false);
+      expect(mockRepo.findByUser).not.toHaveBeenCalled();
+    });
+
+    it('is true for an officer with roles:manage viewing a brother', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.brother,
+        USER.vicePresident,
+        ['members:view', 'roles:manage'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(true);
+    });
+
+    it('is false for that officer viewing the President', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.president,
+        USER.vicePresident,
+        ['members:view', 'roles:manage'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('is false on your own profile', async () => {
+      const profile = await profileAs(TIERED_MEMBER.president, USER.president, [
+        '*',
+      ]);
+      expect(profile.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('is true for a wildcard holder, false once the member is in another chapter', async () => {
+      const first = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(first.viewer_can_edit_profile).toBe(true);
+      mockRepo.findByUser.mockResolvedValue([
+        memberFixture({ id: 'elsewhere', chapter_id: 'other-chapter' }),
+      ]);
+      const second = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(second.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('carries the phone the member set', async () => {
+      mockRepo.findById.mockResolvedValue(memberRow(TIERED_MEMBER.brother));
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ phone: '(518) 555-0142' }),
+      );
+      const profile = await service.findProfileById(
+        TIERED_MEMBER.brother,
+        CHAPTER_ID,
+        USER.riskChair,
+      );
+      expect(profile.phone).toBe('(518) 555-0142');
     });
   });
 
