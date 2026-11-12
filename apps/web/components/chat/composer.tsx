@@ -64,6 +64,8 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import { GifPickerButton } from "./gif-picker";
+import type { GifResult } from "@repo/hooks";
 import { ComposerPlusCard } from "./composer-plus-card";
 import {
   PLUS_MENU_COMMANDS,
@@ -459,6 +461,14 @@ interface ComposerBaseProps {
     body: string,
     attachments: OutboxAttachment[],
   ) => void | Promise<void>;
+  /**
+   * Send a GIF picked from the GIF button's picker as its own message
+   * (#4631). Omitted (GIFs not set up on this server, or a surface that
+   * doesn't take them), the button isn't drawn.
+   */
+  onSendGif?: (gif: GifResult) => void;
+  /** The GIF provider's name, which the picker's field shows ("Search KLIPY"). */
+  gifProvider?: string;
   /**
    * Invoked when the user picks a slash command from the palette. Returns a
    * dispatch result so the composer can toast on failure, or on a partial
@@ -961,6 +971,8 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  onSendGif,
+  gifProvider,
   onSlashDispatch,
   onOpenCommandForm,
   commandForms,
@@ -2039,6 +2051,12 @@ export function Composer({
                 <EmojiPicker onPick={insertEmoji} />
               </PopoverContent>
             </Popover>
+            {onSendGif ? (
+              <GifPickerButton
+                provider={gifProvider ?? ""}
+                onPick={onSendGif}
+              />
+            ) : null}
             <ComposerHelp />
           </div>
           {/*

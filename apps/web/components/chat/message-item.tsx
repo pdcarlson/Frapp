@@ -46,6 +46,7 @@ import {
   type MessageFlagView,
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
+import { MessageGifImage } from "./message-gif";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
   canActOnMessage,
@@ -804,8 +805,10 @@ export function MessageItem({
     carry. The component itself no-ops on a zero count, so this costs nothing
     for the overwhelming majority of messages.
   */
-  const attachments =
-    message.is_deleted || message.attachment_count === 0 ? null : (
+  const attachments = message.is_deleted ? null : message.gif ? (
+    // A GIF message (#4631) is the GIF: no text, no files.
+    <MessageGifImage gif={message.gif} />
+  ) : message.attachment_count === 0 ? null : (
       <MessageAttachments
         channelId={message.channel_id}
         messageId={message.id}

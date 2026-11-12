@@ -454,6 +454,17 @@ than pretending otherwise:**
   hit past the bound needs a window around the message rather than every page between —
   #2785.
 
+### GIFs
+
+A member can send a GIF (#4631, Paul picked KLIPY on 2026-11-12). Tenor, which most apps used, shut its API down on 2026-06-30; Discord moved to KLIPY.
+
+- **Where it starts.** On web, a "GIF" button beside the emoji button opens a picker the emoji panel's size, the way Discord and Slack place theirs. On the phone, the + sheet's GIF row, under Photo, opens a tall sheet, as iMessage's keyboard app does. Each shows trending GIFs until the member types, then search results, two to a column, and loads more on scroll. One click or tap sends; there is no preview step and no caption. The search field reads "Search KLIPY", which is the attribution KLIPY's terms ask for.
+- **When it is offered.** Only when the server has a provider key (`KLIPY_API_KEY`), which `GET /v1/gifs/availability` reports, so a server without one shows no button or row rather than a broken picker. The phone greys the row offline ("Reconnect first") and while a reply is staged ("Not while replying"). Web sends a GIF as a reply when one is staged.
+- **Search goes through the API.** The clients call `GET /v1/gifs/trending`, `/search?q=` and `/recent`; the key never reaches a client. The API sends KLIPY `rating=pg-13` and the provider's medium content filter on every call, so the ceiling is the server's, not a client setting. It sends a pseudonymous customer id (an HMAC of the member's id), never a name or email. Trending is cached for 5 minutes and each search for 10, shared across the chapter's members. Sent GIFs are reported back to KLIPY as shares, which tunes its results.
+- **What a GIF message is.** A plain `text` message with no text and no attachments, and `metadata.gif`: `{provider, id, title, url, width, height}`. The server owns that key: a client's own `metadata.gif` is dropped, and a `gif` in the send body is accepted only with an `https` URL on the provider's media host and edges from 1 to 4096. A GIF can't carry text or attachments, and can't be edited (deleting works as for any message). Push and reply quotes read "Sent a GIF" and "GIF".
+- **How it draws.** The animated WebP is hotlinked from the provider's media host, looping and silent, sized from its stored edges before it loads so the thread never jumps: at most 300 by 200 on web and 240 by 180 on the phone, a little smaller than a photo, as Discord and Slack draw GIFs. A long press on the phone opens the message's actions.
+- **Not yet.** A GIF as a conversation's latest message reads "Message" in the Messages list's preview, since `get_channel_latest_messages` carries no metadata; GIFs can't be sent inside a message thread on web; and neither client stills a GIF for a member who asked for reduced motion.
+
 ### Message flags
 
 *(Added 2026-11-11, [#3921](https://github.com/pdcarlson/Frapp/issues/3921). Shawn asked for it and settled the design in his own chat; Paul added the Ask use below the same day.)* A member can mark a message after it is sent with one **flag**: **Important**, or one of the lighter flags **Funny**, **Interesting**, **Question**, **Hype** and **FYI**. The set is fixed (`CHAT_MESSAGE_FLAGS` in `@repo/validation`), not chapter-defined, and a message carries at most one flag. A flag is a label on the message, the same for every reader. A reaction is each member's own emoji with a count. The two stay separate.

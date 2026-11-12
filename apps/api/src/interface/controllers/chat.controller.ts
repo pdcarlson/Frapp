@@ -19,6 +19,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { GifService } from '../../application/services/gif.service';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
@@ -111,6 +112,7 @@ export class ChatController {
     private readonly rbacService: RbacService,
     private readonly mentions: ChatMentionService,
     private readonly accessLists: ChannelAccessListService,
+    private readonly gifs: GifService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -625,7 +627,10 @@ export class ChatController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chatService.sendMessage({
+    // Checked before the send, so a GIF from anywhere but the provider's
+    // media host is a 400 and nothing is written (#4631).
+    const gif = dto.gif ? this.gifs.messageGif(dto.gif) : null;
+    const sent = await this.chatService.sendMessage({
       chapter_id: chapterId,
       channel_id: channelId,
       sender_id: userId,
@@ -637,8 +642,12 @@ export class ChatController {
       thread_root_id: dto.thread_root_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
+      gif,
       enabled_modules: enabledModules,
     });
+    // Feeds the member's Recent GIFs at the provider; never fails the send.
+    if (gif && !sent.deduplicated) this.gifs.recordShare(userId, gif.id);
+    return sent;
   }
 
   /**

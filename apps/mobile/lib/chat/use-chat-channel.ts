@@ -101,6 +101,7 @@ import {
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
+  type MessageGif,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
@@ -284,6 +285,15 @@ export interface UseChatChannelResult {
     content: string;
     payload: SignupPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
+   * The + sheet's GIF picker (#4631): the GIF as its own message, through
+   * the outbox like any message. It touches neither the draft nor the photo
+   * tray. Never rejects; resolves `ok: false` with the reason it couldn't
+   * queue.
+   */
+  sendGif: (
+    gif: MessageGif,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
    * The + sheet's Task and Service hours forms (#3865): chat-core's
    * `postTask` / `postHours` into this channel, the calls web's `/task` and
@@ -1023,6 +1033,32 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendGif = useCallback(
+    async (
+      gif: MessageGif,
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      try {
+        await sendMessage(ctx, {
+          channelId,
+          content: "",
+          gif,
+          keepDraft: true,
+        });
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error:
+            error instanceof Error && error.message
+              ? error.message
+              : "The GIF didn't send.",
+        };
+      }
+    },
+    [channelId, ctx],
+  );
+
   // No channel or identity means no + (the composer can't send), so these,
   // like `sendPoll`, only answer a caller that raced a sign-out.
   const postTaskHere = useCallback(
@@ -1340,6 +1376,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     sendInFlight,
     sendPoll,
+    sendGif,
     sendSignup,
     postTask: postTaskHere,
     postHours: postHoursHere,

@@ -270,6 +270,12 @@ export interface ChatMessage {
    */
   attachment_photos?: readonly AttachmentPhoto[];
   /**
+   * The GIF this message is (#4631), from `metadata.gif`, which only the
+   * server writes, after holding its URL to the GIF provider's media host.
+   * A GIF message has no text and no files. Absent on every other message.
+   */
+  gif?: MessageGif;
+  /**
    * Who the body mentions, plus a reply's quoted author, as the API resolved
    * it (`users.id`). The one
    * per-message answer to "was I addressed": the in-body chip marks any
@@ -567,6 +573,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
     ...attachmentPhotosField(row.metadata),
+    ...gifField(row.metadata),
     mentions: mentionIds(row.mentions),
     thread_root_id: row.thread_root_id ?? null,
     thread: threadSummaryOf(row),
@@ -626,6 +633,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
       ...(message.attachment_photos
         ? { attachment_photos: message.attachment_photos }
         : {}),
+      ...(message.gif ? { gif: message.gif } : {}),
     },
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
@@ -726,6 +734,58 @@ function attachmentPhotosField(metadata: unknown): {
 }
 
 /**
+ * A GIF message's GIF (`metadata.gif`, #4631), as the API's
+ * `GifService.messageGif` wrote it.
+ */
+export interface MessageGif {
+  provider: string;
+  id: string;
+  /** Short words for a screen reader; may be empty. */
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/** The API's own bound on a GIF's edges. */
+const MAX_GIF_EDGE = 4096;
+
+/**
+ * Reads `metadata.gif` defensively, as a spreadable field. Anything but an
+ * https URL and two whole edges in range reads as no GIF, so a malformed row
+ * draws as an ordinary (empty) message rather than a broken image.
+ */
+export function messageGifOf(metadata: unknown): MessageGif | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const raw = (metadata as Record<string, unknown>)["gif"];
+  if (!raw || typeof raw !== "object") return null;
+  const { provider, id, title, url, width, height } = raw as Record<
+    string,
+    unknown
+  >;
+  if (typeof url !== "string" || !url.startsWith("https://")) return null;
+  const edge = (value: unknown) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_GIF_EDGE;
+  if (!edge(width) || !edge(height)) return null;
+  return {
+    provider: typeof provider === "string" ? provider : "",
+    id: typeof id === "string" ? id : "",
+    title: typeof title === "string" ? title : "",
+    url,
+    width: width as number,
+    height: height as number,
+  };
+}
+
+function gifField(metadata: unknown): { gif?: MessageGif } {
+  const gif = messageGifOf(metadata);
+  return gif ? { gif } : {};
+}
+
+/**
  * `mentions` defensively: only an array of strings counts. A missing column
  * (an older cached row, a masked one) is no mentions, not an error.
  */
@@ -745,6 +805,8 @@ export function optimisticMessage(args: {
   replyToId?: string | null;
   /** How many files this send is carrying, so the pending row is not blank. */
   attachmentCount?: number;
+  /** The GIF this send is, drawn at once from the picker's own result. */
+  gif?: MessageGif | null;
 }): ChatMessage {
   return {
     id: args.clientMessageId,
@@ -762,6 +824,7 @@ export function optimisticMessage(args: {
     // reconnect — so a zero here renders an attachment-only message as a
     // completely blank bubble to its own sender, for as long as it is queued.
     attachment_count: args.attachmentCount ?? 0,
+    ...(args.gif ? { gif: args.gif } : {}),
     mentions: [],
     kind: args.kind ?? "text",
     payload: args.payload ?? null,

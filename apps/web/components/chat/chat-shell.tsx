@@ -74,6 +74,7 @@ import {
   useReorderChannels,
   useImportantMessages,
   useChatCatchUpAvailable,
+  useGifAvailability,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
@@ -1158,6 +1159,9 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // Whether this server has GIF search set up (#4631); the composer's GIF
+  // button waits on it.
+  const gifs = useGifAvailability();
   // The top bar's connection pill says what this channel's realtime transport
   // is doing, folded with the app's own connection state, so the header no
   // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
@@ -3793,6 +3797,32 @@ export function ChatShell({
               if (replyTo) setReplyTarget(null);
               return channel.send(body, { replyToId: target, attachments });
             }}
+            // A GIF goes out as its own message (#4631); the reply strip
+            // attaches to it as it would to typed text.
+            onSendGif={
+              gifs.available
+                ? (gif) => {
+                    const target = replyTo?.id ?? null;
+                    if (replyTo) setReplyTarget(null);
+                    void channel
+                      .sendGif(
+                        {
+                          provider: gifs.provider.toLowerCase(),
+                          id: gif.id,
+                          title: gif.title,
+                          url: gif.full.url,
+                          width: gif.full.width,
+                          height: gif.full.height,
+                        },
+                        { replyToId: target },
+                      )
+                      .catch(() => {
+                        if (target) restoreReply(target);
+                      });
+                  }
+                : undefined
+            }
+            gifProvider={gifs.provider}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
                 command,

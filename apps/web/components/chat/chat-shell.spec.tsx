@@ -573,6 +573,8 @@ vi.mock("@repo/hooks", async () => ({
   // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
   useChatBackground: () => ({ data: undefined }),
   useChapterChatBackground: () => ({ data: undefined }),
+  // GIFs (#4631): off here, so the composer shows no GIF button.
+  useGifAvailability: () => ({ available: false, provider: "" }),
   useSetChannelBackground: () => ({
     mutate: vi.fn(),
     reset: vi.fn(),

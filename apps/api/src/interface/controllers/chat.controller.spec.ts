@@ -1,3 +1,4 @@
+import { GifService } from '../../application/services/gif.service';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ExecutionContext, InternalServerErrorException } from '@nestjs/common';
@@ -46,9 +47,11 @@ describe('ChatController', () => {
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
   let mentions: jest.Mocked<Pick<ChatMentionService, 'listMentionRoles'>>;
   let accessLists: jest.Mocked<Pick<ChannelAccessListService, 'listOptions'>>;
+  let gifs: jest.Mocked<Pick<GifService, 'messageGif' | 'recordShare'>>;
 
   beforeEach(async () => {
     accessLists = { listOptions: jest.fn() };
+    gifs = { messageGif: jest.fn(), recordShare: jest.fn() };
     rbacService = { memberHasAnyPermission: jest.fn() };
     attachments = { requestChatUploadUrl: jest.fn() };
     categories = { updateCategory: jest.fn(), deleteCategory: jest.fn() };
@@ -94,6 +97,7 @@ describe('ChatController', () => {
         { provide: RbacService, useValue: rbacService },
         { provide: ChatMentionService, useValue: mentions },
         { provide: ChannelAccessListService, useValue: accessLists },
+        { provide: GifService, useValue: gifs },
       ],
     }).compile();
 
