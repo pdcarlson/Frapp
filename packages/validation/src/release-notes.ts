@@ -120,6 +120,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
       "On the web, study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
       "On the web, changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
+      "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
     ],
   },
   {
