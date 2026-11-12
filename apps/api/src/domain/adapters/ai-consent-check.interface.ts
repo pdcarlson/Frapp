@@ -25,8 +25,9 @@ export type AiConsentDecision =
  * Whose chat messages may be read is not this check. That is decided where
  * the corpus is read, per author.
  *
- * Bound in `modules/ai/ai-consent-seam.module.ts`. The consent slice (#4308)
- * replaces the binding there and edits nothing in the gateway.
+ * Bound in `modules/ai/ai-consent-seam.module.ts` to `AiConsentService`
+ * (#4308): the chapter's switch for the call's family, and the acting
+ * member's Yes on the current AI sheet.
  */
 export interface IAiConsentCheck {
   check(call: AiCallDescriptor): Promise<AiConsentDecision>;

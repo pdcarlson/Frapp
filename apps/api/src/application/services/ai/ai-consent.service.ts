@@ -192,15 +192,31 @@ export class AiConsentService implements IAiConsentCheck {
       new Date(),
     );
     // After the write, as chapter config does: a failed audit fails the
-    // request, so the switch is never changed without a record of who did.
-    await this.auditLog.record({
-      chapterId,
-      actorUserId: actor.userId,
-      action: 'ai_settings_updated',
-      targetType: 'chapter',
-      targetId: chapterId,
-      diff,
-    });
+    // request. The switches are then put back as they were, so a switch is
+    // never left changed without a record of who changed it, and the
+    // president's retry finds the change still to make and audits it.
+    try {
+      await this.auditLog.record({
+        chapterId,
+        actorUserId: actor.userId,
+        action: 'ai_settings_updated',
+        targetType: 'chapter',
+        targetId: chapterId,
+        diff,
+      });
+    } catch (error) {
+      const restore: ChapterAiSettingsPatch = {};
+      for (const key of Object.keys(diff) as AiChapterSwitch[]) {
+        restore[SWITCH_COLUMN[key]] = before[key];
+      }
+      await this.consents.saveChapterSettings(
+        chapterId,
+        restore,
+        existing?.updated_by ?? actor.userId,
+        existing ? new Date(existing.updated_at) : new Date(),
+      );
+      throw error;
+    }
     return settingsView(saved);
   }
 

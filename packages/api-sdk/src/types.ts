@@ -4164,7 +4164,7 @@ export interface paths {
         get: operations["AiConsentController_getConsent_v1"];
         /**
          * Answer the AI sheet
-         * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in.
+         * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
          */
         put: operations["AiConsentController_answerConsent_v1"];
         post?: never;
@@ -4185,7 +4185,7 @@ export interface paths {
          * Get the chapter’s AI switches
          * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.
          */
-        get: operations["AiConsentController_getSettings_v1"];
+        get: operations["AiChapterSettingsController_getSettings_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4195,7 +4195,7 @@ export interface paths {
          * Turn the chapter’s AI features on or off
          * @description President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.
          */
-        patch: operations["AiConsentController_updateSettings_v1"];
+        patch: operations["AiChapterSettingsController_updateSettings_v1"];
         trace?: never;
     };
 }
@@ -16622,7 +16622,7 @@ export interface operations {
             };
         };
     };
-    AiConsentController_getSettings_v1: {
+    AiChapterSettingsController_getSettings_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -16657,7 +16657,7 @@ export interface operations {
             };
         };
     };
-    AiConsentController_updateSettings_v1: {
+    AiChapterSettingsController_updateSettings_v1: {
         parameters: {
             query?: never;
             header?: never;

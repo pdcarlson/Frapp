@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AiConsentService } from '../../application/services/ai/ai-consent.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
-import { AiConsentController } from '../../interface/controllers/ai-consent.controller';
+import {
+  AiChapterSettingsController,
+  AiConsentController,
+} from '../../interface/controllers/ai-consent.controller';
 import { SupabaseAiConsentRepository } from '../../infrastructure/supabase/repositories/supabase-ai-consent.repository';
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
@@ -18,7 +21,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
  * chat authors said yes (#4314).
  */
 @Module({
-  controllers: [AiConsentController],
+  controllers: [AiConsentController, AiChapterSettingsController],
   providers: [
     AiConsentService,
     { provide: AI_CONSENT_REPOSITORY, useClass: SupabaseAiConsentRepository },

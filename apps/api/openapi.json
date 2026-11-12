@@ -13793,7 +13793,7 @@
         ]
       },
       "put": {
-        "description": "Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in.",
+        "description": "Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.",
         "operationId": "AiConsentController_answerConsent_v1",
         "parameters": [],
         "requestBody": {
@@ -13848,7 +13848,7 @@
     "/v1/ai/settings": {
       "get": {
         "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.",
-        "operationId": "AiConsentController_getSettings_v1",
+        "operationId": "AiChapterSettingsController_getSettings_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -13887,7 +13887,7 @@
       },
       "patch": {
         "description": "President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.",
-        "operationId": "AiConsentController_updateSettings_v1",
+        "operationId": "AiChapterSettingsController_updateSettings_v1",
         "parameters": [],
         "requestBody": {
           "required": true,

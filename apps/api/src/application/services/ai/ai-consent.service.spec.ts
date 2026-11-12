@@ -18,6 +18,8 @@ const OTHER_CHAPTER = 'chapter-2';
 const PRESIDENT_ROLE = 'role-president';
 const MEMBER = 'user-member';
 const PRESIDENT = 'user-president';
+/** Also holds the President role, so a restored row's `updated_by` shows. */
+const CO_PRESIDENT = 'user-co-president';
 const CURRENT: number = AI_CONSENT_SHEET.version;
 
 /** The two tables, in memory, as the repository contract describes them. */
@@ -381,6 +383,39 @@ describe('AiConsentService', () => {
       expect(repo.settings.get(CHAPTER)).toMatchObject({
         ask_enabled: true,
         updated_by: PRESIDENT,
+      });
+    });
+
+    it('puts the switches back when the audit fails, so a retry audits', async () => {
+      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      const before = { ...repo.settings.get(CHAPTER) };
+      record.mockRejectedValueOnce(new Error('audit down'));
+      await expect(
+        service.updateChapterSettings(
+          CHAPTER,
+          { userId: CO_PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+          { ask: true, meeting_notes: false },
+        ),
+      ).rejects.toThrow('audit down');
+      expect(repo.settings.get(CHAPTER)).toEqual(before);
+
+      await service.updateChapterSettings(
+        CHAPTER,
+        { userId: CO_PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+        { ask: true, meeting_notes: false },
+      );
+      expect(record).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          diff: {
+            ask: { from: false, to: true },
+            meeting_notes: { from: true, to: false },
+          },
+        }),
+      );
+      expect(repo.settings.get(CHAPTER)).toMatchObject({
+        ask_enabled: true,
+        meeting_notes_enabled: false,
+        updated_by: CO_PRESIDENT,
       });
     });
 

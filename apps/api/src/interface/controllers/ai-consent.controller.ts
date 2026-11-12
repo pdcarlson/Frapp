@@ -34,18 +34,20 @@ const AI_OFF = {
 };
 
 /**
- * The AI consent gates (#4308, `spec/behavior/ai.md` § Consent): the member's
- * answer on the AI sheet, and the president's switches.
+ * The member's answer on the AI sheet (#4308, `spec/behavior/ai.md` §
+ * Consent).
  *
+ * The answer belongs to the person, not to a chapter (one answer covers every
+ * chapter they are in), so these routes need a signed-in user and nothing
+ * more: someone who has left every chapter can still read the sheet and say
+ * No, which stops their old messages being read wherever chat is a source.
  * `AiEnabledGuard` comes first, so a server with `AI_ENABLED` off answers 404
- * `ai.not_available` on every route, as if none existed. `MEMBERS_VIEW` is
- * the baseline every member holds. Free tier: answering the sheet, No above
- * all, is never paid functionality.
+ * `ai.not_available` on every route, as if none existed. Free tier: answering
+ * the sheet, No above all, is never paid functionality.
  */
 @ApiTags('AI')
 @ApiBearerAuth()
-@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@UseGuards(AiEnabledGuard, SupabaseAuthGuard)
 @FreeTier()
 @Controller('ai')
 export class AiConsentController {
@@ -67,7 +69,7 @@ export class AiConsentController {
   @ApiOperation({
     summary: 'Answer the AI sheet',
     description:
-      'Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in.',
+      'Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.',
   })
   @ApiOkResponse({ type: AiConsentStateDto })
   @ApiConflictResponse({
@@ -81,6 +83,22 @@ export class AiConsentController {
   ): Promise<AiConsentStateDto> {
     return this.consent.answer(userId, dto.sheet_version, dto.answer === 'yes');
   }
+}
+
+/**
+ * The president's switch for each AI feature family (#4308). Read by any
+ * member (`MEMBERS_VIEW`, the baseline every member holds); changed only by
+ * the President, which the service checks. `AiEnabledGuard` comes first, as
+ * above.
+ */
+@ApiTags('AI')
+@ApiBearerAuth()
+@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
+@Controller('ai')
+export class AiChapterSettingsController {
+  constructor(private readonly consent: AiConsentService) {}
 
   @Get('settings')
   @ApiOperation({
