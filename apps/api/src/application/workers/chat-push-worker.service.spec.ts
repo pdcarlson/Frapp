@@ -1609,15 +1609,22 @@ describe('ChatPushWorkerService', () => {
             },
           ],
         });
-        for (let i = 0; i < 4; i++) {
+        // The 5th mentions her again: one mention push per burst, so a
+        // sender pinging in every message stays capped like any burst.
+        for (let i = 0; i < 5; i++) {
           await send('ch-gen', {
             id: `m${i}`,
-            content: i === 3 ? '@alice can you cover saturday?' : `msg ${i}`,
-            mentions: i === 3 ? ['alice'] : [],
+            content:
+              i === 3
+                ? '@alice can you cover saturday?'
+                : i === 4
+                  ? '@alice and sunday?'
+                  : `msg ${i}`,
+            mentions: i >= 3 ? ['alice'] : [],
           });
         }
         const alices = dataFor('alice');
-        // 1, 2, the bundle at 3, then the mention on its own.
+        // 1, 2, the bundle at 3, then the mention on its own; not the 5th.
         expect(alices).toHaveLength(4);
         expect(alices[2]).toMatchObject({ bundled: true, count: 3 });
         expect(alices[2]).not.toHaveProperty('mentioned');
@@ -1633,7 +1640,7 @@ describe('ChatPushWorkerService', () => {
         )[3][2] as { body: string };
         expect(mentionPush.body).toContain('can you cover saturday');
 
-        // Bob was not mentioned: his 4th message stays inside the bundle.
+        // Bob was not mentioned: his 4th and 5th stay inside the bundle.
         expect(dataFor('bob')).toHaveLength(3);
       });
 

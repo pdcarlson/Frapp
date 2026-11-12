@@ -614,14 +614,11 @@ export class ChatPushWorkerService
       // early exit in `handleMessage`), so the null arm is only reachable for a
       // future null-sender kind.
       const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
-      const burst = this.bundler.record(bundleKey);
-      // Past the threshold a burst's messages are already covered by its
-      // bundle row, except one that mentions this recipient: the bundle was
-      // written before it and says nothing of it, so dropping it would lose
-      // the mention entirely (#4359). It pushes on its own, as any single
-      // message does, the way Slack's Activity and Discord's Inbox list each
-      // mention by itself even inside a busy channel.
-      if (burst.action === 'skip' && !mentioned) continue;
+      // Past the threshold the bundle covers a burst, but the first later
+      // message that mentions this recipient still pushes on its own, as a
+      // single message with `mentioned: true` (#4359; `BurstBundler.record`).
+      const burst = this.bundler.record(bundleKey, mentioned);
+      if (burst.action === 'skip') continue;
 
       senderName ??= this.resolveSenderName(row.sender_id);
       const payload = this.buildPayload(

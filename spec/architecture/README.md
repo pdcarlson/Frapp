@@ -474,7 +474,7 @@ The chat write path uses the service-role client (RLS bypassed) on a client-supp
 
 - Don't push a user who is currently online in the affected channel (presence read from Supabase Realtime Presence; ADR-04, ADR-10).
 - Don't push `#chapter-audit` unless the user explicitly subscribed.
-- Bundle bursts: 3+ messages within 60s from one sender → one push titled "N new messages from X"; a later message in the burst that mentions the recipient still pushes on its own ([`notifications.md` § Notification Grouping](../behavior/notifications.md#notification-grouping)).
+- Bundle bursts: 3+ messages within 60s from one sender → one push titled "N new messages from X"; the first later message in the burst that mentions the recipient still pushes on its own ([`notifications.md` § Notification Grouping](../behavior/notifications.md#notification-grouping)).
 - Per-channel / per-kind notification preferences (`all | mentions | off`). The default tier that applies when a user has no stored preference is owned by [`../behavior/notifications.md`](../behavior/notifications.md#chat-notification-preferences) § Chat notification preferences, not restated here.
 
 ### Reconnection
