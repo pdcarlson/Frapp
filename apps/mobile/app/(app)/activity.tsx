@@ -47,6 +47,10 @@ import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
+import {
+  storeActivityFilter,
+  useStoredActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -87,7 +91,15 @@ export default function ActivityScreen() {
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one the member
+  // last left the screen on, on this phone (#4402).
+  const stored = useStoredActivityFilter();
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const filter: ActivityFilter = picked ?? stored;
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    storeActivityFilter(next);
+  };
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
@@ -204,7 +216,7 @@ export default function ActivityScreen() {
             <GroupSection
               key={group.id}
               group={group}
-              filtered={filter !== "all"}
+              filtered={filter !== "all" && filter !== "waiting"}
               onOpen={open}
             />
           ),
