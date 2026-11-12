@@ -158,15 +158,22 @@ export const JSON_BODY_LIMIT = '100kb';
  *   and up to 200 items) can pass 100 KB too.
  * - AI reports. "Report this" on an Ask answer hands back the answer's sealed
  *   receipt, up to `AI_REPORT_RECEIPT_MAX_LENGTH` (200,000) characters.
+ * - Discord imports. The web client confirms uploaded export files 500 paths
+ *   at a time (`CONFIRM_BATCH`), each path around 200 bytes, and the channel
+ *   map can list up to 1,000 channels: both pass 100 KB on a large server.
  *
  * Every route under these prefixes needs a signed-in member. The parser runs
- * before the guards, so a caller with no token can still send these two
+ * before the guards, so a caller with no token can still send these
  * prefixes a 1 MB body before the 401, but not the sign-in, invite and
  * webhook routes, nor any other. A new route that needs more than 100 KB is
  * added here, not by raising the general limit.
  */
 export const LARGE_JSON_BODY_LIMIT = '1mb';
-export const LARGE_JSON_BODY_PATHS = ['/v1/meetings', '/v1/ai/reports'];
+export const LARGE_JSON_BODY_PATHS = [
+  '/v1/meetings',
+  '/v1/ai/reports',
+  '/v1/discord-imports',
+];
 
 /**
  * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to

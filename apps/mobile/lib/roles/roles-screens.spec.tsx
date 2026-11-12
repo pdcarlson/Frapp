@@ -6,7 +6,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
-import { isBetaOffModule } from "@repo/validation";
 
 /**
  * Chapter settings and its Roles screens on the phone (#4074), rendered. They
@@ -406,14 +405,12 @@ describe("A role's permissions (#4074)", () => {
 
 /**
  * The switches for features this server doesn't offer stay off both screens
- * (#4504): the AI ones until the server has AI, the Meetings ones while the
- * module is held off for the beta. Web pins the same rule; both use
- * `isPermissionHidden` from `@repo/hooks`.
+ * (#4504). Both screens draw through `useIsPermissionHidden`; the rule itself
+ * (AI until the server has AI, Meetings while held off for the beta) is
+ * pinned once, in `@repo/hooks`' own spec.
  */
 describe("Switches for features not offered here (#4504)", () => {
   const AI_LABELS = ["Use AI", "Let AI take actions"];
-  const MEETINGS_LABEL = "Write meeting minutes";
-  const meetingsOff = isBetaOffModule("meetings");
 
   for (const [screen, params, Screen] of [
     ["tier", { tierId: "t-bro" }, RoleTierScreen],
@@ -425,8 +422,6 @@ describe("Switches for features not offered here (#4504)", () => {
       // A switch this screen always draws, so an empty screen can't pass.
       expect(text).toContain("Create events");
       for (const label of AI_LABELS) expect(text).not.toContain(label);
-      if (meetingsOff) expect(text).not.toContain(MEETINGS_LABEL);
-      else expect(text).toContain(MEETINGS_LABEL);
     });
 
     it(`offers the AI switches on the ${screen} screen once the server has AI`, () => {

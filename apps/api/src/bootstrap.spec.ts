@@ -9,7 +9,11 @@ import {
 import { Test } from '@nestjs/testing';
 import type { Request } from 'express';
 import request from 'supertest';
-import { configureApp, TRUST_PROXY_HOPS } from './bootstrap';
+import {
+  configureApp,
+  LARGE_JSON_BODY_PATHS,
+  TRUST_PROXY_HOPS,
+} from './bootstrap';
 import { enqueueSanitizedLog } from './infrastructure/analytics/posthog-runtime';
 import { getRequestId } from './infrastructure/observability/request-als';
 import type { DeploymentEnvironment } from './interface/http/deployment-environment';
@@ -42,9 +46,25 @@ class EchoController {
   }
 }
 
-/** Stands in for the meetings routes, which take the larger body (#4504). */
+/** Stands in for the routes that take the larger body (#4504). */
 @Controller('meetings')
 class MeetingsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+@Controller('ai/reports')
+class AiReportsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+@Controller('discord-imports')
+class DiscordImportsEchoController {
   @Post()
   size(@Body() body: { text?: string }): { length: number } {
     return { length: body.text?.length ?? 0 };
@@ -56,7 +76,12 @@ async function createConfiguredEchoApp(
   environment?: DeploymentEnvironment,
 ): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    controllers: [EchoController, MeetingsEchoController],
+    controllers: [
+      EchoController,
+      MeetingsEchoController,
+      AiReportsEchoController,
+      DiscordImportsEchoController,
+    ],
   }).compile();
   const app = moduleRef.createNestApplication();
   configureApp(app, environment);
@@ -82,15 +107,28 @@ describe('configureApp', () => {
       await app.close();
     });
 
-    it('takes a two-hour transcript as notes on a meetings route, which Express’s 100 KB default would refuse', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/v1/meetings')
-        .send({ text: 'x'.repeat(160_000) })
-        .expect(201);
-      expect(res.body).toEqual({ length: 160_000 });
+    // A two-hour transcript as notes, a sealed Ask receipt, a batch of 500
+    // Discord upload paths: each passes Express's 100 KB default.
+    it.each(LARGE_JSON_BODY_PATHS)(
+      'takes a body over 100 KB on %s',
+      async (path) => {
+        const res = await request(app.getHttpServer())
+          .post(path)
+          .send({ text: 'x'.repeat(160_000) })
+          .expect(201);
+        expect(res.body).toEqual({ length: 160_000 });
+      },
+    );
+
+    it('names each route that takes the larger body', () => {
+      expect(LARGE_JSON_BODY_PATHS).toEqual([
+        '/v1/meetings',
+        '/v1/ai/reports',
+        '/v1/discord-imports',
+      ]);
     });
 
-    // The larger ceiling is only for meetings: every other route, the ones a
+    // The larger ceiling is only for those prefixes: every other route, the ones a
     // caller with no token can reach among them, keeps Express's 100 KB.
     it('keeps the 100 KB ceiling on every other route', async () => {
       await request(app.getHttpServer())
