@@ -373,6 +373,23 @@ describe('verifyMinutesDraft', () => {
     expect(review.left_out).toBe(2);
   });
 
+  it('does not read a vote out of a sum of money', () => {
+    const { content, votesCleared } = verifyMinutesDraft(
+      output({
+        decisions: [
+          {
+            text: 'Spend on a DJ.',
+            vote: { for: 200, against: 1, abstain: 5 },
+            quote: 'formal: motion to spend up to $1,200 on a DJ. passed 22-5',
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(content.decisions?.[0]?.vote).toBeNull();
+    expect(votesCleared).toBe(1);
+  });
+
   it('keeps a due date only when the line says when', () => {
     const { content } = verifyMinutesDraft(
       output({

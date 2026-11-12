@@ -308,7 +308,11 @@ function voteInQuote(
       Number.isInteger(count) && count >= 0 && count <= MEETING_VOTE_MAX,
   );
   if (!valid || counts.every((count) => count === 0)) return null;
-  const written = new Set(quote.match(/\d+/g) ?? []);
+  // Whole numbers as written, and never a piece of a sum of money: "$1,200"
+  // holds no 200 and no 1.
+  const written = new Set(
+    quote.replace(/\$\s?[\d,]+(?:\.\d+)?/g, ' ').match(/\d+/g) ?? [],
+  );
   const inQuote = counts.every(
     (count) => count === 0 || written.has(String(count)),
   );
