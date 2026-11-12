@@ -123,6 +123,7 @@ import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
+import { CreateChannelSheet } from "@/components/chat-admin/create-channel-sheet";
 import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
 import {
   classifyMessage,
@@ -1935,6 +1936,13 @@ export function ChatShell({
     };
   }, [canManageChannel, reorderChannelsAsync, reorderCategoriesAsync, toast]);
 
+  // New channel from a rail heading's + (#3838): the Chat settings panel,
+  // started in that heading's category. `undefined` is closed; `null` is the
+  // default Channels group.
+  const [createChannelIn, setCreateChannelIn] = useState<
+    string | null | undefined
+  >(undefined);
+
   // Unread and mention counts come from `GET /v1/channels/unread`, never from a
   // local re-derivation: the server excludes the viewer's own and deleted
   // messages and treats a never-opened channel as entirely unread, so a second
@@ -2681,8 +2689,7 @@ export function ChatShell({
     userId !== null &&
     activeChannelId === null;
   // Nothing to pick at all: the member has never had a DM, or hid every one.
-  const directEmpty =
-    directNoneOpen && !railChannels.some((ch) => !ch.hidden);
+  const directEmpty = directNoneOpen && !railChannels.some((ch) => !ch.hidden);
   const timelineReady =
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
@@ -2799,6 +2806,11 @@ export function ChatShell({
               // it, and the empty categories an officer drags onto would sit
               // in a list of conversations (#3774).
               reorder={directView ? undefined : railReorder}
+              onCreateChannel={
+                canManageChannel && !directView
+                  ? (categoryId) => setCreateChannelIn(categoryId)
+                  : undefined
+              }
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -3688,6 +3700,18 @@ export function ChatShell({
       />
 
       {confirmDialog}
+      {canManageChannel ? (
+        <CreateChannelSheet
+          open={createChannelIn !== undefined}
+          onOpenChange={(open) => {
+            if (!open) setCreateChannelIn(undefined);
+          }}
+          initialCategoryId={createChannelIn ?? null}
+          // Open the new channel, as Discord does, so the officer lands where
+          // the next step (drag it into place, post the first message) is.
+          onCreated={(channelId) => setSelectedChannelId(channelId)}
+        />
+      ) : null}
       {unblockFlow.confirmDialog}
       {blockFlow.confirmDialog}
       {/*

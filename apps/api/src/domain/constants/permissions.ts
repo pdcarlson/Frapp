@@ -184,7 +184,7 @@ const MEMBER_DEFAULT_PERMISSIONS = [
  * Chapters that existed before tiers were placed into the same four names by
  * migration `20261111140000_role_tiers.sql`. Changing this list changes new
  * chapters and nothing else; migration
- * `20261112140000_member_social_trust_defaults.sql` carried #3709's two
+ * `20261112150000_member_social_trust_defaults.sql` carried #3709's two
  * member keys to existing chapters.
  */
 export const STARTING_ROLE_TIERS = [

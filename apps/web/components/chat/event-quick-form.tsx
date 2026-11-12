@@ -11,6 +11,7 @@ import type { EventFormPrefill } from "@repo/chat-core/integrations";
 import { localIsoDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import {
   SubscriptionNotice,
@@ -185,7 +186,11 @@ export function EventQuickForm({
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="grid gap-3" noValidate>
+    <form
+      onSubmit={(event) => void submit(event)}
+      className="grid gap-3"
+      noValidate
+    >
       <SubscriptionNotice gate={gate} feature="creating events" />
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-name`}>Event name</Label>
@@ -208,15 +213,16 @@ export function EventQuickForm({
       </div>
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-date`}>Date</Label>
-        <Input
+        <DateField
           ref={dateRef}
           id={`${ids}-date`}
-          type="date"
+          lean="ahead"
+          placeholder="e.g. Friday"
           className={field}
           value={draft.date}
           aria-invalid={problems.date ? true : undefined}
-          onChange={(event) => {
-            edit({ date: event.target.value });
+          onChange={(date) => {
+            edit({ date });
             clear("date");
           }}
           {...gate.controlProps()}

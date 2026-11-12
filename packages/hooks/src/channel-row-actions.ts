@@ -109,3 +109,17 @@ export function deleteChannelConfirmTitle(name: string): string {
 }
 export const DELETE_CHANNEL_CONFIRM_BODY =
   "Every message, attachment, and pin in this channel is removed. This cannot be undone.";
+
+/**
+ * Deleting a channel asks for its name, typed exactly (Paul, #3838:
+ * "deleting a channel should be harder"), the way GitHub asks before deleting
+ * a repository. Both clients keep Delete disabled until it matches.
+ */
+export function deleteChannelTypeLabel(name: string): string {
+  return `Type ${name} to confirm`;
+}
+
+/** Whether the typed text names the channel: exact, case and all. */
+export function deleteChannelNameMatches(typed: string, name: string): boolean {
+  return typed === name;
+}

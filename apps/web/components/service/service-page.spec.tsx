@@ -850,7 +850,7 @@ describe("ServiceHoursPage pre-filled date (#3167)", () => {
     await userEvent.click(logTrigger());
     expect(
       within(screen.getByRole("dialog")).getByLabelText(/^date$/i),
-    ).toHaveValue("2026-09-30");
+    ).toHaveValue("Today");
   });
 
   it("resets to the member's own calendar day after a submit", async () => {
@@ -872,7 +872,7 @@ describe("ServiceHoursPage pre-filled date (#3167)", () => {
     await userEvent.click(logTrigger());
     expect(
       within(screen.getByRole("dialog")).getByLabelText(/^date$/i),
-    ).toHaveValue("2026-09-30");
+    ).toHaveValue("Today");
   });
 });
 /* eslint-enable turbo/no-undeclared-env-vars */

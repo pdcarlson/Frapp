@@ -3748,6 +3748,23 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback deleted chat messages take their notifications (20261112140000)
+
+* **Migration**: `20261112140000_notifications_chat_message_id.sql`
+
+One new column with its index, and two triggers. It writes no row on apply. Notification rows the delete trigger has removed since are gone; a rollback does not bring them back.
+
+**Revert the API first**, because the API from the same PR writes `chat_message_id` on every single-message chat notification and rewrites rows by it on an edit: redeploy the earlier API, which never touches the column. Then, to stop deletes removing notifications, **revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop trigger if exists chat_messages_forget_notifications on public.chat_messages;
+drop trigger if exists notifications_skip_deleted_message on public.notifications;
+drop function if exists public.chat_messages_forget_notifications();
+drop function if exists public.notifications_skip_deleted_message();
+drop index if exists public.idx_notifications_chat_message;
+alter table public.notifications drop column if exists chat_message_id;
+```
+
 ## Rollback chat search with a filter and no text (20261112131300)
 
 * **Migration**: `20261112131300_chat_search_filter_only.sql`
@@ -3791,15 +3808,15 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-## Rollback member defaults for existing chapters (20261112140000)
+## Rollback member defaults for existing chapters (20261112150000)
 
-* **Migration**: `20261112140000_member_social_trust_defaults.sql`
+* **Migration**: `20261112150000_member_social_trust_defaults.sql`
 
 Adds `events:create` to the tier holding each chapter's Member role and every tier above it, `backwork:upload` to the tiers above it when the Member role holds it, or `events:create` as an "on" override on a Member role outside the tiers (#3709). The tier trigger rewrites `roles.permissions` for every role in those tiers.
 
 **Roll the data back before the API.** An API from before #3709 lets anyone holding `events:create` make an event required and worth points, so rolling the API back while the grants stand hands that to every member.
 
-**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A key the migration added can't be told apart from one an officer added by hand afterwards, and the same keys were already held in many chapters before it, so don't strip them by name: that would take away what officers had granted. Restore from the rows the promoter saved before the push ([`promotion-log.md`](database/promotion-log.md#20261112140000_member_social_trust_defaultssql)), removing only the keys a row didn't hold then. Load the saved rows into two temporary tables, `before_tiers (id uuid, permissions text[])` and `before_members (id uuid, permission_overrides jsonb)`, then:
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A key the migration added can't be told apart from one an officer added by hand afterwards, and the same keys were already held in many chapters before it, so don't strip them by name: that would take away what officers had granted. Restore from the rows the promoter saved before the push ([`promotion-log.md`](database/promotion-log.md#20261112150000_member_social_trust_defaultssql)), removing only the keys a row didn't hold then. Load the saved rows into two temporary tables, `before_tiers (id uuid, permissions text[])` and `before_members (id uuid, permission_overrides jsonb)`, then:
 
 ```sql
 update public.role_tiers t

@@ -8,7 +8,7 @@
  * rule (no NaN propagation) holds.
  */
 
-import { dueEntryFields, parseDueEntryWithTime } from "@repo/formatting";
+import { dueEntryFields, parseDateEntryWithTime } from "@repo/formatting";
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -276,13 +276,13 @@ function parseIsoDate(token: string | undefined): string | null {
 
 /**
  * A `/task` due date: what web's task forms read (#3928,
- * `parseDueEntryWithTime`), so `11/14`, `Friday` and `tomorrow` work with no
+ * `parseDateEntryWithTime`), so `11/14`, `Friday` and `tomorrow` work with no
  * year typed, the year being the next time the date comes round, and a time
  * may go with it (`fri 5pm`, #4003). `YYYY-MM-DD` still reads as before.
  * A bare number is never a time, so `fri 5` stays Friday worth 5 points.
  */
 function parseTaskDue(text: string, now: Date): string | null {
-  return parseIsoDate(text) ?? parseDueEntryWithTime(text, now);
+  return parseIsoDate(text) ?? parseDateEntryWithTime(text, now);
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -171,9 +172,7 @@ export function LogHoursForm({
       date: draft.date ? undefined : "Pick the day you served.",
       duration:
         totalMinutes > 0 ? undefined : "Enter at least one minute of time.",
-      description: draft.description.trim()
-        ? undefined
-        : "Say what you did.",
+      description: draft.description.trim() ? undefined : "Say what you did.",
       proof:
         proofInspected && !proofInspected.ok
           ? proofInspected.reason === "size"
@@ -261,16 +260,17 @@ export function LogHoursForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="grid min-w-0 grid-cols-1 content-start gap-1">
           <Label htmlFor={`${ids}-date`}>Date</Label>
-          <Input
+          <DateField
             ref={dateRef}
             id={`${ids}-date`}
-            type="date"
+            lean="back"
+            placeholder="e.g. Yesterday"
             data-plus-autofocus
             className={field}
             value={draft.date}
             aria-invalid={problems.date ? true : undefined}
-            onChange={(event) => {
-              edit({ date: event.target.value });
+            onChange={(date) => {
+              edit({ date });
               clear("date");
             }}
           />
@@ -362,7 +362,11 @@ export function LogHoursForm({
           </p>
         )}
       </div>
-      <FormFooter layout={layout} onCancel={onCancel} cancelDisabled={submitting}>
+      <FormFooter
+        layout={layout}
+        onCancel={onCancel}
+        cancelDisabled={submitting}
+      >
         <Button
           type="submit"
           size={primarySize(layout)}

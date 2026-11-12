@@ -15,8 +15,12 @@ import {
 import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
+  describeAuthReturnError,
   describeOAuthKickoffError,
+  FINISH_FAILED_COPY,
+  START_FAILED_COPY,
   type OAuthProvider,
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
@@ -72,6 +76,13 @@ type AuthSessionContextValue = {
     password: string;
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
+  /**
+   * Sends the sign-up confirmation email again, for a password account that
+   * was never confirmed (`email_not_confirmed`, #3833). Its link opens the app
+   * through the same `frapp:///?` redirect as a magic link, so opening it on
+   * this phone signs the member in.
+   */
+  resendConfirmation: (input: { email: string }) => Promise<void>;
   /**
    * Google, or Apple. Native SIWA is tried first on iOS; otherwise an Expo
    * auth session opens the provider and the returned URL is exchanged here.
@@ -153,7 +164,14 @@ function readAuthParams(url: string): {
   };
 }
 
-function oauthRedirectTo(): string {
+/**
+ * Where an email link (magic link, the confirmation resend) or a provider
+ * return sends the member back into the app. The hosted Magic Link template
+ * appends `&token_hash=…&type=magiclink` onto `{{ .RedirectTo }}`. Web's
+ * callback already has `?next=`; this URL must also carry `?` or the `&`
+ * produces `frapp:///&token_hash=`.
+ */
+function appRedirectTo(): string {
   const redirectTo = Linking.createURL("/");
   return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
@@ -195,7 +213,7 @@ async function createSessionFromUrl(
     // `error_code` is GoTrue's, `error` the provider's identifier
     // (`access_denied`); `error_description` is a sentence and never sent.
     reportCallback(undefined, errorCode ?? errorIdentifier ?? undefined);
-    return describeOAuthKickoffError({
+    return describeAuthReturnError({
       message: errorDescription ?? errorCode ?? undefined,
       code: errorCode ?? undefined,
     });
@@ -209,31 +227,29 @@ async function createSessionFromUrl(
         refresh_token: refreshToken,
       });
       if (error) reportCallback(error);
-      return error ? describeOAuthKickoffError(error) : null;
+      return error ? describeAuthReturnError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
         reportCallback(undefined, "verify_failed");
-        return "That sign-in link could not be used. Request a new one.";
+        return FINISH_FAILED_COPY;
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
       if (error) reportCallback(error);
-      return error ? describeOAuthKickoffError(error) : null;
+      return error ? describeAuthReturnError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) reportCallback(error);
-      return error ? describeOAuthKickoffError(error) : null;
+      return error ? describeAuthReturnError(error) : null;
     }
     return null;
   } catch (error) {
     reportCallback(error);
-    return error instanceof Error
-      ? describeOAuthKickoffError(error)
-      : "That sign-in link could not be used. Request a new one.";
+    return describeAuthReturnError(error);
   }
 }
 
@@ -540,19 +556,33 @@ export function AuthSessionProvider({
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
       // A fresh request supersedes whatever the last dead link reported.
       setCallbackError(null);
-      // The hosted Magic Link template appends `&token_hash=…&type=magiclink`
-      // onto `{{ .RedirectTo }}`. Web's callback already has `?next=`; this
-      // URL must also carry `?` or the `&` produces `frapp:///&token_hash=`.
-      const redirectTo = Linking.createURL("/");
-      const emailRedirectTo = redirectTo.includes("?")
-        ? redirectTo
-        : `${redirectTo}?`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo },
+        options: { emailRedirectTo: appRedirectTo() },
       });
       if (error) {
         reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
+  const resendConfirmation = useCallback(
+    async ({ email }: { email: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: appRedirectTo() },
+      });
+      if (error) {
+        reportAuthFailure({
+          flow: "confirmation_resend",
+          screen: "/sign-in",
+          error,
+        });
         throw error;
       }
     },
@@ -586,7 +616,7 @@ export function AuthSessionProvider({
         throw startFailed(error);
       }
 
-      const redirectTo = oauthRedirectTo();
+      const redirectTo = appRedirectTo();
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -598,12 +628,15 @@ export function AuthSessionProvider({
       });
       if (error) {
         startFailed(error);
-        throw Object.assign(new Error(describeOAuthKickoffError(error)), {
-          code: error.code,
-        });
+        throw Object.assign(
+          new MemberFacingError(describeOAuthKickoffError(error)),
+          { code: error.code },
+        );
       }
       if (!data.url) {
-        throw startFailed(new Error("Unable to start sign-in. Retry in a moment."));
+        throw startFailed(
+          new MemberFacingError(START_FAILED_COPY),
+        );
       }
 
       const result = await WebBrowser.openAuthSessionAsync(
@@ -612,7 +645,7 @@ export function AuthSessionProvider({
       );
       if (result.type === "cancel" || result.type === "dismiss") return;
       if (result.type !== "success") {
-        throw startFailed(new Error("Unable to finish sign-in. Retry in a moment."));
+        throw startFailed(new MemberFacingError(FINISH_FAILED_COPY));
       }
 
       // `openAuthSessionAsync` returning success and `Linking.useURL`
@@ -627,7 +660,7 @@ export function AuthSessionProvider({
       lastHandledCallbackUrl.current = result.url;
       const message = await createSessionFromUrl(supabase, result.url);
       if (message) {
-        throw new Error(message);
+        throw new MemberFacingError(message);
       }
     },
     [supabase],
@@ -687,6 +720,7 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      resendConfirmation,
       signInWithOAuthProvider,
       signOut,
     }),
@@ -695,6 +729,7 @@ export function AuthSessionProvider({
       chapterId,
       configured,
       isChapterResolving,
+      resendConfirmation,
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,

@@ -66,6 +66,7 @@ describe('NotificationService', () => {
       markRead: jest.fn(),
       markChatChannelRead: jest.fn(),
       markAllRead: jest.fn(),
+      rewriteChatMessageBody: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -287,6 +288,74 @@ describe('NotificationService', () => {
       ).not.toHaveBeenCalled();
       expect(mockNotificationRepo.create).toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    describe('a row about one chat message (#4418)', () => {
+      beforeEach(() => {
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+        mockSettingsRepo.findByUser.mockResolvedValue(null);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+      });
+
+      it('stores the message id on the row and sends it in the push', async () => {
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Alex in #general',
+          body: 'Hello',
+          category: 'chat',
+          data: { target: { screen: 'chat', channelId: 'c-1' } },
+          chatMessageId: 'm-1',
+        });
+
+        expect(mockNotificationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ chat_message_id: 'm-1' }),
+        );
+        expect(
+          mockNotificationRepo.create.mock.calls[0][0].data,
+        ).not.toHaveProperty('chatMessageId');
+        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+          [basePushToken.token],
+          expect.objectContaining({
+            data: expect.objectContaining({
+              messageId: 'm-1',
+              notificationId: baseNotification.id,
+            }),
+          }),
+        );
+      });
+
+      it('writes no message id on a row that is not about one message', async () => {
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Alex in #general',
+          body: '3 new messages',
+          category: 'chat',
+        });
+
+        expect(mockNotificationRepo.create.mock.calls[0][0]).not.toHaveProperty(
+          'chat_message_id',
+        );
+        expect(
+          mockPushProvider.sendToUser.mock.calls[0][1].data,
+        ).not.toHaveProperty('messageId');
+      });
+
+      it('sends no push when the database dropped the row because the message was deleted', async () => {
+        mockNotificationRepo.create.mockResolvedValue(null);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Alex in #general',
+          body: 'Hello',
+          category: 'chat',
+          chatMessageId: 'm-gone',
+        });
+
+        expect(mockPushTokenRepo.findByUser).not.toHaveBeenCalled();
+        expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
+      });
     });
 
     it('cleans U+FFFC, the "OBJ" box, from the stored row and the push (#4346)', async () => {
@@ -1499,6 +1568,42 @@ describe('NotificationService', () => {
         '2026-11-09T05:00:00.000Z',
         undefined,
       );
+    });
+  });
+
+  describe('rewriteChatMessagePreview (#4418)', () => {
+    it("rewrites the rows that quote the message, in the message's chapter", async () => {
+      mockNotificationRepo.rewriteChatMessageBody.mockResolvedValue(undefined);
+
+      await service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', [
+        'u-1',
+      ]);
+
+      expect(mockNotificationRepo.rewriteChatMessageBody).toHaveBeenCalledWith(
+        'chapter-1',
+        'm-1',
+        'fixed',
+        ['u-1'],
+      );
+    });
+
+    it('writes nothing when nobody can read the channel', async () => {
+      await service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', []);
+
+      expect(
+        mockNotificationRepo.rewriteChatMessageBody,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed rewrite instead of failing the edit', async () => {
+      mockNotificationRepo.rewriteChatMessageBody.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(
+        service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', ['u-1']),
+      ).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalled();
     });
   });
 
