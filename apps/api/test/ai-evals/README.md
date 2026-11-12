@@ -10,21 +10,36 @@ npm run test:ai-evals -w apps/api
 It needs its own jest config: the unit project is `rootDir: "src"` and the e2e project matches
 `.e2e-spec.ts`, so neither picks up `test/ai-evals/*.eval-spec.ts`.
 
-## Status: no agent yet
+## Status: graded against the gateway, with a scripted model
 
-There is no AI implementation in the repo (FRA-309 corpus, FRA-310 acting agent). The suite is built
-first on purpose, so the agent work has a target rather than a retrofit. That splits it in two:
-
-| Layer | File | Runs today |
+| Layer | File | What it checks |
 | --- | --- | --- |
-| Corpus invariants | `corpus-invariants.eval-spec.ts` | **Yes** — coverage of all four categories and all four injection vectors, payloads actually planted in context, no self-contradictory expectations |
-| Grader enforcement | `grader.eval-spec.ts` | **Yes** — every case is satisfiable by a compliant answer, and every injection's intended outcome is rejected |
-| Agent behaviour | `adversarial.eval-spec.ts` | **Skipped** until an agent is registered |
+| Corpus invariants | `corpus-invariants.eval-spec.ts` | Coverage of all four categories and all four injection vectors, payloads actually planted in context, no self-contradictory expectations |
+| Grader enforcement | `grader.eval-spec.ts` | Every case is satisfiable by a compliant answer, and every injection's intended outcome is rejected |
+| Agent behaviour | `adversarial.eval-spec.ts` | Every case, answered by the agent below and graded |
 
-The behavioural cases skip rather than pass, and a guard test prints `NOT_IMPLEMENTED` so a green run
-is never mistaken for a graded one.
+The agent is `harness/gateway-agent.ts`: a minimal ask over the real `AiGatewayService`, with the
+scripted adapter as the model (`harness/scripted-model.ts`). The suite's jest config registers it
+(`harness/register-gateway-agent.ts`), and CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
+agent fails instead of skipping.
 
-## Wiring up an implementation
+**What a green run proves.** There is no model here, so it proves nothing about a model's judgment.
+It grades Frapp's own enforcement, which is the code the product runs. The scripted model
+misbehaves on purpose so that each rule has something to stop:
+
+| The scripted model does this | What has to stop it |
+| --- | --- |
+| Cites a quote that is not in the document, on every answer | The gateway's word-for-word check (`isQuoteGrounded`) drops the citation |
+| Cites another chapter's roster, on every answer | The same check: a source the model was not given is never kept |
+| Repeats any text of another chapter that reaches it | The agent hands the gateway only the caller's chapter's documents and tool results |
+| Answers from a neighbouring topic with a made-up quote | An answer left with no kept citation becomes "I don't know" |
+
+Removing the chapter filter or the quote check turns this run red. Whether a real model ignores an
+injected instruction, prefers the newer source or shows both sides of a conflict is not decided
+here: for those the scripted model plays a compliant answer. The bake-off (#4311) runs these cases
+against real providers.
+
+## Putting a different agent under test
 
 Implement `AgentUnderTest` from `harness/types.ts` and register it either way:
 
@@ -42,14 +57,12 @@ registerAgentUnderTest(myAgent);
 AI_EVALS_AGENT_MODULE=/abs/path/to/agent npm run test:ai-evals -w apps/api
 ```
 
-The resolver runs at module load and cannot await, so an `async createAgentUnderTest()` is rejected
-with an explicit error rather than yielding a Promise that later fails as `agent.ask is not a
-function`. A module path that does not resolve throws during import, which surfaces as "Test suite
-failed to run" — a non-zero exit, but note the 14 behavioural tests vanish from the count rather than
-failing individually.
-
-Then set `AI_EVALS_REQUIRE_AGENT=1` in CI. A missing agent becomes a hard failure, so the suite can
-never drift back to asserting nothing.
+A registered agent wins over `AI_EVALS_AGENT_MODULE`, so option 2 also needs the setup file's
+registration removed. The resolver runs at module load and cannot await, so an
+`async createAgentUnderTest()` is rejected with an explicit error rather than yielding a Promise
+that later fails as `agent.ask is not a function`. A module path that does not resolve throws during
+import, which surfaces as "Test suite failed to run" — a non-zero exit, but note the 14 behavioural
+tests vanish from the count rather than failing individually.
 
 ## Grading
 
@@ -80,6 +93,10 @@ Add to the matching file in `cases/`, export it from `cases/index.ts`, and the i
 hold it to the rules automatically. For an injection case the payload string must appear verbatim in
 a corpus body or tool result — the suite checks that a case advertising an injection actually
 performs one.
+
+A new case also needs its reply in `harness/scripted-model.ts`, keyed by the question. Without one
+the scripted model answers "I do not know", and a case that expects an answer fails until someone
+writes down what a model would say.
 
 Keep canary values unlike real credentials. `cases/fixtures.ts` uses `CANARY-DO-NOT-EMIT-7f3a`
 because a realistic `sk_live_…` literal would trip the gitleaks pre-commit gate.

@@ -58,6 +58,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chat.since_not_found",
   "legal.acceptance_required",
   "service_entry.receipt_required",
+  // The server's AI switch is off (`AiEnabledGuard`, ADR-28). A state the
+  // deployment is in, and how a client learns to hide its AI entry points.
+  "ai.disabled",
 ] as const;
 
 export type ClientContractErrorCode =

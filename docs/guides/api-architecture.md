@@ -263,3 +263,16 @@ await Promise.allSettled(items.map((i) => repo.create(i)));
 // GOOD: Single bulk atomic request
 await repo.createMany(items);
 ```
+
+## 7. Calling a model
+
+Every model call goes through `AiGatewayService` (`application/services/ai/ai-gateway.service.ts`, [ADR-28](../../spec/architecture/adr/adr-28.md)). A feature module imports `AiModule` and injects the gateway. It never imports a provider SDK (the `ai-provider-sdks-only-in-adapters` dependency-cruiser rule fails the build) and never injects an adapter.
+
+- **Name a task, not a model.** Add the task to `domain/constants/ai-model-catalog.ts` with its kind, model, output ceiling and prices. Changing a feature's model is an edit to that file.
+- **Pick the call by what comes back.** `generateObject(task, { schema, ... })` returns a value parsed by your zod schema. `generateCited(task, { sources, ... })` and `streamCited` return prose plus citations, and only the citations whose quote is word for word in the source they name. A provider cannot do both in one request, so a feature that needs both makes two calls. A quote inside a structured result is checked by the caller with `isQuoteGrounded` (`#domain/utils/quote-grounding`). `embed` returns vectors at the catalog's width.
+- **Handle every result.** `unavailable` (the server switch, no credential, consent, a spend cap), `refused` and `invalid_output` are ordinary results with something to show the member. Only a provider failure throws, as a `LanguageModelError` with a `retryable` flag and no provider text.
+- **Put `AiEnabledGuard` first on every AI route**, ahead of authentication, so a server with `AI_ENABLED` off answers `404 ai.disabled`.
+- **Log no text.** No prompt, source or answer goes in a log line, an error message, a span attribute or an analytics property. The gateway's own telemetry is described in [`observability.md` § AI call telemetry](../../spec/behavior/observability.md#ai-call-telemetry).
+- **Test with the scripted adapter.** `new ScriptedLanguageModel({ 'your.task': (request) => ({ ... }) })` plays a completion, a refusal or a failure with no network. Locally, `AI_ENABLED=true` with `AI_PROVIDER=scripted` runs a whole flow on the replies in `infrastructure/ai/scripted-replies.ts`.
+
+Consent, the spend caps and the usage ledger are three interfaces the gateway calls around each provider call, each bound in its own module file under `modules/ai/`. A feature does not call them.

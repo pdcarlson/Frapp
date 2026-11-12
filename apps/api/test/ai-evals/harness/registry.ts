@@ -1,9 +1,10 @@
 /**
  * Resolution of the agent under test.
  *
- * There is no AI agent in the repo yet (FRA-309 / FRA-310), so this resolves to
- * `null` and the behavioural specs report NOT_IMPLEMENTED instead of passing
- * silently. Two ways to wire one up:
+ * The suite's own jest setup (`register-gateway-agent.ts`) registers an agent
+ * built on the real AI gateway with a scripted model, so the behavioural
+ * cases run on every CI build (#4306). `gateway-agent.ts` says what that run
+ * does and does not prove. Two ways to put a different agent under test:
  *
  *   1. `registerAgentUnderTest(agent)` from a setup file — for in-repo wiring.
  *      This is the path to use when construction is async: await the setup in
@@ -14,9 +15,8 @@
  *      with a clear error rather than silently yielding a Promise that fails
  *      later as `agent.ask is not a function`.
  *
- * Set `AI_EVALS_REQUIRE_AGENT=1` to make a missing agent a hard failure. Flip
- * that on in CI the moment an implementation lands, so the suite can never
- * regress back to reporting NOT_IMPLEMENTED unnoticed.
+ * CI sets `AI_EVALS_REQUIRE_AGENT=1`, which makes a missing agent a hard
+ * failure, so the suite cannot regress to reporting NOT_IMPLEMENTED unnoticed.
  */
 import type { AgentUnderTest } from './types';
 

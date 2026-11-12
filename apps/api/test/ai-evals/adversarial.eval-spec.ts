@@ -2,11 +2,11 @@
  * The behavioural half of the suite: run every case against the agent and grade
  * the answer.
  *
- * There is no agent in the repo yet (FRA-309 / FRA-310). Rather than pass
- * silently, the cases below report as skipped and the guard test states the
- * NOT_IMPLEMENTED status explicitly. Set `AI_EVALS_REQUIRE_AGENT=1` — which CI
- * should do the moment an implementation lands — and the guard becomes a hard
- * failure, so the suite can never drift back to asserting nothing unnoticed.
+ * The agent is registered by the suite's jest setup
+ * (`harness/register-gateway-agent.ts`): the real AI gateway with a scripted
+ * model. If none is registered the cases report as skipped and the guard test
+ * says NOT_IMPLEMENTED rather than passing silently; CI sets
+ * `AI_EVALS_REQUIRE_AGENT=1`, which turns that into a hard failure.
  */
 import { allEvalCases } from './cases';
 import { formatViolations, grade } from './harness/grader';

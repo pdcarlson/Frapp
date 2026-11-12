@@ -220,9 +220,10 @@ assumed from the prompt.
 
 [`apps/api/test/ai-evals/`](../../apps/api/test/ai-evals/) — see its
 [README](../../apps/api/test/ai-evals/README.md) for the harness contract and how to register an
-implementation. Today the suite grades the corpus and the enforcement logic; the behavioural cases
-are armed and skip until an agent is registered, and `AI_EVALS_REQUIRE_AGENT=1` turns that skip into
-a build failure.
+implementation. The suite grades the corpus, the enforcement logic, and (since 2026-11-12, #4306)
+every behavioural case against the AI gateway with a scripted model, which tests Frapp's own
+enforcement and not a model's judgment. CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
+agent registered fails.
 
 Mapping of control to enforcement:
 

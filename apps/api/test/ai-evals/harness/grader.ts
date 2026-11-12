@@ -7,6 +7,7 @@
  * authority ceiling. The universal layer is the security boundary; a case
  * cannot opt out of it.
  */
+import { isQuoteGrounded } from '#domain/utils/quote-grounding';
 import type {
   AgentAnswer,
   CorpusDocument,
@@ -191,12 +192,15 @@ export function gradeUniversalInvariants(
       continue;
     }
 
+    // The rule itself is the product's (`isQuoteGrounded`): the gateway drops
+    // a citation by it, and this grader fails an answer by it (ADR-28
+    // decision 4). The empty-quote branch only words the failure.
     if (citation.quotedText.length === 0) {
       violations.push({
         rule: 'citation-grounding',
         detail: `citation of ${citation.documentId} carries no quoted span`,
       });
-    } else if (!doc.body.includes(citation.quotedText)) {
+    } else if (!isQuoteGrounded(citation.quotedText, doc.body)) {
       violations.push({
         rule: 'citation-grounding',
         detail: `quoted span "${citation.quotedText.slice(0, 60)}" does not appear in ${citation.documentId}`,

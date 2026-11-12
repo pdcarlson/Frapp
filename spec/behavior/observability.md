@@ -158,7 +158,7 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 **"All" includes denials, which makes the placement load-bearing.** The id is assigned by `requestIdMiddleware` (`apps/api/src/interface/middleware/request-id.middleware.ts`), registered as Express middleware ahead of the Nest pipeline. It cannot be an interceptor: Nest runs middleware → guards → interceptors, so a request rejected by a guard never reaches one, and every 401/403/429 would carry `"requestId": "unknown"` — precisely the requests a tracing id is most useful for. The same middleware binds a request-scoped AsyncLocalStorage store (request id only) so Nest `Logger` calls from services see the id, and tags the Sentry isolation scope `request_id` so a trace can be joined to the correlation id without becoming it.
 
-On the API, Sentry owns tracing (ADR-22). `Sentry.init` lives in `apps/api/src/instrument.ts`, imported first from `main.ts`. Under SDK v11 it registers no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`): spans come from Sentry's own instrumentation. Do not install `@opentelemetry/sdk-node` (or any other global tracer). Traces use `traceLifecycle: 'static'`, because v11's default (`'stream'`) skips `beforeSendTransaction` and with it the transaction scrubber. HTTP spans do not collect request bodies (`maxRequestBodySize: 'none'`). Fetch spans do not copy headers onto attributes. Span attributes that leave the process still pass the scrubber allowlist (`http.request.method`, `http.response.status_code`, `db.system`, `sentry.source`, and the push worker's three fan-out counts `chat.push.recipients`, `chat.push.sent` and `chat.push.presence_channels`); `http.url`, `url.query`, and `db.statement` do not.
+On the API, Sentry owns tracing (ADR-22). `Sentry.init` lives in `apps/api/src/instrument.ts`, imported first from `main.ts`. Under SDK v11 it registers no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`): spans come from Sentry's own instrumentation. Do not install `@opentelemetry/sdk-node` (or any other global tracer). Traces use `traceLifecycle: 'static'`, because v11's default (`'stream'`) skips `beforeSendTransaction` and with it the transaction scrubber. HTTP spans do not collect request bodies (`maxRequestBodySize: 'none'`). Fetch spans do not copy headers onto attributes. Span attributes that leave the process still pass the scrubber allowlist (`http.request.method`, `http.response.status_code`, `db.system`, `sentry.source`, the push worker's three fan-out counts `chat.push.recipients`, `chat.push.sent` and `chat.push.presence_channels`, and the AI gateway's six: `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`); `http.url`, `url.query`, and `db.statement` do not. No `gen_ai.*` key is on the list, so a prompt or an answer an AI integration put on a span would be dropped ([§ AI call telemetry](#ai-call-telemetry)).
 
 ## Health Check
 
@@ -470,6 +470,27 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 | `surface` | `primer` (onboarding's step, `use-push-primer.ts`), `reminder` (the chat home's reminder, same file) or `settings` (the push row, `app/(app)/preferences.tsx`) |
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
+
+## AI call telemetry
+
+Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28](../architecture/adr/adr-28.md) decisions 1 and 12), and each call that reaches a provider leaves two records. Neither holds any text of the prompt, the sources or the answer.
+
+- **A Sentry span**, `ai.gateway.call` (op `ai.gateway`), with `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`. A streamed call has no span of its own yet. Sentry's own Anthropic and Google AI integrations are built with input and output recording off, and `dataCollection.genAI` is off too (`sentry-options.ts`, [#3280](https://github.com/pdcarlson/Frapp/issues/3280)).
+- **A PostHog event**, `ai-call-finished`, sent by `AiTelemetryService` and attributed to the acting member and chapter like any server event:
+
+| Property | Meaning |
+| --- | --- |
+| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`), and what it returns (`structured`, `cited`, `embedding`) |
+| `provider`, `model` | From the model catalog (`domain/constants/ai-model-catalog.ts`) |
+| `prompt_version` | The calling feature's prompt version, such as `ask@v1` |
+| `outcome`, `error_kind` | `completed`, `refused` (the provider declined), `invalid_output` (the reply did not match the schema) or `error`; for an error, its kind, such as `rate_limited` |
+| `input_tokens`, `output_tokens`, `cached_input_tokens` | As the provider reported them |
+| `cost_micro_usd` | The catalog's price for those tokens, in millionths of a US dollar. An estimate, not the invoice |
+| `latency_ms` | Wall time of the provider call |
+| `citations_kept`, `citations_dropped` | For a cited task, how many quotes passed the word-for-word check and how many were dropped |
+| `is_background_run` | Whether an AI run made the call |
+
+A call the gateway stops before the provider (the server switch, no credential, consent, a spend cap) sends nothing. A provider error is thrown as a `LanguageModelError`, which carries the error's kind, HTTP status and request id and never the provider's message, because a provider's 400 can quote the request back. `ai-gateway.service.spec.ts` asserts that no prompt, source or answer text reaches a log line, a Sentry envelope or the event, on a call that succeeds and one that fails.
 
 ## Member Onboarding Funnel
 
