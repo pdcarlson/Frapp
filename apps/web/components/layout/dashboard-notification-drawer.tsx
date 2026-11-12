@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -10,9 +10,33 @@ import {
   useInvalidateChatReports,
   useMarkNotificationRead,
   useMarkNotificationScreensSeen,
+  memberAvatarTint,
+  useChapterRoster,
   useMarkNotificationsRead,
+  useMemberDisplayNames,
   useNotifications,
+  useNowDate,
 } from "@repo/hooks";
+import {
+  NOTIFICATION_KIND_LABEL,
+  NOTIFICATION_TILE_GLYPH,
+  NOTIFICATION_TILE_HUE,
+  isTileKind,
+  notificationLook,
+  notificationPreview,
+  notificationTitle,
+  notificationWhen,
+  titleAroundName,
+  type NotificationKind,
+} from "@repo/hooks/notification-rows";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { NavGlyph } from "@/components/layout/nav-glyphs";
+import {
+  AnnouncementGlyph,
+  DirectMessageGlyph,
+} from "@/components/chat/chat-glyphs";
+import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
@@ -21,8 +45,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatRelativeDayTime } from "@repo/formatting";
-import { asArray, cn } from "@/lib/utils";
+import { asArray, cn, initials } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -50,6 +73,10 @@ type Notification = {
       invoiceId?: string;
     };
     priority?: "URGENT" | "NORMAL" | "SILENT";
+    senderId?: string;
+    memberUserId?: string;
+    chatKind?: string;
+    mentioned?: boolean;
   } | null;
   read_at: string | null;
   created_at: string;
@@ -138,10 +165,26 @@ export function DashboardNotificationDrawer({
     enabled: Boolean(frappUser.userId),
   });
 
-  const notifications = asArray<Notification>(notificationsQuery.data).sort(
-    (a, b) => (a.created_at < b.created_at ? 1 : -1),
+  const notifications = useMemo(
+    () =>
+      asArray<Notification>(notificationsQuery.data).sort((a, b) =>
+        a.created_at < b.created_at ? 1 : -1,
+      ),
+    [notificationsQuery.data],
   );
   const unreadCount = notifications.filter((n) => !n.read_at).length;
+
+  // The roster every chat surface already reads (cached, `staleTime` 60s), for
+  // each row's picture, name colour and mention chips. No read of its own.
+  const roster = useChapterRoster();
+  const rosterMembers = roster.data ?? null;
+  const names = useMemberDisplayNames();
+  // Ticks, so a drawer left open past midnight moves its rows to Earlier.
+  const now = useNowDate();
+  const groups = useMemo(
+    () => groupByDay(notifications, now),
+    [notifications, now],
+  );
 
   /*
     Keep the officer report queue in step with its notifications (#2257).
@@ -244,74 +287,268 @@ export function DashboardNotificationDrawer({
               changes will appear here.
             </div>
           ) : (
-            // A flat list: rows divided by hairlines, no card around each.
-            // Unread is a dot and a bolder title, neutral like the chat list's
-            // unread (foundations.md §5), not a gold card and a badge. Every row is transparent on the sheet's `--popover`, so
-            // one hover serves both states: `--card-hover`, the neutral lift
-            // above the ladder (`elevation-contrast.spec.ts`). The title and
-            // body wrap rather than clip: nothing else on web shows a
-            // notification's text, and most deep links open a list page. The
-            // focus ring is drawn inset, because the list fills the scroll
-            // area's width and its overflow would clip a ring drawn outside.
-            <ul className="-mx-3 divide-y divide-border">
-              {notifications.map((notification) => {
-                const isRead = Boolean(notification.read_at);
-                return (
-                  <li key={notification.id}>
-                    <Link
-                      href={deepLinkFor(notification)}
-                      onClick={() => {
-                        if (isReportNotification(notification)) {
-                          void invalidateReports();
-                        }
-                        void handleMarkRead(notification);
-                        onOpenChange(false);
-                      }}
-                      className={cn(
-                        "grid grid-cols-[8px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
-                        FOCUS_RING,
-                        "focus-visible:ring-inset",
-                      )}
-                    >
-                      <span
-                        aria-hidden="true"
-                        data-unread-dot={isRead ? undefined : ""}
-                        className={cn(
-                          "mt-2 size-2 rounded-full",
-                          isRead ? "bg-transparent" : "bg-foreground",
-                        )}
-                      />
-                      <span className="flex min-w-0 items-baseline justify-between gap-3">
-                        <span
-                          className={cn(
-                            "min-w-0 break-words text-sm",
-                            isRead
-                              ? "font-medium text-muted-foreground"
-                              : "font-semibold text-foreground",
-                          )}
-                        >
-                          {isRead ? null : (
-                            <span className="sr-only">Unread: </span>
-                          )}
-                          {notification.title}
-                        </span>{" "}
-                        <span className="shrink-0 text-caption text-muted-foreground">
-                          {formatRelativeDayTime(notification.created_at)}
-                        </span>
-                      </span>{" "}
-                      {notification.body ? (
-                        <span className="col-start-2 mt-0.5 break-words text-sm text-muted-foreground">
-                          {notification.body}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            // A flat list: rows divided by hairlines, no card around each,
+            // grouped Today / Earlier as mobile s14 is (#4346). Unread is a
+            // dot and a bolder title, neutral like the chat list's unread
+            // (foundations.md §5), not a tinted card. Every row is
+            // transparent on the sheet's `--popover`, so one hover serves
+            // both states: `--card-hover`, the neutral lift above the ladder
+            // (`elevation-contrast.spec.ts`). The focus ring is drawn inset,
+            // because the list fills the scroll area's width and its overflow
+            // would clip a ring drawn outside.
+            <div className="-mx-3 grid gap-2">
+              {groups.map((group) => (
+                <section key={group.heading} aria-label={group.heading}>
+                  <h3 className="px-3 pb-1 text-caption font-semibold uppercase tracking-[0.08em] text-muted">
+                    {group.heading}
+                  </h3>
+                  <ul className="divide-y divide-border">
+                    {group.rows.map((notification) => (
+                      <li key={notification.id}>
+                        <NotificationRow
+                          notification={notification}
+                          members={rosterMembers}
+                          names={names}
+                          onOpen={() => {
+                            if (isReportNotification(notification)) {
+                              void invalidateReports();
+                            }
+                            void handleMarkRead(notification);
+                            onOpenChange(false);
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
           )}
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+type TimedNotification = Notification & { time: string };
+type DayGroup = { heading: string; rows: TimedNotification[] };
+
+/**
+ * Today / Earlier on the viewer's own calendar day, newest first in each, by
+ * the same rule and with the same times as mobile s14 (`notificationWhen` in
+ * `@repo/hooks/notification-rows`). An empty group is dropped, so nobody sees
+ * a Today heading over nothing, and a row whose time doesn't parse is
+ * dropped as mobile drops it.
+ */
+function groupByDay(rows: readonly Notification[], now: Date): DayGroup[] {
+  const today: TimedNotification[] = [];
+  const earlier: TimedNotification[] = [];
+  for (const row of rows) {
+    const when = notificationWhen(row.created_at, now);
+    if (!when) continue;
+    (when.isToday ? today : earlier).push({ ...row, time: when.time });
+  }
+  return [
+    { heading: "Today", rows: today },
+    { heading: "Earlier", rows: earlier },
+  ].filter((group) => group.rows.length > 0);
+}
+
+type MemberNames = ReturnType<typeof useMemberDisplayNames>;
+
+/**
+ * One notification (#4346): the picture of who it is about with a badge for
+ * its kind, or a tile where no person is behind it; the title with the
+ * person's name in their colour; the preview with chat's mention chips; the
+ * time. A row that mentions the viewer wears the @ badge in the chapter
+ * accent, the colour chat lights a mention in, and is not tinted (Shawn's
+ * pick, 2026-11-11: the list stays flat).
+ */
+function NotificationRow({
+  notification,
+  members,
+  names,
+  onOpen,
+}: {
+  notification: TimedNotification;
+  members: readonly { user_id: string; display_name: string }[] | null;
+  names: MemberNames;
+  onOpen: () => void;
+}) {
+  const isRead = Boolean(notification.read_at);
+  const look = notificationLook(notification);
+  const personName = look.personId ? names.nameFor(look.personId) : null;
+  const nameColor = look.personId ? names.roleColorFor(look.personId) : null;
+  const shownTitle = notificationTitle(notification.title);
+  const title = titleAroundName(shownTitle, personName);
+  const preview = notificationPreview(notification.body, members);
+
+  return (
+    <Link
+      href={deepLinkFor(notification)}
+      onClick={onOpen}
+      data-notification-kind={look.kind}
+      className={cn(
+        "grid grid-cols-[8px_36px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
+        FOCUS_RING,
+        "focus-visible:ring-inset",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        data-unread-dot={isRead ? undefined : ""}
+        className={cn(
+          "mt-[14px] size-2 rounded-full",
+          isRead ? "bg-transparent" : "bg-foreground",
+        )}
+      />
+      <NotificationPicture
+        kind={look.kind}
+        personId={look.personId}
+        personName={personName}
+        names={names}
+      />
+      <span className="grid min-w-0 gap-0.5">
+        <span className="flex min-w-0 items-baseline justify-between gap-3">
+          <span
+            className={cn(
+              "min-w-0 break-words text-sm",
+              isRead
+                ? "font-medium text-muted-foreground"
+                : "font-semibold text-foreground",
+            )}
+          >
+            {/* Spaces sit between the spans, not at their edges: a name is
+                built from each element's text trimmed, so "Ryan" and
+                " in #general" would be read as "Ryanin #general". */}
+            <span className="sr-only">
+              {isRead ? "" : "Unread: "}
+              {NOTIFICATION_KIND_LABEL[look.kind]}.
+            </span>{" "}
+            {title ? (
+              <>
+                {title.before}
+                <span
+                  data-person-name=""
+                  style={nameColor ? { color: nameColor } : undefined}
+                >
+                  {title.name}
+                </span>
+                {/^\s/.test(title.after) ? " " : null}
+                <span className="font-medium text-muted-foreground">
+                  {title.after.trimStart()}
+                </span>
+              </>
+            ) : (
+              shownTitle
+            )}
+          </span>{" "}
+          <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
+            {notification.time}
+          </span>
+        </span>
+        {preview.length > 0 ? (
+          <span
+            className={cn(
+              "break-words text-sm",
+              isRead ? "text-muted" : "text-muted-foreground",
+            )}
+          >
+            {preview.map((segment, index) =>
+              segment.mention ? (
+                <mark key={index} data-mention="" className={MENTION_CHIP}>
+                  {segment.text}
+                </mark>
+              ) : (
+                <span key={index}>{segment.text}</span>
+              ),
+            )}
+          </span>
+        ) : null}
+      </span>
+    </Link>
+  );
+}
+
+/**
+ * The row's picture: the person's photo or tinted initials, as chat draws an
+ * author, with a badge for the kind of notice; or, with no person behind it,
+ * a tile in the kind's hue (`NOTIFICATION_TILE_HUE`). Decorative: the row's
+ * hidden label says the kind in words.
+ */
+function NotificationPicture({
+  kind,
+  personId,
+  personName,
+  names,
+}: {
+  kind: NotificationKind;
+  personId: string | null;
+  personName: string | null;
+  names: MemberNames;
+}) {
+  if (isTileKind(kind)) {
+    // The initials avatar's paint (the hue at 18% over `--popover`), so a
+    // tile and a person's picture sit at one strength.
+    const paint = memberAvatarTint(NOTIFICATION_TILE_HUE[kind]);
+    return (
+      <span
+        aria-hidden="true"
+        data-notification-tile={kind}
+        className="grid size-9 place-items-center rounded-[10px]"
+        style={{ backgroundColor: paint.fill, color: paint.text }}
+      >
+        <NavGlyph
+          paths={NAV_GLYPHS[NOTIFICATION_TILE_GLYPH[kind]]}
+          className="size-5"
+        />
+      </span>
+    );
+  }
+  const photo = personId ? names.avatarFor(personId) : null;
+  const tint = personId ? names.avatarTintFor(personId) : null;
+  return (
+    <span aria-hidden="true" className="relative size-9">
+      <Avatar className="size-9">
+        {photo ? <AvatarImage src={photo} alt="" /> : null}
+        <AvatarFallback tint={tint}>{initials(personName)}</AvatarFallback>
+      </Avatar>
+      <KindBadge kind={kind} />
+    </span>
+  );
+}
+
+const BADGE_TONE: Partial<Record<NotificationKind, string>> = {
+  // The mention is the badge in gold: the in-body mention chip's fixed pair
+  // (`components.md` § In-body mention chip), inverted so it reads at 18px.
+  // Fixed, never the chapter accent, so a mention looks alike in every
+  // chapter (`foundations.md` §5, as changed in #4346).
+  mention: "bg-mention-chip-text text-mention-chip",
+  join: "bg-success text-success-foreground",
+};
+
+function KindBadge({ kind }: { kind: NotificationKind }) {
+  return (
+    <span
+      data-kind-badge={kind}
+      className={cn(
+        "absolute -bottom-1 -right-1 grid size-[18px] place-items-center rounded-full text-caption font-bold leading-none ring-2 ring-popover",
+        BADGE_TONE[kind] ?? "bg-card-hover text-muted-foreground",
+      )}
+    >
+      {kind === "mention" ? (
+        "@"
+      ) : kind === "channel" ? (
+        "#"
+      ) : kind === "join" ? (
+        "+"
+      ) : kind === "announcement" ? (
+        <AnnouncementGlyph className="size-3" />
+      ) : kind === "dm" ? (
+        <DirectMessageGlyph className="size-3" />
+      ) : (
+        <NavGlyph paths={NAV_GLYPHS.chat} className="size-3" />
+      )}
+    </span>
   );
 }

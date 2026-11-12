@@ -330,7 +330,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
             id: "n-1",
             title: "Dues reminder",
             body: "Spring dues are open.",
-            categoryLabel: "Dues",
+            data: { target: { screen: "billing" } },
             time: "9:41 PM",
             isUnread: false,
             target: { pathname: "/dues" },
