@@ -30,7 +30,7 @@ const SURFACES = {
  * API stores a role's colour as listed and every client paints only exact
  * palette values (`roleColorOrNull`), so a new hex orphans every stored role
  * and every shipped mobile build at once. That needs a migration and a
- * compatibility window, tracked in #TBD.
+ * compatibility window, tracked in #4387.
  */
 const HOVER_EXCEPTIONS: Readonly<Record<string, number>> = {
   Rose: 4.49,

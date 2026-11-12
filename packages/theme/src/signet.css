@@ -179,25 +179,26 @@
 
     /* `--card-hover` is the hover of a card-filled control: the
      * Secondary button (components.md §3) and a card-filled row or tile.
-     * It is `--popover` lifted 6% toward white, so it sits ABOVE the
-     * top of the ladder and stays distinct from every step a control can
-     * sit on, a dialog included, where the old elevated-step hover was
-     * the dialog's own fill. An opaque literal rather than a white alpha
-     * (which composites over the container, so on `--background` it
-     * landed on the card rest fill) or a `color-mix()` (which has a
-     * browser floor). It is not an elevation step: elevation is still
-     * the four steps above.
+     * It sits ABOVE the top of the ladder, so it stays distinct from
+     * every step a control can sit on, a dialog included, where the old
+     * elevated-step hover was the dialog's own fill. An opaque literal
+     * rather than a white alpha (which composites over the container, so
+     * on `--background` it landed on the card rest fill) or a
+     * `color-mix()` (which has a browser floor). It is not an elevation
+     * step: elevation is still the four steps above. Since 2026-11-09 it
+     * is also the quiet fill under text where `--muted` used to be one
+     * (components.md §1).
      *
-     * Since the 2026-11-12 surface ladder (#3826) it is the lowest neutral
-     * still a perceptible step (1.15:1, `INDISTINGUISHABLE`) over the new
-     * `--popover`, #3B3B3B at 1.16:1, rather than the 6% lift (#3D3D3D, 1.20):
-     * every tone that sits on it as text is measured, and lower is better for
-     * all of them. Two role colours, which a hovered member row draws names in,
-     * still miss 4.5:1 on it (Rose 4.49, Violet 4.42; role-colors-contrast.spec.ts
-     * records the exception and #TBD tracks it). Since 2026-11-09 it is also the quiet fill
-     * under text where `--muted` used to be one (components.md §1).
-     * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder change fails there instead of leaving
-     * this value behind. */
+     * It is the lowest neutral still a perceptible step (1.15:1,
+     * `INDISTINGUISHABLE`) over `--popover`: #3B3B3B, 1.16:1. Until the
+     * 2026-11-12 surface ladder (#3826) it was `--popover` lifted 6%
+     * toward white; on the lighter `--popover` that would be #3D3D3D,
+     * and every tone drawn on it as text reads better the lower it sits.
+     * Two role colours, which a hovered member row draws names in, still
+     * miss 4.5:1 on it (Rose 4.49, Violet 4.42; role-colors-contrast.spec.ts
+     * records the exception and #4387 tracks it).
+     * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder
+     * change fails there instead of leaving this value behind. */
     --card-hover: #3B3B3B;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────

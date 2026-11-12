@@ -200,7 +200,7 @@ describe("the accent preview's label tone, computed from the draft", () => {
     // to `#262626`, and keeping an accent there takes enough luminance that
     // `onHouse` ink always clears: the closest a kept colour comes is 4.75:1.
     // So the label warning is a guard no real input reaches today; the screen
-    // test drives it with a stubbed ink, and #TBD asks whether to keep it.
+    // test drives it with a stubbed ink, and #4388 asks whether to keep it.
     const onCard = (accent: string) =>
       resolveChapterAccentColor(accent, {
         background: SURFACE.card,
