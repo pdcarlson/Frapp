@@ -74,43 +74,38 @@ vi.mock("./activity-panel", () => ({
 
 // The link row's actions are its own spec's (`activity-link-row.spec.tsx`);
 // this page owes drawing one per link, with Remove only for an officer.
-/** The chapter's plan: `allowed` false refuses the row actions. */
+/** The chapter's plan: `state.allowed` false refuses the row actions. */
 const mockGate = vi.fn(() => ({
   allowed: true,
   isOffline: false,
   isPending: false,
+  state: { allowed: true },
 }));
 vi.mock("@/components/shared/subscription-gate", () => ({
   useSubscriptionGate: () => mockGate(),
 }));
 const mockActed = vi.fn();
-vi.mock("./activity-row-action", () => {
-  return {
-    // The rule itself is tested in `activity-row-action.spec.tsx`.
-    activityRowActionGate: (gate: {
-      allowed: boolean;
-      isOffline: boolean;
-      isPending: boolean;
-    }) => (gate.allowed || gate.isOffline || gate.isPending ? gate : null),
-    ActivityRowActionButton: ({
-      row,
-      action,
-      onActed,
-    }: {
-      row: ActivityRow;
-      action: string;
-      onActed: () => void;
-    }) => (
-      <button
-        type="button"
-        onClick={() => {
-          mockActed(action, row.key);
-          onActed();
-        }}
-      >{`act:${action}:${row.title}`}</button>
-    ),
-  };
-});
+// The button itself is tested in `activity-row-action.spec.tsx`; the gate
+// rule (`activity-row-action-gate.ts`) is the real one.
+vi.mock("./activity-row-action", () => ({
+  ActivityRowActionButton: ({
+    row,
+    action,
+    onActed,
+  }: {
+    row: ActivityRow;
+    action: string;
+    onActed: (row: ActivityRow) => Promise<unknown>;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        mockActed(action, row.key);
+        void onActed(row);
+      }}
+    >{`act:${action}:${row.title}`}</button>
+  ),
+}));
 vi.mock("./activity-link-row", () => ({
   useActivityLinkActions: () => ({}),
   ActivityLinkRow: ({
@@ -188,6 +183,7 @@ beforeEach(() => {
     allowed: true,
     isOffline: false,
     isPending: false,
+    state: { allowed: true },
   });
 });
 
@@ -591,17 +587,24 @@ describe("ActivityPage", () => {
         ],
       });
 
-    it("puts Confirm, Approve and Check in on the row, and keeps Vote opening the panel", () => {
+    it("puts Confirm and Approve on the row, and keeps Vote and Check in opening the panel", () => {
       mockActivity.mockReturnValue(officerRead());
       render(<ActivityPage />);
 
       for (const name of [
         "act:confirm:Sweep the porch",
         "act:approve:Food bank",
-        "act:check-in:Chapter meeting",
       ]) {
         expect(screen.getByRole("button", { name })).toBeInTheDocument();
       }
+      // An event may need the member's location, which the web can't give
+      // (#4427): Check in stays the row's ask and opens the panel.
+      expect(
+        screen.queryByRole("button", { name: /^act:check-in/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Chapter meeting/ }),
+      ).toHaveAccessibleName(/Check in/);
       // The ask moved out of the row: the row itself no longer names it,
       // and only holds its place for the button laid over it.
       const row = screen.getByRole("button", { name: /^Sweep the porch/ });
@@ -622,13 +625,21 @@ describe("ActivityPage", () => {
       expect(screen.getByText("panel:Sweep the porch")).toBeInTheDocument();
     });
 
-    it("re-reads the page after acting on the row", () => {
-      mockActivity.mockReturnValue(officerRead());
+    it("reads the item and re-reads the page after acting on the row", () => {
+      const read = officerRead();
+      const hours = read.data.needs_you.hours_approvals as Array<
+        Record<string, unknown>
+      >;
+      hours[0] = { ...hours[0], unread: true };
+      mockActivity.mockReturnValue(read);
       render(<ActivityPage />);
       fireEvent.click(
         screen.getByRole("button", { name: "act:approve:Food bank" }),
       );
       expect(mockActed).toHaveBeenCalledWith("approve", "needs:hours:h1");
+      expect(mockMarkRead).toHaveBeenCalledWith([
+        { kind: "hours_entry", item_id: "h1" },
+      ]);
       expect(mockInvalidate).toHaveBeenCalledTimes(1);
     });
 
@@ -637,6 +648,7 @@ describe("ActivityPage", () => {
         allowed: false,
         isOffline: false,
         isPending: false,
+        state: { allowed: false },
       });
       mockActivity.mockReturnValue(officerRead());
       render(<ActivityPage />);

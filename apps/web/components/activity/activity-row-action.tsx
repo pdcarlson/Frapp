@@ -1,40 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   TASK_ACTION_LABELS,
   useConfirmTask,
   type ActivityRow,
   type ActivityRowAction as RowAction,
 } from "@repo/hooks";
+import { TASK_CONFIRM_FAILURE } from "@/components/chat/renderers/task-card";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { Button } from "@/components/ui/button";
-import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { rowActionGateProps } from "./activity-row-action-gate";
 
 const LABELS: Record<RowAction, string> = {
   confirm: TASK_ACTION_LABELS.confirm,
   approve: "Approve",
-  "check-in": "Check in",
 };
 
 /**
- * A row's ask as a button beside it (#4402): Confirm a completed task,
- * Approve service hours, or Check in to an open event in one press, as
- * GitHub's notifications put Done and Slack's Activity puts its quick
- * actions on the row. Everything else (Reject, a vote, a send-back) is still
- * the row's panel.
+ * A row's ask as a button where the ask was drawn (#4402): Confirm a
+ * completed task or Approve service hours in one press, as GitHub's
+ * notifications and Slack's Activity put quick actions on the row.
+ * Everything else (Reject, a send-back, a vote, a check-in) is still the
+ * row's panel.
  *
  * Each calls what the panel calls, with the panel's words: the task card's
- * `useConfirmTask`, the Service hours page's `useServiceReview`, the event
- * card's `useSelfCheckIn`. They are paid-chapter writes, so the page draws
- * this only while its subscription gate doesn't refuse them
- * (`activityRowActionGate`); refused, the row keeps its ask and opens the
- * panel, which says why. Offline or still checking, the button is disabled
- * with the gate's reason. `onActed` re-reads the page so the row leaves
- * Needs you.
+ * `useConfirmTask` and failure copy, the Service hours review's `approve`.
+ * The page draws this only while the chapter's plan allows those writes
+ * (`activityRowActionGate`); offline or still loading the chapter, it is
+ * disabled with the gate's reason.
+ *
+ * Once the write lands the button stays disabled: the row leaves Needs you
+ * on the page's re-read, and a second press before then would be refused
+ * as a repeat. `onActed` re-reads and resolves when that read settles, and
+ * focus then moves to the row after this one (or before it, at the end of a
+ * list), so a keyboard user carries on down the list instead of starting
+ * again from the top of the page.
  */
 export function ActivityRowActionButton({
   row,
@@ -45,63 +49,67 @@ export function ActivityRowActionButton({
   row: ActivityRow;
   action: RowAction;
   gate: SubscriptionGate;
-  onActed: () => void;
+  onActed: (row: ActivityRow) => Promise<unknown>;
 }) {
   const confirmTask = useConfirmTask();
   const review = useServiceReview();
-  const checkIn = useSelfCheckIn();
   const { toast } = useToast();
-  const [busy, setBusy] = useState(false);
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  const ref = useRef<HTMLButtonElement>(null);
+
+  async function act(): Promise<boolean> {
+    if (action === "confirm" && row.kind === "task") {
+      try {
+        await confirmTask.mutateAsync(row.task.id);
+        return true;
+      } catch (error) {
+        toast({
+          title: TASK_CONFIRM_FAILURE.title,
+          description: getErrorMessage(error, TASK_CONFIRM_FAILURE.fallback),
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+    if (action === "approve" && row.kind === "hours") {
+      // Toasts its own outcome; `false` is a refusal it has already said.
+      return review.approve(row.entry);
+    }
+    return false;
+  }
 
   async function run() {
-    setBusy(true);
-    try {
-      if (action === "confirm" && row.kind === "task") {
-        await confirmTask.mutateAsync(row.task.id).then(onActed, (error) =>
-          toast({
-            title: "Couldn't confirm task",
-            description: getErrorMessage(
-              error,
-              "Only admins with tasks:manage can confirm completions.",
-            ),
-            variant: "destructive",
-          }),
-        );
-      } else if (action === "approve" && row.kind === "hours") {
-        if (await review.approve(row.entry)) onActed();
-      } else if (action === "check-in" && row.kind === "event") {
-        await checkIn.run(row.event.id, row.event.point_value);
-        onActed();
-      }
-    } finally {
-      setBusy(false);
+    setState("busy");
+    // Where focus goes once this row has gone: the next row's own button,
+    // which keeps its node across the re-read, or the previous one.
+    const item = ref.current?.closest("li");
+    const neighbour = (item?.nextElementSibling ?? item?.previousElementSibling)
+      ?.firstElementChild as HTMLElement | null | undefined;
+    if (!(await act())) {
+      setState("idle");
+      return;
+    }
+    setState("done");
+    const hadFocus = document.activeElement === ref.current;
+    await onActed(row);
+    if (hadFocus && neighbour?.isConnected && !ref.current?.isConnected) {
+      neighbour.focus();
     }
   }
 
   const label = LABELS[action];
   return (
     <Button
+      ref={ref}
       type="button"
       variant="tinted"
       size="sm"
-      className="h-7 shrink-0 px-2.5 text-caption"
+      className="pointer-events-auto h-7 shrink-0 px-2.5 text-caption"
       aria-label={`${label}: ${row.title}`}
-      {...gate.controlProps(busy)}
+      {...rowActionGateProps(gate, state !== "idle")}
       onClick={() => void run()}
     >
       {label}
     </Button>
   );
-}
-
-/**
- * The gate the page hands its row actions, or `null` when the chapter's plan
- * refuses these writes: then no row draws a button and each opens its panel,
- * where the subscription notice says why. Offline and still-checking are not
- * refusals; the buttons show, disabled, with the gate's reason.
- */
-export function activityRowActionGate(
-  gate: SubscriptionGate,
-): SubscriptionGate | null {
-  return gate.allowed || gate.isOffline || gate.isPending ? gate : null;
 }

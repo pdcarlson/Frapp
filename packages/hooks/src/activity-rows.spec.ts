@@ -1028,7 +1028,8 @@ describe("activityRowAction (#4402)", () => {
         .map((row) => [row.title, activityRowAction(row)]),
     );
     expect(actions).toEqual({
-      Open: "check-in",
+      // Not yet: an event may need a location the web can't give (#4427).
+      Open: null,
       Mine: null,
       Done: "confirm",
       "Food bank": "approve",

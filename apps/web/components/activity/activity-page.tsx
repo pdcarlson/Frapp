@@ -31,10 +31,8 @@ import {
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
-import {
-  ActivityRowActionButton,
-  activityRowActionGate,
-} from "./activity-row-action";
+import { ActivityRowActionButton } from "./activity-row-action";
+import { activityRowActionGate } from "./activity-row-action-gate";
 import {
   ActivityAsk,
   ActivityRowLead,
@@ -122,7 +120,8 @@ const ROW_CLASS = cn(
 interface RowActions {
   /** `null` when the chapter's plan refuses the writes: rows open their panel. */
   gate: SubscriptionGate | null;
-  onActed: () => void;
+  /** Records the read and re-reads; resolves when the read settles. */
+  onActed: (row: ActivityRow) => Promise<unknown>;
 }
 
 /**
@@ -151,7 +150,9 @@ function PanelRow({
         // Laid over the place the row keeps for its ask (a sibling, not
         // nested: a button can't hold a button), right of it only the
         // row's chevron: its 8px padding, 12px gap and 16px glyph.
-        <span className="absolute right-9 top-1/2 z-10 -translate-y-1/2">
+        // The wrapper lets a click through, so a disabled button (offline)
+        // leaves the row under it opening the panel, as the ask did.
+        <span className="pointer-events-none absolute right-9 top-1/2 z-10 -translate-y-1/2">
           <ActivityRowActionButton
             row={row}
             action={action}
@@ -455,12 +456,18 @@ export function ActivityPage() {
     );
   }
 
-  const refresh = () => {
-    if (!chapterId) return;
-    void queryClient.invalidateQueries({
-      queryKey: activityKeys.chapter(chapterId),
-      exact: true,
-    });
+  const reread = (): Promise<unknown> =>
+    chapterId
+      ? queryClient.invalidateQueries({
+          queryKey: activityKeys.chapter(chapterId),
+          exact: true,
+        })
+      : Promise.resolve();
+  const refresh = () => void reread();
+  // Acting on an item from Activity reads it, as opening it does (#4402).
+  const actedOnRow = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
+    return reread();
   };
 
   return (
@@ -513,7 +520,7 @@ export function ActivityPage() {
             filtered={filter !== "all"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
-            rowActions={{ gate: actionGate, onActed: refresh }}
+            rowActions={{ gate: actionGate, onActed: actedOnRow }}
             onOpen={openFromList}
           />
         ),
