@@ -105,8 +105,39 @@ describe("mobile query-error reporting", () => {
     await failQuery(queryClient, ["polls"], new TypeError("Network request timed out"));
     expect(captureException).toHaveBeenCalledTimes(1);
     expect(captureException.mock.calls[0]![1]).toMatchObject({
-      fingerprint: ["react-query", "query", "polls", "network"],
+      fingerprint: ["react-query", "query", "network"],
     });
+  });
+
+  it("reports expo/fetch's dropped connection as a network failure (#3746)", async () => {
+    // expo/fetch's FetchError keeps the name Error and prefixes the native
+    // message with "fetch failed: ". The client-policy client, because the
+    // product client already spent its one network report on the test above
+    // (one per kind per 10 minutes, whatever the root).
+    await failQuery(
+      clientPolicyQueryClient,
+      CLIENT_POLICY_QUERY_KEY,
+      new Error(
+        "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+      ),
+    );
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]![1]).toMatchObject({
+      fingerprint: ["react-query", "query", "network"],
+      tags: expect.objectContaining({
+        query_failure: "network",
+        query_key_root: "client-policy",
+      }),
+    });
+  });
+
+  it("does not report expo/fetch's already-aborted rejection", async () => {
+    await failQuery(
+      queryClient,
+      ["tasks"],
+      new Error("fetch failed: The operation was aborted."),
+    );
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("does not report a query TanStack cancelled", async () => {
