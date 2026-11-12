@@ -5615,7 +5615,7 @@ export interface components {
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description That role's name, the group's heading, or null when they hold no role. */
+            /** @description The group's heading: that role's name, "Members" for the chapter's Everyone role, or null when they hold no role. */
             role_name: string | null;
         };
         AddChannelMemberDto: {
