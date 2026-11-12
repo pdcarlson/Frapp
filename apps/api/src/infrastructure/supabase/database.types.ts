@@ -408,7 +408,7 @@ export interface Database {
         Returns: Task[];
       };
       /**
-       * `20261113040002` (#3735) — move a PENDING excuse to a decision and
+       * `20261113040003` (#3735) — move a PENDING excuse to a decision and
        * write the attendance it implies in the same transaction. Empty when
        * the excuse was no longer pending.
        */
@@ -1015,7 +1015,7 @@ export interface Database {
         Returns: number | null;
       };
       /**
-       * `20261113040002` (#3735) — delete a PENDING or APPROVED excuse, and an
+       * `20261113040003` (#3735) — delete a PENDING or APPROVED excuse, and an
        * approved one's EXCUSED attendance row. Empty when there was none.
        */
       withdraw_event_excuse: {

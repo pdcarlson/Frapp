@@ -76,7 +76,7 @@ create trigger trg_event_excuses_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.event_excuses is
-  'A member''s request to be excused from an event that requires them, and its decision. Approving writes event_attendance EXCUSED (decide_event_excuse). See 20261113040002_event_excuses.sql.';
+  'A member''s request to be excused from an event that requires them, and its decision. Approving writes event_attendance EXCUSED (decide_event_excuse). See 20261113040003_event_excuses.sql.';
 
 -- ── decide_event_excuse ──────────────────────────────────────────────────
 
