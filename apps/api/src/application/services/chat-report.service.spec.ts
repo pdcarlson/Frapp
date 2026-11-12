@@ -431,7 +431,7 @@ describe('ChatReportService', () => {
         // reported. The queue reads only the report row, so what the officer
         // sees is the snapshot written at file time, whatever happens to the
         // message afterwards (a delete tombstones `content` and wipes
-        // `metadata`; #1575 tracks `payload`). The store below stands in for
+        // `metadata` and `payload`, #1575). The store below stands in for
         // the report table.
         const stored: ChatMessageReportView[] = [];
         channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);

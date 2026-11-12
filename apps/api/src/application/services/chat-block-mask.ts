@@ -141,6 +141,9 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
     thread_reply_count: message.thread_reply_count ?? 0,
     thread_last_reply_at: message.thread_last_reply_at ?? null,
     thread_recent_sender_ids: message.thread_recent_sender_ids ?? [],
+    // The latest reply is another member's content, which this mask is not
+    // about: `maskBlockedMessages` applies the viewer's list to its replier.
+    thread_last_reply: message.thread_last_reply ?? null,
     created_at: message.created_at,
     sender_blocked: true,
   };
@@ -189,6 +192,81 @@ export function maskBlockedBookmarkMessage(
 }
 
 /**
+ * What a deleted message says instead of its content. Like the block
+ * sentinel, a rendering fallback only: the machine-readable signal is
+ * `is_deleted`.
+ */
+export const DELETED_MESSAGE_CONTENT = '[message deleted]';
+
+/**
+ * What a soft-deleted message keeps of its `metadata`.
+ *
+ * Nothing, except an imported row's `discord_import_id`: it is the only key the
+ * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
+ * so wiping it would leave the tombstone behind when its import is deleted,
+ * still carrying the Discord author and an avatar path into purged storage. A
+ * linked member can delete their own imported messages (#2878), so this is
+ * reachable by any member, not only a moderator.
+ */
+export function tombstoneMetadata(
+  message: Pick<ChatMessage, 'kind' | 'metadata'>,
+): Record<string, unknown> {
+  if (message.kind !== 'imported') return {};
+  const importId: unknown = message.metadata?.discord_import_id;
+  return typeof importId === 'string' ? { discord_import_id: importId } : {};
+}
+
+/**
+ * What a soft-deleted message keeps of its `payload` (#1575).
+ *
+ * Nothing, for every card kind: the payload is the card's data (an event's
+ * name and place, a poll's question and options). An imported row's payload is
+ * not a card but the Discord archive sidecar, and keeps `source` and
+ * `author_username`: the Discord handle the operator backfills read back to
+ * name a member (`backfill-discord-mention-tokens.ts`,
+ * `backfill-discord-import-people.ts`), which the row's own `author_name`
+ * already shows. Its reactions, stickers and the rest go. The cleanup
+ * migration `20261112060000_clear_deleted_message_payloads.sql` writes the
+ * same shape, so the two must stay in step.
+ */
+export function tombstonePayload(
+  message: Pick<ChatMessage, 'kind' | 'payload'>,
+): Record<string, unknown> | null {
+  if (message.kind !== 'imported') return null;
+  const username: unknown = message.payload?.author_username;
+  return typeof username === 'string'
+    ? { source: 'discord', author_username: username }
+    : { source: 'discord' };
+}
+
+/**
+ * A deleted message as any reader is served it: the tombstone and nothing of
+ * what it said (#1575).
+ *
+ * The delete clears `content`, `metadata` and `payload` when it lands
+ * (`ChatService.softDeleteMessage`). This is the read half, for a row whose
+ * write did not: everything deleted before the delete cleared `payload` still
+ * holds a card's data in it (an event's name and place, a poll's question and
+ * options). Every read that serves message rows to a member goes through
+ * {@link maskBlockedMessages}, which applies this, and the raw answers to
+ * unpin, delete and a send's retry apply it themselves (pin refuses a deleted
+ * message). It covers the API only: until the cleanup migration runs, those
+ * rows are still readable under `chat_messages`' own read policy.
+ *
+ * Structure stays: ids, kind, timing, pins, thread counts and `is_deleted`,
+ * which the client needs to draw the tombstone in place.
+ */
+export function redactDeletedMessage<T extends ChatMessage>(message: T): T {
+  if (!message.is_deleted) return message;
+  return {
+    ...message,
+    content: DELETED_MESSAGE_CONTENT,
+    payload: tombstonePayload(message),
+    metadata: tombstoneMetadata(message),
+  };
+}
+
+/**
  * Apply `blockedUserIds` to `messages`, flagging every row.
  *
  * A message is masked when {@link isFromBlockedSender} says so.
@@ -205,10 +283,60 @@ export function maskBlockedMessages(
   const blocked = new Set(blockedUserIds);
 
   return messages.map((message) =>
-    isFromBlockedSender(message.sender_id, blocked)
-      ? maskMessage(message)
-      : withFlaggerMasked({ ...message, sender_blocked: false }, blocked),
+    withThreadPreviewMasked(
+      isFromBlockedSender(message.sender_id, blocked)
+        ? maskMessage(message)
+        : withFlaggerMasked(
+            redactDeletedMessage({ ...message, sender_blocked: false }),
+            blocked,
+          ),
+      blocked,
+    ),
   );
+}
+
+/**
+ * A thread's parent whose latest reply is from a blocked member serves that
+ * preview withheld (#4297), whoever wrote the parent, and every other preview
+ * flagged clear.
+ *
+ * The preview is the replier's content riding on someone else's row, so the
+ * row's own mask never reaches it: without this, a blocked member's reply
+ * would read on the card under any parent. What survives is what the row's own
+ * mask keeps of a message (`maskMessage`): the reply's id, its sender and its
+ * time, with `sender_blocked: true`. That flag is the server's verdict, which
+ * the client carries onto the parent's next Realtime echo (`mergeServerRow`),
+ * as it does a masked message's, so a block made on another device holds even
+ * where this client's list predates it; and it is how Unblock finds the
+ * parents to re-read (`hasMaskedCopyFrom`). Nothing replaces it with the next
+ * reply: the trigger keeps one, and the open thread is where the rest are read.
+ * The Realtime echo carries the preview raw, and each client applies its own
+ * list (`threadPreviewVisible`).
+ */
+function withThreadPreviewMasked(
+  message: MaskedChatMessage,
+  blocked: ReadonlySet<string>,
+): MaskedChatMessage {
+  const preview = message.thread_last_reply;
+  if (!preview) return message;
+  if (!isFromBlockedSender(preview.sender_id, blocked)) {
+    return {
+      ...message,
+      thread_last_reply: { ...preview, sender_blocked: false },
+    };
+  }
+  return {
+    ...message,
+    thread_last_reply: {
+      id: preview.id,
+      sender_id: preview.sender_id,
+      content: '',
+      kind: null,
+      attachment_count: 0,
+      created_at: preview.created_at,
+      sender_blocked: true,
+    },
+  };
 }
 
 /**

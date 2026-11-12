@@ -91,7 +91,7 @@ export default async function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0A0A0A", // --background, the page stage
+        backgroundColor: "#050505", // --background, the page stage
         fontFamily: "Figtree",
       }}
     >

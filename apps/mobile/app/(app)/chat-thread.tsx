@@ -117,6 +117,7 @@ import {
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { writeLastChannel } from "@/lib/chat/last-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
@@ -318,6 +319,9 @@ function ChannelThreadScreen() {
     retry,
     discard,
   } = useChatChannel(channelId);
+
+  // What's new in the threads the viewer follows here, for each card (#4297).
+  const threadUnread = useThreadUnread(channelId, messages);
 
   // `viewerId` is `null` both while `/v1/users/me` is in flight and after it
   // failed, and a row can't be drawn in either case (#2250): a row says whose
@@ -1054,6 +1058,8 @@ function ChannelThreadScreen() {
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
           onOpenThread={canThreadHere ? openThread : undefined}
+          threadUnread={threadUnread[item.message.id] ?? 0}
+          memberAvatarFor={memberAvatarFor}
         />
       );
     },
@@ -1082,6 +1088,8 @@ function ChannelThreadScreen() {
       handleReload,
       canThreadHere,
       openThread,
+      threadUnread,
+      memberAvatarFor,
     ],
   );
 

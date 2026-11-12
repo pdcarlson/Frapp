@@ -59,6 +59,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
@@ -124,6 +125,7 @@ import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
+import { usePrefetchUnreadChannels } from "@/lib/chat/prefetch-channel";
 
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
@@ -480,6 +482,28 @@ export default function ChatHomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listAnswered, viewerId]);
 
+  // Read ahead the unread channels and DMs the member is likely to open next
+  // (#3699), so the thread paints rows as it slides in rather than its
+  // skeleton. Muted ones are skipped unless they mention the member: chat home
+  // draws them as read. Held while the launch jump may still open the last
+  // channel, whose own read must not queue behind these.
+  const unreadChannelIds = useMemo(
+    () =>
+      listedChannels(allChannels)
+        .filter((channel) => {
+          const counts = unreadByChannelId?.get(channel.id);
+          const mentions = counts?.mentionCount ?? 0;
+          if (mutedChannelIds?.has(channel.id)) return mentions > 0;
+          return (counts?.unreadCount ?? 0) > 0 || mentions > 0;
+        })
+        .map((channel) => channel.id),
+    [allChannels, unreadByChannelId, mutedChannelIds],
+  );
+  usePrefetchUnreadChannels(
+    unreadChannelIds,
+    isFocused && listAnswered && !!viewerId && !holdingForLaunch,
+  );
+
   function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
     // `lib/routes.spec.ts`'s literal scan — the `pathname:` matcher added
@@ -582,7 +606,7 @@ export default function ChatHomeScreen() {
     </View>
   );
 
-  return (
+  const screen = (
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
@@ -873,6 +897,14 @@ export default function ChatHomeScreen() {
         }}
       />
     </ScreenShell>
+  );
+  // Swipe left to Messages (#3774), beside the top-right door.
+  return (
+    <MessagesSwipeArea
+      enabled={!filterMenu.visible && !accountMenu.visible && !menuTarget}
+    >
+      {screen}
+    </MessagesSwipeArea>
   );
 }
 

@@ -1,9 +1,20 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { memberAvatarHue, memberAvatarTint, useNow } from "@repo/hooks";
-import { threadChipLabel } from "@repo/chat-core/threads";
-import type { ThreadSummary } from "@repo/chat-core/types";
+import {
+  authorInitialsFallback,
+  memberAvatarHue,
+  memberAvatarTint,
+  resolveAuthorLabel,
+  resolveAuthorName,
+  useNow,
+} from "@repo/hooks";
+import {
+  threadCardLabel,
+  threadChipLabel,
+  threadPreviewParts,
+} from "@repo/chat-core/threads";
+import type { ThreadLastReply, ThreadSummary } from "@repo/chat-core/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
@@ -20,6 +31,14 @@ import { cn, initials } from "@/lib/utils";
  * "last reply" drops out whole first, then the faces; the count, "2 new"
  * and the chevron always show.
  *
+ * Under that, a one-line preview of the latest reply (slice 2): that
+ * replier's face, first name ("You" for the viewer's own, "Member 2f4a1c"
+ * for someone who left) and words, cut
+ * with an ellipsis. Only when the row hands one over: `MessageItem` passes
+ * it through `threadPreviewVisible`, so a blocked replier's words never draw.
+ * The preview line is capped at 24rem, so a long reply doesn't widen the
+ * card, or the message under it, to the pane.
+ *
  * On an Important row the count draws in the foreground, as every
  * chapter-accent text on that row does (`IMPORTANT_ROW`), matching mobile.
  */
@@ -29,6 +48,8 @@ export function ThreadChip({
   avatarFor,
   roleColorFor,
   unread = 0,
+  preview = null,
+  viewerId = null,
   onOpen,
 }: {
   summary: ThreadSummary;
@@ -39,6 +60,10 @@ export function ThreadChip({
   roleColorFor?: (userId: string) => string | null;
   /** Replies new to the viewer, from the threads they follow. */
   unread?: number;
+  /** The latest reply to preview, already cleared against the block list. */
+  preview?: ThreadLastReply | null;
+  /** Whose reply reads "You". */
+  viewerId?: string | null;
   onOpen?: () => void;
 }) {
   // The app's one shared clock, so every card ticks together.
@@ -89,7 +114,10 @@ export function ThreadChip({
           data-slot="thread-unread"
           className="flex shrink-0 items-center gap-1 font-semibold text-foreground"
         >
-          <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+          <span
+            className="h-2 w-2 rounded-full bg-primary"
+            aria-hidden="true"
+          />
           {fresh}
         </span>
       ) : null}
@@ -110,16 +138,78 @@ export function ThreadChip({
       />
     </>
   );
+  const previewSender = preview?.sender_id ?? null;
+  // Named as the timeline names its author, by the rule the phone's card
+  // shares: the roster's first name, "You", Frapp, or "Member 2f4a1c" for
+  // someone who left.
+  const parts = preview
+    ? threadPreviewParts(preview, viewerId, {
+        nameOf: (id) =>
+          resolveAuthorName({ sender_id: id, author_name: null }, nameFor),
+        fallbackLabel: (id) =>
+          resolveAuthorLabel(
+            { sender_id: id, author_name: null },
+            nameFor,
+            null,
+          ),
+      })
+    : null;
+  const previewAuthor = { sender_id: previewSender, author_name: null };
+  const previewSrc = previewSender
+    ? (avatarFor?.(previewSender) ?? null)
+    : null;
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-2">{content}</span>
+      {preview ? (
+        <span
+          data-slot="thread-preview"
+          // A fixed cap, not a percentage: the row's `w-fit` extent sizes
+          // to this line's one-line width, and a percentage max-width counts
+          // as none there, so a long reply would widen the message and push
+          // its action bar to the pane's edge.
+          className="flex min-w-0 max-w-[24rem] items-center gap-1.5"
+        >
+          {previewSender ? (
+            <Avatar className="h-5 w-5 shrink-0" aria-hidden="true">
+              {previewSrc ? <AvatarImage src={previewSrc} alt="" /> : null}
+              <AvatarFallback
+                className="text-label"
+                tint={memberAvatarTint(
+                  memberAvatarHue(
+                    previewSender,
+                    roleColorFor?.(previewSender) ?? null,
+                  ),
+                )}
+              >
+                {parts?.fullName
+                  ? initials(parts.fullName)
+                  : authorInitialsFallback(previewAuthor)}
+              </AvatarFallback>
+            </Avatar>
+          ) : null}
+          {parts?.name ? (
+            <span className="max-w-[40%] shrink-0 truncate font-semibold text-foreground">
+              {parts.name}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate text-muted-foreground">
+            {parts?.text}
+          </span>
+        </span>
+      ) : null}
+    </>
+  );
   const className = cn(
     // `self-start`: in cozy and compact the card sits in a stretching
     // column, and a bordered card as wide as a long message reads wrong.
-    "mt-1.5 inline-flex min-w-0 max-w-full self-start items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
+    "mt-1.5 inline-flex min-w-0 max-w-full self-start flex-col gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-caption leading-5",
   );
-  const label = [replies, fresh, lastReply].filter(Boolean).join(", ");
+  const label = threadCardLabel({ replies, fresh, lastReply, preview: parts });
   if (!onOpen) {
     return (
       <div data-slot="thread-card" className={className}>
-        {content}
+        {body}
       </div>
     );
   }
@@ -131,7 +221,7 @@ export function ThreadChip({
       aria-label={`${label}. Open thread`}
       onClick={onOpen}
     >
-      {content}
+      {body}
     </button>
   );
 }

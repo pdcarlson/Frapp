@@ -37,7 +37,7 @@ import type { MemberAvatarTint } from "@repo/hooks";
  *
  * A member's initials take their own color (#3860, Paul approved 2026-11-10):
  * pass `tint` from the roster's `avatarTintFor(userId)` and the circle draws
- * style A, the hue at 18% over `--popover` with the initials in the full hue,
+ * style A, the hue at 14% over `--card` with the initials in the full hue,
  * over whatever fill and initials color the caller's styles carry. A photo
  * covers it exactly as it covers the initials.
  */

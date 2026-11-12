@@ -18,7 +18,7 @@ describe("AvatarFallback", () => {
     expect(fallback.getAttribute("data-avatar-tint")).toBeNull();
   });
 
-  it("paints style A from a member's tint: the 18% fill and the full hue (#3860)", () => {
+  it("paints style A from a member's tint: the 14% fill and the full hue (#3860)", () => {
     const tint = memberAvatarTint("#F2994A");
     render(
       <Avatar>
@@ -26,8 +26,8 @@ describe("AvatarFallback", () => {
       </Avatar>,
     );
     const fallback = screen.getByText("JD");
-    // #443426 and #F2994A, as the browser serializes them.
-    expect(fallback.style.backgroundColor).toBe("rgb(68, 52, 38)");
+    // #43362B and #F2994A, as the browser serializes them.
+    expect(fallback.style.backgroundColor).toBe("rgb(67, 54, 43)");
     expect(fallback.style.color).toBe("rgb(242, 153, 74)");
     expect(fallback.getAttribute("data-avatar-tint")).toBe("#F2994A");
   });

@@ -451,37 +451,104 @@ describe('SupabaseSearchRepository — query shape', () => {
       );
     });
 
-    it('has:file joins attachments without a content-type condition', async () => {
+    it('has:file joins attachments without a content-type condition, and strips the embed', async () => {
       const { client, chains } = recordingClient({
         data: [{ id: 'm-1', chat_message_attachments: [{ id: 'a-1' }] }],
         error: null,
       });
       const repo = new SupabaseSearchRepository(client);
 
-      const hits = await repo.searchMessages(['c-1'], '', 10, {
+      const hits = await repo.searchMessages(['c-1'], 'budget', 10, {
         has: ['file'],
       });
 
       expect(String(chains.chat_messages.select.mock.calls[0][0])).toContain(
         'chat_message_attachments!inner(id)',
       );
+      // A file is any attachment, one with a null content type included.
       expect(chains.chat_messages.like).not.toHaveBeenCalled();
       // The embed filters; it is not returned as part of a message.
       expect(hits).toEqual([{ id: 'm-1' }]);
     });
 
-    it('skips the text match for an empty query and joins nothing unasked', async () => {
+    it('joins nothing unasked on the text path', async () => {
       const { client, chains } = recordingClient();
       const repo = new SupabaseSearchRepository(client);
 
-      await repo.searchMessages(['c-1'], '', 10, { fromUserId: SENDER });
+      await repo.searchMessages(['c-1'], 'budget', 10, { fromUserId: SENDER });
 
-      const messages = chains.chat_messages;
-      expect(messages.textSearch).not.toHaveBeenCalled();
-      expect(messages.in).toHaveBeenCalledWith('channel_id', ['c-1']);
-      expect(String(messages.select.mock.calls[0][0])).not.toContain(
-        'chat_message_attachments',
+      expect(
+        String(chains.chat_messages.select.mock.calls[0][0]),
+      ).not.toContain('chat_message_attachments');
+    });
+
+    it('with no text, asks the filter function once for every channel, never the table (#3965)', async () => {
+      const { client, from, rpc, chains } = recordingClient();
+      const repo = new SupabaseSearchRepository(client);
+      // More channels than one URL can carry (#3265): the ids go in the body.
+      const channels = Array.from({ length: 250 }, (_, i) => `c-${i}`);
+
+      await repo.searchMessages(channels, '', 10, {
+        fromUserId: SENDER,
+        after: '2026-11-01T00:00:00.000Z',
+        has: ['file', 'link'],
+      });
+
+      expect(from).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(rpc).toHaveBeenCalledWith('search_chat_messages_filtered', {
+        p_channel_ids: channels,
+        p_sender_id: SENDER,
+        p_after: '2026-11-01T00:00:00.000Z',
+        p_before: null,
+        p_has: ['file', 'link'],
+        p_limit: 10,
+      });
+      // The generated tsvector is not shipped back per row.
+      expect(String(chains.rpc.select.mock.calls[0][0])).not.toContain(
+        'content_search',
       );
+    });
+
+    it('with no text, returns the newest rows first, cut to the limit', async () => {
+      const { client } = recordingClient({
+        data: [
+          { id: 'b', created_at: '2026-11-01T00:00:00+00:00' },
+          { id: 'c', created_at: '2026-11-03T00:00:00+00:00' },
+          { id: 'a', created_at: '2026-11-02T00:00:00+00:00' },
+        ],
+        error: null,
+      });
+      const repo = new SupabaseSearchRepository(client);
+
+      const hits = await repo.searchMessages(['c-1', 'c-2'], '', 2, {
+        has: ['poll'],
+      });
+
+      expect(hits.map((h) => h.id)).toEqual(['c', 'a']);
+    });
+
+    it('with no text and no channels, calls nothing', async () => {
+      const { client, from, rpc } = recordingClient();
+      const repo = new SupabaseSearchRepository(client);
+
+      expect(await repo.searchMessages([], '', 10, { has: ['poll'] })).toEqual(
+        [],
+      );
+      expect(rpc).not.toHaveBeenCalled();
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a function error rather than an empty result', async () => {
+      const { client } = recordingClient({
+        data: null,
+        error: { message: 'boom', code: 'XX000' },
+      });
+      const repo = new SupabaseSearchRepository(client);
+
+      await expect(
+        repo.searchMessages(['c-1'], '', 10, { has: ['link'] }),
+      ).rejects.toBeInstanceOf(SupabaseQueryError);
     });
   });
 

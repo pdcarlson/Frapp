@@ -39,6 +39,8 @@ const mockState = vi.hoisted(() => ({
   signInWithOtpResult: { error: null as { message: string } | null },
   signInWithPasswordCalls: [] as Array<{ email: string; password: string }>,
   signInWithOtpCalls: [] as Array<{ email: string }>,
+  resendResult: { error: null as { message: string; code?: string } | null },
+  resendCalls: [] as Array<Record<string, unknown>>,
   signInWithOAuthCalls: [] as Array<{
     provider: string;
     options?: {
@@ -68,6 +70,10 @@ const resetObservabilityOnLogout = vi.hoisted(() => vi.fn());
 vi.mock("./observability/reset", () => ({
   resetObservabilityOnLogout,
 }));
+
+const reportAuthFailure = vi.hoisted(() => vi.fn());
+
+vi.mock("./sentry/auth-failures", () => ({ reportAuthFailure }));
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(
@@ -153,6 +159,10 @@ vi.mock("./supabase", async () => {
         mockState.signInWithOtpCalls.push(input);
         return mockState.signInWithOtpResult;
       }),
+      resend: vi.fn(async (input: Record<string, unknown>) => {
+        mockState.resendCalls.push(input);
+        return mockState.resendResult;
+      }),
       signInWithOAuth: vi.fn(
         async (input: {
           provider: string;
@@ -186,6 +196,7 @@ vi.mock("./supabase", async () => {
 });
 
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
+import { DEAD_LINK_COPY, FINISH_FAILED_COPY } from "./auth-providers";
 import { AUTH_TOKEN_STORAGE_KEY, readAuthToken } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
@@ -347,6 +358,8 @@ beforeEach(async () => {
   mockState.signInWithOtpResult = { error: null };
   mockState.signInWithPasswordCalls = [];
   mockState.signInWithOtpCalls = [];
+  mockState.resendResult = { error: null };
+  mockState.resendCalls = [];
   mockState.signInWithOAuthCalls = [];
   mockState.signInWithOAuthResult = {
     data: { url: "https://accounts.google.com/o/oauth" },
@@ -789,6 +802,31 @@ describe("AuthSessionProvider — sign-in", () => {
     expect(mockState.secureStore.has(AUTH_TOKEN_STORAGE_KEY)).toBe(false);
   });
 
+  it("reports a refused sign-in by its error, never the credentials (#3832)", async () => {
+    mockState.signInWithPasswordResult = {
+      error: { message: "Invalid login credentials" },
+    };
+    reportAuthFailure.mockClear();
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current
+        .signInWithPassword({ email: "officer@university.edu", password: "wrong" })
+        .catch(() => undefined);
+    });
+
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    const [input] = reportAuthFailure.mock.calls[0]!;
+    expect(input).toEqual({
+      flow: "password_sign_in",
+      screen: "/sign-in",
+      error: { message: "Invalid login credentials" },
+    });
+    expect(JSON.stringify(input)).not.toContain("officer@university.edu");
+    expect(JSON.stringify(input)).not.toContain("wrong");
+  });
+
   it("sends a magic link without creating a session", async () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
@@ -807,6 +845,46 @@ describe("AuthSessionProvider — sign-in", () => {
     ]);
     expect(result.current.status).toBe("unauthenticated");
     expect(mockState.secureStore.has(AUTH_TOKEN_STORAGE_KEY)).toBe(false);
+  });
+});
+
+describe("AuthSessionProvider — confirmation resend (#3833)", () => {
+  it("resends the sign-up confirmation back into the app", async () => {
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.resendConfirmation({
+        email: "officer@university.edu",
+      });
+    });
+
+    // The magic link's redirect, so the link opens this app, not a browser.
+    expect(mockState.resendCalls).toEqual([
+      {
+        type: "signup",
+        email: "officer@university.edu",
+        options: { emailRedirectTo: "frapp:///?" },
+      },
+    ]);
+  });
+
+  it("reports and rethrows a refused resend", async () => {
+    mockState.resendResult = {
+      error: {
+        message: "For security purposes, you can only request this after 30 seconds.",
+        code: "over_email_send_rate_limit",
+      },
+    };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await expect(
+      result.current.resendConfirmation({ email: "officer@university.edu" }),
+    ).rejects.toMatchObject({ code: "over_email_send_rate_limit" });
+    expect(reportAuthFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: "confirmation_resend" }),
+    );
   });
 });
 
@@ -830,15 +908,15 @@ describe("AuthSessionProvider — magic-link callback", () => {
   });
 
   it("surfaces the reason an expired link failed instead of failing silently", async () => {
+    // GoTrue's redirect for a dead email link, as it sends it.
     mockState.deepLinkUrl =
-      "frapp://#error=access_denied&error_description=Email+link+is+invalid+or+has+expired";
+      "frapp://#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
+    // In Frapp's words, read from the code; never GoTrue's sentence (#3833).
     await waitFor(() =>
-      expect(result.current.callbackError).toBe(
-        "Email link is invalid or has expired",
-      ),
+      expect(result.current.callbackError).toBe(DEAD_LINK_COPY),
     );
     expect(result.current.status).toBe("unauthenticated");
 
@@ -852,7 +930,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
-      expect(result.current.callbackError).toBe("access_denied"),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
 
     await act(async () => {
@@ -862,18 +940,14 @@ describe("AuthSessionProvider — magic-link callback", () => {
     expect(result.current.callbackError).toBeNull();
   });
 
-  it("preserves an encoded '+' in the provider's message", async () => {
+  it("never shows the provider's own sentence", async () => {
     mockState.deepLinkUrl =
       "frapp://#error_description=Rate+limit+hit%3A+wait+1%2B+minutes";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    // URLSearchParams already turns '+' into a space and %2B into '+'. A second
-    // unescaping pass would render this as "1  minutes".
     await waitFor(() =>
-      expect(result.current.callbackError).toBe(
-        "Rate limit hit: wait 1+ minutes",
-      ),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
   });
 
@@ -882,7 +956,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
-      expect(result.current.callbackError).toBe("access_denied"),
+      expect(result.current.callbackError).toBe(FINISH_FAILED_COPY),
     );
 
     await act(async () => {
@@ -924,6 +998,63 @@ describe("AuthSessionProvider — magic-link callback", () => {
     );
     expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
     expect(result.current.callbackError).toBeNull();
+  });
+
+  it("reports a dead link by its code, never its URL (#3832)", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl =
+      "frapp://#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: undefined,
+      code: "otp_expired",
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("frapp:");
+  });
+
+  it("reports a provider's bare `error` identifier when the link has no error_code", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl =
+      "frapp://#error=access_denied&error_description=User+denied+access";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: undefined,
+      code: "access_denied",
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("denied access");
+  });
+
+  it("reports a code exchange Auth refused, with nothing from the link", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl = "frapp:///?code=single-use-secret";
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    const refusal = { name: "AuthApiError", status: 400, code: "bad_code_verifier", message: "invalid" };
+    vi.mocked(client!.auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: refusal,
+    } as never);
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: refusal,
+      code: undefined,
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("single-use-secret");
   });
 
   it("maps an OAuth identity collision on the callback URL", async () => {
@@ -1053,6 +1184,64 @@ describe("AuthSessionProvider — OAuth", () => {
     });
     const WebBrowser = await import("expo-web-browser");
     expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider refusal once, as oauth_start with its code (#3832)", async () => {
+    reportAuthFailure.mockClear();
+    const refusal = {
+      message: "A user with this email address has already been registered",
+      code: "identity_already_exists",
+    };
+    mockState.signInWithOAuthResult = { data: { url: null }, error: refusal };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "oauth_start",
+      screen: "/sign-in",
+      error: refusal,
+    });
+  });
+
+  it("reports a browser return that didn't become a session once, as auth_callback, not again as oauth_start", async () => {
+    reportAuthFailure.mockClear();
+    mockState.authSessionResult = {
+      type: "success",
+      url: "frapp:///#error=access_denied&error_code=otp_expired&error_description=Expired",
+    };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "auth_callback",
+      code: "otp_expired",
+    });
+  });
+
+  it("reports the browser session giving out as oauth_start, and a cancel not at all", async () => {
+    reportAuthFailure.mockClear();
+    mockState.authSessionResult = { type: "cancel" };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google");
+    });
+    expect(reportAuthFailure).not.toHaveBeenCalled();
+
+    mockState.authSessionResult = { type: "locked" };
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+    });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({ flow: "oauth_start" });
   });
 
   it("does not exchange a single-use code twice when the deep link repeats", async () => {

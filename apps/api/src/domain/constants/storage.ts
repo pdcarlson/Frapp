@@ -222,7 +222,8 @@ export function isObjectKeySegment(segment: string): boolean {
  * unchanged, because the key's last segment is also the name a member's
  * download is saved under: chat signs with `download: true`, which sends
  * `Content-Disposition: attachment` with no filename, so the browser takes the
- * URL's last segment, and documents and backwork sign with no `downloadAs`.
+ * URL's last segment, and documents and backwork name it with `downloadAs`
+ * set to that same segment (`storedFilename`).
  * Squashing spaces or parentheses would rename every such file on disk. The
  * stored display name (a document's `title`, a chat attachment's `filename`)
  * is untouched either way. (Profile photos no longer use this: their key is a
@@ -237,6 +238,15 @@ export function safeObjectFilename(filename: string): string {
     .basename(filename)
     .replace(UNSAFE_OBJECT_KEY_CHAR, '_')
     .replace(/ +$/, '');
+}
+
+/**
+ * The filename a saved copy takes: the last segment of the storage key, which
+ * the upload mint already made safe (`safeObjectFilename`). Documents and
+ * backwork pass it as `downloadAs` on the links that force a download.
+ */
+export function storedFilename(storagePath: string): string {
+  return storagePath.slice(storagePath.lastIndexOf('/') + 1);
 }
 
 /**

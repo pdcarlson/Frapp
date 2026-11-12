@@ -336,9 +336,8 @@ function createStyles(tokens: SignetTokens) {
     },
     awardedChip: {
       ...typeRole(tokens.typography.role.caption),
-      // TODO-DESIGN: Canvas draws `#4BC262` here, which is not the Signet
-      // success token (`#3FB950`) and has no token of its own. Using the
-      // semantic role rather than a second green.
+      // Canvas draws `#4BC262` here, which is the Signet success token
+      // (`semantic.success`) since the 2026-11-12 lift (#3826).
       color: tokens.color.semantic.success,
     },
   });

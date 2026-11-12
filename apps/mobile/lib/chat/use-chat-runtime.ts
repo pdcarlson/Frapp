@@ -189,7 +189,15 @@ export interface ChatRuntime {
   drafts: DraftStore;
 }
 
-export function useChatRuntime(): ChatRuntime {
+/**
+ * The runtime without its outbox flush: the same `ctx`, `viewerId`, outbox
+ * and drafts, for a screen that only dispatches row writes while the channel
+ * screen under it owns the flush (the open thread, #4297). The flush effect in
+ * {@link useChatRuntime} runs once per caller, and `flushOutbox` has no
+ * in-flight guard, so a second flushing caller POSTs every queued message
+ * twice on each reconnect.
+ */
+export function useChatActionContext(): ChatRuntime {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
   const supabase = useMemo(() => getSupabaseClient(), []);
@@ -251,6 +259,16 @@ export function useChatRuntime(): ChatRuntime {
     };
   }, [queryClient, apiClient, supabase, viewerId, outbox, track]);
 
+  return { ctx, viewerId, outbox, drafts };
+}
+
+/**
+ * The chat runtime, plus the outbox flush: once on boot and on every return
+ * online. One caller per mounted chat: the channel's `useChatChannel`.
+ */
+export function useChatRuntime(): ChatRuntime {
+  const runtime = useChatActionContext();
+  const { ctx } = runtime;
   // Boot flush, then re-flush on every reconnect. Both the trigger and the gate
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
   // through it keeps the two consistent.
@@ -268,5 +286,5 @@ export function useChatRuntime(): ChatRuntime {
     });
   }, [ctx]);
 
-  return { ctx, viewerId, outbox, drafts };
+  return runtime;
 }

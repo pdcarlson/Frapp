@@ -123,9 +123,10 @@ import {
   matchLocalPhotos,
   rememberLocalPhotos,
 } from "./local-photos";
-import { taskKeys, useFrappClient } from "@repo/hooks";
+import { useFrappClient, withChatRecordRefresh } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
+import { CHANNEL_MESSAGES_GC_TIME, takeReadAhead } from "./prefetch-channel";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
@@ -188,7 +189,7 @@ export interface SendOptions {
  * carrying the member-facing description chat-core classified, since mobile
  * has no toast to show it (#999).
  */
-async function withFailureMessage(
+export async function withFailureMessage(
   run: (onError: ChatErrorFn) => Promise<void>,
   fallback: string,
 ): Promise<void> {
@@ -414,7 +415,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     // for the whole cold read (3 s on prod that evening, the read queued
     // behind the resume burst). Kept, the rows paint at once and the
     // realtime join's backfill reads what arrived since (`mergeSincePage`).
-    gcTime: 30 * 60_000,
+    // Chat home reads ahead into this same key with the same life
+    // (`prefetch-channel.ts`, #3699).
+    gcTime: CHANNEL_MESSAGES_GC_TIME,
     queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
 
@@ -422,6 +425,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const reload = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // A page chat home read ahead (#3699) paints at once, then is read again
+  // here behind the rows already shown: nothing kept it current while no
+  // thread had the channel open, and this read, through the pager, is the one
+  // that records where a short channel's history starts.
+  const hasData = query.data !== undefined;
+  useEffect(() => {
+    if (!channelId || !hasData) return;
+    if (takeReadAhead(channelId)) void refetch();
+  }, [channelId, hasData, refetch]);
 
   // Older history (#2772), one page per call, merged into the same cache the
   // realtime merge, the outbox and the reconnect backfill write to. It only
@@ -989,24 +1002,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const postTaskHere = useCallback(
     async (input: TaskInput): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postTask(ctx, channelId, input);
       // `postTask` writes the chat's cache, not the task board's. A lost
       // answer refreshes it too: the task may exist.
-      if (result.ok)
-        void queryClient.invalidateQueries({ queryKey: taskKeys.all });
-      return result;
+      return withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, channelId, input),
+      );
     },
     [channelId, ctx, queryClient],
   );
   const postHoursHere = useCallback(
     async (input: HoursInput): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postHours(ctx, channelId, input);
       // As above, for the Service page's entries.
-      if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["service-entries"] });
-      }
-      return result;
+      return withChatRecordRefresh(queryClient, "hours", () =>
+        postHours(ctx, channelId, input),
+      );
     },
     [channelId, ctx, queryClient],
   );

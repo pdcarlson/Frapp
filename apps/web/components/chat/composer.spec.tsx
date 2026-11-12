@@ -2645,3 +2645,98 @@ describe("Composer takes files dropped on the chat column (#4143)", () => {
     expect(mockRequestUploadUrl).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #3781 — typing `/` opens the palette, and further typing goes into its
+ * search box. Escape closed it with the `/` still in the composer, and Enter
+ * then posted a message whose whole body was `/`.
+ */
+describe("Composer never posts the bare `/` the palette opened on (#3781)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  function mount(text: string) {
+    const editor = fakeEditor(text);
+    editorDouble.current = editor;
+    const onSend = vi.fn();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <Composer {...baseProps({ draft: text, onSend, onSlashDispatch })} />,
+    );
+    return { editor, onSend, onSlashDispatch };
+  }
+
+  const sendButton = () => screen.getByRole("button", { name: "Send message" });
+
+  it("sends nothing for a lone `/`, and says so with a muted Send", () => {
+    const { editor, onSend, onSlashDispatch } = mount("/");
+    expect(sendButton()).toBeDisabled();
+    // Enter reaches `submit` through the editor's keymap, not the button.
+    const submitKeymap = capturedExtensions
+      .at(-1)!
+      .find(
+        (extension) =>
+          (extension as { name?: string } | null)?.name === "submit-on-enter",
+      ) as {
+      config: { addKeyboardShortcuts: () => { Enter: () => boolean } };
+    };
+    act(() => {
+      submitKeymap.config.addKeyboardShortcuts.call({}).Enter();
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    // Nothing happened, so nothing was cleared either.
+    expect(editor.getText()).toBe("/");
+  });
+
+  it("sends a file staged beside a lone `/` on its own", async () => {
+    const { onSend, editor } = mount("/");
+    fireEvent.change(
+      document.body.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await waitFor(() => expect(sendButton()).toBeEnabled());
+
+    fireEvent.click(sendButton());
+
+    expect(onSend).toHaveBeenCalledWith("", [
+      expect.objectContaining({ filename: "notes.pdf" }),
+    ]);
+    expect(editor.getText()).toBe("");
+  });
+
+  it("still sends text that only starts with a slash", () => {
+    const { onSend } = mount("/ shrug");
+    expect(sendButton()).toBeEnabled();
+    fireEvent.click(sendButton());
+    expect(onSend).toHaveBeenCalledWith("/ shrug", []);
+  });
+
+  it("takes the `/` back when the palette is closed with Escape", async () => {
+    const user = userEvent.setup();
+    const { editor } = mount("/");
+    await openPalette(user);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(editor.getText()).toBe("");
+  });
+
+  it("leaves more than the `/` alone when the palette closes", async () => {
+    const user = userEvent.setup();
+    const { editor } = mount("/not a command, just text");
+    await openPalette(user);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(editor.getText()).toBe("/not a command, just text");
+  });
+});

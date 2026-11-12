@@ -64,13 +64,14 @@ describe("the capability matrix states held and missing in text tones", () => {
     // this comment said 2.3:1 from memory and the review recomputed it at
     // 2.184. A number in a comment is not a measurement — so the number is an
     // assertion now, and the comment cites the assertion. (2.189 on the
-    // neutral ladder, 2026-11-05; 2.681 with the 2026-11-09 text ladder.)
+    // neutral ladder, 2026-11-05; 2.681 with the 2026-11-09 text ladder; 2.596
+    // on the 2026-11-12 surface ladder's lighter card.)
     const washed = ratio(
       mix(TEXT.mutedForeground, MATRIX_SURFACE, 0.4),
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.681, 2);
+    expect(washed).toBeCloseTo(2.596, 2);
   });
 
   it("would also read in `--muted`, since the 2026-11-09 text ladder", () => {
@@ -191,27 +192,33 @@ describe("the accent preview's label tone, computed from the draft", () => {
     expect(ratio(ink, "#0080FD")).toBeCloseTo(4.191, 2);
   });
 
-  it("uses #0086FE as the band's example: kept on the card, ink under AA", () => {
-    // The example writing.md and the Accent card's comments cite. Kept by the
-    // resolver on `--card` (so no fallback warning), yet its best label ink
-    // misses AA (so the label warning fires). Those mentions point here rather
-    // than quoting the figures, so this is the one place that fails when they
-    // move.
+  it("finds the band empty on the 2026-11-12 ladder: every kept accent's label clears AA", () => {
+    // The band is "kept by the resolver on `--card`, yet its best label ink
+    // misses AA", where the label warning fires. The Accent card's comments
+    // cite it. On the 2026-11-05 ladder `#0086FE` was its example (4.99:1 on
+    // the card, ink 4.45:1). The 2026-11-12 ladder (#3826) lightened `--card`
+    // to `#262626`, and keeping an accent there takes enough luminance that
+    // `onHouse` ink always clears: the closest a kept colour comes is 4.75:1.
+    // So the label warning is a guard no real input reaches today; the screen
+    // test drives it with a stubbed ink, and #4388 asks whether to keep it.
     const onCard = (accent: string) =>
       resolveChapterAccentColor(accent, {
         background: SURFACE.card,
         fallbackAccent: signetDarkTokens.color.gold.house,
       }).reason;
-    expect(onCard("#0086FE")).toBe("ok");
-    // Why the example moved, and why it has not moved back: the warm ladder
-    // substituted the original `#0080FD` on the card, so it never reached the
-    // label check. (neutral ladder, 2026-11-05) The darker `--card` keeps it
-    // again, so it is in the band too now; `#0086FE` stays the example.
-    expect(onCard("#0080FD")).toBe("ok");
-    expect(ratio("#0086FE", SURFACE.card)).toBeCloseTo(4.99, 2);
-    const ink = bestInk("#0086FE");
-    expect(ratio(ink, "#0086FE")).toBeLessThan(AA_TEXT);
-    expect(ratio(ink, "#0086FE")).toBeCloseTo(4.45, 2);
+    expect(onCard("#0086FE")).toBe("insufficient_contrast");
+    const hex = (n: number) => n.toString(16).padStart(2, "0");
+    let closest = Infinity;
+    for (let r = 0; r < 256; r += 15) {
+      for (let g = 0; g < 256; g += 15) {
+        for (let b = 0; b < 256; b += 15) {
+          const fill = `#${hex(r)}${hex(g)}${hex(b)}`;
+          if (onCard(fill) !== "ok") continue;
+          closest = Math.min(closest, previewInkFor(fill)!.ratio);
+        }
+      }
+    }
+    expect(closest).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("prints a failing ratio below the minimum it is compared with", () => {

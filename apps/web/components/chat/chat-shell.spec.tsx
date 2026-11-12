@@ -6,7 +6,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  onTestFinished,
+} from "vitest";
 import { useEffect, useState, type ReactNode } from "react";
 
 /**
@@ -198,11 +206,33 @@ const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
 const mockDeleteChannel = vi.fn();
+// The rail's New channel panel (#3838).
+const createChannelState = vi.hoisted(() => ({
+  mutateAsync: vi.fn(),
+  isPending: false,
+}));
 const mockSetRailLevel = vi.fn();
 const mockRouterPush = vi.fn();
 const railRowActions = vi.hoisted(() => ({
   value: undefined as
     import("./channel-row-menu").ChannelRowActions | undefined,
+}));
+// `GET /v1/channels/latest` as Direct messages reads it (#3774).
+const latestReads = vi.hoisted(() => ({
+  rows: [] as {
+    channel_id: string;
+    sender_id: string;
+    author_name: string | null;
+    content: string;
+    kind: string;
+    attachment_count: number;
+    created_at: string;
+  }[],
+  enabled: [] as boolean[],
+  // A first read still in flight.
+  pending: false,
+  // A background refetch that failed after a good answer, which keeps data.
+  failedRefetch: false,
 }));
 // The rail's drag-to-reorder controls (#4178), captured like the row actions.
 const railReorder = vi.hoisted(() => ({
@@ -359,30 +389,33 @@ vi.mock("@/components/service/log-hours-form", async (importOriginal) => ({
     </div>
   ),
 }));
-vi.mock("@/components/points/points-adjustment-form", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/components/points/points-adjustment-form")
-  >()),
-  PointsAdjustmentForm: (props: {
-    submitToChannel?: (input: unknown) => Promise<unknown>;
-  }) => (
-    <div data-testid="points-form">
-      <button
-        data-testid="points-form-post"
-        onClick={() =>
-          void props.submitToChannel?.({
-            target_user_id: "u-2",
-            amount: 5,
-            category: "MANUAL",
-            reason: "Ran the table",
-          })
-        }
-      >
-        post
-      </button>
-    </div>
-  ),
-}));
+vi.mock(
+  "@/components/points/points-adjustment-form",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/components/points/points-adjustment-form")
+    >()),
+    PointsAdjustmentForm: (props: {
+      submitToChannel?: (input: unknown) => Promise<unknown>;
+    }) => (
+      <div data-testid="points-form">
+        <button
+          data-testid="points-form-post"
+          onClick={() =>
+            void props.submitToChannel?.({
+              target_user_id: "u-2",
+              amount: 5,
+              category: "MANUAL",
+              reason: "Ran the table",
+            })
+          }
+        >
+          post
+        </button>
+      </div>
+    ),
+  }),
+);
 vi.mock("./event-quick-form", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./event-quick-form")>()),
   EventQuickForm: (props: {
@@ -501,6 +534,7 @@ vi.mock("@repo/hooks", async () => ({
         IMPORTANT_STRIP_DISMISS_LABEL,
         importantStripLabel,
         landingChannelId,
+        lastChannelLandingId,
         lastChannelStorageKey,
         resolveAuthorName,
         SETUP_CHECKLIST_TITLE,
@@ -508,9 +542,11 @@ vi.mock("@repo/hooks", async () => ({
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
         deleteChannelConfirmTitle,
+        deleteChannelTypeLabel,
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        deleteChannelTypeLabel,
         canSetChannelBackground,
         claimViewedChannel,
         deleteChannelConfirmTitle,
@@ -520,6 +556,7 @@ vi.mock("@repo/hooks", async () => ({
         IMPORTANT_STRIP_DISMISS_LABEL,
         importantStripLabel,
         landingChannelId,
+        lastChannelLandingId,
         lastChannelStorageKey,
         resolveAuthorName,
         SETUP_CHECKLIST_TITLE,
@@ -551,6 +588,9 @@ vi.mock("@repo/hooks", async () => ({
   // them, so a payload that is already sorted could not tell a faithful
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
+  // The rail's New channel panel (#3838).
+  useCreateChannel: () => createChannelState,
+  useChannelAccessOptions: () => ({ data: [], isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -574,6 +614,17 @@ vi.mock("@repo/hooks", async () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
   }),
+  // Direct messages' order and last lines (#3774).
+  useChannelLatestMessages: (options?: { enabled?: boolean }) => {
+    latestReads.enabled.push(options?.enabled ?? true);
+    return latestReads.pending
+      ? { data: undefined, isError: false, fetchStatus: "fetching" }
+      : {
+          data: latestReads.rows,
+          isError: latestReads.failedRefetch,
+          fetchStatus: "idle",
+        };
+  },
   useOrgConfig: () =>
     slashGateReads.orgConfigError
       ? { data: undefined, isError: true, refetch: vi.fn() }
@@ -766,6 +817,10 @@ vi.mock("./channel-list", () => ({
     </button>
   ),
   ChannelList: ({
+    kind,
+    channels,
+    previews,
+    latestAt,
     onPick,
     onHide,
     categories,
@@ -790,9 +845,21 @@ vi.mock("./channel-list", () => ({
     }) => void;
     onHide?: (ch: { id: string; name: string; type: string }) => void;
     categories?: { id: string; name: string }[];
+    kind?: string;
+    channels?: { id: string }[];
+    latestAt?: ReadonlyMap<string, string>;
+    previews?: ReadonlyMap<string, string>;
   }) => (
     <div
       data-testid="channel-list"
+      data-kind={kind}
+      data-previews={
+        previews
+          ? [...previews].map(([id, line]) => `${id}=${line}`).join("|")
+          : undefined
+      }
+      data-latest={latestAt ? [...latestAt.keys()].join(",") : undefined}
+      data-ids={channels?.map((ch) => ch.id).join(",")}
       ref={() => {
         railRowActions.value = rowActions;
         railReorder.value = reorder;
@@ -917,6 +984,7 @@ const displayLockState = vi.hoisted(() => ({
 const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
 const mockChapterRoster = vi.hoisted(() => vi.fn());
 
+const mockDropAttach = vi.fn();
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
@@ -935,8 +1003,10 @@ vi.mock("./composer", () => ({
     renderPlusForm,
     plusDrafts,
     isAuditLog,
+    dropAttachRef,
   }: {
     channelId: string;
+    dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
       card: { close: () => void; back: () => void },
@@ -966,6 +1036,8 @@ vi.mock("./composer", () => ({
     onCancelReply?: () => void;
     onRestoreReply?: (messageId: string) => void;
   }) => {
+    // The live composer is what a file dropped on the column attaches to.
+    if (dropAttachRef) dropAttachRef.current = mockDropAttach;
     // The + card the real composer opens when the shell answers "opened":
     // its form is whatever the shell renders for that command.
     const [plusView, setPlusView] = useState<string | null>(null);
@@ -1326,8 +1398,13 @@ vi.mock("./thread-panel", () => ({
     canReply,
     canPost,
     onClose,
+    beside,
   }: import("./thread-panel").ThreadPanelProps) => (
-    <section aria-label="Thread" data-testid="thread-panel">
+    <section
+      aria-label="Thread"
+      data-testid="thread-panel"
+      data-beside={String(!!beside)}
+    >
       <span data-testid="thread-root">{rootId}</span>
       <span data-testid="thread-held-root">{heldRoot?.content ?? "none"}</span>
       <span data-testid="thread-can-reply">{String(canReply)}</span>
@@ -2870,7 +2947,9 @@ describe("ChatShell hide conversation (#2303)", () => {
     });
   });
 
-  it("lands on #general after hiding the open DM, not on the channel the page loaded with", async () => {
+  it("stays in Direct messages after hiding the open DM, and says how to start one when none is left (#3774)", async () => {
+    // The channels list's own last channel is not where a DM hide lands:
+    // the panel is showing direct messages, and stays there.
     window.localStorage.setItem(
       "frapp.chat.last-channel.viewer-1.chapter-1",
       "chan-random",
@@ -2878,7 +2957,7 @@ describe("ChatShell hide conversation (#2303)", () => {
     channelsQueryState.value = { data: [...CHANNELS, DM] };
     const write = pending();
     mockLeaveMutateAsync.mockReturnValue(write.promise);
-    render(<ChatShell initialChannelId="chan-dm" />);
+    render(<ChatShell initialChannelId="chan-dm" view="direct" />);
 
     fireEvent.click(screen.getByTestId("hide-conversation"));
     channelsQueryState.value = {
@@ -2887,8 +2966,12 @@ describe("ChatShell hide conversation (#2303)", () => {
     await act(async () => write.resolve());
 
     await waitFor(() => {
-      expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
+      expect(screen.getByText(/No direct messages yet/)).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Find someone in the Directory" }),
+    ).toHaveAttribute("href", "/members");
   });
 
   it("still moves off the open DM when a second hide starts before the first lands", async () => {
@@ -3966,7 +4049,8 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     stubWidth(1440);
     const onClose = vi.fn();
     const { rerender } = render(<ChatShell toolBeside onClose={onClose} />);
-    const header = screen.getByRole("button", { name: "Show members" })
+    const header = screen
+      .getByRole("button", { name: "Show members" })
       .closest("header") as HTMLElement;
     const close = within(header).getByRole("button", { name: "Close chat" });
     // The tool page header's X, the same 36px control. No pull into the
@@ -4670,6 +4754,107 @@ describe("ChatShell opens on the last channel", () => {
   });
 });
 
+/** The open thread beside the chat on a wide window (#4297). */
+describe("ChatShell thread beside the chat", () => {
+  const realMatchMedia = window.matchMedia;
+
+  function stubWide(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  /** The chat column: the section that holds the channel's timeline. */
+  const chatColumn = () =>
+    screen.getByTestId("message-timeline").closest("section")!;
+
+  it("opens beside the timeline from 1280px, in the members column's place", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "true");
+    // Its own column, outside the chat column, which stays as it was.
+    expect(chatColumn().contains(panel)).toBe(false);
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show members" }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    // Closing it brings the members back.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channel" }));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives way to the members when the member asks for them", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" defaultMembersHidden />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=0");
+  });
+
+  it("covers the chat column below 1280px, as before", () => {
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "false");
+    expect(chatColumn().contains(panel)).toBe(true);
+  });
+
+  it("keeps the members list (and its search) mounted under it", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    const list = screen.getByTestId("channel-member-list");
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    // Hidden, the same element: its local state survives the thread.
+    expect(list).toBeInTheDocument();
+    expect(list.closest("aside")).toHaveAttribute("hidden");
+  });
+
+  it("still takes files dropped on the channel beside it, and refuses them under one covering it", () => {
+    const dragOver = () => {
+      const transfer = { types: ["Files"], dropEffect: "" };
+      fireEvent.dragOver(chatColumn(), { dataTransfer: transfer });
+      return transfer.dropEffect;
+    };
+    stubWide(true);
+    const wide = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("copy");
+    wide.unmount();
+
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("none");
+  });
+});
+
 /** The member list column and sheet (#3536). */
 describe("ChatShell member list", () => {
   const realMatchMedia = window.matchMedia;
@@ -4906,7 +5091,15 @@ describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
     await waitFor(() => {
       expect(screen.getByText("Delete #random?")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete channel" }));
+    // Delete waits for the channel's name, typed exactly (#3838).
+    const deleteButton = screen.getByRole("button", { name: "Delete channel" });
+    expect(deleteButton).toBeDisabled();
+    const typed = screen.getByLabelText("Type random to confirm");
+    fireEvent.change(typed, { target: { value: "Random" } });
+    expect(deleteButton).toBeDisabled();
+    fireEvent.change(typed, { target: { value: "random" } });
+    expect(deleteButton).toBeEnabled();
+    fireEvent.click(deleteButton);
     await waitFor(() => {
       expect(mockDeleteChannel).toHaveBeenCalledWith("chan-random");
     });
@@ -5539,5 +5732,278 @@ describe("ChatShell thread panel", () => {
     fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
     expect(screen.getByTestId("thread-can-post")).toHaveTextContent("false");
     expect(screen.getByTestId("thread-can-reply")).toHaveTextContent("false");
+  });
+});
+
+describe("ChatShell's two lists (#3774)", () => {
+  const DM = {
+    id: "chan-dm",
+    name: "dm-viewer-other",
+    type: "DM",
+    member_ids: ["viewer-1", "other-1"],
+  };
+  const GROUP = {
+    id: "chan-group",
+    name: "Rush planning",
+    type: "GROUP_DM",
+    member_ids: ["viewer-1", "other-1", "third-1"],
+  };
+  const rail = () => screen.getByTestId("channel-list");
+
+  it("lists only channels on Chat, and only direct and group messages on Direct messages", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    const { unmount } = render(<ChatShell />);
+    expect(rail()).toHaveAttribute("data-kind", "channels");
+    expect(rail().dataset.ids).not.toMatch(/chan-dm|chan-group/);
+    expect(rail().dataset.ids).toContain("chan-general");
+    expect(screen.getByRole("heading", { name: "Channels" })).toBeVisible();
+    unmount();
+
+    render(<ChatShell view="direct" />);
+    expect(rail()).toHaveAttribute("data-kind", "direct");
+    expect(rail().dataset.ids).toBe("chan-dm,chan-group");
+    expect(
+      screen.getByRole("heading", { name: "Direct messages" }),
+    ).toBeVisible();
+  });
+
+  it("lands each list on its own last conversation", async () => {
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1",
+      "chan-random",
+    );
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1.direct",
+      "chan-group",
+    );
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    const { rerender } = render(<ChatShell />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    rerender(<ChatShell view="direct" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-group");
+    });
+    rerender(<ChatShell view="channels" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+  });
+
+  it("drops a channel picked on the other list when the nav switches lists", async () => {
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1.direct",
+      "chan-dm",
+    );
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const onViewChange = vi.fn();
+    const { rerender } = render(
+      <ChatShell initialChannelId="chan-random" onViewChange={onViewChange} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    rerender(
+      <ChatShell
+        initialChannelId="chan-random"
+        view="direct"
+        onViewChange={onViewChange}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-dm");
+    });
+    // The switch came from the nav, so the panel asks for nothing back.
+    expect(onViewChange).not.toHaveBeenCalledWith("channels");
+  });
+
+  it("asks the shell for Direct messages when a link opens a DM on channels, and for Chat the other way", async () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const onViewChange = vi.fn();
+    const { unmount } = render(
+      <ChatShell initialChannelId="chan-dm" onViewChange={onViewChange} />,
+    );
+    await waitFor(() => {
+      expect(onViewChange).toHaveBeenCalledWith("direct");
+    });
+    unmount();
+
+    onViewChange.mockClear();
+    render(
+      <ChatShell
+        initialChannelId="chan-general"
+        view="direct"
+        onViewChange={onViewChange}
+      />,
+    );
+    await waitFor(() => {
+      expect(onViewChange).toHaveBeenCalledWith("channels");
+    });
+  });
+
+  it("opens no DM the member didn't pick, so none is marked read unseen", () => {
+    // No remembered DM: a first visit, or the remembered one since hidden.
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    render(<ChatShell view="direct" />);
+    expect(
+      screen.getByRole("heading", { name: "Pick a conversation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Choose one from the list to open it."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/No direct messages yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the chapter's order and setup checklist out of Direct messages", () => {
+    // An officer who can reorder, in a chapter still being set up: both
+    // show on Chat, and neither on Direct messages.
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    railReorder.value = undefined;
+    const { unmount } = render(<ChatShell />);
+    expect(railReorder.value).toBeDefined();
+    expect(
+      screen.getByRole("region", { name: "Set up your chapter" }),
+    ).toBeInTheDocument();
+    unmount();
+
+    railReorder.value = undefined;
+    render(<ChatShell view="direct" />);
+    expect(railReorder.value).toBeUndefined();
+    expect(
+      screen.queryByRole("region", { name: "Set up your chapter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says how to start one when the member has no direct messages", () => {
+    channelsQueryState.value = { data: CHANNELS };
+    render(<ChatShell view="direct" />);
+    expect(screen.getByText(/No direct messages yet/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Find someone in the Directory" }),
+    ).toHaveAttribute("href", "/members");
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+  });
+
+  it("reads the latest messages only for Direct messages, and words each last line (#3774)", () => {
+    latestReads.enabled = [];
+    latestReads.rows = [
+      {
+        channel_id: "chan-group",
+        sender_id: "other-1",
+        author_name: "Cole Bennett",
+        content: "I do, sending it tonight",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-12T01:20:00.000Z",
+      },
+    ];
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    const { unmount } = render(<ChatShell />);
+    expect(latestReads.enabled.every((on) => on === false)).toBe(true);
+    expect(rail()).not.toHaveAttribute("data-previews");
+    unmount();
+
+    render(<ChatShell view="direct" />);
+    expect(latestReads.enabled.at(-1)).toBe(true);
+    expect(rail()).toHaveAttribute("data-latest", "chan-group");
+    const previews = rail().getAttribute("data-previews") ?? "";
+    // A group DM keeps the sender's first name; a DM with no message yet
+    // says so, as on the phone.
+    expect(previews).toMatch(/chan-group=\S+: I do, sending it tonight/);
+    expect(previews).toContain("chan-dm=No messages yet");
+    latestReads.rows = [];
+  });
+
+  it("offers New message in Direct messages, which opens the Directory", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const { unmount } = render(<ChatShell />);
+    expect(
+      screen.queryByRole("link", { name: "New message" }),
+    ).not.toBeInTheDocument();
+    unmount();
+    render(<ChatShell view="direct" />);
+    expect(screen.getByRole("link", { name: "New message" })).toHaveAttribute(
+      "href",
+      "/members",
+    );
+  });
+
+  describe("the Direct messages lines (#3774)", () => {
+    const row = (
+      channel_id: string,
+      sender_id: string,
+      content: string,
+      created_at: string,
+    ) => ({
+      channel_id,
+      sender_id,
+      author_name: null,
+      content,
+      kind: "text",
+      attachment_count: 0,
+      created_at,
+    });
+    const previews = () =>
+      new Map(
+        (rail().getAttribute("data-previews") ?? "")
+          .split("|")
+          .filter(Boolean)
+          .map((pair) => pair.split("=") as [string, string]),
+      );
+
+    afterEach(() => {
+      latestReads.rows = [];
+      latestReads.pending = false;
+      latestReads.failedRefetch = false;
+    });
+
+    it("drops the name in a 1:1 DM and says You for the viewer's own line", () => {
+      latestReads.rows = [
+        row("chan-dm", "other-1", "see you at 7", "2026-11-12T01:00:00.000Z"),
+        row("chan-group", "viewer-1", "on my way", "2026-11-12T02:00:00.000Z"),
+      ];
+      channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+      render(<ChatShell view="direct" />);
+      expect(previews().get("chan-dm")).toBe("see you at 7");
+      expect(previews().get("chan-group")).toBe("You: on my way");
+    });
+
+    it("gives a hidden DM no line, since the server keeps none for it", () => {
+      channelsQueryState.value = {
+        data: [...CHANNELS, DM, { ...GROUP, hidden: true }],
+      };
+      render(<ChatShell view="direct" />);
+      expect(previews().has("chan-group")).toBe(false);
+      expect(previews().get("chan-dm")).toBe("No messages yet");
+    });
+
+    it("holds the list behind its skeleton until the first read answers", () => {
+      latestReads.pending = true;
+      channelsQueryState.value = { data: [...CHANNELS, DM] };
+      render(<ChatShell view="direct" />);
+      expect(screen.queryByTestId("channel-list")).not.toBeInTheDocument();
+    });
+
+    it("keeps the last good order and lines when a later read fails", () => {
+      latestReads.failedRefetch = true;
+      latestReads.rows = [
+        row("chan-dm", "other-1", "see you at 7", "2026-11-12T01:00:00.000Z"),
+      ];
+      channelsQueryState.value = { data: [...CHANNELS, DM] };
+      render(<ChatShell view="direct" />);
+      expect(rail()).toHaveAttribute("data-latest", "chan-dm");
+      expect(previews().get("chan-dm")).toBe("see you at 7");
+    });
   });
 });

@@ -7,10 +7,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   POINTS_ADJUSTMENT_MAX,
@@ -24,6 +27,56 @@ import {
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
+import {
+  ISO_INSTANT_MESSAGE,
+  ISO_INSTANT_PATTERN,
+  ISO_INSTANT_REGEX,
+} from '#domain/constants/iso-instant';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '#domain/constants/list-query-limits';
+
+/**
+ * `GET /v1/tasks` (#4037). Every parameter is optional, and a request with
+ * none still gets the whole list, which is what shipped mobile builds send.
+ */
+export class ListTasksQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task.',
+    minimum: LIST_QUERY_LIMIT_MIN,
+    maximum: LIST_QUERY_LIMIT_MAX,
+    default: LIST_QUERY_LIMIT_DEFAULT,
+    example: LIST_QUERY_LIMIT_DEFAULT,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(LIST_QUERY_LIMIT_MIN)
+  @Max(LIST_QUERY_LIMIT_MAX)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cursor: the `created_at` of the last task of the previous page, fed back exactly as received. Tasks come newest first, by `created_at` then `id`. Requires `before_id`.',
+    example: '2026-01-31T23:59:59.999999+00:00',
+    pattern: ISO_INSTANT_PATTERN,
+  })
+  @ValidateIf((query: ListTasksQueryDto) => query.before_id !== undefined)
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
+  before?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Cursor: the `id` of the last task of the previous page. Requires `before`.',
+    format: 'uuid',
+  })
+  @ValidateIf((query: ListTasksQueryDto) => query.before !== undefined)
+  @IsUUID()
+  before_id?: string;
+}
 
 export class CreateTaskDto {
   @ApiProperty()

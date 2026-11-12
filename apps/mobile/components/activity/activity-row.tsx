@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   ACTIVITY_GLYPH_NAV,
   activityBadgeIsAsk,
@@ -14,6 +14,7 @@ import {
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { StatusChip } from "@/components/status-chip";
+import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -26,23 +27,36 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * hairlines, the way the phone's Events and Tasks lists draw theirs
  * (`components/events/event-rows.tsx`), not in a rounded card.
  *
- * The whole row is the one hit target, and every row opens something.
+ * Every row opens something. A row whose ask is one press (Confirm,
+ * Approve) carries it as a button where the ask was drawn (`action`, #4437),
+ * so the common case takes one tap and the rest of the row still opens the
+ * sheet, as web's rows do.
  */
 export function ActivityListRow({
   row,
   isFirst,
+  action = null,
   onPress,
 }: {
   row: ActivityRow;
   /** The first row of its run draws no hairline above it. */
   isFirst: boolean;
+  /** The row's ask as a button (`components/activity/activity-row-action.tsx`). */
+  action?: ActivityRowActionControl | null;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
+  const dotStyles = createUnreadDotStyles(tokens);
   const rowStyle = [styles.row, isFirst ? null : styles.divider];
   const content = (
     <>
+      {/* The unread mark (#4405): the notification list's dot, in a slot of
+          its own that stays when read so rows don't shift. */}
+      <View
+        style={row.unread ? dotStyles.dot : dotStyles.spacer}
+        testID={row.unread ? "activity-unread-dot" : undefined}
+      />
       <ActivityRowLead row={row} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
@@ -57,7 +71,9 @@ export function ActivityListRow({
         ) : null}
       </View>
       {row.badge ? (
-        activityBadgeIsAsk(row) ? (
+        action ? (
+          <ActivityAskButton action={action} />
+        ) : activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} />
         ) : (
           <StatusChip
@@ -73,10 +89,26 @@ export function ActivityListRow({
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      accessibilityLabel={row.unread ? `Unread: ${row.title}` : row.title}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
-      accessibilityHint={listRowHint(row.detail || null, undefined)}
+      // Offline, why its button is held, after the detail: the button is no
+      // focus stop of its own, so the row says it.
+      accessibilityHint={listRowHint(row.detail || null, action?.hint)}
+      // The button's press as a named action, one swipe up on VoiceOver and
+      // in TalkBack's actions menu, as the Tasks row offers its checkbox;
+      // the row's own tap still opens the sheet. Left off while the button
+      // is disabled, so it can't offer what it would refuse.
+      accessibilityActions={
+        action && !action.disabled
+          ? [{ name: "rowAction", label: action.label }]
+          : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "rowAction" && action) {
+          if (!action.disabled) action.run();
+        }
+      }}
       onPress={onPress}
       style={rowStyle}
     >
@@ -134,8 +166,10 @@ const ACTIVITY_GLYPH_SIZE = 20;
  * it reads apart from `To do` or `Required` (#4173). Web's tinted button
  * recipe: the chapter's subtle accent fill, its border and its text, since
  * the accent belongs to the one action that matters (`components.md` §3),
- * never a solid status hue (§5). It is not its own control: the whole row is
- * the hit target, and this names what the row opens to.
+ * never a solid status hue (§5). It is not its own control: the row is the
+ * hit target, and this names what the row opens to. `Vote` and `Check in`
+ * stay this; `Confirm` and `Approve` draw as `ActivityAskButton` while the
+ * plan allows them (#4437).
  */
 export function ActivityAsk({ label }: { label: string }) {
   const { tokens } = useFrappTheme();
@@ -153,6 +187,55 @@ export function ActivityAsk({ label }: { label: string }) {
   );
 }
 
+/** What a row's one-press ask needs to draw and run (#4437). */
+export interface ActivityRowActionControl {
+  label: string;
+  /** In flight, done, offline, or the chapter still loading. */
+  disabled: boolean;
+  /** Why it is disabled, when that is the connection. */
+  hint: string | undefined;
+  run: () => void;
+}
+
+/**
+ * The ask as its own control (#4437): the same tinted chip `ActivityAsk`
+ * draws, now pressable, with its hit area grown to the touch floor. Hidden
+ * from screen readers, since the row carries it as a named action rather
+ * than a second focus stop nested in the row's. Disabled, it doesn't claim
+ * the touch, so a tap on it opens the sheet as the ask did.
+ */
+export function ActivityAskButton({
+  action,
+}: {
+  action: ActivityRowActionControl;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const styles = createActivityRowStyles(tokens);
+  const slop = Math.max(0, (tokens.touch.minimum - ASK_HEIGHT) / 2);
+  return (
+    <Pressable
+      testID="activity-row-action"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      disabled={action.disabled}
+      hitSlop={{ top: slop, bottom: slop, left: slop, right: slop }}
+      onPress={action.run}
+      style={({ pressed }) => [
+        styles.ask,
+        { backgroundColor: accentSubtle, borderColor: accentBorder },
+        action.disabled
+          ? styles.askDisabled
+          : pressed
+            ? styles.askPressed
+            : null,
+      ]}
+    >
+      <Text style={[styles.askText, { color: accent }]}>{action.label}</Text>
+    </Pressable>
+  );
+}
+
 /** A row that hasn't loaded, on the loaded row's own frame. */
 export function ActivityRowSkeleton({
   index,
@@ -166,6 +249,7 @@ export function ActivityRowSkeleton({
   const { label, caption } = tokens.typography.role;
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
+      <View style={createUnreadDotStyles(tokens).spacer} />
       <SkeletonBlock
         width={LEAD_SIZE}
         height={LEAD_SIZE}
@@ -261,6 +345,13 @@ function createActivityRowStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.sm,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
+    },
+    // The disabled control's dim: no token carries a de-emphasis ramp.
+    askDisabled: {
+      opacity: 0.5,
+    },
+    askPressed: {
+      opacity: 0.7,
     },
     askText: {
       ...typeRole({

@@ -15,12 +15,17 @@ import {
 import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
+  describeAuthReturnError,
   describeOAuthKickoffError,
+  FINISH_FAILED_COPY,
+  START_FAILED_COPY,
   type OAuthProvider,
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
+import { reportAuthFailure } from "./sentry/auth-failures";
 import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -72,6 +77,13 @@ type AuthSessionContextValue = {
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
   /**
+   * Sends the sign-up confirmation email again, for a password account that
+   * was never confirmed (`email_not_confirmed`, #3833). Its link opens the app
+   * through the same `frapp:///?` redirect as a magic link, so opening it on
+   * this phone signs the member in.
+   */
+  resendConfirmation: (input: { email: string }) => Promise<void>;
+  /**
    * Google, or Apple. Native SIWA is tried first on iOS; otherwise an Expo
    * auth session opens the provider and the returned URL is exchanged here.
    */
@@ -120,6 +132,8 @@ function readAuthParams(url: string): {
   otpType: string | null;
   errorDescription: string | null;
   errorCode: string | null;
+  /** The bare `error` identifier (`access_denied`), kept apart from the sentence. */
+  error: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -146,10 +160,18 @@ function readAuthParams(url: string): {
     // sign in the provider's message into a space.
     errorDescription: read("error_description") ?? read("error"),
     errorCode: read("error_code"),
+    error: read("error"),
   };
 }
 
-function oauthRedirectTo(): string {
+/**
+ * Where an email link (magic link, the confirmation resend) or a provider
+ * return sends the member back into the app. The hosted Magic Link template
+ * appends `&token_hash=…&type=magiclink` onto `{{ .RedirectTo }}`. Web's
+ * callback already has `?next=`; this URL must also carry `?` or the `&`
+ * produces `frapp:///&token_hash=`.
+ */
+function appRedirectTo(): string {
   const redirectTo = Linking.createURL("/");
   return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
@@ -174,10 +196,24 @@ async function createSessionFromUrl(
     otpType,
     errorDescription,
     errorCode,
+    error: errorIdentifier,
   } = readAuthParams(url);
 
+  // A link or provider return that didn't become a session (#3832). Only the
+  // code is read, never the URL, which holds the code or token itself.
+  const reportCallback = (error: unknown, linkCode?: string) =>
+    reportAuthFailure({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error,
+      code: linkCode,
+    });
+
   if (errorDescription || errorCode) {
-    return describeOAuthKickoffError({
+    // `error_code` is GoTrue's, `error` the provider's identifier
+    // (`access_denied`); `error_description` is a sentence and never sent.
+    reportCallback(undefined, errorCode ?? errorIdentifier ?? undefined);
+    return describeAuthReturnError({
       message: errorDescription ?? errorCode ?? undefined,
       code: errorCode ?? undefined,
     });
@@ -190,27 +226,30 @@ async function createSessionFromUrl(
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
-        return "That sign-in link could not be used. Request a new one.";
+        reportCallback(undefined, "verify_failed");
+        return FINISH_FAILED_COPY;
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     return null;
   } catch (error) {
-    return error instanceof Error
-      ? describeOAuthKickoffError(error)
-      : "That sign-in link could not be used. Request a new one.";
+    reportCallback(error);
+    return describeAuthReturnError(error);
   }
 }
 
@@ -504,7 +543,10 @@ export function AuthSessionProvider({
         email,
         password,
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "password_sign_in", screen: "/sign-in", error });
+        throw error;
+      }
     },
     [supabase],
   );
@@ -514,37 +556,67 @@ export function AuthSessionProvider({
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
       // A fresh request supersedes whatever the last dead link reported.
       setCallbackError(null);
-      // The hosted Magic Link template appends `&token_hash=…&type=magiclink`
-      // onto `{{ .RedirectTo }}`. Web's callback already has `?next=`; this
-      // URL must also carry `?` or the `&` produces `frapp:///&token_hash=`.
-      const redirectTo = Linking.createURL("/");
-      const emailRedirectTo = redirectTo.includes("?")
-        ? redirectTo
-        : `${redirectTo}?`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo },
+        options: { emailRedirectTo: appRedirectTo() },
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
+  const resendConfirmation = useCallback(
+    async ({ email }: { email: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: appRedirectTo() },
+      });
+      if (error) {
+        reportAuthFailure({
+          flow: "confirmation_resend",
+          screen: "/sign-in",
+          error,
+        });
+        throw error;
+      }
     },
     [supabase],
   );
 
   const signInWithOAuthProvider = useCallback(
     async (provider: OAuthProvider) => {
-      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      // Each failure below is reported once, here, as `oauth_start` with the
+      // error it came from (#3832). A return that reached the app but didn't
+      // become a session was already reported by `createSessionFromUrl` as
+      // `auth_callback`, so its rethrow is not reported again. A cancel is
+      // not a failure.
+      const startFailed = (error: unknown): unknown => {
+        reportAuthFailure({ flow: "oauth_start", screen: "/sign-in", error });
+        return error;
+      };
+      if (!supabase) throw startFailed(new Error(NOT_CONFIGURED_MESSAGE));
       setCallbackError(null);
 
-      if (provider === "apple") {
-        const native = await signInWithNativeApple(supabase);
-        if (native === "completed" || native === "cancelled") return;
-      }
-      if (provider === "google") {
-        const native = await signInWithNativeGoogle(supabase);
-        if (native === "completed" || native === "cancelled") return;
+      try {
+        if (provider === "apple") {
+          const native = await signInWithNativeApple(supabase);
+          if (native === "completed" || native === "cancelled") return;
+        }
+        if (provider === "google") {
+          const native = await signInWithNativeGoogle(supabase);
+          if (native === "completed" || native === "cancelled") return;
+        }
+      } catch (error) {
+        throw startFailed(error);
       }
 
-      const redirectTo = oauthRedirectTo();
+      const redirectTo = appRedirectTo();
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -555,12 +627,16 @@ export function AuthSessionProvider({
         },
       });
       if (error) {
-        throw Object.assign(new Error(describeOAuthKickoffError(error)), {
-          code: error.code,
-        });
+        startFailed(error);
+        throw Object.assign(
+          new MemberFacingError(describeOAuthKickoffError(error)),
+          { code: error.code },
+        );
       }
       if (!data.url) {
-        throw new Error("Unable to start sign-in. Retry in a moment.");
+        throw startFailed(
+          new MemberFacingError(START_FAILED_COPY),
+        );
       }
 
       const result = await WebBrowser.openAuthSessionAsync(
@@ -569,7 +645,7 @@ export function AuthSessionProvider({
       );
       if (result.type === "cancel" || result.type === "dismiss") return;
       if (result.type !== "success") {
-        throw new Error("Unable to finish sign-in. Retry in a moment.");
+        throw startFailed(new MemberFacingError(FINISH_FAILED_COPY));
       }
 
       // `openAuthSessionAsync` returning success and `Linking.useURL`
@@ -584,7 +660,7 @@ export function AuthSessionProvider({
       lastHandledCallbackUrl.current = result.url;
       const message = await createSessionFromUrl(supabase, result.url);
       if (message) {
-        throw new Error(message);
+        throw new MemberFacingError(message);
       }
     },
     [supabase],
@@ -644,6 +720,7 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      resendConfirmation,
       signInWithOAuthProvider,
       signOut,
     }),
@@ -652,6 +729,7 @@ export function AuthSessionProvider({
       chapterId,
       configured,
       isChapterResolving,
+      resendConfirmation,
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,

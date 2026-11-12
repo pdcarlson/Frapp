@@ -329,6 +329,12 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
 }));
 
+// The read-ahead reaches the real Supabase client (secure store); these
+// specs are about the list, not the thread it opens.
+vi.mock("@/lib/chat/prefetch-channel", () => ({
+  usePrefetchUnreadChannels: () => undefined,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
@@ -1061,9 +1067,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target).toBeNull();
     // iOS: nothing is written until the modal reports it has gone.
     expect(setChannelBackground).not.toHaveBeenCalled();
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
@@ -1092,16 +1096,17 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         node.props.testID === "chat-background-swatch-photo",
     );
     act(() => photoSwatch.props.onPress());
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
 
     const [pick, deps] = save.mock.calls[0]!;
     expect(pick).toBe("photo");
-    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    await deps.requestPhotoUrl({
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
     expect(requestBackgroundPhotoUrl).toHaveBeenCalledWith({
       scope: "channel",
       filename: "a.jpg",
@@ -2100,5 +2105,63 @@ describe("Chat home pinned section headings (owner 2026-11-07)", () => {
     expect(pinned).toHaveLength(tree.root.findAllByType(StickyHeader).length);
     expect(pinned.length).toBeGreaterThanOrEqual(layout(tree).length);
     expect(pinned.every((type) => type === StickyHeader)).toBe(true);
+  });
+});
+
+/**
+ * The swipe to Messages (#3774): a slide right to left on Chat home opens
+ * it, beside the top-right door; only leftward starts it, and a vertical
+ * move hands over to the list's scroll.
+ */
+describe("Chat home: the swipe to Messages", () => {
+  type Pan = {
+    kind: string;
+    handlers: Record<string, (event: unknown, success?: boolean) => void>;
+    config?: Record<string, unknown>;
+  };
+  const pan = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType("GestureDetector" as unknown as React.ElementType)
+      .map((node) => node.props.gesture as Pan)
+      .find((gesture) => gesture.kind === "pan")!;
+
+  it("wraps Chat home, starts only leftward, and yields to a vertical move", () => {
+    const gesture = pan(render());
+    expect(gesture).toBeDefined();
+    const [left, right] = gesture.config?.activeOffsetX as [number, number];
+    expect(left).toBeLessThan(0);
+    expect(right).toBe(Number.MAX_SAFE_INTEGER);
+    expect(gesture.config?.failOffsetY).toEqual([-14, 14]);
+  });
+
+  it("opens Messages on a slide left, and nothing on a slide right", () => {
+    const push = vi.mocked(useRouter)().push;
+    vi.mocked(push).mockClear();
+    const gesture = pan(render());
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: 120, velocityX: 900 }, true),
+    );
+    expect(push).not.toHaveBeenCalled();
+    // A pan the system cancelled opens nothing, however far it went.
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, false),
+    );
+    expect(push).not.toHaveBeenCalled();
+    act(() =>
+      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
+    );
+    expect(push).toHaveBeenCalledWith("/messages");
+  });
+
+  it("holds while a menu is open over Chat home", () => {
+    const tree = render();
+    expect(pan(tree).config?.enabled).toBe(true);
+    const account = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Your account" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => account.props.onPress());
+    expect(pan(tree).config?.enabled).toBe(false);
   });
 });

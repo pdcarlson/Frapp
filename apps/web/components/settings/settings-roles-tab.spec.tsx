@@ -5,22 +5,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the data hooks so the tab renders without a query client / network.
 const mockUseRoles = vi.fn();
 const mockSaveDefaultRole = vi.fn();
-const mockUseCatalog = vi.fn();
-const mockUseMembers = vi.fn();
-const mockUpdateRole = vi.fn();
 const mockPermissions = vi.fn();
+const mockParams = { value: new URLSearchParams("tab=roles") };
+const mockPush = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRoles: () => mockUseRoles(),
-  // The `4e` matrix reads these three directly, so the tab renders even when
-  // the chapter-config call is refused.
-  usePermissionsCatalog: () => mockUseCatalog(),
-  useMembers: () => mockUseMembers(),
-  useUpdateRole: () => ({ mutateAsync: mockUpdateRole, isPending: false }),
-  // The matrix reads `roles:manage` itself rather than taking the tab's
-  // `canManage` (which is `chapter-config:manage`) — the API guards
-  // `PATCH /v1/roles/:id` on the former.
   useMyPermissions: () => ({
     data: { permissions: mockPermissions() },
     isPending: false,
@@ -28,31 +19,48 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: false }),
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockParams.value,
+  useRouter: () => ({ push: mockPush }),
 }));
 
-// The folded-in live RBAC manager pulls in @repo/hooks; stub it out.
-vi.mock("@/components/roles/roles-page", () => ({
-  RolesAndPermissionsPage: () => <div data-testid="live-roles" />,
+// The three pages have their own spec (`roles/roles-pages.spec.tsx`); here
+// only which one the URL picks, and how each one navigates, are under test.
+vi.mock("@/components/roles/roles-overview", () => ({
+  RolesOverview: (props: {
+    onOpenTier: (id: string) => void;
+    onOpenRole: (id: string) => void;
+  }) => (
+    <div data-testid="overview">
+      <button onClick={() => props.onOpenTier("tier-1")}>open tier</button>
+      <button onClick={() => props.onOpenRole("role-1")}>open role</button>
+    </div>
+  ),
 }));
-
-const mockToast = vi.fn();
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: mockToast }),
+vi.mock("@/components/roles/tier-permissions-page", () => ({
+  TierPermissionsPage: (props: { tierId: string; onBack: () => void }) => (
+    <div data-testid="tier-page">
+      {props.tierId}
+      <button onClick={props.onBack}>back</button>
+    </div>
+  ),
+}));
+vi.mock("@/components/roles/role-page", () => ({
+  RolePage: (props: { roleId: string }) => (
+    <div data-testid="role-page">{props.roleId}</div>
+  ),
+}));
+vi.mock("@/components/roles/presidency", () => ({
+  PresidencyClaimBanner: () => null,
+  TransferPresidencySection: () => <div data-testid="transfer" />,
 }));
 
 import { SettingsRolesTab } from "./settings-roles-tab";
 
-const CATALOG = [
-  { key: "MEMBERS_VIEW", permission: "members:view" },
-  { key: "EVENTS_CREATE", permission: "events:create" },
-];
-
-
 /** The hook mocks every test in this file renders against. */
 function primeMocks() {
   vi.clearAllMocks();
+  mockParams.value = new URLSearchParams("tab=roles");
   mockUseRoles.mockReturnValue({
     data: [
       {
@@ -75,316 +83,53 @@ function primeMocks() {
     isSuccess: true,
     refetch: vi.fn(),
   });
-  mockUseCatalog.mockReturnValue({
-    data: CATALOG,
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  });
-  mockUseMembers.mockReturnValue({
-    data: [],
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-  });
-  mockUpdateRole.mockResolvedValue({});
   mockPermissions.mockReturnValue(["roles:manage", "chapter-config:manage"]);
 }
+
+const tab = () => (
+  <SettingsRolesTab
+    canManage
+    defaultInviteRoleId={null}
+    onSaveDefaultInviteRole={mockSaveDefaultRole}
+  />
+);
 
 describe("SettingsRolesTab", () => {
   beforeEach(primeMocks);
 
-  it("never shows the role pack, a setup detail, under the Roles title", () => {
-    // `4e` drew the pack as a label beside the count ("IFC Fraternity role
-    // pack"): a seed's name, not the chapter's (principles.md P2.2). It used
-    // to be the default sub-tab before that.
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(screen.getByRole("heading", { name: "Roles" })).toBeInTheDocument();
-    expect(screen.queryByText(/role pack/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("tab", { name: /pack/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("draws one row per permission and one column per live role", () => {
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    // Columns are the `roles` table, not the archetype pack — the old matrix
-    // drew pack columns it had no capability data for and filled them with the
-    // literal string "n/a".
-    expect(
-      screen.getByRole("columnheader", { name: "Member, 0 members" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("columnheader", { name: "New Member, 0 members" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("rowheader", { name: "See the full directory" }),
-    ).toBeInTheDocument();
-    // Rows group by permission namespace (`4e` pin 3).
-    expect(
-      screen.getByRole("rowheader", { name: "Members" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("rowheader", { name: "Events" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("n/a")).not.toBeInTheDocument();
-  });
-
-  it("counts the members holding each role", () => {
-    // The only test that enters the `memberCounts` loop at all. Every other
-    // fixture is `data: []` or `data: undefined`, so the loop body — which
-    // reads `member.role_ids` straight off the contract type — was executed
-    // by nothing before this.
-    mockUseMembers.mockReturnValue({
-      data: [
-        { user_id: "u-1", role_ids: ["role-member"] },
-        { user_id: "u-2", role_ids: ["role-member", "role-pledge"] },
-        { user_id: "u-3", role_ids: [] },
-      ],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    expect(
-      screen.getByRole("columnheader", { name: /Member, 2 members/ }),
-    ).toBeInTheDocument();
-    // `role-pledge` is labelled "New Member" by the ifc archetype.
-    expect(
-      screen.getByRole("columnheader", { name: /New Member, 1 member$/ }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows no member count at all when the members read has not landed", () => {
-    // Not "0". An officer auditing who holds the President role would read a
-    // zero as a fact, and act on it.
-    mockUseMembers.mockReturnValue({
-      data: undefined,
-      isPending: false,
-      isError: true,
-      isSuccess: false,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    expect(
-      screen.getByRole("columnheader", { name: "Member" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("columnheader", { name: /0 members/ }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("flips a cell straight to the API, with no Save step", async () => {
-    // `4e` pin 2: "Click flips and saves". The permission it sends is the
-    // role's existing set plus the one clicked — never the whole catalog.
+  it("lands on the tier list, and links a tier and a role by URL", async () => {
     const user = userEvent.setup();
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Create events for Member" }),
-    );
-
-    expect(mockUpdateRole).toHaveBeenCalledWith({
-      id: "role-member",
-      body: { permissions: ["members:view", "events:create"] },
-    });
+    render(tab());
+    expect(screen.getByTestId("overview")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "open tier" }));
+    expect(mockPush).toHaveBeenCalledWith("/settings?tab=roles&tier=tier-1");
+    await user.click(screen.getByRole("button", { name: "open role" }));
+    expect(mockPush).toHaveBeenCalledWith("/settings?tab=roles&role=role-1");
   });
 
-  it("composes a second flip on top of the first, not on top of stale props", async () => {
-    /*
-     * The race the optimistic overlay exists for. `useUpdateRole`'s
-     * `onSuccess` fires `invalidateQueries` without returning it, so
-     * `mutateAsync` resolves before the refetched roles arrive — the `roles`
-     * prop here never changes at all, standing in for that window. Without the
-     * overlay the second PATCH would rebuild from the original
-     * `["members:view"]` and silently drop the grant the first one made.
-     */
+  it("opens a tier's permissions from ?tier=, and goes back to the list", async () => {
     const user = userEvent.setup();
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Create events for Member" }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "See the full directory for Member" }),
-    );
-
-    expect(mockUpdateRole).toHaveBeenNthCalledWith(1, {
-      id: "role-member",
-      body: { permissions: ["members:view", "events:create"] },
-    });
-    // The revoke is applied to the array the first call sent, so
-    // `events:create` survives.
-    expect(mockUpdateRole).toHaveBeenNthCalledWith(2, {
-      id: "role-member",
-      body: { permissions: ["events:create"] },
-    });
+    mockParams.value = new URLSearchParams("tab=roles&tier=tier-9");
+    render(tab());
+    expect(screen.getByTestId("tier-page")).toHaveTextContent("tier-9");
+    expect(screen.queryByTestId("overview")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "back" }));
+    expect(mockPush).toHaveBeenCalledWith("/settings?tab=roles");
   });
 
-  it("locks every cell of a role holding the wildcard", () => {
-    // The API rejects introducing or stripping `*` outside presidency
-    // transfer, so a clickable cell there is a control that always fails.
-    mockUseRoles.mockReturnValue({
-      data: [
-        {
-          id: "role-president",
-          name: "President",
-          permissions: ["*"],
-          is_system: true,
-          display_order: 0,
-        },
-      ],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-      refetch: vi.fn(),
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    expect(
-      screen.queryByRole("button", { name: /for President/ }),
-    ).not.toBeInTheDocument();
-    // And it reads as granted rather than empty.
-    expect(
-      screen.getByText("Granted: See the full directory for President"),
-    ).toBeInTheDocument();
+  it("opens a role from ?role=", () => {
+    mockParams.value = new URLSearchParams("tab=roles&role=role-3");
+    render(tab());
+    expect(screen.getByTestId("role-page")).toHaveTextContent("role-3");
   });
 
-  it("never renders the wildcard as a permission row", () => {
-    mockUseCatalog.mockReturnValue({
-      data: [{ key: "WILDCARD", permission: "*" }, ...CATALOG],
-      isPending: false,
-      isError: false,
-      refetch: vi.fn(),
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(
-      screen.queryByRole("rowheader", { name: "WILDCARD" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("leaves the cells read-only for a caller who cannot manage roles", () => {
-    // `roles:manage` specifically. A caller holding `chapter-config:manage`
-    // alone must not get live cells: every click would 403.
-    mockPermissions.mockReturnValue(["chapter-config:manage"]);
-    render(
-      <SettingsRolesTab
-        canManage={false}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(
-      screen.queryByRole("button", { name: /for Member/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Granted: See the full directory for Member"),
-    ).toBeInTheDocument();
-  });
-});
-
-describe("the capability matrix's marks, at the call site", () => {
-  beforeEach(primeMocks);
-
-  /*
-   * `settings-contrast.spec.ts` measures the tones; it cannot see which one
-   * the component reaches for. The review proved the gap: reverting the
-   * missing-permission mark to `text-muted` — the exact near-miss that file's
-   * docstring is written about, 3.568:1 and under §6 — left all of its
-   * assertions and all of this file's green. Same lesson as the accent-painted
-   * status one slice back: a value-level guard is blind to the call site.
-   */
-  it("uses the token pair the measurements clear, not the one that reads right", () => {
-    render(
-      <SettingsRolesTab
-        canManage
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    // The cells that carry the mark: one granted, one not, both on a role
-    // whose cells are editable so the tone lives on the button.
-    const marks = [
-      screen.getByRole("button", { name: "See the full directory for Member" }),
-      screen.getByRole("button", { name: "Create events for Member" }),
-    ];
-    for (const mark of marks) {
-      const { className } = mark;
-      // The marks take `--muted-foreground`. `--muted` was 3.568:1 on this
-      // card when this guard was written, under §6's 4.5:1 text floor (the
-      // marks are characters, so the glyph floor does not apply). Since the
-      // 2026-11-09 text ladder it clears 4.5:1, so the ban now keeps the
-      // mark's place in the hierarchy rather than its legibility.
-      expect(className).not.toMatch(/text-muted(?![-\w])/);
-      /*
-       * No opacity modifier on the tone, in *either* Tailwind spelling. The
-       * first cut of this guard banned `text-muted-foreground/40` literally,
-       * and the review walked straight past it with
-       * `text-muted-foreground/[.4]` — the identical 2.184:1 the whole file
-       * exists to prevent, reached through the bracket syntax. Checking which
-       * token is only half the question; a correct token at 40% is the same
-       * defect. This caught `text-muted-foreground/60` on the first cut of the
-       * `4e` matrix.
-       */
-      expect(className).not.toMatch(/text-(accent-text|muted-foreground)\//);
-      expect(className).not.toMatch(/emerald|green-\d/);
-      expect(className).not.toMatch(/\bdark:/);
-    }
-    // Granted takes the retinting accent, not `--success`: a held permission
-    // is an entitlement, not a status (`pro-chip.tsx`). And not `--gold-ask-*`,
-    // which is Ask's fixed family and must never merge into the accent.
-    expect(marks[0]!.className).toContain("text-accent-text");
-    expect(marks[0]!.className).not.toContain("gold-ask");
-    expect(marks[1]!.className).toContain("text-muted-foreground");
+  it("offers Transfer presidency only to the caller who holds everything", () => {
+    const { unmount } = render(tab());
+    expect(screen.queryByTestId("transfer")).toBeNull();
+    unmount();
+    mockPermissions.mockReturnValue(["*"]);
+    render(tab());
+    expect(screen.getByTestId("transfer")).toBeInTheDocument();
   });
 
   // ── Default invite role (#422) ───────────────────────────────────────────

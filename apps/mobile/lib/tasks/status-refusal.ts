@@ -24,3 +24,10 @@ export function taskStatusGateRefusal(error: unknown): string | null {
   if (moduleRefusalOf(error)) return MODULE_REFUSAL_COPY.taskStatus;
   return null;
 }
+
+/**
+ * A refused confirm that isn't a gate's, when the server gives no message
+ * worth relaying: the task card's line, which Activity's row Confirm also
+ * says (#4437).
+ */
+export const TASK_CONFIRM_FAILURE = "Couldn't confirm the task.";

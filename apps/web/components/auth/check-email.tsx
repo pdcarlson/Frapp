@@ -9,15 +9,18 @@ import { buildAuthCallbackUrl } from "@/lib/auth/redirect";
 import {
   cooldownCopy,
   describeEmailSendError,
+  EMAIL_RESEND_COOLDOWN_SECONDS,
   emailCooldownSeconds,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
+import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
  * GoTrue sends one address one auth email a minute and refuses a second with
  * a 429. Counting the minute down here means the member never meets that
- * refusal by tapping Resend right after the first email went out.
+ * refusal by tapping Resend right after the first email went out. Shared with
+ * mobile's Resend (`@repo/hooks/auth-error-copy`).
  */
-export const RESEND_COOLDOWN_SECONDS = 60;
+export const RESEND_COOLDOWN_SECONDS = EMAIL_RESEND_COOLDOWN_SECONDS;
 
 /**
  * Where the confirmation email's link lands: `/auth/callback` with `next` and
@@ -138,6 +141,13 @@ export function CheckEmail({
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
       setNotice({ text: `We sent a new link to ${email}.`, isError: false });
     } catch (error) {
+      // Shown on `/sign-in` and `/sign-up` alike; a path that isn't a bare
+      // screen name is reported as `unknown`.
+      reportAuthFailure({
+        flow: "confirmation_resend",
+        screen: window.location.pathname,
+        error,
+      });
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
         setSecondsLeft(Math.max(cooldown, 1));

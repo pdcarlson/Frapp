@@ -45,8 +45,11 @@ export interface PreviewAuthor {
   author_name: string | null;
 }
 
-/** A name's first word, so a row reads "Jake: ..." the way Messages does. */
-function firstName(label: string): string {
+/**
+ * A name's first word, so a row reads "Jake: ..." the way Messages does. The
+ * thread card's preview names its replier the same way (`threadPreviewParts`).
+ */
+export function firstName(label: string): string {
   return label.trim().split(/\s+/)[0] || label;
 }
 
