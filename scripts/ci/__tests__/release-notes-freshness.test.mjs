@@ -18,7 +18,10 @@ import {
   releaseNotesVerdict,
   runCli,
 } from "../release-notes-freshness.mjs";
-import { RELEASE_NOTES } from "../../../packages/validation/src/release-notes.ts";
+import {
+  RELEASE_NOTES,
+  releaseNoteLineCount,
+} from "../../../packages/validation/src/release-notes.ts";
 import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -35,8 +38,18 @@ describe("newestReleaseNote", () => {
     const source = readFileSync(join(ROOT, RELEASE_NOTES_PATH), "utf8");
     assert.deepEqual(newestReleaseNote(source), {
       date: RELEASE_NOTES[0].date,
-      lines: RELEASE_NOTES[0].changes.length,
+      lines: releaseNoteLineCount(RELEASE_NOTES[0]),
     });
+  });
+
+  it("counts the newest entry's web and phone lines, and none of an older entry's", () => {
+    const source =
+      `export const RELEASE_NOTES = Object.freeze([\n` +
+      `  { date: "2026-11-12", title: "t", changes: ["a"], web: ["b", "c"], phone: ["d"] },\n` +
+      `  { date: "2026-11-11", title: "t", changes: ["e"], web: ["f"] },\n]);\n`;
+    assert.deepEqual(newestReleaseNote(source), { date: "2026-11-12", lines: 4 });
+    const onlyChanges = source.replace(`, web: ["b", "c"], phone: ["d"]`, "");
+    assert.deepEqual(newestReleaseNote(onlyChanges), { date: "2026-11-12", lines: 1 });
   });
 
   it("reads the first entry inside the list, not a date in a comment above it", () => {

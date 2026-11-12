@@ -11,6 +11,9 @@ import {
   isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   releaseNoteLineProblem,
+  releaseNoteGroups,
+  releaseNoteStoreText,
+  releaseNoteLineCount,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -26,12 +29,21 @@ describe("RELEASE_NOTES", () => {
       expect(note.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(formatReleaseNoteDate(note.date)).not.toBe(note.date);
       expect(note.title.trim()).not.toBe("");
-      expect(note.changes.length).toBeGreaterThan(0);
-      for (const line of [note.title, ...note.changes]) {
+      expect(releaseNoteLineCount(note)).toBeGreaterThan(0);
+      const lines = releaseNoteGroups(note).flatMap((group) => group.lines);
+      expect(lines).toHaveLength(releaseNoteLineCount(note));
+      for (const line of [note.title, ...lines]) {
         expect(releaseNoteLineProblem(line)).toBeNull();
       }
     },
   );
+
+  it("leaves the place out of a web or phone line, which its heading says", () => {
+    for (const note of RELEASE_NOTES) {
+      for (const line of note.web ?? []) expect(line).not.toMatch(/^on the web\b/i);
+      for (const line of note.phone ?? []) expect(line).not.toMatch(/^on your phone\b/i);
+    }
+  });
 });
 
 describe("releaseNoteLineProblem", () => {
@@ -77,11 +89,86 @@ describe("releaseNoteText", () => {
   });
 });
 
+describe("releaseNoteText with places", () => {
+  const split: ReleaseNote = {
+    date: "2026-11-12",
+    title: "A title",
+    changes: ["Both."],
+    web: ["Web."],
+    phone: ["Phone."],
+  };
+
+  it("lists the lines for both first, then Web and Mobile under their subheadings", () => {
+    expect(releaseNoteText(split)).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n" +
+        "- Both.\n\nWeb\n- Web.\n\nMobile\n- Phone.",
+    );
+  });
+
+  it("keeps only the places asked for, as the store text does", () => {
+    expect(releaseNoteText(split, ["everywhere", "phone"])).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n- Both.\n\nMobile\n- Phone.",
+    );
+  });
+});
+
+describe("releaseNoteStoreText", () => {
+  const note: ReleaseNote = {
+    date: "2026-11-12",
+    title: "T",
+    changes: ["Both one.", "Both two."],
+    web: ["Web only."],
+    phone: ["Phone only."],
+  };
+
+  it("leaves the web-only lines out, for phone testers", () => {
+    const text = releaseNoteStoreText(note);
+    expect(text).not.toContain("Web only.");
+    expect(text).toContain("Mobile\n- Phone only.");
+  });
+
+  it("keeps as many whole lines as fit under a limit, in order", () => {
+    const full = releaseNoteStoreText(note);
+    const short = releaseNoteStoreText(note, full.length - 1);
+    expect(short.length).toBeLessThan(full.length);
+    expect(short).toContain("- Both two.");
+    expect(short).not.toContain("Phone only.");
+    expect(releaseNoteStoreText(note, full.length)).toBe(full);
+  });
+});
+
+describe("releaseNoteGroups", () => {
+  it("gives an entry from before the split one group with no subheading", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-07", title: "t", changes: ["A."] }),
+    ).toEqual([{ place: "everywhere", label: null, lines: ["A."] }]);
+  });
+
+  it("subheads Web and Mobile, leaving out empty places", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-12", title: "t", changes: [], phone: ["P."] }),
+    ).toEqual([{ place: "phone", label: "Mobile", lines: ["P."] }]);
+    expect(
+      releaseNoteGroups({
+        date: "2026-11-12",
+        title: "t",
+        changes: ["A."],
+        web: ["W."],
+      }).map((group) => group.label),
+    ).toEqual([null, "Web"]);
+  });
+});
+
 describe("releaseNoteVersion", () => {
   const note = { date: "2026-11-09", title: "A title", changes: ["One.", "Two."] };
 
   it("is the date and the number of lines", () => {
     expect(releaseNoteVersion(note)).toBe("2026-11-09#2");
+  });
+
+  it("counts the web and phone lines too, so moving a line between places isn't news", () => {
+    expect(releaseNoteVersion({ ...note, web: ["Three."], phone: ["Four."] })).toBe("2026-11-09#4");
+    expect(releaseNoteVersion({ ...note, changes: ["One."], web: ["Two."] })).toBe("2026-11-09#2");
   });
 
   it("moves when lines are added, not when one is reworded", () => {
@@ -156,6 +243,14 @@ describe("decideWhatsNew", () => {
     const extended = { ...NOTES[0]!, changes: [...NOTES[0]!.changes, "More."] };
     const notes = [extended, NOTES[1]!, NOTES[2]!];
     expect(decide({ notes, seen: ID[0]! })).toEqual({
+      show: [extended],
+      record: releaseNoteVersion(extended),
+    });
+  });
+
+  it("shows the same day's entry again when a later release added only Web or Mobile lines", () => {
+    const extended = { ...NOTES[0]!, phone: ["Mobile only."] };
+    expect(decide({ notes: [extended, NOTES[1]!], seen: ID[0]! })).toEqual({
       show: [extended],
       record: releaseNoteVersion(extended),
     });
