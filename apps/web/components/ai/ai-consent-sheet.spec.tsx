@@ -151,9 +151,9 @@ describe("the AI sheet", () => {
     render(<Entry onResult={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Draft minutes" }));
     await user.click(await screen.findByRole("button", { name: "Yes, use AI" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /has changed since you opened this/i,
-    );
+    expect(
+      await screen.findByText(/has changed since you opened this/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 

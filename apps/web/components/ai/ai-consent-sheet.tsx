@@ -152,16 +152,18 @@ export function AiConsentDialog({ open, consent, onAnswered, onDismiss }: Props)
           </DialogDescription>
         </DialogHeader>
         <AiConsentDetails sheet={consent.sheet} />
-        <p className="text-caption text-muted-foreground">
-          {AI_CONSENT_COPY.changeLater}
-        </p>
-        {/* Reserved line, so an error never pushes the buttons down. */}
+        {/*
+          One line that says where to change the answer, and says why a save
+          failed in its place, so an error never pushes the buttons down.
+        */}
         <p
-          role="status"
           aria-live="polite"
-          className="min-h-5 text-caption text-destructive-text"
+          className={cn(
+            "text-caption",
+            error ? "text-destructive-text" : "text-muted-foreground",
+          )}
         >
-          {error ?? ""}
+          {error ?? AI_CONSENT_COPY.changeLater}
         </p>
         {/*
           Yes and No at the same size, side by side: Apple's 5.1.2(i) asks
