@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
 import {
+  AI_REPORT_COPY,
   ASK_COPY,
   askLeftOutLine,
   askSourceMetaLine,
@@ -262,5 +263,41 @@ describe("askSourceMetaLine", () => {
 
   it("marks live data, and says its kind once when the title is the kind", () => {
     expect(askSourceMetaLine(ROSTER).endsWith(ASK_COPY.live)).toBe(true);
+  });
+});
+
+describe("Report this on an answer", () => {
+  it("draws Report this last, only for something Ask wrote, and Reported once sent", () => {
+    const onPress = vi.fn();
+    const done = exchange({ answer: answer(), askId: "ask-1" });
+    const tree = render(done, { report: { reported: false, onPress } });
+    act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
+    expect(onPress).toHaveBeenCalledTimes(1);
+
+    const sent = render(done, { report: { reported: true, onPress } });
+    expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(true);
+
+    // Nothing AI-made in an answer that was never attempted, or not yet named.
+    expect(
+      byLabel(
+        render(
+          exchange({
+            askId: "ask-1",
+            answer: answer({ status: "unavailable", reason: "chapter_off" }),
+          }),
+          { report: { reported: false, onPress } },
+        ),
+        AI_REPORT_COPY.action,
+      ),
+    ).toHaveLength(0);
+    expect(
+      byLabel(
+        render(exchange({ answer: answer() }), {
+          report: { reported: false, onPress },
+        }),
+        AI_REPORT_COPY.action,
+      ),
+    ).toHaveLength(0);
+    expect(byLabel(render(done), AI_REPORT_COPY.action)).toHaveLength(0);
   });
 });

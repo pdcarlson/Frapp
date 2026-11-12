@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDraftState } from "@repo/hooks";
 import {
+  AI_REPORT_COPY,
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
@@ -45,6 +46,20 @@ const confirm = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/minutes/meetings-on", () => ({ confirmAlert: confirm }));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
+}));
+
+const reporting = vi.hoisted(() => ({
+  offered: true,
+  reported: false,
+  report: vi.fn(),
+}));
+vi.mock("@/components/ai/report-ai-sheet", () => ({
+  useAiReport: () => ({
+    offered: reporting.offered,
+    isReported: () => reporting.reported,
+    report: reporting.report,
+    reportSheet: null,
+  }),
 }));
 
 import { NotesDraftSheet } from "./notes-draft-sheet";
@@ -108,6 +123,8 @@ beforeEach(() => {
   hooks.use.mockResolvedValue({});
   gate.ensureConsent.mockResolvedValue(true);
   confirm.mockResolvedValue(true);
+  reporting.offered = true;
+  reporting.reported = false;
 });
 
 describe("NotesDraftSheet", () => {
@@ -233,6 +250,48 @@ describe("NotesDraftSheet", () => {
     expect(onSettled).not.toHaveBeenCalled();
     act(() => tree.update(element(draftState({ status: "applied" }))));
     expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a written draft be reported, each draft as its own thing", async () => {
+    const tree = render(
+      draftState({
+        status: "ready",
+        notes: "n",
+        requested_at: "2026-11-12T01:00:00Z",
+      } as Partial<MeetingDraftState>),
+    );
+    await press(tree, AI_REPORT_COPY.titles.meeting_draft);
+    expect(reporting.report).toHaveBeenCalledWith({
+      subject: "meeting_draft",
+      subjectId: "m1",
+      version: "2026-11-12T01:00:00Z",
+    });
+  });
+
+  it("offers no report before there is a draft, while one is written, or without ai:use", () => {
+    expect(
+      button(render(draftState()), AI_REPORT_COPY.titles.meeting_draft),
+    ).toBeUndefined();
+    expect(
+      button(
+        render(draftState({ status: "drafting", notes: "n" })),
+        AI_REPORT_COPY.titles.meeting_draft,
+      ),
+    ).toBeUndefined();
+    reporting.offered = false;
+    expect(
+      button(
+        render(draftState({ status: "ready", notes: "n" })),
+        AI_REPORT_COPY.titles.meeting_draft,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reads Reported, and can't be pressed again, once a draft is reported", () => {
+    reporting.reported = true;
+    const tree = render(draftState({ status: "applied", notes: "n" }));
+    expect(screenText(tree)).toContain(AI_REPORT_COPY.reported);
+    expect(button(tree, AI_REPORT_COPY.reported).props.disabled).toBe(true);
   });
 
   it("says why a draft failed in the server's words", () => {

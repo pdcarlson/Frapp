@@ -31,6 +31,10 @@ import {
   type AskSource,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import {
+  useAiReport,
+  type AiReportTarget,
+} from "@/components/ai/report-ai-sheet";
 import { AskExchangeCard } from "@/components/ask/answer-card";
 import {
   SheetGrabber,
@@ -158,6 +162,7 @@ export const AskSheet = forwardRef<
   const [shownOpen, setShownOpen] = useState(false);
   const status = useAskStatus({ enabled: shownOpen });
   const { ensureConsent, consentSheet } = useAiConsentGate();
+  const reporting = useAiReport();
   const openDocument = useDocumentDownloadUrl();
 
   const [draft, setDraft] = useState("");
@@ -297,6 +302,7 @@ export const AskSheet = forwardRef<
                 onOpenSource={(source) => void openSource(source)}
                 onRetry={() => void submit(shown.question)}
                 onAnswerConsent={() => void submit(shown.question)}
+                report={reportFor(shown, reporting)}
               />
               {sourceNotice !== null ? (
                 <Text accessibilityLiveRegion="polite" style={styles.caption}>
@@ -368,9 +374,27 @@ export const AskSheet = forwardRef<
         </View>
       </BottomSheetModal>
       {consentSheet}
+      {reporting.reportSheet}
     </>
   );
 });
+
+/** The answer's "Report this", for a member who may report (#4315). */
+function reportFor(
+  exchange: AskExchange,
+  reporting: ReturnType<typeof useAiReport>,
+) {
+  if (!reporting.offered || !exchange.askId) return null;
+  const target: AiReportTarget = {
+    subject: "ask_answer",
+    subjectId: exchange.askId,
+    receipt: exchange.answer?.report_receipt ?? null,
+  };
+  return {
+    reported: reporting.isReported(target),
+    onPress: () => reporting.report(target),
+  };
+}
 
 const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
 

@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -15,6 +15,7 @@ import {
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_REPORT_COPY,
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
@@ -22,6 +23,10 @@ import {
   meetingLocalDay,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import {
+  useAiReport,
+  type AiReportTarget,
+} from "@/components/ai/report-ai-sheet";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import {
   SHEET_STACK_BEHAVIOR,
@@ -89,6 +94,7 @@ export const NotesDraftSheet = forwardRef<
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
   const { ensureConsent, consentSheet } = useAiConsentGate();
+  const reporting = useAiReport();
   const [notes, setNotes] = useState(state.notes);
   const [problem, setProblem] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
@@ -252,6 +258,14 @@ export const NotesDraftSheet = forwardRef<
   const reviewed = state.status === "applied" || state.status === "ready";
   const { gaps, left_out: leftOut } = state.review;
   const canClear = !drafting && (notes !== "" || state.status !== "none");
+  // A draft the AI wrote can be reported, like an Ask answer. Each draft is
+  // its own thing to report.
+  const reportTarget: AiReportTarget = {
+    subject: "meeting_draft",
+    subjectId: meetingId,
+    version: state.requested_at ?? null,
+  };
+  const draftReported = reporting.isReported(reportTarget);
 
   return (
     <>
@@ -368,9 +382,35 @@ export const NotesDraftSheet = forwardRef<
               ) : null}
             </View>
           ) : null}
+
+          {/* Last in the sheet, so it turning into "Reported" moves nothing. */}
+          {reviewed && !drafting && reporting.offered ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                draftReported
+                  ? AI_REPORT_COPY.reported
+                  : AI_REPORT_COPY.titles.meeting_draft
+              }
+              accessibilityState={draftReported ? { disabled: true } : undefined}
+              disabled={draftReported}
+              onPress={() => reporting.report(reportTarget)}
+              style={({ pressed }) => [
+                styles.report,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.reportText}>
+                {draftReported
+                  ? AI_REPORT_COPY.reported
+                  : AI_REPORT_COPY.action}
+              </Text>
+            </Pressable>
+          ) : null}
         </BottomSheetScrollView>
       </BottomSheetModal>
       {consentSheet}
+      {reporting.reportSheet}
     </>
   );
 });
@@ -416,6 +456,19 @@ function createStyles(tokens: SignetTokens, accent: string) {
     gap: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
+    },
+    report: {
+      alignSelf: "center",
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+    },
+    reportText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+    pressed: {
+      opacity: 0.7,
     },
   });
 }

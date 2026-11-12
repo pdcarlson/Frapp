@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import type { AskExchange } from "@repo/hooks";
 import {
+  AI_REPORT_COPY,
   ASK_COPY,
   askSavedLine,
   askUnavailableLine,
@@ -50,6 +51,20 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
   useAiConsentGate: () => ({
     ensureConsent: gate.ensureConsent,
     consentSheet: null,
+  }),
+}));
+
+const reporting = vi.hoisted(() => ({
+  offered: true,
+  reported: false,
+  report: vi.fn(),
+}));
+vi.mock("@/components/ai/report-ai-sheet", () => ({
+  useAiReport: () => ({
+    offered: reporting.offered,
+    isReported: () => reporting.reported,
+    report: reporting.report,
+    reportSheet: null,
   }),
 }));
 
@@ -140,6 +155,8 @@ beforeEach(() => {
   hooks.exchange = null;
   hooks.statusEnabled = [];
   hooks.savedUntil = null;
+  reporting.offered = true;
+  reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
   vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
     type: "dismiss",
@@ -267,6 +284,29 @@ describe("AskSheet", () => {
     const done = render();
     act(() => sheet(done).props.onDismiss());
     expect(hooks.reset).not.toHaveBeenCalled();
+  });
+
+  it("reports an answer by the ask's id, with the receipt exactly as it came", () => {
+    hooks.exchange = {
+      ...answered(),
+      askId: "ask-1",
+      answer: { ...answered().answer!, report_receipt: "sealed" },
+    };
+    const tree = render();
+    act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
+    expect(reporting.report).toHaveBeenCalledWith({
+      subject: "ask_answer",
+      subjectId: "ask-1",
+      receipt: "sealed",
+    });
+  });
+
+  it("offers no report to a member who can't send one, or before the ask has an id", () => {
+    hooks.exchange = answered();
+    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
+    hooks.exchange = { ...answered(), askId: "ask-1" };
+    reporting.offered = false;
+    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
   });
 
   it("can't send an empty question or a second one while the first is answered", () => {

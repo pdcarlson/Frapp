@@ -16,10 +16,15 @@ import { memberLabel } from "@repo/hooks/display-names";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
   aiSuggestionRefusalLine,
   meetingDueLabel,
 } from "@repo/validation";
+import {
+  useAiReport,
+  type AiReportTarget,
+} from "@/components/ai/report-ai-sheet";
 import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -127,6 +132,7 @@ function SuggestedTasks() {
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
   const refresh = useRefetchAll([suggestionsQuery]);
+  const reporting = useAiReport();
 
   const [busy, setBusy] = useState<{ id: string; doing: "accept" | "dismiss" } | null>(
     null,
@@ -235,6 +241,7 @@ function SuggestedTasks() {
       onOpen={() => setFormFor(item)}
       onAccept={() => void acceptRow(item)}
       onDismiss={() => void dismissRow(item)}
+      report={reportFor(item, reporting)}
       styles={styles}
     />
   );
@@ -296,8 +303,22 @@ function SuggestedTasks() {
           onClosed={() => setFormFor(null)}
         />
       ) : null}
+      {reporting.reportSheet}
     </>
   );
+}
+
+/** A suggestion's "Report this", for a member who may report (#4315). */
+function reportFor(item: Waiting, reporting: ReturnType<typeof useAiReport>) {
+  if (!reporting.offered) return null;
+  const target: AiReportTarget = {
+    subject: "ai_suggestion",
+    subjectId: item.id,
+  };
+  return {
+    reported: reporting.isReported(target),
+    onPress: () => reporting.report(target),
+  };
 }
 
 type Styles = ReturnType<typeof createStyles>;
@@ -311,6 +332,7 @@ function SuggestionRow({
   onOpen,
   onAccept,
   onDismiss,
+  report,
   styles,
 }: {
   item: Waiting;
@@ -321,6 +343,7 @@ function SuggestionRow({
   onOpen: () => void;
   onAccept: () => void;
   onDismiss: () => void;
+  report: { reported: boolean; onPress: () => void } | null;
   styles: Styles;
 }) {
   const { accent, accentOnPrimary } = useChapterBranding();
@@ -352,6 +375,32 @@ function SuggestionRow({
         <Text style={styles.meta}>{meta}</Text>
       </Pressable>
       <View style={styles.actions}>
+        {/* Quiet and to the left, away from the two decisions. The words
+            change in place, so the row keeps its height. */}
+        {report ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              report.reported
+                ? AI_REPORT_COPY.reported
+                : `${AI_REPORT_COPY.action}: ${task.title}`
+            }
+            accessibilityState={report.reported ? { disabled: true } : undefined}
+            disabled={report.reported}
+            hitSlop={4}
+            onPress={report.onPress}
+            style={({ pressed }) => [
+              styles.report,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.meta}>
+              {report.reported
+                ? AI_REPORT_COPY.reported
+                : AI_REPORT_COPY.action}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${AI_SUGGESTION_COPY.dismiss}: ${task.title}`}
@@ -444,6 +493,12 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       justifyContent: "flex-end",
       gap: tokens.spacing.sm,
+    },
+    report: {
+      height: 36,
+      justifyContent: "center",
+      // Takes the room left of Dismiss and Accept, which stay on the right.
+      marginRight: "auto",
     },
     skeletonActions: {
       height: 36,

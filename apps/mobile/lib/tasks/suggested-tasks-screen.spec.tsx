@@ -4,7 +4,11 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { AI_SUGGESTION_COPY, aiSuggestionRefusalLine } from "@repo/validation";
+import {
+  AI_REPORT_COPY,
+  AI_SUGGESTION_COPY,
+  aiSuggestionRefusalLine,
+} from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import type { ValidatedNewTask } from "@/lib/tasks/create-task";
@@ -70,6 +74,20 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
 }));
 
+const reporting = vi.hoisted(() => ({
+  offered: true,
+  reported: false,
+  report: vi.fn(),
+}));
+vi.mock("@/components/ai/report-ai-sheet", () => ({
+  useAiReport: () => ({
+    offered: reporting.offered,
+    isReported: () => reporting.reported,
+    report: reporting.report,
+    reportSheet: null,
+  }),
+}));
+
 import SuggestedTasksScreen, {
   suggestionEdits,
 } from "@/app/(app)/suggested-tasks";
@@ -120,6 +138,8 @@ beforeEach(() => {
   state.seed = undefined;
   state.accept.mockResolvedValue({});
   state.dismiss.mockResolvedValue({});
+  reporting.offered = true;
+  reporting.reported = false;
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
 });
 
@@ -186,6 +206,21 @@ describe("Suggested tasks", () => {
       byLabel(tree, `${AI_SUGGESTION_COPY.dismiss}: Book the hall`).props.onPress(),
     );
     expect(state.dismiss).toHaveBeenCalledWith("s1");
+  });
+
+  it("reports a suggestion by its id, and offers that only to a member who can send it", () => {
+    const tree = render();
+    act(() =>
+      byLabel(tree, `${AI_REPORT_COPY.action}: Book the hall`)!.props.onPress(),
+    );
+    expect(reporting.report).toHaveBeenCalledWith({
+      subject: "ai_suggestion",
+      subjectId: "s1",
+    });
+    reporting.offered = false;
+    expect(
+      byLabel(render(), `${AI_REPORT_COPY.action}: Book the hall`),
+    ).toBeUndefined();
   });
 
   it("goes to Tasks, and asks the server nothing, where AI is off", () => {

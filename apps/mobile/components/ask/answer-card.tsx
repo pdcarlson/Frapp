@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_REPORT_COPY,
   ASK_COPY,
   askAnswerSegments,
   askLeftOutLine,
@@ -47,6 +48,7 @@ export function AskExchangeCard({
   onOpenSource,
   onRetry,
   onAnswerConsent,
+  report,
 }: {
   exchange: AskExchange;
   /** Whether this build has a screen for the source; a row without one is plain text. */
@@ -58,6 +60,11 @@ export function AskExchangeCard({
   onRetry: () => void;
   /** Opens the AI sheet, for an answer refused because it is unanswered. */
   onAnswerConsent: () => void;
+  /**
+   * "Report this" for the answer (#4315), where the member may report. Left
+   * out, or null, draws nothing.
+   */
+  report?: { reported: boolean; onPress: () => void } | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -92,6 +99,23 @@ export function AskExchangeCard({
           openingSourceId={openingSourceId ?? null}
           onOpenSource={onOpenSource}
           onAnswerConsent={onAnswerConsent}
+        />
+      ) : null}
+
+      {/* Anything Ask wrote, or chose not to, can be reported. An answer
+          that was never attempted has nothing AI-made in it. Last in the
+          card, so it turning into "Reported" moves nothing. */}
+      {report &&
+      exchange.phase === "done" &&
+      exchange.answer &&
+      exchange.answer.status !== "unavailable" &&
+      exchange.askId ? (
+        <CardAction
+          label={
+            report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action
+          }
+          disabled={report.reported}
+          onPress={report.onPress}
         />
       ) : null}
     </View>
@@ -268,9 +292,11 @@ function SourceRow({
 function CardAction({
   label,
   onPress,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -278,10 +304,16 @@ function CardAction({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={disabled ? { disabled: true } : undefined}
+      disabled={disabled}
       // 36pt drawn against the 44pt minimum.
       hitSlop={4}
       onPress={onPress}
-      style={({ pressed }) => [styles.action, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [
+        styles.action,
+        pressed ? styles.pressed : null,
+        disabled ? styles.dimmed : null,
+      ]}
     >
       <Text style={styles.actionText}>{label}</Text>
     </Pressable>
@@ -358,6 +390,9 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.7,
+    },
+    dimmed: {
+      opacity: 0.5,
     },
   });
 }
