@@ -65,6 +65,7 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
+  lastChannelLandingId,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
   useReorderCategories,
@@ -78,6 +79,7 @@ import {
   can,
   canAll,
   isAnnouncementChannel,
+  isDirectChannel,
   type MentionCandidate,
   type MentionChipTargets,
 } from "@repo/validation";
@@ -98,6 +100,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useThreadUnread } from "@/lib/chat/use-thread-unread";
@@ -107,6 +110,7 @@ import {
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
 import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
+import type { ChatView } from "@/components/layout/shell-prefs";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
@@ -229,7 +233,11 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
-import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import {
+  InlineNote,
+  InlineNoteAction,
+  inlineNoteActionClassName,
+} from "@/components/shared/inline-note";
 
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
@@ -414,6 +422,8 @@ export function ChatShell({
   defaultMembersHidden = false,
   toolBeside = false,
   onClose,
+  view = "channels",
+  onViewChange,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
@@ -436,6 +446,20 @@ export function ChatShell({
    * into, so the header draws no X.
    */
   onClose?: () => void;
+  /**
+   * Which list the rail shows (#3774): the chapter's channels, or the
+   * member's direct and group messages. The nav's Chat and Direct messages
+   * rows switch it (`dashboard-shell.tsx`), and each list lands on its own
+   * last conversation.
+   */
+  view?: ChatView;
+  /**
+   * The open conversation is the other kind: a link, a notification, a
+   * search hit or a bookmark into a DM while channels show, or the reverse.
+   * The shell moves the panel to that list, so the open row is always on the
+   * rail.
+   */
+  onViewChange?: (view: ChatView) => void;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -543,6 +567,14 @@ export function ChatShell({
         muted: levelByChannelId.get(ch.id) === "off",
       })),
     [channelsQuery.data, levelByChannelId],
+  );
+  // The rail's half of the list (#3774): channels, or direct and group
+  // messages. Everything that resolves a channel by id (links, search,
+  // bookmarks, mentions) still reads the whole list.
+  const directView = view === "direct";
+  const railChannels = useMemo(
+    () => channels.filter((ch) => isDirectChannel(ch) === directView),
+    [channels, directView],
   );
 
   // Always formal (#3787): every row asks its channel's density by id, so the
@@ -874,26 +906,35 @@ export function ChatShell({
       effect below) over messages the member never saw, then jump a render
       later. A selection or a link above never waits.
 
-      Read fresh, not once at mount: a fallback later in the visit (hiding
-      the open DM, the open channel deleted) reads the channel that was just
-      open, which `landingChannelId` skips as hidden or missing, so it lands
-      on `#general` rather than on a channel from page load.
+      Read fresh, not once at mount: a fallback later in the visit (the open
+      channel deleted, the open DM hidden) reads the conversation that was
+      just open, which the landing skips as hidden or missing, so Chat lands
+      on `#general` and Direct messages on none, rather than on one from page
+      load.
 
-      Shared with the first-chunk cache, which pins this channel's tail
-      against eviction: the two rules have to be one rule or the cache
-      misses here.
+      Shared with the first-chunk cache, which pins both lists' landings
+      against eviction (`evictOldestTails`): the rules have to be one rule or
+      the cache misses here.
     */
     if (!userId) return null;
-    return landingChannelId(
-      channels,
-      readLastChannel(userId, lastChannelChapter),
-    );
+    // Each list lands in its own half, on its own last conversation (#3774).
+    // Direct messages open only the one the member had open: there is no
+    // default to fall back to, and opening one they didn't pick would mark
+    // its messages read, a direct message's red count gone unseen. With none,
+    // the thread column asks them to pick one.
+    const last = readLastChannel(userId, lastChannelChapter, view);
+    return directView
+      ? lastChannelLandingId(railChannels, last)
+      : landingChannelId(railChannels, last);
   }, [
     selectedChannelId,
     channels,
+    railChannels,
     requestedChannelMissing,
     userId,
     lastChannelChapter,
+    view,
+    directView,
   ]);
   /*
     On a chapter switch the new chapter id lands one commit before the old
@@ -919,13 +960,52 @@ export function ChatShell({
     guard.list = channels;
     if (!activeChannelId || channels === guard.staleList) return;
     guard.staleList = null;
-    writeLastChannel(userId, lastChannelChapter, activeChannelId);
+    const open = channels.find((ch) => ch.id === activeChannelId);
+    if (!open) return;
+    writeLastChannel(
+      userId,
+      lastChannelChapter,
+      activeChannelId,
+      isDirectChannel(open) ? "direct" : "channels",
+    );
   }, [activeChannelId, userId, activeChapterId, lastChannelChapter, channels]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
     [channels, activeChannelId],
   );
+
+  /*
+    The panel and the open conversation agree on the list (#3774).
+
+    The nav switching lists drops a selection of the other kind, so the new
+    list lands on its own last conversation. Adjusted during render, keyed on
+    the view, so the old conversation never paints beside the new list.
+
+    Anything else that opens the other kind (a link, a notification, a
+    search hit or a bookmark into a DM while channels show) moves the panel
+    instead, so the open row is always on the rail.
+  */
+  const [seenView, setSeenView] = useState(view);
+  if (seenView !== view) {
+    setSeenView(view);
+    const selected = selectedChannelId
+      ? channels.find(
+          (ch) => ch.id === selectedChannelId || ch.name === selectedChannelId,
+        )
+      : undefined;
+    if (selected && isDirectChannel(selected) !== directView) {
+      setSelectedChannelId(null);
+    }
+  }
+  const activeView: ChatView | null = activeChannel
+    ? isDirectChannel(activeChannel)
+      ? "direct"
+      : "channels"
+    : null;
+  useEffect(() => {
+    if (activeView && activeView !== view) onViewChange?.(activeView);
+  }, [activeView, view, onViewChange]);
 
   // A 1:1 DM has no list worth showing: its two members are the header's own
   // title and the viewer.
@@ -2513,8 +2593,34 @@ export function ChatShell({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
 
+  // The rail's title is the nav row's label for the list it shows (#3774).
+  const railTitle = directView ? "Direct messages" : "Channels";
+  // Direct messages with none to open: the member has never had one, or has
+  // hidden every one. The thread column says how to start one instead of
+  // drawing a timeline for no conversation.
+  //
+  // Only once there is nothing left to wait for: the viewer's id (landing
+  // waits for it) and a requested conversation the list doesn't hold yet (a
+  // link into a DM made moments ago, while the list is refetched).
+  const selectionPending =
+    selectedChannelId !== null &&
+    !channels.some(
+      (ch) => ch.id === selectedChannelId || ch.name === selectedChannelId,
+    );
+  const directNoneOpen =
+    directView &&
+    channelsPaneState === "ready" &&
+    !requestedChannelMissing &&
+    !selectionPending &&
+    userId !== null &&
+    activeChannelId === null;
+  // Nothing to pick at all: the member has never had a DM, or hid every one.
+  const directEmpty =
+    directNoneOpen && !railChannels.some((ch) => !ch.hidden);
   const timelineReady =
-    channelsPaneState === "ready" && !requestedChannelMissing;
+    channelsPaneState === "ready" &&
+    !requestedChannelMissing &&
+    !directNoneOpen;
   const memberColumnMounted =
     !membersHidden &&
     !toolBeside &&
@@ -2551,7 +2657,7 @@ export function ChatShell({
             screen.
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+        <h2 className="text-sm font-semibold text-foreground">{railTitle}</h2>
         <ChannelFilters
           filters={sidebarPreferences.filters}
           onChange={sidebarControls.onSetFilters}
@@ -2582,20 +2688,26 @@ export function ChatShell({
           The officer setup checklist, above the channels where Discord puts
           its server guide. Renders `null` for anyone with nothing to set up.
         */}
-          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
+          {channelsPaneState === "ready" && !directView ? (
+            <SetupChecklistSection />
+          ) : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
+              kind={view}
               viewerId={userId}
               memberNames={memberNames}
               avatarTintFor={avatarTintFor}
-              channels={channels}
+              channels={railChannels}
               categories={categories}
               unreadByChannelId={unreadByChannelId}
               activeChannelId={activeChannelId}
               onHide={hideFromRail}
               rowActions={rowActions}
               sidebar={sidebarControls}
-              reorder={railReorder}
+              // The chapter's order is for channels: a DM is never placed in
+              // it, and the empty categories an officer drags onto would sit
+              // in a list of conversations (#3774).
+              reorder={directView ? undefined : railReorder}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -2681,7 +2793,7 @@ export function ChatShell({
         each (`narrowPane`).
       */}
       <section
-        aria-label="Channels"
+        aria-label={railTitle}
         className={cn(
           "flex min-h-0 flex-col border-r border-border bg-surface-1",
           // Full width below `lg`, where it is the only column on screen.
@@ -2756,6 +2868,7 @@ export function ChatShell({
             channel={activeChannel}
             name={activeChannelName}
             description={activeChannelDescription}
+            placeholder={directView ? "Pick a conversation" : undefined}
           />
           <div className="flex shrink-0 items-center gap-2">
             {showMemberList ? (
@@ -3036,6 +3149,36 @@ export function ChatShell({
                 Browse channels
               </InlineNoteAction>
             </InlineNote>
+          </div>
+        ) : null}
+        {directNoneOpen ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {directEmpty ? (
+              /*
+                A DM starts from a member, on web as on the phone, so the way
+                in is the Directory's Message action.
+              */
+              <InlineNote>
+                {"No direct messages yet. "}
+                <Link href="/members" className={inlineNoteActionClassName}>
+                  Find someone in the Directory
+                </Link>
+                {" and choose Message."}
+              </InlineNote>
+            ) : (
+              <InlineNote>
+                <span className="max-lg:hidden">
+                  Choose one from the list to open it.
+                </span>
+                {/* Below `lg` the list is its own screen. */}
+                <InlineNoteAction
+                  className="lg:hidden"
+                  onClick={() => setNarrowPane("channels")}
+                >
+                  Show your direct messages
+                </InlineNoteAction>
+              </InlineNote>
+            )}
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (
