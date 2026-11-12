@@ -216,7 +216,7 @@ describe("New event", () => {
       }),
     );
     expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
-      "Who's coming: Required for everyone, optional for Alumni",
+      "Who's coming: Alumni optional, everyone else required",
     );
     act(() => chip(tree, "Every week").props.onPress());
     // Read against the default start, Thursday the 5th at 7 PM.

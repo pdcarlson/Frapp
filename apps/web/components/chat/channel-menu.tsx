@@ -146,6 +146,8 @@ type ChannelMenuProps = {
   bookmarksError: boolean;
   onRemoveBookmark: (messageId: string) => void;
   notificationLevel: ChatNotificationLevel | null;
+  /** The level came from Settings → Chat messages (#4124). */
+  notificationFromChapterLevel?: boolean;
   notificationSaving: boolean;
   onChangeNotificationLevel: (level: ChatNotificationLevel) => void;
   /**
@@ -236,6 +238,7 @@ export function ChannelMenu({
   bookmarksError,
   onRemoveBookmark,
   notificationLevel,
+  notificationFromChapterLevel = false,
   notificationSaving,
   onChangeNotificationLevel,
   hideConversation,
@@ -583,6 +586,7 @@ export function ChannelMenu({
             {view === "notifications" ? (
               <NotificationLevelPanel
                 level={notificationLevel}
+                fromChapterLevel={notificationFromChapterLevel}
                 disabled={!activeChannelId}
                 isSaving={notificationSaving}
                 // Closes, the way the deleted popover's own `setOpen(false)`

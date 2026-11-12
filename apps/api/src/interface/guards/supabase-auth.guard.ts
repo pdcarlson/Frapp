@@ -17,11 +17,6 @@ import {
   tokenExpired,
 } from './auth-rejected.exception';
 import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
-import { PermissionsGuard } from './permissions.guard';
-import {
-  PERMISSIONS_ANY_KEY,
-  PERMISSIONS_KEY,
-} from '../decorators/permissions.decorator';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -62,7 +57,6 @@ export class SupabaseAuthGuard implements CanActivate {
         verified.sub,
         verified,
         request.headers,
-        { roles: this.permissionsWillBeChecked(context) },
       );
     }
 
@@ -95,25 +89,6 @@ export class SupabaseAuthGuard implements CanActivate {
       context.getClass(),
     ]);
     return guards.includes(ChapterGuard);
-  }
-
-  /**
-   * Whether `PermissionsGuard` will read the caller's roles on this route: it
-   * is on the route and the route requires a permission. Without a
-   * requirement that guard returns before reading anything (attendance
-   * check-in carries no `PermissionsGuard` at all), so prefetching roles
-   * there would be a read nobody uses.
-   */
-  private permissionsWillBeChecked(context: ExecutionContext): boolean {
-    const targets = [context.getHandler(), context.getClass()];
-    const guards = this.reflector.getAllAndMerge<unknown[]>(
-      GUARDS_METADATA,
-      targets,
-    );
-    if (!guards.includes(PermissionsGuard)) return false;
-    return [PERMISSIONS_KEY, PERMISSIONS_ANY_KEY].some(
-      (key) => this.reflector.getAllAndMerge<string[]>(key, targets).length > 0,
-    );
   }
 
   /**

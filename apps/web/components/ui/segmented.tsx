@@ -13,6 +13,10 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *
  * `fill` stretches the track to its container with equal segments (a form
  * row); without it the track hugs its labels (a toolbar or a table row).
+ *
+ * `quiet` holds the answer in neutral ink, for a row whose answer only follows
+ * a default set elsewhere (Who's coming's roles that follow "Everyone else"),
+ * so the rows set apart are the ones lit.
  */
 export function SegmentedChoice<T extends string>({
   label,
@@ -21,6 +25,8 @@ export function SegmentedChoice<T extends string>({
   onChange,
   disabled = false,
   fill = false,
+  quiet = false,
+  dense = false,
   className,
 }: {
   label: string;
@@ -42,6 +48,9 @@ export function SegmentedChoice<T extends string>({
   onChange: (next: T) => void;
   disabled?: boolean;
   fill?: boolean;
+  quiet?: boolean;
+  /** Caption-size labels and tighter padding, for a control beside a name in a list row. */
+  dense?: boolean;
   className?: string;
 }) {
   return (
@@ -69,13 +78,16 @@ export function SegmentedChoice<T extends string>({
               if (!held) onChange(option.value);
             }}
             className={cn(
-              "flex min-h-8 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-semibold transition-colors pointer-coarse:min-h-11",
+              "flex min-h-8 items-center justify-center whitespace-nowrap rounded-sm font-semibold transition-colors pointer-coarse:min-h-11",
+              dense ? "px-2 text-caption" : "px-3 text-sm",
               fill && "flex-1",
               // The held answer as chat search's filter radios draw theirs.
               held
                 ? option.quiet
                   ? "bg-card-hover text-foreground"
-                  : "bg-accent-subtle text-accent-text"
+                  : quiet
+                    ? "bg-card text-foreground"
+                    : "bg-accent-subtle text-accent-text"
                 : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
               off && "pointer-events-none text-disabled",
               FOCUS_RING,

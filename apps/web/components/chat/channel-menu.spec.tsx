@@ -109,12 +109,15 @@ vi.mock("./bookmarks-popover", () => ({
 vi.mock("./notification-level-popover", () => ({
   NotificationLevelPanel: ({
     onChange,
+    fromChapterLevel,
   }: {
     onChange: (level: "all" | "mentions" | "off") => void;
+    fromChapterLevel?: boolean;
   }) => (
     <button
       type="button"
       data-testid="notifications-panel"
+      data-from-chapter-level={String(Boolean(fromChapterLevel))}
       onClick={() => onChange("off")}
     >
       mute
@@ -315,6 +318,17 @@ describe("ChannelMenu (#2142)", () => {
     expect(
       screen.getByRole("button", { name: "Back to channel menu" }),
     ).toHaveFocus();
+  });
+
+  it("tells the panel when Settings decided the level (#4124)", async () => {
+    const user = userEvent.setup();
+    renderMenu({ notificationFromChapterLevel: true });
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    expect(screen.getByTestId("notifications-panel")).toHaveAttribute(
+      "data-from-chapter-level",
+      "true",
+    );
   });
 
   it("closes when a notification level is picked", async () => {

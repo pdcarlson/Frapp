@@ -227,6 +227,7 @@ await import("./tiers/ai-corpus.mjs");
 await import("./tiers/ai-corpus-chat.mjs");
 await import("./tiers/ai-ask-diagnostics.mjs");
 await import("./tiers/ai-reports.mjs");
+await import("./tiers/request-context.mjs");
 await import("./tiers/clear-deleted-message-payloads.mjs");
 await import("./tiers/notifications-forget-deleted-message.mjs");
 
