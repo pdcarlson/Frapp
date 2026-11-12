@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
 import { useMeetings, useMyPermissions, useStartMeeting } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { MEETING_ENTRY_COPY, can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { inlineNoteActionClassName } from "@/components/shared/inline-note";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
@@ -67,14 +67,13 @@ export function EventMinutes({
       if (codeOf(error) === "meeting.already_started") {
         void meetingsQuery.refetch();
         toast({
-          title: "These minutes are already started",
-          description:
-            "Someone else started minutes for this meeting. They show here once they are posted.",
+          title: MEETING_ENTRY_COPY.alreadyStartedTitle,
+          description: MEETING_ENTRY_COPY.alreadyStartedBody,
         });
         return;
       }
       toast({
-        title: "Couldn't start the minutes",
+        title: MEETING_ENTRY_COPY.startFailed,
         description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
@@ -86,9 +85,9 @@ export function EventMinutes({
       status={
         minutes
           ? minutes.status === "draft"
-            ? "A draft, not posted yet"
-            : "Posted"
-          : "Nobody has written them yet"
+            ? MEETING_ENTRY_COPY.draft
+            : MEETING_ENTRY_COPY.posted
+          : MEETING_ENTRY_COPY.none
       }
     >
       {minutes ? (
@@ -96,7 +95,7 @@ export function EventMinutes({
           href={meetingHref(minutes.id)}
           className={inlineNoteActionClassName}
         >
-          Open minutes
+          {MEETING_ENTRY_COPY.open}
         </Link>
       ) : (
         <Button
@@ -105,7 +104,7 @@ export function EventMinutes({
           disabled={start.isPending}
           onClick={() => void write()}
         >
-          Write minutes
+          {MEETING_ENTRY_COPY.write}
         </Button>
       )}
     </MinutesRowFrame>
@@ -126,9 +125,15 @@ function MinutesRowFrame({
       aria-busy={status === null ? true : undefined}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-caption text-muted-foreground">Minutes</p>
+        <p className="text-caption text-muted-foreground">
+          {MEETING_ENTRY_COPY.label}
+        </p>
         <p className="text-sm">
-          {status ?? <span className="text-muted-foreground">Checking</span>}
+          {status ?? (
+            <span className="text-muted-foreground">
+              {MEETING_ENTRY_COPY.checking}
+            </span>
+          )}
         </p>
       </div>
       {children}

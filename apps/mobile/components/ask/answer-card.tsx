@@ -1,180 +1,304 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import type { AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { SkeletonLines } from "@/components/state-block";
-import type { AskAnswer, AskSource } from "@/lib/ask/corpus";
+import {
+  ASK_COPY,
+  askAnswerSegments,
+  askLeftOutLine,
+  askSourceKindLabel,
+  askUnavailableLine,
+  formatAiAnswerDate,
+  type AskAnswer,
+  type AskSource,
+} from "@repo/validation";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The AI sourced-answer card — `spec/ui/design-system/components.md` §11, in
- * its **nested variant**: presented inside the s17 Ask sheet the block steps
- * down to card `#1E1B17` at radius 16, one ladder step below the sheet it sits
- * in, and the ✦ header moves up to the sheet header. Drawn at
- * `canvas-screens.dc.html` s17.
+ * One Ask exchange on the phone: the answer with a numbered marker at each
+ * cited sentence, and the sources those markers open
+ * (`spec/ui/design-system/components.md` §11; `spec/behavior/ai.md` § Ask;
+ * #450, #451). Web's twin is `apps/web/components/ask/ask-answer.tsx`, and
+ * both read the same words (`ASK_COPY`) and cut the answer with the same
+ * function (`askAnswerSegments`), so a citation lands on the same sentence in
+ * both.
  *
- * **This surface never retints.** §11: "the answer surface speaks in Signet's
- * voice, not the chapter's." Nothing in this file may reach
- * `useChapterBranding()` — the border, the key figure and every source chip
- * come from the fixed `gold` token group, which exists for exactly this card.
+ * Perplexity and Notion AI on a phone do the same two things: a small numbered
+ * marker after the sentence it backs, and a list of sources under the answer
+ * whose rows are the real tap targets. The marker is tappable too, but a
+ * number inside a sentence is a small target, so every source is also a full
+ * row below.
  *
- * The card renders four states, because it has four to render: in flight,
- * answered, refused, and "I don't know". The last two are not error states and
- * must not look like them — a refusal is the product working correctly
- * (`spec/behavior/ai.md`: low confidence refuses rather than fabricates), so it
- * keeps the same gold chrome as an answer rather than borrowing `ErrorState`'s
- * semantic border.
+ * **Nothing above moves while it works.** The step line ("Searching your
+ * chapter's sources") sits under the text, where the sources go when the
+ * answer lands, so words stream in above it. The streamed text is a preview:
+ * the server decides what stands once the model stops, and that replaces it
+ * (`ask.ts`).
+ *
+ * **Fixed gold, never the chapter accent** (§11): nothing here reaches
+ * `useChapterBranding()`.
+ *
+ * A refusal, "couldn't find that" and "not available" are the product working
+ * as designed, not errors, so they keep the same card and plain words.
  */
-
-export function AnswerCard({
-  answer,
+export function AskExchangeCard({
+  exchange,
+  canOpen,
+  openingSourceId,
   onOpenSource,
+  onRetry,
+  onAnswerConsent,
 }: {
-  /** `null` while the answer is in flight. */
-  answer: AskAnswer | null;
-  /** Fired when a citation chip is tapped. §11: chips are the citation UI. */
+  exchange: AskExchange;
+  /** Whether this build has a screen for the source; a row without one is plain text. */
+  canOpen: (source: AskSource) => boolean;
+  /** The source whose document link is being fetched, so its row says so. */
+  openingSourceId?: string | null;
   onOpenSource: (source: AskSource) => void;
+  /** Asks the same question again, after a failure that may not repeat. */
+  onRetry: () => void;
+  /** Opens the AI sheet, for an answer refused because it is unanswered. */
+  onAnswerConsent: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  /*
-   * In flight. §11 carries a TODO-DESIGN for this state — it is not drawn
-   * anywhere — and names the content-shaped skeleton (§10) as the nearest
-   * pattern, never a spinner-in-a-box.
-   *
-   * TODO-DESIGN: §11 asks for that skeleton *inside* the card chrome.
-   * `SkeletonLines` brings its own card (radius, hairline, 16pt padding), so
-   * nesting it would draw a card inside a card and double the padding to 32
-   * inside a 16-padded sheet. Nearest pattern used: the skeleton stands in for
-   * the whole card until the answer resolves.
-   */
-  if (answer === null) return <SkeletonLines lines={2} />;
+  return (
+    <View style={styles.card} accessibilityLiveRegion="polite">
+      {exchange.phase === "working" ? (
+        <>
+          {exchange.preview ? (
+            <Text style={styles.answer}>{exchange.preview}</Text>
+          ) : null}
+          <Text style={styles.note}>
+            {(ASK_COPY.steps as Record<string, string>)[exchange.step ?? ""] ??
+              ASK_COPY.steps.searching}
+          </Text>
+        </>
+      ) : null}
+
+      {exchange.phase === "failed" && exchange.failure ? (
+        <>
+          <Text style={styles.answer}>{exchange.failure.message}</Text>
+          {exchange.failure.retryable ? (
+            <CardAction label={ASK_COPY.try_again} onPress={onRetry} />
+          ) : null}
+        </>
+      ) : null}
+
+      {exchange.phase === "done" && exchange.answer ? (
+        <AnswerBody
+          answer={exchange.answer}
+          canOpen={canOpen}
+          openingSourceId={openingSourceId ?? null}
+          onOpenSource={onOpenSource}
+          onAnswerConsent={onAnswerConsent}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function AnswerBody({
+  answer,
+  canOpen,
+  openingSourceId,
+  onOpenSource,
+  onAnswerConsent,
+}: {
+  answer: AskAnswer;
+  canOpen: (source: AskSource) => boolean;
+  openingSourceId: string | null;
+  onOpenSource: (source: AskSource) => void;
+  onAnswerConsent: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
+  if (answer.status === "unavailable") {
+    return (
+      <>
+        <Text style={styles.answer}>{askUnavailableLine(answer.reason)}</Text>
+        {answer.reason === "consent_required" ? (
+          <CardAction
+            label={ASK_COPY.consent_action}
+            onPress={onAnswerConsent}
+          />
+        ) : null}
+      </>
+    );
+  }
+  if (answer.status === "refused") {
+    return <Text style={styles.answer}>{ASK_COPY.refused}</Text>;
+  }
+  if (answer.status === "not_found") {
+    return (
+      <>
+        <Text style={styles.answer}>{ASK_COPY.not_found}</Text>
+        <Text style={styles.note}>{ASK_COPY.not_found_hint}</Text>
+        <AnswerNotes answer={answer} />
+      </>
+    );
+  }
 
   return (
-    <View style={styles.card}>
-      {answer.status === "answered" ? (
-        <Text style={styles.answer}>
-          {answer.spans.map((span, index) => (
+    <>
+      <Text style={styles.answer}>
+        {askAnswerSegments(answer).map((segment, position) => {
+          if (segment.type === "text") {
+            return <Text key={position}>{segment.text}</Text>;
+          }
+          const source = answer.sources[segment.citation.source];
+          if (!source) return null;
+          const number = segment.citation.source + 1;
+          const opens = canOpen(source);
+          return (
             <Text
-              key={index}
-              style={
-                span.emphasis === "key"
-                  ? styles.keyFigure
-                  : span.emphasis === "strong"
-                    ? styles.strong
-                    : null
-              }
+              key={position}
+              accessibilityRole={opens ? "link" : undefined}
+              accessibilityLabel={`Source ${number}: ${source.title}`}
+              onPress={opens ? () => onOpenSource(source) : undefined}
+              style={styles.marker}
             >
-              {span.text}
+              {` ${number} `}
             </Text>
-          ))}
-        </Text>
-      ) : (
-        <Text style={styles.answer}>{answer.message}</Text>
-      )}
-
-      {answer.status === "answered" ? (
-        <View style={styles.sourceRow}>
-          {answer.sources.map((source) => (
-            <SourceChip
-              key={`${source.kind}:${source.label}`}
+          );
+        })}
+      </Text>
+      <AnswerNotes answer={answer} />
+      {answer.sources.length > 0 ? (
+        <View style={styles.sources}>
+          <Text style={[eyebrowStyle(tokens), styles.sourcesHead]}>
+            {ASK_COPY.sources}
+          </Text>
+          {answer.sources.map((source, index) => (
+            <SourceRow
+              key={source.id}
+              number={index + 1}
               source={source}
+              opens={canOpen(source)}
+              opening={openingSourceId === source.id}
               onPress={() => onOpenSource(source)}
             />
           ))}
         </View>
       ) : null}
+    </>
+  );
+}
 
-      <Text style={styles.footer}>
-        Sources open in-app. Low confidence = refuses, never fabricates.
-      </Text>
+/** What the member should know before relying on the answer. Each only when true. */
+function AnswerNotes({ answer }: { answer: AskAnswer }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const notes = [
+    answer.unverified_citations > 0 ? ASK_COPY.unverified : null,
+    answer.truncated ? ASK_COPY.truncated : null,
+    answer.left_out_messages > 0
+      ? askLeftOutLine(answer.left_out_messages)
+      : null,
+  ].filter((note): note is string => note !== null);
+  if (notes.length === 0) return null;
+  return (
+    <View style={styles.notes}>
+      {notes.map((note) => (
+        <Text key={note} style={styles.note}>
+          {note}
+        </Text>
+      ))}
     </View>
   );
 }
 
-/**
- * One citation.
- *
- * §11 requires each chip to be tappable with a ≥ 44px hit area (§2) while
- * drawing it 28px tall. Expanded with `hitSlop` rather than by growing the box,
- * the #939 ruling `sheet-scaffold.tsx` and `ask-pill.tsx` already apply — the
- * drawing stays honest and the target stays legal.
- */
-function SourceChip({
+/** "Minutes · Budget · November 9, 2026": kind, the place inside, the date. */
+export function askSourceMeta(source: AskSource): string {
+  const kind = askSourceKindLabel(source.kind);
+  return [
+    // Live data's title is already its kind ("Events"), so it is said once.
+    kind === source.title ? null : kind,
+    source.detail,
+    source.date ? formatAiAnswerDate(source.date) : ASK_COPY.live,
+  ]
+    .filter((part): part is string => !!part)
+    .join(" · ");
+}
+
+function SourceRow({
+  number,
   source,
+  opens,
+  opening,
   onPress,
 }: {
+  number: number;
   source: AskSource;
+  opens: boolean;
+  opening: boolean;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-
+  const meta = askSourceMeta(source);
+  const body = (
+    <>
+      <Text style={styles.sourceNumber}>{number}</Text>
+      <View style={styles.sourceText}>
+        <Text style={styles.sourceTitle}>{source.title}</Text>
+        {/* The same line whether or not a link is being fetched, so the row
+            keeps its height. */}
+        <Text style={styles.note}>{opening ? "Opening" : meta}</Text>
+      </View>
+    </>
+  );
+  if (!opens) {
+    return (
+      <View
+        accessible
+        accessibilityLabel={`Source ${number}: ${source.title}. ${meta}`}
+        style={styles.sourceRow}
+      >
+        {body}
+      </View>
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Source: ${source.label}`}
-      accessibilityHint="Open the source this answer quotes."
-      // 28pt drawn against a 44pt minimum: 8pt a side closes the gap.
-      // Vertical slop carries the 44pt floor (28 + 8 + 8); horizontal is capped
-      // at half the row gap so neighbouring citations never share touch area.
-      // See the same ruling on the suggestion chips in `ask-sheet.tsx`.
-      hitSlop={{
-        top: tokens.spacing.sm,
-        bottom: tokens.spacing.sm,
-        left: tokens.spacing.xs,
-        right: tokens.spacing.xs,
-      }}
+      accessibilityLabel={`Source ${number}: ${source.title}. ${meta}`}
+      accessibilityHint="Opens this source."
+      accessibilityState={{ busy: opening }}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.sourceChip,
+        styles.sourceRow,
         pressed ? styles.pressed : null,
       ]}
     >
-      <SourceGlyph kind={source.kind} color={tokens.color.gold.askText} />
-      <Text style={styles.sourceLabel}>{source.label}</Text>
+      {body}
     </Pressable>
   );
 }
 
-/**
- * The three leading source glyphs, transcribed from `canvas-screens.dc.html`
- * s17 — the visual truth that wins over prose per #937. Nothing here is
- * invented.
- *
- * Stroke-only rather than duotone, exactly as Canvas draws them:
- * `iconography.md` §1 reserves the duotone fill for a primary silhouette, and
- * inside a 28px chip a fill at 12px reads as a smudge. Colour arrives as a prop
- * for the reason `components/tab-glyphs.tsx` gives, even though this one caller
- * always passes `gold.askText`.
- */
-function SourceGlyph({
-  kind,
-  color,
-  size = 12,
+/** A compact secondary action inside the card. */
+function CardAction({
+  label,
+  onPress,
 }: {
-  kind: AskSource["kind"];
-  color: string;
-  size?: number;
+  label: string;
+  onPress: () => void;
 }) {
-  const path =
-    kind === "document"
-      ? "M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z"
-      : kind === "minutes"
-        ? "M5 6.5h14M5 12h14M5 17.5h9"
-        : "M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z";
-
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d={path}
-        stroke={color}
-        strokeWidth={2}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      // 36pt drawn against the 44pt minimum.
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [styles.action, pressed ? styles.pressed : null]}
+    >
+      <Text style={styles.actionText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -183,64 +307,68 @@ function createStyles(tokens: SignetTokens) {
     card: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
-      // House gold at 35%, per §11. `gold.house` is the fixed brand value; the
-      // chapter accent is never allowed near this border.
+      // House gold at 35%, per §11: the fixed brand value, never the accent.
       borderColor: tint(tokens.color.gold.house, 0.35),
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.md,
     },
     answer: {
-      // TODO-DESIGN: Canvas draws the answer at 16px/24; the `body` role is
-      // 16/25 and arithmetic on a role token is a defect (foundations.md §7).
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    keyFigure: {
-      // Weight only — size and line height are inherited from the parent Text,
-      // so the emphasis cannot drift away from the sentence around it. The
-      // family carries the weight because `fontWeight` alongside an
-      // expo-font-registered family resolves the wrong typeface on Android
-      // (`lib/theme.tsx`); `components/tab-glyphs.tsx` sets weight the same way.
+    marker: {
+      // Weight and colour only: size and line height come from the sentence
+      // around it, so the marker can't change a line's height.
       fontFamily: fontFamilyFor(700),
       color: tokens.color.gold.askText,
+      backgroundColor: tokens.color.gold.askFill,
     },
-    strong: {
-      fontFamily: fontFamilyFor(700),
-      color: tokens.color.text.foreground,
+    notes: {
+      gap: tokens.spacing.xs,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    sources: {
+      gap: tokens.spacing.xs,
+    },
+    sourcesHead: {
+      color: tokens.color.text.muted,
     },
     sourceRow: {
       flexDirection: "row",
-      flexWrap: "wrap",
-      // TODO-DESIGN: Canvas draws the chip gap at 7; `spacing.sm` is 8 and is
-      // the nearest step on the locked scale.
       gap: tokens.spacing.sm,
-    },
-    sourceChip: {
-      flexDirection: "row",
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
-      gap: tokens.spacing.xs + 2,
-      // Drawn geometry, as `ask-pill.tsx` (36) and `status-chip.tsx` (24)
-      // already carry it. The 44pt floor is met by `hitSlop`, not by the box.
-      height: 28,
-      paddingHorizontal: tokens.spacing.sm,
-      // TODO-DESIGN: Canvas draws radius 9; `chip` is 8 and is the nearest role
-      // in the locked radius map (foundations.md § Radius).
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-      backgroundColor: tokens.color.gold.askFill,
     },
-    sourceLabel: {
-      // TODO-DESIGN: Canvas draws the chip label at 12.5/600; `caption` is
-      // 12.5/400, so the size is exact and only the weight is lifted.
+    sourceNumber: {
       ...typeRole(tokens.typography.role.caption),
-      fontFamily: fontFamilyFor(600),
+      fontFamily: fontFamilyFor(700),
       color: tokens.color.gold.askText,
+      width: 18,
     },
-    footer: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+    sourceText: {
+      flex: 1,
+    },
+    sourceTitle: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    action: {
+      alignSelf: "flex-start",
+      height: 36,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.chipLarge,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+    },
+    actionText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     pressed: {
       opacity: 0.7,

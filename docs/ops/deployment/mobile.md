@@ -221,9 +221,9 @@ so scale the output the same way until it renders 1206 × 2622 itself
 Supabase):
 
 1. Write `apps/mobile/.env.local` per
-   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), **without**
-   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the run stops
-   rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
+   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), and leave
+   the API's `AI_ENABLED` off (the default). With AI on for the demo chapter the app draws Ask
+   Frapp in the + panel, and the run stops rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
    it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
    shot times out.

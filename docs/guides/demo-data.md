@@ -206,8 +206,8 @@ choose **Agree and continue**; the App Review reviewer does the same, which
 `node scripts/demo/capture-mobile.mjs --store` is the second mode: the framed
 store sets for both stores, into `screenshots/app-store/` and
 `screenshots/google-play/`, with no Ask or Dues shot and a hard stop if any Ask
-surface is on screen. It needs the Expo server started **without**
-`EXPO_PUBLIC_ASK_ENABLED`. The procedure, the sizes and why, and how the frames
+surface is on screen, which only an API running with `AI_ENABLED` on can
+produce. The procedure, the sizes and why, and how the frames
 are made are in
 [`mobile.md` § 6.4](../ops/deployment/mobile.md#64-store-screenshots).
 
@@ -298,24 +298,16 @@ EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<SUPABASE_ANON_KEY from apps/api/.env.local>
 EXPO_PUBLIC_API_URL=http://localhost:3001
 EXPO_PUBLIC_WEB_SECURE_STORE=1
-# Marketing/demo capture only. Leave it out for either store set.
-EXPO_PUBLIC_ASK_ENABLED=1
 ```
 
-`EXPO_PUBLIC_ASK_ENABLED` turns on Ask (s17). Its answers come from the
-synthetic keyword table in `lib/ask/corpus.ts`, not from a model or the API —
-the screen is real, the answers are demo copy. `lib/ask/corpus.ts` explains why
-that is acceptable: nothing in the repo sets the flag, and an EAS `production`
-build refuses to evaluate its config when it is on (`apps/mobile/app.config.js`).
-
-**The flag is for the marketing and demo capture only.** The default run shoots
-`02-ask-answer` and so needs it. The store run (`--store`) must run with it
-**unset**: the store binary has no Ask, so
-with the flag off the app draws no ✦ pill
-([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and the store run
-refuses to write anything if it finds one. `EXPO_PUBLIC_*` values are inlined
-when Metro transforms the bundle, so between the marketing run and a store run
-remove the line and restart Expo with `--clear`.
+Ask (s17) has no client flag. The app draws it only when the API says AI is
+on for the member (`AI_ENABLED` on the server, Ask on for the chapter, and a
+role with `ai:use`), and the seeded stack runs with AI off, so neither capture
+shows Ask and the marketing run no longer shoots `02-ask-answer`. The store
+run (`--store`) refuses to write anything if it finds an Ask surface
+([#2259](https://github.com/pdcarlson/Frapp/issues/2259)). `EXPO_PUBLIC_*`
+values are inlined when Metro transforms the bundle, so after changing one
+restart Expo with `--clear`.
 
 Two API-side values matter for the check-in screens:
 

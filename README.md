@@ -43,13 +43,11 @@ uses, so structured answers are correct when given and inherit the caller's perm
 never read, vault documents are excluded, and every answer must cite its source inline.
 
 **It is specified, not shipped.** There is no `ai` module in `apps/api`. On web the ✦ Ask entry is
-a shell with no engine behind it. On mobile Ask exists only when a build flag is set, and then it is
-a sheet that answers from a synthetic corpus. With the flag off, which is the default, there is no
-Ask at all: no ✦ pill, no sheet, and a `frapp://ask` link redirects to Chat home. Nothing in this
-repo sets that flag (a test fails if an `eas.json` profile does), and an EAS production build
-refuses to build with it on, so a store binary cannot ship Ask; preview and development builds
-are not fenced ([`ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)). Scope, non-goals, the citation
-mechanism, and how the mock deliberately differs from the real contract:
+a shell with no engine behind it. On mobile Ask has no build
+flag any more: the app draws Ask only when the API says the server has AI on, the chapter's
+president has turned Ask on, and the member's role may use it, and with the server's `AI_ENABLED`
+off (the default) there is no Ask at all and a `frapp://ask` link goes to Chat home. Scope, non-goals and the citation
+mechanism:
 [`spec/behavior/ai.md`](spec/behavior/ai.md).
 
 ## Repository Structure
