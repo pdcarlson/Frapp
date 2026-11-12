@@ -64,7 +64,7 @@ The board's Notifications row is not in the app's More: the inbox opens from the
 | Group | Row | Destination | Trailing status |
 | ----- | --- | ----------- | --------------- |
 | — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
-| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs", or "4.0 / 6.0 hrs" against the member's weekly goal when the chapter sets one (#1062) |
 | | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
 | | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
 | | Documents | `documents.tsx` (s12) | — |

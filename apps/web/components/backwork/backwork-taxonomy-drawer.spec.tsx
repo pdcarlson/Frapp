@@ -80,6 +80,25 @@ async function openDrawer() {
 }
 
 describe("BackworkTaxonomyDrawer", () => {
+  it("opens docked in place of the Backwork page beside chat (#4593)", async () => {
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="" />
+        <BackworkTaxonomyDrawer open onOpenChange={onOpenChange} />
+      </div>,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", {
+      name: "Manage departments & professors",
+    });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    expect(within(region).getByText("Chemistry")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("lists existing departments and professors", async () => {
     await openDrawer();
 

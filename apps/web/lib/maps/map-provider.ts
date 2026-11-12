@@ -6,14 +6,18 @@
  *
  * - **Tiles: OpenFreeMap** (`tiles.openfreemap.org`), vector tiles built from
  *   OpenStreetMap, no limits on views or requests, commercial use allowed, a
- *   dark style that sits on Signet's near-black. Rendered with MapLibre GL JS.
+ *   dark style that sits on Signet's near-black. Rendered with MapLibre GL JS,
+ *   re-inked at load by `readable-dark-style.ts` so buildings, roads and
+ *   place names read (the stock dark style hides them).
  * - **Search: Photon** (`photon.komoot.io`), OpenStreetMap search made for
  *   search-as-you-type. Nominatim, the other free one, forbids autocomplete.
  *
  * Neither has a service level. Zones are drawn a few times a term per chapter,
- * so the volume is tiny, but if either goes away or throttles, this file is
- * the whole swap: a MapTiler or Mapbox style URL and its geocoder (both have
- * free tiers far above this volume, and need a key in Infisical).
+ * so the volume is tiny, but if either goes away or throttles, the swap is
+ * here: a MapTiler or Mapbox style URL and its geocoder (both have free tiers
+ * far above this volume, and need a key in Infisical). The re-inking in
+ * `readable-dark-style.ts` is keyed to OpenFreeMap's layer ids, so a new
+ * style needs its own pass there (or drop the transform in zone-map.tsx).
  */
 
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";

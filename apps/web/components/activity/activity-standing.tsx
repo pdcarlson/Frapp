@@ -29,9 +29,9 @@ const HREF: Record<StandingRow["id"], string> = {
  * (`apps/mobile/components/activity/activity-standing.tsx`); here they are
  * tiles side by side, in the recipe of the summary's tiles below them.
  *
- * A cell opens the page that owns its number. Only required events draw a
- * meter, because only they have a target: a chapter sets no goal for points
- * or hours yet (#1062). The meter is `components/shared/meter.ts`'s, beside
+ * A cell opens the page that owns its number. A cell draws a meter only when
+ * it has a target: required events always, and points or hours when the
+ * chapter sets the member a goal in Chapter settings (#1062). The meter is `components/shared/meter.ts`'s, beside
  * the count in words, and hidden from a screen reader, which hears the
  * cell's sentence instead.
  */

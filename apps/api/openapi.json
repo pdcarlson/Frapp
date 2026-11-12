@@ -13846,6 +13846,144 @@
         ]
       }
     },
+    "/v1/goals": {
+      "get": {
+        "operationId": "GoalsController_getGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter's goals for points, service hours and study hours",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/mine": {
+      "get": {
+        "operationId": "GoalsController_getMyGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own goal on each measure (points, service and study minutes), null where none",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/{metric}": {
+      "put": {
+        "operationId": "GoalsController_setGoals_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "points",
+                "service",
+                "study"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalSetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A target out of range, a role named twice, or a role not in this chapter."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace one measure's goals",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -25090,12 +25228,18 @@
           "ranked": {
             "type": "number",
             "description": "How many members the board ranks."
+          },
+          "goal": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s points goal this semester (#1062), or null when the chapter sets none for them."
           }
         },
         "required": [
           "total",
           "rank",
-          "ranked"
+          "ranked",
+          "goal"
         ]
       },
       "StandingRequiredEventsDto": {
@@ -25130,11 +25274,17 @@
           "pending_minutes": {
             "type": "number",
             "description": "Service minutes waiting for approval."
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s service goal this semester in minutes (#1062), or null for none."
           }
         },
         "required": [
           "approved_minutes",
-          "pending_minutes"
+          "pending_minutes",
+          "goal_minutes"
         ]
       },
       "StandingStudyDto": {
@@ -25147,11 +25297,17 @@
           "week_start": {
             "type": "string",
             "format": "date-time"
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s study goal for the week in minutes (#1062), or null for none."
           }
         },
         "required": [
           "minutes",
-          "week_start"
+          "week_start",
+          "goal_minutes"
         ]
       },
       "ActivityStandingDto": {
@@ -25274,6 +25430,104 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "RoleGoalDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "type": "number",
+            "nullable": true,
+            "description": "Points for a points goal; minutes for a service or study goal. Null holds the role to no goal."
+          }
+        },
+        "required": [
+          "role_id",
+          "target"
+        ]
+      },
+      "GoalSetDto": {
+        "type": "object",
+        "properties": {
+          "everyone": {
+            "type": "number",
+            "nullable": true,
+            "description": "Every member's goal (points, or minutes for hours), or null for none."
+          },
+          "roles": {
+            "description": "Roles held to a different goal. A member with several is held to the one on their highest-ranked role.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleGoalDto"
+            }
+          }
+        },
+        "required": [
+          "everyone",
+          "roles"
+        ]
+      },
+      "ChapterGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "description": "Points this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "service": {
+            "description": "Approved service minutes this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "study": {
+            "description": "Study minutes this week (Sunday to Saturday).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
+        ]
+      },
+      "MyGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's points goal this semester, or null."
+          },
+          "service": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's approved service minutes goal this semester, or null."
+          },
+          "study": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's study minutes goal this week, or null."
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
         ]
       },
       "CreateDiscordImportDto": {
