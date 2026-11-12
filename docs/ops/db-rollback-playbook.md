@@ -3302,7 +3302,7 @@ Four columns, a check, a trigger and two partial indexes on `chat_messages`; one
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies. *Since 2026-11-12:* remove the thread card's latest-reply preview first ([§ Rollback the thread card's latest-reply preview](#rollback-the-thread-cards-latest-reply-preview-20261112121000)), because its trigger's `when` clause reads `thread_root_id` and the column won't drop while it stands:
 
 ```sql
 drop trigger if exists chat_messages_thread_summary on public.chat_messages;
@@ -3746,6 +3746,23 @@ The new index is harmless to keep, and nothing needs the dropped one back. To re
 ```sql
 drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
+```
+
+## Rollback the thread card's latest-reply preview (20261112121000)
+
+* **Migration**: `20261112121000_chat_thread_last_reply.sql`
+
+One nullable column on `chat_messages` (`thread_last_reply`), the helper `chat_thread_reply_preview`, the insert trigger function `chat_messages_bump_thread_summary` redefined with one more column, and the update trigger `chat_messages_thread_last_reply` with its function. The backfill wrote the column on existing thread parents; nothing else changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never serves the new one, so the card draws without a preview. The triggers keep the column current, which is harmless.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. First restore the insert trigger's `20261110220000_chat_message_threads.sql` body (`create or replace function public.chat_messages_bump_thread_summary()` as written there), or every thread reply fails to send once the column is gone:
+
+```sql
+drop trigger if exists chat_messages_thread_last_reply on public.chat_messages;
+drop function if exists public.chat_messages_keep_thread_last_reply();
+drop function if exists public.chat_thread_reply_preview(public.chat_messages);
+alter table public.chat_messages drop column if exists thread_last_reply;
 ```
 
 ## Rollback clear deleted chat card payloads (20261112060000)

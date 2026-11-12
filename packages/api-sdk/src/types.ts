@@ -5118,6 +5118,18 @@ export interface components {
             /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
             who_can_post?: string[] | null;
         };
+        ChatThreadLastReplyDto: {
+            id: string;
+            sender_id: string | null;
+            /** @description The reply’s text, cut to 500 characters. */
+            content: string;
+            kind: string | null;
+            /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
+            attachment_count: number;
+            created_at: string;
+            /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
+            sender_blocked?: boolean;
+        };
         ChatMessageDto: {
             /** Format: uuid */
             id: string;
@@ -5174,6 +5186,8 @@ export interface components {
             thread_last_reply_at?: string | null;
             /** @description On a thread parent: up to three recent repliers, newest first. */
             thread_recent_sender_ids?: string[];
+            /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
+            thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
