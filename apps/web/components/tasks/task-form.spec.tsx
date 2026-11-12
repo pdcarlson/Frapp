@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { formatDueEntry } from "@repo/formatting";
+import { formatDateEntry } from "@repo/formatting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -80,7 +80,7 @@ describe("TaskForm (#3865, #3983)", () => {
     expect(screen.getByLabelText("Title")).toHaveValue("Sweep the porch");
     // Shown as a day, not the wire date; the year appears outside this one.
     expect(screen.getByLabelText("Due date")).toHaveValue(
-      formatDueEntry("2026-11-12", new Date()),
+      formatDateEntry("2026-11-12", new Date()),
     );
     // Points live behind More options, open because the command set them.
     expect(screen.getByLabelText("Points")).toHaveValue(5);

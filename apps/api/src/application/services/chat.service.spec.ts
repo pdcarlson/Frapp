@@ -3231,6 +3231,61 @@ describe('ChatService', () => {
       expect(result.edited_at).toBeTruthy();
     });
 
+    it('rewrites the in-app notifications that quote the edited message, for current readers only (#4418)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        {
+          user_id: 'user-2',
+          channel_access: EMPTY_ACCESS_HOLDER,
+          top_role_order: 0,
+          top_role: null,
+        },
+      ]);
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        content: '  Updated  ',
+        edited_at: '2026-01-01T13:00:00.000Z',
+      });
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', '  Updated  ');
+
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).toHaveBeenCalledWith('ch-1', 'msg-1', 'Updated', ['user-2']);
+    });
+
+    it('leaves the notifications when the readers cannot be resolved', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        content: 'Updated',
+      });
+      mockRbac.getChapterMemberAccess.mockRejectedValue(new Error('db down'));
+
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
+
+      expect(result.content).toBe('Updated');
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rewrites no notification when the edit is refused', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-2', 'Hacked'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).not.toHaveBeenCalled();
+    });
+
     it("should reject editing another user's message", async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 

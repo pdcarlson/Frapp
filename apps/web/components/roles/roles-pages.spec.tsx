@@ -1,0 +1,494 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { networkMock } from "@/tests/network";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
+
+/**
+ * The Roles pages (#3990), walked as an officer of a chapter with tiers: the
+ * list of tiers and their roles, a tier's page of switches, and a role's own
+ * page. The rank rules (#4071) are mirrored only to disable controls the API
+ * would refuse, so the tests pin which controls are live for whom.
+ */
+
+const h = vi.hoisted(() => ({
+  offline: { value: false },
+  roles: [] as Array<Record<string, unknown>>,
+  tiers: [] as Array<Record<string, unknown>>,
+  members: [] as Array<Record<string, unknown>>,
+  mine: ["*"] as string[],
+  vocabulary: undefined as { vocabulary: Record<string, string> } | undefined,
+  updateRole: vi.fn(),
+  createRole: vi.fn(),
+  deleteRole: vi.fn(),
+  updateTier: vi.fn(),
+  createTier: vi.fn(),
+  deleteTier: vi.fn(),
+  reorderTiers: vi.fn(),
+}));
+
+const ok = (data: unknown) => ({
+  data,
+  error: null,
+  isPending: false,
+  isError: false,
+  isSuccess: true,
+  refetch: vi.fn(),
+});
+const mutation = (fn: ReturnType<typeof vi.fn>) => ({
+  mutateAsync: fn,
+  isPending: false,
+});
+
+vi.mock("@/lib/providers/network-provider", () => networkMock(h.offline));
+vi.mock("@repo/hooks", () => ({
+  useRoles: () => ok(h.roles),
+  useRoleTiers: () => ok(h.tiers),
+  useMembers: () => ok(h.members),
+  useMyPermissions: () => ok({ permissions: h.mine }),
+  useViewerUserId: () => "me",
+  useUpdateRole: () => mutation(h.updateRole),
+  useCreateRole: () => mutation(h.createRole),
+  useDeleteRole: () => mutation(h.deleteRole),
+  useUpdateRoleTier: () => mutation(h.updateTier),
+  useCreateRoleTier: () => mutation(h.createTier),
+  useDeleteRoleTier: () => mutation(h.deleteTier),
+  useReorderRoleTiers: () => mutation(h.reorderTiers),
+}));
+vi.mock("@/lib/hooks/use-chapter-vocabulary", () => ({
+  useChapterVocabulary: () => h.vocabulary,
+}));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+import { RolesOverview } from "@/components/roles/roles-overview";
+import { TierPermissionsPage } from "@/components/roles/tier-permissions-page";
+import { RolePage } from "@/components/roles/role-page";
+
+const EXEC = {
+  id: "t1",
+  name: "Exec board",
+  position: 1,
+  permissions: ["members:view", "roles:manage", "service:approve"],
+};
+const OFFICERS = {
+  id: "t2",
+  name: "Officers and chairs",
+  position: 2,
+  permissions: ["members:view", "service:approve"],
+};
+const MEMBERS = {
+  id: "t3",
+  name: "Members",
+  position: 3,
+  permissions: ["members:view"],
+};
+
+const role = (
+  id: string,
+  name: string,
+  tier: string | null,
+  permissions: string[],
+  extra: Record<string, unknown> = {},
+) => ({
+  id,
+  name,
+  tier_id: tier,
+  permissions,
+  permission_overrides: {},
+  is_system: false,
+  display_order: 1,
+  color: null,
+  ...extra,
+});
+
+function chapter() {
+  h.tiers = [EXEC, OFFICERS, MEMBERS];
+  h.roles = [
+    role("pres", "President", "t1", ["*"], { is_system: true }),
+    role("vp", "Vice President", "t1", EXEC.permissions),
+    role(
+      "treas",
+      "Treasurer",
+      "t2",
+      [...OFFICERS.permissions, "events:create"],
+      {
+        permission_overrides: { "events:create": true },
+      },
+    ),
+    role("brother", "Brothers", "t3", MEMBERS.permissions),
+    role("alum", "Alumni", null, []),
+  ];
+  h.members = [
+    { user_id: "me", role_ids: ["pres"] },
+    { user_id: "u2", role_ids: ["brother"] },
+    { user_id: "u3", role_ids: ["brother", "treas"] },
+  ];
+  h.mine = ["*"];
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  h.offline.value = false;
+  h.vocabulary = undefined;
+  for (const fn of [
+    h.updateRole,
+    h.createRole,
+    h.deleteRole,
+    h.updateTier,
+    h.createTier,
+    h.deleteTier,
+    h.reorderTiers,
+  ]) {
+    fn.mockResolvedValue({});
+  }
+  chapter();
+});
+
+/** Make the caller the Vice President: Exec board, not the President. */
+function asVicePresident() {
+  h.members = [{ user_id: "me", role_ids: ["vp"] }];
+  h.mine = EXEC.permissions;
+}
+
+describe("the tier list", () => {
+  it("shows the tiers in order with their roles, then the roles outside them", () => {
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual([
+      "Exec board",
+      "Officers and chairs",
+      "Members",
+      "Outside the tiers",
+    ]);
+    const members = screen.getByRole("region", { name: "Members" });
+    expect(members).toHaveTextContent("Brothers");
+    expect(members).toHaveTextContent("2 members");
+    expect(
+      screen.getByRole("region", { name: "Outside the tiers" }),
+    ).toHaveTextContent("Alumni");
+    expect(screen.getByText("Can do everything")).toBeInTheDocument();
+  });
+
+  it("uses the chapter's own word for a tier", () => {
+    h.vocabulary = { vocabulary: { tier: "Level" } };
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    expect(screen.getByText("5 roles in 3 levels")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Outside the levels" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add level" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens a tier's permissions and a role's page", async () => {
+    const user = userEvent.setup();
+    const onOpenTier = vi.fn();
+    const onOpenRole = vi.fn();
+    render(<RolesOverview onOpenTier={onOpenTier} onOpenRole={onOpenRole} />);
+    const officers = screen.getByRole("region", {
+      name: "Officers and chairs",
+    });
+    await user.click(
+      within(officers).getByRole("button", { name: "Edit permissions" }),
+    );
+    expect(onOpenTier).toHaveBeenCalledWith("t2");
+    await user.click(
+      within(officers).getByRole("button", { name: /^treasurer/i }),
+    );
+    expect(onOpenRole).toHaveBeenCalledWith("treas");
+  });
+
+  it("adds a role into a tier, taking the tier's permissions", async () => {
+    const user = userEvent.setup();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const officers = screen.getByRole("region", {
+      name: "Officers and chairs",
+    });
+    await user.click(
+      within(officers).getByRole("button", { name: "Add role" }),
+    );
+    await user.type(
+      within(officers).getByRole("textbox", { name: "New role name" }),
+      "Social chair{Enter}",
+    );
+    expect(h.createRole).toHaveBeenCalledWith({
+      name: "Social chair",
+      permissions: [],
+      tier_id: "t2",
+    });
+  });
+
+  it("moves a tier down with the whole order, highest first", async () => {
+    const user = userEvent.setup();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    await user.click(
+      screen.getByRole("button", { name: "More for Officers and chairs" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Move down" }));
+    expect(h.reorderTiers).toHaveBeenCalledWith(["t1", "t3", "t2"]);
+  });
+
+  it("deletes only an empty tier, after a confirmation", async () => {
+    const user = userEvent.setup();
+    h.tiers = [
+      ...h.tiers,
+      { id: "t4", name: "Pledges", position: 4, permissions: [] },
+    ];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "More for Members" }));
+    expect(
+      screen.getByRole("menuitem", {
+        name: /delete \(move its roles out first\)/i,
+      }),
+    ).toHaveAttribute("data-disabled");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "More for Pledges" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(h.deleteTier).not.toHaveBeenCalled();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete tier",
+      }),
+    );
+    await waitFor(() => expect(h.deleteTier).toHaveBeenCalledWith("t4"));
+  });
+
+  it("moves a role to another tier from its menu", async () => {
+    const user = userEvent.setup();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "More for Brothers" }));
+    await user.click(
+      screen.getByRole("menuitem", { name: "Officers and chairs" }),
+    );
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "brother",
+      body: { tier_id: "t2" },
+    });
+  });
+
+  it("keeps the caller's own tier and everything above it out of reach", async () => {
+    const user = userEvent.setup();
+    asVicePresident();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const exec = screen.getByRole("region", { name: "Exec board" });
+    expect(
+      within(exec).getByRole("button", { name: "View permissions" }),
+    ).toBeInTheDocument();
+    expect(within(exec).queryByRole("button", { name: "Add role" })).toBeNull();
+    const officers = screen.getByRole("region", {
+      name: "Officers and chairs",
+    });
+    expect(
+      within(officers).getByRole("button", { name: "Edit permissions" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More for Brothers" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Exec board" }),
+    ).toHaveAttribute("data-disabled");
+  });
+
+  it("finds a role by name across a chapter with many", async () => {
+    const user = userEvent.setup();
+    h.roles = [
+      ...h.roles,
+      ...Array.from({ length: 100 }, (_, i) =>
+        role(`r${i}`, `Committee ${i}`, "t3", MEMBERS.permissions),
+      ),
+    ];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText("Find a role"), "treas");
+    expect(
+      screen.getByRole("button", { name: /^treasurer/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Committee 4")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
+  });
+});
+
+describe("a tier's permissions", () => {
+  it("lists every module's switches and saves a flip as the tier's whole list", async () => {
+    const user = userEvent.setup();
+    render(
+      <TierPermissionsPage tierId="t2" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Officers and chairs" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    const approve = screen.getByRole("switch", {
+      name: /approve service hours for officers and chairs/i,
+    });
+    expect(approve).toBeChecked();
+    await user.click(approve);
+    expect(h.updateTier).toHaveBeenCalledWith({
+      id: "t2",
+      body: { permissions: ["members:view"] },
+    });
+  });
+
+  it("composes a second flip on the first, not on stale props", async () => {
+    const user = userEvent.setup();
+    let resolve!: () => void;
+    h.updateTier.mockImplementationOnce(
+      () => new Promise<void>((done) => (resolve = done)),
+    );
+    render(
+      <TierPermissionsPage tierId="t3" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    await user.click(
+      screen.getByRole("switch", { name: /^create events for/i }),
+    );
+    resolve();
+    await waitFor(() => expect(h.updateTier).toHaveBeenCalledTimes(1));
+    await user.click(
+      screen.getByRole("switch", { name: /^create polls for/i }),
+    );
+    expect(h.updateTier).toHaveBeenLastCalledWith({
+      id: "t3",
+      body: { permissions: ["members:view", "events:create", "polls:create"] },
+    });
+  });
+
+  it("is read-only for a tier at or above the caller's own, and says why", () => {
+    asVicePresident();
+    render(
+      <TierPermissionsPage tierId="t1" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    expect(screen.getByText(/ranks at or above yours/i)).toBeInTheDocument();
+    for (const control of screen.getAllByRole("switch")) {
+      expect(control).toBeDisabled();
+    }
+  });
+
+  it("won't switch on what the caller doesn't hold, and says so on the row", () => {
+    asVicePresident();
+    render(
+      <TierPermissionsPage tierId="t2" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("switch", { name: /^create events for/i }),
+    ).toBeDisabled();
+    // On already, so taking it away is still allowed.
+    expect(
+      screen.getByRole("switch", { name: /approve service hours for/i }),
+    ).toBeEnabled();
+  });
+
+  it("never draws the wildcard as a switch", () => {
+    render(
+      <TierPermissionsPage tierId="t1" onBack={vi.fn()} onOpenRole={vi.fn()} />,
+    );
+    expect(screen.queryByRole("switch", { name: /everything/i })).toBeNull();
+  });
+});
+
+describe("a role's page", () => {
+  it("marks where the role differs from its tier", () => {
+    render(<RolePage roleId="treas" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.getByText(
+        /on for this role only\. officers and chairs has it off/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/starts from officers and chairs/i),
+    ).toBeInTheDocument();
+  });
+
+  it("saves a flip as the role's list, which the database records as an override", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="treas" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(
+      screen.getByRole("switch", {
+        name: /approve service hours for treasurer/i,
+      }),
+    );
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "treas",
+      body: { permissions: ["members:view", "events:create"] },
+    });
+  });
+
+  it("locks every switch on the President's role", () => {
+    render(<RolePage roleId="pres" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.getByText(/only moves through transfer presidency/i),
+    ).toBeInTheDocument();
+    for (const control of screen.getAllByRole("switch")) {
+      expect(control).toBeDisabled();
+    }
+  });
+
+  it("saves details without a permissions key, and moves the role between tiers", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("combobox", { name: "Tier" }));
+    await user.click(
+      screen.getByRole("option", { name: "Officers and chairs" }),
+    );
+    await user.click(
+      screen.getByRole("switch", { name: /anyone can @mention/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save role" }));
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "brother",
+      body: {
+        name: undefined,
+        color: undefined,
+        display_order: 1,
+        mentionable: false,
+        tier_id: "t2",
+      },
+    });
+  });
+
+  it("saves a picked swatch, and leaves an untouched color out", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    const swatches = within(
+      screen.getByRole("group", { name: "Color" }),
+    ).getAllByRole("button");
+    await user.click(swatches[1]!);
+    await user.click(screen.getByRole("button", { name: "Save role" }));
+    const body = h.updateRole.mock.calls[0]![0].body;
+    expect(typeof body.color).toBe("string");
+    expect(body).not.toHaveProperty("permissions", expect.anything());
+  });
+
+  it("keeps the last whole number in the position field (#2206)", () => {
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    const field = screen.getByLabelText("Position in its list");
+    expectRefusedEntriesKeep(field, "4");
+    expectClearingEntriesEmpty(field, "4");
+  });
+
+  it("deletes a role only after a confirmation, then goes back", async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    render(<RolePage roleId="alum" onBack={onBack} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Delete role" }));
+    expect(h.deleteRole).not.toHaveBeenCalled();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete role",
+      }),
+    );
+    await waitFor(() => expect(h.deleteRole).toHaveBeenCalledWith("alum"));
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it("is read-only for a role in the caller's own tier", () => {
+    asVicePresident();
+    render(<RolePage roleId="vp" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Save role" })).toBeNull();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+  });
+});

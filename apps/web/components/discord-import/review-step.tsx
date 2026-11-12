@@ -5,7 +5,7 @@ import { ChevronRight, Hash, Lock } from "lucide-react";
 import { useChannels } from "@repo/hooks";
 import { localIsoDate, parseBareDateLocalMidnight } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { asArray, cn } from "@/lib/utils";
@@ -243,16 +243,15 @@ export function ReviewStep({
               <Label htmlFor="import-messages-since">
                 Import messages from
               </Label>
-              <Input
+              <DateField
                 id="import-messages-since"
-                type="date"
+                lean="back"
+                placeholder="e.g. January 1"
                 className="max-w-48"
                 value={messagesSince}
-                // Today in the viewer's own zone.
-                max={localIsoDate(new Date())}
                 aria-describedby="import-messages-since-hint"
                 aria-invalid={messagesSinceProblem ? true : undefined}
-                onChange={(event) => onMessagesSinceChange(event.target.value)}
+                onChange={onMessagesSinceChange}
               />
             </div>
           ) : null}
