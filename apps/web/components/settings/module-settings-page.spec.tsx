@@ -2,16 +2,37 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-const { roles, updateRole } = vi.hoisted(() => ({
+const { roles, tiers, updateRole, updateTier, mine } = vi.hoisted(() => ({
   roles: {
     current: [] as Array<Record<string, unknown>>,
   },
+  tiers: {
+    current: [] as Array<Record<string, unknown>>,
+  },
   updateRole: vi.fn(),
+  updateTier: vi.fn(),
+  mine: { permissions: ["*"] as string[] },
 }));
 
+const ok = (data: unknown) => ({
+  data,
+  isPending: false,
+  isError: false,
+  isSuccess: true,
+});
+
 vi.mock("@repo/hooks", () => ({
-  useRoles: () => ({ data: roles.current, isPending: false, isError: false }),
+  useRoles: () => ok(roles.current),
+  useRoleTiers: () => ok(tiers.current),
+  useMembers: () => ok([{ user_id: "me", role_ids: ["p"] }]),
+  useMyPermissions: () => ok({ permissions: mine.permissions }),
+  useViewerUserId: () => "me",
   useUpdateRole: () => ({ mutateAsync: updateRole, isPending: false }),
+  useUpdateRoleTier: () => ({ mutateAsync: updateTier, isPending: false }),
+}));
+
+vi.mock("@/lib/hooks/use-chapter-vocabulary", () => ({
+  useChapterVocabulary: () => undefined,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -64,21 +85,32 @@ describe("a module page", () => {
     expect(screen.getByText("Always on")).toBeInTheDocument();
   });
 
-  it("lists each permission with the roles that hold it, leaving the President's wildcard out", () => {
+  it("lists each permission with the tiers and roles that have it, leaving the President's wildcard out", () => {
+    tiers.current = [
+      {
+        id: "t1",
+        name: "Exec board",
+        position: 1,
+        permissions: ["service:approve"],
+      },
+      { id: "t3", name: "Members", position: 3, permissions: ["service:log"] },
+    ];
     roles.current = [
       { id: "p", name: "President", permissions: ["*"], display_order: 0 },
       {
         id: "s",
         name: "Service Chair",
         color: "#3366ff",
-        permissions: ["service:approve"],
+        permissions: ["service:approve", "service:log"],
         display_order: 3,
+        tier_id: "t3",
       },
       {
         id: "m",
         name: "Member",
         permissions: ["service:log"],
         display_order: 9,
+        tier_id: "t3",
       },
     ];
     render(
@@ -95,8 +127,17 @@ describe("a module page", () => {
     const approve = within(list)
       .getByText(/approve service/i)
       .closest("li")!;
+    // The tier answers for its roles; a role shows on its own only where
+    // it differs from its tier.
+    expect(approve).toHaveTextContent("Exec board");
     expect(approve).toHaveTextContent("Service Chair");
     expect(approve).not.toHaveTextContent("President");
+    const log = within(list)
+      .getByText(/^log service/i)
+      .closest("li")!;
+    expect(log).toHaveTextContent("Members");
+    expect(log).not.toHaveTextContent("Member,");
+    expect(log).not.toHaveTextContent("Service Chair");
     expect(
       within(list).getByRole("link", { name: /change in roles/i }),
     ).toHaveAttribute("href", "/settings?tab=roles");
@@ -104,9 +145,18 @@ describe("a module page", () => {
     expect(within(list).queryByRole("button")).toBeNull();
   });
 
-  it("lets a roles:manage holder take a permission from a role right there", async () => {
+  it("lets a roles:manage holder take a permission from a tier right there", async () => {
     const user = userEvent.setup();
-    updateRole.mockReset().mockResolvedValue(undefined);
+    updateTier.mockReset().mockResolvedValue(undefined);
+    tiers.current = [
+      { id: "t1", name: "Exec board", position: 1, permissions: [] },
+      {
+        id: "t2",
+        name: "Officers",
+        position: 2,
+        permissions: ["service:approve", "service:log"],
+      },
+    ];
     roles.current = [
       { id: "p", name: "President", permissions: ["*"], display_order: 0 },
       {
@@ -114,6 +164,7 @@ describe("a module page", () => {
         name: "Service Chair",
         permissions: ["service:approve", "service:log"],
         display_order: 3,
+        tier_id: "t2",
       },
     ];
     render(
@@ -129,11 +180,11 @@ describe("a module page", () => {
     );
     await user.click(
       screen.getByRole("button", {
-        name: /remove service chair from approve service/i,
+        name: /remove officers from approve service/i,
       }),
     );
-    expect(updateRole).toHaveBeenCalledWith({
-      id: "s",
+    expect(updateTier).toHaveBeenCalledWith({
+      id: "t2",
       body: { permissions: ["service:log"] },
     });
   });
@@ -141,6 +192,7 @@ describe("a module page", () => {
   it("adds a role to a permission from a list it can filter, leaving the President out", async () => {
     const user = userEvent.setup();
     updateRole.mockReset().mockResolvedValue(undefined);
+    tiers.current = [];
     roles.current = [
       { id: "p", name: "President", permissions: ["*"], display_order: 0 },
       {
@@ -163,16 +215,53 @@ describe("a module page", () => {
       />,
     );
     await user.click(
-      screen.getByRole("button", { name: /add a role to approve service/i }),
+      screen.getByRole("button", { name: /add to approve service/i }),
     );
     expect(screen.queryByRole("option", { name: /president/i })).toBeNull();
-    await user.type(screen.getByPlaceholderText("Find a role"), "trea");
+    await user.type(screen.getByPlaceholderText("Find a tier or role"), "trea");
     expect(screen.queryByRole("option", { name: "Member" })).toBeNull();
     await user.click(screen.getByRole("option", { name: "Treasurer" }));
     expect(updateRole).toHaveBeenCalledWith({
       id: "t",
       body: { permissions: ["service:log", "service:approve"] },
     });
+  });
+
+  it("offers no tier ranked at or above the caller's own", async () => {
+    const user = userEvent.setup();
+    mine.permissions = ["roles:manage", "service:approve", "members:view"];
+    tiers.current = [
+      { id: "t1", name: "Exec board", position: 1, permissions: [] },
+      { id: "t2", name: "Officers", position: 2, permissions: [] },
+    ];
+    roles.current = [
+      {
+        id: "p",
+        name: "Vice President",
+        permissions: ["roles:manage", "service:approve"],
+        display_order: 1,
+        tier_id: "t1",
+      },
+    ];
+    render(
+      <ModuleSettingsPage
+        module={hours}
+        on
+        canManage
+        onToggle={vi.fn()}
+        tools={[]}
+        canSeeWhoCan
+        canEditRoles
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /add to approve service/i }),
+    );
+    expect(
+      screen.getByRole("option", { name: "Officers" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Exec board" })).toBeNull();
+    mine.permissions = ["*"];
   });
 });
 
