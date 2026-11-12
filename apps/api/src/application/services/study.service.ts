@@ -819,4 +819,20 @@ export class StudyService {
       return this.sessionRepo.findByUserAndChapter(userId, chapterId);
     });
   }
+
+  /**
+   * The member's sessions started at or after `since`, read as they stand.
+   * Unlike {@link listSessions} it settles nothing, so a read that runs on
+   * every Activity load never writes (a grace-expired pause is settled, and
+   * its minutes counted, once the member opens Study or starts again).
+   */
+  async listSessionsStartedSince(
+    userId: string,
+    chapterId: string,
+    since: Date,
+  ): Promise<StudySession[]> {
+    return this.sessionRepo.findByUserAndChapter(userId, chapterId, {
+      startedSince: since,
+    });
+  }
 }

@@ -1,5 +1,6 @@
 export * from "./activity-faces";
 export * from "./activity-rows";
+export * from "./activity-standing";
 export * from "./calendar-tasks";
 export * from "./channel-members";
 export * from "./channel-row-actions";

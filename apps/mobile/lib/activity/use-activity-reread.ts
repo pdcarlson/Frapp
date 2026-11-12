@@ -1,7 +1,11 @@
 import { useCallback, useRef } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { activityKeys, useActiveChapterId } from "@repo/hooks";
+import {
+  activityKeys,
+  activityStandingKeys,
+  useActiveChapterId,
+} from "@repo/hooks";
 
 /**
  * Reads Activity again (`GET /v1/activity`), now and each time the screen
@@ -20,17 +24,30 @@ import { activityKeys, useActiveChapterId } from "@repo/hooks";
  * re-read, for a screen that also wants it after an action of its own. An
  * invalidation, not a `refetch`, so a read that is held (no chapter yet)
  * stays held.
+ *
+ * `standing` also re-reads the "This semester" block
+ * (`GET /v1/activity/standing`), for the Activity screen that draws it: a
+ * check-in on its own rows moves those numbers too.
  */
-export function useActivityReread(): () => void {
+export function useActivityReread(
+  options: { standing?: boolean } = {},
+): () => void {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
+  const withStanding = options.standing ?? false;
   const reread = useCallback(() => {
     if (!chapterId) return;
     void queryClient.invalidateQueries({
       queryKey: activityKeys.chapter(chapterId),
       exact: true,
     });
-  }, [chapterId, queryClient]);
+    if (withStanding) {
+      void queryClient.invalidateQueries({
+        queryKey: activityStandingKeys.chapter(chapterId),
+        exact: true,
+      });
+    }
+  }, [chapterId, queryClient, withStanding]);
 
   const mounted = useRef(false);
   useFocusEffect(

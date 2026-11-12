@@ -3823,6 +3823,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/standing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get how the caller is doing this semester
+         * @description The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.
+         */
+        get: operations["ActivityController_getStanding_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -7708,6 +7728,46 @@ export interface components {
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
              */
             unread_since: string | null;
+        };
+        StandingPointsDto: {
+            /** @description Points earned this semester. */
+            total: number;
+            /** @description Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board. */
+            rank: number | null;
+            /** @description How many members the board ranks. */
+            ranked: number;
+        };
+        StandingRequiredEventsDto: {
+            /** @description Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in. */
+            required: number;
+            /** @description Of `required`, those marked present or late. */
+            attended: number;
+            /** @description Required events the caller was excused from. */
+            excused: number;
+        };
+        StandingServiceDto: {
+            /** @description Approved service minutes this semester. */
+            approved_minutes: number;
+            /** @description Service minutes waiting for approval. */
+            pending_minutes: number;
+        };
+        StandingStudyDto: {
+            /** @description Minutes from study sessions that started this week and have ended. */
+            minutes: number;
+            /** Format: date-time */
+            week_start: string;
+        };
+        ActivityStandingDto: {
+            /** @description Null when Points is off or couldn’t be read. */
+            points: components["schemas"]["StandingPointsDto"] | null;
+            /** @description Null when Events is off or couldn’t be read. */
+            required_events: components["schemas"]["StandingRequiredEventsDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            service: components["schemas"]["StandingServiceDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            study: components["schemas"]["StandingStudyDto"] | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("points" | "required_events" | "service" | "study")[];
         };
         ActivityItemRefDto: {
             /**
@@ -17264,6 +17324,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getStanding_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStandingDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
