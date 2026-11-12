@@ -1,3 +1,4 @@
+import { SERVICE_COLUMNS } from '#domain/constants/report-columns';
 import { toCSV } from './csv';
 
 describe('toCSV', () => {
@@ -63,5 +64,74 @@ describe('toCSV', () => {
     const rows = [{ meta: { foo: 'bar' } }];
     const result = toCSV(rows, cols);
     expect(result).toBe('Meta\r\n"{""foo"":""bar""}"');
+  });
+
+  // #3976: a member-typed cell a spreadsheet would run as a formula (CSV
+  // injection) gets the same apostrophe the dashboard's export adds.
+  describe('formula-shaped cells', () => {
+    it('makes a member-typed formula inert in a real report row', () => {
+      const rows = [
+        {
+          member_name: '=HYPERLINK("https://evil.example","Click")',
+          date: '2026-11-10',
+          duration_minutes: 90,
+          description: '@SUM(A1:A9)',
+          status: '+approved',
+        },
+      ];
+      const result = toCSV(rows, SERVICE_COLUMNS);
+      expect(result.split('\r\n')[1]).toBe(
+        `"'=HYPERLINK(""https://evil.example"",""Click"")",2026-11-10,90,'@SUM(A1:A9),'+approved`,
+      );
+    });
+
+    it('prefixes a leading tab or carriage return, then quotes the CR', () => {
+      const cols = [{ key: 'v', header: 'V' }];
+      expect(toCSV([{ v: '\t=1+1' }], cols)).toBe("V\r\n'\t=1+1");
+      expect(toCSV([{ v: '\r=1+1' }], cols)).toBe('V\r\n"\'\r=1+1"');
+    });
+
+    it('makes a formula inert inside an array cell', () => {
+      const cols = [{ key: 'roles', header: 'Roles' }];
+      expect(toCSV([{ roles: ['=1+1', 'Member'] }], cols)).toBe(
+        'Roles\r\n"\'=1+1, Member"',
+      );
+    });
+
+    it('leaves negative numbers and currency amounts as values', () => {
+      const cols = [
+        { key: 'n', header: 'N' },
+        { key: 's', header: 'S' },
+        { key: 'c', header: 'C' },
+      ];
+      expect(toCSV([{ n: -5, s: '-12.50', c: '-$12.00' }], cols)).toBe(
+        'N,S,C\r\n-5,-12.50,-$12.00',
+      );
+    });
+
+    it('quotes a semicolon, so a `;`-separator spreadsheet keeps one cell', () => {
+      const rows = [
+        {
+          member_name: 'Ann',
+          date: '2026-11-10',
+          duration_minutes: 30,
+          description: 'Late;=HYPERLINK("https://evil.example")',
+          status: 'approved',
+        },
+      ];
+      expect(toCSV(rows, SERVICE_COLUMNS).split('\r\n')[1]).toBe(
+        'Ann,2026-11-10,30,"Late;=HYPERLINK(""https://evil.example"")",approved',
+      );
+    });
+
+    it('writes a number as is, even one a string rule would prefix', () => {
+      expect(toCSV([{ n: -1e-7 }], [{ key: 'n', header: 'N' }])).toBe(
+        'N\r\n-1e-7',
+      );
+    });
+
+    it('applies to a header too', () => {
+      expect(toCSV([], [{ key: 'x', header: '-Points' }])).toBe("'-Points");
+    });
   });
 });

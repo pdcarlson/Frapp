@@ -142,7 +142,8 @@ import {
 // Type-only: erased at compile time, so the channel rail's component graph is
 // not on this module's runtime import graph.
 import type { ChatChannel } from "@/components/chat/channel-list";
-import { landingChannelId } from "@repo/hooks";
+import { landingChannelId, lastChannelLandingId } from "@repo/hooks";
+import { isDirectChannel } from "@repo/validation";
 import { readLastChannel } from "./last-channel";
 import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
 // Type-only: the shared scope definition, erased at compile time.
@@ -702,16 +703,30 @@ async function evictOldestTails(
     the auth uid, so it is read through the scope row's cached viewer id.
     With none cached yet, the pin falls back to the fixed default.
   */
-  const pinned = list
-    ? landingChannelId(
-        list.channels,
-        scopeRow?.viewerUserId
-          ? readLastChannel(scopeRow.viewerUserId, scope.chapterId)
-          : null,
-      )
-    : null;
+  /*
+    Since #3774 the panel lands per list, Chat on its channels and Direct
+    messages on the one DM the member had open (`chat-shell.tsx`), and the
+    cache can't know which list a cold load opens, so both landings are
+    pinned: two slots of the limit.
+  */
+  const viewer = scopeRow?.viewerUserId ?? null;
+  const pinned = new Set<string>();
+  if (list) {
+    const channelLanding = landingChannelId(
+      list.channels.filter((ch) => !isDirectChannel(ch)),
+      viewer ? readLastChannel(viewer, scope.chapterId) : null,
+    );
+    if (channelLanding) pinned.add(channelLanding);
+    const directLanding = viewer
+      ? lastChannelLandingId(
+          list.channels.filter(isDirectChannel),
+          readLastChannel(viewer, scope.chapterId, "direct"),
+        )
+      : null;
+    if (directLanding) pinned.add(directLanding);
+  }
   const evictable = tails
-    .filter((row) => row.channelId !== pinned)
+    .filter((row) => !pinned.has(row.channelId))
     .sort((a, b) => a.cachedAt - b.cachedAt);
   const surplus = tails.length - FIRST_CHUNK_CHANNEL_LIMIT;
   if (surplus <= 0) return;

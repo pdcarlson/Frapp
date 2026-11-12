@@ -7,6 +7,7 @@ import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
 import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
+import type { ChatView } from "@/components/layout/shell-prefs";
 
 /**
  * Reads `?channel=<id>&message=<id>` so a caller (the member directory's
@@ -25,10 +26,14 @@ function ChatPageContent({
   defaultMembersHidden,
   toolBeside,
   onClose,
+  view,
+  onViewChange,
 }: {
   defaultMembersHidden: boolean;
   toolBeside: boolean;
   onClose?: () => void;
+  view: ChatView;
+  onViewChange?: (view: ChatView) => void;
 }) {
   const searchParams = useSearchParams();
   const onChatUrl = isChatRoute(usePathname());
@@ -55,6 +60,8 @@ function ChatPageContent({
         defaultMembersHidden={defaultMembersHidden}
         toolBeside={toolBeside}
         onClose={onClose}
+        view={view}
+        onViewChange={onViewChange}
       />
     </ChatProvider>
   );
@@ -72,6 +79,8 @@ export function ChatPage({
   defaultMembersHidden = false,
   toolBeside = false,
   onClose,
+  view = "channels",
+  onViewChange,
 }: {
   /** The member list's remembered state, read by the layout on the server. */
   defaultMembersHidden?: boolean;
@@ -79,6 +88,10 @@ export function ChatPage({
   toolBeside?: boolean;
   /** Closes the chat panel (`ChatShell`'s prop of the same name). */
   onClose?: () => void;
+  /** Channels or direct messages (`ChatShell`'s prop of the same name). */
+  view?: ChatView;
+  /** The panel moving to the other list (`ChatShell`'s prop). */
+  onViewChange?: (view: ChatView) => void;
 } = {}) {
   /*
     This boundary's fallback must never be what the server sends.
@@ -104,6 +117,8 @@ export function ChatPage({
         defaultMembersHidden={defaultMembersHidden}
         toolBeside={toolBeside}
         onClose={onClose}
+        view={view}
+        onViewChange={onViewChange}
       />
     </Suspense>
   );

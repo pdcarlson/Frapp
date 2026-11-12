@@ -2,6 +2,7 @@ import {
   ActivityGlyph,
   BackworkGlyph,
   ChatGlyph,
+  DirectMessagesGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
   EventsGlyph,
@@ -31,7 +32,12 @@ import {
  * Structure (#2946): a Chat anchor with no section header, then Chapter, then
  * Resources, then one unlabeled group holding Directory, Billing and Chapter
  * settings. Chat leads because chat is the product's home — `/` and
- * `/dashboard` both redirect there. Profile and the personal Settings page are
+ * `/dashboard` both redirect there. The anchor holds two rows since #3774
+ * (Shawn, 2026-11-12): Chat, then Direct messages, which opens the same chat
+ * panel on the member's conversations instead of the chapter's channels, the
+ * way Slack's DMs entry and Discord's Direct Messages home sit apart from the
+ * channel list. Its `href` is the link it is below the side-by-side width,
+ * `/chat?view=direct` (`CHAT_VIEW_PARAM`). Profile and the personal Settings page are
  * deliberately absent: they live in the account menu, which the shell hangs
  * off the top-bar avatar (`account-menu.tsx`), because they are about the
  * viewer, not about the chapter. That is the two doors (#3856): the row here
@@ -144,7 +150,14 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Chat",
         icon: ChatGlyph,
         href: "/chat",
-        description: "Channels, DMs, announcements, realtime.",
+        description: "The chapter's channels and announcements.",
+      },
+      {
+        id: "direct",
+        label: "Direct messages",
+        icon: DirectMessagesGlyph,
+        href: "/chat?view=direct",
+        description: "Your one-to-one and group conversations.",
       },
     ],
   },

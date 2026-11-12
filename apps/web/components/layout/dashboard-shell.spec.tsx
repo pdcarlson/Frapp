@@ -47,6 +47,7 @@ const {
   mockPermissions: { value: [] as string[] | undefined },
 }));
 const routerPush = vi.hoisted(() => vi.fn());
+const routerReplace = vi.hoisted(() => vi.fn());
 const mockSearch = vi.hoisted(() => ({ value: "" }));
 /** The phone this browser runs on: none in jsdom unless a test says so. */
 const device = vi.hoisted(() => ({ phone: null as "ios" | "android" | null }));
@@ -56,7 +57,7 @@ vi.mock("@/lib/use-phone-platform", () => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
-  useRouter: () => ({ push: routerPush }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
   useSearchParams: () => new URLSearchParams(mockSearch.value),
 }));
 // Chat's panel has its own specs (`chat-shell.spec.tsx`); here it is a stub
@@ -65,12 +66,20 @@ vi.mock("@/components/chat/chat-page", () => ({
   ChatPage: ({
     toolBeside,
     onClose,
+    view,
+    onViewChange,
   }: {
     toolBeside?: boolean;
     onClose?: () => void;
+    view?: string;
+    onViewChange?: (view: "channels" | "direct") => void;
   }) => (
     <>
       <p data-testid="chat-stub">{toolBeside ? "beside a tool" : "alone"}</p>
+      <p data-testid="chat-view">{view}</p>
+      <button type="button" onClick={() => onViewChange?.("direct")}>
+        Open a DM link
+      </button>
       {onClose ? (
         <button type="button" onClick={onClose}>
           Close chat
@@ -194,10 +203,12 @@ afterEach(() => {
   mockChapter.value = undefined;
   unreadReads.count = 0;
   routerPush.mockClear();
+  routerReplace.mockClear();
   mockSearch.value = "";
   setWindowWidth(null);
   document.cookie = "frapp_chat_open=; Max-Age=0; Path=/";
   document.cookie = "frapp_chat_split=; Max-Age=0; Path=/";
+  document.cookie = "frapp_chat_view=; Max-Age=0; Path=/";
 });
 
 /**
@@ -618,6 +629,154 @@ describe("DashboardShell", () => {
         "min-[1056px]:min-w-[375px]",
       );
       expect(chatPanel(container)!.style.minWidth).toBe("615px");
+    });
+
+    describe("the Direct messages row (#3774)", () => {
+      const row = (name: string) =>
+        within(nav()).getByRole("button", { name: new RegExp(`^${name}`) });
+
+      it("switches the one panel between channels and direct messages, and the open row closes it", () => {
+        vi.useFakeTimers();
+        try {
+          setWindowWidth(1440);
+          mockPathname.value = "/events";
+          const { container } = render(<DashboardShell>events</DashboardShell>);
+          expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+          expect(row("Chat")).toHaveAttribute("aria-pressed", "true");
+          expect(row("Direct messages")).toHaveAttribute(
+            "aria-pressed",
+            "false",
+          );
+
+          // Switches in place: still one panel, now on direct messages.
+          fireEvent.click(row("Direct messages"));
+          expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+          expect(chatPanel(container)).toHaveAttribute(
+            "aria-label",
+            "Direct messages",
+          );
+          expect(container.querySelectorAll("[data-chat-panel]")).toHaveLength(
+            1,
+          );
+          expect(row("Direct messages")).toHaveAttribute(
+            "aria-pressed",
+            "true",
+          );
+          expect(row("Direct messages")).toHaveAttribute(
+            "title",
+            "Close direct messages",
+          );
+          expect(row("Chat")).toHaveAttribute("aria-pressed", "false");
+          expect(document.cookie).toMatch(/frapp_chat_view=direct/);
+
+          // The open row closes the panel.
+          fireEvent.click(row("Direct messages"));
+          act(() => {
+            vi.runAllTimers();
+          });
+          expect(chatPanel(container)).toBeNull();
+
+          // Chat opens it again, on channels.
+          fireEvent.click(row("Chat"));
+          expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+          expect(routerPush).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("opens on the list the cookie remembers", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/events";
+        render(
+          <DashboardShell defaultChatView="direct">events</DashboardShell>,
+        );
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(row("Direct messages")).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("follows the panel to direct messages when it opens a DM", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/events";
+        render(<DashboardShell>events</DashboardShell>);
+        fireEvent.click(screen.getByRole("button", { name: "Open a DM link" }));
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(row("Direct messages")).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("is a link below the side-by-side width, and the list on screen names the page", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=direct";
+        render(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        const direct = within(nav()).getByRole("link", {
+          name: "Direct messages",
+        });
+        expect(direct).toHaveAttribute("href", "/chat?view=direct");
+        expect(direct).toHaveAttribute("aria-current", "page");
+        // Chat links back to channels, since a bare `/chat` keeps the list.
+        const chat = within(nav()).getByRole("link", { name: "Chat" });
+        expect(chat).toHaveAttribute("href", "/chat?view=channels");
+        expect(chat).not.toHaveAttribute("aria-current");
+        expect(
+          screen.getByRole("heading", { name: "Direct messages" }),
+        ).toBeInTheDocument();
+      });
+
+      it("follows the address below the side-by-side width: a row's link, and Back to a bare /chat", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+        // Following the Direct messages row's link.
+        mockSearch.value = "view=direct";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        // Back to `/chat`, which is Chat's own link.
+        mockSearch.value = "";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+      });
+
+      it("keeps the list for a link to a conversation, which names none", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=direct";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        mockSearch.value = "channel=d1";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        // The panel follows the conversation's kind itself (`ChatShell`).
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+      });
+
+      it("drops a ?view= the panel has left, so the other row's link still works", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=channels";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        // A search hit or a bookmark into a DM, from inside the panel.
+        fireEvent.click(screen.getByRole("button", { name: "Open a DM link" }));
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(routerReplace).toHaveBeenCalledWith("/chat");
+        // The shell's own move to `/chat` keeps the list it followed to.
+        mockSearch.value = "";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(
+          within(nav()).getByRole("link", { name: "Chat" }),
+        ).toHaveAttribute("href", "/chat?view=channels");
+      });
+
+      it("drops a stale ?view= from the address when the rows switch lists", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=direct";
+        render(<DashboardShell>{null}</DashboardShell>);
+        fireEvent.click(row("Chat"));
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+        expect(routerReplace).toHaveBeenCalledWith("/chat");
+      });
     });
 
     describe("closing chat from chat's own header (#4223)", () => {
@@ -1115,6 +1274,11 @@ describe("DashboardShell", () => {
         "link",
         { name: /^Chat/ },
       );
+    const directRow = () =>
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "link",
+        { name: /^Direct messages/ },
+      );
 
     it("marks the Chat row unread only for a channel that isn't muted", () => {
       mockUnread.value = [
@@ -1130,7 +1294,7 @@ describe("DashboardShell", () => {
       expect(chatRow()).toHaveAccessibleName(/unread messages/);
     });
 
-    it("lets a mention or a DM through a mute, and lights nothing on unknown levels", () => {
+    it("lets a mention or a DM through a mute, and lights nothing on unknown levels (a DM on its own row, #3774)", () => {
       mockUnread.value = [
         { channel_id: "c1", unread_count: 1, mention_count: 1 },
       ];
@@ -1145,7 +1309,10 @@ describe("DashboardShell", () => {
       mockLevels.value = [{ channel_id: "d1", level: "off" }];
       mockChannels.value = [{ id: "d1", type: "DM" }];
       const second = render(<DashboardShell>content</DashboardShell>);
-      expect(chatRow()).toHaveAccessibleName(/unread messages/);
+      expect(chatRow()).not.toHaveAccessibleName(/unread/);
+      expect(directRow()).toHaveAccessibleName(
+        "Direct messages, 1 unread conversation",
+      );
       second.unmount();
 
       mockUnread.value = [
@@ -1166,9 +1333,9 @@ describe("DashboardShell", () => {
 
     it("lights the Chat row until the counts clear", () => {
       mockLevels.value = [];
-      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockChannels.value = [{ id: "c1", type: "PUBLIC" }];
       mockUnread.value = [
-        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+        { channel_id: "c1", unread_count: 2, mention_count: 0 },
       ];
       const { container, rerender } = render(
         <DashboardShell>content</DashboardShell>,
@@ -1183,16 +1350,56 @@ describe("DashboardShell", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("lights the Chat row in the collapsed rail and in the drawer too", () => {
+    it("counts DM conversations on the Direct messages row until they are read (#3774)", () => {
       mockLevels.value = [];
-      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockChannels.value = [
+        { id: "d1", type: "DM" },
+        { id: "d2", type: "GROUP_DM" },
+        { id: "c1", type: "PUBLIC" },
+      ];
       mockUnread.value = [
         { channel_id: "d1", unread_count: 2, mention_count: 0 },
+        { channel_id: "d2", unread_count: 5, mention_count: 0 },
+      ];
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      // Conversations, not messages: two DMs with seven unread between them.
+      expect(directRow()).toHaveAccessibleName(
+        "Direct messages, 2 unread conversations",
+      );
+      const badge = directRow().querySelector("[data-nav-count]");
+      expect(badge).toHaveTextContent("2");
+      // Mention red, never the chapter accent (foundations.md §5).
+      expect(badge).toHaveClass("bg-mention");
+      expect(chatRow()).not.toHaveAccessibleName(/unread/);
+      mockUnread.value = [];
+      rerender(<DashboardShell>content</DashboardShell>);
+      expect(directRow()).toHaveAccessibleName("Direct messages");
+      expect(
+        container.querySelector("[data-nav-count]"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lights the Chat row in the collapsed rail and in the drawer too", () => {
+      mockLevels.value = [];
+      mockChannels.value = [
+        { id: "c1", type: "PUBLIC" },
+        { id: "d1", type: "DM" },
+      ];
+      mockUnread.value = [
+        { channel_id: "c1", unread_count: 2, mention_count: 0 },
+        { channel_id: "d1", unread_count: 1, mention_count: 0 },
       ];
       render(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
       const rail = screen.getByRole("navigation", { name: "Primary" });
       expect(
         within(rail).getByRole("link", { name: "Chat, unread messages" }),
+      ).toBeInTheDocument();
+      expect(
+        within(rail).getByRole("link", {
+          name: "Direct messages, 1 unread conversation",
+        }),
       ).toBeInTheDocument();
       fireEvent.click(
         screen.getByRole("button", {

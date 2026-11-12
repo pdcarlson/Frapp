@@ -120,7 +120,8 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  * doesn't have. The sort is the Actives tab's alone, by choice: the Alumni
  * tab's trailing chip is Filters, and web's Alumni tab has no sort either
  * (#4088). Alumni rows still name their class, since `GET /v1/alumni` returns
- * it. Read-only here; officers set both on web (mobile editing is #3991).
+ * it. Read-only on the list; an officer holding `roles:manage` sets both from
+ * the member sheet a row opens (#3991), or on web.
  *
  * ## Actives filters (#3971)
  *
