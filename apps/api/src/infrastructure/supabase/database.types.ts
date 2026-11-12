@@ -231,7 +231,7 @@ export interface Database {
       users: TableDefinition<User>;
     };
     Views: {
-      /** `20261113040002` (#4076): one row per (group, member), every kind. */
+      /** `20261113040007` (#4076): one row per (group, member), every kind. */
       chapter_group_memberships: {
         Row: TableRow<ChapterGroupMembership>;
         Relationships: [];
@@ -933,7 +933,7 @@ export interface Database {
         Returns: ChatMessage[];
       };
       /**
-       * `20261113040002` (#4076): a manual group's members set to exactly
+       * `20261113040007` (#4076): a manual group's members set to exactly
        * `p_user_ids`, all or none. Returns the `users.id`s after.
        */
       set_chapter_group_members: {

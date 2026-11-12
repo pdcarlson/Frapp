@@ -177,7 +177,7 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
     );
     if (error) {
       // Both are the function refusing the whole write, not a fault: see
-      // 20261113040002_chapter_groups.sql.
+      // 20261113040007_chapter_groups.sql.
       if (error.code === PG_NO_DATA_FOUND) return 'group_not_found';
       if (error.code === PG_FOREIGN_KEY_VIOLATION) return 'member_not_found';
       throw new SupabaseQueryError(error);

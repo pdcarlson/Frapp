@@ -222,7 +222,7 @@ export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
 
 /**
  * Groups (#4076). The name bound mirrors the CHECK constraint in
- * `20261113040002_chapter_groups.sql`; the counts are API-side caps on one
+ * `20261113040007_chapter_groups.sql`; the counts are API-side caps on one
  * chapter's manual groups and one `PUT /v1/groups/:id/members`.
  */
 export const GROUP_NAME_MAX_LENGTH = 80;

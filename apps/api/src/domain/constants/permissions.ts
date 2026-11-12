@@ -165,7 +165,7 @@ const OFFICER_DEFAULT_PERMISSIONS = [
   SystemPermissions.TASKS_MANAGE,
   SystemPermissions.CHANNELS_CREATE,
   SystemPermissions.CHANNELS_MANAGE,
-  // Groups (#4076); migration `20261113040002_chapter_groups.sql` gives it
+  // Groups (#4076); migration `20261113040007_chapter_groups.sql` gives it
   // to every existing tier and role that manages roles or channels.
   SystemPermissions.GROUPS_MANAGE,
 ] as const;

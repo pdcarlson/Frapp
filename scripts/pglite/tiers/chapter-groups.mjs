@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
 import { setAuth } from "../probe.mjs";
 
-// ─── Functional: groups and pingable tiers (20261113040002, #4076) ─────────
+// ─── Functional: groups and pingable tiers (20261113040007, #4076) ─────────
 //
 // Replay runs the migration against empty tables, so replay alone proves
 // nothing about its triggers, its view or its backfills. This tier seeds a
@@ -26,7 +26,7 @@ import { setAuth } from "../probe.mjs";
 //     channels, and a second run of the file changes nothing.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
+console.log("\n=== Functional: groups and pingable tiers (20261113040007) ===");
 {
   const CH = "a4076000-0000-4000-8000-00000000000a";
   const T_EXEC = "a4076000-0000-4000-8000-0000000000e1";
@@ -42,7 +42,7 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040002) ===");
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261113040002_chapter_groups.sql",
+      "supabase/migrations/20261113040007_chapter_groups.sql",
     ),
     "utf8",
   );

@@ -138,7 +138,7 @@ create trigger trg_chapter_groups_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.chapter_groups is
-  'Named sets of members with no permissions (#4076): manual ones an officer keeps, and one per pledge class and per graduation year, whose members follow the members'' own data. Members: chapter_group_memberships. See 20261113040002_chapter_groups.sql.';
+  'Named sets of members with no permissions (#4076): manual ones an officer keeps, and one per pledge class and per graduation year, whose members follow the members'' own data. Members: chapter_group_memberships. See 20261113040007_chapter_groups.sql.';
 comment on column public.chapter_groups.mentionable is
   'Whether any member may @ the group. On by default; while off, only a member who can manage channels or roles can ping it, as for a role.';
 
@@ -169,7 +169,7 @@ create index if not exists idx_chapter_group_members_member
 alter table public.chapter_group_members enable row level security;
 
 comment on table public.chapter_group_members is
-  'Who is in each manual group (#4076). Automatic groups have no rows here: chapter_group_memberships reads theirs from the members'' own data. See 20261113040002_chapter_groups.sql.';
+  'Who is in each manual group (#4076). Automatic groups have no rows here: chapter_group_memberships reads theirs from the members'' own data. See 20261113040007_chapter_groups.sql.';
 
 -- Only a manual group has hand-picked members: an automatic one's follow the
 -- data, and a row here would add someone the data says isn't in it.
@@ -290,7 +290,7 @@ with (security_invoker = true) as
    where g.kind = 'class_year';
 
 comment on view public.chapter_group_memberships is
-  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members, with the group''s kind. The one definition the API and can_read_chat_channel both read. A class_year row never opens a channel: members set their own graduation year. See 20261113040002_chapter_groups.sql.';
+  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members, with the group''s kind. The one definition the API and can_read_chat_channel both read. A class_year row never opens a channel: members set their own graduation year. See 20261113040007_chapter_groups.sql.';
 
 -- The API reads it with the service role; nothing on a client does.
 revoke all on public.chapter_group_memberships from public;
