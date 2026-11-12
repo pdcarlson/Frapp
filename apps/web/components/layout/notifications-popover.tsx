@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useId, useMemo, type ReactElement } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -42,11 +42,10 @@ import { Button } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { asArray, cn, initials } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -58,9 +57,11 @@ import {
 } from "@/components/settings/settings-paths";
 import { usePageVisible } from "@/lib/notifications/use-page-visible";
 
-type DashboardNotificationDrawerProps = {
+type NotificationsPopoverProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The bell in the top bar, which opens and closes the list. */
+  children: ReactElement;
 };
 
 type Notification = {
@@ -154,10 +155,22 @@ function isReportNotification(notification: Notification): boolean {
   return notification.data?.target?.screen === CHAT_REPORTS_NOTIFICATION_SCREEN;
 }
 
-export function DashboardNotificationDrawer({
+/**
+ * The notification list, a dropdown under the top bar's bell (2026-11-12,
+ * #4593): a quick list opens under its button, as Discord's inbox, Facebook's
+ * and LinkedIn's bell and GitHub's notification menu do, instead of a sheet
+ * sliding over the page and dimming chat. It closes on a row, Escape, the
+ * bell, or a click outside, and never covers more than the corner it opens in.
+ *
+ * Mounted with the top bar, so on every dashboard page, open or not: the
+ * read-on-visit, realtime and report-queue effects below run from here.
+ */
+export function NotificationsPopover({
   open,
   onOpenChange,
-}: DashboardNotificationDrawerProps) {
+  children,
+}: NotificationsPopoverProps) {
+  const titleId = useId();
   const frappUser = useFrappUser();
   const notificationsQuery = useNotifications();
   const markRead = useMarkNotificationRead();
@@ -168,7 +181,7 @@ export function DashboardNotificationDrawer({
   // (notifications.md § How an in-app row is marked read): opening Events
   // reads the event notices, as opening a channel reads its chat notices.
   // Only while the tab is showing, so a page left open in the background does
-  // not read what nobody saw. The drawer is mounted with the shell, so this
+  // not read what nobody saw. The list is mounted with the top bar, so this
   // runs on every dashboard page.
   const pathname = usePathname();
   const pageVisible = usePageVisible();
@@ -199,7 +212,7 @@ export function DashboardNotificationDrawer({
   const roster = useChapterRoster();
   const rosterMembers = roster.data ?? null;
   const names = useMemberDisplayNames();
-  // Ticks, so a drawer left open past midnight moves its rows to Earlier.
+  // Ticks, so a list left open past midnight moves its rows to Earlier.
   const now = useNowDate();
   const groups = useMemo(
     () => groupByDay(notifications, now),
@@ -236,34 +249,39 @@ export function DashboardNotificationDrawer({
   }
 
   // One request (`POST /v1/notifications/read`), so it also reads rows past
-  // the page this drawer shows. Until #3929 it sent one PATCH per row.
+  // the page this list shows. Until #3929 it sent one PATCH per row.
   function markAllRead() {
     markManyRead.mutate(undefined);
   }
 
   /*
-    The drawer's chrome is a title and one icon (components.md § Chrome
+    The list's chrome is a title and one control (components.md § Chrome
     weight). Until 2026-11-05 it stacked a bell, the title, a gold count, a
     description, an "N total" line, Mark all read and Refresh above a list of
     bordered cards, each with its own Read or New badge. The count said what
-    the dots already say, the description narrated the drawer to someone
+    the dots already say, the description narrated the list to someone
     reading it, and Refresh did by hand what the realtime ping above does on
     its own. Mark all read stayed as an icon beside the close until 2026-11-09
     (#3929), when the owner asked for one that is obvious: it is worded, as
     Slack's and GitHub's are, and drawn only while something is unread.
   */
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col sm:max-w-md"
-        aria-describedby={undefined}
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        collisionPadding={8}
+        aria-labelledby={titleId}
+        // 400px, or the window less a gutter on a phone; as tall as its rows
+        // up to 560px or the room under the bar, then the list scrolls.
+        className="flex max-h-[min(560px,var(--radix-popover-content-available-height))] w-[min(400px,calc(100vw-16px))] flex-col p-0"
       >
-        <SheetHeader className="pr-40">
-          <SheetTitle>Notifications</SheetTitle>
-        </SheetHeader>
-        {unreadCount > 0 ? (
-          <div className="absolute right-12 top-2.5 flex items-center">
+        <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2">
+          <h2 id={titleId} className="text-sm font-semibold">
+            Notifications
+          </h2>
+          {unreadCount > 0 ? (
             <Button
               variant="link"
               size="sm"
@@ -272,17 +290,17 @@ export function DashboardNotificationDrawer({
             >
               Mark all read
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
-        <div className="-mx-3 flex-1 overflow-y-auto px-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {notificationsQuery.isPending ? (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            // The drawer stays mounted between opens, so closing and
+            // The list's queries stay mounted between opens, so closing and
             // reopening it doesn't refetch: the retry has to live here, now
             // that the header has no Refresh (components.md § Chrome weight).
             <div className="grid justify-items-start gap-2 rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
@@ -311,7 +329,7 @@ export function DashboardNotificationDrawer({
             // grouped Today / Earlier as mobile s14 is (#4346). Unread is a
             // dot and a bolder title, neutral like the chat list's unread
             // (foundations.md §5), not a tinted card. Every row is
-            // transparent on the sheet's `--popover`, so one hover serves
+            // transparent on the popover's `--popover`, so one hover serves
             // both states: `--card-hover`, the neutral lift above the ladder
             // (`elevation-contrast.spec.ts`). The focus ring is drawn inset,
             // because the list fills the scroll area's width and its overflow
@@ -345,8 +363,8 @@ export function DashboardNotificationDrawer({
             </div>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </PopoverContent>
+    </Popover>
   );
 }
 

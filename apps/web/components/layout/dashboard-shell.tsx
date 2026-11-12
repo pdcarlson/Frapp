@@ -49,7 +49,7 @@ import {
   CHAT_VIEW_PARAM,
 } from "@/lib/chat/chat-links";
 import { TopBar } from "@/components/layout/top-bar";
-import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
+import { NotificationsPopover } from "@/components/layout/notifications-popover";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { resolvePageTitle } from "@/components/layout/page-title";
@@ -172,7 +172,7 @@ export function DashboardShell({
   useChatRealtimeBinding();
 
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
-  const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Side by side: `null` until the client knows its width, so a hydration
@@ -517,10 +517,6 @@ export function DashboardShell({
       <OnboardingTutorial />
       {/* What's new, by itself once after an update (#3943). */}
       <WhatsNewHost />
-      <DashboardNotificationDrawer
-        open={notificationDrawerOpen}
-        onOpenChange={setNotificationDrawerOpen}
-      />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         {/*
@@ -624,7 +620,14 @@ export function DashboardShell({
           titleMovesBesideChat={hasTool}
           titleIsHeading={!(hasTool && split === true)}
           unreadNotifications={unreadNotifications}
-          onOpenNotifications={() => setNotificationDrawerOpen(true)}
+          notifications={(bell) => (
+            <NotificationsPopover
+              open={notificationsOpen}
+              onOpenChange={setNotificationsOpen}
+            >
+              {bell}
+            </NotificationsPopover>
+          )}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
         {/* On a phone only, until dismissed (#4002). Above `<main>` so it
