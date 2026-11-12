@@ -204,6 +204,19 @@ const railRowActions = vi.hoisted(() => ({
   value: undefined as
     import("./channel-row-menu").ChannelRowActions | undefined,
 }));
+// `GET /v1/channels/latest` as Direct messages reads it (#3774).
+const latestReads = vi.hoisted(() => ({
+  rows: [] as {
+    channel_id: string;
+    sender_id: string;
+    author_name: string | null;
+    content: string;
+    kind: string;
+    attachment_count: number;
+    created_at: string;
+  }[],
+  enabled: [] as boolean[],
+}));
 // The rail's drag-to-reorder controls (#4178), captured like the row actions.
 const railReorder = vi.hoisted(() => ({
   value: undefined as
@@ -576,6 +589,11 @@ vi.mock("@repo/hooks", async () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
   }),
+  // Direct messages' order and last lines (#3774).
+  useChannelLatestMessages: (options?: { enabled?: boolean }) => {
+    latestReads.enabled.push(options?.enabled ?? true);
+    return { data: latestReads.rows, isSuccess: true };
+  },
   useOrgConfig: () =>
     slashGateReads.orgConfigError
       ? { data: undefined, isError: true, refetch: vi.fn() }
@@ -770,6 +788,8 @@ vi.mock("./channel-list", () => ({
   ChannelList: ({
     kind,
     channels,
+    previews,
+    latestAt,
     onPick,
     onHide,
     categories,
@@ -796,10 +816,18 @@ vi.mock("./channel-list", () => ({
     categories?: { id: string; name: string }[];
     kind?: string;
     channels?: { id: string }[];
+    latestAt?: ReadonlyMap<string, string>;
+    previews?: ReadonlyMap<string, string>;
   }) => (
     <div
       data-testid="channel-list"
       data-kind={kind}
+      data-previews={
+        previews
+          ? [...previews].map(([id, line]) => `${id}=${line}`).join("|")
+          : undefined
+      }
+      data-latest={latestAt ? [...latestAt.keys()].join(",") : undefined}
       data-ids={channels?.map((ch) => ch.id).join(",")}
       ref={() => {
         railRowActions.value = rowActions;
@@ -5712,5 +5740,49 @@ describe("ChatShell's two lists (#3774)", () => {
       screen.getByRole("link", { name: "Find someone in the Directory" }),
     ).toHaveAttribute("href", "/members");
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+  });
+
+  it("reads the latest messages only for Direct messages, and words each last line (#3774)", () => {
+    latestReads.enabled = [];
+    latestReads.rows = [
+      {
+        channel_id: "chan-group",
+        sender_id: "other-1",
+        author_name: "Cole Bennett",
+        content: "I do, sending it tonight",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-12T01:20:00.000Z",
+      },
+    ];
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    const { unmount } = render(<ChatShell />);
+    expect(latestReads.enabled.every((on) => on === false)).toBe(true);
+    expect(rail()).not.toHaveAttribute("data-previews");
+    unmount();
+
+    render(<ChatShell view="direct" />);
+    expect(latestReads.enabled.at(-1)).toBe(true);
+    expect(rail()).toHaveAttribute("data-latest", "chan-group");
+    const previews = rail().getAttribute("data-previews") ?? "";
+    // A group DM keeps the sender's first name; a DM with no message yet
+    // says so, as on the phone.
+    expect(previews).toMatch(/chan-group=\S+: I do, sending it tonight/);
+    expect(previews).toContain("chan-dm=No messages yet");
+    latestReads.rows = [];
+  });
+
+  it("offers New message in Direct messages, which opens the Directory", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const { unmount } = render(<ChatShell />);
+    expect(
+      screen.queryByRole("link", { name: "New message" }),
+    ).not.toBeInTheDocument();
+    unmount();
+    render(<ChatShell view="direct" />);
+    expect(screen.getByRole("link", { name: "New message" })).toHaveAttribute(
+      "href",
+      "/members",
+    );
   });
 });
