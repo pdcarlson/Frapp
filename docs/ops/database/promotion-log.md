@@ -34,16 +34,6 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-## 2026-11-12: Calendar subscription links (#3322)
-
-### 20261112287400_calendar_feeds.sql
-
-- **Purpose**: Adds `calendar_feeds`: one row per calendar subscription link (`id`, `user_id`, `chapter_id`, `token`, `created_at`, `revoked_at`; `token` unique and at least 32 characters; at most one row with `revoked_at` null per `(chapter_id, user_id)`), cascading with the user and the chapter. RLS on, no policies (API only, service role). Adds `calendar_feeds_drop_for_deleted_user()` and the trigger `users_drop_calendar_feeds` (after `deleted_at` is first set on `users`, which `anonymize_user` does), which deletes the account's links; `anonymize_user` is not redefined. No existing row changes. The rule is [`spec/behavior/events.md` § Calendar subscription](../../../spec/behavior/events.md#calendar-subscription).
-- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'calendar_feeds';` returns `true`, `select count(*) from pg_policies where tablename = 'calendar_feeds';` returns `0`, `select count(*) from pg_indexes where indexname in ('calendar_feeds_token_key', 'calendar_feeds_one_live_per_member');` returns `2`, and `select count(*) from pg_trigger where tgname = 'users_drop_calendar_feeds';` returns `1`.
-- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table. The newer API against an unmigrated database fails the three `/v1/calendar-feed` routes (500), so the Subscribe menu says it couldn't get a link; nothing else is affected. The two foreign keys and the trigger take `SHARE ROW EXCLUSIVE` on `users` and `chapters` until commit, for a few catalog statements that touch no rows. `if not exists`, `create or replace` and `drop trigger if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
-
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-calendar-subscription-links-20261112287400) § Rollback calendar subscription links.
-
 ## 2026-11-12: Study zones drawn on a map (#2239)
 
 ### 20261112270000_study_zone_circle.sql
