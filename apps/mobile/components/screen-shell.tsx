@@ -29,7 +29,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 type ScreenShellProps = {
   title: string;
   /**
-   * The `‹ More` / `‹ Events` row above the title, on a screen reached from
+   * The `‹ You` / `‹ Calendar` row above the title, on a screen reached from
    * another one (#3022, `spec/ui/mobile/navigation.md` § Back rows). A tab's
    * own screen passes none. Every state of a screen passes the same one, so a
    * deep link that lands on an error still has a way out.

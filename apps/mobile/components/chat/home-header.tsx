@@ -1,40 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { useFocusEffect, useRouter } from "expo-router";
-import { onlineManager } from "@tanstack/react-query";
-import { useNotifications, type MemberAvatarTint } from "@repo/hooks";
+import { useRouter } from "expo-router";
+import { useNotifications } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
-import { StatusDot } from "@/components/account/status-dot";
-import { useOwnStatus } from "@/lib/account/own-status";
+import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
-import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
-import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
- * Chat home's top-right pair (owner, 2026-11-07, option B of the round-two
- * redesign): a door to Messages, the member's direct messages on their own
- * screen, then the member's own avatar, which opens a small menu holding
- * Status (#3845), Profile, Notifications and Settings.
+ * Chat home's top-right pair: a door to Messages, the member's direct
+ * messages on their own screen (owner, 2026-11-07), then the notification
+ * bell (#3839).
  *
- * Every chat app the members already use puts these two in that corner
- * (Instagram's DM door, the avatar that is "you" in Slack, Discord and
- * GroupMe). The notification bell folded into the avatar: its unread dot
- * moved there, and the menu row carries the count, so the header holds two
- * controls instead of three beside a long chapter name.
+ * Until #3839 the second control was the member's own avatar, which opened a
+ * menu of Status, Profile, Notifications and Settings. The avatar is the You
+ * tab now, as Instagram, Slack and Discord draw their last tab, and those
+ * rows live on that tab. The bell came back here because the inbox count is
+ * Chat home's to show: Instagram keeps its heart and Slack its Activity
+ * beside the conversations, not behind the profile.
  */
 
 const BUTTON = 36;
-const MENU_WIDTH = 220;
 
 /** A speech bubble, the Messages door's glyph, on the 24pt grid. */
 function MessagesGlyph({ color }: { color: string }) {
@@ -96,7 +83,7 @@ export function MessagesButton({
         <View
           testID="messages-badge"
           pointerEvents="none"
-          style={[styles.count, styles.countMention]}
+          style={[styles.count, styles.countBadge, styles.countMention]}
         >
           <Text style={[styles.countText, styles.countTextMention]}>
             {unreadConversations > 99 ? "99+" : unreadConversations}
@@ -107,260 +94,70 @@ export function MessagesButton({
   );
 }
 
-export type AccountMenuState = {
-  visible: boolean;
-  top: number;
-  open: (top: number) => void;
-  close: () => void;
-};
-
-/** The avatar menu's open state, held by the screen whose overlay draws it. */
-export function useAccountMenu(): AccountMenuState {
-  const [visible, setVisible] = useState(false);
-  const [top, setTop] = useState(0);
-  const close = useCallback(() => setVisible(false), []);
-  const open = useCallback((at: number) => {
-    setTop(at);
-    setVisible(true);
-  }, []);
-  useBackToClose(visible, close);
-  // A row navigates away, and Chat home stays mounted under the next screen.
-  useFocusEffect(useCallback(() => close, [close]));
-  return { visible, top, open, close };
-}
-
 /**
- * The member's own avatar: their photo, or their initials in their member
- * tint (#3860; never the chapter accent, foundations.md §6). A
- * dot in the inbox's house gold says the notification inbox has something
- * unread, the dot the bell's badge used to be.
+ * The notification inbox's door: a bell beside Messages, with the unread
+ * count as a badge (#3362, back on the header in #3839). The avatar that held
+ * it moved to the tab bar as the You tab, and a count that lived only as a dot
+ * on that avatar was a count nobody could read, so the bell is its own
+ * control again, as the web top bar's is.
  *
- * The member's picked status (#3845) sits bottom-right, where web draws a
- * presence dot, so it never collides with the gold dot top-right. It is
- * hidden while Online, the status a member doesn't pick, so the corner stays
- * quiet for most members most of the time.
+ * ## The badge is house gold
+ *
+ * Fixed `gold.house`, never the chapter accent, as the web bell's badge is
+ * (`spec/ui/design-system/components.md` § App bar chips). A count is not
+ * direct address, and on this screen it sits beside the Messages door's
+ * mention-red badge: a chapter whose accent is red would otherwise draw an
+ * inbox count that reads as "someone addressed you".
+ *
+ * ## It counts what the channel list doesn't
+ *
+ * The chat push worker writes an inbox row for every chat push it sends, and
+ * the channel rows already badge those messages from read receipts. Reading
+ * the thread clears the channel badge but not the inbox row, so the bell
+ * counts the rest, `selectUnreadNonChatCount`, the same split the app-icon
+ * badge makes (`lib/notifications/use-badge-sync.ts`).
  */
-export function AccountButton({
-  menu,
-  initials,
-  photoUrl,
-  fetchedAt,
-  tint = null,
-}: {
-  menu: AccountMenuState;
-  initials: string;
-  photoUrl: string | null;
-  fetchedAt: number;
-  /** The viewer's initials paint (#3860); `null` keeps the neutral fill. */
-  tint?: MemberAvatarTint | null;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const ref = useRef<View>(null);
-  const inboxUnread = selectUnreadNonChatCount(useNotifications().data);
-  const own = useOwnStatus();
-  const shownStatus = own && own.status !== "online" ? own.status : null;
-  // A photo that fails to load falls back to initials, retried on a refetch
-  // or reconnect, as the More tab's profile card does.
-  const [failed, setFailed] = useState<{ url: string; at: number } | null>(
-    null,
-  );
-  useEffect(
-    () =>
-      onlineManager.subscribe((online) => {
-        if (online) setFailed(null);
-      }),
-    [],
-  );
-  const showPhoto =
-    !!photoUrl && !(failed?.url === photoUrl && failed.at === fetchedAt);
-  // Dropped when it came from the swipe to Messages (`lib/swipe-claim.ts`).
-  const toggleMenu = useGuardedBySwipe(() => {
-    if (menu.visible) return menu.close();
-    const node = ref.current;
-    if (!node?.measureInWindow) return menu.open(0);
-    node.measureInWindow((_x, y, _width, height) =>
-      menu.open(y + height + tokens.spacing.xs),
-    );
-  });
-
-  return (
-    <Pressable
-      ref={ref}
-      accessibilityRole="button"
-      accessibilityLabel="Your account"
-      accessibilityHint="Opens Status, Profile, Notifications and Settings."
-      accessibilityValue={accountValue(
-        shownStatus ? MEMBER_STATUS_LABEL[shownStatus] : null,
-        inboxUnread,
-      )}
-      accessibilityState={{ expanded: menu.visible }}
-      hitSlop={4}
-      onPress={toggleMenu}
-      style={({ pressed }) => [
-        styles.avatar,
-        tint ? { backgroundColor: tint.fill } : null,
-        pressed ? styles.dim : null,
-      ]}
-    >
-      {showPhoto ? (
-        <Image
-          source={{ uri: photoUrl }}
-          style={styles.photo}
-          onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        />
-      ) : (
-        <Text style={[styles.initials, tint ? { color: tint.text } : null]}>
-          {initials}
-        </Text>
-      )}
-      {inboxUnread > 0 ? (
-        <View
-          testID="account-inbox-dot"
-          pointerEvents="none"
-          style={styles.dot}
-        />
-      ) : null}
-      {shownStatus ? (
-        <View pointerEvents="none" style={styles.statusDot}>
-          <StatusDot
-            testID={`account-status-${shownStatus}`}
-            status={shownStatus}
-            ring={tokens.color.surface.background}
-          />
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
-
-/** The ME button's value: the picked status, then the unread count. */
-function accountValue(
-  status: string | null,
-  inboxUnread: number,
-): { text: string } | undefined {
-  const parts = [
-    status,
-    inboxUnread > 0 ? `${inboxUnread} unread notifications` : null,
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? { text: parts.join(", ") } : undefined;
-}
-
-/** The avatar's menu, drawn by `ScreenShell`'s overlay like the filter menu. */
-export function AccountMenu({
-  menu,
-  onStatus,
-}: {
-  menu: AccountMenuState;
-  /** Opens the status sheet (#3845); the menu has already closed. */
-  onStatus: () => void;
-}) {
+export function NotificationsButton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const firstRef = useRef<React.ComponentRef<typeof Text>>(null);
-  useFocusOnOpen(firstRef, menu.visible);
-  const inboxUnread = selectUnreadNonChatCount(useNotifications().data);
-  const own = useOwnStatus();
-
-  if (!menu.visible) return null;
-  const status = own?.status ?? "online";
-  const statusSub = own?.statusEndsAt
-    ? untilLabel(own.statusEndsAt, new Date())
-    : (own?.line ?? null);
-
-  const rows: {
-    key: string;
-    label: string;
-    href: "/profile" | "/notifications" | "/preferences";
-    count?: number;
-  }[] = [
-    { key: "profile", label: "Profile", href: "/profile" },
-    {
-      key: "notifications",
-      label: "Notifications",
-      href: "/notifications",
-      count: inboxUnread,
-    },
-    { key: "settings", label: "Settings", href: "/preferences" },
-  ];
-
+  const unread = selectUnreadNonChatCount(useNotifications().data);
+  // A leftward flick that starts on the bell is the swipe to Messages, not a
+  // tap on the bell (`lib/swipe-claim.ts`).
+  const openInbox = useGuardedBySwipe(() => router.push("/notifications"));
   return (
-    <View
-      accessibilityViewIsModal
-      onAccessibilityEscape={menu.close}
-      style={styles.fill}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Notifications"
+      accessibilityHint="Opens your notification history."
+      accessibilityValue={
+        unread > 0 ? { text: `${unread} unread` } : undefined
+      }
+      hitSlop={4}
+      android_ripple={{
+        color: tint(tokens.color.text.foreground, 0.12),
+        borderless: true,
+        radius: 22,
+      }}
+      onPress={openInbox}
+      style={({ pressed }) => [
+        styles.glass,
+        pressed && Platform.OS !== "android" ? styles.pressed : null,
+      ]}
     >
-      <Pressable
-        testID="account-menu-backdrop"
-        accessible={false}
-        importantForAccessibility="no"
-        onPress={menu.close}
-        style={styles.fill}
-      />
-      <View style={[styles.menu, { top: menu.top, right: tokens.spacing.lg }]}>
-        {/* Status first, as Discord and Slack put it at the top of the
-            avatar's menu: it opens the status sheet. */}
-        <Pressable
-          testID="account-menu-status"
-          accessibilityRole="button"
-          accessibilityLabel={
-            statusSub
-              ? `Status: ${MEMBER_STATUS_LABEL[status]}, ${statusSub}`
-              : `Status: ${MEMBER_STATUS_LABEL[status]}`
-          }
-          accessibilityHint="Opens your status and custom status."
-          onPress={() => {
-            menu.close();
-            onStatus();
-          }}
-          style={({ pressed }) => [styles.row, pressed ? styles.dim : null]}
+      <NotificationsGlyph color={tokens.color.text.foreground} neutral />
+      {unread > 0 ? (
+        <View
+          testID="notifications-badge"
+          pointerEvents="none"
+          style={[styles.count, styles.countBadge, styles.countInbox]}
         >
-          <View style={styles.statusGlyph}>
-            <StatusDot status={status} />
-          </View>
-          <View style={styles.statusText}>
-            <Text ref={firstRef} style={styles.label}>
-              {MEMBER_STATUS_LABEL[status]}
-            </Text>
-            {statusSub ? (
-              <Text numberOfLines={1} style={styles.statusSub}>
-                {statusSub}
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
-        {rows.map((row) => (
-          <Pressable
-            key={row.key}
-            accessibilityRole="button"
-            accessibilityValue={
-              row.count ? { text: `${row.count} unread` } : undefined
-            }
-            onPress={() => {
-              menu.close();
-              router.push(row.href);
-            }}
-            style={({ pressed }) => [
-              styles.row,
-              styles.rowDivided,
-              pressed ? styles.dim : null,
-            ]}
-          >
-            <Text style={styles.label}>{row.label}</Text>
-            {row.count ? (
-              <View style={[styles.count, styles.countInbox, styles.inline]}>
-                <Text style={[styles.countText, styles.countTextInbox]}>
-                  {row.count > 99 ? "99+" : row.count}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-        ))}
-      </View>
-    </View>
+          <Text style={[styles.countText, styles.countTextInbox]}>
+            {unread > 99 ? "99+" : unread}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -379,48 +176,6 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
     },
     pressed: { backgroundColor: tokens.color.surface.popover },
-    dim: { opacity: 0.7 },
-    avatar: {
-      width: BUTTON,
-      height: BUTTON,
-      borderRadius: avatarRadius(BUTTON),
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: tokens.color.surface.popover,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
-    photo: {
-      width: BUTTON - 2,
-      height: BUTTON - 2,
-      borderRadius: avatarRadius(BUTTON - 2),
-    },
-    initials: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    dot: {
-      position: "absolute",
-      top: -1,
-      right: -1,
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: tokens.color.gold.house,
-      borderWidth: 2,
-      borderColor: tokens.color.surface.background,
-    },
-    statusDot: {
-      position: "absolute",
-      bottom: -3,
-      right: -3,
-    },
-    statusGlyph: { width: 16, marginRight: tokens.spacing.sm },
-    statusText: { flex: 1, minWidth: 0, paddingVertical: tokens.spacing.xs },
-    statusSub: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
     count: {
       minWidth: 18,
       height: 18,
@@ -429,48 +184,14 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    countMention: {
-      position: "absolute",
-      top: -4,
-      right: -6,
-      backgroundColor: tokens.color.semantic.mention,
-    },
+    countBadge: { position: "absolute", top: -4, right: -6 },
+    countMention: { backgroundColor: tokens.color.semantic.mention },
     countInbox: { backgroundColor: tokens.color.gold.house },
-    inline: { marginLeft: "auto" },
     countText: {
       ...typeRole({ size: 11, weight: tokens.typography.weight.bold }),
       lineHeight: 14,
     },
     countTextMention: { color: tokens.color.semantic.mentionForeground },
     countTextInbox: { color: tokens.color.gold.onHouse },
-    fill: {
-      position: "absolute",
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    },
-    menu: {
-      position: "absolute",
-      width: MENU_WIDTH,
-      paddingHorizontal: tokens.spacing.md,
-      backgroundColor: tokens.color.surface.popover,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      borderRadius: tokens.radius.control,
-    },
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      minHeight: tokens.touch.minimum + tokens.spacing.xs,
-    },
-    rowDivided: {
-      borderTopWidth: 1,
-      borderTopColor: tokens.color.border.hairline,
-    },
-    label: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
   });
 }

@@ -12,7 +12,7 @@ import { can, statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { HistoryRow, HistoryRowsSkeleton } from "@/components/history-row";
 import { SectionHeader } from "@/components/list-section";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
@@ -119,7 +119,7 @@ export default function ServiceHoursScreen() {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
+          body="If you belong to more than one chapter, pick one from You → Switch chapter first."
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />
@@ -158,7 +158,7 @@ export default function ServiceHoursScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_MORE}
+      back={BACK_TO_YOU}
       title="Service hours"
       refresh={refresh}
       // Filing is `service:log` (`POST /v1/service-entries`), which the seeded

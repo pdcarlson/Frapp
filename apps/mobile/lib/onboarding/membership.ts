@@ -8,7 +8,7 @@
  * disabled as an incident mitigation — #805's dashboard toggle is on, so the
  * empty-prod case is "no membership", not "hook off". A sole membership is then
  * the only one we can attribute — a multi-chapter account with no claim is not
- * forced through s03 (they already have a chapter they can open from More).
+ * forced through s03 (they already have a chapter they can open from You).
  */
 
 export type OnboardingMembership = {

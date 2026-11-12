@@ -102,7 +102,7 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours: the nav set's hand-heart, the More hub's shape, lifted when focused like its sibling eyebrows. */
+/** Service hours: the nav set's hand-heart, the You tab's row shape, lifted when focused like its sibling eyebrows. */
 export function ServiceHoursGlyph(props: TabGlyphProps) {
   return <TabGlyph name="service" {...props} />;
 }

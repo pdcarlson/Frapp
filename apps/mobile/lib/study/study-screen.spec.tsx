@@ -784,11 +784,11 @@ describe("Study pull-to-refresh (#3385)", () => {
   });
 });
 
-/** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
+/** #3022. s10 opens from You's Study hours row and draws `‹ You`. */
 describe("Study back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
-    expectBackRow(tree, "More", "/more");
+    expectBackRow(tree, "You", "/you");
     tree.unmount();
   });
 });

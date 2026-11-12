@@ -1,6 +1,6 @@
 # Chapter Branding
 
-Behavior and boundaries for per-chapter branding. Visual design tokens (palette, typography, radii) are owned by the UI spec; this file covers what branding *means* and what the API enforces. Editing of branding happens in Chapter settings → Chapter on web (the Accent section sits under the chapter mark) — see [`settings/customization.md`](settings/customization.md) — and, for the accent alone, in More → Chapter settings → Chapter accent on mobile (§ Accent Color below).
+Behavior and boundaries for per-chapter branding. Visual design tokens (palette, typography, radii) are owned by the UI spec; this file covers what branding *means* and what the API enforces. Editing of branding happens in Chapter settings → Chapter on web (the Accent section sits under the chapter mark) — see [`settings/customization.md`](settings/customization.md) — and, for the accent alone, in You → Chapter settings → Chapter accent on mobile (§ Accent Color below).
 
 ## Logo
 

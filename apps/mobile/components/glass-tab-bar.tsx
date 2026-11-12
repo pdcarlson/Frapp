@@ -24,6 +24,8 @@ import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-ho
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
 import { useActivity } from "@repo/hooks";
 import { useAiSurfaces } from "@/lib/ai/availability";
+import { MEMBER_STATUS_LABEL } from "@repo/hooks/member-status";
+import { useOwnStatus } from "@/lib/account/own-status";
 import { activityCountChip } from "@/lib/activity/count-chip";
 import { useActivityRereadOnTab } from "@/lib/activity/use-activity-reread";
 import { TabLabel } from "@/components/tab-glyphs";
@@ -40,12 +42,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The four tabs, in order (`spec/ui/mobile/navigation.md` § Tab bar): Chat,
- * Activity, Calendar (the `events` route) and More, since 2026-11-12
+ * Activity, Calendar (the `events` route) and You (#3839), since 2026-11-12
  * (#4610). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`);
  * every other screen is pushed on the stack above it and covers the bar
  * (`spec/ui/mobile/navigation.md` § Going back).
  */
-export const TAB_ROUTES = ["index", "activity", "events", "more"] as const;
+export const TAB_ROUTES = ["index", "activity", "events", "you"] as const;
 
 /** The pill's radius: half its height, so its ends are round. */
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
@@ -78,9 +80,14 @@ export function GlassTabBar({
   const needsYou = activityCountChip(useActivity().data);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
-  // Two of the first-run tour's stops: the + and the More tab.
+  // Two of the first-run tour's stops: the + and the You tab.
   const plusAnchor = useTourAnchor("quickActions");
-  const moreAnchor = useTourAnchor("more");
+  const youAnchor = useTourAnchor("you");
+  // The status a member picked (#3845) shows on the You tab's avatar, so the
+  // tab names it too. Online is the one nobody picks, so it says nothing.
+  const own = useOwnStatus();
+  const youStatus =
+    own && own.status !== "online" ? MEMBER_STATUS_LABEL[own.status] : null;
   const { run, ask, sheets, notice } = useQuickActionsHost({
     events: available.includes("checkIn") || available.includes("hostCheckIn"),
   });
@@ -256,13 +263,15 @@ export function GlassTabBar({
             return (
               <Pressable
                 key={route.key}
-                ref={name === "more" ? moreAnchor : undefined}
+                ref={name === "you" ? youAnchor : undefined}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={
                   name === "activity" && needsYou
                     ? `${label}, ${needsYou.spoken}`
-                    : label
+                    : name === "you" && youStatus
+                      ? `${label}, ${youStatus}`
+                      : label
                 }
                 testID={`tab-${route.name}`}
                 onPress={() => {
@@ -291,7 +300,7 @@ export function GlassTabBar({
                 {name === "activity" && needsYou ? (
                   // A count is not direct address, so it is house gold, never
                   // the accent or mention red (components.md § App bar chips),
-                  // as the Notifications count in Chat home's menu is.
+                  // as the bell's count on Chat home is.
                   <View
                     testID="tab-activity-badge"
                     pointerEvents="none"

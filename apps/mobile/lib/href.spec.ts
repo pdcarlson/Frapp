@@ -12,7 +12,7 @@ const router = () => ({
   navigate: vi.fn(),
   dismissTo: vi.fn(),
 });
-const TABS = ["/", "/activity", "/events", "/more", "/events?focus=1"];
+const TABS = ["/", "/activity", "/events", "/you", "/events?focus=1"];
 
 describe("openHref", () => {
   it.each(TABS)("pops down to the tab %s", (href) => {

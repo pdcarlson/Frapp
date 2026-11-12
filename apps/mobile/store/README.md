@@ -354,7 +354,7 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > | Old claim | Verdict | Evidence |
 > | --- | --- | --- |
-> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
+> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" row in `you.tsx` (`more.tsx` until #3839) and gated `events:update` |
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
@@ -368,7 +368,7 @@ Frapp is invite-only. Your chapter's officers create the chapter on the web and 
 > **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
 > and send you an invite link". Neither half holds: the app has its own create-chapter flow
 > (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
-> our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
+> our chapter" and from You), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
 > founder needs no invite. What is invite-only is joining an existing chapter.
 
 Features
@@ -801,7 +801,7 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Question | Answer |
 | --- | --- |
 | Is all user data encrypted in transit? | **Yes.** Every endpoint the binary calls is HTTPS: `api.frapp.live`, Supabase, Sentry, PostHog and Expo |
-| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: More → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
+| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: You → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
 | Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. Play wants this page to name the app as the listing does *(rule unverified)*. It says Frapp on `main` since ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)); enter this URL only after that's live on production |
 | Independent security review | No |
 | Families policy | Not applicable. The app isn't in the Families program, and its target audience is adults (§ Android-specific) |

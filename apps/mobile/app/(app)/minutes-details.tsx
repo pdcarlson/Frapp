@@ -83,7 +83,7 @@ export default function MinutesDetailsScreen() {
   // beta; this catches a way in that skips them (a typed link), where the
   // server would only refuse. A chapter's own switch doesn't close the
   // screen, so minutes already posted stay readable from a notification.
-  if (isBetaOffModule("meetings")) return <Redirect href="/more" />;
+  if (isBetaOffModule("meetings")) return <Redirect href="/you" />;
   return <MinutesDetailsScreenBody />;
 }
 

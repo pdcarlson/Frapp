@@ -269,7 +269,7 @@ describe("Events list states", () => {
     query = { isPending: true, isError: false, isFetching: false };
     const tree = render();
 
-    expect(screenText(tree)).toContain("Choose a chapter from More");
+    expect(screenText(tree)).toContain("Choose a chapter from You");
     expect(skeletons(tree)).toHaveLength(0);
   });
 
