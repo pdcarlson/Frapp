@@ -23,8 +23,11 @@ export type AiSpendReservationResult =
     }
   | {
       granted: false;
-      /** Which cap the estimate would cross. */
-      reason: 'chapter_cap' | 'platform_cap';
+      /**
+       * Which cap the estimate would cross: the chapter's month, the acting
+       * member's day, or the platform's month for the provider.
+       */
+      reason: 'chapter_cap' | 'member_cap' | 'platform_cap';
     };
 
 /**
@@ -37,8 +40,9 @@ export type AiSpendReservationResult =
  * `IAiUsageRecorder.record` carrying its id, whether the call completed, was
  * refused or failed, so an implementation settles or releases there.
  *
- * Bound in `modules/ai/ai-spend-seam.module.ts`. The ledger slice (#714)
- * replaces the binding there and edits nothing in the gateway.
+ * Bound in `modules/ai/ai-spend-seam.module.ts` to the ledger's
+ * `AiSpendLedgerService` (#714), which holds the estimate against the
+ * chapter's, the member's and the platform's caps.
  */
 export interface IAiSpendReservation {
   reserve(

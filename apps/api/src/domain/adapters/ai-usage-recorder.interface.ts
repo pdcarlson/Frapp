@@ -44,8 +44,9 @@ export interface AiUsageRecord extends AiCallDescriptor {
  * `record` throws, the gateway's call fails with it: a result is not handed
  * back with its cost unrecorded.
  *
- * Bound in `modules/ai/ai-usage-seam.module.ts`. The ledger slice (#714)
- * replaces the binding there and edits nothing in the gateway.
+ * Bound in `modules/ai/ai-usage-seam.module.ts` to the ledger's
+ * `AiSpendLedgerService` (#714), which settles the call's hold in
+ * `ai_usage_events`.
  */
 export interface IAiUsageRecorder {
   record(usage: AiUsageRecord): Promise<void>;
