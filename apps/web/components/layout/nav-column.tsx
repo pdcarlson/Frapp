@@ -3,6 +3,7 @@
 import { AppNav } from "@/components/layout/app-nav";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
+import type { ChatView } from "@/components/layout/shell-prefs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,8 +29,10 @@ type NavColumnProps = {
   permissions: readonly string[] | null | undefined;
   isModuleEnabled?: (moduleKey: string) => boolean;
   pathname: string;
-  /** The Chat row as a toggle, from the side-by-side width up. */
-  chatRow?: { onSelect: () => void; open: boolean };
+  /** The two chat rows as toggles, from the side-by-side width up. */
+  chatRow?: React.ComponentProps<typeof AppNav>["chatRow"];
+  /** Which list chat shows, for the chat rows when they are links. */
+  chatView?: ChatView;
   /** Closes the open tool, from the side-by-side width up. */
   onCloseTool?: () => void;
   /** Extra classes on the column, merged last (the shell's band visibility). */
@@ -43,10 +46,11 @@ export function NavColumn({
   isModuleEnabled,
   pathname,
   chatRow,
+  chatView,
   onCloseTool,
   className,
 }: NavColumnProps) {
-  const highlighted = useNavHighlights();
+  const { highlighted, counts } = useNavHighlights();
 
   return (
     <div
@@ -81,7 +85,9 @@ export function NavColumn({
           isModuleEnabled={isModuleEnabled}
           pathname={pathname}
           highlighted={highlighted}
+          counts={counts}
           chatRow={chatRow}
+          chatView={chatView}
           onCloseTool={onCloseTool}
         />
       </div>

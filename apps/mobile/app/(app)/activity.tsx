@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
+  activityFilterAvailable,
   activityGroups,
   activitySummary,
   useActivity,
+  useActivityUnread,
   useNowDate,
   useCurrentChapter,
   useClearActivityLinkState,
@@ -28,6 +30,11 @@ import {
   ActivityRowSkeleton,
 } from "@/components/activity/activity-row";
 import {
+  ActivityRowItem,
+  useActivityRowActions,
+  type ActivityRowActions,
+} from "@/components/activity/activity-row-action";
+import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
@@ -43,9 +50,14 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
+import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
+import {
+  storeActivityFilter,
+  useStoredActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -86,13 +98,40 @@ export default function ActivityScreen() {
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one the member
+  // last left the screen on, on this phone (#4402).
+  const stored = useStoredActivityFilter();
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const chapterModules = useCurrentChapter().data?.enabled_modules;
+  const moduleOn = useCallback(
+    (key: string) => isModuleEnabled(chapterModules, key),
+    [chapterModules],
+  );
+  // A stored chip whose module the chapter has since turned off opens on All.
+  const filter: ActivityFilter =
+    picked ?? (activityFilterAvailable(stored, moduleOn) ? stored : "all");
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    // Clearing the To confirm tile isn't a pick: the stored chip stays.
+    if (!(filter === "confirm" && next === "all")) storeActivityFilter(next);
+  };
+  const chips = useMemo(
+    () =>
+      CHIPS.filter((chip) =>
+        activityFilterAvailable(
+          (chip.value ?? "all") as ActivityFilter,
+          moduleOn,
+        ),
+      ),
+    [moduleOn],
+  );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
-  const chapter = useCurrentChapter().data;
+  const chapterRead = useCurrentChapter();
+  const chapter = chapterRead.data;
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),
     [activity.data, filter, now],
@@ -130,10 +169,26 @@ export default function ActivityScreen() {
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
+  // Dots (#4405): opening a row from here is what reads it; scrolling past
+  // doesn't, and neither does acting on the item elsewhere in Frapp.
+  const { markRead } = useActivityUnread(activity.data);
   const open = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
     setOpened(row);
     setOpenedKey(row.key);
   };
+  // Confirm and Approve on the row (#4437), while the chapter's plan allows
+  // them; acting there reads the item, as opening it does, and re-reads so
+  // the row leaves Needs you.
+  const { actions: rowActions, stateOf: rowActionStateOf } =
+    useActivityRowActions({
+      allowed: activityRowActionsAllowed(chapter),
+      chapterPending: chapterRead.isPending === true,
+      onActed: (row) => {
+        if (row.unread) markRead([row.readRef]);
+        reread();
+      },
+    });
 
   function renderBody() {
     if (activity.isPending) {
@@ -177,7 +232,7 @@ export default function ActivityScreen() {
           />
         ) : null}
         <FilterChips
-          chips={CHIPS}
+          chips={chips}
           // The To confirm tile narrows within Tasks, so the Tasks chip stays
           // lit under it, as on web.
           selected={
@@ -199,7 +254,8 @@ export default function ActivityScreen() {
             <GroupSection
               key={group.id}
               group={group}
-              filtered={filter !== "all"}
+              filtered={filter !== "all" && filter !== "waiting"}
+              rowActions={rowActions}
               onOpen={open}
             />
           ),
@@ -215,6 +271,7 @@ export default function ActivityScreen() {
         <ActivitySheet
           row={sheetRow}
           viewerId={viewerId}
+          rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
           onActed={reread}
           onClosed={() => {
             setOpenedKey(null);
@@ -319,10 +376,12 @@ function useLinkActions() {
 function GroupSection({
   group,
   filtered,
+  rowActions,
   onOpen,
 }: {
   group: ActivityGroup;
   filtered: boolean;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -349,7 +408,12 @@ function GroupSection({
         ) : null
       ) : (
         group.parts.map((part) => (
-          <GroupPart key={part.id} part={part} onOpen={onOpen} />
+          <GroupPart
+            key={part.id}
+            part={part}
+            rowActions={rowActions}
+            onOpen={onOpen}
+          />
         ))
       )}
       {group.archive ? (
@@ -413,9 +477,11 @@ function ArchivePart({
  */
 function GroupPart({
   part,
+  rowActions,
   onOpen,
 }: {
   part: ActivityPart;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -441,10 +507,11 @@ function GroupPart({
         </View>
       ) : null}
       {rows.map((row, index) => (
-        <ActivityListRow
+        <ActivityRowItem
           key={row.key}
           row={row}
           isFirst={index === 0}
+          actions={rowActions}
           onPress={() => onOpen(row)}
         />
       ))}

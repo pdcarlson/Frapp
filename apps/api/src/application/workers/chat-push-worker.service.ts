@@ -591,11 +591,12 @@ export class ChatPushWorkerService
     const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
+      const mentioned = mentions.includes(recipientId);
       const decision = decidePush({
         channel,
         messageKind: row.kind,
         recipientIsPresent: presenceMap.has(recipientId),
-        hasMention: mentions.includes(recipientId),
+        hasMention: mentioned,
         preferences: prefs,
         isAuditMirror,
         ...(followStates
@@ -613,7 +614,10 @@ export class ChatPushWorkerService
       // early exit in `handleMessage`), so the null arm is only reachable for a
       // future null-sender kind.
       const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
-      const burst = this.bundler.record(bundleKey);
+      // Past the threshold the bundle covers a burst, but the first later
+      // message that mentions this recipient still pushes on its own, as a
+      // single message with `mentioned: true` (#4359; `BurstBundler.record`).
+      const burst = this.bundler.record(bundleKey, mentioned);
       if (burst.action === 'skip') continue;
 
       senderName ??= this.resolveSenderName(row.sender_id);
@@ -624,7 +628,7 @@ export class ChatPushWorkerService
         burst,
         await senderName,
         threadRootId,
-        mentions.includes(recipientId),
+        mentioned,
       );
       try {
         await this.notificationService.notifyUser(

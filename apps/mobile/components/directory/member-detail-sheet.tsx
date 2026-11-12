@@ -53,6 +53,10 @@ import {
   type MemberRolesSession,
 } from "@/components/directory/member-roles-sheet";
 import {
+  MemberClassSheet,
+  type MemberClassSession,
+} from "@/components/directory/member-class-sheet";
+import {
   confirmRemoveMember,
   memberMenuActions,
   showMemberMenu,
@@ -104,6 +108,12 @@ import {
  * `PATCH /v1/members/{id}/roles`) gets Edit, which opens
  * {@link MemberRolesSheet}: the one role editor on mobile (Paul, 2026-11-07),
  * now reachable from chat too; for everyone else the chips are read-only.
+ *
+ * **Pledge class and order number** (#3939) show to everyone when set. The
+ * same `roles:manage` holder, the officer `PUT /v1/pledge-classes/assignments`
+ * lets set them, always sees both rows ("Not set" when unset) and taps either
+ * to open {@link MemberClassSheet} (#3991), as web's profile sheet offers Edit
+ * beside the role editor.
  *
  * **The `⋯` menu** beside the header's X holds what a viewer reaches for only
  * now and then (Paul, 2026-11-11: nobody opens a profile to remove someone).
@@ -179,15 +189,20 @@ export const MemberDetailSheet = forwardRef<
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
-  // The member's pledge class and order number (#3939), each drawn only when
-  // set.
-  const classRows = usePledgeClassRows(detail);
   const roleChips = useMemo(
     () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
   );
 
   const canEditRoles = can("roles:manage", permissions);
+  // The member's pledge class and order number (#3939): each drawn only when
+  // set, except to an officer who sets them here (the same `roles:manage`).
+  const canEditClass = canEditRoles && !!detail?.memberId;
+  const classRows = usePledgeClassRows(detail, { canEdit: canEditClass });
+  const classSheetRef = useRef<BottomSheetModal>(null);
+  const [classSession, setClassSession] = useState<MemberClassSession | null>(
+    null,
+  );
   const roleOptions = useMemo(
     () => parseRoleOptions(rolesQuery.data),
     [rolesQuery.data],
@@ -543,6 +558,24 @@ export const MemberDetailSheet = forwardRef<
                     variant="detail"
                     label={row.label}
                     value={row.value}
+                    accessibilityHint={
+                      canEditClass ? `Edits ${detail.displayName}'s ${row.label}` : undefined
+                    }
+                    // Held while a DM opens, as the roles Edit is (#3790).
+                    disabled={canEditClass && dmPending.has(detail.userId)}
+                    onPress={
+                      canEditClass
+                        ? () => {
+                            setClassSession({
+                              memberId: detail.memberId ?? "",
+                              name: detail.displayName,
+                              pledgeClassId: detail.pledgeClassId,
+                              orderNumber: detail.orderNumber,
+                            });
+                            classSheetRef.current?.present();
+                          }
+                        : undefined
+                    }
                   />
                 ))}
                 <ListRow
@@ -584,6 +617,7 @@ export const MemberDetailSheet = forwardRef<
         session={rolesSession}
         options={roleOptions}
       />
+      <MemberClassSheet ref={classSheetRef} session={classSession} />
     </>
   );
 });

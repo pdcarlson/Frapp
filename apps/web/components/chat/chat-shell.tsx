@@ -36,6 +36,7 @@ import {
   useChannelNotificationPreferences,
   claimViewedChannel,
   useChannelUnreadCounts,
+  useChannelLatestMessages,
   useChannels,
   useChapterScope,
   useSetChannelNotificationLevel,
@@ -65,6 +66,7 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
+  lastChannelLandingId,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
   useReorderCategories,
@@ -73,16 +75,21 @@ import {
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import {
+  channelPreviewLine,
+  NO_MESSAGES_PREVIEW,
+} from "@repo/chat-core/channel-preview";
 import { TypingLine } from "./typing-line";
 import {
   can,
   canAll,
   isAnnouncementChannel,
+  isDirectChannel,
   type MentionCandidate,
   type MentionChipTargets,
 } from "@repo/validation";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
@@ -98,6 +105,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useThreadUnread } from "@/lib/chat/use-thread-unread";
@@ -107,6 +115,7 @@ import {
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
 import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
+import type { ChatView } from "@/components/layout/shell-prefs";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
@@ -229,7 +238,11 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
-import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import {
+  InlineNote,
+  InlineNoteAction,
+  inlineNoteActionClassName,
+} from "@/components/shared/inline-note";
 
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
@@ -414,6 +427,8 @@ export function ChatShell({
   defaultMembersHidden = false,
   toolBeside = false,
   onClose,
+  view = "channels",
+  onViewChange,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
@@ -436,6 +451,20 @@ export function ChatShell({
    * into, so the header draws no X.
    */
   onClose?: () => void;
+  /**
+   * Which list the rail shows (#3774): the chapter's channels, or the
+   * member's direct and group messages. The nav's Chat and Direct messages
+   * rows switch it (`dashboard-shell.tsx`), and each list lands on its own
+   * last conversation.
+   */
+  view?: ChatView;
+  /**
+   * The open conversation is the other kind: a link, a notification, a
+   * search hit or a bookmark into a DM while channels show, or the reverse.
+   * The shell moves the panel to that list, so the open row is always on the
+   * rail.
+   */
+  onViewChange?: (view: ChatView) => void;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -543,6 +572,14 @@ export function ChatShell({
         muted: levelByChannelId.get(ch.id) === "off",
       })),
     [channelsQuery.data, levelByChannelId],
+  );
+  // The rail's half of the list (#3774): channels, or direct and group
+  // messages. Everything that resolves a channel by id (links, search,
+  // bookmarks, mentions) still reads the whole list.
+  const directView = view === "direct";
+  const railChannels = useMemo(
+    () => channels.filter((ch) => isDirectChannel(ch) === directView),
+    [channels, directView],
   );
 
   // Always formal (#3787): every row asks its channel's density by id, so the
@@ -874,26 +911,35 @@ export function ChatShell({
       effect below) over messages the member never saw, then jump a render
       later. A selection or a link above never waits.
 
-      Read fresh, not once at mount: a fallback later in the visit (hiding
-      the open DM, the open channel deleted) reads the channel that was just
-      open, which `landingChannelId` skips as hidden or missing, so it lands
-      on `#general` rather than on a channel from page load.
+      Read fresh, not once at mount: a fallback later in the visit (the open
+      channel deleted, the open DM hidden) reads the conversation that was
+      just open, which the landing skips as hidden or missing, so Chat lands
+      on `#general` and Direct messages on none, rather than on one from page
+      load.
 
-      Shared with the first-chunk cache, which pins this channel's tail
-      against eviction: the two rules have to be one rule or the cache
-      misses here.
+      Shared with the first-chunk cache, which pins both lists' landings
+      against eviction (`evictOldestTails`): the rules have to be one rule or
+      the cache misses here.
     */
     if (!userId) return null;
-    return landingChannelId(
-      channels,
-      readLastChannel(userId, lastChannelChapter),
-    );
+    // Each list lands in its own half, on its own last conversation (#3774).
+    // Direct messages open only the one the member had open: there is no
+    // default to fall back to, and opening one they didn't pick would mark
+    // its messages read, a direct message's red count gone unseen. With none,
+    // the thread column asks them to pick one.
+    const last = readLastChannel(userId, lastChannelChapter, view);
+    return directView
+      ? lastChannelLandingId(railChannels, last)
+      : landingChannelId(railChannels, last);
   }, [
     selectedChannelId,
     channels,
+    railChannels,
     requestedChannelMissing,
     userId,
     lastChannelChapter,
+    view,
+    directView,
   ]);
   /*
     On a chapter switch the new chapter id lands one commit before the old
@@ -919,13 +965,52 @@ export function ChatShell({
     guard.list = channels;
     if (!activeChannelId || channels === guard.staleList) return;
     guard.staleList = null;
-    writeLastChannel(userId, lastChannelChapter, activeChannelId);
+    const open = channels.find((ch) => ch.id === activeChannelId);
+    if (!open) return;
+    writeLastChannel(
+      userId,
+      lastChannelChapter,
+      activeChannelId,
+      isDirectChannel(open) ? "direct" : "channels",
+    );
   }, [activeChannelId, userId, activeChapterId, lastChannelChapter, channels]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
     [channels, activeChannelId],
   );
+
+  /*
+    The panel and the open conversation agree on the list (#3774).
+
+    The nav switching lists drops a selection of the other kind, so the new
+    list lands on its own last conversation. Adjusted during render, keyed on
+    the view, so the old conversation never paints beside the new list.
+
+    Anything else that opens the other kind (a link, a notification, a
+    search hit or a bookmark into a DM while channels show) moves the panel
+    instead, so the open row is always on the rail.
+  */
+  const [seenView, setSeenView] = useState(view);
+  if (seenView !== view) {
+    setSeenView(view);
+    const selected = selectedChannelId
+      ? channels.find(
+          (ch) => ch.id === selectedChannelId || ch.name === selectedChannelId,
+        )
+      : undefined;
+    if (selected && isDirectChannel(selected) !== directView) {
+      setSelectedChannelId(null);
+    }
+  }
+  const activeView: ChatView | null = activeChannel
+    ? isDirectChannel(activeChannel)
+      ? "direct"
+      : "channels"
+    : null;
+  useEffect(() => {
+    if (activeView && activeView !== view) onViewChange?.(activeView);
+  }, [activeView, view, onViewChange]);
 
   // A 1:1 DM has no list worth showing: its two members are the header's own
   // title and the viewer.
@@ -1856,6 +1941,52 @@ export function ChatShell({
   // definition would disagree on exactly those cases
   // (`spec/behavior/chat/README.md` § Read Receipts).
   const unreadQuery = useChannelUnreadCounts();
+  /*
+    Direct messages read like the phone's Messages screen (#3774): newest
+    conversation first, each with its last line, worded by the rule both
+    clients share (`channelPreviewLine`; spec/behavior/chat/README.md
+    § Channel list previews). The channels rail draws neither, so the read
+    runs only while the panel shows direct messages.
+
+    The list waits for the read's first answer behind its skeleton, as the
+    phone's does, so the rows never re-sort under the pointer. After that the
+    last good answer stands: a background refetch that fails keeps its data,
+    and so the order and the lines. A hidden DM has no latest row (the server
+    leaves it out), so it gets no line rather than a false "No messages yet".
+  */
+  const latestQuery = useChannelLatestMessages({ enabled: directView });
+  const latestRows = latestQuery.data;
+  // Settled once it has data, has failed, or isn't fetching at all (paused
+  // offline, or never enabled for want of a chapter): only a first read in
+  // flight holds the list.
+  const latestSettled =
+    latestRows !== undefined ||
+    latestQuery.isError ||
+    latestQuery.fetchStatus !== "fetching";
+  const directLatest = useMemo(() => {
+    if (!directView || !latestRows) return undefined;
+    const byId = new Map(latestRows.map((row) => [row.channel_id, row]));
+    const at = new Map<string, string>();
+    const previews = new Map<string, string>();
+    for (const channel of railChannels) {
+      if (channel.hidden) continue;
+      const latest = byId.get(channel.id);
+      if (latest) at.set(channel.id, latest.created_at);
+      previews.set(
+        channel.id,
+        latest
+          ? channelPreviewLine(latest, {
+              isOneToOne: channel.type === "DM",
+              viewerId: userId,
+              nameOf: (author) => resolveAuthorName(author, nameFor),
+              fallbackLabel: (author) =>
+                resolveAuthorLabel(author, nameFor, null),
+            })
+          : NO_MESSAGES_PREVIEW,
+      );
+    }
+    return { at, previews };
+  }, [directView, latestRows, railChannels, userId, nameFor]);
   // A failed fetch must not read as "everything is read". `ChannelList` maps
   // an absent row to zero, so handing it an empty map on error would render
   // every row calm and unbadged — telling a member they have no @-mentions at
@@ -2221,6 +2352,21 @@ export function ChatShell({
     [activeChannel],
   );
   const closeThread = useCallback(() => setOpenThread(null), []);
+  // On a wide window the open thread is a column of its own beside the chat
+  // (#4297, as Discord and Slack do on a computer), so the channel stays in
+  // view and usable; it takes the members column's place while open, as
+  // Discord's does. Narrower, or beside a tool page, it covers the chat
+  // column instead (#3785).
+  const threadBeside = isWideChat && threadRootId !== null;
+  // The members toggle while a thread is beside the chat: the members come
+  // back, so the thread closes.
+  const showMembersOverThread = () => {
+    setOpenThread(null);
+    if (membersHidden) {
+      setMembersHidden(false);
+      persistMembersHidden(false);
+    }
+  };
   // The thread panel's row writes (#4034): the timeline's own, each told
   // which thread a reply belongs to.
   const {
@@ -2513,8 +2659,34 @@ export function ChatShell({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
 
+  // The rail's title is the nav row's label for the list it shows (#3774).
+  const railTitle = directView ? "Direct messages" : "Channels";
+  // Direct messages with none to open: the member has never had one, or has
+  // hidden every one. The thread column says how to start one instead of
+  // drawing a timeline for no conversation.
+  //
+  // Only once there is nothing left to wait for: the viewer's id (landing
+  // waits for it) and a requested conversation the list doesn't hold yet (a
+  // link into a DM made moments ago, while the list is refetched).
+  const selectionPending =
+    selectedChannelId !== null &&
+    !channels.some(
+      (ch) => ch.id === selectedChannelId || ch.name === selectedChannelId,
+    );
+  const directNoneOpen =
+    directView &&
+    channelsPaneState === "ready" &&
+    !requestedChannelMissing &&
+    !selectionPending &&
+    userId !== null &&
+    activeChannelId === null;
+  // Nothing to pick at all: the member has never had a DM, or hid every one.
+  const directEmpty =
+    directNoneOpen && !railChannels.some((ch) => !ch.hidden);
   const timelineReady =
-    channelsPaneState === "ready" && !requestedChannelMissing;
+    channelsPaneState === "ready" &&
+    !requestedChannelMissing &&
+    !directNoneOpen;
   const memberColumnMounted =
     !membersHidden &&
     !toolBeside &&
@@ -2551,11 +2723,32 @@ export function ChatShell({
             screen.
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
-        <ChannelFilters
-          filters={sidebarPreferences.filters}
-          onChange={sidebarControls.onSetFilters}
-        />
+        <h2 className="text-sm font-semibold text-foreground">{railTitle}</h2>
+        <div className="ml-auto flex items-center gap-1">
+          {directView && channelsPaneState === "ready" ? (
+            // New message (#3774), where the phone's Messages screen, iMessage
+            // and Instagram keep it. A DM starts from a member, so it opens
+            // the Directory, whose member sheet has Message.
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className={compactControlClassName}
+            >
+              <Link
+                href="/members"
+                aria-label="New message"
+                title="New message: pick someone in the Directory"
+              >
+                <SquarePen className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
+          <ChannelFilters
+            filters={sidebarPreferences.filters}
+            onChange={sidebarControls.onSetFilters}
+          />
+        </div>
       </header>
       {/*
         The gutter is on an inner wrapper, not the scroller: a scroller's own
@@ -2582,20 +2775,30 @@ export function ChatShell({
           The officer setup checklist, above the channels where Discord puts
           its server guide. Renders `null` for anyone with nothing to set up.
         */}
-          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
-          {channelsPaneState === "ready" ? (
+          {channelsPaneState === "ready" && !directView ? (
+            <SetupChecklistSection />
+          ) : null}
+          {channelsPaneState === "ready" && directView && !latestSettled ? (
+            <ChannelListSkeleton />
+          ) : channelsPaneState === "ready" ? (
             <ChannelList
+              kind={view}
+              latestAt={directLatest?.at}
+              previews={directLatest?.previews}
               viewerId={userId}
               memberNames={memberNames}
               avatarTintFor={avatarTintFor}
-              channels={channels}
+              channels={railChannels}
               categories={categories}
               unreadByChannelId={unreadByChannelId}
               activeChannelId={activeChannelId}
               onHide={hideFromRail}
               rowActions={rowActions}
               sidebar={sidebarControls}
-              reorder={railReorder}
+              // The chapter's order is for channels: a DM is never placed in
+              // it, and the empty categories an officer drags onto would sit
+              // in a list of conversations (#3774).
+              reorder={directView ? undefined : railReorder}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -2616,6 +2819,50 @@ export function ChatShell({
       </div>
     </>
   );
+
+  // The members column is on screen: a wide window, not hidden, and no
+  // thread beside the chat in its place.
+  const membersBeside = isWideChat && !membersHidden && !threadBeside;
+  // The open thread (#3785), drawn over the chat column or beside it.
+  const threadPanel =
+    activeChannel && threadRootId ? (
+      <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+        <ThreadPanel
+          key={threadRootId}
+          className={
+            threadBeside
+              ? "w-96 shrink-0 border-l border-border"
+              : "absolute inset-0 z-10"
+          }
+          beside={threadBeside}
+          onClosePanel={onClose}
+          channelId={activeChannel.id}
+          channelName={activeChannel.name ?? null}
+          rootId={threadRootId}
+          viewerId={userId}
+          nameFor={nameFor}
+          avatarFor={avatarFor}
+          roleColorFor={roleColorFor}
+          blockState={blockState}
+          heldRoot={heldThreadRoot}
+          writes={threadWrites}
+          onUnblock={handleUnblock}
+          onReloadMasked={handleReloadMasked}
+          maskedRefresh={maskedRefresh}
+          bookmarkedMessageIds={bookmarkedMessageIds}
+          onToggleBookmark={handleToggleBookmark}
+          canManageChannel={canManageChannel}
+          onReport={handleReport}
+          onBlock={handleBlock}
+          onOpenProfile={openProfile}
+          isMember={isMember}
+          canReply={channelAllowsThreadReplies(activeChannel)}
+          // An edit authorizes as a post (#2775), the timeline's gate.
+          canPost={activeChannel.can_post !== false}
+          onClose={closeThread}
+        />
+      </MentionChipTargetsContext.Provider>
+    ) : null;
 
   return (
     /*
@@ -2681,7 +2928,7 @@ export function ChatShell({
         each (`narrowPane`).
       */}
       <section
-        aria-label="Channels"
+        aria-label={railTitle}
         className={cn(
           "flex min-h-0 flex-col border-r border-border bg-surface-1",
           // Full width below `lg`, where it is the only column on screen.
@@ -2718,8 +2965,9 @@ export function ChatShell({
               ? activeChannelName
               : `#${activeChannelName}`
           }
-          // A thread covers the column, and its replies take no files.
-          disabled={!!threadRootId}
+          // A thread covering the column takes no files: its replies have
+          // none. Beside the chat, the channel's composer is still there.
+          disabled={!!threadRootId && !threadBeside}
         />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
@@ -2756,6 +3004,7 @@ export function ChatShell({
             channel={activeChannel}
             name={activeChannelName}
             description={activeChannelDescription}
+            placeholder={directView ? "Pick a conversation" : undefined}
           />
           <div className="flex shrink-0 items-center gap-2">
             {showMemberList ? (
@@ -2763,17 +3012,12 @@ export function ChatShell({
                 variant="ghost"
                 size="icon"
                 className={compactControlClassName}
-                onClick={toggleMembers}
-                aria-label={
-                  isWideChat && !membersHidden ? "Hide members" : "Show members"
-                }
-                aria-pressed={isWideChat ? !membersHidden : undefined}
+                onClick={threadBeside ? showMembersOverThread : toggleMembers}
+                aria-label={membersBeside ? "Hide members" : "Show members"}
+                aria-pressed={isWideChat ? membersBeside : undefined}
                 aria-haspopup={isWideChat ? undefined : "dialog"}
               >
-                <MembersGlyph
-                  className="h-5 w-5"
-                  active={isWideChat && !membersHidden}
-                />
+                <MembersGlyph className="h-5 w-5" active={membersBeside} />
               </Button>
             ) : null}
             <ChannelMenu
@@ -3036,6 +3280,36 @@ export function ChatShell({
                 Browse channels
               </InlineNoteAction>
             </InlineNote>
+          </div>
+        ) : null}
+        {directNoneOpen ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {directEmpty ? (
+              /*
+                A DM starts from a member, on web as on the phone, so the way
+                in is the Directory's Message action.
+              */
+              <InlineNote>
+                {"No direct messages yet. "}
+                <Link href="/members" className={inlineNoteActionClassName}>
+                  Find someone in the Directory
+                </Link>
+                {" and choose Message."}
+              </InlineNote>
+            ) : (
+              <InlineNote>
+                <span className="max-lg:hidden">
+                  Choose one from the list to open it.
+                </span>
+                {/* Below `lg` the list is its own screen. */}
+                <InlineNoteAction
+                  className="lg:hidden"
+                  onClick={() => setNarrowPane("channels")}
+                >
+                  Show your direct messages
+                </InlineNoteAction>
+              </InlineNote>
+            )}
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (
@@ -3339,42 +3613,17 @@ export function ChatShell({
         {/*
           A message thread (#3785) replaces the message list inside the chat
           column, and Back returns to it. Drawn over the column rather than in
-          its place, so the timeline keeps its scroll position underneath.
+          its place, so the timeline keeps its scroll position underneath. On
+          a wide window it is a column beside the chat instead (below).
         */}
-        {activeChannel && threadRootId ? (
-          <MentionChipTargetsContext.Provider value={mentionChipTargets}>
-            <ThreadPanel
-              key={threadRootId}
-              className="absolute inset-0 z-10"
-              onClosePanel={onClose}
-              channelId={activeChannel.id}
-              channelName={activeChannel.name ?? null}
-              rootId={threadRootId}
-              viewerId={userId}
-              nameFor={nameFor}
-              avatarFor={avatarFor}
-              roleColorFor={roleColorFor}
-              blockState={blockState}
-              heldRoot={heldThreadRoot}
-              writes={threadWrites}
-              onUnblock={handleUnblock}
-              onReloadMasked={handleReloadMasked}
-              maskedRefresh={maskedRefresh}
-              bookmarkedMessageIds={bookmarkedMessageIds}
-              onToggleBookmark={handleToggleBookmark}
-              canManageChannel={canManageChannel}
-              onReport={handleReport}
-              onBlock={handleBlock}
-              onOpenProfile={openProfile}
-              isMember={isMember}
-              canReply={channelAllowsThreadReplies(activeChannel)}
-              // An edit authorizes as a post (#2775), the timeline's gate.
-              canPost={activeChannel.can_post !== false}
-              onClose={closeThread}
-            />
-          </MentionChipTargetsContext.Provider>
-        ) : null}
+        {threadBeside ? null : threadPanel}
       </section>
+
+      {/*
+        The open thread beside the chat on a wide window (#4297), in the
+        members column's place.
+      */}
+      {threadBeside ? threadPanel : null}
 
       {/*
         Members, 240px on the right from 1280px (#3536), the same step as the
@@ -3388,6 +3637,9 @@ export function ChatShell({
       {memberColumnMounted ? (
         <aside
           aria-label="Members"
+          // Hidden, not unmounted, under a thread beside the chat (#4297), so
+          // the list's search is still there when the thread closes.
+          hidden={threadBeside}
           className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
         >
           {/*

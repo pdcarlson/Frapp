@@ -26,7 +26,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "@repo/hooks";
+import {
+  chatRecordKindForCommand,
+  useFrappClient,
+  withChatRecordRefresh,
+} from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -662,8 +666,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const retryUnconfirmed = useCallback(
-    async (replay: ReplayRequest) => retryPointsDispatch(ctx, replay),
-    [ctx],
+    async (replay: ReplayRequest) =>
+      withChatRecordRefresh(queryClient, "points", () =>
+        retryPointsDispatch(ctx, replay),
+      ),
+    [ctx, queryClient],
   );
 
   const act = useCallback(
@@ -695,15 +702,22 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (!channelId) {
         return { ok: false, error: "No active channel" };
       }
-      return dispatchSlashCommand(ctx, {
-        command,
-        args,
-        channelId,
-        announcementsChannelId,
-        resolveMember,
-      });
+      // Chat-core writes through the API client, so the page a record lands
+      // on (Tasks, Service, Points) never hears of it (#3912).
+      return withChatRecordRefresh(
+        queryClient,
+        chatRecordKindForCommand(command.name),
+        () =>
+          dispatchSlashCommand(ctx, {
+            command,
+            args,
+            channelId,
+            announcementsChannelId,
+            resolveMember,
+          }),
+      );
     },
-    [channelId, ctx],
+    [channelId, ctx, queryClient],
   );
 
   const sendPoll = useCallback(
@@ -741,18 +755,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
   const postTaskCb = useCallback(
     (targetChannelId: string, input: TaskInput) =>
-      postTask(ctx, targetChannelId, input),
-    [ctx],
+      withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
   );
   const postHoursCb = useCallback(
     (targetChannelId: string, input: HoursInput) =>
-      postHours(ctx, targetChannelId, input),
-    [ctx],
+      withChatRecordRefresh(queryClient, "hours", () =>
+        postHours(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
   );
   const postPointsCb = useCallback(
     (targetChannelId: string, input: PointsAdjustmentInput) =>
-      postPointsAdjustment(ctx, targetChannelId, input),
-    [ctx],
+      withChatRecordRefresh(queryClient, "points", () =>
+        postPointsAdjustment(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
   );
 
   // Best-effort flush whenever the connection comes live for this channel.

@@ -15,6 +15,7 @@ import {
   discardThreadReply,
   fetchThread,
   loadThreadReplies,
+  chatFollowedThreadsKey,
   markThreadRead,
   sendThreadReply,
   setThreadFollow,
@@ -153,8 +154,16 @@ export function useMessageThread(
   const metaLoaded = !!meta.data;
   useEffect(() => {
     if (!metaLoaded) return;
-    void markThreadRead(api, channelId, rootId).catch(() => undefined);
-  }, [api, channelId, rootId, metaLoaded, newestId]);
+    void markThreadRead(api, channelId, rootId)
+      // The channel's thread cards re-read what's new once the server has
+      // the cursor (#4297), as web's do.
+      .then(() =>
+        queryClient.invalidateQueries({
+          queryKey: chatFollowedThreadsKey(channelId),
+        }),
+      )
+      .catch(() => undefined);
+  }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);
 
   const root = useMemo<ChatMessage | null>(
     () => (meta.data ? normalizeRow(meta.data.root) : null),

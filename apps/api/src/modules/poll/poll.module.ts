@@ -9,9 +9,11 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
 // ChatBlockModule → ChatBlockService: both poll reads serve a member's question
 // and options to a named viewer, so they apply the viewer's block list (#2495).
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+// RbacModule → RbacService: the close route resolves `channels:manage` (#4046).
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
-  imports: [ChannelAccessModule, ChatBlockModule],
+  imports: [ChannelAccessModule, ChatBlockModule, RbacModule],
   controllers: [PollController],
   providers: [
     PollService,

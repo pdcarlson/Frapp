@@ -199,6 +199,11 @@ function fitToContent(node: HTMLTextAreaElement): void {
  * obvious placeholder" — is answered rather than overruled: this one takes the
  * message.
  */
+/** The composer holds only the `/` that opens the slash palette (#3781). */
+function isBareSlash(trimmedText: string): boolean {
+  return trimmedText === "/";
+}
+
 export function ComposerShell({
   onTextChange,
   onFocusChange,
@@ -1327,7 +1332,14 @@ export function Composer({
   );
   const submit = useCallback(() => {
     if (!editor) return;
-    const text = chatText(editor).trim();
+    const typed = chatText(editor).trim();
+    // A lone `/` is the palette's trigger, never a message body (#3781). The
+    // palette takes it back when the member closes it, but one can still
+    // reach here without the palette open (a draft restored as `/`), so it
+    // is dropped: with a file staged the file goes alone, and with nothing
+    // else Enter does nothing, as the muted Send button says. Only the bare
+    // slash: `/ shrug` has no command either, and is text.
+    const text = isBareSlash(typed) ? "" : typed;
     // An attachment-only message is a real message. Returning early on empty
     // text would have been correct while the filename WAS the text; now that a
     // file travels beside the body it would silently swallow the send.
@@ -2023,11 +2035,13 @@ export function Composer({
             aria-label="Send message"
             title="Send (Enter)"
             /* An attached file is enough to send: an empty editor with a staged
-               attachment is a real message, and `submit` accepts it. */
+               attachment is a real message, and `submit` accepts it. A lone
+               `/` is not, so it reads as empty (#3781). */
             disabled={
               !editor ||
               uploading.length > 0 ||
-              (editor.isEmpty && pending.length === 0)
+              ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                pending.length === 0)
             }
           >
             <SendArrowGlyph className="h-4 w-4" />
@@ -2044,13 +2058,18 @@ export function Composer({
           status={slashCommandsStatus}
           onRetry={onRetrySlashCommands}
           onSelect={onPaletteSelect}
-          onOpenChange={(open) =>
+          onOpenChange={(open) => {
             setPalette((prev) => ({
               ...prev,
               open,
               query: open ? prev.query : "",
-            }))
-          }
+            }));
+            // Backing out of the palette takes back the `/` that opened it
+            // (#3781). Anything more in the box is the member's, and stays.
+            if (!open && editor && isBareSlash(chatText(editor).trim())) {
+              editor.commands.clearContent(true);
+            }
+          }}
         />
       ) : null}
     </div>

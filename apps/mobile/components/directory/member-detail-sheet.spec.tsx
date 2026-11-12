@@ -98,6 +98,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       : { data: state.classes, isPending: false, isSuccess: true };
   },
   useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAssignPledgeClasses: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveMember: () => ({ mutate: state.removeMutate, isPending: false }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
@@ -127,6 +128,8 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 import { ListRow } from "@/components/list-section";
 import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
+import { MemberClassSheet } from "./member-class-sheet";
+import { MemberRolesSheet } from "./member-roles-sheet";
 import {
   PRESENCE_NOT_READY,
   setChapterPresence,
@@ -197,7 +200,7 @@ describe("MemberDetailSheet as a tall sheet", () => {
     // Stops under the status bar, so the X is never in the unsafe area.
     expect(modal.props.topInset).toBeGreaterThan(0);
     // The header (and its X) stays put while the profile scrolls under it.
-    const scroll = tree.root.findByType("BottomSheetScrollView" as never);
+    const scroll = modal.findByType("BottomSheetScrollView" as never);
     expect(scroll.props.stickyHeaderIndices).toEqual([0]);
 
     const texts = tree.root
@@ -236,8 +239,10 @@ describe("MemberDetailSheet Message action (#2773)", () => {
 
   it("draws no title row or Done over the name", () => {
     const tree = render(ADA);
-    // The member's name heads the sheet (components.md § Chrome weight).
-    expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
+    // The member's name heads the sheet (components.md § Chrome weight). The
+    // first modal is the profile; the editors stacked after it have their own.
+    const profileModal = tree.root.findAllByType("BottomSheetModal" as never)[0];
+    expect(profileModal.findAllByType(SheetHeader)).toHaveLength(0);
     // The role editor's list header is a React element prop, which links
     // back to its fiber; skip those links.
     expect(
@@ -739,6 +744,122 @@ describe("MemberDetailSheet fact rows", () => {
   });
 });
 
+// #3991: an officer holding `roles:manage` sets the class and number here.
+describe("MemberDetailSheet pledge class editing (#3991)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    state.vocabulary = undefined;
+  });
+
+  function classRows(tree: ReactTestRenderer) {
+    return tree.root
+      .findAllByType(ListRow)
+      .filter(
+        (row) =>
+          row.props.label === "Pledge class" ||
+          row.props.label === "Fraternal order",
+      );
+  }
+
+  it("shows an officer both rows, unset ones as Not set, and reads the list", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    state.classReads = [];
+    const tree = render(ADA);
+    const rows = classRows(tree);
+
+    expect(rows.map((row) => [row.props.label, row.props.value])).toEqual([
+      ["Pledge class", "Not set"],
+      ["Fraternal order", "Not set"],
+    ]);
+    expect(rows.every((row) => typeof row.props.onPress === "function")).toBe(
+      true,
+    );
+    expect(state.classReads.some((read) => read?.enabled === true)).toBe(true);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  it("opens the class editor on this member's saved values", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    const tree = render(ADA);
+    act(() => classRows(tree)[1]!.props.onPress());
+
+    expect(present).toHaveBeenCalled();
+    expect(tree.root.findByType(MemberClassSheet).props.session).toEqual({
+      memberId: `m-${ADA}`,
+      name: "Ada",
+      pledgeClassId: "pc-1",
+      orderNumber: 9,
+    });
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+    state.permissions = [];
+  });
+
+  // As the roles Edit is (#3790): the editor stacks over the profile, so a DM
+  // landing under it would leave the editor drawn over the thread.
+  it("holds the class rows while a DM with this member opens", async () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      false,
+      false,
+    ]);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      true,
+      true,
+    ]);
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(classRows(tree)[0]!.props.disabled).toBe(false);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  it("offers no editor for a profile read without a membership id", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    PROFILES[ADA] = { ...profile(ADA, "Ada"), id: undefined } as never;
+    const tree = render(ADA);
+
+    expect(classRows(tree)).toEqual([]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+    state.permissions = [];
+  });
+
+  it("leaves the rows read-only, and unset ones hidden, without roles:manage", () => {
+    state.permissions = ["members:view"];
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      pledge_class_id: "pc-1",
+    } as never;
+    const tree = render(ADA);
+    const rows = classRows(tree);
+
+    expect(rows.map((row) => row.props.label)).toEqual(["Pledge class"]);
+    expect(rows[0]!.props.onPress).toBeUndefined();
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+});
+
 describe("MemberDetailSheet roles", () => {
   beforeEach(() => {
     state.viewer = VIEWER;
@@ -786,10 +907,7 @@ describe("MemberDetailSheet roles", () => {
     const button = editButton(tree);
     expect(button?.props.onPress).toBeTypeOf("function");
     act(() => button?.props.onPress());
-    const editor = tree.root.find(
-      (node) =>
-        typeof node.type !== "string" && node.props.session !== undefined,
-    );
+    const editor = tree.root.findByType(MemberRolesSheet);
     expect(present).toHaveBeenCalled();
     expect(editor.props.session).toEqual({
       memberId: `m-${ADA}`,

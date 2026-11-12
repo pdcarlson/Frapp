@@ -92,7 +92,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, thread_last_reply, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -427,6 +427,21 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         : query.eq('flagged_by', expected.flagged_by);
     if (expected.requireLive) query = query.eq('is_deleted', false);
     const { data: updated, error } = await query
+      .select(CHAT_MESSAGE_COLUMNS)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async updateIfLive(
+    id: string,
+    data: TablesUpdate<'chat_messages'>,
+  ): Promise<ChatMessage | null> {
+    const { data: updated, error } = await this.supabase
+      .from('chat_messages')
+      .update(data)
+      .eq('id', id)
+      .eq('is_deleted', false)
       .select(CHAT_MESSAGE_COLUMNS)
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);

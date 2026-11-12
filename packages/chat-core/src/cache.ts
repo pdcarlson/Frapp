@@ -114,11 +114,44 @@ export function mergeServerRow(
   byId[serverKey] = {
     ...incoming,
     ...(carriesMask ? { sender_blocked: true } : {}),
+    ...(carriesPreviewMask(overwritten, incoming)
+      ? {
+          thread: {
+            ...incoming.thread!,
+            last_reply: {
+              ...incoming.thread!.last_reply!,
+              sender_blocked: true,
+            },
+          },
+        }
+      : {}),
     actions,
     reactions,
   };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
+}
+
+/**
+ * The same carry for a thread parent's latest-reply preview (#4297): the
+ * server withheld it because the viewer blocked its replier, and the parent's
+ * echo now carries that replier's words raw (an edit, or the trigger's
+ * rewrite). Kept while the same replier's reply is still the latest; a newer
+ * reply from someone else is a new question for the client's own list.
+ */
+function carriesPreviewMask(
+  overwritten: ChatMessage | undefined,
+  incoming: ChatMessage,
+): boolean {
+  const before = overwritten?.thread?.last_reply;
+  const after = incoming.thread?.last_reply;
+  return (
+    before?.sender_blocked === true &&
+    !!after &&
+    !after.sender_blocked &&
+    !incoming._blockEvaluated &&
+    after.sender_id === before.sender_id
+  );
 }
 
 /**

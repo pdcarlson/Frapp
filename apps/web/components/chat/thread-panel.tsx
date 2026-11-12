@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   applyBlockList,
@@ -108,14 +114,47 @@ export interface ThreadPanelProps extends Pick<
    * thread covers, so the thread carries its own. Only beside a tool page.
    */
   onClosePanel?: () => void;
+  /**
+   * Drawn beside the chat on a wide window (#4297) rather than over it: the
+   * channel stays in view, so the header closes the thread (X) rather than
+   * going back to it.
+   */
+  beside?: boolean;
   className?: string;
+}
+
+/**
+ * Unsent replies, by thread, for this tab (#4297). The panel remounts when it
+ * moves between beside the chat and over it (the window crossing 1280px, a
+ * tool page opening), and a reply being typed survives that, and closing and
+ * reopening the thread, as Slack's and Discord's thread drafts do. Cleared
+ * when sent.
+ */
+const threadDrafts = new Map<string, string>();
+
+export function resetThreadDraftsForTests(): void {
+  threadDrafts.clear();
+}
+
+/**
+ * Beside the chat the panel is outside the chat column's drop target, so it
+ * refuses a file dragged from the desktop itself, as that target does for a
+ * thread over the column: otherwise the browser opens the file in place of
+ * the app. A thread reply takes no files.
+ */
+function refuseFileDrop(event: DragEvent<HTMLElement>) {
+  const types = event.dataTransfer?.types;
+  if (!types || !Array.from(types).includes("Files")) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "none";
 }
 
 /**
  * A message thread (#3785, `spec/behavior/chat/README.md` § Message threads):
  * the parent at the top, a reply divider, the replies, Follow and a
- * "Reply in thread…" composer. Inside the docked chat it replaces the message
- * list and Back returns to it.
+ * "Reply in thread…" composer. On a wide window it is a column beside the
+ * chat that X closes (#4297); narrower, or in the docked chat, it replaces the
+ * message list and Back returns to it.
  *
  * The replies are the channel's own rows (#4034): `MessageTimeline` draws
  * them, so a reply carries everything a timeline row does (attachments,
@@ -150,12 +189,24 @@ export function ThreadPanel({
   canPost,
   onClose,
   onClosePanel,
+  beside = false,
   className,
 }: ThreadPanelProps) {
   const thread = useMessageThread(channelId, rootId, viewerId);
   const { toast } = useToast();
   const { isOffline } = useNetwork();
-  const [draft, setDraft] = useState("");
+  const draftKey = `${channelId}:${rootId}`;
+  const [draft, setDraftState] = useState(
+    () => threadDrafts.get(draftKey) ?? "",
+  );
+  const setDraft = useCallback(
+    (value: string) => {
+      setDraftState(value);
+      if (value) threadDrafts.set(draftKey, value);
+      else threadDrafts.delete(draftKey);
+    },
+    [draftKey],
+  );
   const [followBusy, setFollowBusy] = useState(false);
   const [olderError, setOlderError] = useState(false);
 
@@ -171,8 +222,8 @@ export function ThreadPanel({
     root?.thread?.reply_count ?? 0,
   );
 
-  // Escape inside the panel returns to the channel, like Back, and goes no
-  // further: the shell's own Escape (back to the channel list below `lg`)
+  // Escape inside the panel returns to the channel, like Back (or closes the
+  // thread beside it, like X), and goes no further: the shell's own Escape (back to the channel list below `lg`)
   // must not also run. A reply being typed keeps it, as the composer does.
   function onPanelKey(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -418,18 +469,27 @@ export function ThreadPanel({
         className,
       )}
       onKeyDown={onPanelKey}
+      onDragOver={beside ? refuseFileDrop : undefined}
+      onDrop={beside ? refuseFileDrop : undefined}
     >
       <ChatBackground channelId={channelId} />
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Back to channel"
-          title="Back to channel"
-          onClick={onClose}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </Button>
+      <header
+        className={cn(
+          "flex h-12 shrink-0 items-center gap-2 border-b border-border",
+          beside ? "pl-4 pr-2" : "px-2",
+        )}
+      >
+        {beside ? null : (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to channel"
+            title="Back to channel"
+            onClick={onClose}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        )}
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-body font-semibold">Thread</h2>
           {channelName ? (
@@ -449,7 +509,9 @@ export function ThreadPanel({
             {following ? "Following" : "Follow"}
           </Button>
         ) : null}
-        {onClosePanel ? (
+        {beside ? (
+          <PanelCloseButton label="Close thread" onClick={onClose} />
+        ) : onClosePanel ? (
           <PanelCloseButton
             label="Close chat"
             onClick={onClosePanel}

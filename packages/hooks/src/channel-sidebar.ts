@@ -201,6 +201,27 @@ export function sidebarSections<
 const NO_UNREAD: SidebarUnreadCounts = { unreadCount: 0, mentionCount: 0 };
 
 /**
+ * The direct messages order (owner, 2026-11-07, mobile's Messages screen;
+ * web's Direct messages list since #3774): newest conversation first by its
+ * latest message (`GET /v1/channels/latest`), a conversation with no message
+ * after every one with one, then A to Z by the title the row shows. One rule
+ * for both clients, so the phone and the web list a member's DMs alike.
+ *
+ * `latestAt` gives a conversation's latest message time, `undefined` for
+ * none. ISO timestamps from one server compare as strings.
+ */
+export function compareLatestFirst<C extends { id: string }>(
+  latestAt: (channel: C) => string | undefined,
+  titleOf: (channel: C) => string,
+): (a: C, b: C) => number {
+  return (a, b) => {
+    const at = latestAt(a) ?? "";
+    const bt = latestAt(b) ?? "";
+    return bt.localeCompare(at) || titleOf(a).localeCompare(titleOf(b));
+  };
+}
+
+/**
  * The order of rows inside a section (owner, 2026-11-11, #4178): the
  * chapter's `display_order` first, a row without one after every row with
  * one, then A to Z by the title the row shows, then id so two rows with one

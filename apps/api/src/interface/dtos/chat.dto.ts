@@ -962,6 +962,38 @@ export class ResolveAuthorAvatarsDto {
   message_ids: string[];
 }
 
+/** What a thread's parent holds of its newest reply (#4297). */
+export class ChatThreadLastReplyDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  sender_id: string | null;
+
+  @ApiProperty({ description: 'The reply’s text, cut to 500 characters.' })
+  content: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  kind: string | null;
+
+  @ApiProperty({
+    description:
+      'The reply’s `metadata.attachment_count`, or 0 when it has none.',
+  })
+  attachment_count: number;
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list.',
+  })
+  sender_blocked?: boolean;
+}
+
 /**
  * A chat message as a read surface serves it — the whole row, plus the
  * server's masking verdict for the caller.
@@ -1028,7 +1060,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text.',
+      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575).',
   })
   payload?: Record<string, any> | null;
 
@@ -1116,6 +1148,15 @@ export class ChatMessageDto {
       'On a thread parent: up to three recent repliers, newest first.',
   })
   thread_recent_sender_ids?: string[];
+
+  @ApiProperty({
+    type: () => ChatThreadLastReplyDto,
+    nullable: true,
+    required: false,
+    description:
+      'On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).',
+  })
+  thread_last_reply?: ChatThreadLastReplyDto | null;
 
   @ApiProperty()
   created_at: string;

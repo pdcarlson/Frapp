@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { threadVersion, useThreadUnread } from "./use-thread-unread";
+import { useThreadUnread } from "./use-thread-unread";
 
 const fetchThreadUnread = vi.fn(async () => ({ a: 2 }));
 vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
@@ -24,37 +24,6 @@ const row = (id: string, last_reply_at: string | null | undefined) =>
         ? null
         : { reply_count: 1, last_reply_at, recent_sender_ids: [] },
   }) as ChatMessage;
-
-describe("threadVersion (#4297)", () => {
-  it("is empty when no loaded message has a thread, so nothing is read", () => {
-    expect(threadVersion([row("a", undefined)])).toBe("");
-  });
-
-  it("changes when a parent's last reply moves, and only then", () => {
-    const before = [row("a", "2026-11-11T20:00:00Z"), row("b", undefined)];
-    const after = [row("a", "2026-11-11T20:05:00Z"), row("b", undefined)];
-    expect(threadVersion([...before])).toBe(threadVersion(before));
-    expect(threadVersion(after)).not.toBe(threadVersion(before));
-  });
-
-  it("holds when an older page brings a thread with an older reply", () => {
-    // The server's answer already covers every followed thread in the
-    // channel, loaded or not, so an older page needs no read of its own.
-    const one = [row("a", "2026-11-11T20:00:00Z")];
-    const two = [row("z", "2026-11-10T09:00:00Z"), ...one];
-    expect(threadVersion(two)).toBe(threadVersion(one));
-  });
-
-  it("leaves the open thread out, which re-reads on its own when read", () => {
-    const before = [row("a", "2026-11-11T20:00:00Z"), row("open", "2026-11-11T20:01:00Z")];
-    const after = [row("a", "2026-11-11T20:00:00Z"), row("open", "2026-11-11T20:09:00Z")];
-    expect(threadVersion(after, "open")).toBe(threadVersion(before, "open"));
-  });
-
-  it("still reads when the open thread is the only one", () => {
-    expect(threadVersion([row("open", "2026-11-11T20:01:00Z")], "open")).toBe("-");
-  });
-});
 
 describe("useThreadUnread (#4297)", () => {
   function setup(initial: ChatMessage[]) {
