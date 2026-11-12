@@ -3,7 +3,9 @@ import {
   EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
+  HERE_MENTION_NAME,
   isEveryoneRole,
+  reservedMentionName,
   resolveMentions,
   sendMentionReading,
   type MentionRole,
@@ -18,6 +20,7 @@ import type { Role } from '#domain/entities/role.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import { RbacService } from './rbac.service';
+import { ChapterPresenceReader } from './chapter-presence-reader.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** A chapter role as the mention picker and the resolver see it. */
@@ -53,6 +56,7 @@ export class ChatMentionService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly rbac: RbacService,
+    private readonly presence: ChapterPresenceReader,
   ) {}
 
   /**
@@ -77,7 +81,7 @@ export class ChatMentionService {
     replyTo: ReplyTarget | null = null,
   ): Promise<string[]> {
     return withMention(
-      await this.resolveBody(chapterId, senderId, content),
+      await this.resolveBody(chapterId, senderId, content, 'read'),
       replyPingTarget(senderId, replyTo),
     );
   }
@@ -93,6 +97,10 @@ export class ChatMentionService {
    * `quotedAuthorId` is `undefined` when the quoted message could not be read.
    * Then every previous mention is kept: an edit cannot tell the ping apart,
    * and losing it to a read blip is worse than keeping a name the edit removed.
+   *
+   * `@here` is not re-read on an edit: it keeps the members the previous
+   * body's `@here` reached, so an edit never pings someone who came online
+   * since, and one that adds `@here` pings nobody new, as on Discord.
    */
   async resolveForEdit(
     chapterId: string,
@@ -100,8 +108,12 @@ export class ChatMentionService {
     content: string,
     previousMentions: readonly string[],
     quotedAuthorId: string | null | undefined,
+    previousContent: string = '',
   ): Promise<string[]> {
-    const body = await this.resolveBody(chapterId, senderId, content);
+    const body = await this.resolveBody(chapterId, senderId, content, {
+      previousContent,
+      previousMentions,
+    });
     if (quotedAuthorId === undefined) {
       return previousMentions.reduce(withMention, body);
     }
@@ -113,10 +125,16 @@ export class ChatMentionService {
     );
   }
 
+  /**
+   * `here` says who `@here` may reach: `'read'` reads who is online now (a
+   * send), and an edit's previous body and mentions say who it reached then
+   * ({@link reachedByHere}).
+   */
   private async resolveBody(
     chapterId: string,
     senderId: string,
     content: string,
+    here: HereSource,
   ): Promise<string[]> {
     // Parse before querying. `content.includes('@')` admits every email
     // address, every `@here`, and every `user@host` in a pasted log, all of
@@ -167,12 +185,24 @@ export class ChatMentionService {
             await this.rbac.getEffectivePermissions(chapterId, senderId),
           )
         : false;
+      const allowed = views.map((view) => withMentionable(view, officer));
 
-      return resolveMentions(
-        content,
-        candidates,
-        views.map((view) => withMentionable(view, officer)),
-      );
+      // Who `@here` reaches is worked out only once the sender may use it:
+      // reading who is online is a join on the chapter's presence topic, the
+      // costliest read here, and neither an ordinary send nor a member's
+      // `@here` that reaches nobody should wait on it.
+      const hereView = allowed.find((view) => view.name === HERE_MENTION_NAME);
+      if (
+        hereView?.mentionable &&
+        tokens.some((token) => foldMentionName(token) === HERE_MENTION_NAME)
+      ) {
+        hereView.member_ids =
+          here === 'read'
+            ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
+            : reachedByHere(here, candidates, allowed);
+      }
+
+      return resolveMentions(content, candidates, allowed);
     } catch (error) {
       // `error`: the message still sends, but everyone it named goes
       // unpinged and is never pinged later, so a fault here (a broken query,
@@ -203,10 +233,43 @@ export class ChatMentionService {
       this.rbac.getEffectivePermissions(chapterId, userId),
     ]);
     const officer = canPingAnyRole(permissions);
+    // `@here` holds nobody here, so it is left out with the empty roles: it
+    // is no role, and the clients add its row after `@everyone`'s
+    // (`withHereMention`), which is the switch it follows.
     return mentionRoleViews(roles, candidates)
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
+}
+
+/** Where `@here`'s members come from: read now (a send), or an edit's earlier body. */
+type HereSource =
+  'read' | { previousContent: string; previousMentions: readonly string[] };
+
+/**
+ * The members an edited message's earlier `@here` reached: its mentions less
+ * the ones its body names otherwise, by name or role. None when the earlier
+ * body had no `@here`, so an edit that adds it reaches nobody new. A member
+ * both named and reached by `@here` counts as named, so editing their name
+ * out takes the mention away, as editing out any name does.
+ */
+function reachedByHere(
+  edit: Exclude<HereSource, 'read'>,
+  candidates: readonly ChapterMemberIdentity[],
+  views: readonly MentionRoleView[],
+): string[] {
+  const hadHere = extractMentionTokens(edit.previousContent).some(
+    (token) => foldMentionName(token) === HERE_MENTION_NAME,
+  );
+  if (!hadHere) return [];
+  const named = new Set(
+    resolveMentions(
+      edit.previousContent,
+      candidates,
+      views.filter((view) => view.name !== HERE_MENTION_NAME),
+    ),
+  );
+  return edit.previousMentions.filter((id) => !named.has(id));
 }
 
 /** The parts of a quoted message the reply ping reads. */
@@ -261,8 +324,17 @@ export function canPingAnyRole(permissions: readonly string[]): boolean {
 
 /**
  * Every role of the chapter with its holders, in role order, and its own
- * switch. `mentionable` is left for the caller to set, since it depends on
- * who is sending.
+ * switch, then `@here`. `mentionable` is left for the caller to set, since it
+ * depends on who is sending.
+ *
+ * `@here` (2026-11-12) holds nobody yet: `resolveBody` fills it with the
+ * members online once the sender may use it. It follows the Everyone role's
+ * switch, as Discord's one permission covers `@everyone` and `@here`, and is
+ * officers-only where a chapter has no Everyone role. With no roles read at
+ * all (a failed read) there is no `@here`, so the token reaches nobody without
+ * asking for the sender's permissions, which would fail the same way. A role
+ * an older chapter named "Here" before the name was reserved is left out, so
+ * the token means one thing.
  */
 export function mentionRoleViews(
   roles: readonly Role[],
@@ -276,7 +348,12 @@ export function mentionRoleViews(
       else holders.set(roleId, [member.user_id]);
     }
   }
-  return [...roles]
+  const views: MentionRoleView[] = [...roles]
+    .filter(
+      (role) =>
+        isEveryoneRole(role) ||
+        reservedMentionName(role.name) !== HERE_MENTION_NAME,
+    )
     .sort((a, b) => a.display_order - b.display_order)
     .map((role) => {
       // The Everyone role is `@everyone` (#4191): it reaches every member of
@@ -297,6 +374,17 @@ export function mentionRoleViews(
         mentionable: false,
       };
     });
+  if (roles.length === 0) return views;
+  const everyone = roles.find(isEveryoneRole);
+  views.push({
+    role_id: everyone?.id ?? HERE_MENTION_NAME,
+    name: HERE_MENTION_NAME,
+    color: null,
+    member_ids: [],
+    open_to_all: everyone ? everyone.mentionable !== false : false,
+    mentionable: false,
+  });
+  return views;
 }
 
 function withMentionable(

@@ -57,6 +57,7 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { SupabaseChatNotificationPreferenceRepository } from '../../infrastructure/supabase/repositories/supabase-chat-notification-preference.repository';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
+import { ChapterPresenceReader } from '../../application/services/chapter-presence-reader.service';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 
@@ -118,6 +119,7 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     ChatService,
     // `@`-mention resolution and the picker's roles (2026-11-06).
     ChatMentionService,
+    ChapterPresenceReader,
     // Split out of `ChatService` (#1380): the chat buckets' objects, and a
     // member's own notification levels. Neither touches the send hot path's
     // ordering; `ChatService.sendMessage` calls into the first.

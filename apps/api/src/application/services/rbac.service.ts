@@ -19,7 +19,7 @@ import { Member } from '#domain/entities/member.entity';
 import {
   EVERYONE_ROLE_NAME,
   isEveryoneRole,
-  isEveryoneRoleName,
+  reservedMentionName,
   permissionDefinition,
   permissionModuleLabel,
 } from '@repo/validation';
@@ -422,7 +422,7 @@ export class RbacService {
       );
     }
 
-    assertNotEveryoneName(data.name);
+    assertNotReservedMentionName(data.name);
     const existing = await this.roleRepo.findByChapterAndName(
       chapterId,
       data.name!,
@@ -541,7 +541,7 @@ export class RbacService {
         });
       }
     } else if (data.name && data.name !== role.name) {
-      assertNotEveryoneName(data.name);
+      assertNotReservedMentionName(data.name);
     }
 
     if (data.name && data.name !== role.name) {
@@ -1242,14 +1242,17 @@ function withoutUndefined<T extends object>(changes: T): Partial<T> {
 }
 
 /**
- * Refuses a role name that reads as `@everyone` (#4191): a second role folding
- * to it would make every `@everyone` ambiguous, which reaches nobody.
+ * Refuses a role name that reads as `@everyone` (#4191) or `@here`
+ * (2026-11-12): a second role folding to `@everyone` would make every
+ * `@everyone` ambiguous, which reaches nobody, and `@here` is the members
+ * online, never a role.
  */
-function assertNotEveryoneName(name: string | undefined): void {
-  if (name !== undefined && isEveryoneRoleName(name)) {
+function assertNotReservedMentionName(name: string | undefined): void {
+  const reserved = name === undefined ? null : reservedMentionName(name);
+  if (name !== undefined && reserved !== null) {
     throw new ConflictException({
       code: 'role.everyone_name',
-      message: `"${name.trim()}" is what @everyone reads as. Pick another name.`,
+      message: `"${name.trim()}" is what @${reserved} reads as. Pick another name.`,
     });
   }
 }

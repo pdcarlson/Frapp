@@ -67,9 +67,13 @@ export {
   EVERYONE_MENTION_NAME,
   EVERYONE_ROLE_NAME,
   EVERYONE_ROLE_SYSTEM_KEY,
+  HERE_MENTION_NAME,
+  type HereMentionSource,
   isEveryoneRole,
-  isEveryoneRoleName,
+  mentionRoleHint,
+  reservedMentionName,
   rolesAfterSave,
+  withHereMention,
 } from "./everyone-role";
 // ── Field limits ─────────────────────────────────────────────────────────────
 // The bounds a client or a schema here reads. The API-only ones are in

@@ -7,6 +7,18 @@ import {
   mentionRoleViews,
 } from './chat-mention.service';
 import type { RbacService } from './rbac.service';
+import type { ChapterPresenceReader } from './chapter-presence-reader.service';
+
+/** A presence reader that answers `online` (or `null`, a failed read). */
+function presenceOf(online: string[] | null = []) {
+  const onlineUserIds = jest
+    .fn()
+    .mockResolvedValue(online === null ? null : new Set(online));
+  return {
+    reader: { onlineUserIds } as unknown as ChapterPresenceReader,
+    onlineUserIds,
+  };
+}
 
 function role(id: string, name: string, extra: Partial<Role> = {}): Role {
   return {
@@ -52,6 +64,7 @@ describe('mentionRoleViews', () => {
       'Rush Chair',
       'Brothers',
       'everyone',
+      'here',
     ]);
     expect(views[0].member_ids).toEqual(['u1']);
   });
@@ -80,7 +93,40 @@ describe('mentionRoleViews', () => {
       'Rush Chair': true,
       Brothers: true,
       everyone: false,
+      here: false,
     });
+  });
+
+  it('adds an empty @here on the Everyone switch', () => {
+    expect(mentionRoleViews(roles, members).at(-1)).toMatchObject({
+      name: 'here',
+      member_ids: [],
+      open_to_all: false,
+    });
+    const opened = roles.map((r) =>
+      r.id === 'member' ? { ...r, mentionable: true } : r,
+    );
+    expect(mentionRoleViews(opened, members).at(-1)?.open_to_all).toBe(true);
+  });
+
+  it('leaves out a role named Here, which @here now means', () => {
+    const named = [...roles, role('h', 'Here', { display_order: 4 })];
+    const views = mentionRoleViews(named, members);
+    expect(views.filter((view) => view.name.toLowerCase() === 'here')).toEqual([
+      expect.objectContaining({ name: 'here', role_id: 'member' }),
+    ]);
+  });
+
+  it('keeps @here for officers only in a chapter with no Everyone role', () => {
+    const legacy = roles.filter((r) => r.id !== 'member');
+    expect(mentionRoleViews(legacy, members).at(-1)).toMatchObject({
+      name: 'here',
+      open_to_all: false,
+    });
+  });
+
+  it('has no @here when no roles were read', () => {
+    expect(mentionRoleViews([], members)).toEqual([]);
   });
 
   it('reads a role with no stored switch as on', () => {
@@ -107,7 +153,7 @@ describe('ChatMentionService.listMentionRoles', () => {
       findByChapter: jest.fn().mockResolvedValue(roles),
       getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
     } as unknown as RbacService;
-    return new ChatMentionService(memberRepo, rbac);
+    return new ChatMentionService(memberRepo, rbac, presenceOf().reader);
   }
 
   it('leaves out a role nobody holds, and gates one switched off', async () => {
@@ -133,6 +179,7 @@ describe('ChatMentionService.resolveForSend', () => {
     chapterMembers: typeof members,
     chapterRoles: Role[],
     permissions: string[] = [],
+    online: string[] | null = [],
   ) {
     const memberRepo = {
       findChapterMemberIdentities: jest.fn().mockResolvedValue(chapterMembers),
@@ -142,9 +189,11 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockResolvedValue(chapterRoles),
       getEffectivePermissions,
     } as unknown as RbacService;
+    const presence = presenceOf(online);
     return {
-      mentions: new ChatMentionService(memberRepo, rbac),
+      mentions: new ChatMentionService(memberRepo, rbac, presence.reader),
       getEffectivePermissions,
+      onlineUserIds: presence.onlineUserIds,
     };
   }
 
@@ -230,6 +279,127 @@ describe('ChatMentionService.resolveForSend', () => {
     });
   });
 
+  describe('@here', () => {
+    it('reaches the members online now when an officer sends it', async () => {
+      const officer = service(
+        members,
+        roles,
+        ['channels:manage'],
+        ['u1', 'u3', 'not-in-this-chapter'],
+      );
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', 'anyone free? @here'),
+      ).resolves.toEqual(['u1', 'u3']);
+      expect(officer.onlineUserIds).toHaveBeenCalledWith('ch-1');
+    });
+
+    it('reads who is online only when the body says @here', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u3']);
+      await officer.mentions.resolveForSend('ch-1', 'u1', '@Ann and @everyone');
+      expect(officer.onlineUserIds).not.toHaveBeenCalled();
+    });
+
+    it('follows the Everyone switch: nobody from a member until it is on', async () => {
+      const member = service(members, roles, ['members:view'], ['u1', 'u3']);
+      await expect(
+        member.mentions.resolveForSend('ch-1', 'u2', '@here'),
+      ).resolves.toEqual([]);
+      expect(member.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      // Nobody it could reach, so nothing waits on reading who is online.
+      expect(member.onlineUserIds).not.toHaveBeenCalled();
+
+      const opened = roles.map((r) =>
+        r.id === 'member' ? { ...r, mentionable: true } : r,
+      );
+      const open = service(members, opened, ['members:view'], ['u1', 'u3']);
+      await expect(
+        open.mentions.resolveForSend('ch-1', 'u2', '@here'),
+      ).resolves.toEqual(['u1', 'u3']);
+    });
+
+    it('never falls through to a member when nobody is online or the read fails', async () => {
+      const named = [
+        ...members,
+        { user_id: 'u8', display_name: 'Herenton', role_ids: [] },
+      ];
+      for (const online of [[], null]) {
+        const officer = service(named, roles, ['channels:manage'], online);
+        await expect(
+          officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
+        ).resolves.toEqual([]);
+      }
+    });
+
+    it('keeps who the earlier @here reached on an edit instead of reading again', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u2']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@here (edited)',
+          ['u3', 'u4'],
+          null,
+          '@here',
+        ),
+      ).resolves.toEqual(['u3', 'u4']);
+      expect(officer.onlineUserIds).not.toHaveBeenCalled();
+    });
+
+    it('drops a name the edit removes, though the message keeps @here', async () => {
+      // Sent "@Dee @here" with Ann and Cal online: Dee by name, Ann and Cal
+      // by @here. Editing Dee out for Ben takes her mention away.
+      const officer = service(members, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ben @here',
+          ['u4', 'u1', 'u3'],
+          null,
+          '@Dee @here',
+        ),
+      ).resolves.toEqual(['u2', 'u1', 'u3']);
+    });
+
+    it('reaches nobody new when an edit adds @here', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u2']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ann @here',
+          ['u1'],
+          null,
+          '@Ann',
+        ),
+      ).resolves.toEqual(['u1']);
+    });
+
+    it('keeps member mentions when the roles read fails', async () => {
+      const memberRepo = {
+        findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+      } as unknown as IMemberRepository;
+      const getEffectivePermissions = jest
+        .fn()
+        .mockRejectedValue(new Error('roles down'));
+      const rbac = {
+        findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
+        getEffectivePermissions,
+      } as unknown as RbacService;
+      const presence = presenceOf(['u3']);
+      const mentions = new ChatMentionService(
+        memberRepo,
+        rbac,
+        presence.reader,
+      );
+      await expect(
+        mentions.resolveForSend('ch-1', 'u1', '@Ben @here'),
+      ).resolves.toEqual(['u2']);
+      expect(getEffectivePermissions).not.toHaveBeenCalled();
+      expect(presence.onlineUserIds).not.toHaveBeenCalled();
+    });
+  });
+
   it('still resolves member mentions when the roles read fails', async () => {
     const memberRepo = {
       findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
@@ -238,7 +408,11 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
       getEffectivePermissions: jest.fn(),
     } as unknown as RbacService;
-    const mentions = new ChatMentionService(memberRepo, rbac);
+    const mentions = new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+    );
 
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
@@ -265,7 +439,11 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockResolvedValue([]),
       getEffectivePermissions: jest.fn(),
     } as unknown as RbacService;
-    const mentions = new ChatMentionService(memberRepo, rbac);
+    const mentions = new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+    );
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
     await expect(

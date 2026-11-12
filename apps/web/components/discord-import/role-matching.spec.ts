@@ -171,6 +171,19 @@ describe("roleIssues (#2818)", () => {
     ]);
   });
 
+  it("asks for another name than one reading as @here", () => {
+    expect(
+      roleIssues(
+        [{ roleId: "r5", roleName: "here" }],
+        { r5: { action: "new", name: "Here" } },
+        frappRoles,
+        50,
+      ).map((issue) => issue.message),
+    ).toEqual([
+      '"Here" is what @here reads as. Give the new role for here another name.',
+    ]);
+  });
+
   it("asks for a name no Frapp role has, within the limit", () => {
     expect(
       roleIssues(

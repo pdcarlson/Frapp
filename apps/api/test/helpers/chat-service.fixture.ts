@@ -26,6 +26,7 @@ import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
+import { ChapterPresenceReader } from '../../src/application/services/chapter-presence-reader.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../src/application/services/chat-category.service';
@@ -294,6 +295,11 @@ export async function createChatServiceFixture() {
     providers: [
       ChatService,
       ChatMentionService,
+      // `@here` reads the chapter's presence topic; no fixture sends one.
+      {
+        provide: ChapterPresenceReader,
+        useValue: { onlineUserIds: jest.fn().mockResolvedValue(new Set()) },
+      },
       ChatAttachmentService,
       ChatNotificationPreferenceService,
       ChatCategoryService,

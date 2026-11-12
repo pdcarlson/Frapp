@@ -398,7 +398,7 @@ function RoleBody({
             <div className="grid gap-1">
               <Label htmlFor="role-mentionable">
                 {everyone
-                  ? "Anyone can use @everyone"
+                  ? "Anyone can use @everyone and @here"
                   : "Anyone can @mention this role"}
               </Label>
               <p
@@ -406,7 +406,7 @@ function RoleBody({
                 className="text-sm text-muted-foreground"
               >
                 {everyone
-                  ? "@everyone pings the whole chapter. When off, only officers who manage channels or roles can use it."
+                  ? "@everyone pings everyone in a channel, @here only those online. When off, only officers who manage channels or roles can use them."
                   : "When off, only officers who manage channels or roles can ping everyone in it."}
               </p>
             </div>
