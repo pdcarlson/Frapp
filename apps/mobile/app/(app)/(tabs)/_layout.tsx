@@ -1,10 +1,10 @@
 import { Tabs, type ErrorBoundaryProps } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/tabs";
 import {
+  ActivityTabGlyph,
   ChatGlyph,
   EventsGlyph,
   MoreGlyph,
-  TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 import { AppErrorScreen } from "@/components/route-error";
@@ -26,7 +26,10 @@ function renderTabBar(props: BottomTabBarProps) {
 }
 
 /**
- * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
+ * The 4-tab IA (spec/ui/mobile/navigation.md § Tab bar): Chat, Activity,
+ * Calendar (the `events` route) and More, owner pick 2026-11-12 (#4610). The
+ * task board left the bar for a pushed screen: a member's tasks are
+ * Activity's first rows and dots on the calendar.
  *
  * There is no Home tab — chat is home. This navigator holds only the four
  * tabs. Every other screen in the app is pushed onto the stack above it
@@ -84,7 +87,7 @@ export default function TabLayout() {
           headerShown: false,
         }}
       >
-        {/* ── The four locked tabs ─────────────────────────────────────────── */}
+        {/* ── The four tabs ────────────────────────────────────────────────── */}
         <Tabs.Screen
           name="index"
           options={{
@@ -93,20 +96,20 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="activity"
+          options={{
+            title: SCREEN_TITLES.activity,
+            tabBarIcon: ({ focused }) => (
+              <ActivityTabGlyph {...glyphPaint(focused)} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="events"
           options={{
             title: SCREEN_TITLES.events,
             tabBarIcon: ({ focused }) => (
               <EventsGlyph {...glyphPaint(focused)} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="tasks"
-          options={{
-            title: SCREEN_TITLES.tasks,
-            tabBarIcon: ({ focused }) => (
-              <TasksGlyph {...glyphPaint(focused)} />
             ),
           }}
         />

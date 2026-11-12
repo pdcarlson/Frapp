@@ -199,6 +199,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now change what each tier and role can do from More, Chapter settings, which also holds the chapter accent and chat background.",
       "Officers can now choose who can see and post in a channel, and move whole categories.",
       "Swiping to Messages from Chat no longer also opens the channel your finger started on.",
+      "Activity is now its own tab, Events is now called Calendar, and your task board opens from Activity.",
     ],
   },
   {

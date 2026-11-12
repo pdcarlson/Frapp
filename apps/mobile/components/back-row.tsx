@@ -59,7 +59,13 @@ export const BACK_TO_ROLES: BackTarget = {
   href: "/chapter-roles",
 };
 /** s07, opened from an Events row (and from Chat home's Up next). */
-export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
+export const BACK_TO_EVENTS: BackTarget = { label: "Calendar", href: "/events" };
+
+/** The task board's way back when nothing is under it: the Activity tab (#4610). */
+export const BACK_TO_ACTIVITY: BackTarget = {
+  label: "Activity",
+  href: "/activity",
+};
 /**
  * s14. The board draws `‹ More`, but the inbox's entry is the bell on Chat
  * home since #3362, so its way back is Chat.

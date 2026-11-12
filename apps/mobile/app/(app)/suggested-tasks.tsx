@@ -63,7 +63,7 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * § Suggested tasks): the action items of posted minutes, each waiting for an
  * officer to accept it into a task, change it first, or dismiss it. Nothing
  * is a task until they do. It is where the "tasks were suggested" push
- * lands, and where the Tasks tab's one row and a meeting's minutes lead. Web
+ * lands, and where the task board's one row and a meeting's minutes lead. Web
  * draws the same rows (`components/ai/suggested-tasks.tsx`).
  *
  * The secretary does this right after the meeting, from the notification, so
