@@ -189,6 +189,32 @@ describe('AiConsentService', () => {
       });
     });
 
+    it('indexes a document whose uploader said No while the chapter switch is on', async () => {
+      // Chapter records are under the president's switch, whoever uploaded
+      // them: an index run acting for an officer who said No still runs.
+      const index = call({
+        family: 'corpus',
+        task: 'corpus.embed',
+        actingUserId: MEMBER,
+      });
+      await repo.saveConsent(MEMBER, CURRENT, false, new Date());
+      await turnOn(CHAPTER, { ask_enabled: true });
+      await expect(service.check(index)).resolves.toEqual({ allowed: true });
+      // The same officer's own question is still refused.
+      await expect(service.check(call({ family: 'ask' }))).resolves.toEqual({
+        allowed: false,
+        reason: 'member_declined',
+      });
+    });
+
+    it('indexes nothing while the chapter switch is off, whoever said yes', async () => {
+      await sayYes(MEMBER);
+      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      await expect(
+        service.check(call({ family: 'corpus', task: 'corpus.embed' })),
+      ).resolves.toEqual({ allowed: false, reason: 'chapter_off' });
+    });
+
     it("reads the call's own chapter, not another chapter the member is in", async () => {
       await sayYes(MEMBER);
       await turnOn(OTHER_CHAPTER, { ask_enabled: true });

@@ -4,7 +4,10 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import type { AiCallDescriptor } from '#domain/adapters/ai-call-context';
+import type {
+  AiCallDescriptor,
+  AiFeatureFamily,
+} from '#domain/adapters/ai-call-context';
 import type {
   AiConsentDecision,
   IAiConsentCheck,
@@ -36,6 +39,17 @@ const SWITCH_COLUMN: Readonly<
   meeting_notes: 'meeting_notes_enabled',
   chat_source: 'chat_source_enabled',
 };
+
+/**
+ * Families that read the chapter's records for the chapter, so they need the
+ * chapter's switch and no member's Yes: today, building the index
+ * (`corpus`). Embedding a member's question to search it is that member's own
+ * use, which this gate does not see apart from indexing, so the route that
+ * searches asks for the member's Yes first (an `ask` check) (#4311).
+ */
+const CHAPTER_RECORD_FAMILIES: ReadonlySet<AiFeatureFamily> = new Set([
+  'corpus',
+]);
 
 /** What a feature does when a person answers No: see `onConsentWithdrawn`. */
 export type AiConsentWithdrawnListener = (userId: string) => Promise<void>;
@@ -81,8 +95,8 @@ function settingsView(row: ChapterAiSettings | null): AiChapterSettingsView {
  *
  * It is the gateway's consent check (bound in
  * `modules/ai/ai-consent-seam.module.ts`), asked before every model call:
- * the family's switch must be on and the acting member must have said yes on
- * the current sheet version. Nothing is cached, so turning a switch off or
+ * the family's switch must be on and, except for indexing the chapter's
+ * records, the acting member must have said yes on the current sheet version. Nothing is cached, so turning a switch off or
  * answering No stops the next call.
  *
  * Whose chat messages may be read is a separate question, answered where the
@@ -122,6 +136,13 @@ export class AiConsentService implements IAiConsentCheck {
     if (settings?.[column] !== true) {
       return { allowed: false, reason: 'chapter_off' };
     }
+    // Indexing the chapter's records serves the chapter, not the member the
+    // run names: the president's switch is the whole gate for them, whoever
+    // uploaded or posted them, so a document from an officer who said No is
+    // still indexed (`spec/behavior/ai.md` § Consent). A member's own words
+    // are not records: their messages are filtered by author
+    // (`chatAuthorsWhoSaidYes`), and their question is the Ask family's.
+    if (CHAPTER_RECORD_FAMILIES.has(call.family)) return { allowed: true };
     if (consent?.accepted !== true) {
       return { allowed: false, reason: 'member_declined' };
     }
