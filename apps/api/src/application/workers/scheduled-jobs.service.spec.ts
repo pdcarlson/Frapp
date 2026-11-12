@@ -9,6 +9,7 @@ import { PollService } from '../services/poll.service';
 import { ChatReportService } from '../services/chat-report.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
+import { EventExcuseService } from '../services/event-excuse.service';
 import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.repository.interface';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { buildChapterPalette } from '../services/chapter-palette';
@@ -42,6 +43,8 @@ const TOMORROW = '2026-08-06';
 describe('ScheduledJobsService', () => {
   let service: ScheduledJobsService;
   let markAutoAbsent: jest.Mock;
+  let remindPending: jest.Mock;
+  let excusedUserIds: jest.Mock;
   let notifyUser: jest.Mock;
   let getDuesGraceDays: jest.Mock;
   let claimDispatch: jest.Mock;
@@ -82,6 +85,8 @@ describe('ScheduledJobsService', () => {
     captureException.mockClear();
     captureMessage.mockClear();
     markAutoAbsent = jest.fn().mockResolvedValue({ marked: 0 });
+    remindPending = jest.fn().mockResolvedValue(undefined);
+    excusedUserIds = jest.fn().mockResolvedValue(new Set());
     notifyUser = jest.fn().mockResolvedValue(undefined);
     getDuesGraceDays = jest.fn().mockResolvedValue(0);
     // Default: the claim succeeds, i.e. this is the first sweep to see it.
@@ -128,7 +133,7 @@ describe('ScheduledJobsService', () => {
         },
         {
           provide: AttendanceService,
-          useValue: { markAutoAbsent, resolveRequiredMembers },
+          useValue: { markAutoAbsent, resolveRequiredMembers, excusedUserIds },
         },
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
@@ -139,6 +144,7 @@ describe('ScheduledJobsService', () => {
           provide: ChatReportService,
           useValue: { sweepPendingEvidenceReleases },
         },
+        { provide: EventExcuseService, useValue: { remindPending } },
       ],
     }).compile();
 
@@ -157,6 +163,17 @@ describe('ScheduledJobsService', () => {
       expect(result).toEqual({ events: 2 });
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-1', 'chap-1');
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-2', 'chap-2');
+    });
+
+    it('reminds receivers of pending excuses once per marked event (#3735)', async () => {
+      findEventsPendingAutoAbsent.mockResolvedValue([
+        { id: 'evt-1', chapter_id: 'chap-1', end_time: '2026-08-05T10:00:00Z' },
+      ]);
+
+      await service.sweepAutoAbsent(NOW);
+
+      expect(remindPending).toHaveBeenCalledTimes(1);
+      expect(remindPending).toHaveBeenCalledWith('evt-1', 'chap-1');
     });
 
     it('queries only events whose 15-minute grace has already elapsed', async () => {
@@ -180,6 +197,8 @@ describe('ScheduledJobsService', () => {
 
       expect(result).toEqual({ events: 0 });
       expect(markAutoAbsent).not.toHaveBeenCalled();
+      // The reminder rides the claim, so it is sent once per event.
+      expect(remindPending).not.toHaveBeenCalled();
     });
 
     it('releases the claim when marking fails, so the next tick retries', async () => {
@@ -209,6 +228,9 @@ describe('ScheduledJobsService', () => {
       );
       // The sweep keeps going after the failure.
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
+      // No reminder for the event that will be retried.
+      expect(remindPending).toHaveBeenCalledTimes(1);
+      expect(remindPending).toHaveBeenCalledWith('evt-ok', 'chap-1');
     });
 
     it('skips an event with no valid end_time and sweeps the rest (#3498)', async () => {
@@ -345,6 +367,27 @@ describe('ScheduledJobsService', () => {
       });
       expect(notifyUser).toHaveBeenCalledWith(
         'user-2',
+        'chap-1',
+        expect.anything(),
+      );
+    });
+
+    it('leaves out a member whose excuse was approved (#3735)', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      resolveRequiredMembers.mockResolvedValue([
+        { user_id: 'user-1', role_ids: [] },
+        { user_id: 'user-2', role_ids: [] },
+      ]);
+      excusedUserIds.mockResolvedValue(new Set(['user-2']));
+
+      await service.sweepEventReminders(NOW);
+
+      expect(excusedUserIds).toHaveBeenCalledWith('chap-1', 'evt-1', [
+        'APPROVED',
+      ]);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
         'chap-1',
         expect.anything(),
       );

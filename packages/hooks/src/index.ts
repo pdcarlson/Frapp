@@ -24,6 +24,7 @@ export * from "./member-avatar-color";
 export * from "./open-chat-transport";
 export * from "./pay-errors";
 export * from "./permission-preview";
+export * from "./profile-stats";
 export * from "./put-signed-upload";
 export * from "./rush-card";
 export * from "./search-analytics";

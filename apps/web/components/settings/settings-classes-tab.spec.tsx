@@ -255,6 +255,30 @@ describe("SettingsClassesTab", () => {
     });
   });
 
+  it("opens the class editor in place of the page beside chat (#4593)", async () => {
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <SettingsClassesTab
+            canManage
+            classTerm="Pledge class"
+            orderTerm="Fraternal order"
+          />
+        </div>
+      </div>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit members of Alpha" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Alpha" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to Pledge class" }),
+    );
+    expect(screen.queryByRole("region", { name: "Alpha" })).toBeNull();
+  });
+
   it("offers no editing to a viewer without roles:manage", () => {
     renderTab(false);
     expect(screen.queryByRole("button", { name: /reorder/i })).toBeNull();

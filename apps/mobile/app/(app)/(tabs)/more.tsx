@@ -15,6 +15,7 @@ import {
   useStudySessions,
   useViewerUserId,
   useOwnAvatarTint,
+  selectPointsBalance,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
@@ -38,7 +39,7 @@ import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { formatPointsLabel } from "@/lib/more/hub";
-import { selectPointsBalance, selectViewerProfile } from "@/lib/more/profile";
+import { selectViewerProfile } from "@/lib/more/profile";
 import {
   dueChip,
   selectInvoiceRows,

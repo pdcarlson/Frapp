@@ -125,6 +125,7 @@ export default function ChapterRolesScreen() {
             onChangeText={setQuery}
             placeholder="Find a role"
             accessibilityLabel="Find a role"
+            searchGlyph
           />
         ) : null}
         {filtering && shown.length === 0 ? (

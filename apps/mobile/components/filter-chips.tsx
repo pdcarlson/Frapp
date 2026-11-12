@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { SearchGlyph } from "@/components/control-glyphs";
 import { PressableRow } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
@@ -314,6 +315,7 @@ export function SearchField({
   accessibilityLabel,
   autoCapitalize = "none",
   keyboardType = "default",
+  searchGlyph = false,
 }: {
   value: string;
   onChangeText: (next: string) => void;
@@ -324,11 +326,14 @@ export function SearchField({
   autoCapitalize?: "none" | "words";
   /** "number-pad" for a graduation-year filter; the default suits free text. */
   keyboardType?: "default" | "number-pad";
+  /** Leads the field with a magnifier, for a search rather than a filter
+   * value (#4137): web's search fields and iOS's search bar draw one. */
+  searchGlyph?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  return (
+  const input = (
     <TextInput
       value={value}
       onChangeText={onChangeText}
@@ -338,8 +343,18 @@ export function SearchField({
       autoCapitalize={autoCapitalize}
       autoCorrect={false}
       keyboardType={keyboardType}
-      style={styles.search}
+      style={[styles.search, searchGlyph ? styles.searchWithGlyph : null]}
     />
+  );
+  if (!searchGlyph) return input;
+  return (
+    <View>
+      {input}
+      {/* Decorative: the field's own label names it. */}
+      <View pointerEvents="none" style={styles.searchGlyph}>
+        <SearchGlyph color={tokens.color.text.muted} size={SEARCH_GLYPH_SIZE} />
+      </View>
+    </View>
   );
 }
 
@@ -417,5 +432,19 @@ function createStyles(tokens: SignetTokens) {
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
+    // Room for the glyph: its inset, its width, then the field's own gap.
+    searchWithGlyph: {
+      paddingLeft: tokens.spacing.md + SEARCH_GLYPH_SIZE + tokens.spacing.sm,
+    },
+    searchGlyph: {
+      position: "absolute",
+      left: tokens.spacing.md,
+      top: 0,
+      bottom: 0,
+      justifyContent: "center",
+    },
   });
 }
+
+/** Web's toolbar search glyph is 16px (`h-4 w-4`). */
+const SEARCH_GLYPH_SIZE = 16;

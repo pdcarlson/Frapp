@@ -183,6 +183,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
       "Changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
       "Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
+      "An Activity item, a pledge class's member list and Create a channel in Chat admin now open right inside their page instead of sliding over the whole screen.",
+      "Your profile now shows your points, service hours, pledge class and number, as it does on your phone.",
     ],
     phone: [
       "Officers who manage roles can now set a member's pledge class and number from their profile.",
@@ -200,6 +202,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now choose who can see and post in a channel, and move whole categories.",
       "Swiping to Messages from Chat no longer also opens the channel your finger started on.",
       "Activity is now its own tab, Events is now called Calendar, and your task board opens from Activity.",
+      "A message you send no longer sometimes stays in the box afterward, ready to be sent twice.",
+      "The Directory now shows each member's status and custom status line, and its search has a search icon.",
     ],
   },
   {
