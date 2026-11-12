@@ -194,7 +194,7 @@ That returns **69** rows. The "API only" row of that table is those 68 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **72**. Counted 2026-11-12 by adding `ai_runs` (#4310, migration
-`20261112020000`) and `ai_suggestions` (#4309, migration `20261112021000`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
+`20261112020000`) and `ai_suggestions` (#4309, migration `20261112120401`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
 `20261111235900`, which added `chat_message_important_seen` (#4186), after
 `20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
 which added no table. Before that,

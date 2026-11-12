@@ -3783,9 +3783,9 @@ drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
 
-## Rollback AI suggestions (20261112021000)
+## Rollback AI suggestions (20261112120401)
 
-* **Migration**: `20261112021000_ai_suggestions.sql`
+* **Migration**: `20261112120401_ai_suggestions.sql`
 
 One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
 
