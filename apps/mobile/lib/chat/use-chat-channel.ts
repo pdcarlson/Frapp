@@ -188,7 +188,7 @@ export interface SendOptions {
  * carrying the member-facing description chat-core classified, since mobile
  * has no toast to show it (#999).
  */
-async function withFailureMessage(
+export async function withFailureMessage(
   run: (onError: ChatErrorFn) => Promise<void>,
   fallback: string,
 ): Promise<void> {

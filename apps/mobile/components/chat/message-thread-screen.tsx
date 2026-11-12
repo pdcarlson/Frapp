@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
-import { messageFlagView } from "@repo/chat-core/flags";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatBackground } from "@/components/chat/chat-background";
 import {
   Alert,
@@ -13,29 +12,55 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useIsFocused, useRouter } from "expo-router";
 import {
+  MASKED_RELOAD_FAILED_BODY,
+  MASKED_RELOAD_FAILED_TITLE,
+} from "@repo/chat-core/block-copy";
+import {
   applyBlockList,
-  tombstoneCanUnblock,
+  isBlockableSender,
   visibleTypingUsers,
   type BlockState,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { channelAllowsThreadReplies } from "@repo/chat-core/message-actions";
+import {
+  channelAllowsThreadReplies,
+  copyableText,
+  departedIn,
+  messageActionsFor,
+  noDepartedMembers,
+  rosterMembership,
+  withDeparted,
+  type DepartedMembers,
+} from "@repo/chat-core/message-actions";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LIST_KEY,
+  resolveAuthorAvatar,
+  resolveAuthorLabel,
+  resolveAuthorName,
+  useActiveChapterId,
+  useAuthorAvatars,
   useBlockedUserIds,
   useChannel,
   useMemberDisplayNames,
+  usePermissionList,
   useViewerUserId,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { SignetTokens } from "@repo/theme/signet";
-import { BlockedMessageTombstone } from "@/components/chat/blocked-message-tombstone";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { MessageItem } from "@/components/chat/message-item";
+import {
+  MessageActionsSheet,
+  type MessageActionsSheetHandle,
+  type MessageActionsTarget,
+} from "@/components/chat/message-actions-sheet";
+import { groupReactions } from "@/components/chat/message-item";
+import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
-import { BackGlyph } from "@/components/control-glyphs";
+import { BackGlyph, CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import { Chip } from "@/components/filter-chips";
 import { ErrorState } from "@/components/state-block";
 import { useScreenBelow } from "@/lib/back-target";
@@ -50,8 +75,17 @@ import {
   threadChannel,
   threadTitleFor,
 } from "@/lib/chat/channel-list";
+import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
+import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
+import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { threadLayout } from "@/lib/chat/thread-layout";
-import { useMessageThread } from "@/lib/chat/use-message-thread";
+import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import {
+  useHeldChannelMessage,
+  useMessageThread,
+} from "@/lib/chat/use-message-thread";
+import { useThreadRowWrites } from "@/lib/chat/use-thread-row-writes";
+import { selectionHaptic } from "@/lib/haptics";
 import { useConnection } from "@/lib/connection/use-connection";
 import { goBackTo } from "@/lib/href";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -62,9 +96,9 @@ const TYPING_LINE_HEIGHT = 16;
 /** Holds the typing line's place when nobody types: a line box, no glyphs. */
 const TYPING_LINE_BLANK = " ";
 
-/** Thread rows draw no reactions in slice 1, so nothing is there to tap. */
-const NO_REACT = () => undefined;
 const NO_IDS: ReadonlySet<string> = new Set();
+/** The parent's placement: a run and a row of its own, no day line. */
+const ROOT_PLACEMENT = { startsRun: true, endsRun: true, startsDay: false };
 
 /** The thread composer's line while offline: a reply has no outbox. */
 export const THREAD_OFFLINE_HINT =
@@ -97,8 +131,14 @@ export interface MessageThreadScreenProps {
  * The same `SafeAreaView` + `KeyboardAvoidingArea` frame as s05, so the
  * composer clears the keyboard the same way on both platforms.
  *
- * Slice 1's rows are lean, as web's panel's are (#4034): text, the delivery
- * line with Retry and Delete, no reactions, cards or long-press actions.
+ * The parent and the replies are full rows (#4297, slice 5), as web's panel's
+ * are since #4034: the timeline's own row (`ThreadMessageRow`), so cards,
+ * reactions, quotes and tombstones draw as they do in the channel, and a
+ * long-press opens the same actions sheet. Every write names its target
+ * (`useThreadRowWrites`), so a reply's lands in this thread's cache. The sheet
+ * offers what web's thread rows do: react, copy, Edit, Delete, Report and
+ * Block; not Reply, Start thread, Mention or Important, which belong to the
+ * channel's timeline.
  */
 export function MessageThreadScreen({
   channelId,
@@ -112,7 +152,12 @@ export function MessageThreadScreen({
   const queryClient = useQueryClient();
 
   const roster = useMemberDisplayNames();
-  const { nameFor, roleColorFor } = roster;
+  const {
+    nameFor,
+    roleColorFor,
+    avatarFor: memberAvatarFor,
+    refetch: refetchRoster,
+  } = roster;
 
   const channelQuery = useChannel(channelId);
   const postCapability = useMemo(
@@ -123,10 +168,28 @@ export function MessageThreadScreen({
     can_post: postCapability.canPost,
     is_read_only: postCapability.isReadOnly,
   });
+  // Delete on someone else's message, as the channel offers it (#2775).
+  const canManageChannel = can("channels:manage", usePermissionList());
 
   // `users.id`, the column `sender_id` references (`use-chat-runtime.ts`).
   const viewerId = useViewerUserId();
   const thread = useMessageThread(channelId, rootId, viewerId);
+  // The parent as the channel under this screen holds it, live through the
+  // channel's realtime; the thread's own read while it doesn't, as web's.
+  const heldRoot = useHeldChannelMessage(channelId, rootId);
+  const root = heldRoot ?? thread.root;
+  // The message the parent quotes, as the channel holds it: the parent's own
+  // quote draws it as the channel does, rather than "not loaded".
+  const rootQuoted = useHeldChannelMessage(
+    channelId,
+    root?.reply_to_id ?? null,
+  );
+  const writes = useThreadRowWrites({
+    channelId,
+    rootId,
+    parentHeld: !!heldRoot,
+    refreshRoot: thread.refreshRoot,
+  });
 
   const openChannel = useMemo(
     () =>
@@ -155,18 +218,17 @@ export function MessageThreadScreen({
     [blockList.status, blockList.ids, blockList.unblocked, clearance],
   );
   const rootRow = useMemo<ThreadRow | null>(() => {
-    if (!thread.root) return null;
-    // The chip and reactions belong to the channel's view of the parent.
-    const root: ChatMessage = { ...thread.root, thread: null, reactions: {} };
-    return applyBlockList([root], blockState, viewerId).rows[0] ?? null;
-  }, [thread.root, blockState, viewerId]);
+    if (!root) return null;
+    // Its own card would repeat the divider below it.
+    const parent: ChatMessage = { ...root, thread: null };
+    return applyBlockList([parent], blockState, viewerId).rows[0] ?? null;
+  }, [root, blockState, viewerId]);
   const rows = useMemo(
     () => applyBlockList(thread.messages, blockState, viewerId).rows,
     [thread.messages, blockState, viewerId],
   );
-  const layout = useMemo(() => threadLayout(rows), [rows]);
   // Newest at the bottom: the list is inverted, as s05's is.
-  const inverted = useMemo(() => [...rows].reverse(), [rows]);
+  const layout = useMemo(() => threadLayout(rows), [rows]);
 
   const typing = typingLabel(
     visibleTypingUsers(thread.typingUsers, blockState, viewerId),
@@ -178,38 +240,73 @@ export function MessageThreadScreen({
   const focused = useIsFocused();
   useReportOpenChatTransport(focused ? thread.connection : null);
 
+  // Every message the screen draws, by id: the parent and the replies, for
+  // the sheet and an edit. (A thread reply can't quote, so the only quote
+  // here is the parent's, looked up in the channel's cache below.)
+  const byId = useMemo(() => {
+    const index = new Map<string, ChatMessage>();
+    if (root) index.set(root.id, root);
+    for (const message of thread.messages) index.set(message.id, message);
+    return index;
+  }, [root, thread.messages]);
+  const shown = useMemo(() => [...byId.values()], [byId]);
+
+  // Each row's photo, as the channel resolves it (`resolveAuthorAvatar`).
+  const importedAvatars = useAuthorAvatars(channelId, shown);
+  const avatarFor = useCallback(
+    (message: ChatMessage) =>
+      resolveAuthorAvatar(message, memberAvatarFor, importedAvatars.data),
+    [memberAvatarFor, importedAvatars.data],
+  );
+
   const { writeBlockedReason } = useConnection();
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
-  const { send, emitTyping } = thread;
+  const { send, retry, emitTyping } = thread;
+  // The thread's send is optimistic: the row is in the list at once and a
+  // failure stays there with Retry and Delete (rule 6), the line over the
+  // composer saying why. So the composer clears on the tap.
+  const sendReply = useCallback(
+    (content: string) => {
+      const body = content.trim();
+      if (!body) return Promise.resolve(false);
+      setDraft("");
+      setSendError(null);
+      void send(body).then(({ error }) => setSendError(error));
+      return Promise.resolve(true);
+    },
+    [send],
+  );
+  const { edit } = writes;
+  // Edit opens in this composer, as it does in the channel's: the same strip,
+  // the same unchanged-save and empty-save rules (`useComposerStaging`).
+  const staging = useComposerStaging({
+    channelId,
+    viewerId,
+    byId,
+    nameFor,
+    blockState,
+    draft,
+    setDraft,
+    hasAttachments: false,
+    send: sendReply,
+    sendInFlight: () => false,
+    edit,
+  });
+  const { onChangeText: stagingChangeText, isEditing } = staging;
   const onChangeText = useCallback(
     (next: string) => {
-      setDraft(next);
-      if (next.trim()) emitTyping();
+      stagingChangeText(next);
+      if (next.trim() && !isEditing) emitTyping();
     },
-    [emitTyping],
+    [stagingChangeText, isEditing, emitTyping],
   );
-  const onSend = useCallback(() => {
-    const content = draft.trim();
-    if (!content) return;
-    setDraft("");
-    setSendError(null);
-    // A failure stays in the list, marked, with Retry and Delete (rule 6);
-    // the line over the composer says why.
-    void send(content).then(({ error }) => setSendError(error));
-  }, [draft, send]);
   const onRetry = useCallback(
     (clientMessageId: string) => {
-      const failed = thread.messages.find(
-        (message) => message.client_message_id === clientMessageId,
-      );
-      if (!failed) return;
       setSendError(null);
-      void send(failed.content, clientMessageId).then(({ error }) =>
-        setSendError(error),
-      );
+      void retry(clientMessageId).then(({ error }) => setSendError(error));
     },
-    [thread.messages, send],
+    [retry],
   );
 
   const [followBusy, setFollowBusy] = useState(false);
@@ -251,50 +348,235 @@ export function MessageThreadScreen({
     [nameFor, unblock, retryLoad],
   );
 
-  const renderRow = useCallback(
-    (row: ThreadRow, startsRun: boolean, endsRun: boolean) => {
-      if (!viewerId) return null;
-      if (row.visibility === "tombstone") {
-        const senderId = row.message.sender_id;
-        return (
-          <BlockedMessageTombstone
-            channelId={channelId}
-            senderName={senderId ? nameFor(senderId) : null}
-            canUnblock={tombstoneCanUnblock(row.message, blockState)}
-            onUnblock={() => {
-              if (senderId) onUnblock(senderId);
-            }}
-            startsRun={startsRun}
-          />
-        );
+  // A stale tombstone's Reload, as the channel's (`refreshMaskedCopies`), and
+  // the thread read again. That re-read is a backfill of newer replies and
+  // the parent: a masked reply already held stays masked until the thread's
+  // cache is dropped, on web too (#4451).
+  const maskedRefresh = useMaskedRefresh();
+  const { reloadMaskedCopies } = useBlockActions();
+  const onReload = useCallback(
+    (userId: string) => {
+      void reloadMaskedCopies(userId).then((landed) => {
+        retryLoad();
+        if (!landed) {
+          Alert.alert(MASKED_RELOAD_FAILED_TITLE, MASKED_RELOAD_FAILED_BODY);
+        }
+      });
+    },
+    [reloadMaskedCopies, retryLoad],
+  );
+
+  // A reaction chip's tap and the sheet's quick row tick once, here where the
+  // member acted, as the channel's do.
+  const { react, unreact, act, remove, closePoll } = writes;
+  const onReact = useCallback(
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void react(messageId, emoji);
+    },
+    [react],
+  );
+  const onUnreact = useCallback(
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void unreact(messageId, emoji);
+    },
+    [unreact],
+  );
+  const onVote = useCallback(
+    (messageId: string, actionType: string, payload: Record<string, unknown>) =>
+      void act(messageId, actionType, payload),
+    [act],
+  );
+  const onClosePoll = useCallback(
+    (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
+    [closePoll],
+  );
+  const onDelete = useCallback(
+    (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
+    [remove],
+  );
+
+  // A quote's tap scrolls to the message it quotes when the thread holds it.
+  const listRef = useRef<FlatList<ThreadRow>>(null);
+  const inverted = useMemo(() => [...rows].reverse(), [rows]);
+  const onJumpToMessage = useCallback(
+    (messageId: string) => {
+      if (messageId === rootId) {
+        listRef.current?.scrollToEnd({ animated: true });
+        return;
       }
+      const index = inverted.findIndex((row) => row.message.id === messageId);
+      if (index >= 0) {
+        listRef.current?.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }
+    },
+    [rootId, inverted],
+  );
+
+  // Members a block attempt proved are not in this chapter, as the channel
+  // keeps them (`DepartedMembers`): only "known departed" withholds Block.
+  const chapterId = useActiveChapterId();
+  const [departed, setDeparted] = useState<DepartedMembers>(() =>
+    noDepartedMembers(chapterId),
+  );
+  const departedIds = departedIn(departed, chapterId);
+  const markDeparted = useCallback(
+    (userId: string) =>
+      setDeparted((previous) => withDeparted(previous, chapterId, userId)),
+    [chapterId],
+  );
+  const isMember = useMemo(
+    () =>
+      rosterMembership(
+        {
+          byId: roster.byId,
+          isPending: roster.isPending,
+          isError: roster.isError,
+        },
+        departedIds,
+      ),
+    [roster.byId, roster.isPending, roster.isError, departedIds],
+  );
+
+  // One sheet, retargeted per long-press, as the channel's.
+  const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
+  const [actionTarget, setActionTarget] = useState<Omit<
+    MessageActionsTarget,
+    "reactedWith"
+  > | null>(null);
+  const openActions = useCallback(
+    (message: ChatMessage) => {
+      const actions = messageActionsFor(message, viewerId, {
+        isMember,
+        canReply: false,
+        // The parent's Edit authorizes as a post, a reply's as a thread reply
+        // (`ChatService.editMessage`), as web's panel gates them.
+        canPost: message.id === rootId ? postCapability.canPost : canReply,
+        canManageChannel,
+      });
+      if (!actions.canOpen) return;
+      // As the channel's: a sender the roster can't vouch for most likely
+      // joined after it was read.
+      if (
+        actions.canReport &&
+        isBlockableSender(message.sender_id) &&
+        isMember(message.sender_id) === null
+      ) {
+        refetchRoster();
+      }
+      setActionTarget({
+        messageId: message.id,
+        copyText: copyableText(message),
+        canReply: false,
+        canStartThread: false,
+        canEdit: actions.canEdit,
+        canMention: false,
+        canDelete: actions.canDelete,
+        canReport: actions.canReport,
+        blockUserId: actions.canBlock ? message.sender_id : null,
+        senderName: resolveAuthorName(message, nameFor),
+        senderLabel: resolveAuthorLabel(message, nameFor, viewerId),
+        sentAt: message.created_at,
+        senderInDirectory:
+          message.sender_id !== null && isMember(message.sender_id) === true,
+      });
+      actionsSheetRef.current?.present();
+    },
+    [
+      viewerId,
+      isMember,
+      rootId,
+      postCapability.canPost,
+      canReply,
+      canManageChannel,
+      refetchRoster,
+      nameFor,
+    ],
+  );
+  // The viewer's reactions on the sheet's message, read live, as the
+  // channel's sheet reads them.
+  const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
+    if (!actionTarget) return null;
+    const current = byId.get(actionTarget.messageId);
+    const groups = current && viewerId ? groupReactions(current, viewerId) : [];
+    return {
+      ...actionTarget,
+      reactedWith: groups.filter((group) => group.mine).map((g) => g.emoji),
+      messageEmojis: groups.map((group) => group.emoji),
+    };
+  }, [actionTarget, byId, viewerId]);
+  // Deleted, or gone, while its sheet is open: the sheet closes, as the
+  // channel's does.
+  const sheetMessageGone = actionTarget
+    ? (byId.get(actionTarget.messageId)?.is_deleted ?? true)
+    : false;
+  useEffect(() => {
+    if (sheetMessageGone) actionsSheetRef.current?.dismiss();
+  }, [sheetMessageGone]);
+
+  const renderRow = useCallback(
+    (
+      row: ThreadRow,
+      placement: { startsRun: boolean; endsRun: boolean; startsDay: boolean },
+    ) => {
+      if (!viewerId) return null;
+      const quotedId = row.message.reply_to_id;
+      const replyParent = quotedId
+        ? (byId.get(quotedId) ??
+          (rootQuoted?.id === quotedId ? rootQuoted : null))
+        : undefined;
       return (
-        <MessageItem
-          message={row.message}
+        <ThreadMessageRow
+          row={row}
+          startsRun={placement.startsRun}
+          endsRun={placement.endsRun}
+          startsDay={placement.startsDay}
           viewerId={viewerId}
           nameFor={nameFor}
           roleColorFor={roleColorFor}
-          startsRun={startsRun}
-          endsRun={endsRun}
+          avatarFor={avatarFor}
+          replyParent={replyParent}
+          blockState={blockState}
+          onVote={onVote}
+          onClosePoll={onClosePoll}
           onRetry={onRetry}
           onDiscard={thread.discard}
-          onReact={NO_REACT}
-          onUnreact={NO_REACT}
-          // The parent's flag, and any reply's (#3921), as the channel draws
-          // them, against the same block list.
-          flag={messageFlagView(row.message, viewerId, blockState, nameFor)}
+          onReact={onReact}
+          onUnreact={onUnreact}
+          onOpenActions={openActions}
+          onJumpToMessage={onJumpToMessage}
+          onUnblock={onUnblock}
+          maskedRefresh={maskedRefresh}
+          onReload={onReload}
+          memberAvatarFor={memberAvatarFor}
         />
       );
     },
     [
       viewerId,
+      byId,
+      rootQuoted,
       nameFor,
       roleColorFor,
+      avatarFor,
+      blockState,
+      onVote,
+      onClosePoll,
       onRetry,
       thread.discard,
-      channelId,
-      blockState,
+      onReact,
+      onUnreact,
+      openActions,
+      onJumpToMessage,
       onUnblock,
+      maskedRefresh,
+      onReload,
+      memberAvatarFor,
     ],
   );
 
@@ -311,7 +593,7 @@ export function MessageThreadScreen({
   // Drawn at the top of the inverted list: the parent, then the divider.
   const head = rootRow ? (
     <View>
-      {renderRow(rootRow, true, true)}
+      {renderRow(rootRow, ROOT_PLACEMENT)}
       <View style={styles.divider} accessibilityRole="header">
         <Text style={styles.dividerText}>
           {replyCount === 1 ? "1 reply" : `${replyCount} replies`}
@@ -354,15 +636,20 @@ export function MessageThreadScreen({
       <ThreadSkeleton channelId={channelId} />
     ) : (
       <FlatList
+        ref={listRef}
         data={inverted}
         inverted
         keyExtractor={(row) => row.message.client_message_id}
-        renderItem={({ item }) => {
-          const placement = layout.get(item.message.client_message_id);
-          return renderRow(
+        renderItem={({ item }) =>
+          renderRow(
             item,
-            placement?.startsRun ?? true,
-            placement?.endsRun ?? true,
+            layout.get(item.message.client_message_id) ?? ROOT_PLACEMENT,
+          )
+        }
+        // A quote's jump to a reply not yet measured: let it land next frame.
+        onScrollToIndexFailed={({ index }) => {
+          requestAnimationFrame(() =>
+            listRef.current?.scrollToIndex({ index, viewPosition: 0.5 }),
           );
         }}
         // Inverted, so the footer draws at the top, over the oldest reply.
@@ -441,24 +728,68 @@ export function MessageThreadScreen({
             {typing ?? TYPING_LINE_BLANK}
           </Text>
         </View>
+        {/* The channel's banner, for the channel's reason: a refused reaction
+            or vote rolls back silently, so this is its only report (#999).
+            Dismissible, as nothing is left to retry. */}
+        {writes.reactionError || writes.actionError ? (
+          <View style={styles.rowErrorBanner} accessibilityLiveRegion="polite">
+            <Text style={styles.rowErrorText}>
+              {writes.reactionError ?? writes.actionError}
+            </Text>
+            <IconButton
+              label="Dismiss"
+              onPress={
+                writes.reactionError
+                  ? writes.clearReactionError
+                  : writes.clearActionError
+              }
+            >
+              <CloseGlyph color={tokens.color.text.mutedForeground} />
+            </IconButton>
+          </View>
+        ) : null}
         <ChatComposer
-          value={draft}
+          value={staging.value}
           onChangeText={onChangeText}
-          onSend={onSend}
-          canSend={!!viewerId && canReply && !writeBlockedReason}
-          placeholder="Reply in thread…"
+          onSend={staging.submit}
+          canSend={
+            !!viewerId &&
+            !writeBlockedReason &&
+            // The composer keys its input's `editable` on this, so an emptied
+            // edit stays typeable; it greys Save out itself, and the hint says
+            // why (`useComposerStaging`).
+            (staging.isEditing ? !staging.isSavingEdit : canReply)
+          }
+          placeholder={staging.isEditing ? "Edit message" : "Reply in thread…"}
+          context={staging.context}
           disabledHint={
-            !canReply
-              ? THREAD_NO_REPLY_HINT
-              : writeBlockedReason
+            staging.isEditing
+              ? writeBlockedReason
                 ? THREAD_OFFLINE_HINT
-                : sendError
+                : staging.editError
+              : !canReply
+                ? THREAD_NO_REPLY_HINT
+                : writeBlockedReason
+                  ? THREAD_OFFLINE_HINT
+                  : sendError
           }
           hintTone={
-            canReply && !writeBlockedReason && sendError ? "error" : "muted"
+            !writeBlockedReason &&
+            (staging.isEditing ? !!staging.editError : canReply && !!sendError)
+              ? "error"
+              : "muted"
           }
         />
       </KeyboardAvoidingArea>
+      <MessageActionsSheet
+        ref={actionsSheetRef}
+        target={sheetTarget}
+        onSenderDeparted={markDeparted}
+        onEdit={staging.startEdit}
+        onDelete={onDelete}
+        onReact={onReact}
+        onUnreact={onUnreact}
+      />
     </SafeAreaView>
   );
 }
@@ -534,6 +865,22 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.6,
+    },
+    rowErrorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
+      backgroundColor: tokens.color.surface.surface1,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    rowErrorText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      flex: 1,
     },
     typingSlot: {
       paddingHorizontal: tokens.spacing.lg,
