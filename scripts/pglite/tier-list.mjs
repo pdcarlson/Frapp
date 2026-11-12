@@ -10,9 +10,11 @@
 //
 // Filename order is a plain code-unit sort, not a locale one, so every machine
 // runs the same order. No tier depends on running before or after another
-// today (every order tried passed the same assertions). A tier that comes to
-// need a place in the order gets a sortable prefix, such as `00-`, which sorts
-// before every letter. A tier never imports another tier, which
+// today: on 2026-11-12 (#4558) the same 685 assertions passed in filename
+// order, the old hand-kept order, reverse order and ten shuffled orders. To
+// re-check, reverse or shuffle `tierFiles()`'s result in a scratch copy and
+// compare `run.mjs`'s OK lines. A tier that comes to need a place in the order
+// gets a sortable prefix, such as `00-`, which sorts before every letter. A tier never imports another tier, which
 // `pglite-filter-coverage.test.mjs` holds: the import would run the imported
 // tier's body at the importer's turn, not its own. Shared setup lives beside
 // `harness.mjs`, as `chat-read-enforcement.mjs` does.
@@ -29,9 +31,13 @@ export function tierFiles(dir = TIERS_DIR) {
     .sort();
 }
 
-/** Import every tier, in order, each awaited before the next starts. */
-export async function runTiers() {
-  for (const file of tierFiles()) {
-    await import(new URL(file, TIERS_DIR).href);
+/**
+ * Import every tier in `dir`, in order, each awaited before the next starts.
+ * `pglite-filter-coverage.test.mjs` runs it on a folder of stand-in tiers to
+ * prove that.
+ */
+export async function runTiers(dir = TIERS_DIR) {
+  for (const file of tierFiles(dir)) {
+    await import(new URL(file, dir).href);
   }
 }

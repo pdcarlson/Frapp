@@ -11,12 +11,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { basename, dirname, join } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
-import { tierFiles } from "../../pglite/tier-list.mjs";
+import { runTiers, tierFiles } from "../../pglite/tier-list.mjs";
 
 // `pglite-migrations` is a REQUIRED check (#2538) that is path-gated on PRs by a
 // job-level `if:` on `changes.pglite`. A job skipped that way reports Success,
@@ -67,7 +67,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const HARNESS = "scripts/pglite";
 const ENTRY = `${HARNESS}/run.mjs`;
 const TIER_LOADER = `${HARNESS}/tier-list.mjs`;
-const TIER_IMPORT = "import(new URL(file, TIERS_DIR).href)";
+const TIER_IMPORT = "import(new URL(file, dir).href)";
 
 // Inputs the job depends on that the forms above cannot derive: the job's own
 // definition, the npm script it runs, the lockfile, and the seed CSV that
@@ -555,9 +555,10 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
   });
 });
 
-// A tier runs only when `run.mjs` imports it: each tier's body executes on
-// import. `tier-list.mjs` imports every `.mjs` file directly in `tiers/`, in
-// filename order, so adding a file is all it takes. What still stops a module
+// A tier runs only when it is imported: each tier's body executes on import.
+// `run.mjs` awaits `runTiers()` in `tier-list.mjs`, which imports every `.mjs`
+// file directly in `tiers/`, in filename order, so adding a file is all it
+// takes. What still stops a module
 // running without failing anything (the job reports fewer assertions and stays
 // green): a tier in a subfolder of `tiers/`, which the loader does not read; a
 // loader or `run.mjs` that stops awaiting, so the database closes under a tier
@@ -577,18 +578,45 @@ describe("pglite-migrations: every module under scripts/pglite is loaded", () =>
     );
   });
 
-  it("run.mjs awaits the loader, and the loader awaits each tier", () => {
-    const code = (rel) => mask(readFileSync(join(REPO, rel), "utf8"));
+  it("run.mjs awaits the loader", () => {
     assert.match(
-      code(ENTRY),
+      mask(readFileSync(join(REPO, ENTRY), "utf8")),
       /(?<![.\w$])await\s+runTiers\s*\(\s*\)/,
       "run.mjs no longer awaits runTiers(), so it can close the database under a running tier",
     );
-    const loader = code(TIER_LOADER);
-    assert.ok(
-      loader.includes(`await ${TIER_IMPORT}`),
-      `tier-list.mjs no longer awaits \`${TIER_IMPORT}\`: update TIER_IMPORT here if it was reworded`,
-    );
+  });
+
+  it("the loader runs every tier, one at a time, in filename order", async () => {
+    // Stand-in tiers that log when they start and finish, with a wait between,
+    // so a loader that skips a file, reorders, or starts the next tier before
+    // the last one finished (`forEach(async ...)`, `Promise.all`) logs
+    // something else.
+    const dir = mkdtempSync(join(tmpdir(), "pglite-run-tiers-"));
+    const names = ["b.mjs", "a.mjs", "00-first.mjs"];
+    try {
+      for (const name of names) {
+        writeFileSync(
+          join(dir, name),
+          [
+            `globalThis.__tierLog.push("start ${name}");`,
+            "await new Promise((done) => setTimeout(done, 20));",
+            `globalThis.__tierLog.push("end ${name}");`,
+          ].join("\n"),
+        );
+      }
+      globalThis.__tierLog = [];
+      await runTiers(pathToFileURL(`${dir}/`));
+      assert.deepEqual(
+        globalThis.__tierLog,
+        ["00-first.mjs", "a.mjs", "b.mjs"].flatMap((name) => [
+          `start ${name}`,
+          `end ${name}`,
+        ]),
+      );
+    } finally {
+      delete globalThis.__tierLog;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("no tier imports another tier", () => {
@@ -643,7 +671,7 @@ describe("pglite-migrations: every module under scripts/pglite is loaded", () =>
     });
     // Reworded, it is just another computed import.
     assert.throws(
-      () => scan("await import(new URL(f, TIERS_DIR).href);", at, {
+      () => scan("await import(new URL(f, dir).href);", at, {
         computedImport: TIER_IMPORT,
       }),
       /cannot resolve/,

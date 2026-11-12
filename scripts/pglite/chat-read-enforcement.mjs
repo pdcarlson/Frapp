@@ -5,9 +5,10 @@ import { canReadAs } from "./probe.mjs";
 // Not under `tiers/`, because it is not a tier of its own: it seeds the rows
 // `tiers/chat-black-box.mjs` reads, so it has to run right before that tier,
 // with nothing in between. That tier imports it, which runs this module's body
-// first, wherever `chat-black-box.mjs` falls in the tier order. Left under
-// `tiers/`, it would also run at its own place in filename order, and any tier
-// that sorted between the two could change the rows first.
+// first, wherever `chat-black-box.mjs` falls in the tier order. Under `tiers/`,
+// its file name would decide nothing (it runs once, at whichever turn comes
+// first), so it would run at its own turn only if it sorted first, and a tier
+// sorting between the two could then change the rows.
 
 // ─── chat_message_actions read enforcement (FRA-38) ─────────────────────────
 //
