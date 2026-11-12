@@ -195,7 +195,7 @@ describe("DASHBOARD_NAV structure", () => {
   it("has no officer-only section: officer setup and tools sit behind one Settings row", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     const { isNavItemVisible } = await import("./protected-nav-item");
-    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOL_ROUTES } = await import(
+    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOLS } = await import(
       "@/components/settings/settings-access"
     );
 
@@ -213,11 +213,11 @@ describe("DASHBOARD_NAV structure", () => {
     const settings = items.find((item) => item.id === "settings");
     expect(settings?.requireAnyOf).toEqual(SETTINGS_ENTRY_PERMISSIONS);
     expect(isNavItemVisible(settings!, ["members:view"])).toBe(false);
-    // Every officer tool route is owned by the Settings row, and none of them
-    // is a row of its own.
-    expect(settings?.activeFor).toEqual(SETTINGS_TOOL_ROUTES);
-    for (const route of SETTINGS_TOOL_ROUTES) {
-      expect(items.some((item) => item.href === route)).toBe(false);
+    // Every officer tool opens inside Chapter settings (#3837), and none of
+    // them is a row of its own.
+    for (const tool of SETTINGS_TOOLS) {
+      expect(tool.href.startsWith(`${settings?.href}?`), tool.id).toBe(true);
+      expect(items.some((item) => item.href === tool.href)).toBe(false);
     }
   });
 
