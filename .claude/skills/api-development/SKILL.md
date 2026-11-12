@@ -170,15 +170,17 @@ All live in `interface/decorators/`.
 
 ## Database changes
 
-1. `npm run supabase -- migration new my_change_name` creates
-   `supabase/migrations/{14-digit timestamp}_{snake_case}.sql`.
+1. `npm run migration:new -- my_change_name` creates
+   `supabase/migrations/{version}_{snake_case}.sql` and its ledger page, with a version after both
+   the clock and everything on `main`. If `migration-order` or a duplicate version fails after main
+   moves, `npm run migration:renumber` fixes it
+   ([`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md)).
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
 3. Apply locally with `npm run supabase -- db push --local`.
-4. Add an entry for the migration to both
-   [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
-   [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry
-   shape each one states. `check:migration-safety` fails on a migration missing from either (see
-   the [`testing`](../testing/SKILL.md) skill for reading its failures).
+4. Fill in the migration's ledger page (`## Promotion` and `## Rollback`). Don't add entries to
+   the shared `promotion-log.md` or `db-rollback-playbook.md`: every PR prepending there conflicted
+   with every other. `check:migration-safety` fails on a migration with no page (see the
+   [`testing`](../testing/SKILL.md) skill for reading its failures).
 5. Update `database.types.ts` by hand, as described next.
 
 More: [`docs/guides/database.md`](../../../docs/guides/database.md).

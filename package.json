@@ -26,6 +26,8 @@
     "check:api-breaking:shipped": "node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
+    "migration:new": "node scripts/migration.mjs new",
+    "migration:renumber": "node scripts/migration.mjs renumber",
     "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",
     "check:links": "node scripts/check-links.mjs",
     "install:lychee": "bash scripts/install-lychee.sh",
