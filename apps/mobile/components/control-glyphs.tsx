@@ -216,6 +216,27 @@ export function PlusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
+ * Put on your calendar (#3322): the Events header's Subscribe control, the
+ * same mark web's toolbar button draws (Lucide's `CalendarPlus`).
+ */
+export function CalendarPlusGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M8 2v4M16 2v4M3 10h18" {...detail} />
+      <Path
+        d="M21 13V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h8"
+        {...detail}
+      />
+      <Path d="M16 19h6M19 16v6" {...detail} />
+    </Frame>
+  );
+}
+
+/**
  * The grip a row is dragged by (Arrange channels, #3838): three lines, the
  * handle iOS's own list reorder draws.
  */
