@@ -2281,42 +2281,52 @@ describe("Chat home: the swipe to Messages", () => {
     // finger leave it, so its release reads as a tap unless the swipe holds
     // the touch.
     const push = vi.mocked(useRouter)().push;
-    const now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
     try {
       const tree = render();
-      const gesture = pan(tree);
+      const swipe = () => pan(tree);
       const general = () =>
         rowNamed(tree, "general").find(
           (node) => (node.type as unknown) === "Pressable",
         );
+      const door = () => pressableLabelled(tree, "Messages");
       vi.mocked(push).mockClear();
 
-      act(() => gesture.handlers.onStart!({}));
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onStart!({}));
       act(() =>
-        gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
+        swipe().handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
       );
-      // The row's release can land on either side of the pan's finalize.
+      // The row's release can land on either side of the pan's finalize,
+      // and late on a slow phone.
       act(() => general().props.onPress());
-      act(() => gesture.handlers.onFinalize!({}, true));
+      act(() => swipe().handlers.onFinalize!({}, true));
+      now.mockReturnValue(10_900);
       act(() => general().props.onPress());
-      act(() => general().props.onLongPress?.());
+      // A flick that starts on the Messages door opens Messages once.
+      act(() => door().props.onPress());
       expect(push).toHaveBeenCalledTimes(1);
       expect(push).toHaveBeenCalledWith("/messages");
+      // Nor does the swipe's touch open the row's actions menu, which would
+      // hold the swipe while it is open.
+      act(() => general().props.onLongPress(undefined));
+      expect(swipe().config?.enabled).toBe(true);
 
       // A slide that took the touch over but stopped short opens nothing.
       vi.mocked(push).mockClear();
-      now.mockReturnValue(20_000);
-      act(() => gesture.handlers.onStart!({}));
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onStart!({}));
       act(() =>
-        gesture.handlers.onEnd!({ translationX: -30, velocityX: 0 }, true),
+        swipe().handlers.onEnd!({ translationX: -30, velocityX: 0 }, true),
       );
-      act(() => gesture.handlers.onFinalize!({}, true));
+      act(() => swipe().handlers.onFinalize!({}, true));
       act(() => general().props.onPress());
       expect(push).not.toHaveBeenCalled();
 
-      // A tap a moment later, which never activates the pan, opens the row.
-      now.mockReturnValue(21_000);
-      act(() => gesture.handlers.onFinalize!({}, false));
+      // The next touch is a plain tap: it never activates the pan, and the
+      // row opens at once.
+      act(() => swipe().handlers.onBegin!({}));
+      act(() => swipe().handlers.onFinalize!({}, false));
       act(() => general().props.onPress());
       expect(push).toHaveBeenCalledWith({
         pathname: "/chat-thread",
