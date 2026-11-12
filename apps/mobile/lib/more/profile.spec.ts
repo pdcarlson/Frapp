@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatGraduationYear,
-  selectViewerProfile,
-} from "./profile";
+import { selectViewerProfile } from "./profile";
 
 describe("selectViewerProfile", () => {
   it("narrows the fields s15 actually draws", () => {
@@ -53,12 +50,5 @@ describe("selectViewerProfile", () => {
       "AB",
     );
     expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe("PR");
-  });
-});
-
-describe("formatGraduationYear", () => {
-  it("renders the two-digit form the reference draws", () => {
-    expect(formatGraduationYear(2027)).toBe("'27");
-    expect(formatGraduationYear(null)).toBeNull();
   });
 });

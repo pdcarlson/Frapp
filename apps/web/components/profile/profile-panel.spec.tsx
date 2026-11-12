@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
       points: 1240 as number | null,
       serviceHours: "18.5" as string | null,
       hasChapter: true,
+      visible: true,
       pointsFailed: false,
       serviceFailed: false,
     },
@@ -58,6 +59,7 @@ vi.mock("@/components/profile/profile-photo-control", () => ({
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
+    profileIdentityLine: actual.profileIdentityLine,
     profileStatsErrorNote: actual.profileStatsErrorNote,
     useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
     useCurrentUser: () => mocks.userQuery,
@@ -343,9 +345,7 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Enter a phone number",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a phone number");
     expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
   });
 
@@ -383,6 +383,8 @@ describe("ProfilePanel — what the phone's Profile shows (#4137)", () => {
     mocks.stats.serviceHours = "18.5";
     mocks.stats.pointsFailed = false;
     mocks.stats.serviceFailed = false;
+    mocks.stats.hasChapter = true;
+    mocks.stats.visible = true;
     mocks.permissions = ["members:view"];
     mocks.memberByUserId.mockClear();
     mocks.classSection.mockClear();
@@ -420,6 +422,39 @@ describe("ProfilePanel — what the phone's Profile shows (#4137)", () => {
     };
     render(<ProfilePanel />);
     expect(screen.getByText("Economics · Acme · '27")).toBeInTheDocument();
+  });
+
+  it("keeps that line on what is saved while you type", async () => {
+    mocks.userQuery.data = {
+      id: "u-1",
+      email: "member@example.com",
+      display_name: "Member",
+      major: "Economics",
+      graduation_year: 2027,
+    };
+    render(<ProfilePanel />);
+    const major = screen.getByLabelText("Major");
+    await userEvent.clear(major);
+    await userEvent.type(major, "History");
+    expect(screen.getByText("Economics · '27")).toBeInTheDocument();
+    expect(screen.queryByText("History · '27")).toBeNull();
+  });
+
+  it("says to choose a chapter when there is none to read points in", () => {
+    mocks.stats.hasChapter = false;
+    mocks.stats.points = null;
+    mocks.stats.serviceHours = null;
+    render(<ProfilePanel />);
+    expect(
+      screen.getByText("Choose a chapter to see your points."),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the numbers out for a role that can't read them", () => {
+    mocks.stats.visible = false;
+    render(<ProfilePanel />);
+    expect(screen.queryByText("Points")).toBeNull();
+    expect(screen.queryByText("Service hours")).toBeNull();
   });
 
   it("hands your class and number to read-only rows", () => {

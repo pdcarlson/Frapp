@@ -1,6 +1,7 @@
 /**
  * Narrowing for s15 (Profile). The stat cards' reads and arithmetic are shared
- * with web, in `@repo/hooks` (`profile-stats.ts`).
+ * with web, in `@repo/hooks` (`profile-stats.ts`), as are the major · company ·
+ * year line and `formatGraduationYear`.
  */
 import { initialsFor, isRecord, num, str } from "./narrow";
 
@@ -35,10 +36,4 @@ export function selectViewerProfile(data: unknown): ViewerProfile | null {
     bio: str(data, "bio"),
     photoUrl: str(data, "avatar_url"),
   };
-}
-
-/** `2027` → `"'27"`, the form the reference draws. */
-export function formatGraduationYear(year: number | null): string | null {
-  if (year === null) return null;
-  return `'${String(year).slice(-2)}`;
 }

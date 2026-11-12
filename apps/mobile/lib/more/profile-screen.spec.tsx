@@ -11,13 +11,11 @@ import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 
 /**
- * s12's service-hours total reads `GET /v1/service-entries`, which the
- * endpoint does not scope by itself: `service-entry.controller.ts` resolves
- * `userId: isAdmin ? query.userId : userId`, so a read with no `userId` hands
- * anyone holding `service:approve` every entry in the chapter. The card
- * presents the total as the viewer's own, so the screen must ask for the
- * viewer's entries, and must wait for the viewer's id rather than firing
- * once unscoped. `service-hours-screen.spec.tsx` pins the same for s20.
+ * s15, the viewer's own Profile. Its two stat cards come from `@repo/hooks`
+ * `useMyProfileStats`, mocked whole here: the reads behind them, including
+ * the service read scoped to the viewer (an unscoped one hands a
+ * `service:approve` holder the whole chapter's entries as their own), are
+ * pinned in `packages/hooks/src/profile-stats.hook.spec.tsx`.
  *
  * It renders `app/(app)/profile.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -55,6 +53,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     points: null,
     serviceHours: null,
     hasChapter: true,
+    visible: true,
     pointsFailed: false,
     serviceFailed: false,
   }),

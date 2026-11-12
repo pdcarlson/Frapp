@@ -8,6 +8,7 @@ import {
   usePermissionList,
   useViewerUserId,
   useOwnAvatarTint,
+  profileIdentityLine,
   profileStatsErrorNote,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -34,10 +35,7 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
-import {
-  formatGraduationYear,
-  selectViewerProfile,
-} from "@/lib/more/profile";
+import { selectViewerProfile } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -109,6 +107,13 @@ export default function ProfileScreen() {
     [memberQuery.data],
   );
   const classRows = usePledgeClassRows(membership);
+  const identityMeta = profile
+    ? profileIdentityLine({
+        major: profile.major,
+        company: profile.currentCompany,
+        graduationYear: profile.graduationYear,
+      })
+    : null;
   const statsNote = profileStatsErrorNote(
     stats.pointsFailed,
     stats.serviceFailed,
@@ -165,46 +170,40 @@ export default function ProfileScreen() {
             {profile?.displayName ?? "Your profile"}
           </Text>
         </Pressable>
-        {profile?.major ||
-        profile?.graduationYear ||
-        profile?.currentCompany ? (
-          <Text style={styles.identityMeta}>
-            {[
-              profile.major,
-              profile.currentCompany,
-              formatGraduationYear(profile.graduationYear),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
+        {identityMeta ? (
+          <Text style={styles.identityMeta}>{identityMeta}</Text>
         ) : null}
       </View>
 
-      <View style={styles.statRow}>
-        <View style={styles.statCard}>
-          {/* Both stats in the foreground text: a number is never the chapter
+      {stats.visible ? (
+        <>
+          <View style={styles.statRow}>
+            <View style={styles.statCard}>
+              {/* Both stats in the foreground text: a number is never the chapter
               accent (foundations.md §6, "Where the accent goes"). */}
-          <Text style={styles.statValue}>
-            {stats.points === null ? "—" : stats.points.toLocaleString()}
-          </Text>
-          <Text style={styles.statLabel}>points</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stats.serviceHours ?? "—"}</Text>
-          <Text style={styles.statLabel}>service hrs</Text>
-        </View>
-      </View>
+              <Text style={styles.statValue}>
+                {stats.points === null ? "—" : stats.points.toLocaleString()}
+              </Text>
+              <Text style={styles.statLabel}>points</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{stats.serviceHours ?? "—"}</Text>
+              <Text style={styles.statLabel}>service hrs</Text>
+            </View>
+          </View>
 
-      {!stats.hasChapter ? (
-        // Points are chapter-scoped, so without one the card would sit on a
-        // dash forever with nothing explaining why. The claim is absent until
-        // a membership exists (and during a hook-off incident), so this is
-        // the empty-prod case rather than an edge one.
-        <Text style={styles.statNote}>
-          Choose a chapter from More → Switch chapter to see your points.
-        </Text>
-      ) : statsNote ? (
-        <Text style={styles.statNote}>{statsNote}</Text>
+          {!stats.hasChapter ? (
+            // Points are chapter-scoped, so without one the card would sit on a
+            // dash forever with nothing explaining why. The claim is absent until
+            // a membership exists (and during a hook-off incident), so this is
+            // the empty-prod case rather than an edge one.
+            <Text style={styles.statNote}>
+              Choose a chapter from More → Switch chapter to see your points.
+            </Text>
+          ) : statsNote ? (
+            <Text style={styles.statNote}>{statsNote}</Text>
+          ) : null}
+        </>
       ) : null}
 
       <SectionHeader>Details</SectionHeader>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatGraduationYear,
   formatServiceHours,
+  profileIdentityLine,
   profileStatsErrorNote,
   selectPointsBalance,
   sumApprovedServiceMinutes,
@@ -77,5 +79,37 @@ describe("profileStatsErrorNote", () => {
     expect(profileStatsErrorNote(true, true)).toBe(
       "Points and service hours couldn't load just now.",
     );
+  });
+});
+
+describe("formatGraduationYear", () => {
+  it("renders the two-digit form the reference draws", () => {
+    expect(formatGraduationYear(2027)).toBe("'27");
+    expect(formatGraduationYear(null)).toBeNull();
+  });
+});
+
+describe("profileIdentityLine", () => {
+  it("joins major, company and year, skipping what is unset", () => {
+    expect(
+      profileIdentityLine({
+        major: "Economics",
+        company: "Acme",
+        graduationYear: 2027,
+      }),
+    ).toBe("Economics · Acme · '27");
+    expect(
+      profileIdentityLine({ major: "  ", company: null, graduationYear: 2027 }),
+    ).toBe("'27");
+  });
+
+  it("is null when nothing is set", () => {
+    expect(
+      profileIdentityLine({
+        major: undefined,
+        company: "",
+        graduationYear: null,
+      }),
+    ).toBeNull();
   });
 });

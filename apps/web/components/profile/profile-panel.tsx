@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  profileIdentityLine,
   profileStatsErrorNote,
   useCurrentUser,
   useMemberByUserId,
@@ -53,7 +54,9 @@ type CurrentUser = {
 
 /**
  * `/profile`: who you are in the directory. Name, photo, phone, major, year,
- * bio and the after-graduation fields, and nothing else: quiet hours, chapter alerts,
+ * bio and the after-graduation fields, with your points, service hours,
+ * pledge class and order number read-only above the form (#4137), and nothing
+ * else: quiet hours, chapter alerts,
  * chat density, blocked members, Discord history and the account controls
  * moved to the personal Settings page (`/preferences`,
  * `components/personal-settings/`, #3856).
@@ -219,15 +222,11 @@ export function ProfilePanel() {
   // The phone's line under the name: major · company · '27, from what is
   // saved, so it doesn't change while the member types in the form below.
   const saved = userQuery.data as CurrentUser | undefined;
-  const identityMeta = [
-    saved?.major?.trim(),
-    saved?.current_company?.trim(),
-    typeof saved?.graduation_year === "number"
-      ? `'${String(saved.graduation_year).slice(-2)}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const identityMeta = profileIdentityLine({
+    major: saved?.major,
+    company: saved?.current_company,
+    graduationYear: saved?.graduation_year,
+  });
 
   return (
     <div className="space-y-6">
@@ -242,7 +241,8 @@ export function ProfilePanel() {
           everywhere your face appears (#3860). s15 drew it in the house-gold
           family and this transcribed that as the chapter accent until
           2026-11-05, when the accent came off people's avatars
-          (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.
+          (`foundations.md` §6). The untinted initials are measured in
+          `profile-contrast.spec.ts`.
 
           Beside the photo rather than centred over the name, as the phone
           draws it: a desktop profile reads left to right, as Slack's and
@@ -300,28 +300,36 @@ export function ProfilePanel() {
           can read an attendance rate (`profile-stats.ts`).
         */}
         <section aria-label="Your numbers" className="space-y-2">
-          <dl className="flex gap-10">
-            <div className="space-y-0.5">
-              <dt className="text-caption text-muted-foreground">Points</dt>
-              <dd className="text-headline font-bold tabular-nums text-foreground">
-                {stats.points === null ? "—" : stats.points.toLocaleString()}
-              </dd>
-            </div>
-            <div className="space-y-0.5">
-              <dt className="text-caption text-muted-foreground">
-                Service hours
-              </dt>
-              <dd className="text-headline font-bold tabular-nums text-foreground">
-                {stats.serviceHours ?? "—"}
-              </dd>
-            </div>
-          </dl>
-          {!stats.hasChapter ? (
-            <p className="text-caption text-muted-foreground">
-              Choose a chapter to see your points.
-            </p>
-          ) : statsNote ? (
-            <p className="text-caption text-muted-foreground">{statsNote}</p>
+          {stats.visible ? (
+            <>
+              <dl className="flex gap-10">
+                <div className="space-y-0.5">
+                  <dt className="text-caption text-muted-foreground">Points</dt>
+                  <dd className="text-headline font-bold tabular-nums text-foreground">
+                    {stats.points === null
+                      ? "—"
+                      : stats.points.toLocaleString()}
+                  </dd>
+                </div>
+                <div className="space-y-0.5">
+                  <dt className="text-caption text-muted-foreground">
+                    Service hours
+                  </dt>
+                  <dd className="text-headline font-bold tabular-nums text-foreground">
+                    {stats.serviceHours ?? "—"}
+                  </dd>
+                </div>
+              </dl>
+              {!stats.hasChapter ? (
+                <p className="text-caption text-muted-foreground">
+                  Choose a chapter to see your points.
+                </p>
+              ) : statsNote ? (
+                <p className="text-caption text-muted-foreground">
+                  {statsNote}
+                </p>
+              ) : null}
+            </>
           ) : null}
           {/*
             Your class and number, read-only as on the phone: they are an

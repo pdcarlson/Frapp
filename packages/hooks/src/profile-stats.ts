@@ -9,10 +9,11 @@
  * `reports:export`, its rows carry no `user_id`, and there is no denominator of
  * events a member owed. Two true numbers beat three with one invented.
  */
+import { can } from "@repo/validation";
 import { useActiveChapterId } from "./use-frapp-client";
 import { useMyPoints } from "./use-points";
 import { useServiceEntries } from "./use-service-entries";
-import { useViewerUserId } from "./use-user";
+import { useMyPermissions, useViewerUserId } from "./use-user";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -64,6 +65,36 @@ export function formatServiceHours(minutes: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
+/** `2027` → `"'27"`, the form the reference draws. */
+export function formatGraduationYear(year: number | null): string | null {
+  if (year === null) return null;
+  return `'${String(year).slice(-2)}`;
+}
+
+/**
+ * The line under the name on both apps' Profile: major · company · '27, each
+ * part only when set, or `null` when none is.
+ */
+export function profileIdentityLine(parts: {
+  major: string | null | undefined;
+  company: string | null | undefined;
+  graduationYear: number | null | undefined;
+}): string | null {
+  const year =
+    typeof parts.graduationYear === "number" &&
+    Number.isFinite(parts.graduationYear)
+      ? parts.graduationYear
+      : null;
+  const line = [
+    parts.major?.trim(),
+    parts.company?.trim(),
+    formatGraduationYear(year),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return line || null;
+}
+
 /** The note under the cards when a read failed, or `null` when none did. */
 export function profileStatsErrorNote(
   pointsFailed: boolean,
@@ -85,6 +116,12 @@ export interface ProfileStats {
   serviceHours: string | null;
   /** Points are chapter-scoped: without an active chapter neither card can fill. */
   hasChapter: boolean;
+  /**
+   * `false` once the viewer's permissions are known to lack `members:view`,
+   * which both reads require: the cards are then left out rather than shown
+   * as a failure that retrying can't fix. `true` while permissions load.
+   */
+  visible: boolean;
   pointsFailed: boolean;
   serviceFailed: boolean;
 }
@@ -95,20 +132,33 @@ export interface ProfileStats {
  * The service read is scoped to the viewer: unscoped, the endpoint hands a
  * `service:approve` holder the whole chapter, and these cards present the
  * total as the viewer's own.
+ *
+ * Both reads sit behind `members:view` (`points.controller.ts`,
+ * `service-entry.controller.ts`), the gate the pledge-class rows beside these
+ * cards also take, so neither is sent without it.
+ *
+ * A failure counts only while there is no number to show: TanStack v5 keeps
+ * `data` through a failed background refetch, and a number drawn above
+ * "couldn't load" contradicts itself.
  */
 export function useMyProfileStats(): ProfileStats {
   const chapterId = useActiveChapterId();
   const viewerUserId = useViewerUserId();
-  const pointsQuery = useMyPoints();
+  const permissionsQuery = useMyPermissions();
+  const permissions = permissionsQuery.data?.permissions;
+  const permissionsKnown = Array.isArray(permissions);
+  const canView = permissionsKnown && can("members:view", permissions);
+  const pointsQuery = useMyPoints(undefined, undefined, { enabled: canView });
   const serviceQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
-    enabled: !!viewerUserId,
+    enabled: canView && !!viewerUserId,
   });
   const minutes = sumApprovedServiceMinutes(serviceQuery.data);
   return {
     points: selectPointsBalance(pointsQuery.data),
     serviceHours: minutes === null ? null : formatServiceHours(minutes),
     hasChapter: !!chapterId,
-    pointsFailed: pointsQuery.isError,
-    serviceFailed: serviceQuery.isError,
+    visible: !permissionsKnown || canView,
+    pointsFailed: pointsQuery.isError && pointsQuery.data === undefined,
+    serviceFailed: serviceQuery.isError && serviceQuery.data === undefined,
   };
 }
