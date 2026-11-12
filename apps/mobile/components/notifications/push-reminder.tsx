@@ -4,6 +4,7 @@ import { CloseGlyph } from "@/components/control-glyphs";
 import { BellGlyph } from "@/components/notifications/push-ask";
 import { usePushReminder } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
  * The chat home's one come-back for push (`shouldOfferReminder`): a member who
@@ -19,6 +20,12 @@ export function PushReminder() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const reminder = usePushReminder();
+  // On Chat home, inside the swipe to Messages: a slide that starts here is
+  // the swipe, not a press (`lib/swipe-claim.ts`).
+  const turnOn = useGuardedBySwipe(() => {
+    void reminder.turnOn();
+  });
+  const dismiss = useGuardedBySwipe(reminder.dismiss);
   if (!reminder.show) return null;
 
   const label = reminder.action === "settings" ? "Open Settings" : "Turn on";
@@ -40,9 +47,7 @@ export function PushReminder() {
             : "Turn on notifications"
         }
         disabled={reminder.isRequesting}
-        onPress={() => {
-          void reminder.turnOn();
-        }}
+        onPress={turnOn}
         hitSlop={8}
         style={({ pressed }) => [
           styles.action,
@@ -54,7 +59,7 @@ export function PushReminder() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss"
-        onPress={reminder.dismiss}
+        onPress={dismiss}
         hitSlop={10}
         style={({ pressed }) => [styles.close, pressed ? styles.pressed : null]}
       >

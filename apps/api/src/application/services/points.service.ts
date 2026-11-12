@@ -162,6 +162,16 @@ export class PointsService {
   }
 
   /**
+   * The exclusive lower bound of "this semester" (see {@link getSemesterRange}),
+   * or `null` when the chapter has no archive yet and the window is all-time.
+   * For reads outside the ledger (Activity's standing) that must count the
+   * same semester the points window does.
+   */
+  async getActiveSemesterSince(chapterId: string): Promise<Date | null> {
+    return (await this.getSemesterRange(chapterId))?.after ?? null;
+  }
+
+  /**
    * Filter to one archived period's exact `[since, until]` range — distinct
    * from {@link filterByWindow}'s `all | semester | month` enum, which always
    * measures relative to *now* or the *latest* archive. Selecting an archive

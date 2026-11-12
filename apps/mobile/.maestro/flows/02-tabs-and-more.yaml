@@ -10,18 +10,22 @@ tags:
 - launchApp
 - runFlow: ../subflows/sign-in.yaml
 - tapOn:
+    id: "tab-activity"
+- takeScreenshot: tab-activity
+# The task board left the tab bar for Activity (#4610): its door is on
+# Activity's title row, and it goes back there.
+- tapOn: "Task board"
+- assertVisible: "Back to Activity"
+- takeScreenshot: task-board
+- tapOn: "Back to Activity"
+- assertVisible:
+    id: "tab-activity"
+- tapOn:
     id: "tab-events"
 - takeScreenshot: tab-events
 - tapOn:
-    id: "tab-tasks"
-- takeScreenshot: tab-tasks
-- tapOn:
     id: "tab-more"
 - takeScreenshot: tab-more
-- runFlow:
-    file: ../subflows/open-more-row.yaml
-    env:
-      ROW: "Activity"
 - runFlow:
     file: ../subflows/open-more-row.yaml
     env:

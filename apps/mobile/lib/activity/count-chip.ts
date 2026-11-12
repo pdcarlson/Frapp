@@ -9,7 +9,7 @@ const COUNTED_SECTIONS: ReadonlySet<Activity["unavailable"][number]> = new Set([
 ]);
 
 /**
- * The More hub's Activity chip: the count of things waiting on the member,
+ * Activity's tab badge (More's Activity row until #4610): the count of things waiting on the member,
  * or `null` for no chip (the read has not answered, or nothing waits).
  *
  * A section the server could not read is served empty and named in

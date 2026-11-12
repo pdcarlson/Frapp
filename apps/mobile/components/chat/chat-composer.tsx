@@ -17,6 +17,8 @@ import {
   activeMentionQuery,
   spacedMentionNames,
   mentionPickerEntries,
+  mentionRoleHint,
+  reservedMentionName,
   type MentionCandidate,
   type MentionPickerEntry,
   withoutObjectReplacement,
@@ -562,7 +564,9 @@ function MentionPicker({
             accessibilityLabel={
               entry.kind === "member"
                 ? `Mention ${name}`
-                : `Mention everyone in the ${name} role`
+                : reservedMentionName(name) !== null
+                  ? `Mention @${name}. ${mentionRoleHint(name)}`
+                  : `Mention everyone in the ${name} role`
             }
             onPress={() => onPick(entry.label)}
             style={({ pressed }) => [
@@ -594,7 +598,8 @@ function MentionPicker({
               {name}
             </Text>
             {entry.kind === "role" ? (
-              <Text style={styles.mentionKind}>Role</Text>
+              // "Role", or who `@everyone` and `@here` reach (shared with web).
+              <Text style={styles.mentionKind}>{mentionRoleHint(name)}</Text>
             ) : null}
           </Pressable>
         );

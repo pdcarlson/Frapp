@@ -85,10 +85,9 @@ export default function AppLayout() {
         name="notifications"
         options={{ title: SCREEN_TITLES.notifications }}
       />
-      <Stack.Screen
-        name="activity"
-        options={{ title: SCREEN_TITLES.activity }}
-      />
+      {/* The task board left the tab bar for Activity and Calendar
+          (#4610); it opens from Activity, a task on Calendar and Up next. */}
+      <Stack.Screen name="tasks" options={{ title: SCREEN_TITLES.tasks }} />
       <Stack.Screen
         name="messages"
         options={{ title: SCREEN_TITLES.messages }}

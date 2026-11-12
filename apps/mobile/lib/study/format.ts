@@ -5,6 +5,7 @@
  */
 
 import { parseInstant } from "@repo/formatting";
+import { localWeekStart } from "@repo/hooks";
 
 /** Minutes as the drawn `2.1 hrs`. Singular below 1.05 so `1.0 hrs` never ships. */
 export function formatHoursLabel(minutes: number): string {
@@ -65,15 +66,7 @@ export function formatSessionRange(
  * `isDueUrgent`, approached from the other direction.
  */
 export function startOfWeek(now: Date): Date {
-  const start = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0,
-    0,
-    0,
-    0,
-  );
-  start.setDate(start.getDate() - start.getDay());
-  return start;
+  // The one definition, which Activity's "Study hours, This week" also sends
+  // to the server, so the two screens never count different weeks.
+  return localWeekStart(now);
 }

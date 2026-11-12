@@ -45,7 +45,11 @@ import {
   checkInFailure,
   checkInSuccess,
 } from "@/lib/events/check-in-outcome";
-import { latLngOf, requireForegroundFix } from "@/lib/location";
+import { requireForegroundFix, tryForegroundFix } from "@/lib/location";
+import {
+  CHECK_IN_FIX_TIMEOUT_MS,
+  useWarmCheckInFix,
+} from "@/lib/events/check-in-fix";
 import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
@@ -212,9 +216,10 @@ export default function CheckInScreen() {
   );
   /**
    * Nothing is sent until the event has loaded. A check-in reads it twice:
-   * whether the event has a zone decides whether a location goes with it (a
+   * whether the event has a zone decides whether a location is required (a
    * zoned event refuses a check-in without one, even from a member standing
-   * in the zone), and the success panel names the event and its points as
+   * in the zone; without a zone one is sent when the phone has it, for the
+   * officer's screen), and the success panel names the event and its points as
    * they were when the check-in was sent. The camera still shows while it
    * loads; it just doesn't decode, and the manual Check in stays off.
    */
@@ -227,6 +232,9 @@ export default function CheckInScreen() {
   // True on a focused screen's first render, so the camera mounts without
   // waiting a commit for an effect to say so.
   const focused = useIsFocused();
+  // A GPS fix kept ready while the scanner is up, so a scan doesn't wait on
+  // one (see `resolveLocation`).
+  const warmFix = useWarmCheckInFix(focused);
   const [torchOn, setTorchOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
 
@@ -390,21 +398,41 @@ export default function CheckInScreen() {
   }, [writeBlockedReason]);
 
   /**
-   * Read the member's position, but only when the event actually has a zone.
-   * Asking for location on an unzoned event would be a permission prompt with
-   * no purpose.
+   * Read the member's position for the server's presence check.
    *
-   * The permission-and-accuracy rules moved to `lib/location.ts` when s10 grew
-   * a second caller for them — the "no background location" ban binds every
-   * surface, and one module asking is easier to keep honest than two.
+   * With a drawn zone it is required, so a refusal stops here with the
+   * zone's own words. Without one, the officer's screen showing the code may
+   * be the zone (#4532): within 100 yards of it. Only the server knows
+   * whether that screen could tell where it was, so the scan asks for a fix
+   * without insisting, and sends the code either way; when the server needed
+   * the location it says so. A GPS fix ("high"), because the screen is
+   * checked against a 91 m radius and a "balanced" iOS fix can be 100 m off.
+   *
+   * The fix is usually ready before the scan (`useWarmCheckInFix`), and a
+   * scan that has to find its own waits at most `CHECK_IN_FIX_TIMEOUT_MS`:
+   * the scanned code expires in 30 to 60 seconds, and a code refused as
+   * expired is worse than a check-in the server can ask to retry.
+   *
+   * The permission-and-accuracy rules live in `lib/location.ts`, shared with
+   * s10: the "no background location" ban binds every surface, and one
+   * module asking is easier to keep honest than two.
    */
-  const resolveLocation = useCallback(async () => {
-    if (!needsLocation) return {};
-
-    const fix = await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY);
-    // Check-in DTO is lat/lng only — spreading accuracy_meters 400s.
-    return latLngOf(fix);
-  }, [needsLocation]);
+  const resolveLocation = useCallback(async (): Promise<{
+    lat?: number;
+    lng?: number;
+    accuracy_meters?: number;
+  }> => {
+    const warm = warmFix();
+    if (warm) return warm;
+    const fix = needsLocation
+      ? await requireForegroundFix(
+          CHECK_IN_LOCATION_DENIED_COPY,
+          "high",
+          CHECK_IN_FIX_TIMEOUT_MS,
+        )
+      : (await tryForegroundFix("high", CHECK_IN_FIX_TIMEOUT_MS)).fix;
+    return fix ?? {};
+  }, [needsLocation, warmFix]);
 
   /**
    * The one path a check-in takes, scanned or typed, so its confirmation is
@@ -750,7 +778,7 @@ export default function CheckInScreen() {
             <Text style={styles.hint}>
               {needsLocation
                 ? "Code rotates every 30s. Your location is the real check — screenshots don't work."
-                : "Code rotates every 30s, so a screenshot goes stale quickly."}
+                : "Scan from the room where the code is shown."}
             </Text>
 
             {sendingHere ? (
@@ -805,7 +833,9 @@ export default function CheckInScreen() {
                   <Path
                     d="M13 3L5 13h5l-1 8 8-10h-5z"
                     fill={torchOn ? tint(accent, 0.16) : TORCH_OFF_FILL}
-                    stroke={torchOn ? accent : tokens.color.text.mutedForeground}
+                    stroke={
+                      torchOn ? accent : tokens.color.text.mutedForeground
+                    }
                     strokeWidth={1.6}
                     strokeLinejoin="round"
                   />
