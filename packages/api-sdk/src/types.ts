@@ -1997,6 +1997,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/gifs/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether GIF search is set up, and its provider */
+        get: operations["GifController_availability_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/trending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trending GIFs, for the picker before a search */
+        get: operations["GifController_trending_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search GIFs (rated PG-13 at most) */
+        get: operations["GifController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -6051,6 +6102,15 @@ export interface components {
             /** @description The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded. */
             preview_storage_path?: string;
         };
+        MessageGifDto: {
+            id: string;
+            title?: string;
+            url: string;
+            width: number;
+            height: number;
+            /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
+            token: string;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
@@ -6058,6 +6118,7 @@ export interface components {
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
@@ -6416,6 +6477,33 @@ export interface components {
         MarkImportantSeenDto: {
             /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
             message_ids: string[];
+        };
+        GifAvailabilityDto: {
+            /** @description Whether GIF search is set up on this server. Clients hide the GIF button when it is not. */
+            available: boolean;
+            /** @description The provider's name, shown in the picker's search field as its attribution. */
+            provider: string;
+        };
+        GifRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
+        };
+        GifResultDto: {
+            /** @description The provider's id for this GIF. */
+            id: string;
+            /** @description Short words for screen readers; may be empty. */
+            title: string;
+            /** @description Small, for a grid tile. */
+            preview: components["schemas"]["GifRenditionDto"];
+            /** @description What a message shows; send this one. */
+            full: components["schemas"]["GifRenditionDto"];
+            /** @description Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search. */
+            token: string;
+        };
+        GifPageDto: {
+            results: components["schemas"]["GifResultDto"][];
+            next_page: number | null;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -13564,6 +13652,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_availability_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifAvailabilityDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_trending_v1: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_search_v1: {
+        parameters: {
+            query: {
+                page?: number;
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
                 };
             };
             /** @description Error */

@@ -66,6 +66,7 @@ export {
   useSidebarPreferencesRefetch,
 } from "./use-chat-sidebar";
 export * from "./use-custom-fields";
+export * from "./use-debounced-value";
 export * from "./use-discord-author-link";
 export * from "./use-discord-connection";
 export * from "./use-discord-import";
@@ -75,6 +76,7 @@ export * from "./use-event-excuses";
 export * from "./use-event-types";
 export * from "./use-events";
 export * from "./use-frapp-client";
+export * from "./use-gifs";
 export * from "./use-google-calendar";
 export * from "./use-groups";
 export * from "./use-hidden-permissions";

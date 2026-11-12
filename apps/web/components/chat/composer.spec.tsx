@@ -221,6 +221,19 @@ describe("Composer placeholder wiring", () => {
   });
 });
 
+describe("Composer GIF button (#4631)", () => {
+  it("shows no GIF button unless the shell hands it a send (GIFs set up)", () => {
+    const { unmount } = render(<Composer {...baseProps()} />);
+    expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+    unmount();
+
+    render(
+      <Composer {...baseProps()} onSendGif={() => {}} gifProvider="KLIPY" />,
+    );
+    expect(screen.getByRole("button", { name: "Send a GIF" })).toBeTruthy();
+  });
+});
+
 /**
  * #396: the trigger button announced neither that it opens a dialog nor
  * whether that dialog is currently open — a screen-reader user got no signal

@@ -121,6 +121,10 @@ const REQUIRED_ENV_VARS = [
 //   - GOOGLE_CALENDAR_TOKEN_KEY  seals members' Google refresh tokens,
 //                        "<key id>:<base64 of 32 bytes>"
 //
+// Also optional (#4631): GIFs in chat. Unset, GET /v1/gifs/availability says
+// off and both clients hide the GIF picker. Not checked at boot.
+//   - KLIPY_API_KEY      the KLIPY app key (infrastructure/gifs/)
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY

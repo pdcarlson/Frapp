@@ -17,6 +17,9 @@ export function chatPushPreview(row: {
   // `ChatService` cleans what it saves; this covers a row written any other way.
   const text = withoutObjectReplacement(row.content ?? '').trim();
   if (text) return Array.from(text).slice(0, 200).join('');
+  // A GIF message (#4631) is the GIF, with no text of its own.
+  const gif = row.metadata?.gif;
+  if (gif && typeof gif === 'object') return 'Sent a GIF';
   const raw = Number(row.metadata?.attachment_count);
   const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
   if (count === 1) return 'Sent an attachment';
