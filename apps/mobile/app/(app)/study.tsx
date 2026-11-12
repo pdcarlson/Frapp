@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, StyleSheet, View } from "react-native";
 import type { AppStateStatus } from "react-native";
@@ -896,13 +897,13 @@ export default function StudyScreen() {
       );
     }
 
-    if (sessionsQuery.isError) {
+    if (sessionsQuery.isError && sessionsQuery.data === undefined) {
       return (
         <>
           {standaloneMessages}
           <ErrorState
             title="Couldn't load study hours"
-            body="Your sessions are still recorded — this was a problem fetching them."
+            body={describeLoadFailure(sessionsQuery.error)}
             onRetry={() => void sessionsQuery.refetch()}
             isRetrying={sessionsQuery.isFetching}
           />
@@ -910,13 +911,13 @@ export default function StudyScreen() {
       );
     }
 
-    if (zonesQuery.isError) {
+    if (zonesQuery.isError && zonesQuery.data === undefined) {
       return (
         <>
           {standaloneMessages}
           <ErrorState
             title="Couldn't load study zones"
-            body="A session has to start inside a zone, so this has to load first."
+            body={describeLoadFailure(zonesQuery.error)}
             onRetry={() => void zonesQuery.refetch()}
             isRetrying={zonesQuery.isFetching}
           />

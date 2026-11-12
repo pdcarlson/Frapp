@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { codeOf } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   CHANNELS_ROLE_REFUSAL_TITLE,
   channelsRoleRefusalBody,
@@ -9,7 +10,8 @@ import {
 /**
  * What Chat home's error state says when the channel list fails. A refusal
  * by role gets the shared role copy (`@repo/chat-core/channels-refused-copy`,
- * which web uses too); every other failure keeps the connection copy.
+ * which web uses too); every other failure says what failed, by
+ * `describeLoadFailure`.
  */
 export type ChannelsErrorCopy = {
   title: string;
@@ -28,7 +30,7 @@ export function channelsErrorCopy(
   }
   return {
     title: "Couldn't load channels",
-    body: "Chat couldn't reach the server.",
+    body: describeLoadFailure(error),
   };
 }
 

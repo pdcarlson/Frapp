@@ -157,6 +157,17 @@ export const LOAD_FAILURE_SERVER_COPY =
   "Something went wrong on our side. Retry in a moment.";
 
 /**
+ * A read refused for its sign-in token. On mobile that means the token lapsed
+ * while the app was suspended and a fresh one is on its way: the screen
+ * retries by itself when it lands (`apps/mobile/lib/query-client.ts`), and an
+ * account that really is gone is signed out by `onUnauthorized`, which takes
+ * the member off this screen. "You've been signed out" was untrue in both
+ * cases (FRAPP-API-E, 2026-11-12).
+ */
+export const LOAD_FAILURE_SIGN_IN_COPY =
+  "Refreshing your sign-in. This reloads in a moment.";
+
+/**
  * The second line of a screen's "Couldn't load …" state, by what actually
  * failed (`spec/ui/design-system/writing.md` § copy rules). It reads the same
  * map as {@link errorCopy}, so a load and an action refused for the same
@@ -166,11 +177,12 @@ export const LOAD_FAILURE_SERVER_COPY =
  *
  * One fixed line used to cover every load failure, and whichever cause it
  * named was wrong for the others ("Confirm your chapter access" sent a member
- * on a dropped connection to their officers). A 401 normally never reaches a
- * screen, because the client signs a refused session out (`onUnauthorized`).
+ * on a dropped connection to their officers). A 401 says the sign-in is being
+ * refreshed ({@link LOAD_FAILURE_SIGN_IN_COPY}).
  */
 export function describeLoadFailure(error: unknown): string {
   const status = statusOf(error) ?? wrappedStatusOf(error);
   if (status === undefined) return OFFLINE_COPY;
+  if (status === 401) return LOAD_FAILURE_SIGN_IN_COPY;
   return errorCopy(error, LOAD_FAILURE_SERVER_COPY);
 }

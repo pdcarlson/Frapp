@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -440,11 +441,11 @@ export default function DirectoryScreen() {
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="the member directory" />;
-    if (activeQuery.isError) {
+    if (activeQuery.isError && activeQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load the directory"
-          body="The chapter roster couldn't reach the server."
+          body={describeLoadFailure(activeQuery.error)}
           onRetry={() => void activeQuery.refetch()}
           isRetrying={activeQuery.isFetching}
         />
