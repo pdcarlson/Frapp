@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { arrivedSince, type LatestRow } from "@repo/chat-core/jump-to-latest";
-
-/**
- * How far back the reader is. `newest`: within `followWithin` of the end, where
- * the list follows an arrival by itself. `near`: past it but within one screen.
- * `away`: more than one screen back.
- */
-type Zone = "newest" | "near" | "away";
+import {
+  arrivedSince,
+  zoneFor,
+  type LatestRow,
+  type ReadingZone as Zone,
+} from "@repo/chat-core/jump-to-latest";
 
 interface ReadingState {
   channelKey: string | null;
@@ -18,16 +16,6 @@ interface ReadingState {
    * from a row that was already there.
    */
   seenWhenLeft: ReadonlySet<string> | null;
-}
-
-/** Which zone a scroll position is in. Exported for the spec. */
-export function zoneFor(
-  distanceFromEnd: number,
-  viewport: number,
-  followWithin: number,
-): Zone {
-  if (distanceFromEnd <= followWithin) return "newest";
-  return distanceFromEnd > viewport ? "away" : "near";
 }
 
 /**
@@ -44,9 +32,15 @@ export function zoneFor(
  * Per channel (`channelKey`): the timeline keeps one list across channel
  * switches, and a reader back in history in one channel is not in the next.
  *
+ * Only a scroll up leaves `newest`. While the list follows an arrival in, its
+ * scroll events move down from the arrival's height above the end, and a photo
+ * taller than the screen would otherwise flash the control for the length of
+ * the animation.
+ *
  * `scrollerRef` attaches to Virtuoso's scroller. `markNewest` is for a scroll
- * made there in code (the jump itself, a send), which is at the end at once,
- * so the control clears on that frame rather than the scroll event's.
+ * made there in code (the jump itself, and the timeline's jump on the member's
+ * own send), which is at the end at once, so the control clears on that frame
+ * rather than the scroll event's.
  */
 export function useJumpToLatest({
   rows,
@@ -104,16 +98,22 @@ export function useJumpToLatest({
       detach.current?.();
       detach.current = null;
       if (!(element instanceof HTMLElement)) return;
+      let lastTop = element.scrollTop;
       const onScroll = () => {
+        const top = element.scrollTop;
+        const movedUp = top < lastTop;
+        lastTop = top;
         // Unmeasured, so there is no screen to be "past" yet.
         if (element.clientHeight <= 0) return;
-        moveTo(
-          zoneFor(
-            element.scrollHeight - element.scrollTop - element.clientHeight,
-            element.clientHeight,
-            followWithin,
-          ),
+        const next = zoneFor(
+          element.scrollHeight - top - element.clientHeight,
+          element.clientHeight,
+          followWithin,
         );
+        if (zoneRef.current === "newest" && next !== "newest" && !movedUp) {
+          return;
+        }
+        moveTo(next);
       };
       element.addEventListener("scroll", onScroll, { passive: true });
       detach.current = () => element.removeEventListener("scroll", onScroll);

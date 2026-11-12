@@ -11,7 +11,12 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
-import { arrivedSince, type LatestRow } from "@repo/chat-core/jump-to-latest";
+import {
+  arrivedSince,
+  zoneFor,
+  type LatestRow,
+  type ReadingZone,
+} from "@repo/chat-core/jump-to-latest";
 
 export type { LatestRow };
 
@@ -28,12 +33,8 @@ export interface LatestScrollableList {
   scrollToOffset(params: { offset: number; animated?: boolean }): void;
 }
 
-/**
- * How far back the reader is. `newest`: within the follow threshold, where an
- * arrival scrolls into view by itself. `near`: past it but within one screen.
- * `away`: more than one screen back.
- */
-type Zone = "newest" | "near" | "away";
+/** How far back the reader is (`zoneFor` in chat-core). */
+type Zone = ReadingZone;
 
 /** Where the reader is, per channel. */
 interface ReadingState {
@@ -112,12 +113,7 @@ export function useJumpToLatest<L extends LatestScrollableList>({
       // Unmeasured, so there is no screen to be "past" yet.
       if (viewport <= 0) return;
       const offset = event.nativeEvent.contentOffset.y;
-      const next: Zone =
-        offset <= FOLLOW_ARRIVALS_WITHIN
-          ? "newest"
-          : offset > viewport
-            ? "away"
-            : "near";
+      const next = zoneFor(offset, viewport, FOLLOW_ARRIVALS_WITHIN);
       // Only a crossing is a state change: a scroll event fires per frame.
       if (next === zoneRef.current) return;
       const leftNewest = zoneRef.current === "newest";

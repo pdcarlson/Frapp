@@ -81,6 +81,24 @@ export function arrivedSince(
   return false;
 }
 
+/**
+ * How far back the reader is. `newest`: within `followWithin` of the newest
+ * message, where the list follows an arrival by itself. `near`: past it but
+ * within one screen. `away`: more than one screen back. Each client measures
+ * `distance` its own way (the phone's inverted list from the top, the web's
+ * from the scroller's end); the boundaries are the same on both.
+ */
+export type ReadingZone = "newest" | "near" | "away";
+
+export function zoneFor(
+  distance: number,
+  viewport: number,
+  followWithin: number,
+): ReadingZone {
+  if (distance <= followWithin) return "newest";
+  return distance > viewport ? "away" : "near";
+}
+
 /** The control's accessible name, by whether something new landed below. */
 export function jumpToLatestLabel(hasNew: boolean): string {
   return hasNew ? "New messages. Jump to latest" : "Jump to latest";

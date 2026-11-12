@@ -799,23 +799,61 @@ export const MessageTimeline = forwardRef<
   }, [markNewest, pinToBottom]);
 
   /*
-    Whether the newest row is a send the member just made from here: their own
-    row, not yet confirmed. Virtuoso asks `followOutput` each time the count
-    rises, and it used to follow only while the list sat within
-    `STICK_TO_BOTTOM_SLACK_PX` of its end. A member a line or two up when they
-    pressed Enter (a photo above that grew, a nudge of the wheel) saw their
-    message go nowhere: it landed below the fold with the list left where it
-    was, and read as unsent (2026-11-12, #4537). Their own send now always
-    brings the list to it, as the phone's Send does (`jumpToLatest` on the
-    tap). Anyone else's message still follows only from the bottom, so reading
-    back is never yanked away.
+    The member's own send brings the list to it, wherever they were reading,
+    as the phone's Send does (`jumpToLatest` on the tap). The list used to
+    follow a new row only from within `STICK_TO_BOTTOM_SLACK_PX` of its end, so
+    a member a line or two up when they pressed Enter (a photo above that grew,
+    a nudge of the wheel) saw their message go nowhere: it landed below the
+    fold and read as unsent (2026-11-12, #4537).
+
+    A send is a key of theirs, still pending, that wasn't one on the last
+    render, wherever it sorts: an optimistic row is placed by this device's
+    clock, so one a few seconds slow puts it under another member's newer
+    message. A pending row already there (an outbox send waiting on a
+    reconnect) is not a new send, so the backfill merged in under it leaves the
+    reader where they are, and so does a channel opening onto pending rows.
+    Everyone else's message still follows only from the bottom
+    (`followOutput`).
+
+    A frame later: Virtuoso takes the new count in its own effects, so a jump
+    made in this commit lands on the row before the send (measured against the
+    real list in a browser). Not cancelled by the next render, which has
+    already recorded the key and won't schedule it again.
   */
-  const newestEntry = decorated[decorated.length - 1];
-  const newestIsOwnSend =
-    newestEntry !== undefined &&
-    viewerId !== null &&
-    newestEntry.message.sender_id === viewerId &&
-    newestEntry.message._status === "pending";
+  const ownPendingKeys = useMemo(() => {
+    if (viewerId === null) return [];
+    const keys: string[] = [];
+    for (const { message } of decorated) {
+      if (message.sender_id === viewerId && message._status === "pending") {
+        keys.push(message.client_message_id ?? message.id);
+      }
+    }
+    return keys;
+  }, [decorated, viewerId]);
+  const ownSendsSeen = useRef<{
+    channelKey: string | null;
+    keys: ReadonlySet<string>;
+  } | null>(null);
+  const sendFrame = useRef<number | null>(null);
+  useEffect(() => {
+    const channelKey = channelId ?? null;
+    const previous = ownSendsSeen.current;
+    const keys = new Set(ownPendingKeys);
+    ownSendsSeen.current = { channelKey, keys };
+    if (previous === null || previous.channelKey !== channelKey) return;
+    if (!ownPendingKeys.some((key) => !previous.keys.has(key))) return;
+    if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    sendFrame.current = requestAnimationFrame(() => {
+      sendFrame.current = null;
+      jumpToLatest();
+    });
+  }, [ownPendingKeys, channelId, jumpToLatest]);
+  useEffect(
+    () => () => {
+      if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    },
+    [],
+  );
 
   /*
     Load the next older page while the member sits at the top of what is
@@ -1166,13 +1204,7 @@ export const MessageTimeline = forwardRef<
           // Until the list is armed it is still settling onto its bottom, and
           // the live page landing over the cached tail prepends rows; following
           // those is what keeps a cold open at the newest message.
-          followOutput={(atBottom) => {
-            if (holdFollow || (prepended && armed)) return false;
-            if (atBottom) return "smooth";
-            // Off the bottom only for the member's own send, and instantly:
-            // a smooth scroll over estimated heights settles short.
-            return newestIsOwnSend ? "auto" : false;
-          }}
+          followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
           rangeChanged={handleRangeChanged}
