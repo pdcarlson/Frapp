@@ -48,7 +48,8 @@ import { selectionHaptic } from "@/lib/haptics";
 import { confirmBlockMember, useBlockActions } from "@/lib/chat/block-actions";
 import { AddReactionGlyph } from "@/components/control-glyphs";
 import { EmojiPickerSheet } from "@/components/chat/emoji-picker-sheet";
-import { canonicalEmoji } from "@/lib/chat/emoji-search";
+import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
+import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
 import {
   REPORT_ALREADY_BODY,
   REPORT_ALREADY_TITLE,
@@ -89,8 +90,8 @@ import type { ChatMessageFlag } from "@repo/validation";
  * message nobody has reacted to (`ReactionRow` in `message-item.tsx`), so this
  * row is where the first reaction starts, as it does in every messenger's
  * long-press. The four picks are web's (`QUICK_REACTIONS` in
- * `apps/web/components/chat/reaction-bar.tsx`), and the last cell opens every
- * emoji (`EmojiPickerSheet`), so any reaction is two taps away. One the viewer
+ * `@repo/chat-core/emoji-recent`), and the last cell opens every emoji
+ * (`EmojiPickerSheet`), recent ones first, so any reaction is two taps away. One the viewer
  * already used is drawn selected, and tapping it takes the reaction back off,
  * the toggle `spec/behavior/chat/README.md` § Reactions describes. Either way
  * the sheet closes: the chip under the message is the confirmation.
@@ -139,14 +140,6 @@ const REPORT_SNAP_POINTS = ["85%"];
 export const COPIED_LABEL = "Copied";
 /** How long "Copied" shows before the sheet closes: long enough to read. */
 const COPIED_HOLD_MS = 700;
-
-/**
- * The sheet's quick reactions, in web's order (`QUICK_REACTIONS` in
- * `apps/web/components/chat/reaction-bar.tsx`). A copy rather than a shared
- * export: the list lives in a web component, not in `@repo/chat-core`, so
- * the two must move together until it is hoisted there.
- */
-export const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"];
 
 /** A quick reaction's accessible name, by whether it adds or takes back. */
 export function quickReactionLabel(emoji: string, mine: boolean): string {
@@ -457,7 +450,10 @@ export const MessageActionsSheet = forwardRef<
       menuRef.current?.dismiss();
       if (!messageId) return;
       if (mine) onUnreact?.(messageId, emoji);
-      else onReact?.(messageId, emoji);
+      else {
+        onReact?.(messageId, emoji);
+        recordRecentEmoji(emoji);
+      }
     },
     [onReact, onUnreact, target],
   );
@@ -480,7 +476,10 @@ export const MessageActionsSheet = forwardRef<
         ...QUICK_REACTIONS,
       ]);
       if (mine) onUnreact?.(messageId, spelled);
-      else onReact?.(messageId, spelled);
+      else {
+        onReact?.(messageId, spelled);
+        recordRecentEmoji(spelled);
+      }
     },
     [onReact, onUnreact, target],
   );
