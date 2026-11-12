@@ -4286,9 +4286,9 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
-## Rollback reaction removal policy (20261112270000)
+## Rollback reaction removal policy (20261112280000)
 
-- **Migration**: `20261112270000_chat_message_actions_client_writes.sql`
+- **Migration**: `20261112280000_chat_message_actions_client_writes.sql`
 
 Drops `chat_message_actions_insert`, re-creates `chat_message_actions_delete` on `reaction:*` rows through the new `chat_action_is_callers(uuid)` helper, and revokes INSERT and UPDATE on `chat_message_actions` from `anon` and `authenticated`. No rows change, and the API writes as `service_role`, so no API version depends on it.
 

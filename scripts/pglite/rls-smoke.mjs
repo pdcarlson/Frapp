@@ -157,7 +157,7 @@ export const RLS_SMOKE = [
     name: "users stays default-deny to client roles",
     // Clients reach `users` only through `security definer` helpers
     // (`chat_action_is_callers`, `chat_viewer_has_blocked`, ...). Until
-    // 20261112270000, chat_message_actions' INSERT policy gated on a plain
+    // 20261112280000, chat_message_actions' INSERT policy gated on a plain
     // `users` subselect, and this default-deny was the only thing refusing
     // direct-client action writes (#4513). That policy is gone, but a routine
     // "read your own row" policy here would still widen what every client
@@ -284,7 +284,7 @@ export const RLS_SMOKE = [
     name: "chat_message_actions DELETE scoped to the caller's own reaction rows via chat_action_is_callers (#724)",
     // Not a `users` subselect: `users` is default-deny to clients, so such a
     // subselect inside a policy sees no rows and the policy never matches.
-    // That is how reaction removal silently did nothing until 20261112270000.
+    // That is how reaction removal silently did nothing until 20261112280000.
     sql: `select pg_get_expr(polqual, polrelid) as using_expr
             from pg_policy p join pg_class c on c.oid = p.polrelid
            where c.relname = 'chat_message_actions' and polcmd = 'd'`,
