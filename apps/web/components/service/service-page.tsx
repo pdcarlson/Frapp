@@ -18,7 +18,6 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { serviceStatusKind } from "@/components/service/service-status";
-import type { ServiceStatus } from "@/components/service/service-status";
 import { Badge } from "@/components/ui/badge";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -39,27 +38,19 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import type { components } from "@repo/api-sdk";
 import { awardedPointsLabel, statusLabel } from "@repo/validation";
 import { formatDay, formatMinutesRounded } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 import { approvePointsPreview } from "@/components/service/service-points-preview";
 import { LogHoursDialog } from "@/components/service/log-hours-dialog";
 
-type ServiceEntry = {
-  id: string;
-  chapter_id: string;
-  user_id: string;
-  date: string;
-  duration_minutes: number;
-  description: string;
-  proof_path: string | null;
-  status: ServiceStatus;
-  reviewed_by: string | null;
-  review_comment: string | null;
-  points_awarded: boolean;
-  awarded_points?: number | null;
-  created_at: string;
-};
+/**
+ * One row of `GET /v1/service-entries`, from the generated contract, so a
+ * change to a field the page reads (`awarded_points`, #3868) fails the
+ * typecheck here rather than silently falling back.
+ */
+type ServiceEntry = components["schemas"]["ServiceEntryResponseDto"];
 
 /**
  * A row's when and how long: `"Nov 4 · 3h"`. `date` is a bare `YYYY-MM-DD`

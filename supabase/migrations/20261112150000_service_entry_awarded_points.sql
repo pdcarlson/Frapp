@@ -24,23 +24,37 @@ comment on column service_entries.awarded_points is
 -- Backfill from the ledger row the approval wrote. An approved entry with
 -- `points_awarded = false` was a sub-rate approval with no ledger row, so 0.
 -- An awarded entry whose ledger row can't be found stays NULL (unknown), and
--- clients fall back to the flag rather than print a guessed number.
+-- clients fall back to the flag rather than print a guessed number. The ledger
+-- is grouped once and joined, rather than rescanned per entry: nothing indexes
+-- `metadata->>'service_entry_id'`.
 update service_entries se
-   set awarded_points = coalesce(
-         (select sum(pt.amount)::integer
-            from point_transactions pt
-           where pt.chapter_id = se.chapter_id
-             and pt.category = 'SERVICE'
-             and pt.metadata->>'service_entry_id' = se.id::text),
-         case when se.points_awarded then null else 0 end
-       )
- where se.awarded_points is null
+   set awarded_points = l.points
+  from (
+    select pt.chapter_id,
+           pt.metadata->>'service_entry_id' as entry_id,
+           sum(pt.amount)::integer as points
+      from point_transactions pt
+     where pt.category = 'SERVICE'
+       and pt.metadata ? 'service_entry_id'
+     group by 1, 2
+  ) l
+ where l.chapter_id = se.chapter_id
+   and l.entry_id = se.id::text
+   and l.points >= 0
+   and se.awarded_points is null
    and (se.status = 'APPROVED' or se.points_awarded);
 
--- Same function as 20260603120000, plus `awarded_points = p_points` in the
--- compare-and-set. `create or replace` with the identical signature keeps the
--- EXECUTE grants that migration set (service_role only). It does reset the
--- function's settings, so the `search_path` 20261107160000 pinned is restated.
+update service_entries
+   set awarded_points = 0
+ where awarded_points is null
+   and status = 'APPROVED'
+   and not points_awarded;
+
+-- Same function as 20260603120000, plus `awarded_points = greatest(p_points, 0)`
+-- in the compare-and-set (clamped to match the column's check). `create or
+-- replace` with the identical signature keeps the EXECUTE grants that migration
+-- set (service_role only). It does reset the function's settings, so the
+-- `search_path` 20261107160000 pinned is restated.
 create or replace function approve_service_entry(
   p_entry_id uuid,
   p_chapter_id uuid,

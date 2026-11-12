@@ -206,7 +206,6 @@ describe('ServiceEntryService', () => {
         reviewed_by: null,
         review_comment: null,
         points_awarded: false,
-        awarded_points: null,
       });
       expect(result).toEqual(baseEntry);
     });
