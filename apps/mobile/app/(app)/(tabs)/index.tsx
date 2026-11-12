@@ -125,6 +125,10 @@ import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
+import {
+  usePrefetchChannel,
+  usePrefetchUnreadChannels,
+} from "@/lib/chat/prefetch-channel";
 
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
@@ -481,6 +485,27 @@ export default function ChatHomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listAnswered, viewerId]);
 
+  // Read ahead what the member is likely to open (#3699): the unread channels
+  // and DMs while chat home shows, and any row the moment a finger lands on
+  // it. The thread then paints its rows as it slides in, not a skeleton.
+  const prefetchChannel = usePrefetchChannel();
+  const unreadChannelIds = useMemo(
+    () =>
+      listedChannels(allChannels)
+        .filter((channel) => {
+          const counts = unreadByChannelId?.get(channel.id);
+          return (
+            (counts?.unreadCount ?? 0) > 0 || (counts?.mentionCount ?? 0) > 0
+          );
+        })
+        .map((channel) => channel.id),
+    [allChannels, unreadByChannelId],
+  );
+  usePrefetchUnreadChannels(
+    unreadChannelIds,
+    isFocused && listAnswered && !!viewerId,
+  );
+
   function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
     // `lib/routes.spec.ts`'s literal scan — the `pathname:` matcher added
@@ -507,6 +532,7 @@ export default function ChatHomeScreen() {
         unreadCount={counts?.unreadCount ?? 0}
         mentionCount={counts?.mentionCount ?? 0}
         onPress={() => openChannel(channel.id)}
+        onPressIn={() => prefetchChannel(channel.id)}
         onTogglePin={togglePin}
         onLongPress={(event) => {
           pressHaptic();

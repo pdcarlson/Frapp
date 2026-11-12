@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Stack, type ErrorBoundaryProps } from "expo-router";
+import { useEffect, useMemo } from "react";
+import { Stack, ThemeProvider, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import * as Sentry from "@sentry/react-native";
@@ -17,14 +17,14 @@ import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { ObservabilityIdentityProvider } from "@/lib/observability-identity-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
-import {
-  FIGTREE_FACES,
-  FrappThemeProvider,
-  useFrappTheme,
-} from "@/lib/theme";
+import { FIGTREE_FACES, FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "@/lib/posthog/client";
-import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
+import { navigationThemeFor } from "@/lib/navigation-theme";
+import {
+  buildMobileSentryOptions,
+  mobileSentryDsn,
+} from "@/lib/sentry/options";
 import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
 import { startWhatsNewBootRead } from "@/lib/whats-new";
 
@@ -87,6 +87,7 @@ void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
   const { tokens } = useFrappTheme();
+  const navigationTheme = useMemo(() => navigationThemeFor(tokens), [tokens]);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface.background }}>
@@ -100,10 +101,17 @@ function RootLayoutContent() {
       <AppRuntime />
       {/* Signet is dark-only, so the status bar is statically light-on-dark. */}
       <StatusBar style="light" />
-      <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
-      </Stack>
+      {/*
+        The navigators paint what no screen covers from this theme, which a
+        back swipe uncovers; without it they paint React Navigation's light
+        default (#3699, `lib/navigation-theme.ts`).
+      */}
+      <ThemeProvider value={navigationTheme}>
+        <Stack>
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(app)" options={{ headerShown: false }} />
+        </Stack>
+      </ThemeProvider>
     </View>
   );
 }

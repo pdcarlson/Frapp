@@ -329,6 +329,13 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
 }));
 
+// The read-ahead reaches the real Supabase client (secure store); these
+// specs are about the list, not the thread it opens.
+vi.mock("@/lib/chat/prefetch-channel", () => ({
+  usePrefetchChannel: () => () => undefined,
+  usePrefetchUnreadChannels: () => undefined,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
@@ -1061,9 +1068,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target).toBeNull();
     // iOS: nothing is written until the modal reports it has gone.
     expect(setChannelBackground).not.toHaveBeenCalled();
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
@@ -1092,16 +1097,17 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         node.props.testID === "chat-background-swatch-photo",
     );
     act(() => photoSwatch.props.onPress());
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
 
     const [pick, deps] = save.mock.calls[0]!;
     expect(pick).toBe("photo");
-    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    await deps.requestPhotoUrl({
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
     expect(requestBackgroundPhotoUrl).toHaveBeenCalledWith({
       scope: "channel",
       filename: "a.jpg",
