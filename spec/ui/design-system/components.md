@@ -562,6 +562,15 @@ The window is measured from the previous row, not from the run's first row. The 
 - **Comparable:** Slack's "N new messages" bar under the channel header and Discord's "new messages since" bar, both of which jump you up and clear as you read; Microsoft Teams for the red Important mark.
 - **Implementation:** web `ImportantStrip` in `apps/web/components/chat/important-strip.tsx`, placed by `chat-shell.tsx`; mobile `ImportantStrip` in `apps/mobile/components/chat/important-strip.tsx`, placed by `chat-thread.tsx`. Both draw from `useImportantMessages` in `@repo/hooks`, whose `importantStripLabel` holds the count's words.
 
+#### The Catch me up strip
+
+*(Added 2026-11-12, [#3946](https://github.com/pdcarlson/Frapp/issues/3946), the building session's, Paul's to change. Behavior: [ai.md § Catch me up](../../behavior/ai.md#catch-me-up).)* When a channel opens with 20 or more new messages, and summaries are on, a strip sits under [the Important strip](#the-important-strip)'s place and above the timeline. It is an offer, not an alert, so it wears the quiet rail paint and none of the Important strip's red, and it is not gold: the ✦ and the house-gold family stay Ask's (§11).
+
+- **Web,** 36px tall (44 to a finger): `--surface-1` with a hairline under it, "140 new messages since you were last here." in `--muted-foreground` at caption size, then **Catch me up** as a text button in `--foreground` at 600, then a × that puts the strip away for this visit. Starting the summary also puts it away. It never returns for the same visit, and a channel opened with fewer new messages never shows it.
+- **Mobile:** not built.
+- **Comparable:** Discord's summaries bar above a busy channel, and Slack's "N new messages" bar for the placement.
+- **Implementation:** `CatchUpOffer` in `apps/web/components/chat/catch-up-panel.tsx`, placed by `chat-shell.tsx`.
+
 #### In-body mention chip
 
 `@Name` inside a message body takes a muted amber chip on the **handle alone**: fill `--mention-chip` `#2D2617`, text `--mention-chip-text` `#EED7A8`, radius 5, inline padding, at the weight of the text around it. The chip is the same whoever it names; whether the row is tinted is the next rule's job. **A handle chips only when the send reached someone** (2026-11-07, a tester's `@bigsigma`, a name nobody holds, drew as a mention): a member's handle when that member is in the message's resolved `mentions`, a role's name when the message reached anyone, and nothing on a message that reached nobody (`mentionChipFilter` in `@repo/validation`). (This was a TODO-DESIGN: the reference draws mention red only as a list badge and a notification dot, and drew nothing for the in-body case.) *(Muted 2026-11-06, owner direction "way less intrusive", set beside Discord's chip. It was fill `#4C3A1A` and a saturated `#FAA81A` at weight 600, 5.54:1, which read louder than the message around it. The tone now carries the handle and the weight stays the body's.)*

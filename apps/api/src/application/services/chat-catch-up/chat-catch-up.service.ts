@@ -1,0 +1,370 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  CHAT_CATCH_UP_MAX_DAYS,
+  CHAT_CATCH_UP_MAX_MESSAGES,
+  CHAT_CATCH_UP_MIN_MESSAGES,
+  type ChatCatchUp,
+  type ChatCatchUpStatus,
+  type ChatCatchUpUnavailableReason,
+} from '@repo/validation';
+import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import {
+  CHAT_CATCH_UP_REPOSITORY,
+  type CatchUpMessageRow,
+  type CatchUpStretch,
+  type IChatCatchUpRepository,
+} from '#domain/repositories/chat-catch-up.repository.interface';
+import {
+  CHAT_MEMBER_BLOCK_REPOSITORY,
+  type IChatMemberBlockRepository,
+} from '#domain/repositories/chat-moderation.repository.interface';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '#domain/repositories/user.repository.interface';
+import {
+  CHAT_CATCH_UP_PROMPT_VERSION,
+  CatchUpOutputSchema,
+  buildCatchUpLines,
+  catchUpMessages,
+  catchUpSystem,
+  checkCatchUpPoints,
+  type CatchUpMessage,
+} from '#domain/utils/chat-catch-up';
+import { aiConsentRefusal } from '../ai/ai-consent-refusal';
+import { AiConsentService } from '../ai/ai-consent.service';
+import { AiGatewayService, type AiUnavailable } from '../ai/ai-gateway.service';
+import { ChannelAccessService } from '../channel-access.service';
+
+const TASK = 'chat.catch-up';
+const DAY_MS = 86_400_000;
+
+export interface ChatCatchUpInput {
+  /** From `ChapterGuard`. Never from the request body or a model. */
+  chapterId: string;
+  /** The reader, from the auth guard. */
+  userId: string;
+  channelId: string;
+  /** Exactly one of these three says what to read. */
+  threadRootId?: string;
+  since?: string;
+  unread?: { count: number; asOf: string };
+  /** The reader's IANA time zone, for "today". */
+  timeZone: string;
+  signal?: AbortSignal;
+}
+
+function result(
+  status: ChatCatchUpStatus,
+  fields: Partial<ChatCatchUp> = {},
+): ChatCatchUp {
+  return {
+    status,
+    reason: null,
+    points: [],
+    messages_read: 0,
+    messages_total: 0,
+    left_out_messages: 0,
+    unverified_points: 0,
+    covers_from: null,
+    covers_to: null,
+    ...fields,
+  };
+}
+
+/** Why a gateway call was not made, in the words the clients know. */
+function unavailableReason(
+  refusal: AiUnavailable,
+): ChatCatchUpUnavailableReason {
+  if (refusal.reason === 'consent') {
+    return refusal.detail === 'chapter_off'
+      ? 'chapter_off'
+      : 'consent_required';
+  }
+  if (refusal.reason === 'spend_cap') {
+    if (refusal.detail === 'chapter_cap') return 'chapter_limit';
+    if (refusal.detail === 'member_cap') return 'member_limit';
+  }
+  return 'not_available';
+}
+
+function longDate(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone,
+  }).format(date);
+}
+
+/**
+ * Catch me up (#3946, `spec/behavior/ai.md` § Catch me up): a member asks
+ * for the short version of a channel's new messages or of one thread, and
+ * gets a few points, each tied to the message it came from.
+ *
+ * It runs only when a member asks. Nothing here is scheduled, nothing reads
+ * a channel nobody asked about, and nothing is stored: the summary is the
+ * response and exists nowhere else (ADR-28 decision 8). No message, name or
+ * point is logged.
+ *
+ * One request runs these steps, and each rule is here, in the product, not
+ * in a prompt (`docs/security/ai-prompt-injection.md` C1 to C8):
+ *
+ * 1. **The reader can open the channel.** The timeline's own check
+ *    (`ChannelAccessService`), in the chapter the request's guard resolved.
+ *    A direct message, a group DM and the audit-log channel are refused
+ *    here, and again by the read itself.
+ * 2. **The chapter and the reader said yes.** The president's Ask switch and
+ *    the reader's answer on the AI sheet, as for Ask (the gateway checks the
+ *    same again before the call). Then the chat switch: with it off, no
+ *    member's messages may be read, and the answer says so.
+ * 3. **The stretch is read.** The newest messages of it, up to a fixed
+ *    number.
+ * 4. **Only messages whose authors said yes.** `chatAuthorsWhoSaidYes`, the
+ *    rule the chat index applies: everyone else's messages are left out and
+ *    counted, never named. An imported message nobody linked to a member has
+ *    no author to have said yes. A member the reader blocked is left out and
+ *    not counted, since a count that moved when the reader blocked someone
+ *    would say who.
+ * 5. **Too little, no model call.** A stretch with only a few readable
+ *    messages is quicker to read than to shorten.
+ * 6. **The summary.** One structured call. The conversation is the user
+ *    turn, as data; the instructions are the system channel.
+ * 7. **No point without its message.** Each point must name a message that
+ *    was sent and quote words that are in it. The rest are dropped and
+ *    counted; a summary left with none is not shown.
+ *
+ * Chat never triggers an action (C8): the call has no tools, and what comes
+ * back is text for one reader.
+ */
+@Injectable()
+export class ChatCatchUpService {
+  constructor(
+    private readonly channels: ChannelAccessService,
+    private readonly consent: AiConsentService,
+    private readonly gateway: AiGatewayService,
+    @Inject(CHAT_CATCH_UP_REPOSITORY)
+    private readonly stretches: IChatCatchUpRepository,
+    @Inject(CHAT_MEMBER_BLOCK_REPOSITORY)
+    private readonly blocks: Pick<
+      IChatMemberBlockRepository,
+      'findBlockedUserIds'
+    >,
+    @Inject(USER_REPOSITORY)
+    private readonly users: Pick<IUserRepository, 'findDisplayIdentitiesByIds'>,
+  ) {}
+
+  async catchUp(
+    input: ChatCatchUpInput,
+    now: Date = new Date(),
+  ): Promise<ChatCatchUp> {
+    // 1. A channel in another chapter is a 404, one the reader cannot open a
+    // 403, before anything about it is said.
+    const channel = await this.channels.assertChannelAccess(
+      input.channelId,
+      input.chapterId,
+      input.userId,
+      'read',
+    );
+    if (
+      channel.type === 'DM' ||
+      channel.type === 'GROUP_DM' ||
+      channel.is_audit_log
+    ) {
+      throw new BadRequestException({
+        code: 'ai.catch_up.not_a_channel',
+        message: 'Summaries are for chapter channels, never direct messages.',
+      });
+    }
+
+    // 2. Refusals a client acts on arrive as ordinary errors, as Ask's do.
+    const entry = aiCatalogEntry(TASK);
+    const decision = await this.consent.check({
+      chapterId: input.chapterId,
+      actingUserId: input.userId,
+      task: TASK,
+      family: entry.family,
+      provider: entry.provider,
+      model: entry.model,
+      promptVersion: CHAT_CATCH_UP_PROMPT_VERSION,
+    });
+    if (!decision.allowed) throw aiConsentRefusal(decision.reason);
+    if (!(await this.consent.chapterSwitchOn(input.chapterId, 'chat_source'))) {
+      return result('unavailable', { reason: 'chat_off' });
+    }
+
+    // 3.
+    const stretch = await this.read(input, now);
+    if (stretch.total === 0) return result('nothing_new');
+
+    // 4.
+    const readable = await this.readable(input, stretch.messages);
+    const base = {
+      messages_total: stretch.total - readable.blocked,
+      left_out_messages: readable.leftOut,
+    };
+    const { lines, dropped } = buildCatchUpLines(readable.messages);
+    const counts = {
+      ...base,
+      messages_read: lines.length,
+      covers_from: lines[0]?.message.createdAt ?? null,
+      covers_to: lines.at(-1)?.message.createdAt ?? null,
+    };
+    // Only the reader's blocked members wrote here: to the reader that is
+    // an empty stretch, as the timeline draws it.
+    if (base.messages_total === 0) return result('nothing_new');
+
+    // 5.
+    if (lines.length < CHAT_CATCH_UP_MIN_MESSAGES && dropped === 0) {
+      return result('too_little', counts);
+    }
+
+    // 6.
+    const readerName = readable.readerName;
+    const generated = await this.gateway.generateObject(
+      TASK,
+      {
+        promptVersion: CHAT_CATCH_UP_PROMPT_VERSION,
+        system: catchUpSystem({
+          readerName,
+          channelName: channel.name,
+          thread: input.threadRootId !== undefined,
+          today: longDate(now, input.timeZone),
+        }),
+        messages: catchUpMessages(lines, readerName),
+        schema: CatchUpOutputSchema,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      },
+      { chapterId: input.chapterId, actingUserId: input.userId },
+    );
+    if (generated.status === 'unavailable') {
+      return result('unavailable', {
+        ...counts,
+        reason: unavailableReason(generated),
+      });
+    }
+    if (generated.status === 'refused') return result('refused', counts);
+    if (generated.status === 'invalid_output') {
+      return result('not_found', counts);
+    }
+
+    // 7.
+    const checked = checkCatchUpPoints(generated.value, lines);
+    if (checked.points.length === 0) {
+      return result('not_found', {
+        ...counts,
+        unverified_points: checked.dropped,
+      });
+    }
+    return result('summarized', {
+      ...counts,
+      points: checked.points,
+      unverified_points: checked.dropped,
+    });
+  }
+
+  private async read(
+    input: ChatCatchUpInput,
+    now: Date,
+  ): Promise<CatchUpStretch> {
+    const scope = { chapterId: input.chapterId, channelId: input.channelId };
+    if (input.threadRootId !== undefined) {
+      const thread = await this.stretches.readThread({
+        ...scope,
+        rootId: input.threadRootId,
+        limit: CHAT_CATCH_UP_MAX_MESSAGES,
+      });
+      if (!thread) throw new NotFoundException('Thread not found');
+      return thread;
+    }
+
+    const floor = now.getTime() - CHAT_CATCH_UP_MAX_DAYS * DAY_MS;
+    let since: number;
+    if (input.unread !== undefined) {
+      // The client's clock is not trusted past now: a later `as_of` would
+      // only count messages the member has not been shown as unread.
+      const asOf = Math.min(Date.parse(input.unread.asOf), now.getTime());
+      const start = await this.stretches.unreadStart({
+        ...scope,
+        userId: input.userId,
+        count: input.unread.count,
+        asOf: new Date(asOf).toISOString(),
+      });
+      // Fewer messages than the client counted (some were deleted since):
+      // everything in reach is the stretch.
+      since = start === null ? floor : Date.parse(start);
+    } else {
+      since = Date.parse(input.since ?? '');
+    }
+    if (Number.isNaN(since)) {
+      throw new BadRequestException('since must be a date and time');
+    }
+    return this.stretches.readChannelSince({
+      ...scope,
+      since: new Date(Math.max(since, floor)).toISOString(),
+      limit: CHAT_CATCH_UP_MAX_MESSAGES,
+    });
+  }
+
+  /** Step 4: whose messages the summary may read, and how many it may not. */
+  private async readable(
+    input: ChatCatchUpInput,
+    rows: readonly CatchUpMessageRow[],
+  ): Promise<{
+    messages: CatchUpMessage[];
+    leftOut: number;
+    blocked: number;
+    readerName: string;
+  }> {
+    const authors = [
+      ...new Set(rows.flatMap((row) => (row.sender_id ? [row.sender_id] : []))),
+    ];
+    // A block list that cannot be read is not an empty block list: an error
+    // here fails the request rather than summarizing a blocked member.
+    const [yes, blockedIds, identities] = await Promise.all([
+      this.consent.chatAuthorsWhoSaidYes(input.chapterId, authors),
+      this.blocks.findBlockedUserIds(input.chapterId, input.userId),
+      this.users.findDisplayIdentitiesByIds([
+        ...new Set([...authors, input.userId]),
+      ]),
+    ]);
+    const blockedSet = new Set(blockedIds);
+    const names = new Map(
+      identities.map((identity) => [identity.id, identity.display_name]),
+    );
+    const messages: CatchUpMessage[] = [];
+    let leftOut = 0;
+    let blocked = 0;
+    for (const row of rows) {
+      if (row.sender_id !== null && blockedSet.has(row.sender_id)) {
+        blocked += 1;
+        continue;
+      }
+      if (row.sender_id === null || !yes.has(row.sender_id)) {
+        leftOut += 1;
+        continue;
+      }
+      messages.push({
+        id: row.id,
+        senderId: row.sender_id,
+        senderName: names.get(row.sender_id) ?? '',
+        content: row.content,
+        createdAt: row.created_at,
+        threadRootId: row.thread_root_id,
+        mentionsReader: row.mentions?.includes(input.userId) ?? false,
+      });
+    }
+    return {
+      messages,
+      leftOut,
+      blocked,
+      readerName: names.get(input.userId) ?? '',
+    };
+  }
+}

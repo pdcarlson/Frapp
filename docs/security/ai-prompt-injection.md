@@ -227,6 +227,12 @@ index (#4314) and on Ask (#450). They are the security-bearing subset of
 - *No action because a message asked.* No tool call is made because retrieved chat asked for it,
   and every action needs the asker's own confirmation (C3, C5).
 
+(Added 2026-11-12, #3946.) Catch me up reads chat directly, not through the index, and keeps the
+same rules: `ChatCatchUpService` checks the reader's channel access and each author's yes before the
+call, the conversation is the user turn and the instructions the system channel (C1), the call has
+no tools (C3), and every point must quote the message it names or it is dropped (C6). A planted
+message can at worst be quoted as itself. `chat-catch-up.eval-spec.ts` holds the cases.
+
 ## 5. Residual risk
 
 - **Model-level susceptibility is mitigated, not eliminated.** C1–C8 constrain the *blast radius* of a

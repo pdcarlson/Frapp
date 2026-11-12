@@ -51,6 +51,7 @@ import { DevLogModule } from './modules/dev-log/dev-log.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
 import { AskModule } from './modules/ask/ask.module';
+import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -115,6 +116,7 @@ import { validateEnv } from './config/env.validation';
     AiModule,
     AiConsentModule,
     AskModule,
+    ChatCatchUpModule,
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
     MeetingDraftModule,

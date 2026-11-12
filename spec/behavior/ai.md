@@ -158,6 +158,26 @@ A member asks a question in their own words and gets an answer from what they co
 
 > **Added 2026-11-12 (#450, the building session's, Paul's to change).** Not stated before: single questions with no follow-ups; the pill hidden rather than disabled when the president has Ask off; no relevance threshold (the no-source rule is the only "couldn't find it" test); an event's location text is given to the model; and the rate of ten a minute.
 
+## Catch me up
+
+A member back to a busy channel asks for the short version and gets a few lines, each tied to the message it came from. Built 2026-11-12 on web (#3946); mobile follows as its own change. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned on both Ask and "Include channel messages", and it needs the member's yes on the AI sheet.
+
+- **Only when a member asks.** Nothing summarizes in the background, on a schedule, or for a channel nobody asked about. One request is one summary for one reader.
+- **Chapter channels only.** Never a direct message, a group DM or the audit log. The reader must be able to open the channel, by the timeline's own check.
+- **What it reads.** One of three stretches: the messages that were new when the member opened the channel, the channel's last 24 hours or 7 days, or one thread. At most the newest 300 messages, no further back than 30 days, and about 48,000 characters of text; when a stretch is longer, the summary says it read the most recent part.
+- **Consent is [Chat as a source](#chat-as-a-source)'s, unchanged.** Only messages whose authors said yes are sent. Everyone else's are left out and the summary says how many, never whose. An imported message nobody linked to a member is left out the same way. A member the reader blocked is left out and not counted, so the count cannot say who.
+- **Too little is not summarized.** A stretch with fewer than 5 readable messages is quicker to read than to shorten, so no model is called and the member is told so. When consent is why, it says that.
+- **Every line is tied to a message.** A summary is up to 12 points in four groups, shown in this order: For you (asked of the reader, assigned to them, or promised by them), Decided, Dates and reminders, Also discussed. The model must name the one message each point rests on and quote words from it. The server checks every quote against that message, word for word, and drops a point that fails. A summary left with no point is not shown, and one that lost some says part of it could not be matched. Pressing a line opens its message, in its thread when it is a reply.
+- **There is no overall paragraph.** A gist nobody can check is the part of a summary most likely to be wrong, so the points are the summary.
+- **It proposes nothing.** A decision or a reminder in a summary is a line, never a suggested task, a calendar entry or a notification. Chat never triggers an action ([Chat as a source](#chat-as-a-source)), and a suggestion made from a private read would outlive it.
+- **Only the asker sees it, and it is not kept.** The summary is the response to the request. The server stores no summary, no prompt and no point, the beta diagnostics window never covers it, and the client holds it only while the panel is open: closing the panel, leaving the channel or reloading ends it.
+- **A message is never an instruction.** The conversation goes to the model as data, with the instructions in the system channel, and the call has no tools. Contact details are not to be repeated.
+- **Where it is.** On web: "Catch me up" in the channel's menu, a "Summarize thread" control on a thread of 5 or more messages, and a strip above the timeline when a channel opens with 20 or more new messages ([`../ui/web-dashboard/README.md` § Chat](../ui/web-dashboard/README.md#chat)). With summaries off for the chapter, or for a member without `ai:use`, none of these appear.
+- **When it can't** it says which: the member has not answered the AI sheet (with a button that opens it), the president has summaries or channel messages turned off, the chapter or the member reached its allowance, or summaries are not available. A provider refusal reads "This conversation can't be summarized."
+- **Limits.** Ten summaries a minute per member, on top of the spend caps. The request, the answer and the words both clients show are defined once, in `@repo/validation` (`chat-catch-up.ts`).
+
+> **Added 2026-11-12 (#3946, the building session's, Paul's to change).** The issue asked for the design to be settled with Paul first; this is the most conservative shape, built so he can change it. Not stated before: points instead of prose, with no overall paragraph; the four groups and their order; no suggestions from a summary; that it rides the Ask switch and the chat switch, with no switch of its own and no new version of the member sheet (the sheet already names summaries and channel messages); the reader's blocked members left out uncounted; every number above (5, 12, 20, 300, 30 days, ten a minute); and that the author's name goes to the model beside their message, as it does for Ask.
+
 ## Suggestions
 
 Some features propose instead of answer: a task drafted from minutes, a decision worth logging, a value for a form field.

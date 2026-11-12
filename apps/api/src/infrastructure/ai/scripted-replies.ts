@@ -1,4 +1,5 @@
 import { scriptedAskAnswer, scriptedAskPlan } from './scripted-ask';
+import { scriptedChatCatchUp } from './scripted-chat-catch-up';
 import type { ScriptedReplies } from './scripted-language-model';
 import { scriptedMinutesDraft } from './scripted-minutes-draft';
 
@@ -17,5 +18,6 @@ import { scriptedMinutesDraft } from './scripted-minutes-draft';
 export const SCRIPTED_REPLIES: ScriptedReplies = {
   'ask.plan': scriptedAskPlan,
   'ask.answer': scriptedAskAnswer,
+  'chat.catch-up': scriptedChatCatchUp,
   'minutes.draft': scriptedMinutesDraft,
 };

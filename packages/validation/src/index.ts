@@ -1061,6 +1061,8 @@ export * from "./meeting-recording";
 
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+// Catch me up (#3946): a channel's new messages or a thread, summarized.
+export * from "./chat-catch-up";
 
 export {
   AI_CONSENT_COPY,
