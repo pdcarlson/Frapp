@@ -3,7 +3,7 @@
  * later AI features retrieve from.
  *
  * The list of source types is closed, and the database holds the same list
- * (`corpus_sources_type_allowed`, widened in `20261112150000_ai_corpus_chat.sql`).
+ * (`corpus_sources_type_allowed`, widened in `20261112170000_ai_corpus_chat.sql`).
  * Vault, rush and backwork content have no type, so they cannot be indexed.
  *
  * A `chat_message` source is a conversation window of a chapter channel (one

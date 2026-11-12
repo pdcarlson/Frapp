@@ -84,7 +84,7 @@ export async function chatPassagesStillAllowed<P extends ChatPassageAuthors>(
  *
  * A source is a conversation window: one channel's messages on one day, each
  * thread's replies under the message they answer
- * (`20261112150000_ai_corpus_chat.sql`). The database keeps the windows in
+ * (`20261112170000_ai_corpus_chat.sql`). The database keeps the windows in
  * step with the chat and never offers a DM or group DM; this adapter decides
  * whose words are read.
  *

@@ -3867,9 +3867,9 @@ drop table if exists public.corpus_chunks;
 drop table if exists public.corpus_sources;
 ```
 
-## Rollback chat in the AI index (20261112150000)
+## Rollback chat in the AI index (20261112170000)
 
-* **Migration**: `20261112150000_ai_corpus_chat.sql`
+* **Migration**: `20261112170000_ai_corpus_chat.sql`
 
 One new table, `corpus_chat_windows`, new columns on `corpus_sources` and `corpus_chunks`, four triggers (three on `chat_messages`, one on `chapter_ai_settings`) and new functions; four corpus functions were redefined. No chat message, setting or consent row changed. Everything it wrote is derived and can be rebuilt by turning a chapter's chat switch off and on.
 

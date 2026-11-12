@@ -73,7 +73,7 @@ create index if not exists idx_corpus_chat_windows_chapter
 alter table public.corpus_chat_windows enable row level security;
 
 comment on table public.corpus_chat_windows is
-  'One conversation window of a chapter channel (a channel and a day, thread replies under their root): the unit the AI corpus indexes chat by. Exists only while the chapter''s chat-as-a-source switch is on. See 20261112150000_ai_corpus_chat.sql.';
+  'One conversation window of a chapter channel (a channel and a day, thread replies under their root): the unit the AI corpus indexes chat by. Exists only while the chapter''s chat-as-a-source switch is on. See 20261112170000_ai_corpus_chat.sql.';
 
 -- The day a message's conversation belongs to: the day turns at 09:00 UTC.
 create or replace function public.corpus_chat_day(p_at timestamptz)
@@ -272,9 +272,25 @@ begin
         or n.sender_id is distinct from o.sender_id
         or n.kind is distinct from o.kind
         or n.thread_root_id is distinct from o.thread_root_id
-        or n.channel_id is distinct from o.channel_id;
+        or n.channel_id is distinct from o.channel_id
+        or n.created_at is distinct from o.created_at;
     if v_channels is not null then
       perform public.note_chat_corpus_windows(v_channels, v_ats, v_senders, true);
+    end if;
+    -- A message moved to another channel, thread or day also leaves the
+    -- window it was in: that window is rebuilt without it.
+    select array_agg(o.channel_id),
+           array_agg(coalesce(r.created_at, o.created_at)),
+           array_agg(o.sender_id)
+      into v_channels, v_ats, v_senders
+      from old_messages o
+      join new_messages n on n.id = o.id
+      left join public.chat_messages r on r.id = o.thread_root_id
+     where n.thread_root_id is distinct from o.thread_root_id
+        or n.channel_id is distinct from o.channel_id
+        or n.created_at is distinct from o.created_at;
+    if v_channels is not null then
+      perform public.note_chat_corpus_windows(v_channels, v_ats, v_senders, false);
     end if;
   else
     select array_agg(o.channel_id),
@@ -408,6 +424,25 @@ begin
         from public.corpus_sources s
        where s.left_out_author_ids && p_user_ids
          and (p_chapter_id is null or s.chapter_id = p_chapter_id)
+      union
+      -- A window waiting for, or in the middle of, an index run holds no
+      -- passage yet, but a run may already have read the member's words
+      -- under their old answer. Its revision goes up, so that run's write
+      -- fails its revision check and nothing it embedded is kept.
+      select s.id
+        from public.corpus_sources s
+        join public.corpus_chat_windows w on w.id = s.source_id
+       where s.source_type = 'chat_message'
+         and s.indexed_revision < s.revision
+         and (p_chapter_id is null or s.chapter_id = p_chapter_id)
+         and exists (
+           select 1
+             from public.chat_messages m
+             left join public.chat_messages r on r.id = m.thread_root_id
+            where m.channel_id = w.channel_id
+              and m.sender_id = any (p_user_ids)
+              and public.corpus_chat_day(coalesce(r.created_at, m.created_at)) = w.day
+         )
     ) hit;
   if v_ids is null then
     return 0;
@@ -564,24 +599,38 @@ $$;
 
 -- 7. Indexing, redefined for the new columns ----------------------------------
 
--- Documents and minutes before chat, then the longest waiting. Otherwise as
--- in 20261112140000.
+-- Documents and minutes before chat, then the longest waiting; then, with
+-- what room is left, sources made by another model or pipeline. Two passes,
+-- each on its own partial index: chat adds a row per channel per day of
+-- history, so one filter over every source (as in 20261112140000) would scan
+-- the whole index every minute once it is large.
+create index if not exists idx_corpus_sources_due_official_first
+  on public.corpus_sources ((source_type = 'chat_message'), next_attempt_at)
+  where status = 'pending';
+
+create index if not exists idx_corpus_sources_fingerprint
+  on public.corpus_sources (index_fingerprint)
+  where status <> 'pending';
+
 create or replace function public.claim_corpus_sources(
   p_fingerprint text,
   p_now timestamptz,
   p_limit integer
 )
 returns setof public.corpus_sources
-language sql
+language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
+declare
+  v_claimed integer;
+begin
+  return query
   with due as (
     select s.id
       from public.corpus_sources s
-     where s.next_attempt_at <= p_now
-       and (s.status = 'pending'
-            or s.index_fingerprint is distinct from p_fingerprint)
+     where s.status = 'pending'
+       and s.next_attempt_at <= p_now
      order by (s.source_type = 'chat_message'), s.next_attempt_at
      limit greatest(p_limit, 0)
        for update skip locked
@@ -594,6 +643,32 @@ as $$
     from due
    where s.id = due.id
   returning s.*;
+  get diagnostics v_claimed = row_count;
+
+  if v_claimed < p_limit then
+    return query
+    with stale as (
+      select s.id
+        from public.corpus_sources s
+       where s.status <> 'pending'
+         and (s.index_fingerprint < p_fingerprint
+              or s.index_fingerprint > p_fingerprint
+              or s.index_fingerprint is null)
+         and s.next_attempt_at <= p_now
+       order by (s.source_type = 'chat_message'), s.next_attempt_at
+       limit p_limit - v_claimed
+         for update skip locked
+    )
+    update public.corpus_sources s
+       set attempts = s.attempts + 1,
+           next_attempt_at = p_now + least(
+             interval '10 minutes' * power(2, least(s.attempts, 10)),
+             interval '1 day')
+      from stale
+     where s.id = stale.id
+    returning s.*;
+  end if;
+end;
 $$;
 
 -- As in 20261112140000, and writes a chat passage's authors, first message
@@ -830,7 +905,7 @@ as $$
 $$;
 
 comment on function public.match_corpus_chunks(uuid, uuid, text, text, text, integer) is
-  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank, authors and (for chat) channel. See 20261112140000_ai_corpus.sql and 20261112150000_ai_corpus_chat.sql.';
+  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank, authors and (for chat) channel. See 20261112140000_ai_corpus.sql and 20261112170000_ai_corpus_chat.sql.';
 
 -- 9. Grants: service role only ----------------------------------------------
 

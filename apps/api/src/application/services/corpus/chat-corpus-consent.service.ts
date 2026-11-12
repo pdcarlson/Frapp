@@ -41,9 +41,14 @@ export class ChatCorpusConsentService implements OnModuleInit {
     });
   }
 
-  /** Returns how many windows were put back in line. */
+  /**
+   * Returns how many windows were put back in line. A chapter that fails
+   * does not stop the others; once every chapter has had its turn, the
+   * failure is thrown so the cron reports it.
+   */
   async reconcile(): Promise<number> {
     let requeued = 0;
+    let failed = 0;
     for (const chapterId of await this.corpus.chatCorpusChapters()) {
       try {
         const { indexed, leftOut } =
@@ -65,12 +70,18 @@ export class ChatCorpusConsentService implements OnModuleInit {
         }
       } catch (error) {
         // One chapter's failure must not stop the others' purge.
+        failed += 1;
         this.logger.warn(
           `Chat index reconcile failed for a chapter: ${
             error instanceof Error ? error.name : 'unknown error'
           }`,
         );
       }
+    }
+    if (failed > 0) {
+      throw new Error(
+        `Chat index reconcile failed for ${failed} chapter(s); ${requeued} windows re-queued`,
+      );
     }
     return requeued;
   }

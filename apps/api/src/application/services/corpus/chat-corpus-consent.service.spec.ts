@@ -65,10 +65,12 @@ describe('ChatCorpusConsentService', () => {
     );
   });
 
-  it('keeps going to the next chapter when one fails', async () => {
+  it('keeps going to the next chapter when one fails, then reports the failure', async () => {
     const { service, corpus } = setup({ [CHAPTER_B]: [] });
     corpus.chatCorpusAuthors.mockRejectedValueOnce(new Error('database away'));
-    await service.reconcile();
+    await expect(service.reconcile()).rejects.toThrow(
+      'Chat index reconcile failed for 1 chapter(s)',
+    );
     expect(corpus.requeueChatByAuthors).toHaveBeenCalledWith(
       ['sam'],
       CHAPTER_B,

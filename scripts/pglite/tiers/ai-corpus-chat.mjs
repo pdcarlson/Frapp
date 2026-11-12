@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: chat in the AI corpus (20261112150000, #4314) ──────────────
+// ─── Functional: chat in the AI corpus (20261112170000, #4314) ──────────────
 //
 // The database half of chat as a source. The API decides whose messages are
 // read (consent); the database decides which messages exist to be read, and
@@ -39,7 +39,7 @@ import { db, miss } from "../harness.mjs";
 //   - neither client role may execute any of the new functions.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: chat in the AI corpus (20261112150000, #4314) ===");
+console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===");
 {
   const CH = "a4314000-0000-4000-8000-00000000000a";
   const CH2 = "a4314000-0000-4000-8000-00000000000b";
@@ -303,6 +303,18 @@ console.log("\n=== Functional: chat in the AI corpus (20261112150000, #4314) ===
       { after },
     );
 
+    // A message moved to another day leaves the window it was in.
+    await index(await chatSource(genWin.id), [U1, U2]);
+    await db.query(`update chat_messages set created_at = '2026-11-11T15:00:00Z' where id = $1`, [imported.id]);
+    after = await chatSource(genWin.id);
+    const movedTo = await windowOf(GEN, "2026-11-11");
+    check(
+      "a message moved to another day rebuilds the window it left and the one it joined",
+      after.status === "pending" && (await chunkCount(after.id)) === 0 && movedTo &&
+        (await chatSource(movedTo.id))?.status === "pending",
+      { after, movedTo },
+    );
+
     // A new day makes a new window.
     await db.query(
       `insert into chat_messages (channel_id, sender_id, content, created_at)
@@ -368,13 +380,23 @@ console.log("\n=== Functional: chat in the AI corpus (20261112150000, #4314) ===
     const execAfter = await chatSource(exec.id);
     check(
       "requeueing a member drops every passage by them and every window that left them out",
-      requeued.n === 2 &&
+      requeued.n >= 2 &&
         genAfter.status === "pending" &&
         execAfter.status === "pending" &&
         (await chunkCount(genAfter.id)) === 0 &&
         (await chunkCount(execAfter.id)) === 0 &&
         new Date(genAfter.next_attempt_at).getTime() <= Date.now() + 1000,
       { requeued, genAfter: genAfter.status, execAfter: execAfter.status },
+    );
+    // A run may have read the window under the member's old answer and not
+    // written yet: the window holds no passage by them, but its revision must
+    // still move so that run's write is refused.
+    const inFlight = await chatSource(genWin.id);
+    const again = await one(`select requeue_chat_corpus_by_authors($1::uuid[], $2) as n`, [[U2], CH]);
+    check(
+      "requeueing a member also moves a window still waiting to be indexed that holds their messages",
+      again.n >= 1 && Number((await chatSource(genWin.id)).revision) === Number(inFlight.revision) + 1,
+      { again, before: inFlight.revision },
     );
     check(
       "requeueing a member with nothing indexed changes nothing",
@@ -403,6 +425,21 @@ console.log("\n=== Functional: chat in the AI corpus (20261112150000, #4314) ===
       "a waiting document is claimed before chat that has waited longer",
       claimed.length === 1 && claimed[0].source_type === "chapter_document",
       { claimed },
+    );
+    // Nothing waiting, one indexed source made by an older model: the second
+    // pass claims it.
+    await db.query(`update corpus_sources set status = 'indexed', indexed_revision = revision, index_fingerprint = $2
+                     where chapter_id = $1`, [CH, FP]);
+    await db.query(`update corpus_sources set index_fingerprint = 'old-model', next_attempt_at = now() - interval '1 minute'
+                     where id = (select id from corpus_sources where chapter_id = $1 and source_type = 'chat_message' limit 1)`, [CH]);
+    const stale = await rows(
+      `select source_type, index_fingerprint from claim_corpus_sources($1, now() + interval '1 minute', 5)`,
+      [FP],
+    );
+    check(
+      "with nothing waiting, a source made by another model is claimed again, and only that one",
+      stale.length === 1 && stale[0].index_fingerprint === "old-model",
+      { stale },
     );
 
     // ── The switch off, and channel deletion ─────────────────────────────
