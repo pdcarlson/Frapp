@@ -12,6 +12,7 @@ import {
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { fetchAllPages } from '../supabase.utils';
 
 /** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
 const SUBTASK_READ_BATCH = 100;
@@ -42,6 +43,27 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
     return data || [];
+  }
+
+  async findSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<Task[]> {
+    return fetchAllPages<Task>(
+      (from, to) =>
+        this.supabase
+          .from('tasks')
+          .select('*')
+          .eq('chapter_id', chapterId)
+          .or(
+            `due_date.gte.${since.dueFrom},created_at.gte."${since.createdFrom}"`,
+          )
+          // A total order: `id` breaks ties, so no row repeats across pages.
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: 1000 },
+    );
   }
 
   async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {

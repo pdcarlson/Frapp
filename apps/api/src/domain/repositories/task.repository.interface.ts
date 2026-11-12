@@ -5,6 +5,15 @@ export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 export interface ITaskRepository {
   findById(id: string, chapterId: string): Promise<Task | null>;
   findByChapter(chapterId: string): Promise<Task[]>;
+  /**
+   * The chapter's tasks due on or after `dueFrom` (`YYYY-MM-DD`), or made at
+   * or after `createdFrom`, every row of them: read in pages, so a chapter
+   * with more rows than one response holds loses none.
+   */
+  findSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<Task[]>;
   findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]>;
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;

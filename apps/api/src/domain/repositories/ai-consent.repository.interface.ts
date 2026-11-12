@@ -33,6 +33,14 @@ export interface IAiConsentRepository {
     now: Date,
   ): Promise<ChapterAiSettings>;
 
+  /**
+   * Every chapter with this switch on. For a scheduled feature that visits
+   * each such chapter (#3930); nothing a member's request reads.
+   */
+  listChapterIdsWithSwitchOn(
+    column: keyof ChapterAiSettingsPatch,
+  ): Promise<string[]>;
+
   /** The person's answer on this sheet version, or null if they gave none. */
   findConsent(
     userId: string,

@@ -38,6 +38,20 @@ class FakeRepo implements IAiSuggestionRepository {
     return this.rows.find((r) => r.chapter_id === chapterId && r.id === id);
   }
 
+  findTakenDedupeKeys = jest.fn(
+    async (chapterId: string, keys: readonly string[]) =>
+      new Set(
+        this.rows
+          .filter(
+            (r) =>
+              r.chapter_id === chapterId &&
+              r.dedupe_key !== null &&
+              keys.includes(r.dedupe_key),
+          )
+          .map((r) => r.dedupe_key as string),
+      ),
+  );
+
   insertBatch = jest.fn(
     async (chapterId: string, rows: readonly NewAiSuggestion[]) => {
       const written: AiSuggestion[] = [];

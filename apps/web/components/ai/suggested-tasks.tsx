@@ -11,13 +11,20 @@ import {
   useMeetings,
   useMembers,
   type AiSuggestion,
+  type AiSuggestionDismissReason,
   type AiSuggestionSourceRef,
   type TaskSuggestionEdits,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
-import { AI_SUGGESTION_COPY, aiSuggestionRefusalLine } from "@repo/validation";
+import {
+  AI_SUGGESTION_COPY,
+  LAST_YEAR_COPY,
+  aiSuggestionRefusalLine,
+  lastYearTaskLine,
+} from "@repo/validation";
+import { lastYearBareDay } from "@/components/ai/last-year-dates";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -54,6 +61,11 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * things a meeting leaves unsaid ("someone should call the caterer"), and a
  * task needs both; the pencil opens the board's own task form for anything
  * else. Accept with one of them missing points at it instead of failing.
+ *
+ * A task drawn from last year's board (#3930, "this time last year") is the
+ * same row under a line that says so, with one more answer: already planned.
+ * It carries last year's checklist and nobody's name, because the officer
+ * who did it has likely handed the job on.
  */
 
 /** `AI_SUGGESTION_DECIDE_MAX` on the API: decisions one request may carry. */
@@ -105,7 +117,7 @@ function editsFor(
 }
 
 /** Why an accept or dismiss was refused, in words an officer can act on. */
-function refusalLine(error: unknown): string {
+export function suggestionRefusalLine(error: unknown): string {
   return (
     aiSuggestionRefusalLine(codeOf(error)) ??
     getErrorMessage(error, AI_SUGGESTION_COPY.tryAgain)
@@ -183,12 +195,15 @@ export function SuggestedTasks({
     setBusyId(item.id);
     try {
       await accept.mutateAsync({ id: item.id, task: editsFor(item, values) });
-      toast({ title: AI_SUGGESTION_COPY.created, description: item.task.title });
+      toast({
+        title: AI_SUGGESTION_COPY.created,
+        description: item.task.title,
+      });
       return true;
     } catch (error) {
       toast({
         title: AI_SUGGESTION_COPY.acceptFailed,
-        description: refusalLine(error),
+        description: suggestionRefusalLine(error),
         variant: "destructive",
       });
       return false;
@@ -197,14 +212,17 @@ export function SuggestedTasks({
     }
   }
 
-  async function dismissRow(item: WaitingSuggestion) {
+  async function dismissRow(
+    item: WaitingSuggestion,
+    reason?: AiSuggestionDismissReason,
+  ) {
     setBusyId(item.id);
     try {
-      await dismiss.mutateAsync(item.id);
+      await dismiss.mutateAsync({ id: item.id, reason });
     } catch (error) {
       toast({
         title: AI_SUGGESTION_COPY.dismissFailed,
-        description: refusalLine(error),
+        description: suggestionRefusalLine(error),
         variant: "destructive",
       });
     } finally {
@@ -262,6 +280,11 @@ export function SuggestedTasks({
       onEdit={(patch) => editRow(item.id, patch)}
       onAccept={() => void acceptRow(item)}
       onDismiss={() => void dismissRow(item)}
+      onAlreadyDoing={
+        item.task.last_year_on
+          ? () => void dismissRow(item, "already_doing")
+          : undefined
+      }
       onOpenForm={() => setFormFor(item.id)}
       onCloseForm={() => setFormFor(null)}
       acceptWith={async (task) => {
@@ -280,19 +303,25 @@ export function SuggestedTasks({
           const first = group[0]!;
           return (
             <div key={first.source.id} className="space-y-2">
-              <p className="text-caption text-muted-foreground">
-                {AI_SUGGESTION_COPY.fromMinutesOf}{" "}
-                {first.source.type === "meeting" ? (
-                  <Link
-                    href={meetingHref(first.source.id)}
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    {meetingName(first.source.id)}
-                  </Link>
-                ) : (
-                  AI_SUGGESTION_COPY.aMeeting
-                )}
-              </p>
+              {first.task.last_year_on ? (
+                <p className="text-caption text-muted-foreground">
+                  {lastYearTaskLine(lastYearBareDay(first.task.last_year_on))}
+                </p>
+              ) : (
+                <p className="text-caption text-muted-foreground">
+                  {AI_SUGGESTION_COPY.fromMinutesOf}{" "}
+                  {first.source.type === "meeting" ? (
+                    <Link
+                      href={meetingHref(first.source.id)}
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      {meetingName(first.source.id)}
+                    </Link>
+                  ) : (
+                    AI_SUGGESTION_COPY.aMeeting
+                  )}
+                </p>
+              )}
               <ul className="space-y-2">{group.map(renderRow)}</ul>
             </div>
           );
@@ -342,6 +371,7 @@ function SuggestedTaskRow({
   onEdit,
   onAccept,
   onDismiss,
+  onAlreadyDoing,
   onOpenForm,
   onCloseForm,
   acceptWith,
@@ -355,6 +385,8 @@ function SuggestedTaskRow({
   onEdit: (patch: RowEdits) => void;
   onAccept: () => void;
   onDismiss: () => void;
+  /** Only on a "this time last year" row: the chapter is already on it. */
+  onAlreadyDoing?: () => void;
   onOpenForm: () => void;
   onCloseForm: () => void;
   acceptWith: (task: TaskSuggestionEdits) => Promise<void>;
@@ -394,7 +426,7 @@ function SuggestedTaskRow({
               });
               return { ok: true };
             } catch (error) {
-              return { ok: false, error: refusalLine(error) };
+              return { ok: false, error: suggestionRefusalLine(error) };
             }
           }}
         />
@@ -469,6 +501,16 @@ function SuggestedTaskRow({
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </Button>
+          {onAlreadyDoing ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              onClick={onAlreadyDoing}
+            >
+              {LAST_YEAR_COPY.alreadyDoing}
+            </Button>
+          ) : null}
           <Button
             size="icon"
             variant="ghost"

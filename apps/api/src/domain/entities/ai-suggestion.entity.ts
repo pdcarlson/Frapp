@@ -6,18 +6,23 @@
  * (ADR-28 decision 11, spec/behavior/ai.md § Suggestions).
  */
 
-/** What accepting a suggestion makes. One value per kind handler. */
-export const AI_SUGGESTION_KINDS = ['task'] as const;
+/**
+ * What accepting a suggestion makes. One value per kind handler. `event` is
+ * an event added to the calendar (#3930).
+ */
+export const AI_SUGGESTION_KINDS = ['task', 'event'] as const;
 export type AiSuggestionKind = (typeof AI_SUGGESTION_KINDS)[number];
 
 /**
  * What a suggestion was drawn from. A source type with no access checker
- * registered is shown to nobody (fail closed).
+ * registered is shown to nobody (fail closed). `task` is an earlier task
+ * (last year's, #3930).
  */
 export const AI_SUGGESTION_SOURCE_TYPES = [
   'meeting',
   'event',
   'channel',
+  'task',
 ] as const;
 export type AiSuggestionSourceType =
   (typeof AI_SUGGESTION_SOURCE_TYPES)[number];

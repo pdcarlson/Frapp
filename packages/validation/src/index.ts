@@ -1065,6 +1065,7 @@ export * from "./meeting-recording";
 
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+export * from "./last-year";
 
 // Report this (#4315): the reasons, the request, and the words about what a
 // report keeps.
