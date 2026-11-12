@@ -87,7 +87,9 @@ describe('GoogleCalendarApiClient', () => {
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://oauth2.googleapis.com/token');
-    expect(Object.fromEntries(new URLSearchParams(init.body as string))).toEqual({
+    expect(
+      Object.fromEntries(new URLSearchParams(init.body as string)),
+    ).toEqual({
       grant_type: 'authorization_code',
       code: 'code-1',
       redirect_uri: 'https://api/cb',

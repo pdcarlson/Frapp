@@ -113,7 +113,7 @@
 - **Auto-absent:** For mandatory or role-targeted events, required members who did not check in, were not excused and have no pending or approved excuse are auto-marked ABSENT.
 - **Meeting minutes:** Events have an optional notes field (markdown) editable by admins after the event. Visible to all members with access to the event.
 - Unique constraint: one attendance record per (event, user).
-- **Calendar integration:** a private subscription link per member that Apple Calendar, Google Calendar and Outlook subscribe to (2026-11-12, #3322), replacing the per-event `.ics` download withdrawn on 2026-11-08 (#3708); [`events.md` § Calendar subscription](../behavior/events.md#calendar-subscription).
+- **Calendar integration:** a private subscription link per member that Apple Calendar, Google Calendar and Outlook subscribe to (2026-11-12, #3322), replacing the per-event `.ics` download withdrawn on 2026-11-08 (#3708); [`events.md` § Calendar subscription](../behavior/events.md#calendar-subscription). Where the server is set up for it, Google Calendar connects instead: Frapp keeps a calendar of its own in the member's Google account, updated within minutes ([`events.md` § Google Calendar](../behavior/events.md#google-calendar)).
 
 ## Polls and Voting
 

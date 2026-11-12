@@ -45,6 +45,7 @@ export * from "./use-attendance";
 export * from "./use-backwork";
 export * from "./use-billing";
 export * from "./use-calendar-feed";
+export * from "./use-google-calendar";
 export * from "./use-chapter-directory";
 export * from "./use-chapters";
 export * from "./use-chat";
