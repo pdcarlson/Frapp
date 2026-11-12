@@ -55,6 +55,12 @@ export const FEATURE_EVENTS = {
     feature: 'meetings',
     properties: ['meeting_type', 'has_decisions', 'has_action_items'],
   },
+  // An officer asks for minutes drafted from their notes (#4312). No
+  // property: the AI call itself is counted by the gateway's own event.
+  'meeting-draft-requested': {
+    feature: 'meetings',
+    properties: [],
+  },
 
   // Tasks
   'task-created': {

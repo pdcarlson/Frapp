@@ -1,4 +1,5 @@
 import type { ScriptedReplies } from './scripted-language-model';
+import { scriptedMinutesDraft } from './scripted-minutes-draft';
 
 /**
  * The canned replies the scripted adapter gives in the running app, by task.
@@ -12,4 +13,6 @@ import type { ScriptedReplies } from './scripted-language-model';
  * Tests and the eval suite pass their own scripts to the adapter and do not
  * read this map.
  */
-export const SCRIPTED_REPLIES: ScriptedReplies = {};
+export const SCRIPTED_REPLIES: ScriptedReplies = {
+  'minutes.draft': scriptedMinutesDraft,
+};

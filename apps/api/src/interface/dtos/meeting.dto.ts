@@ -19,8 +19,11 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  MEETING_DRAFT_FAILURES,
+  MEETING_DRAFT_STATUSES,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
+  MEETING_NOTES_MAX_LENGTH,
   MEETING_OTHER_LABEL_MAX_LENGTH,
   MEETING_SECTION_KEYS,
   MEETING_STATUSES,
@@ -355,4 +358,92 @@ export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ format: 'date-time' }) created_at: string;
   @ApiProperty() can_edit: boolean;
   @ApiProperty() can_delete: boolean;
+}
+
+// ── Drafting from notes (#4312) ──────────────────────────────────────────────
+
+export class RequestMeetingDraftDto {
+  @ApiProperty({
+    maxLength: MEETING_NOTES_MAX_LENGTH,
+    description:
+      'The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MEETING_NOTES_MAX_LENGTH)
+  notes: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version.',
+  })
+  @IsDateString()
+  expected_updated_at: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-09',
+    description:
+      'The meeting’s calendar day where the officer is, so "by Friday" in the notes becomes the right date.',
+  })
+  @IsOptional()
+  @Matches(DATE_PATTERN)
+  meeting_date?: string;
+}
+
+export class MeetingDraftSourceDto {
+  @ApiProperty({ enum: ['decision', 'action_item'] })
+  kind: 'decision' | 'action_item';
+  @ApiProperty({
+    description: 'The drafted text, as it went into the minutes.',
+  })
+  text: string;
+  @ApiProperty({
+    description: 'The line of the notes it came from, word for word.',
+  })
+  quote: string;
+}
+
+export class MeetingDraftReviewDto {
+  @ApiProperty({
+    type: [String],
+    description: 'What the notes leave unsaid, for the officer to fill in.',
+  })
+  gaps: string[];
+  @ApiProperty({ type: [MeetingDraftSourceDto] })
+  sources: MeetingDraftSourceDto[];
+  @ApiProperty({
+    description:
+      'Drafted lines left out because the line they named is not in the notes.',
+  })
+  left_out: number;
+}
+
+export class MeetingDraftDto {
+  @ApiProperty({ enum: MEETING_DRAFT_STATUSES })
+  status: (typeof MEETING_DRAFT_STATUSES)[number];
+  @ApiProperty({ description: 'The notes the draft was asked from, or "".' })
+  notes: string;
+  @ApiProperty({ enum: MEETING_DRAFT_FAILURES, nullable: true })
+  failure: (typeof MEETING_DRAFT_FAILURES)[number] | null;
+  @ApiProperty({ type: String, nullable: true })
+  failure_message: string | null;
+  @ApiProperty({
+    type: MeetingContentPatchDto,
+    nullable: true,
+    description:
+      'The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it.',
+  })
+  content: MeetingContentPatchDto | null;
+  @ApiProperty({ type: MeetingDraftReviewDto })
+  review: MeetingDraftReviewDto;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  requested_at: string | null;
+  @ApiProperty({
+    enum: ['chapter_off', 'consent_required'],
+    nullable: true,
+    description:
+      'Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
+  })
+  blocked: 'chapter_off' | 'consent_required' | null;
 }

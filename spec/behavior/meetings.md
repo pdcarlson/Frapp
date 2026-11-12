@@ -90,6 +90,24 @@ The Notes way in, without the AI draft: an officer writes the minutes themselves
 - **Who changes them.** The author edits their own minutes, draft or posted, while the event still shows itself to them; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
 - **Off by default during the beta.** The `meetings` module is in `BETA_OFF_MODULES`, so no chapter sees Meetings in the nav or its settings page, and every write is refused, until it is taken out of that list.
 
+## Drafting from notes
+
+The officer who takes the minutes pastes or types what they wrote down during the meeting and asks for a draft ([ADR-28](../architecture/adr/adr-28.md) decision 6). The draft lands in the same sections as hand-written minutes, for them to fix and post. Web first (#4312); mobile and the recording path reuse the same draft.
+
+- **Where it is.** A "Your notes" box sits above the sections of a draft the officer may edit. It shows only when the server has AI on and the president has turned meeting notes on ([`ai.md` § Consent](ai.md#consent)). An officer who has not answered the AI sheet sees the box with one plain line saying so, and can't ask until they have.
+- **Asking** needs `meetings:record`, and the right to edit these minutes. Typing in the sections is saved first. If the sections already hold something, the page asks before the draft replaces them. Attendees are never touched.
+- **While it is written,** the sections wait and can't be typed in, Save and Post wait, and the box offers Stop. Stopping keeps the notes in the box.
+- **It never overwrites a save.** The draft goes into the minutes only if they are still at the version it was asked on. If someone saved meanwhile, the draft waits and the officer chooses Use the draft.
+- **Only what the notes say.** Every decision and action item must come with the line of the notes it was drawn from, word for word. An item whose line isn't in the notes is dropped, and the officer is told how many were. A vote count is kept only when its numbers are in that line. An owner is kept only when that line names exactly one member, by name or by a role only one member holds. Otherwise the item shows "Nobody named". Points are never an action item.
+- **Honest gaps.** What the notes leave unsaid is listed under "To fill in" (who is doing something, a vote with no count), not guessed. Each drafted decision and action item shows the line it came from until the officer rewrites it.
+- **Notes are text, not instructions.** A line in the notes addressed to the AI is not followed.
+- **Nothing is posted.** The draft is an unposted draft like any other. Posting is the officer's own step, and action items stay as written for the officer; turning them into suggested tasks is [Suggested tasks](#suggested-tasks).
+- **When it can't be done,** the box says why in plain words and keeps the notes: the chapter's AI limit was reached, drafting is unavailable, the provider declined, or the draft didn't come through and can be asked for again.
+- **Standards.** A Standards meeting has no minutes in Frapp, so there is nothing to draft into. Minutes whose type is changed to Standards are refused by the server before any text leaves ([Standards meetings](#standards-meetings)).
+- **How long the notes are kept.** The notes, and the draft's list of lines, are kept only while the minutes are an unposted draft, so "Draft again" works and the box is as the officer left it. They are deleted when the minutes are posted or deleted, when the officer clears them, when the officer deletes their account, and 30 days after the draft was asked for whatever else happened.
+
+> **Added 2026-11-12 (#4312, the drafting session's, Paul's to change).** Keeping the notes while the minutes are a draft, the 30-day limit, and replacing the sections rather than merging into them were not stated before. The conservative choice in each case: the shortest keep that still lets the officer ask again, and a replace the page asks about first.
+
 ## Suggested tasks
 
 Minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal.
@@ -134,4 +152,5 @@ Frapp stores no voiceprint and never recognises a member by voice. Speaker label
 
 - **Raw audio is deleted when the minutes are posted.** A recording whose minutes are never posted is deleted after 30 days. Audio can't be anonymised when a member deletes their account, so it must already be gone.
 - **Transcripts and posted minutes** follow the chapter's general [data retention](data-retention.md) policy. When a member deletes their account, their name on a speaker label becomes "Deleted User", as it does on their chat messages.
+- **An officer's notes for a draft** are kept only while the minutes are unposted, and never more than 30 days ([Drafting from notes](#drafting-from-notes)).
 - **Standards minutes** in the vault follow the vault retention rules.

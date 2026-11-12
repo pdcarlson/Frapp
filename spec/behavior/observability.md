@@ -583,6 +583,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | --- | --- | --- |
 | `meeting-started` | An officer starts minutes ([`meetings.md`](meetings.md#writing-minutes-by-hand)). `meeting_type` is the type picked; `from_new_event` is `true` when the meeting wasn't on the calendar and got its event then | `meeting_type`, `from_new_event` |
 | `meeting-posted` | An officer posts minutes. Posting minutes that are already posted changes nothing, and still counts the request | `meeting_type`, `has_decisions`, `has_action_items` |
+| `meeting-draft-requested` | An officer asks for minutes drafted from their notes ([`meetings.md`](meetings.md#drafting-from-notes)). The model call itself is the gateway's `ai-call-finished` | — |
 
 **Polls (`polls`)**
 

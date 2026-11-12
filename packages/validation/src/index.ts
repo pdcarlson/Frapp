@@ -1054,3 +1054,6 @@ export {
   type MeetingType,
   type MeetingVote,
 } from "./meetings";
+// Minutes drafted from notes (#4312): the model's output schema, the draft's
+// states and the words each failure shows.
+export * from "./meeting-draft";

@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   push: vi.fn(),
   confirm: vi.fn(),
+  draft: { current: null as unknown },
+  requestDraft: vi.fn(),
+  discardDraft: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -18,6 +21,15 @@ vi.mock("@repo/hooks", () => ({
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
   usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
   useDeleteMeeting: () => ({ mutateAsync: mocks.remove, isPending: false }),
+  useMeetingDraft: () => ({ isPending: false, data: mocks.draft.current }),
+  useRequestMeetingDraft: () => ({
+    mutateAsync: mocks.requestDraft,
+    isPending: false,
+  }),
+  useDiscardMeetingDraft: () => ({
+    mutateAsync: mocks.discardDraft,
+    isPending: false,
+  }),
   useMemberDisplayNames: () => ({
     nameFor: (id: string) =>
       ({
@@ -136,10 +148,36 @@ beforeEach(() => {
     mocks.toast,
     mocks.push,
     mocks.confirm,
+    mocks.requestDraft,
+    mocks.discardDraft,
   ]) {
     fn.mockReset();
   }
+  mocks.draft.current = null;
 });
+
+const NO_DRAFT = {
+  status: "none",
+  notes: "",
+  failure: null,
+  failure_message: null,
+  content: null,
+  review: { gaps: [], sources: [], left_out: 0 },
+  requested_at: null,
+  blocked: null,
+};
+
+function ownDraft(overrides: Partial<MeetingMinutes> = {}): MeetingMinutes {
+  return minutes({
+    status: "draft",
+    posted_at: null,
+    posted_by: null,
+    can_edit: true,
+    can_delete: true,
+    content: EMPTY,
+    ...overrides,
+  });
+}
 
 describe("MinutesPage", () => {
   it("reads posted minutes as a document, with only the sections that hold something", () => {
@@ -345,5 +383,183 @@ describe("MinutesPage", () => {
       (screen.getByRole("textbox", { name: "Summary" }) as HTMLTextAreaElement)
         .value,
     ).toBe("Newer.");
+  });
+
+  describe("drafting from notes", () => {
+    it("shows no notes box where drafting isn't offered", () => {
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.queryByRole("heading", { name: "Your notes" })).toBeNull();
+      mocks.draft.current = { ...NO_DRAFT, blocked: "chapter_off" };
+      render(<MinutesPage id="m-1" />);
+      expect(screen.queryByRole("heading", { name: "Your notes" })).toBeNull();
+    });
+
+    it("asks for a draft against the version on screen, with the meeting's day", async () => {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      // Empty notes are caught on the ask, not while typing.
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      expect(screen.getByText("Paste or type your notes first.")).toBeTruthy();
+      expect(mocks.requestDraft).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "voted yes on formal budget 30-2" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+      // Nothing was written yet, so nothing is replaced and nobody is asked.
+      expect(mocks.confirm).not.toHaveBeenCalled();
+      expect(mocks.requestDraft.mock.calls[0]![0]).toMatchObject({
+        id: "m-1",
+        body: {
+          notes: "voted yes on formal budget 30-2",
+          expected_updated_at: "2026-11-10T01:00:00.000Z",
+        },
+      });
+      expect(mocks.requestDraft.mock.calls[0]![0].body.meeting_date).toMatch(
+        /^2026-11-(09|10)$/,
+      );
+    });
+
+    it("asks before a draft replaces what is written, and saves typing first", async () => {
+      mocks.draft.current = NO_DRAFT;
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      mocks.update.mockResolvedValue({
+        ...draft,
+        updated_at: "2026-11-10T02:00:00.000Z",
+        content: { ...EMPTY, summary: "We met." },
+      });
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+        target: { value: "We met." },
+      });
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Replace what's written?",
+      );
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      expect(
+        mocks.requestDraft.mock.calls[0]![0].body.expected_updated_at,
+      ).toBe("2026-11-10T02:00:00.000Z");
+    });
+
+    it("holds the sections still while a draft is written, and offers Stop", () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "drafting", notes: "notes" };
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Drafting minutes from your notes")).toBeTruthy();
+      // The sections sit in a disabled fieldset, so every field in it waits.
+      expect(
+        screen.getByRole("textbox", { name: "Summary" }).matches(":disabled"),
+      ).toBe(true);
+      expect(
+        screen.getByRole("button", { name: "Post minutes" }),
+      ).toHaveProperty("disabled", true);
+      fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+      expect(mocks.discardDraft).toHaveBeenCalledWith("m-1");
+    });
+
+    it("shows what to fill in and the line each drafted item came from", () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "applied",
+        notes: "voted yes on formal budget 30-2",
+        review: {
+          gaps: ["The notes don't say who is booking the venue."],
+          sources: [
+            {
+              kind: "decision",
+              text: "Approve the formal budget",
+              quote: "voted yes on formal budget 30-2",
+            },
+          ],
+          left_out: 1,
+        },
+      };
+      loaded(
+        ownDraft({
+          content: {
+            ...EMPTY,
+            decisions: [
+              {
+                text: "Approve the formal budget",
+                vote: { for: 30, against: 2, abstain: 0 },
+              },
+            ],
+          },
+        }),
+      );
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByText("The notes don't say who is booking the venue."),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "One drafted line was left out because nothing in your notes backed it.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText("From your notes: “voted yes on formal budget 30-2”"),
+      ).toBeTruthy();
+      // Once the officer rewrites the line it is theirs, and the quote goes.
+      fireEvent.change(screen.getByRole("textbox", { name: "Decision 1" }), {
+        target: { value: "Approve the budget" },
+      });
+      expect(screen.queryByText(/^From your notes:/)).toBeNull();
+      expect(screen.getByRole("button", { name: "Draft again" })).toBeTruthy();
+    });
+
+    it("puts a draft that waited into the editor only when asked", () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "ready",
+        notes: "notes",
+        content: { ...EMPTY, summary: "Drafted summary." },
+      };
+      loaded(ownDraft({ content: { ...EMPTY, summary: "Mine." } }));
+      render(<MinutesPage id="m-1" />);
+      const summary = screen.getByRole("textbox", { name: "Summary" });
+      expect(summary).toHaveProperty("value", "Mine.");
+      fireEvent.click(screen.getByRole("button", { name: "Use the draft" }));
+      expect(summary).toHaveProperty("value", "Drafted summary.");
+      expect(screen.getByRole("button", { name: "Save" })).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+
+    it("says plainly when the member hasn't agreed to AI, and when a draft failed", () => {
+      mocks.draft.current = { ...NO_DRAFT, blocked: "consent_required" };
+      loaded(ownDraft());
+      const first = render(<MinutesPage id="m-1" />);
+      expect(screen.getByText(/you haven't agreed to that yet/)).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Draft minutes" }),
+      ).toHaveProperty("disabled", true);
+      first.unmount();
+
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "failed",
+        notes: "notes",
+        failure: "failed",
+        failure_message: "The draft didn't come through.",
+      };
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("The draft didn't come through.")).toBeTruthy();
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
+    });
   });
 });

@@ -472,6 +472,20 @@ export class MeetingService {
     );
   }
 
+  /**
+   * The minutes, when `userId` may change them; otherwise the refusal a save
+   * gives (404 for someone who can't read them, 403 for a reader who isn't
+   * their author). The draft-from-notes flow asks this rather than restating
+   * who edits minutes.
+   */
+  async editableBy(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<Meeting> {
+    return (await this.editable(chapterId, id, userId)).meeting;
+  }
+
   private async view(
     chapterId: string,
     meeting: Meeting,

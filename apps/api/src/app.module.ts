@@ -15,6 +15,7 @@ import { RbacModule } from './modules/rbac/rbac.module';
 import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
 import { MeetingModule } from './modules/meeting/meeting.module';
+import { MeetingDraftModule } from './modules/meeting/meeting-draft.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -109,6 +110,9 @@ import { validateEnv } from './config/env.validation';
     DevLogModule,
     AiModule,
     AiConsentModule,
+    // After the AI modules it imports, so their routes keep their place in
+    // the exported contract.
+    MeetingDraftModule,
   ],
   providers: [
     {

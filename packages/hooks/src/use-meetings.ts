@@ -220,3 +220,102 @@ export function useDeleteMeeting() {
     },
   });
 }
+
+// ── Drafting from notes (#4312) ──────────────────────────────────────────────
+
+/** Where a meeting's draft from notes stands. */
+export type MeetingDraftState = components["schemas"]["MeetingDraftDto"];
+export type RequestMeetingDraftBody =
+  components["schemas"]["RequestMeetingDraftDto"];
+
+const meetingDraftKey = (chapterId: string | null | undefined, id: string) =>
+  ["meetings", chapterId, "draft", id] as const;
+
+/** How often the page asks while a draft is being written. */
+const DRAFTING_POLL_MS = 1500;
+
+/**
+ * Where the draft from notes stands for one meeting's minutes, for someone
+ * who may edit them. `null` means this server has no AI drafting (the route
+ * answers 404 `ai.not_available`, or the meetings module is off), and the
+ * caller shows the hand-written flow alone. While a draft is being written
+ * the query asks again every second and a half, and stops when it ends.
+ */
+export function useMeetingDraft(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingDraftKey(chapterId, id ?? ""),
+    queryFn: async (): Promise<MeetingDraftState | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings/{id}/draft",
+        { params: { path: { id: id! } } },
+      );
+      // Not here for this viewer, whatever the reason: no AI on this server,
+      // minutes they can't edit, a module that is off.
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "drafting" ? DRAFTING_POLL_MS : false,
+  });
+}
+
+/**
+ * Ask for minutes drafted from notes. Refusals carry a code: `ai.chapter_off`,
+ * `ai.consent.required`, `meeting.stale`, `meeting.draft_posted`,
+ * `meeting.standards_refused`.
+ */
+export function useRequestMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "request"],
+    // A retry after a lost answer would start a second draft.
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: RequestMeetingDraftBody;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/draft", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingDraftKey(chapterId, id), data);
+    },
+  });
+}
+
+/** Clear the notes and the draft, and stop one still being written. */
+export function useDiscardMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "discard"],
+    mutationFn: async (id: string) => {
+      const { error } = await client.DELETE("/v1/meetings/{id}/draft", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) =>
+      queryClient.invalidateQueries({
+        queryKey: meetingDraftKey(chapterId, id),
+      }),
+  });
+}
