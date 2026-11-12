@@ -422,7 +422,8 @@ mint too: its summary then lists the uploads to record by hand.
 A third consumer is the What's new fold, `.github/workflows/release-notes-fold.yml`, with the same
 two permissions: it force-pushes the one branch `bot/whats-new`, which only it writes, and opens or
 closes that branch's PR, looked up as `<owner>:bot/whats-new` so a fork's same-named branch is never
-touched. It never writes to `main`; its `AUTO_MERGE` switch, off, would let that PR merge itself
+touched. It never pushes to `main` itself; its `AUTO_MERGE` switch, on since 2026-11-12, turns on
+squash auto-merge for that PR, so it lands once its required checks pass
 ([`packages/validation/release-notes/README.md`](../../packages/validation/release-notes/README.md)).
 Narrowing or replacing the App stops the fold PR too.
 
