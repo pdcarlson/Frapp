@@ -24,11 +24,11 @@
  * The owner approved renders of the real app as the store screenshots
  * (#2454), and the store binary has no Ask (#2259), so the store set is a
  * different list from the marketing one above, not a subset of its output.
- * Each screen is captured once, at the 6.9" iPhone viewport, then framed by
+ * Each screen is captured once, at the iPhone viewport App Store Connect takes, then framed by
  * `store-frames.mjs` (caption, phone, one lifted card) for both stores:
  *
- *   store-raw/         the seven bare captures, 1320x2868 (440x956 at 3x)
- *   app-store/         the framed set, 1320x2868
+ *   store-raw/         the seven bare captures, 1206x2622 (402x874 at 3x)
+ *   app-store/         the framed set, 1206x2622
  *   google-play/       the framed set, 1242x2208 (9:16; Play caps the long
  *                      side at 2x the short, which the App Store size passes)
  *
@@ -322,12 +322,14 @@ const STORE_SCREENS = [
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
     // The #general row alone is the channels query (`GENERAL_ROW_SHOWN` says
-    // why not a section header); UP NEXT and the unread badges come from
-    // separate queries (events/tasks, unread counts), so wait for both.
+    // why not a section header); UP NEXT and the unread state come from
+    // separate queries (events/tasks, unread counts), so wait for both. An
+    // unread row draws no number since #4220 (white name and a pip), so the
+    // count is read from the row's spoken label ("#exec, 4 unread").
     ready: () =>
       Boolean(document.querySelector('[aria-label^="#general"]')) &&
       document.body.innerText.includes("UP NEXT") &&
-      /\n\d+\n/.test(document.body.innerText),
+      Boolean(document.querySelector('[aria-label$=" unread"]')),
   },
   {
     slug: "02-events",
@@ -363,9 +365,10 @@ const STORE_SCREENS = [
     // A task row as well as the points card: the card lands on its own, and
     // without a row the shot is the "You're all clear" empty state. The demo
     // seed assigns roster #1, the account this signs in as, two open tasks.
+    // A row is read by its points pill: since rows open their task they are
+    // buttons on web, with no checkbox role or aria-checked (`task-row.tsx`).
     ready: () =>
-      /House rank\s*#\d+/.test(document.body.innerText) &&
-      Boolean(document.querySelector('[role="checkbox"]')),
+      /House rank\s*#\d+[\s\S]*\+\d+ pts/.test(document.body.innerText),
   },
   {
     slug: "06-study",
