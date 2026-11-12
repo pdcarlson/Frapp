@@ -477,9 +477,9 @@ describe('SupabaseSearchRepository — query shape', () => {
 
       await repo.searchMessages(['c-1'], 'budget', 10, { fromUserId: SENDER });
 
-      expect(String(chains.chat_messages.select.mock.calls[0][0])).not.toContain(
-        'chat_message_attachments',
-      );
+      expect(
+        String(chains.chat_messages.select.mock.calls[0][0]),
+      ).not.toContain('chat_message_attachments');
     });
 
     it('with no text, asks the filter function once for every channel, never the table (#3965)', async () => {
