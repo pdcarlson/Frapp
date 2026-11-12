@@ -591,11 +591,12 @@ export class ChatPushWorkerService
     const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
+      const mentioned = mentions.includes(recipientId);
       const decision = decidePush({
         channel,
         messageKind: row.kind,
         recipientIsPresent: presenceMap.has(recipientId),
-        hasMention: mentions.includes(recipientId),
+        hasMention: mentioned,
         preferences: prefs,
         isAuditMirror,
         ...(followStates
@@ -620,7 +621,6 @@ export class ChatPushWorkerService
       // the mention entirely (#4359). It pushes on its own, as any single
       // message does, the way Slack's Activity and Discord's Inbox list each
       // mention by itself even inside a busy channel.
-      const mentioned = mentions.includes(recipientId);
       if (burst.action === 'skip' && !mentioned) continue;
 
       senderName ??= this.resolveSenderName(row.sender_id);

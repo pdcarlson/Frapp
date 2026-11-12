@@ -1,1 +1,1 @@
-If someone sends several messages in a row and one of them mentions you, you now get a notification for that mention instead of it being folded into the message count.
+When someone sends several messages in a row and mentions you after you've been told about the first few, you now get a notification for that mention instead of missing it.
