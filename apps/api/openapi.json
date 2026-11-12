@@ -6634,6 +6634,150 @@
         ]
       }
     },
+    "/v1/gifs/availability": {
+      "get": {
+        "operationId": "GifController_availability_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifAvailabilityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether GIF search is set up, and its provider",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/trending": {
+      "get": {
+        "operationId": "GifController_trending_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trending GIFs, for the picker before a search",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/search": {
+      "get": {
+        "operationId": "GifController_search_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search GIFs (rated PG-13 at most)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -19573,6 +19717,45 @@
           "content_type"
         ]
       },
+      "MessageGifDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused."
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "width",
+          "height",
+          "token"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -19608,6 +19791,9 @@
               "announcement",
               "signup"
             ]
+          },
+          "gif": {
+            "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
             "type": "object"
@@ -20660,6 +20846,101 @@
         },
         "required": [
           "message_ids"
+        ]
+      },
+      "GifAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether GIF search is set up on this server. Clients hide the GIF button when it is not."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider's name, shown in the picker's search field as its attribution."
+          }
+        },
+        "required": [
+          "available",
+          "provider"
+        ]
+      },
+      "GifRenditionDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "GifResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The provider's id for this GIF."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short words for screen readers; may be empty."
+          },
+          "preview": {
+            "description": "Small, for a grid tile.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "full": {
+            "description": "What a message shows; send this one.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "preview",
+          "full",
+          "token"
+        ]
+      },
+      "GifPageDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GifResultDto"
+            }
+          },
+          "next_page": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "results",
+          "next_page"
         ]
       },
       "GeofenceCoordinateDto": {

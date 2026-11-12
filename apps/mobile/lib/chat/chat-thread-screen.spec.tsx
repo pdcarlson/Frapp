@@ -352,6 +352,7 @@ function channelState(
     send: vi.fn(async () => true),
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
+    sendGif: vi.fn(async () => ({ ok: true as const })),
     sendSignup: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
@@ -471,6 +472,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
   useRosterCatchUp: rosterCatchUp,
+  // GIFs (#4631): off here, so the + sheet offers no GIF row.
+  useGifAvailability: () => ({ available: false, provider: "" }),
   useActiveChapterId: () => "chapter-1",
   useChannel: (id: string) =>
     channelRow === "found"

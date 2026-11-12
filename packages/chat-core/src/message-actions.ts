@@ -92,13 +92,16 @@ export function canActOnMessage(
  * channel row.
  */
 export function canEditMessage(
-  message: Pick<ChatMessage, "sender_id" | "kind">,
+  message: Pick<ChatMessage, "sender_id" | "kind" | "gif">,
   viewerId: string | null,
 ): boolean {
   return (
     isOwnMessage(message, viewerId) &&
     message.kind !== "imported" &&
-    !isCardMessage(message)
+    !isCardMessage(message) &&
+    // A GIF message is the GIF, with no text to edit (#4631); the API
+    // refuses the edit too.
+    !message.gif
   );
 }
 

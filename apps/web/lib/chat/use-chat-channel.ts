@@ -85,7 +85,7 @@ import {
   browserKeyValueStore,
   type OutboxAttachment,
 } from "@repo/chat-core/adapters";
-import type { ReplayRequest } from "@repo/chat-core/types";
+import type { OutgoingGif, ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
   postHours,
@@ -141,6 +141,11 @@ export interface UseChatChannelResult {
   send: (
     content: string,
     opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
+  ) => Promise<void>;
+  /** A GIF from the picker, as its own message (#4631). */
+  sendGif: (
+    gif: OutgoingGif,
+    opts?: { replyToId?: string | null },
   ) => Promise<void>;
   /*
     Every row write below takes an optional `threadRootId`: set, the message
@@ -589,6 +594,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [cancelPendingSave, clearAfterSend, channelId, ctx],
   );
 
+  /**
+   * Send a GIF from the picker (#4631): its own message, with no text, so
+   * the draft in the composer stays where it is.
+   */
+  const sendGif = useCallback(
+    async (gif: OutgoingGif, opts?: { replyToId?: string | null }) => {
+      if (!channelId) return;
+      await sendMessage(ctx, {
+        channelId,
+        content: "",
+        replyToId: opts?.replyToId ?? null,
+        gif,
+        keepDraft: true,
+      });
+    },
+    [channelId, ctx],
+  );
+
   const reactCb = useCallback(
     async (messageId: string, emoji: string, threadRootId?: string | null) => {
       if (!channelId) return;
@@ -844,6 +867,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     loadOlder,
     loadNewer,
     send,
+    sendGif,
     react: reactCb,
     unreact: unreactCb,
     edit: editCb,

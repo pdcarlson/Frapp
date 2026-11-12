@@ -29,6 +29,7 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import { MAX_GIF_EDGE } from '#domain/adapters/gif-search.interface';
 import {
   CHAT_MESSAGE_KINDS,
   CHAT_THREAD_FOLLOW_STATES,
@@ -486,6 +487,53 @@ export class MessageAttachmentDto {
   preview_storage_path?: string;
 }
 
+/**
+ * A GIF picked in the composer's GIF picker (#4631), as `GET /v1/gifs/*`
+ * returned it. `ChatService` stores it as the server's own `metadata.gif`
+ * after `GifService.messageGif` holds the URL to the provider's media host.
+ */
+export class MessageGifDto {
+  @ApiProperty({ maxLength: 200 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  id: string;
+
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @ApiProperty({ maxLength: 2048 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2048)
+  url: string;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  width: number;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  height: number;
+
+  @ApiProperty({
+    maxLength: 128,
+    description:
+      'The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  token: string;
+}
+
 export class SendMessageDto {
   /**
    * Client-generated idempotency key. The server dedupes on
@@ -536,6 +584,16 @@ export class SendMessageDto {
   @IsOptional()
   @IsIn(CHAT_MESSAGE_KINDS)
   kind?: (typeof CHAT_MESSAGE_KINDS)[number];
+
+  /**
+   * A GIF from the GIF picker (#4631). The message is the GIF: `content` is
+   * empty, and it carries no attachments. Only on a plain text message.
+   */
+  @ApiPropertyOptional({ type: MessageGifDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MessageGifDto)
+  gif?: MessageGifDto;
 
   /** Inline card payload for rich kinds (event, poll, task, …). */
   @ApiPropertyOptional({ type: Object })

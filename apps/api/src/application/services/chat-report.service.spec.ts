@@ -1942,6 +1942,27 @@ describe('reportedContentSnapshot', () => {
     metadata: {},
   };
 
+  it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
+    const gif = {
+      provider: 'klipy',
+      id: 'dance',
+      title: 'Happy dance',
+      url: 'https://static.klipy.com/ii/a/dance.webp',
+      width: 498,
+      height: 280,
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', metadata: { gif } }),
+    ).toBe('GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        metadata: { gif: { ...gif, title: '' } },
+      }),
+    ).toBe('GIF: https://static.klipy.com/ii/a/dance.webp');
+  });
+
   it('is the content for anything that is not a poll', () => {
     expect(reportedContentSnapshot(text)).toBe('hello');
     // A card of another kind carries no member-written options.

@@ -1,4 +1,4 @@
-import type { ChatMessageKind } from "./types";
+import type { ChatMessageKind, MessageGif } from "./types";
 
 /**
  * Tombstone a deleted message shows in a quote and in the bubble that
@@ -135,6 +135,8 @@ export type MessagePreviewSource = {
   is_deleted?: boolean | null;
   attachment_count?: number | null;
   kind?: ChatMessageKind | null;
+  /** A GIF message (#4631) has no text, and quotes as "GIF". */
+  gif?: MessageGif | null;
 };
 
 export function replyPreviewText(message: MessagePreviewSource): string {
@@ -144,6 +146,8 @@ export function replyPreviewText(message: MessagePreviewSource): string {
     .replace(/\s+/g, " ")
     .trim();
   if (text.length > 0) return text;
+
+  if (message.gif) return "GIF";
 
   const attachments = message.attachment_count ?? 0;
   if (attachments > 0) {

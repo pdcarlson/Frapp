@@ -681,6 +681,15 @@ describe('ChatPushWorkerService', () => {
   });
 
   describe('chatPushPreview', () => {
+    it('names a GIF message, which has no text (#4631)', () => {
+      expect(
+        chatPushPreview({
+          content: '',
+          metadata: { gif: { url: 'https://static.klipy.com/h.webp' } },
+        }),
+      ).toBe('Sent a GIF');
+    });
+
     it('drops U+FFFC, which every surface drew as an "OBJ" box (#4346)', () => {
       expect(chatPushPreview({ content: 'take a look \uFFFC' })).toBe(
         'take a look',

@@ -34,6 +34,7 @@ import {
   reactionActionType,
   type ChannelCache,
   type ChatMessageKind,
+  type OutgoingGif,
   type RawChatMessage,
   type RawChatMessageAction,
   type ReplayRequest,
@@ -373,6 +374,12 @@ export interface SendMessageArgs {
   attachmentsReady?: Promise<OutboxAttachment[]> | null;
   /** How many files the optimistic row shows while `attachmentsReady` runs. */
   attachmentCount?: number;
+  /**
+   * A GIF from the picker (#4631). The message is the GIF: `content` is
+   * empty and there are no attachments. The server checks its token, so only
+   * a GIF the API's own search returned is accepted.
+   */
+  gif?: OutgoingGif | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -477,6 +484,7 @@ export async function sendMessage(
     payload: args.payload,
     replyToId: args.replyToId ?? null,
     attachmentCount: args.attachmentCount ?? args.attachments?.length ?? 0,
+    gif: args.gif ?? null,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
@@ -519,6 +527,7 @@ export async function sendMessage(
     payload: args.payload ?? null,
     replyToId: args.replyToId ?? null,
     attachments,
+    gif: args.gif ?? null,
   } as const;
 
   let enqueued: OutboxRow;
@@ -572,6 +581,16 @@ export async function sendMessage(
                 preview_storage_path:
                   attachment.previewStoragePath ?? undefined,
               }))
+            : undefined,
+          gif: args.gif
+            ? {
+                id: args.gif.id,
+                title: args.gif.title || undefined,
+                url: args.gif.url,
+                width: args.gif.width,
+                height: args.gif.height,
+                token: args.gif.token,
+              }
             : undefined,
         },
       },
@@ -895,6 +914,7 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     payload: row.payload ?? null,
     replyToId: row.replyToId ?? null,
     attachments: row.attachments ?? null,
+    gif: row.gif ?? null,
     clientMessageId: row.clientId,
     priorAttempts: row.attempts,
     keepDraft: true,
@@ -971,6 +991,10 @@ export async function hydrateOutboxIntoCache(
         kind: coerceKind(row.kind),
         payload: row.payload ?? null,
         replyToId: row.replyToId ?? null,
+        // So a queued photo or GIF redraws as itself after a reload, not as
+        // an empty bubble.
+        attachmentCount: row.attachments?.length ?? 0,
+        gif: row.gif ?? null,
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {

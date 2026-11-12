@@ -95,6 +95,14 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
     reason: "The unread count, fitted inside its 14px dot.",
   },
   {
+    file: "components/chat/gif-picker.tsx",
+    literal: "text-[10px]",
+    count: 1,
+    reason:
+      "The GIF button's glyph: the word GIF drawn in a rounded outline to " +
+      "sit in the composer's 16px icon slot beside the emoji icon (#4631).",
+  },
+  {
     file: "components/events/events-calendar.tsx",
     literal: "text-[11px]",
     count: 2,
