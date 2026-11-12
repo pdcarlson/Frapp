@@ -295,14 +295,14 @@ describe("createRecorderDevice", () => {
     expect(device.fileSize(uri)).toBeNull();
   });
 
-  it("clears every recording file but the one kept", () => {
+  it("clears every recording file but the ones kept", () => {
     const fake = fakeModules();
     const device = createRecorderDevice(fake.modules);
     fake.disk.set(`${DOCS}/ExpoAudio/recording-1.aac`, new Uint8Array(1));
     fake.disk.set(`${DOCS}/ExpoAudio/recording-2.aac`, new Uint8Array(1));
     fake.disk.set(`${DOCS}/Audio/recording-3.aac`, new Uint8Array(1));
     fake.disk.set(`${DOCS}/photos/keep.jpg`, new Uint8Array(1));
-    device.purge(`${DOCS}/ExpoAudio/recording-2.aac`);
+    device.purge([`${DOCS}/ExpoAudio/recording-2.aac`]);
     expect([...fake.disk.keys()].sort()).toEqual([
       `${DOCS}/ExpoAudio/recording-2.aac`,
       `${DOCS}/photos/keep.jpg`,

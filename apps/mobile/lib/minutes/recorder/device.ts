@@ -233,14 +233,16 @@ export function createRecorderDevice({
       };
     },
 
-    purge(keepUri) {
-      const keep = keepUri ? nameOf(keepUri) : null;
+    purge(keepUris) {
+      const keep = new Set(keepUris.map(nameOf));
       for (const folder of RECORDING_FOLDERS) {
         try {
           const directory = new files.Directory(files.Paths.document, folder);
           if (!directory.exists) continue;
           for (const entry of directory.list()) {
-            if ("delete" in entry && nameOf(entry.uri) !== keep) entry.delete();
+            if ("delete" in entry && !keep.has(nameOf(entry.uri))) {
+              entry.delete();
+            }
           }
         } catch {
           // Nothing to clear, or not ours to list.

@@ -10,10 +10,10 @@
 // `option || infoPlist[key] || <the plugin's default string>`. So a guard that
 // reads app.json can't see three things that each ship a real defect:
 //
-//   - An omitted option. Delete expo-camera's `"microphonePermission": false`
-//     and the binary ships "Allow $(PRODUCT_NAME) to access your microphone", a
-//     Guideline 5.1.1(i) purpose string for a feature that doesn't exist. The
-//     string is never written into app.json.
+//   - An omitted option. Delete expo-camera's `microphonePermission` and the
+//     binary ships the plugin's default, "Allow $(PRODUCT_NAME) to access your
+//     microphone", in place of the text that says what the recorder is for
+//     (Guideline 5.1.1(i)). The default is never written into app.json.
 //   - A vendor option spelled some other way (`cameraPermissionText`, say),
 //     which no `*Permission` scan matches.
 //   - A native dependency that uses a required-reason API. The categories
@@ -123,7 +123,8 @@ const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
  * says it never does). Declining one with `false` is what got iOS 0.9.1 (8)
  * rejected on 2026-11-05. Not every linked API is flagged: the same upload
  * named only the motion key, though expo-camera links microphone access and
- * expo-secure-store links Face ID, both declined below. So an entry is added
+ * expo-secure-store links Face ID, both declined then (Face ID still is; the
+ * microphone key is now requested by the meeting recorder). So an entry is added
  * when Apple names the key, not for every symbol a library links.
  *
  * Plugin options that are load-bearing, which the checks below catch changing:

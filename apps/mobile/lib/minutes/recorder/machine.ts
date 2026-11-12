@@ -288,12 +288,3 @@ export function recorderReducer(
 export function recorderMeetingId(state: RecorderState): string | null {
   return state.phase === "idle" ? null : state.subject.meetingId;
 }
-
-/** The microphone is open, or was until something paused it. */
-export function isRecorderLive(state: RecorderState): boolean {
-  return (
-    state.phase === "starting" ||
-    state.phase === "recording" ||
-    state.phase === "saving"
-  );
-}

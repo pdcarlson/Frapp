@@ -4,6 +4,7 @@ import {
   ResumableUploadError,
   base64Utf8,
   blobSource,
+  isNetworkFailure,
   uploadResumable,
 } from "./resumable-upload";
 
@@ -159,6 +160,23 @@ describe("uploadResumable", () => {
     await expect(
       uploadResumable(file(10), TARGET, { ...OPTIONS, fetch: server.send }),
     ).rejects.toMatchObject({ failure: "network" });
+  });
+
+  it("retries the failure Expo's fetch throws on a phone, which is not a TypeError", async () => {
+    // `expo/fetch` rejects with `FetchError extends Error`: "fetch failed: ...".
+    class FetchError extends Error {}
+    const server = storage(10);
+    server.fail.push(new FetchError("fetch failed: The network connection was lost."));
+    await uploadResumable(file(10), TARGET, { ...OPTIONS, fetch: server.send });
+    expect(server.received()).toBe(10);
+    expect(isNetworkFailure(new FetchError("fetch failed: offline"))).toBe(true);
+    expect(isNetworkFailure(new TypeError("Network request failed"))).toBe(true);
+    // A bug, a refusal and a stop are not the network.
+    expect(isNetworkFailure(new Error("boom"))).toBe(false);
+    expect(isNetworkFailure(new ResumableUploadError("rejected"))).toBe(false);
+    const stopped = new Error("fetch failed: stopped");
+    stopped.name = "AbortError";
+    expect(isNetworkFailure(stopped)).toBe(false);
   });
 
   it("reads Storage's refusals: too large, or rejected", async () => {

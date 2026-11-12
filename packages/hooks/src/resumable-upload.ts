@@ -102,6 +102,23 @@ function abortError(): Error {
   return error;
 }
 
+/**
+ * Whether a thrown fetch failure means "no answer", which is worth trying
+ * again, as against a bug or a refusal. Browsers and React Native's own fetch
+ * throw a `TypeError`. Expo's fetch, which is the global one in the mobile app,
+ * throws its own `FetchError` (a plain `Error` whose message starts "fetch
+ * failed"), so the class alone can't be the test.
+ */
+export function isNetworkFailure(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  return (
+    error instanceof Error &&
+    !(error instanceof ResumableUploadError) &&
+    error.name !== "AbortError" &&
+    (error.name === "FetchError" || error.message.startsWith("fetch failed"))
+  );
+}
+
 function metadata(target: ResumableUploadTarget): string {
   const encode = base64Utf8;
   return [
@@ -149,7 +166,7 @@ export async function uploadResumable(
         if (response.status < 500) return response;
       } catch (error) {
         stopped();
-        if (!(error instanceof TypeError)) throw error;
+        if (!isNetworkFailure(error)) throw error;
       }
       const delay = RETRY_DELAYS_MS[tries];
       if (delay === undefined) throw new ResumableUploadError("network");

@@ -7,7 +7,7 @@ import { bindMeetingRecorder } from "./session";
  * the old one, which closes and keeps what it was recording.
  */
 const store: RecorderStore = {
-  load: vi.fn(async () => null),
+  all: vi.fn(async () => []),
   save: vi.fn(async () => undefined),
   clear: vi.fn(async () => undefined),
 };
@@ -24,7 +24,7 @@ describe("bindMeetingRecorder", () => {
     const first = bindMeetingRecorder(paul, device, store);
     expect(first).not.toBeNull();
     expect(bindMeetingRecorder({ ...paul }, device, store)).toBe(first);
-    expect(store.load).toHaveBeenCalledTimes(1);
+    expect(store.all).toHaveBeenCalledTimes(1);
   });
 
   it("ends the recorder on sign-out and on a change of chapter", () => {
@@ -44,6 +44,6 @@ describe("bindMeetingRecorder", () => {
 
   it("binds nothing on a build that can't record", () => {
     expect(bindMeetingRecorder(paul, null, store)).toBeNull();
-    expect(store.load).not.toHaveBeenCalled();
+    expect(store.all).not.toHaveBeenCalled();
   });
 });

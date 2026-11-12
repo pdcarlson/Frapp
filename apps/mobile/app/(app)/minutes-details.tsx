@@ -31,7 +31,10 @@ import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { MinutesBody } from "@/components/minutes/minutes-body";
 import { NotesDraftSheet } from "@/components/minutes/notes-draft-sheet";
-import { RecordingRow } from "@/components/minutes/recording-row";
+import {
+  RecordingRow,
+  RecordingRowPlaceholder,
+} from "@/components/minutes/recording-row";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -46,6 +49,8 @@ import { StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { confirmAlert } from "@/lib/minutes/meetings-on";
+import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
+import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -166,6 +171,13 @@ function LoadedMinutes({
   const recordingState =
     (finishing && notesOffered ? recordingQuery.data : null) ?? null;
   const recorderOffered = recordingState?.available === true;
+  // A recording this phone holds for this meeting always has its row here,
+  // whatever the server says or hasn't said yet (its read out or failed, the
+  // minutes posted meanwhile): the pill steps aside on this screen, so
+  // without the row an open microphone would have no Stop anywhere.
+  const heldHere = recorderMeetingId(useMeetingRecorder().state) === meeting.id;
+  const recordingLoading =
+    finishing && notesOffered && recordingQuery.isPending && !heldHere;
   const { ensureConsent, consentSheet } = useAiConsentGate();
 
   // The tasks suggested from these minutes, for someone who could accept
@@ -267,47 +279,53 @@ function LoadedMinutes({
           </ListSection>
         ) : null}
 
-        {finishing ? (
+        {finishing || heldHere ? (
           <View style={styles.actions}>
-            {recorderOffered && recordingState ? (
+            {(recorderOffered && recordingState) || heldHere ? (
               <RecordingRow
                 meetingId={meeting.id}
                 eventName={meeting.event_name}
-                server={recordingState}
+                server={recorderOffered ? recordingState : null}
                 ensureConsent={ensureConsent}
                 onOpenNotes={() => notesRef.current?.present()}
               />
+            ) : recordingLoading ? (
+              <RecordingRowPlaceholder />
             ) : null}
-            {draftState || draftLoading ? (
-              <OnboardingSecondaryButton
-                fill
-                label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
-                disabled={!draftState}
-                onPress={() => notesRef.current?.present()}
-              />
+            {finishing ? (
+              <>
+                {draftState || draftLoading ? (
+                  <OnboardingSecondaryButton
+                    fill
+                    label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
+                    disabled={!draftState}
+                    onPress={() => notesRef.current?.present()}
+                  />
+                ) : null}
+                <SheetPrimaryButton
+                  label={MEETING_COPY.post}
+                  busy={post.isPending}
+                  disabled={post.isPending || drafting || empty}
+                  accessibilityHint={
+                    empty ? MEETING_COPY.nothingWritten : undefined
+                  }
+                  onPress={() => void handlePost()}
+                  accent={accent}
+                  onAccent={accentOnPrimary}
+                />
+                {/* One line, always there for a draft's editor, that carries a
+                    failed post in its place, so nothing moves when one fails. */}
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.meta, problem ? styles.problem : null]}
+                >
+                  {problem ??
+                    (empty && !draftState && !draftLoading
+                      ? MEETING_COPY.writeOnWeb
+                      : MEETING_COPY.editOnWeb)}
+                </Text>
+              </>
             ) : null}
-            <SheetPrimaryButton
-              label={MEETING_COPY.post}
-              busy={post.isPending}
-              disabled={post.isPending || drafting || empty}
-              accessibilityHint={
-                empty ? MEETING_COPY.nothingWritten : undefined
-              }
-              onPress={() => void handlePost()}
-              accent={accent}
-              onAccent={accentOnPrimary}
-            />
-            {/* One line, always there for a draft's editor, that carries a
-                failed post in its place, so nothing moves when one fails. */}
-            <Text
-              accessibilityLiveRegion="polite"
-              style={[styles.meta, problem ? styles.problem : null]}
-            >
-              {problem ??
-                (empty && !draftState && !draftLoading
-                  ? MEETING_COPY.writeOnWeb
-                  : MEETING_COPY.editOnWeb)}
-            </Text>
           </View>
         ) : null}
       </ScreenShell>

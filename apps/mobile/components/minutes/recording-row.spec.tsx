@@ -95,7 +95,7 @@ const onOpenNotes = vi.fn();
 
 function render(
   state: RecorderState,
-  serverState: MeetingRecordingState = server(),
+  serverState: MeetingRecordingState | null = server(),
 ): ReactTestRenderer {
   session.state = state;
   let tree!: ReactTestRenderer;
@@ -317,5 +317,21 @@ describe("RecordingRow", () => {
         node.props.importantForAccessibility === "no-hide-descendants",
     );
     expect(tracks).toHaveLength(1);
+  });
+
+  describe("with no answer from the server", () => {
+    it("still gives a recording under way its clock, Pause and Stop", async () => {
+      const tree = render(RECORDING, null);
+      expect(screenText(tree)).toContain(MEETING_RECORDER_COPY.recording);
+      await press(tree, MEETING_RECORDER_COPY.pause);
+      expect(session.recorder.pause).toHaveBeenCalled();
+      await press(tree, MEETING_RECORDER_COPY.stop);
+      expect(session.recorder.stop).toHaveBeenCalled();
+    });
+
+    it("draws nothing, and offers no Record, when the phone holds nothing", () => {
+      const tree = render(IDLE, null);
+      expect(tree.toJSON()).toBeNull();
+    });
   });
 });

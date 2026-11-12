@@ -6,6 +6,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { MEETING_RECORDER_COPY, connectionIndicator } from "@repo/validation";
 import { useConnection } from "@/lib/connection/use-connection";
 import { recordingBarView } from "@/lib/minutes/recorder/row-view";
+import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -44,8 +45,8 @@ export function RecordingBar() {
   );
 
   const view = recordingBarView(state);
-  if (!view || state.phase === "idle") return null;
-  const { meetingId } = state.subject;
+  const meetingId = recorderMeetingId(state);
+  if (!view || !meetingId) return null;
   const openId = Array.isArray(params.id) ? params.id[0] : params.id;
   if (pathname === "/minutes-details" && openId === meetingId) return null;
 

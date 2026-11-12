@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   IDLE,
-  isRecorderLive,
   recorderMeetingId,
   recorderReducer,
   type RecorderEvent,
@@ -244,17 +243,5 @@ describe("recorder helpers", () => {
     expect(recorderMeetingId(IDLE)).toBeNull();
     expect(recorderMeetingId(recording())).toBe("meeting-1");
     expect(recorderMeetingId(kept())).toBe("meeting-1");
-  });
-
-  it("is live from the tap on Start until the file is closed", () => {
-    expect(isRecorderLive(IDLE)).toBe(false);
-    expect(isRecorderLive(run([{ type: "start_requested", subject }]))).toBe(
-      true,
-    );
-    expect(isRecorderLive(recording())).toBe(true);
-    expect(isRecorderLive(run([{ type: "stop_requested" }], recording()))).toBe(
-      true,
-    );
-    expect(isRecorderLive(kept())).toBe(false);
   });
 });

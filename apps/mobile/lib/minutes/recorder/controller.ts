@@ -1,5 +1,6 @@
 import {
   ResumableUploadError,
+  isNetworkFailure,
   uploadResumable,
   type ResumableSource,
   type ResumableUploadTarget,
@@ -71,9 +72,14 @@ export interface StoredRecording {
 }
 
 export interface RecorderStore {
-  load: () => Promise<StoredRecording | null>;
+  /**
+   * Every recording the phone remembers, whoever made it. Rejects when the
+   * phone's storage can't be read, which is not the same as holding none.
+   */
+  all: () => Promise<StoredRecording[]>;
   save: (recording: StoredRecording) => Promise<void>;
-  clear: () => Promise<void>;
+  /** Forget the recording of this member in this chapter. */
+  clear: (identity: RecorderIdentity) => Promise<void>;
 }
 
 /** The phone: its microphone, its recorder and its disk. */
@@ -104,8 +110,8 @@ export interface RecorderDevice {
   remove: (uri: string) => void;
   /** The file as something the uploader can read a piece at a time. */
   source: (uri: string, size: number) => ResumableSource;
-  /** Deletes every recording file on the phone except this one. */
-  purge: (keepUri: string | null) => void;
+  /** Deletes every recording file on the phone except these. */
+  purge: (keepUris: readonly string[]) => void;
 }
 
 export interface RecorderUploadTarget extends ResumableUploadTarget {
@@ -152,6 +158,8 @@ const TICK_MS = 1000;
 const REMEMBER_EVERY_TICKS = 15;
 /** How often free space is checked while recording. */
 const SPACE_EVERY_TICKS = 30;
+/** How often a recorder a call paused is asked to carry on. */
+const RETRY_RESUME_EVERY_TICKS = 5;
 /** A signed upload is good for two hours; one older than this starts over. */
 const UPLOAD_TARGET_LIFE_MS = 90 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -166,6 +174,7 @@ export class MeetingRecorderController {
   private stopWatching: (() => void) | null = null;
   private ticks = 0;
   private uploadAbort: AbortController | null = null;
+  private disposed = false;
   /** The upload begun for the kept file, so a retry carries on from it. */
   private target: {
     meetingId: string;
@@ -212,46 +221,56 @@ export class MeetingRecorderController {
    */
   async restore(): Promise<void> {
     if (this.state.phase !== "idle") return;
-    const stored = await this.store.load().catch(() => null);
-    if (!stored) {
-      this.device.purge(null);
+    let remembered: StoredRecording[];
+    try {
+      remembered = await this.store.all();
+    } catch {
+      // The phone's storage couldn't be read. That is not "nothing is
+      // remembered": no file is cleared on a guess.
       return;
     }
-    const uri = this.device.locate(stored.uri);
-    const age = this.clock.now() - stored.startedAt;
-    if (age > MEETING_RECORDER_KEEP_DAYS * DAY_MS) {
-      // A recording of a room is not left on a phone indefinitely.
-      if (uri) this.device.remove(uri);
-      await this.store.clear().catch(ignore);
-      this.device.purge(null);
+    if (this.disposed || this.state.phase !== "idle") return;
+    const now = this.clock.now();
+    const keep: string[] = [];
+    let mine: { stored: StoredRecording; uri: string | null } | null = null;
+    for (const stored of remembered) {
+      const uri = this.device.locate(stored.uri);
+      if (now - stored.startedAt > MEETING_RECORDER_KEEP_DAYS * DAY_MS) {
+        // A recording of a room is not left on a phone indefinitely,
+        // whoever made it.
+        if (uri) this.device.remove(uri);
+        await this.store.clear(stored).catch(ignore);
+      } else if (
+        stored.userId === this.identity.userId &&
+        stored.chapterId === this.identity.chapterId
+      ) {
+        mine = { stored, uri };
+      } else if (uri) {
+        // Another member's, or another chapter's: not this session's to
+        // show, upload or delete. It waits for its owner.
+        keep.push(uri);
+      }
+    }
+    if (!mine) {
+      this.device.purge(keep);
       return;
     }
-    // Another member's, or another chapter's: not this session's to show,
-    // upload or delete.
-    if (
-      stored.userId !== this.identity.userId ||
-      stored.chapterId !== this.identity.chapterId
-    ) {
-      return;
-    }
+    const { stored, uri } = mine;
     const bytes = uri ? this.device.fileSize(uri) : null;
     if (!uri || !bytes) {
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
       this.dispatch({ type: "lost", meetingId: stored.subject.meetingId });
+      this.device.purge(keep);
       return;
     }
     const died = stored.stage === "recording";
     // An ADTS file states no length, so a recording cut short is measured
     // by its size, and never taken as shorter than what was written down.
-    const seconds = died
-      ? Math.min(
-          stored.subject.maxSeconds,
-          Math.max(stored.seconds, meetingRecorderSeconds(bytes)),
-        )
-      : stored.seconds;
+    const seconds = died ? this.measured(stored.seconds, bytes) : stored.seconds;
     if (seconds < MIN_MEETING_RECORDING_SECONDS) {
       this.device.remove(uri);
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
+      this.device.purge(keep);
       return;
     }
     const reason: KeptReason = died ? "recovered" : stored.reason;
@@ -264,7 +283,17 @@ export class MeetingRecorderController {
       bytes,
       reason,
     });
-    this.device.purge(uri);
+    this.device.purge([...keep, uri]);
+  }
+
+  /**
+   * A recording's length when the clock can't be trusted: what the file's
+   * size says, and never less than the clock's last word. Android holds the
+   * app's clock while the screen is off, so a recording stopped from its
+   * notification an hour in may have a clock that reads six seconds.
+   */
+  private measured(clockSeconds: number, bytes: number): number {
+    return Math.max(clockSeconds, meetingRecorderSeconds(bytes));
   }
 
   /**
@@ -292,6 +321,9 @@ export class MeetingRecorderController {
       const free = this.device.freeBytes();
       if (free !== null && free < needed) return refuse("low_storage", needed);
 
+      // The session ended (sign-out, another chapter) while the phone was
+      // being asked: don't open a microphone nobody can see or stop.
+      if (this.disposed) return;
       uri = (await this.device.begin()).uri;
       this.recording = {
         v: 1,
@@ -308,11 +340,18 @@ export class MeetingRecorderController {
       // find again after a crash is one it must not make.
       await this.store.save(this.recording);
       this.dispatch({ type: "started" });
+      if (this.disposed) {
+        // Ended in the moment the microphone opened: close it and keep
+        // whatever there is, as `dispose` does for a recording under way.
+        await this.finish("outside");
+        return;
+      }
       this.watch();
     } catch {
       await this.device.finish().catch(ignore);
       if (uri) this.device.remove(uri);
       this.recording = null;
+      await this.store.clear(this.identity).catch(ignore);
       refuse("start_failed");
     }
   }
@@ -340,6 +379,29 @@ export class MeetingRecorderController {
     this.dispatch({ type: "tick", ...status });
     if (this.state.phase !== "recording") return;
     this.ticks += 1;
+    if (this.state.paused === "user" && status.isRecording) {
+      // iOS restarts every recorder when a call ends, one the officer
+      // paused included. Their pause stands: what they stopped the
+      // recording for must not be recorded.
+      try {
+        this.device.pause();
+      } catch {
+        // The next tick tries again.
+      }
+    } else if (
+      this.state.paused === "interrupted" &&
+      this.ticks % RETRY_RESUME_EVERY_TICKS === 0
+    ) {
+      // iOS doesn't always hand the microphone back after a call, and a
+      // phone lying on a table has nobody to tap Resume. Asking is
+      // harmless while the call is still on; the next tick reads whether
+      // it took.
+      try {
+        this.device.resume();
+      } catch {
+        // Still taken.
+      }
+    }
     if (this.state.seconds >= this.state.subject.maxSeconds) {
       void this.finish("max_reached");
       return;
@@ -404,9 +466,15 @@ export class MeetingRecorderController {
     this.dispatch({ type: "stop_requested" });
     this.unwatch();
     await this.device.finish().catch(ignore);
+    // The recorder is already stopped and reports no length, and the clock
+    // may be an hour stale (Android, screen off): measure the file.
+    const bytes = this.recording
+      ? this.device.fileSize(this.recording.uri)
+      : null;
+    const length = bytes ? this.measured(seconds, bytes) : seconds;
     await this.keep(
-      seconds,
-      seconds >= subject.maxSeconds ? "max_reached" : "outside",
+      length,
+      length >= subject.maxSeconds ? "max_reached" : "outside",
     );
   }
 
@@ -417,14 +485,14 @@ export class MeetingRecorderController {
       const meetingId =
         this.state.phase === "idle" ? "" : this.state.subject.meetingId;
       this.recording = null;
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
       this.dispatch({ type: "lost", meetingId });
       return;
     }
     if (seconds < MIN_MEETING_RECORDING_SECONDS) {
       this.device.remove(recording.uri);
       this.recording = null;
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
       this.dispatch({ type: "too_short" });
       return;
     }
@@ -443,7 +511,7 @@ export class MeetingRecorderController {
     if (!recording || !size) {
       this.recording = null;
       this.target = null;
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
       this.dispatch({ type: "lost", meetingId: subject.meetingId });
       return;
     }
@@ -506,8 +574,9 @@ export class MeetingRecorderController {
             return;
           }
           if (
-            error instanceof ResumableUploadError &&
-            error.failure === "network"
+            isNetworkFailure(error) ||
+            (error instanceof ResumableUploadError &&
+              error.failure === "network")
           ) {
             // What Storage holds stays; Try again carries on from it.
             this.dispatch({ type: "upload_ended", reason: "upload_failed" });
@@ -528,12 +597,12 @@ export class MeetingRecorderController {
       this.device.remove(recording.uri);
       this.recording = null;
       this.target = null;
-      await this.store.clear().catch(ignore);
+      await this.store.clear(this.identity).catch(ignore);
       this.dispatch({ type: "uploaded" });
     } catch (error) {
       if (abort.signal.aborted) {
         this.dispatch({ type: "upload_ended", reason: "upload_cancelled" });
-      } else if (error instanceof TypeError) {
+      } else if (isNetworkFailure(error)) {
         // No answer from the API (starting, or confirming a file Storage
         // already holds): what was sent stays sent.
         this.dispatch({ type: "upload_ended", reason: "upload_failed" });
@@ -566,7 +635,7 @@ export class MeetingRecorderController {
     }
     this.recording = null;
     this.target = null;
-    await this.store.clear().catch(ignore);
+    await this.store.clear(this.identity).catch(ignore);
     this.dispatch({ type: "discarded" });
   }
 
@@ -580,6 +649,7 @@ export class MeetingRecorderController {
    * finds it.
    */
   dispose(): void {
+    this.disposed = true;
     this.uploadAbort?.abort();
     if (this.state.phase === "recording") void this.finish("outside");
     else this.unwatch();

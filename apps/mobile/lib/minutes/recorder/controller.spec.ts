@@ -42,7 +42,7 @@ function harness(stored: StoredRecording | null = null) {
     recorder: null as { isRecording: boolean; seconds: number } | null,
     ended: null as (() => void) | null,
     beginFails: false,
-    purged: [] as (string | null)[],
+    purged: [] as string[][],
   };
   const device: RecorderDevice = {
     microphone: async () => phone.microphone,
@@ -74,17 +74,32 @@ function harness(stored: StoredRecording | null = null) {
     fileSize: (uri) => files.get(uri) || null,
     remove: (uri) => void files.delete(uri),
     source: (_uri, size) => ({ size, read: () => "" }),
-    purge: (keep) => void phone.purged.push(keep),
+    purge: (keep) => void phone.purged.push([...keep]),
   };
 
-  const disk = { value: stored };
-  const store: RecorderStore = {
-    load: async () => disk.value,
-    save: async (recording) => {
-      disk.value = recording;
+  const keyOf = (who: { userId: string; chapterId: string }) =>
+    `${who.userId}:${who.chapterId}`;
+  const rows = new Map<string, StoredRecording>();
+  if (stored) rows.set(keyOf(stored), stored);
+  const disk = {
+    rows,
+    /** The phone's storage can't be read. */
+    failing: false,
+    /** What is written down for the member and chapter under test. */
+    get value() {
+      return rows.get(keyOf(identity)) ?? null;
     },
-    clear: async () => {
-      disk.value = null;
+  };
+  const store: RecorderStore = {
+    all: async () => {
+      if (disk.failing) throw new Error("storage unavailable");
+      return [...rows.values()];
+    },
+    save: async (recording) => {
+      rows.set(keyOf(recording), recording);
+    },
+    clear: async (who) => {
+      rows.delete(keyOf(who));
     },
   };
 
@@ -329,6 +344,57 @@ describe("in the middle of a meeting", () => {
     expect(h.disk.value).toMatchObject({ stage: "kept", reason: "outside" });
   });
 
+  it("measures the file when the notification stops a recording the clock lost track of", async () => {
+    const h = harness();
+    await h.controller.start(subject, true);
+    // Android held the app's clock with the screen off: it last read six
+    // seconds, and an hour of audio is in the file.
+    h.recordTo(6);
+    h.files.set(URI, meetingRecorderBytes(3600));
+    h.phone.ended?.();
+    await flush();
+    expect(h.controller.getState()).toMatchObject({
+      phase: "kept",
+      reason: "outside",
+      seconds: 3600,
+    });
+    expect(h.files.has(URI)).toBe(true);
+  });
+
+  it("pauses again when the phone restarts a recorder the officer paused", async () => {
+    const h = harness();
+    await h.controller.start(subject, true);
+    h.recordTo(60);
+    h.controller.pause();
+    // iOS restarts every recorder when a call ends.
+    if (h.phone.recorder) h.phone.recorder.isRecording = true;
+    h.recordTo(61);
+    expect(h.phone.recorder?.isRecording).toBe(false);
+    expect(h.controller.getState()).toMatchObject({ paused: "user" });
+  });
+
+  it("asks a recorder a call paused to carry on, without a tap", async () => {
+    const h = harness();
+    await h.controller.start(subject, true);
+    h.recordTo(60);
+    if (h.phone.recorder) h.phone.recorder.isRecording = false;
+    h.recordTo(60);
+    expect(h.controller.getState()).toMatchObject({ paused: "interrupted" });
+    for (let i = 0; i < 5; i += 1) h.recordTo(60);
+    expect(h.phone.recorder?.isRecording).toBe(true);
+    h.recordTo(61);
+    expect(h.controller.getState()).toMatchObject({ paused: null });
+  });
+
+  it("opens no microphone when the member signs out while the phone is asked", async () => {
+    const h = harness();
+    const starting = h.controller.start(subject, true);
+    h.controller.dispose();
+    await starting;
+    expect(h.phone.recorder).toBeNull();
+    expect(h.files.has(URI)).toBe(false);
+  });
+
   it("keeps nothing of a recording too short to transcribe", async () => {
     const h = harness();
     await h.controller.start(subject, true);
@@ -380,7 +446,7 @@ describe("the app closed", () => {
     expect(h.disk.value).toMatchObject({ stage: "kept", reason: "recovered" });
     // And doesn't send it until the officer says so.
     expect(h.api.start).not.toHaveBeenCalled();
-    expect(h.phone.purged).toEqual([URI]);
+    expect(h.phone.purged).toEqual([[URI]]);
 
     await h.controller.upload();
     expect(h.api.confirm).toHaveBeenCalledWith("meeting-1", "upload-1");
@@ -414,8 +480,11 @@ describe("the app closed", () => {
     await h.controller.restore();
     expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
     expect(h.files.has(URI)).toBe(true);
-    expect(h.disk.value).toMatchObject({ userId: "user-2" });
-    expect(h.phone.purged).toEqual([]);
+    expect(h.disk.rows.get("user-2:chapter-1")).toMatchObject({
+      userId: "user-2",
+    });
+    // The sweep of stray files spares it.
+    expect(h.phone.purged).toEqual([[URI]]);
   });
 
   it("deletes a recording left on the phone past its keep time, whoever made it", async () => {
@@ -429,14 +498,37 @@ describe("the app closed", () => {
     h.files.set(URI, meetingRecorderBytes(5385));
     await h.controller.restore();
     expect(h.files.has(URI)).toBe(false);
-    expect(h.disk.value).toBeNull();
+    expect(h.disk.rows.size).toBe(0);
+    expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
+  });
+
+  it("keeps another member's unsent recording through this member's own meeting", async () => {
+    const theirs = "file:///documents/ExpoAudio/recording-0.aac";
+    const h = harness(dead({ userId: "user-2", uri: theirs, stage: "kept" }));
+    h.files.set(theirs, meetingRecorderBytes(5385));
+    await h.controller.restore();
+    await h.controller.start(subject, true);
+    h.recordTo(1200);
+    await h.controller.stop();
+    expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
+    expect(h.files.has(theirs)).toBe(true);
+    expect(h.disk.rows.get("user-2:chapter-1")).toMatchObject({ uri: theirs });
+  });
+
+  it("clears no file when the phone's storage can't be read", async () => {
+    const h = harness(dead());
+    h.files.set(URI, meetingRecorderBytes(5385));
+    h.disk.failing = true;
+    await h.controller.restore();
+    expect(h.phone.purged).toEqual([]);
+    expect(h.files.has(URI)).toBe(true);
     expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
   });
 
   it("clears stray recording files when the phone remembers none", async () => {
     const h = harness();
     await h.controller.restore();
-    expect(h.phone.purged).toEqual([null]);
+    expect(h.phone.purged).toEqual([[]]);
   });
 });
 
@@ -470,6 +562,25 @@ describe("a bad connection", () => {
     });
     expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
     expect(h.files.has(URI)).toBe(false);
+  });
+
+  it("reads the phone's own network failure as a dropped connection, not a refusal", async () => {
+    const h = await stoppedAt(3600);
+    // Expo's fetch on a phone throws this, which is not a TypeError.
+    class FetchError extends Error {}
+    h.api.confirm.mockRejectedValueOnce(
+      new FetchError("fetch failed: The network connection was lost."),
+    );
+    await h.controller.stop();
+    expect(h.controller.getState()).toMatchObject({
+      phase: "kept",
+      reason: "upload_failed",
+    });
+    await h.controller.upload();
+    // The file Storage already holds is not sent again.
+    expect(h.api.start).toHaveBeenCalledTimes(1);
+    expect(h.send).toHaveBeenCalledTimes(1);
+    expect(h.controller.getState()).toEqual({ phase: "idle", refusal: null });
   });
 
   it("starts a new upload when the signed one is too old to trust", async () => {

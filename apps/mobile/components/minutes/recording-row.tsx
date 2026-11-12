@@ -18,6 +18,7 @@ import {
   type RowAction,
   type RowButton,
 } from "@/lib/minutes/recorder/row-view";
+import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -51,8 +52,13 @@ export function RecordingRow({
 }: {
   meetingId: string;
   eventName: string;
-  /** The server's record of this meeting's recording. */
-  server: MeetingRecordingState;
+  /**
+   * The server's record of this meeting's recording, or null when it has
+   * none to give (the read is out or failed, or the minutes are posted). The
+   * row is still drawn then for a recording this phone holds: a microphone
+   * that is open always has its Stop on this screen.
+   */
+  server: MeetingRecordingState | null;
   /** Asks the AI question when the officer hasn't answered it. */
   ensureConsent: () => Promise<boolean>;
   onOpenNotes: () => void;
@@ -65,15 +71,20 @@ export function RecordingRow({
   const remove = useRemoveMeetingRecording();
   const noticeRef = useRef<BottomSheetModal>(null);
 
-  const view = recordingRowView(meetingId, state, server);
-  // A build that can't record still shows what the web uploaded.
+  const view = recordingRowView(meetingId, state, server ?? NO_RECORD);
+  // A build that can't record still shows what the web uploaded, and
+  // nothing new is recorded for a meeting the server hasn't offered it on.
   const offered = (button: RowButton | null) =>
-    button && (recorder || button.does !== "record") ? button : null;
+    button && ((recorder && server) || button.does !== "record")
+      ? button
+      : null;
   const primary = offered(view.primary);
   const secondary = offered(view.secondary);
-  if (!recorder && server.status === "none") return null;
+  if (!server && recorderMeetingId(state) === null) return null;
+  if (!recorder && server?.status === "none") return null;
 
   async function record() {
+    if (!server) return;
     recorder?.clearRefusal();
     if (server.blocked === "consent_required") {
       try {
@@ -232,7 +243,7 @@ export function RecordingRow({
           </View>
         ) : null}
       </View>
-      {recorder ? (
+      {recorder && server ? (
         <RecordingNoticeSheet
           ref={noticeRef}
           maxSeconds={server.max_seconds}
@@ -247,6 +258,35 @@ export function RecordingRow({
     </View>
   );
 }
+
+/**
+ * The row's place while the server's answer is out, so Draft minutes and
+ * Post don't drop under a thumb when it arrives (principles P4). Exactly
+ * the row's height, with nothing in it.
+ */
+export function RecordingRowPlaceholder() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View
+      style={styles.block}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <View style={styles.statusLine} />
+      <Text style={styles.text} />
+      <View style={[styles.track, styles.hidden]} />
+      <View style={styles.buttons} />
+    </View>
+  );
+}
+
+const NO_RECORD = {
+  status: "none",
+  duration_seconds: null,
+  failure_message: null,
+  transcript: null,
+} as const;
 
 const DOT_SIZE = 10;
 const TRACK_HEIGHT = 4;

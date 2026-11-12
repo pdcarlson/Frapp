@@ -30,6 +30,9 @@ const state = vi.hoisted(() => ({
   recording: null as Record<string, unknown> | null,
   recordingEnabled: undefined as boolean | undefined,
   recordingRow: null as Record<string, unknown> | null,
+  recordingPending: false,
+  recordingPlaceholder: 0,
+  recorder: { phase: "idle", refusal: null } as Record<string, unknown>,
   notesProps: null as Record<string, unknown> | null,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -63,6 +66,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     state.recordingEnabled = options.enabled;
     return {
       data: options.enabled ? (state.recording ?? undefined) : undefined,
+      isPending: options.enabled && state.recordingPending,
       refetch: vi.fn(),
     };
   },
@@ -104,6 +108,13 @@ vi.mock("@/components/minutes/recording-row", () => ({
     state.recordingRow = props;
     return React.createElement("RecordingRow");
   },
+  RecordingRowPlaceholder: () => {
+    state.recordingPlaceholder += 1;
+    return React.createElement("RecordingRowPlaceholder");
+  },
+}));
+vi.mock("@/lib/minutes/recorder/session", () => ({
+  useMeetingRecorder: () => ({ state: state.recorder, recorder: null }),
 }));
 vi.mock("@/components/ai/ai-consent-sheet", () => ({
   useAiConsentGate: () => ({
@@ -173,6 +184,9 @@ beforeEach(() => {
   state.notesSheet = 0;
   state.recording = null;
   state.recordingRow = null;
+  state.recordingPending = false;
+  state.recordingPlaceholder = 0;
+  state.recorder = { phase: "idle", refusal: null };
   state.notesProps = null;
   state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
@@ -225,6 +239,57 @@ describe("Recording on the minutes screen", () => {
     render();
     expect(state.recordingEnabled).toBe(false);
     expect(state.recordingRow).toBeNull();
+  });
+
+  it("holds the row's place while the server's answer is out", () => {
+    state.recordingPending = true;
+    render();
+    expect(state.recordingRow).toBeNull();
+    expect(state.recordingPlaceholder).toBeGreaterThan(0);
+  });
+
+  describe("while this phone holds this meeting's recording", () => {
+    const live = {
+      phase: "recording",
+      subject: { meetingId: "m1", eventName: "Chapter meeting", maxSeconds: 7200 },
+      seconds: 600,
+      paused: null,
+    };
+
+    it("keeps the row, and its Stop, when the server's answer is out or never comes", () => {
+      state.recorder = live;
+      state.recordingPending = true;
+      render();
+      expect(state.recordingRow).toMatchObject({ meetingId: "m1", server: null });
+      expect(state.recordingPlaceholder).toBe(0);
+    });
+
+    it("keeps the row when transcription was turned off meanwhile", () => {
+      state.recorder = live;
+      state.recording = { ...available, available: false };
+      render();
+      expect(state.recordingRow).toMatchObject({ server: null });
+    });
+
+    it("keeps the row on minutes posted from another device", () => {
+      state.recorder = live;
+      state.meeting = meeting({
+        status: "posted",
+        posted_at: "2026-11-10T02:00:00Z",
+      });
+      render();
+      expect(state.recordingRow).toMatchObject({ meetingId: "m1", server: null });
+    });
+
+    it("shows no row for a recording of another meeting once the minutes are posted", () => {
+      state.recorder = { ...live, subject: { ...live.subject, meetingId: "m2" } };
+      state.meeting = meeting({
+        status: "posted",
+        posted_at: "2026-11-10T02:00:00Z",
+      });
+      render();
+      expect(state.recordingRow).toBeNull();
+    });
   });
 });
 
