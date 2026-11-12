@@ -80,8 +80,12 @@ export function useActivityRereadOnTab(
 ): void {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
+  // Kept current in an effect declared before the tab effect below, so that
+  // effect reads the value of the same commit.
   const skip = useRef(activityInFront);
-  skip.current = activityInFront;
+  useEffect(() => {
+    skip.current = activityInFront;
+  }, [activityInFront]);
   const reread = useCallback(() => {
     if (!chapterId || skip.current) return;
     void queryClient.invalidateQueries({
