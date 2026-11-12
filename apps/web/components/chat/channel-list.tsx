@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { VoiceRowParticipants } from "@/components/voice/voice-ui";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
 import {
@@ -802,6 +803,8 @@ export function ChannelList({
               ) : null}
             </span>
           </button>
+          {/* Voice prototype (#3866): nothing unless its dev flag is on. */}
+          <VoiceRowParticipants channelId={channel.id} />
         </li>
       </ChannelRowMenu>
     );

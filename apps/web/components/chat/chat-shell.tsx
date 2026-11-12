@@ -83,6 +83,7 @@ import {
 } from "@repo/validation";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, X } from "lucide-react";
+import { VoiceHeaderButton } from "@/components/voice/voice-ui";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
@@ -2758,6 +2759,11 @@ export function ChatShell({
             description={activeChannelDescription}
           />
           <div className="flex shrink-0 items-center gap-2">
+            {/* Voice prototype (#3866): nothing unless its dev flag is on. */}
+            <VoiceHeaderButton
+              channelId={activeChannelId}
+              channelName={activeChannelName}
+            />
             {showMemberList ? (
               <Button
                 variant="ghost"

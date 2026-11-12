@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { ChapterPresenceProvider } from "@/lib/providers/chapter-presence-provider";
+import { VoiceProvider } from "@/lib/voice/voice-provider";
 import {
   NAV_COLLAPSED_COOKIE,
   parseNavCollapsed,
@@ -62,14 +63,17 @@ export default async function DashboardLayout({
         own name in chat) is below.
       */}
       <ChapterAccentStyle paint={accentPaint} />
-      <DashboardShell
-        defaultNavCollapsed={navCollapsed}
-        defaultChatOpen={chatOpen}
-        defaultToolShare={toolShare}
-        defaultMembersHidden={membersHidden}
-      >
-        {children}
-      </DashboardShell>
+      {/* Voice prototype (#3866): a pass-through unless its dev flag is on. */}
+      <VoiceProvider>
+        <DashboardShell
+          defaultNavCollapsed={navCollapsed}
+          defaultChatOpen={chatOpen}
+          defaultToolShare={toolShare}
+          defaultMembersHidden={membersHidden}
+        >
+          {children}
+        </DashboardShell>
+      </VoiceProvider>
     </ChapterPresenceProvider>
   );
 }

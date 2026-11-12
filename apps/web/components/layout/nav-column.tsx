@@ -3,6 +3,7 @@
 import { AppNav } from "@/components/layout/app-nav";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
+import { VoiceBar } from "@/components/voice/voice-ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -85,6 +86,8 @@ export function NavColumn({
           onCloseTool={onCloseTool}
         />
       </div>
+      {/* Voice prototype (#3866): renders nothing unless its dev flag is on. */}
+      <VoiceBar collapsed={collapsed} />
     </div>
   );
 }
