@@ -1,0 +1,12 @@
+# Opens #general from Chat home. The smoke account's chapter needs one.
+appId: live.frapp.mobile
+---
+- tapOn:
+    id: "tab-index"
+- scrollUntilVisible:
+    element:
+      text: "#?general.*"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "#?general.*"
+- assertVisible: "Message.*"

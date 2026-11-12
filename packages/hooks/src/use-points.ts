@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   isRetryableFailure,
   randomClientId,
@@ -11,6 +16,24 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
+
+/**
+ * Refresh every points read (my total, the leaderboard, the ledger) after a
+ * write that moves points: a manual adjustment, a check-in, a confirmed task,
+ * a service approval, a study session ending, an accepted AI suggestion, a
+ * semester rollover, a removed member. Points keys are
+ * `["points", chapterId, …]`, so the bare prefix covers every chapter and
+ * window; a chapter switch clears the cache anyway.
+ *
+ * Every hook here whose write moves points calls this. Chat's `/points`, which
+ * writes through chat-core rather than a hook, refreshes the same prefix
+ * through `chat-record-writes.ts`. Without a refresh the member sees their old
+ * total until the 30s `staleTime` lapses on web, or until the app comes back
+ * to the foreground on mobile, where a mounted tab never refetches on its own.
+ */
+export function invalidatePointReads(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ["points"] });
+}
 
 export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
   const client = useFrappClient();
@@ -239,7 +262,7 @@ export function useAdjustPoints() {
     },
     onSuccess: (_data, variables) => {
       release(variables.client_message_id);
-      queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
+      void invalidatePointReads(queryClient);
     },
     onError: (error, variables) => {
       const key = variables.client_message_id;

@@ -1,5 +1,10 @@
 # Promotion log
 
+**New migrations are not ledgered here.** Since 2026-11-12 each migration has its own page in
+[`migrations/`](migrations/README.md), holding its promotion entry and rollback recipe, because
+every PR prepending to this file conflicted with every other open migration PR. This file is the
+record for older migrations, and still counts for them.
+
 Every migration below records what it does, how it was promoted, and anything a
 promoter must do by hand. How a migration gets promoted is
 [`promotion.md`](promotion.md).
@@ -28,16 +33,6 @@ That list is **shrink-only** and enforced by a version ceiling: a migration
 created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
-
-## 2026-11-12: Check in near the QR screen (#4532)
-
-### 20261112293700_event_check_in_screens.sql
-
-- **Purpose**: Adds `event_check_in_screens`, one row per event and officer (`reported_by`, the primary key with `event_id`) recording where that officer's phone showing the check-in code is (`lat`, `lng`, `accuracy_m`, `located_at`, all set or all null), when it last reported (`shown_at`), and `expires_at`, the close of the event's check-in window. Foreign keys to `events`, `users` and `chapters` cascade on delete. Row-level security on with no policies (API only). Indexes on `expires_at` (the sweep), `chapter_id` and `reported_by`. Nothing is written on apply.
-- **Checks**: After `db push`, `select count(*) from information_schema.tables where table_name = 'event_check_in_screens';` returns 1 and `select relrowsecurity from pg_class where relname = 'event_check_in_screens';` returns `true`.
-- **Promoter notes**: Must land before the API that reads it, which reads the table on every check-in (an API deployed first fails check-in with a missing-relation error until it lands). Deploy applies migrations before it deploys the API (`_deploy.yml`), so the order holds by itself. The mobile half rides an OTA, which Deploy production sends after the API. Hosted projects are not applied from a cloud-agent session.
-
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-check-in-screens-20261112293700) § Rollback event check-in screens.
 
 ## 2026-11-12: Study zones drawn on a map (#2239)
 

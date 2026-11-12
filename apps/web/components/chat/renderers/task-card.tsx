@@ -1,13 +1,18 @@
 "use client";
 
-import { CheckCircle2, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Pencil, Undo2 } from "lucide-react";
 import { TasksGlyph } from "../chat-glyphs";
 import {
+  canEditCardTask,
   canReadCardTask,
+  readEditableCardTask,
   readLiveTask,
   taskCardControls,
   TASK_ACTION_LABELS,
   taskStatusLabel,
+  useCurrentChapter,
+  useMembers,
   useMyPermissions,
   subtaskProgress,
   useNow,
@@ -28,12 +33,15 @@ import { Badge } from "@/components/ui/badge";
 import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
-import { can } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { OWNS_ESCAPE } from "@/components/shared/panel";
+import { TaskEditForm } from "@/components/tasks/task-edit-form";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -62,7 +70,8 @@ export const TASK_CONFIRM_FAILURE = {
  * `kind:"task"` — see `ChatService.SERVER_ONLY_KINDS`).
  *
  * Interactive: the assignee can Start / Mark done and an admin
- * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
+ * (`tasks:manage`) can Confirm / Reject inline, and Edit an unconfirmed task
+ * in the board's form (#4512). Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
  * boundary, so the gating here is UX-only. Which controls show, and when the
  * live status can be read at all, are `taskCardControls` and `canReadCardTask`
@@ -104,6 +113,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const gate = useSubscriptionGate();
   // The due countdown's clock, a hook for the same reason.
   const now = useNow();
+  // An officer's edit (#4512) puts the task form in the card's place until it
+  // saves or is cancelled, as the board's tile does (#4296).
+  const [editing, setEditing] = useState(false);
+  const chapterQuery = useCurrentChapter();
+  const tasksOff =
+    chapterQuery.data !== undefined &&
+    !isModuleEnabled(chapterQuery.data?.enabled_modules, "tasks");
 
   if (!payload) {
     return (
@@ -156,6 +172,14 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     isAssignee: isAssigneeNow,
     canManage: true,
   }).filter((control) => control !== "start" && control !== "complete");
+  // Edit, wherever the card is shown (chat and Activity, #4512): the board's
+  // rule, a tasks:manage holder until the task is confirmed.
+  // Not while the chapter has Tasks turned off, as on mobile: every save
+  // would be refused.
+  const editable =
+    !tasksOff && canEditCardTask({ live, canManage })
+      ? readEditableCardTask(liveRaw)
+      : null;
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||
@@ -185,6 +209,36 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     };
   }
 
+  if (editing && editable) {
+    return (
+      <Card
+        className={cn(MESSAGE_CARD)}
+        role="group"
+        aria-label={`Editing ${editable.title}`}
+        // Escape puts the card back unsaved, like the board tile's Escape.
+        // The Activity panel would hear it first and close with the draft,
+        // so the card claims it there (`OWNS_ESCAPE`). An open picker is
+        // portaled out of the card, so its own Escape is not the card's.
+        {...{ [OWNS_ESCAPE]: "" }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            event.currentTarget.contains(event.target as Node)
+          ) {
+            event.stopPropagation();
+            setEditing(false);
+          }
+        }}
+      >
+        <CardTaskEdit
+          task={editable}
+          gate={gate}
+          onClose={() => setEditing(false)}
+        />
+      </Card>
+    );
+  }
+
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
@@ -196,9 +250,25 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
-        {live && statusLabel ? (
-          <Badge variant={taskStatusKind(live)}>{statusLabel}</Badge>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {editable ? (
+            // A square icon by the badge, as on the board's tile: the
+            // lifecycle actions below stay the card's actions.
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 pointer-coarse:size-11"
+              aria-label={`Edit ${payload.title}`}
+              {...gate.controlProps(!isConfirmed)}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
+          {live && statusLabel ? (
+            <Badge variant={taskStatusKind(live)}>{statusLabel}</Badge>
+          ) : null}
+        </div>
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
@@ -323,5 +393,33 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         </div>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The board's edit form on a card (#4512), with the name of whom the task is
+ * assigned to now for the line under Assignee: an edit may have handed it on
+ * since the card was posted, so the snapshot's name won't do.
+ */
+function CardTaskEdit({
+  task,
+  gate,
+  onClose,
+}: {
+  task: NonNullable<ReturnType<typeof readEditableCardTask>>;
+  gate: ReturnType<typeof useSubscriptionGate>;
+  onClose: () => void;
+}) {
+  const members = useMembers().data ?? [];
+  const assignee = members.find(
+    (member) => member.user_id === task.assignee_id,
+  );
+  return (
+    <TaskEditForm
+      task={task}
+      assigneeName={memberLabel(assignee?.display_name, task.assignee_id)}
+      gate={gate}
+      onClose={onClose}
+    />
   );
 }

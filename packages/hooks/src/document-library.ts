@@ -65,7 +65,7 @@ export type LibrarySourceDocument = {
 export type FileKind = "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
 
 /** The groups in the order the filter offers them. */
-export const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
+const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
   { value: "pdf", label: "PDF" },
   { value: "word", label: "Word" },
   { value: "slides", label: "Slides" },
@@ -330,7 +330,7 @@ export function uploadedLine(day: string | null, uploader: string | null): strin
 }
 
 /** Everything a member might type to find a document. */
-export function searchText(doc: LibrarySourceDocument, uploader: string | null): string {
+function searchText(doc: LibrarySourceDocument, uploader: string | null): string {
   return [doc.title, doc.description, uploader, doc.folder, doc.document_type]
     .filter((part) => part !== null && part !== undefined && part !== "")
     .join(" ");

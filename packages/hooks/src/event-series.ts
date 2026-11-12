@@ -40,7 +40,7 @@ export type EventListEntry<T> = {
 };
 
 /** Today through the end of the fourteenth day after it (#3707). */
-export const EVENT_HORIZON_DAYS = 14;
+const EVENT_HORIZON_DAYS = 14;
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;

@@ -44,7 +44,7 @@ export const REQUEST_ID_HEADER = "x-request-id";
 export const TIME_ZONE_HEADER = "x-time-zone";
 
 /** This runtime's IANA zone, or null where `Intl` cannot say. */
-export const runtimeTimeZone = (): string | null => {
+const runtimeTimeZone = (): string | null => {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return typeof zone === "string" && zone.length > 0 ? zone : null;
@@ -66,10 +66,11 @@ export const mintRequestId = (): string => `req_${randomClientId()}`;
 
 /**
  * Ensure `x-request-id` is present. Honours a caller-supplied value.
- * Same rule as {@link createFrappClient} — used by raw `fetch` health probes
- * that cannot go through the OpenAPI client (`/health` is not under `/v1`).
+ * Same rule as {@link createFrappClient}; {@link withRequestIdInit} applies it
+ * for raw `fetch` health probes that cannot go through the OpenAPI client
+ * (`/health` is not under `/v1`).
  */
-export const ensureRequestIdHeader = (headers: Headers): Headers => {
+const ensureRequestIdHeader = (headers: Headers): Headers => {
   if (!headers.has(REQUEST_ID_HEADER)) {
     headers.set(REQUEST_ID_HEADER, mintRequestId());
   }

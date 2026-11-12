@@ -130,17 +130,12 @@ const TOGGLE_LABEL = {
 const navIconClassName = "h-[18px] w-[18px]";
 
 /**
- * A row is the current page when its own route is open, and the current
- * section when a route it owns is (`activeFor`: the Settings tools, which keep
- * their own pages but sit under the Settings row).
+ * A row is the current page when its own route is open. The officer tools
+ * that once kept routes of their own under the Settings row now open inside
+ * Chapter settings (#3837), so no row stands for another route any more.
  */
-function currentFor(
-  item: NavItem,
-  pathname: string,
-): "page" | "true" | undefined {
-  if (item.href === pathname) return "page";
-  if (item.activeFor?.includes(pathname)) return "true";
-  return undefined;
+function currentFor(item: NavItem, pathname: string): "page" | undefined {
+  return item.href === pathname ? "page" : undefined;
 }
 
 export function AppNav({
@@ -258,9 +253,7 @@ export function AppNav({
               {...shared}
               {...(onCloseTool && currentFor(item, pathname) === "page"
                 ? {
-                    // Only the row whose own page is open. A Settings tool's
-                    // route marks the Settings row too (`activeFor`), and
-                    // there the row stays the way back to the Settings hub.
+                    // Only the row whose own page is open.
                     onSelect: onCloseTool,
                     pressed: true,
                     selectLabel: `Close ${item.label}`,

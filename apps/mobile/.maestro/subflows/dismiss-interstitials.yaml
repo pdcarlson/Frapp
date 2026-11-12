@@ -1,0 +1,34 @@
+# Clears what can stand between launch and Chat home: the first-run tour, the
+# push step and its later reminder, What's new opening by itself, and the
+# launch jump into the last channel opened (lib/chat/last-channel.ts).
+appId: live.frapp.mobile
+---
+- runFlow:
+    when:
+      visible: "Skip the tour"
+    commands:
+      - tapOn: "Skip the tour"
+- runFlow:
+    when:
+      visible: "Not now"
+    commands:
+      - tapOn: "Not now"
+- runFlow:
+    when:
+      visible: "Dismiss"
+    commands:
+      - tapOn: "Dismiss"
+- runFlow:
+    when:
+      visible: "What's new"
+    commands:
+      - tapOn: "Close"
+# The last-channel jump lands after the channel list loads, so let it settle
+# before looking for the channel's back row.
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "Back to [Cc]hat"
+    commands:
+      - tapOn: "Back to [Cc]hat"

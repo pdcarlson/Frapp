@@ -114,7 +114,7 @@ function str(row: Record<string, unknown>, key: string): string | null {
  * status (the server synthesizes `OVERDUE`); a confirm leaves it at
  * `COMPLETED` and sets `points_awarded` / `confirmed_at`.
  */
-export function calendarTaskState(row: Record<string, unknown>): {
+function calendarTaskState(row: Record<string, unknown>): {
   state: CalendarTaskState;
   label: string;
 } | null {

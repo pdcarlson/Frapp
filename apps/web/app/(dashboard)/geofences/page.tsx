@@ -1,4 +1,8 @@
 import { redirect } from "next/navigation";
+import {
+  STUDY_ZONES_SETTINGS_PATH,
+  settingsRedirectPath,
+} from "@/components/settings/settings-paths";
 
 /**
  * Study zones moved inside Chapter settings' Study zones page, which lists
@@ -11,8 +15,5 @@ export default async function Geofences({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = new URLSearchParams({ tab: "geofences" });
-  const from = (await searchParams).from;
-  if (typeof from === "string") params.set("from", from);
-  redirect(`/settings?${params.toString()}`);
+  redirect(settingsRedirectPath(STUDY_ZONES_SETTINGS_PATH, await searchParams));
 }

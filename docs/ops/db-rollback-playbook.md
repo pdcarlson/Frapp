@@ -1,9 +1,16 @@
 # DB Rollback Playbook
 
+**A migration created since 2026-11-12 has its rollback recipe on its own page** in
+[`database/migrations/`](database/migrations/README.md), named after the migration. The recipes
+below are for older migrations, and the procedure sections (decision matrix, backups, undo one
+migration) apply to all of them.
+
 ## Every migration owes a recipe here
 
-`check:migration-safety` asserts **per-migration** coverage in this file *and*
-in [`database/promotion-log.md`](database/promotion-log.md) — both, not either. It
+For a migration created before 2026-11-12, `check:migration-safety` asserts
+**per-migration** coverage in this file *and* in
+[`database/promotion-log.md`](database/promotion-log.md) (both, not either), unless
+the migration has a ledger page. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
 Any of these counts, anywhere in the file:
 
@@ -61,7 +68,7 @@ Use when:
 - service can stay online.
 
 Action:
-1. Create new migration: `npm run supabase -- migration new <hotfix_name>`
+1. Create new migration: `npm run migration:new -- <hotfix_name>` (the SQL file and its ledger page)
 2. Apply to staging first.
 3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
@@ -157,10 +164,9 @@ migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npm run supabase -- migration new rollback_<what>`),
-and give it its own entries here and in
-[`database/promotion-log.md`](database/promotion-log.md) (`check:migration-safety`
-requires both). Make every statement idempotent, so the migration also applies
+recipe's SQL as a new migration (`npm run migration:new -- rollback_<what>`),
+and fill in its own [ledger page](database/migrations/README.md)
+(`check:migration-safety` requires it). Make every statement idempotent, so the migration also applies
 where someone already ran it by hand (below): `if exists` where Postgres has it,
 and a guarded `do` block where it doesn't. `alter publication … drop table` has
 no `if exists`, so check `pg_publication_tables` first, as the original
@@ -4163,18 +4169,6 @@ To remove the function, do it in a later forward migration:
 
 ```sql
 drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
-```
-
-## Rollback event check-in screens (20261112293700)
-
-* **Migration**: `20261112293700_event_check_in_screens.sql`
-
-One table, `event_check_in_screens` (#4532): where each officer's screen showing an event's check-in QR is, kept only until check-in closes. **Roll the API back first.** The API reads the table on every check-in, so dropping it under a running API fails every check-in. With the API reverted, check-in is checked against drawn zones alone and the code is optional again; the rows hold nothing worth keeping (each expires with its check-in window).
-
-Keep the migration file ([§ 3) Undo one migration](#3-undo-one-migration)) and, in a later forward migration:
-
-```sql
-drop table if exists public.event_check_in_screens;
 ```
 
 ## Rollback AI deleted-account gaps (20261112260000)

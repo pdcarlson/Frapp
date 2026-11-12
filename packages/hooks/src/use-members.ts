@@ -14,6 +14,7 @@ import {
   type MemberDismissalKey,
 } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { invalidatePointReads } from "./use-points";
 import {
   memberFallbackLabel,
   resolveDisplayName,
@@ -481,7 +482,8 @@ export function useRemoveMember() {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       // A removed alumnus is gone from the Alumni tab too.
       queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] });
-      queryClient.invalidateQueries({ queryKey: ["chapters", chapterId] });
+      // The removed member drops off the leaderboard.
+      void invalidatePointReads(queryClient);
     },
   });
 }
