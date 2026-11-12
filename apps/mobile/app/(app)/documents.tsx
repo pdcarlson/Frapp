@@ -38,7 +38,7 @@ import {
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
-import { errorCopy } from "@repo/hooks/error-copy";
+import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
@@ -572,11 +572,11 @@ export default function DocumentsScreen() {
         </SkeletonRegion>
       );
     }
-    if (documentsQuery.isError) {
+    if ((documentsQuery.isError && documentsQuery.data === undefined)) {
       return (
         <ErrorState
           title="Couldn't load documents"
-          body="If you belong to more than one chapter, pick one from You → Switch chapter first."
+          body={describeLoadFailure(documentsQuery.error)}
           onRetry={() => void documentsQuery.refetch()}
           isRetrying={documentsQuery.isFetching}
         />
@@ -893,11 +893,11 @@ export default function DocumentsScreen() {
           {deleteFailed}
         </Text>
       ) : null}
-      {truncated && !documentsQuery.isError ? (
+      {truncated && !(documentsQuery.isError && documentsQuery.data === undefined) ? (
         <InlineNote>{DOCUMENT_CAP_NOTICE}</InlineNote>
       ) : null}
 
-      {showCards && !documentsQuery.isPending && !documentsQuery.isError ? (
+      {showCards && !documentsQuery.isPending && !(documentsQuery.isError && documentsQuery.data === undefined) ? (
         <MarkedCards
           pinned={cards.pinned}
           starred={cards.starred}

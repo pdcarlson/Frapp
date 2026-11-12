@@ -150,6 +150,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      data?: unknown;
       error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
@@ -1714,7 +1715,12 @@ describe("Chat home loading and error states", () => {
 
   it("fails on the shared error state, whose retry refetches the channels", () => {
     const refetch = vi.fn();
-    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+      refetch,
+    };
     const tree = render();
 
     const error = tree.root.findByType(ErrorState);
@@ -1729,9 +1735,21 @@ describe("Chat home loading and error states", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the channels it has when a refresh fails", () => {
+    // Back from the background, the focus refetch can fail (a lapsed token,
+    // FRAPP-API-E). The rows it already had stay; the error card is for a
+    // list that never loaded (components.md §10).
+    channelsState.value = { ...channelsState.value, isError: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ErrorState)).toHaveLength(0);
+    expect(rows(tree).length).toBeGreaterThan(0);
+  });
+
   it("says a refused list is about the member's role, not the network", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1748,6 +1766,7 @@ describe("Chat home loading and error states", () => {
     vi.mocked(Sentry.captureMessage).mockClear();
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1762,6 +1781,7 @@ describe("Chat home loading and error states", () => {
   it("says Retrying… and holds the control while a retry is in flight", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       isFetching: true,
     };
@@ -2013,7 +2033,11 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
 
   it("draws nothing over the channels' error", () => {
     setupChecklist.value = ONE_LINE;
-    channelsState.value = { ...channelsState.value, isError: true };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+    };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });

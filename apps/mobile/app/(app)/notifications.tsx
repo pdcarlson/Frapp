@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -152,11 +153,11 @@ export default function NotificationsScreen() {
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="your notifications" />;
     if (notificationsQuery.isPending) return <NotificationListSkeleton />;
-    if (notificationsQuery.isError) {
+    if (notificationsQuery.isError && notificationsQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load notifications"
-          body="Your activity history couldn't reach the server."
+          body={describeLoadFailure(notificationsQuery.error)}
           onRetry={() => void notificationsQuery.refetch()}
           isRetrying={notificationsQuery.isFetching}
         />

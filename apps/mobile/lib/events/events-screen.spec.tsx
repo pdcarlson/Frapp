@@ -60,7 +60,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useListChapters: () => ({
     data: [{ chapter_id: "chapter-1", role_ids: [] }],
   }),
-  useEvents: () => ({ ...query, data: events, refetch }),
+  // A failed first read: nothing loaded. A failed refetch keeps its rows.
+  useEvents: () => ({
+    ...query,
+    data: query.isError ? undefined : events,
+    refetch,
+  }),
   useTasks: () => ({ ...query, data: tasks, refetch: tasksRefetch }),
   useCalendarTasks: () => {
     const items = selectCalendarTasks(tasks, "me");

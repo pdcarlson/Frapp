@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -91,11 +92,11 @@ export default function ServiceHoursScreen() {
   }, []);
 
   function renderList() {
-    if (viewerQuery.isError) {
+    if (viewerQuery.isError && viewerQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your account"
-          body="Your service hours are filtered to you, so this has to load first."
+          body={describeLoadFailure(viewerQuery.error)}
           onRetry={() => void viewerQuery.refetch()}
           isRetrying={viewerQuery.isFetching}
         />
@@ -115,11 +116,11 @@ export default function ServiceHoursScreen() {
           />
         </SkeletonRegion>
       );
-    if (entriesQuery.isError) {
+    if (entriesQuery.isError && entriesQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="If you belong to more than one chapter, pick one from You → Switch chapter first."
+          body={describeLoadFailure(entriesQuery.error)}
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />

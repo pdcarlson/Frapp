@@ -43,6 +43,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       error?: unknown;
+      data?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
   },
@@ -473,7 +474,12 @@ describe("Messages header, empty and error states", () => {
 
   it("fails on the shared error state, whose retry refetches", () => {
     const refetch = vi.fn();
-    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+      refetch,
+    };
     const tree = render();
 
     const error = tree.root.findByType(ErrorState);
