@@ -157,6 +157,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
       "Officers can now type @here in chat to notify only the people in a channel who are online right now.",
       "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
+      "Officers can set goals for points, service hours and study hours in Chapter settings, for everyone or per role, and each member sees a bar toward theirs on Activity and Study hours.",
+      "What's new now lists what changed on the web and on your phone under their own Web and Mobile headings.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
@@ -185,6 +187,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
       "An Activity item, a pledge class's member list and Create a channel in Chat admin now open right inside their page instead of sliding over the whole screen.",
       "Your profile now shows your points, service hours, pledge class and number, as it does on your phone.",
+      "Upload and Clean up professors and departments in Backwork now open right inside the page instead of sliding over the whole screen.",
+      "The study zone map now shows buildings, streets and building names clearly, so you can find the right building without squinting.",
     ],
     phone: [
       "Officers who manage roles can now set a member's pledge class and number from their profile.",
