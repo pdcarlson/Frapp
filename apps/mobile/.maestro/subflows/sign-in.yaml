@@ -1,0 +1,28 @@
+# Signs in with the smoke account when the app is on the sign-in screen, and
+# does nothing when it is already signed in. MAESTRO_SMOKE_EMAIL and
+# MAESTRO_SMOKE_PASSWORD come from the shell (or the Expo Workflows
+# environment); Maestro reads any MAESTRO_-prefixed variable on its own.
+appId: live.frapp.mobile
+---
+- extendedWaitUntil:
+    visible:
+      text: "Continue with email|Chat"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Continue with email"
+    commands:
+      - tapOn: "Continue with email"
+      - tapOn: "you@university.edu"
+      - inputText: ${MAESTRO_SMOKE_EMAIL}
+      # The email field's return key moves to the password field in Password
+      # mode, the mode the form opens in.
+      - pressKey: Enter
+      - inputText: ${MAESTRO_SMOKE_PASSWORD}
+      - hideKeyboard
+      - tapOn: "Sign in"
+- runFlow: dismiss-interstitials.yaml
+- extendedWaitUntil:
+    visible:
+      id: "tab-index"
+    timeout: 30000

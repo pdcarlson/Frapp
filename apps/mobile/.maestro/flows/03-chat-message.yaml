@@ -1,0 +1,30 @@
+# Device pass: a message sends in #general and its long-press menu offers
+# Copy text (#3653). The smoke account's chapter needs a #general.
+appId: live.frapp.mobile
+name: "Send a message and open its menu"
+tags:
+  - smoke
+---
+- launchApp
+- runFlow: ../subflows/sign-in.yaml
+- tapOn:
+    id: "tab-index"
+- scrollUntilVisible:
+    element:
+      text: "#?general"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "#?general"
+- evalScript: ${output.stamp = 'Smoke check ' + Date.now()}
+- tapOn: "Message.*"
+- inputText: ${output.stamp}
+- tapOn: "Send message"
+- extendedWaitUntil:
+    visible: ${output.stamp}
+    timeout: 15000
+- takeScreenshot: chat-sent
+- longPressOn: ${output.stamp}
+- assertVisible: "Copy text"
+- takeScreenshot: chat-message-menu
+- tapOn: "Copy text"
+- assertNotVisible: "Copy text"

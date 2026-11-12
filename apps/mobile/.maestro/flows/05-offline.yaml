@@ -1,0 +1,39 @@
+# Device pass row 21, Android only (Maestro can't switch airplane mode on an
+# iOS simulator): the Offline pill shows without moving the screen, a message
+# sent offline waits, and it sends on reconnect (smoke checklist § 4).
+appId: live.frapp.mobile
+name: "Offline pill and a queued message"
+tags:
+  - smoke
+  - android
+---
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp
+      - runFlow: ../subflows/sign-in.yaml
+      - tapOn:
+          id: "tab-index"
+      - scrollUntilVisible:
+          element:
+            text: "#?general"
+          direction: DOWN
+          timeout: 10000
+      - tapOn: "#?general"
+      - setAirplaneMode: enabled
+      - extendedWaitUntil:
+          visible: "Offline"
+          timeout: 15000
+      - takeScreenshot: offline-pill
+      - evalScript: ${output.queued = 'Queued while offline ' + Date.now()}
+      - tapOn: "Message.*"
+      - inputText: ${output.queued}
+      - tapOn: "Send message"
+      - assertVisible: ${output.queued}
+      - setAirplaneMode: disabled
+      - extendedWaitUntil:
+          notVisible: "Offline"
+          timeout: 60000
+      - assertVisible: ${output.queued}
+      - takeScreenshot: back-online

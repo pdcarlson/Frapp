@@ -1,0 +1,14 @@
+# Device pass: sign-in reaches Chat home (smoke checklist § 1).
+appId: live.frapp.mobile
+name: "Sign in with a password"
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+- runFlow: ../subflows/sign-in.yaml
+- assertVisible:
+    id: "tab-index"
+- takeScreenshot: chat-home

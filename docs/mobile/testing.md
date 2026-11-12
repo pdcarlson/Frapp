@@ -7,7 +7,8 @@ server. It cannot be done from a headless cloud VM: it needs a physical device
 (or a local simulator) on the same network as the machine running Metro.
 
 EAS builds are a separate path with a separate owner. `apps/mobile/eas.json`
-defines `development` / `preview` / `production` profiles against a linked EAS
+defines `development` / `preview` / `production` profiles, plus `e2e` for the
+[automated flows](#automated-flows-maestro), against a linked EAS
 project (`extra.eas.projectId` and `owner` are committed in
 `apps/mobile/app.json`); the `eas build` commands and that linkage live in
 [`docs/ops/deployment/mobile.md`](../ops/deployment/mobile.md#6-mobile-eas-setup).
@@ -58,6 +59,9 @@ you to log in, an Expo account is being resolved that you are not signed in to.
 is the script. Note that in Expo Go the deep-link scheme is `exp://`, not
 `frapp://`, so the magic-link rows in §1 are unreachable regardless of the
 Supabase redirect allowlist — use the password sign-in path.
+
+On a store build, start with [`device-pass.md`](device-pass.md): the 15-minute, ordered
+pass through the rows only a phone can settle.
 
 ### 4. S1 foundation smoke
 
@@ -120,6 +124,51 @@ device run, check:
       and land back in the tabs with that chapter's data. If a test token has no
       claim, the pick should still return you to the tabs rather than spin —
       the chapter just will not change until a later token carries the claim.
+
+## Automated flows (Maestro)
+
+`apps/mobile/.maestro/` holds [Maestro](https://maestro.dev/) flows for the parts of the
+[device pass](device-pass.md#what-the-automated-flows-cover) a script can see: sign-in, every
+tab and the More rows every member has (each must open and come back), sending a message and
+its menu, the quick-actions panel, and, on Android only, the Offline pill and a queued message.
+They select by what a member reads (labels, placeholders, accessibility labels) plus the tab
+bar's `tab-<route>` test IDs, so renaming a More row or the composer's placeholder means
+updating them.
+
+They run in Expo Workflows, on an Android emulator and an iOS simulator, against staging. The
+workflow is `apps/mobile/.eas/workflows/device-smoke.yml`. It builds the `e2e` profile (an APK
+and a simulator `.app`, staging's API, Sentry environment `e2e`), then runs the flows with screen
+recordings and screenshots in the run's artifacts. It has no trigger: each run spends two EAS
+builds, so it runs only when someone starts it.
+
+Before the first run, once:
+
+1. Create a staging account for the flows, in a chapter that has a #general channel, and finish
+   its onboarding on any device so it signs straight in to Chat home. Never use a real member's
+   account.
+2. In the EAS dashboard (expo.dev, the project, Environment variables), add
+   `MAESTRO_SMOKE_EMAIL` and `MAESTRO_SMOKE_PASSWORD` to the **preview** environment with
+   visibility **Secret** ([`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
+
+Then, from the repo root:
+
+```bash
+npm run eas -- workflow:run .eas/workflows/device-smoke.yml
+```
+
+The run's link prints in the terminal, and the Expo dashboard lists it under Workflows. A
+flow that fails names the step and leaves a screenshot.
+
+The flows also run against a phone plugged into a computer with the
+[Maestro CLI](https://docs.maestro.dev/maestro-cli/how-to-install-maestro-cli) installed (an Android
+phone over USB, or an iOS simulator on a Mac), from `apps/mobile`:
+
+```bash
+maestro test -e MAESTRO_SMOKE_EMAIL=... -e MAESTRO_SMOKE_PASSWORD=... .maestro
+```
+
+That runs against whichever build is installed, so on a store build it signs in to production
+and posts its test messages there. Use a staging build for it.
 
 ## Unit tests
 

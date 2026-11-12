@@ -1,0 +1,14 @@
+# Device pass: the tab bar's + opens the quick-actions panel and closes it
+# (#3603).
+appId: live.frapp.mobile
+name: "Quick actions open and close"
+tags:
+  - smoke
+---
+- launchApp
+- runFlow: ../subflows/sign-in.yaml
+- tapOn: "Quick actions"
+- assertVisible: "Close quick actions"
+- takeScreenshot: quick-actions
+- tapOn: "Close quick actions"
+- assertVisible: "Quick actions"

@@ -1,0 +1,21 @@
+# Clears what can stand between sign-in and Chat home on a fresh install: the
+# first-run tour, the push reminder, and What's new opening by itself.
+appId: live.frapp.mobile
+---
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Not now"
+    commands:
+      - tapOn: "Not now"
+- runFlow:
+    when:
+      visible: "Back to .*"
+      notVisible:
+        id: "tab-index"
+    commands:
+      - tapOn: "Back to .*"
