@@ -164,8 +164,10 @@ describe("SignupCard (#3926)", () => {
       "bringing a date",
     );
     await user.click(screen.getByRole("button", { name: "Save" }));
+    // The card hasn't redrawn since the switch to Can't make it, so the note
+    // builds on that tap rather than putting the member back on Going.
     expect(onClaim).toHaveBeenLastCalledWith("m1", "signup", {
-      slot_ids: ["going"],
+      slot_ids: ["not_going"],
       note: "bringing a date",
     });
   });
@@ -174,10 +176,16 @@ describe("SignupCard (#3926)", () => {
     const onClose = vi.fn();
     const { unmount } = render(
       <SignupCard
-        message={card([{ user: "u1", slots: ["fri"] }], {
-          closed_at: "2026-11-12T09:00:00Z",
-        })}
-        viewerId="me"
+        // As its creator, on a confirmed card: only the closing hides Close.
+        message={
+          {
+            ...card([{ user: "u1", slots: ["fri"] }], {
+              closed_at: "2026-11-12T09:00:00Z",
+            }),
+            _status: "confirmed",
+          } as ChatMessage
+        }
+        viewerId="u9"
         nameFor={nameFor}
         isConfirmed
         onClaim={vi.fn()}

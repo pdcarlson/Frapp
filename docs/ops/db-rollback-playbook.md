@@ -4153,7 +4153,7 @@ If one must be recovered (a legal hold, for instance), there is no point-in-time
 
 * **Migration**: `20261112260000_signup_headcount_close.sql`
 
-Replaces the one function sign-up taps call (#3926 step 2). It changes no table. **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The step 1 API calls the function with three arguments, which this version still takes. Leaving the function in place is the safe rollback: a closed card keeps refusing claims, and the older clients draw it as open, so a tap there gets a 400.
+Replaces the one function sign-up taps call (#3926 step 2). It changes no table. **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The step 1 API calls the function with three arguments, which this version still takes. Leaving the function in place is the safe rollback: a closed card keeps refusing claims, so nobody's name moves on a card its creator closed. Two things change while the API is on step 1. A tap on a closed or past-end card is refused as a **500**, not a 400, because the step 1 API doesn't know the function's `signup_closed` refusal: expect those taps in Sentry, and expect the older clients to draw such a card as open. And a step 1 claim sends no note, so a member who changes a headcount answer then loses the note on it.
 
 To restore the step 1 behaviour in a later forward migration, recreate the step 1 function body from `20261112250000_signup_card_claims.sql` and drop this one:
 

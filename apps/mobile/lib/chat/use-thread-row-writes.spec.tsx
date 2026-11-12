@@ -103,6 +103,7 @@ describe("useThreadRowWrites", () => {
       await hook.result.current.edit("r1", "fixed");
       await hook.result.current.remove(ROOT);
       await hook.result.current.closePoll("r1");
+      await hook.result.current.closeSignup(ROOT);
     });
     expect(calls.map(({ fn, args }) => [fn, args.threadRootId])).toEqual([
       ["react", ROOT],
@@ -111,6 +112,7 @@ describe("useThreadRowWrites", () => {
       ["edit", ROOT],
       ["delete", null],
       ["closePoll", ROOT],
+      ["closeSignup", null],
     ]);
     expect(calls.every(({ args }) => args.channelId === CHANNEL)).toBe(true);
   });

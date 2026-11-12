@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   emptySignupDraft,
+  SIGNUP_END_PASSED_PROBLEM,
   SIGNUP_SPOTS_PROBLEM,
 } from "@repo/chat-core/signups";
 import { SignupForm } from "./signup-form";
@@ -127,5 +128,40 @@ describe("SignupForm (#3926)", () => {
     expect(signup.payload.format).toBe("headcount");
     expect(signup.payload.slots).toHaveLength(2);
     expect(new Date(signup.payload.closes_at!).getHours()).toBe(18);
+  });
+
+  it("checks the end time again at Post, so a form left open can't post a closed card", async () => {
+    const user = userEvent.setup();
+    const onPost = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <SignupForm
+        initialDraft={emptySignupDraft()}
+        onPost={onPost}
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("radio", { name: "Headcount" }));
+    await user.type(
+      screen.getByPlaceholderText("Formal on Saturday"),
+      "Formal",
+    );
+    await user.click(
+      screen.getByRole("switch", { name: "Ends at a set time" }),
+    );
+
+    // Two days pass with the form open and nothing edited: tomorrow's end
+    // time is now behind us.
+    const later = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await user.click(screen.getByRole("button", { name: "Post sign-up" }));
+      expect(onPost).not.toHaveBeenCalled();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        SIGNUP_END_PASSED_PROBLEM,
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 });

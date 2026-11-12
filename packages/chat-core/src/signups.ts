@@ -1,6 +1,11 @@
 import { formatDueLabel, parseInstant } from "@repo/formatting";
 import {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  HEADCOUNT_SLOTS,
   SIGNUP_ANSWER_NOTE_MAX_LENGTH,
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
+  SIGNUP_HEADCOUNT_FORMAT,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
@@ -8,7 +13,11 @@ import {
   SIGNUP_TITLE_MAX_LENGTH,
 } from "@repo/validation";
 import { canActOnMessage, isOwnMessage } from "./message-actions";
-import { currentPollPicks, makePollOptionId } from "./polls";
+import {
+  currentPollPicks,
+  makePollOptionId,
+  POLL_PICKS_PENDING_MS,
+} from "./polls";
 import type { PendingPollPicks } from "./polls";
 import type { ChatMessage } from "./types";
 
@@ -36,10 +45,11 @@ import type { ChatMessage } from "./types";
 
 export const SIGNUP_CLAIM_ACTION_TYPE = "signup";
 
-/** A headcount card's format, and the two slot ids the server gives it. */
-export const SIGNUP_HEADCOUNT_FORMAT = "headcount";
-export const HEADCOUNT_GOING_SLOT_ID = "going";
-export const HEADCOUNT_NOT_GOING_SLOT_ID = "not_going";
+export {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  SIGNUP_HEADCOUNT_FORMAT,
+};
 
 export interface SignupSlot {
   id: string;
@@ -72,11 +82,6 @@ export interface SignupMessageInput {
   /** When sign-ups end, or absent for a card that stays open. */
   closesAt?: Date | null;
 }
-
-const HEADCOUNT_SLOTS: readonly SignupSlot[] = [
-  { id: HEADCOUNT_GOING_SLOT_ID, label: "Going", capacity: null },
-  { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
-];
 
 /**
  * The `kind: "signup"` message a client posts: `content` is the title, which
@@ -441,6 +446,40 @@ export function castSignupClaim(
 }
 
 /**
+ * The viewer's last headcount tap, while the card hasn't caught up with it.
+ * A claim isn't optimistic, so the card's tally shows the old answer and note
+ * until the server answers; a second tap or a note saved in that window builds
+ * on this instead, as a quick second vote does (`castPollVote`). The server
+ * stores a claim's payload whole, so a claim built on the stale tally would
+ * undo the first: put the member back on their old answer, or erase the note
+ * they just saved.
+ */
+export interface PendingHeadcount {
+  answer: string | null;
+  note: string;
+  at: number;
+}
+
+/**
+ * The viewer's answer and note as the card should build on them: their last
+ * tap while it is fresh (`POLL_PICKS_PENDING_MS`), else the tally.
+ */
+export function currentHeadcount(
+  tally: SignupTally,
+  viewerId: string | null,
+  pending: PendingHeadcount | null,
+  now: number,
+): { answer: string | null; note: string } {
+  if (pending && now - pending.at < POLL_PICKS_PENDING_MS) {
+    return { answer: pending.answer, note: pending.note };
+  }
+  return {
+    answer: tally.mine[0] ?? null,
+    note: viewerId ? (tally.notes[viewerId] ?? "") : "",
+  };
+}
+
+/**
  * The claim a headcount answer sends: the one slot tapped, or none when the
  * member taps the answer they already gave. The note rides along on every
  * claim, because the server stores the claim's payload whole and a claim
@@ -449,26 +488,38 @@ export function castSignupClaim(
 export function headcountAnswerPayload(
   tally: SignupTally,
   viewerId: string | null,
+  pending: { current: PendingHeadcount | null },
   slotId: string,
+  now: number = Date.now(),
 ): { slot_ids: string[]; note?: string } {
-  if (tally.mine.includes(slotId)) return { slot_ids: [] };
-  const note = viewerId ? tally.notes[viewerId] : undefined;
-  return { slot_ids: [slotId], ...(note ? { note } : {}) };
+  const base = currentHeadcount(tally, viewerId, pending.current, now);
+  if (base.answer === slotId) {
+    pending.current = { answer: null, note: "", at: now };
+    return { slot_ids: [] };
+  }
+  pending.current = { answer: slotId, note: base.note, at: now };
+  return { slot_ids: [slotId], ...(base.note ? { note: base.note } : {}) };
 }
 
 /**
- * The claim that saves a note on the viewer's answer, or `null` when they
- * have no answer to attach it to. Blank clears the note. The server trims it
- * and holds it to {@link SIGNUP_ANSWER_NOTE_MAX_LENGTH}.
+ * The claim that saves a note on the viewer's answer, or `null` when there is
+ * nothing to send: no answer to attach it to, or the same note already. Blank
+ * clears the note. The server trims it and holds it to
+ * {@link SIGNUP_ANSWER_NOTE_MAX_LENGTH}.
  */
 export function headcountNotePayload(
   tally: SignupTally,
+  viewerId: string | null,
+  pending: { current: PendingHeadcount | null },
   note: string,
+  now: number = Date.now(),
 ): { slot_ids: string[]; note?: string } | null {
-  const answer = tally.mine[0];
-  if (!answer) return null;
+  const base = currentHeadcount(tally, viewerId, pending.current, now);
+  if (!base.answer) return null;
   const trimmed = note.trim().slice(0, SIGNUP_ANSWER_NOTE_MAX_LENGTH);
-  return { slot_ids: [answer], ...(trimmed ? { note: trimmed } : {}) };
+  if (trimmed === base.note) return null;
+  pending.current = { answer: base.answer, note: trimmed, at: now };
+  return { slot_ids: [base.answer], ...(trimmed ? { note: trimmed } : {}) };
 }
 
 // ── The New sign-up sheet form ──────────────────────────────────────────────
@@ -570,7 +621,8 @@ export const SIGNUP_END_TOO_FAR_PROBLEM =
   "Sign-ups can end at most a year from now.";
 
 /** The API's furthest end time (`signup-card-rules.ts`), less a day of slack. */
-const SIGNUP_END_MAX_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
+const SIGNUP_END_MAX_AHEAD_MS =
+  (SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS - 1) * 24 * 60 * 60 * 1000;
 
 /**
  * A default end time for a member who turns one on: tomorrow at 6 PM, the

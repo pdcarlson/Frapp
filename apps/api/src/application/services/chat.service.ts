@@ -16,6 +16,7 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
+import { stampCardClosed } from './card-close';
 import {
   isSignupCardClosed,
   normalizeSignupCard,
@@ -1812,19 +1813,13 @@ export class ChatService {
     if (isSignupCardClosed(payload)) {
       throw new BadRequestException('Sign-ups are already closed');
     }
-    // Only while the card is live: a delete landing between the read and this
-    // write cleared the payload (#1575), and an unconditional update would put
-    // the removed slots back on the tombstone.
-    const closed = await this.messageRepo.updateIfLive(message.id, {
-      payload: {
-        ...payload,
-        closed_at: new Date().toISOString(),
-        closed_by: userId,
-      },
-    });
-    if (!closed)
-      throw new BadRequestException('Cannot close a deleted sign-up');
-    return closed;
+    return stampCardClosed(
+      this.messageRepo,
+      message,
+      payload as Record<string, unknown>,
+      userId,
+      'Cannot close a deleted sign-up',
+    );
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────

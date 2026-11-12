@@ -147,6 +147,8 @@ describe("SignupCard on the phone (#3926)", () => {
   });
 
   it("takes no taps once closed, and offers Close to a moderator while open", () => {
+    // A moderator viewing: only the closing hides Close.
+    myPermissions.current = ["channels:manage"];
     const closed = render(
       card([{ user: "u1", slots: ["fri"] }], {
         closed_at: "2026-11-12T09:00:00Z",

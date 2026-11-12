@@ -8,6 +8,7 @@ import {
   castSignupClaim,
   headcountAnswerPayload,
   headcountNotePayload,
+  type PendingHeadcount,
   isHeadcountSignup,
   isSignupClosed,
   readSignupPayload,
@@ -85,6 +86,8 @@ export function SignupCard(props: SignupCardProps) {
     [message, payload, viewerId],
   );
   const pending = useRef<PendingPollPicks | null>(null);
+  // The last headcount tap, until the card catches up (`PendingHeadcount`).
+  const pendingAnswer = useRef<PendingHeadcount | null>(null);
   const now = useNow();
   const canManageChannels = can(
     "channels:manage",
@@ -120,15 +123,20 @@ export function SignupCard(props: SignupCardProps) {
       message.id,
       SIGNUP_CLAIM_ACTION_TYPE,
       headcount
-        ? headcountAnswerPayload(tally, viewerId, slotId)
+        ? headcountAnswerPayload(tally, viewerId, pendingAnswer, slotId)
         : castSignupClaim(payload, tally, pending, slotId),
     );
   };
   const saveNote = () => {
     if (noteDraft === null) return;
-    const next = headcountNotePayload(tally, noteDraft);
+    const next = headcountNotePayload(
+      tally,
+      viewerId,
+      pendingAnswer,
+      noteDraft,
+    );
     setNoteDraft(null);
-    if (!canClaim || !next || noteDraft.trim() === myNote) return;
+    if (!canClaim || !next) return;
     onClaim(message.id, SIGNUP_CLAIM_ACTION_TYPE, next);
   };
 

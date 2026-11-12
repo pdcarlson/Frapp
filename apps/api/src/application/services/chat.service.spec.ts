@@ -4045,6 +4045,34 @@ describe('ChatService', () => {
       expect(closed.payload).toMatchObject({ closed_by: 'user-1' });
     });
 
+    it('checks the caller may close in the card’s channel before anything else', async () => {
+      mockMessageRepo.findById.mockResolvedValue(card);
+      const access = (
+        service as unknown as {
+          channelAccess: {
+            assertChannelAccess: (...a: unknown[]) => Promise<unknown>;
+          };
+        }
+      ).channelAccess;
+      const refusal = new ForbiddenException('No access');
+      const spy = jest
+        .spyOn(access, 'assertChannelAccess')
+        .mockRejectedValue(refusal);
+
+      await expect(service.closeSignup('msg-1', 'ch-1', 'user-1')).rejects.toBe(
+        refusal,
+      );
+      // 'close', not 'post': a creator who lost post rights can still close.
+      expect(spy).toHaveBeenCalledWith(
+        card.channel_id,
+        'ch-1',
+        'user-1',
+        'close',
+      );
+      expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
     it('lets a channels:manage holder close someone else’s card, and nobody else', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...card,

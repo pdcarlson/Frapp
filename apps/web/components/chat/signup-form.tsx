@@ -8,6 +8,7 @@ import {
   canAddSignupSlot,
   canRemoveSignupSlot,
   checkSignupDraft,
+  SIGNUP_END_PASSED_PROBLEM,
   defaultSignupEnd,
   SIGNUP_FORMAT_CHOICES,
   removeSignupSlot,
@@ -16,7 +17,8 @@ import {
   type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
-import { localIsoDate } from "@repo/formatting";
+import { localDateTimeToIso } from "@repo/chat-core/dispatch";
+import { localClock, localIsoDate } from "@repo/formatting";
 import {
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
@@ -86,10 +88,18 @@ export function SignupForm({
 
   const post = useCallback(() => {
     if (!check.ok || sending.current) return;
+    // Checked again now, not at the last edit: an end time can pass while the
+    // form sits open, and the server keeps a past one, so the card would post
+    // already closed.
+    const fresh = checkSignupDraft(draft);
+    if (!fresh.ok) {
+      setFailure(fresh.problem ?? SIGNUP_END_PASSED_PROBLEM);
+      return;
+    }
     sending.current = true;
     setPosting(true);
     setFailure(null);
-    void onPost(buildSignupMessage(check.input))
+    void onPost(buildSignupMessage(fresh.input))
       .catch((): { ok: false; error: string } => ({
         ok: false,
         error: "Couldn't post that sign-up sheet. Try again.",
@@ -103,7 +113,7 @@ export function SignupForm({
         }
         setFailure(result.error);
       });
-  }, [check, onPost, onDone]);
+  }, [check, draft, onPost, onDone]);
 
   return (
     <form
@@ -262,11 +272,6 @@ export function SignupForm({
   );
 }
 
-/** `"HH:MM"` in local time. */
-function localClock(at: Date): string {
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-}
-
 /**
  * Ends at a set time: off by default (the card stays open until it is
  * closed); on, a day and a time, starting from tomorrow at 6 PM. The day is
@@ -284,11 +289,8 @@ function EndTimeField({
   const day = value ? localIsoDate(value) : "";
   const time = value ? localClock(value) : "";
   const join = (nextDay: string, nextTime: string) => {
-    const [y, m, d] = nextDay.split("-").map(Number);
-    const [hh, mm] = nextTime.split(":").map(Number);
-    if (!y || !m || !d || hh === undefined || mm === undefined) return;
-    if (Number.isNaN(hh) || Number.isNaN(mm)) return;
-    onChange(new Date(y, m - 1, d, hh, mm));
+    const iso = localDateTimeToIso(nextDay, nextTime);
+    if (iso) onChange(new Date(iso));
   };
   return (
     <div className="space-y-2 text-sm">

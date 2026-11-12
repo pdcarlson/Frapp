@@ -352,20 +352,60 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
       { user: "me", slots: ["going"], note: "late" },
     ]);
     const tally = tallySignups(m, headcount, "me");
-    expect(headcountAnswerPayload(tally, "me", "not_going")).toEqual({
+    // Each call starts from the tally (no recent tap) unless it shares `p`.
+    const fresh = () => ({ current: null });
+    expect(headcountAnswerPayload(tally, "me", fresh(), "not_going")).toEqual({
       slot_ids: ["not_going"],
       note: "late",
     });
-    expect(headcountAnswerPayload(tally, "me", "going")).toEqual({
+    expect(headcountAnswerPayload(tally, "me", fresh(), "going")).toEqual({
       slot_ids: [],
     });
-    expect(headcountNotePayload(tally, "  bringing a date ")).toEqual({
+    expect(
+      headcountNotePayload(tally, "me", fresh(), "  bringing a date "),
+    ).toEqual({ slot_ids: ["going"], note: "bringing a date" });
+    expect(headcountNotePayload(tally, "me", fresh(), "")).toEqual({
       slot_ids: ["going"],
-      note: "bringing a date",
     });
-    expect(headcountNotePayload(tally, "")).toEqual({ slot_ids: ["going"] });
+    // The same note again sends nothing.
+    expect(headcountNotePayload(tally, "me", fresh(), " late ")).toBeNull();
     const none = tallySignups(message(headcount), headcount, "me");
-    expect(headcountNotePayload(none, "x")).toBeNull();
+    expect(headcountNotePayload(none, "me", fresh(), "x")).toBeNull();
+  });
+
+  it("builds a quick second tap or a note on the last tap, not the stale tally", () => {
+    // The card still shows Going with "late": the server hasn't answered yet.
+    const tally = tallySignups(
+      message(headcount, [{ user: "me", slots: ["going"], note: "late" }]),
+      headcount,
+      "me",
+    );
+    const at = 1_000_000;
+
+    // Switch to Can't make it, then save a note before the switch lands: the
+    // note keeps the new answer rather than putting the member back on Going.
+    const p = { current: null };
+    expect(headcountAnswerPayload(tally, "me", p, "not_going", at)).toEqual({
+      slot_ids: ["not_going"],
+      note: "late",
+    });
+    expect(headcountNotePayload(tally, "me", p, "work shift", at + 1)).toEqual({
+      slot_ids: ["not_going"],
+      note: "work shift",
+    });
+    // Then switch back: the note just saved rides along, not the old one.
+    expect(headcountAnswerPayload(tally, "me", p, "going", at + 2)).toEqual({
+      slot_ids: ["going"],
+      note: "work shift",
+    });
+    // A second tap on the answer just given takes it back.
+    expect(headcountAnswerPayload(tally, "me", p, "going", at + 3)).toEqual({
+      slot_ids: [],
+    });
+    // Once the last tap is old, the tally leads again.
+    expect(
+      headcountAnswerPayload(tally, "me", p, "going", at + 3 + 60_000),
+    ).toEqual({ slot_ids: [] });
   });
 
   it("closes at its end time or when closed early, and says when it ends", () => {

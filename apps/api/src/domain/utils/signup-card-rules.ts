@@ -1,5 +1,10 @@
 import {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  HEADCOUNT_SLOTS,
   SIGNUP_ANSWER_NOTE_MAX_LENGTH,
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
+  SIGNUP_HEADCOUNT_FORMAT,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
@@ -37,19 +42,16 @@ export const SIGNUP_ACTION_TYPE = 'signup';
 /** The longest slot id a card may carry. Clients make 8-character ids. */
 const SLOT_ID_MAX_LENGTH = 32;
 
-/** The format of a headcount card: "I'm going / Can't make it". */
-export const SIGNUP_HEADCOUNT_FORMAT = 'headcount';
-
-/** A headcount's two slots, fixed by the server whatever the client sent. */
-export const HEADCOUNT_GOING_SLOT_ID = 'going';
-export const HEADCOUNT_NOT_GOING_SLOT_ID = 'not_going';
-const HEADCOUNT_SLOTS: readonly SignupSlot[] = [
-  { id: HEADCOUNT_GOING_SLOT_ID, label: 'Going', capacity: null },
-  { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: 'Can’t make it', capacity: null },
-];
+/** A headcount's format and two slots, shared with the clients. */
+export {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  SIGNUP_HEADCOUNT_FORMAT,
+};
 
 /** The furthest ahead an end time may be set. */
-const CLOSES_AT_MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
+const CLOSES_AT_MAX_AHEAD_MS =
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS * 24 * 60 * 60 * 1000;
 
 export interface SignupSlot {
   id: string;

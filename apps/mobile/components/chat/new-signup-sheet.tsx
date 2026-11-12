@@ -11,6 +11,7 @@ import {
   canAddSignupSlot,
   canRemoveSignupSlot,
   checkSignupDraft,
+  SIGNUP_END_PASSED_PROBLEM,
   defaultSignupEnd,
   emptySignupDraft,
   SIGNUP_FORMAT_CHOICES,
@@ -20,7 +21,7 @@ import {
   type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
-import { localIsoDate } from "@repo/formatting";
+import { localClock, localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SIGNUP_NOTE_MAX_LENGTH,
@@ -124,11 +125,19 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
 
     const post = useCallback(() => {
       if (!check.ok || sending.current) return;
+      // Checked again now, not at the last edit: an end time can pass while the
+      // form sits open, and the server keeps a past one, so the card would post
+      // already closed.
+      const fresh = checkSignupDraft(draft);
+      if (!fresh.ok) {
+        setFailure(fresh.problem ?? SIGNUP_END_PASSED_PROBLEM);
+        return;
+      }
       sending.current = true;
       setPosting(true);
       setFailure(null);
       const sentFrom = visit();
-      void onPost(buildSignupMessage(check.input))
+      void onPost(buildSignupMessage(fresh.input))
         .catch((): { ok: false; error: string } => ({
           ok: false,
           error: "Couldn't post that sign-up sheet. Try again.",
@@ -144,7 +153,7 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
           }
           if (isSameVisit(sentFrom)) setFailure(result.error);
         });
-    }, [check, onPost, reset, dismiss, visit, isSameVisit]);
+    }, [check, draft, onPost, reset, dismiss, visit, isSameVisit]);
 
     const field = (key: string, multiline = false) => [
       styles.field,
@@ -362,7 +371,7 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
                 }
               />
               <DueTimeField
-                value={clockOf(draft.closesAt)}
+                value={localClock(draft.closesAt)}
                 suggested="18:00"
                 disabled={posting}
                 onChange={(time) =>
@@ -403,11 +412,6 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
     );
   },
 );
-
-/** `"HH:MM"` on the 24-hour clock, device-local. */
-function clockOf(at: Date): string {
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-}
 
 /** The end time moved to another day (`YYYY-MM-DD`), its time kept. */
 function withDay(at: Date | null, day: string): Date | null {

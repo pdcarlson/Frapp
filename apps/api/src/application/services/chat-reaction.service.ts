@@ -77,6 +77,9 @@ function assertCardPollVoteAllowed(
   }
 }
 
+/** The refusal of a claim on a closed sign-up card (#3926 step 2). */
+const SIGNUPS_CLOSED = 'Sign-ups are closed';
+
 /**
  * A member's responses to a message: emoji reactions on the legacy
  * `message_reactions` table, and the `chat_message_actions` hot path that
@@ -85,9 +88,6 @@ function assertCardPollVoteAllowed(
  * Split out of `ChatService` (#1380). It shares only the message-access check
  * and the block list with the send path, and never writes a message.
  */
-/** The refusal of a claim on a closed sign-up card (#3926 step 2). */
-const SIGNUPS_CLOSED = 'Sign-ups are closed';
-
 @Injectable()
 export class ChatReactionService {
   constructor(

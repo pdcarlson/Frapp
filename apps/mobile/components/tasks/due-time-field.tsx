@@ -11,6 +11,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import Svg, { Circle, Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
+import { localClock } from "@repo/formatting";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { formatDueTimeLabel } from "@/lib/tasks/create-task";
@@ -45,7 +46,7 @@ export function DueTimeField({
   const styles = createStyles(tokens);
   const muted = tokens.color.text.mutedForeground;
   const pick = (picked: Date | undefined) => {
-    if (picked) onChange(clockOf(picked));
+    if (picked) onChange(localClock(picked));
   };
 
   const openAndroid = (from: string) => {
@@ -147,10 +148,6 @@ function dateAt(time: string): Date {
   const at = new Date();
   at.setHours(hours, minutes, 0, 0);
   return at;
-}
-
-function clockOf(at: Date): string {
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 }
 
 /** A clock face, stroked like the field's `CalendarGlyph`. */
