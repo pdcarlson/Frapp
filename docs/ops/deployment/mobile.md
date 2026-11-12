@@ -203,19 +203,16 @@ is seeded empty so App Review never sees that footer or a Pay control (the store
 reviewer's chapter). The listing's text still names dues and payment history; the shots keep out the
 in-app payment copy.
 
-**App Store size: 1320 × 2868 pixels, portrait**, a 440 × 956 point viewport at 3x, which is also
-the viewport every screen is captured at. Apple's
+**App Store size: 1206 × 2622 pixels, portrait**, a 402 × 874 point viewport at 3x (the iPhone 16
+Pro's screen), which is also the viewport every screen is captured at. That is what App Store
+Connect took on 2026-11-05: its screenshot slot is now *iPhone with Dynamic Island (medium
+display)*, the 6.1"/6.3" size, which lists 1179 × 2556, 1206 × 2622 and their landscape twins, and
+its dialog said it uses that one set for every iPhone display size. It rejected the 1320 × 2868 set
+the pipeline rendered then, from Apple's
 [screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications)
-(read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
-1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
-scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
-**What the console took (2026-11-05), which overrides the paragraph above.** App Store Connect's
-screenshot slot is now *iPhone with Dynamic Island (medium display)*, the 6.1"/6.3" size, and it
-rejected the 1320 × 2868 set. It lists 1179 × 2556, 1206 × 2622 and their landscape twins, and it
-took **1206 × 2622**. Its dialog then said it uses that one set for every iPhone display size. The upload was a
-scale-to-cover and center crop of the 1320 × 2868 frames. The pipeline still renders 1320 × 2868,
-so scale the output the same way until it renders 1206 × 2622 itself
-([#2454](https://github.com/pdcarlson/Frapp/issues/2454)). Google Play's size is § 6.5.
+(6.9", read 2026-09-22); that day's upload was a scale-and-crop of it, and since 2026-11-12 the
+pipeline renders 1206 × 2622 itself ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
+`app.json` sets `ios.supportsTablet: false`, so no iPad set applies. Google Play's size is § 6.5.
 
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):
@@ -251,14 +248,14 @@ captured, as does a frame list in `store-frames.mjs` that no longer matches the 
 check is a word list, so read the captions before uploading.
 
 **Upload is the owner's step**, files in filename order, for the English (U.S.) localization:
-App Store Connect → the app → the version → iPhone with Dynamic Island (medium display) → drag in the 1206 × 2622 set; Play Console
+App Store Connect → the app → the version → iPhone with Dynamic Island (medium display) → drag in `app-store/` (1206 × 2622); Play Console
 → the app → Main store listing → Phone screenshots → `google-play/` (needs the developer account,
 #2556). `screenshots/` is gitignored and the PNGs are not committed; regenerate them with the
 procedure above rather than keeping copies.
 
 ### 6.5 Google Play screenshots
 
-Play can't take the App Store size: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
+Play can't take the App Store size: 1206 × 2622 is about 2.17:1, and Play caps a screenshot's long
 side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). So the Play
 frame is its own shape around the same capture (§ 6.4).
 

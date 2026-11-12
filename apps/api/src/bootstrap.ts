@@ -147,7 +147,7 @@ const HELMET_OPTIONS = {
  * its own fields; this is only the ceiling the parser enforces before any of
  * them is read, or any guard has run.
  */
-export const JSON_BODY_LIMIT = '100kb';
+const JSON_BODY_LIMIT = '100kb';
 
 /**
  * The routes that take a larger body (#4504), and how large:
@@ -168,7 +168,7 @@ export const JSON_BODY_LIMIT = '100kb';
  * webhook routes, nor any other. A new route that needs more than 100 KB is
  * added here, not by raising the general limit.
  */
-export const LARGE_JSON_BODY_LIMIT = '1mb';
+const LARGE_JSON_BODY_LIMIT = '1mb';
 export const LARGE_JSON_BODY_PATHS = [
   '/v1/meetings',
   '/v1/ai/reports',

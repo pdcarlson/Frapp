@@ -13,13 +13,25 @@ import { useViewerUserId } from "@repo/hooks";
  * Drive's own per-place layouts work the same way.
  *
  * Best-effort: a private window, blocked site data or a full quota throws or
- * reads empty. The page then opens as a list, and a pick made in it holds in
+ * reads empty. The page then opens in its default layout
+ * ({@link DEFAULT_LIST_LAYOUT}), and a pick made in it holds in
  * memory for the tab's life; so does one made before the viewer's id is known.
  */
 export type ListLayout = "list" | "grid";
 
 /** The screens that offer the toggle. A new one joins here. */
-export type ListLayoutScreen = "directory" | "documents";
+export type ListLayoutScreen = "directory" | "documents" | "tasks";
+
+/**
+ * The layout a screen opens in before this person picks one. List, except
+ * Tasks: its board of status columns was its only view and is its Grid, so
+ * nobody's Tasks page changes until they flip it (#4175).
+ */
+export const DEFAULT_LIST_LAYOUT: Record<ListLayoutScreen, ListLayout> = {
+  directory: "list",
+  documents: "list",
+  tasks: "grid",
+};
 
 export function listLayoutStorageKey(
   screen: ListLayoutScreen,
@@ -99,7 +111,7 @@ function subscribe(listener: () => void): () => void {
  * The screen's layout and its setter. Every caller on one screen reads the
  * same stored value, so a toggle in a page's tab row and the lists under it
  * stay in step. The server render, and a viewer not yet resolved, draw the
- * list.
+ * screen's default layout.
  */
 export function useListLayout(
   screen: ListLayoutScreen,
@@ -107,8 +119,8 @@ export function useListLayout(
   const userId = useViewerUserId();
   const layout = useSyncExternalStore(
     subscribe,
-    () => readListLayout(screen, userId) ?? "list",
-    () => "list" as const,
+    () => readListLayout(screen, userId) ?? DEFAULT_LIST_LAYOUT[screen],
+    () => DEFAULT_LIST_LAYOUT[screen],
   );
   const setLayout = useCallback(
     (next: ListLayout) => writeListLayout(screen, userId, next),

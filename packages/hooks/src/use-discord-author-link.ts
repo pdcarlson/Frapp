@@ -15,7 +15,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * does not own the chat message cache (`@repo/chat-core`).
  */
 
-export const discordAuthorLinkKeys = {
+const discordAuthorLinkKeys = {
   all: ["discord-author-link"] as const,
   mine: (chapterId: string | null) =>
     ["discord-author-link", chapterId, "mine"] as const,

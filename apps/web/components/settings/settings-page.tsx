@@ -58,7 +58,14 @@ import {
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
-import { StudyZonesManager } from "@/components/geofences/study-zones-manager";
+import {
+  SettingsToolBody,
+  SettingsToolSubpage,
+} from "@/components/settings/settings-tool-views";
+import {
+  SETTINGS_SUBPAGE_PARAMS,
+  settingsSubpageFor,
+} from "@/components/settings/settings-paths";
 import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
@@ -176,10 +183,27 @@ function SettingsPageContent() {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+  /*
+    A page opened inside a module page (#3837): one channel's settings
+    (`?channel=`, the chat rail's Edit channel) or Discord import
+    (`?tool=discord-import`), each drawn in place of the Chat page with a way
+    back, so the rail stays on screen.
+  */
+  const channelParam = searchParams.get("channel");
+  const toolParam = searchParams.get("tool");
   // Switching rows starts the panel at its top, not wherever the last one
-  // was scrolled to: the panel scrolls inside the shell's tool pane.
+  // was scrolled to: the panel scrolls inside the shell's tool pane. The
+  // address follows the row, without the params that opened a page inside
+  // the last one, so Chat shows its own page when the officer comes back to
+  // it, and a refresh or a copied link lands on the row they were on. Next
+  // keeps `useSearchParams` in step with `replaceState`.
   const changeTab = useCallback((next: string) => {
     setActiveTab(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next);
+    for (const param of SETTINGS_SUBPAGE_PARAMS) url.searchParams.delete(param);
+    url.hash = "";
+    window.history.replaceState(null, "", url.toString());
     document.querySelector("[data-tool-page]")?.scrollTo?.({ top: 0 });
   }, []);
 
@@ -580,6 +604,16 @@ function SettingsPageContent() {
   });
   const canViewConfig = can("chapter-config:view", permissions);
   const canSeeWhoCan = can("members:view", permissions);
+  const holdsTool = (id: string) => tools.some((tool) => tool.id === id);
+  // A page opened in place of a module page (#3837): a channel's settings or
+  // Discord import, inside Chat.
+  const subpageFor = (key: string) =>
+    settingsSubpageFor(
+      key,
+      { channel: channelParam, tool: toolParam },
+      holdsTool,
+    );
+
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.
   const shownTab = visibleTabs.some((tab) => tab.value === activeTab)
@@ -623,7 +657,16 @@ function SettingsPageContent() {
         onValueChange={changeTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10"
       >
-        <SettingsRail visibleTabs={visibleTabs} />
+        <SettingsRail
+          visibleTabs={visibleTabs}
+          onRowClick={(value) => {
+            // The lit row closes a page opened inside it (a channel's
+            // settings, Discord import) and goes back to the row's own page.
+            if (value === shownTab && (channelParam || toolParam)) {
+              changeTab(value);
+            }
+          }}
+        />
 
         <div className="w-full min-w-0 max-w-[960px] flex-1">
           <TabsContent value="org" className="mt-0">
@@ -750,40 +793,47 @@ function SettingsPageContent() {
             config a tool-only viewer lacks the way rules do, so only the
             rules wait on the config read.
           */}
-          {shownModuleSettings().map((module) => (
-            <TabsContent key={module.key} value={module.key} className="mt-0">
-              <ModuleSettingsPage
-                module={module}
-                on={moduleOn(module.key)}
-                canManage={canManage}
-                switchPending={pendingConfigKeys.has(
-                  `enabled_modules.${module.key}`,
+          {shownModuleSettings().map((module) => {
+            const subpage = subpageFor(module.key);
+            return (
+              <TabsContent key={module.key} value={module.key} className="mt-0">
+                {subpage ? (
+                  <SettingsToolSubpage subpage={subpage} />
+                ) : (
+                  <ModuleSettingsPage
+                    module={module}
+                    on={moduleOn(module.key)}
+                    canManage={canManage}
+                    switchPending={pendingConfigKeys.has(
+                      `enabled_modules.${module.key}`,
+                    )}
+                    onToggle={(enabled) =>
+                      patchConfig(
+                        { enabled_modules: { [module.key]: enabled } },
+                        enabled
+                          ? `${module.label} turned on`
+                          : `${module.label} turned off`,
+                      )
+                    }
+                    tools={tools.filter((tool) => tool.page === module.key)}
+                    toolBody={
+                      <SettingsToolBody
+                        moduleKey={module.key}
+                        holdsTool={holdsTool}
+                      />
+                    }
+                    canSeeWhoCan={canSeeWhoCan}
+                    canEditRoles={can("roles:manage", permissions)}
+                    focusSwitch={focusModuleKey === module.key}
+                    onSwitchFocused={handleModuleFocused}
+                    rules={
+                      canViewConfig ? renderModuleRules(module.key) : undefined
+                    }
+                  />
                 )}
-                onToggle={(enabled) =>
-                  patchConfig(
-                    { enabled_modules: { [module.key]: enabled } },
-                    enabled
-                      ? `${module.label} turned on`
-                      : `${module.label} turned off`,
-                  )
-                }
-                tools={tools.filter((tool) => tool.page === module.key)}
-                toolBody={
-                  module.key === "geofences" &&
-                  tools.some((tool) => tool.id === "study-zones") ? (
-                    <StudyZonesManager />
-                  ) : undefined
-                }
-                canSeeWhoCan={canSeeWhoCan}
-                canEditRoles={can("roles:manage", permissions)}
-                focusSwitch={focusModuleKey === module.key}
-                onSwitchFocused={handleModuleFocused}
-                rules={
-                  canViewConfig ? renderModuleRules(module.key) : undefined
-                }
-              />
-            </TabsContent>
-          ))}
+              </TabsContent>
+            );
+          })}
           <TabsContent value="ai" className="mt-0">
             <SettingsAiTab />
           </TabsContent>

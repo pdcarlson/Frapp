@@ -198,6 +198,12 @@ A new table needs a row interface in `domain/entities/` (exported from the barre
 `text` parameter the caller may omit is `string | null`, because Postgres function parameters are
 nullable.
 
+Put each new entry, its entity in the `#domain/entities` import, and the entity file's line in the
+`domain/entities/index.ts` barrel in alphabetical position, never at the end: two PRs that each
+append a table always conflict on the same lines, and two that insert in order conflict only when
+they sort into the same gap. `database.types.sorted.spec.ts` fails on anything out of order and
+names the entry it belongs after (plain code-unit order, so `_` sorts before letters).
+
 Constraints to know before you fight the compiler:
 
 - `Row` is written `{ [K in keyof Row]: Row[K] }` on purpose. PostgREST constrains rows to
@@ -213,10 +219,9 @@ Constraints to know before you fight the compiler:
   `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
 - Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
-  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin
-  the repository count, so adding one means raising `EXPECTED_REPOSITORY_COUNT` in that helper
-  (and the `covered` count in `tenant-scope-coverage.spec.ts`, unless it lands with a
-  `TENANT_SCOPE_BACKLOG` reason). Direct service-layer writes use the same
+  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives, and needs
+  a tenant-scope spec or a `TENANT_SCOPE_BACKLOG` reason. The counts there are floors, so adding
+  a repository edits no number. Direct service-layer writes use the same
   `TablesInsert` / `TablesUpdate` types.
 
 ## Rate limiting

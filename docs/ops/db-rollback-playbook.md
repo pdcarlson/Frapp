@@ -4292,3 +4292,22 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
+## Rollback reaction removal policy (20261112280000)
+
+- **Migration**: `20261112280000_chat_message_actions_client_writes.sql`
+
+Drops `chat_message_actions_insert`, re-creates `chat_message_actions_delete` on `reaction:*` rows through the new `chat_action_is_callers(uuid)` helper, and revokes INSERT and UPDATE on `chat_message_actions` from `anon` and `authenticated`. No rows change, and the API writes as `service_role`, so no API version depends on it.
+
+Rolling it back brings back the bug it fixes (a removed reaction stays in the database), so prefer a forward fix. If it must go, put the 20260523150000 policies back and drop the helper:
+
+```sql
+drop policy if exists "chat_message_actions_delete" on public.chat_message_actions;
+create policy "chat_message_actions_delete" on public.chat_message_actions for delete
+  using (user_id in (select id from public.users where supabase_auth_id = auth.uid()));
+create policy "chat_message_actions_insert" on public.chat_message_actions for insert
+  with check (user_id in (select id from public.users where supabase_auth_id = auth.uid()));
+grant insert, update on public.chat_message_actions to authenticated;
+drop function if exists public.chat_action_is_callers(uuid);
+```
+
+Keep the migration file ([§ 3) Undo one migration](#3-undo-one-migration)).

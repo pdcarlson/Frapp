@@ -45,10 +45,10 @@ import {
   type CorpusSourceAdapter,
 } from './corpus-source';
 
-export const CORPUS_INDEX_RUN_KIND = 'corpus_index';
+const CORPUS_INDEX_RUN_KIND = 'corpus_index';
 const EMBED_TASK = 'corpus.embed';
 /** Stamped on the ledger row of every indexing embed call. */
-export const CORPUS_INDEX_PROMPT_VERSION = 'corpus.index@v1';
+const CORPUS_INDEX_PROMPT_VERSION = 'corpus.index@v1';
 
 /** Sources handed to the queue per sweep. */
 const SWEEP_LIMIT = 25;

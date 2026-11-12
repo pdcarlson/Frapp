@@ -22,13 +22,13 @@ function byScore(a: CorpusPassage, b: CorpusPassage): number {
 }
 
 /** Stamped on the ledger row of every question's embed call. */
-export const CORPUS_QUERY_PROMPT_VERSION = 'corpus.query@v1';
+const CORPUS_QUERY_PROMPT_VERSION = 'corpus.query@v1';
 /**
  * What a chat passage's score is multiplied by: chat ranks below official
  * sources (`ai.md` § Chat as a source), so a chat passage has to match much
  * better than a document or minutes to take its place.
  */
-export const CHAT_RANK_WEIGHT = 0.5;
+const CHAT_RANK_WEIGHT = 0.5;
 /** How many candidates each half (nearest, best words) contributes. */
 const CANDIDATES_PER_HALF = 40;
 const DEFAULT_LIMIT = 8;

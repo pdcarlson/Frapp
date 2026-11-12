@@ -11,7 +11,7 @@ import { EventService } from './event.service';
 export const NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH = 255;
 export const NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH = 2000;
 /** An event proposal is stale by the next day (the acting agent, #718). */
-export const NEW_EVENT_SUGGESTION_EXPIRY_DAYS = 1;
+const NEW_EVENT_SUGGESTION_EXPIRY_DAYS = 1;
 /** Longer than any ISO 8601 instant, so a model's essay is not one. */
 const INSTANT_MAX_LENGTH = 40;
 

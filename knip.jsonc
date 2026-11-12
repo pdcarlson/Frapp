@@ -1,0 +1,61 @@
+// Knip finds unused files, exports and dependencies: `npm run check:knip`.
+// Advisory, not a CI gate. Everything below exists to stop a false positive;
+// say why when you add to it, so the next reader can tell a real exception
+// from a hidden finding.
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      // Scripts run by hand, from CI workflows or from npm scripts.
+      "entry": [
+        "scripts/**/*.{mjs,cjs,js,ts}",
+        "supabase/functions/*/index.ts",
+        "supabase/functions/**/*.test.ts",
+      ],
+      "project": ["scripts/**/*.{mjs,cjs,js,ts}", "supabase/functions/**/*.ts"],
+      "ignoreDependencies": [
+        // Run after `infisical run --` in `dev:stack`, which knip doesn't parse.
+        "concurrently",
+        // Run as node_modules/.bin/squawk by check-migration-lock-safety.mjs.
+        "squawk-cli",
+        // Only hand-run scripts import these: supabase-js is hoisted from the
+        // apps, playwright arrives through @playwright/test.
+        "@supabase/supabase-js",
+        "playwright",
+      ],
+    },
+    "apps/api": {
+      "entry": [
+        "src/main.ts",
+        // One-off backfills run by hand with ts-node.
+        "src/backfill-*.ts",
+        "test/**/*.ts",
+        // Compile-time checks: tsc type-checks them, nothing imports them.
+        "src/infrastructure/supabase/database.types.insert-check.ts",
+        "src/interface/dtos/service-input-coverage.ts",
+      ],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      // Transitive packages of @supabase/supabase-js, imported for a type and
+      // a spec.
+      "ignoreDependencies": ["@supabase/realtime-js", "@supabase/storage-js"],
+    },
+    "apps/mobile": {
+      // Metro picks a platform file by suffix, which knip can't follow.
+      "entry": ["**/*.{native,web,ios,android}.{ts,tsx}"],
+      // Native modules Expo needs installed though no file imports them.
+      "ignoreDependencies": ["@expo/vector-icons", "expo-font"],
+    },
+    // The packages are private, so an export nothing imports is dead even
+    // when package.json exports the file.
+    "packages/*": {
+      "includeEntryExports": true,
+      "eslint": { "config": ["eslint.config.mjs"] },
+      "ignoreDependencies": ["eslint"],
+    },
+  },
+  // Vendored from Radix; kept whole so it diffs cleanly against upstream.
+  "ignoreIssues": { "packages/chapter-theme/src/vendor/**": ["exports"] },
+  // Every workspace lints through @repo/eslint-config, which owns eslint; the
+  // rest are system binaries the scripts expect on PATH.
+  "ignoreBinaries": ["eslint", "gitleaks", "jq", "flock", "supabase"],
+}

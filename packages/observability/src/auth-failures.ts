@@ -86,7 +86,7 @@ export type AuthFailureFlow =
  * Anything not here is treated as unexpected, so a new failure surfaces
  * rather than hides.
  */
-export const EXPECTED_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
+const EXPECTED_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   // Credentials and the account's own state.
   "invalid_credentials",
   "email_not_confirmed",

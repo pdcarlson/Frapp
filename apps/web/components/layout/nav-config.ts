@@ -17,7 +17,6 @@ import {
 import type { UnsetFeatureKey } from "@repo/hooks";
 import {
   SETTINGS_ENTRY_PERMISSIONS,
-  SETTINGS_TOOL_ROUTES,
   hasSettingsDestination,
 } from "@/components/settings/settings-access";
 
@@ -110,12 +109,6 @@ export type NavItem = {
    * gating" above). Omit for a feature that works with nothing in it.
    */
   hiddenUntilSetUp?: UnsetFeatureKey;
-  /**
-   * Other routes that live under this row. While one of them is open the row
-   * reads as the current section (`aria-current="true"`), so a page reached
-   * from inside Settings still shows where it sits in the nav.
-   */
-  activeFor?: readonly string[];
   /**
    * A last check for a row whose destination depends on more than one
    * permission or module: the row shows only when this returns true. It runs
@@ -305,7 +298,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         // an entry point that opens onto nothing is the defect.
         requireAnyOf: SETTINGS_ENTRY_PERMISSIONS,
         showWhen: hasSettingsDestination,
-        activeFor: SETTINGS_TOOL_ROUTES,
       },
     ],
   },

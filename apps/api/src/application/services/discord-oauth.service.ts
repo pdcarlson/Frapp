@@ -43,7 +43,7 @@ import {
  * than trusting the paste. Anything more configurable turns a one-time paste
  * into a `redirect_uri mismatch` nobody can debug from the error alone.
  */
-export const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
+const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
 
 /**
  * How long a verdict on the Discord application is reused.
@@ -74,7 +74,7 @@ function checkTtlMs(check: DiscordApplicationCheck): number {
  * a state left in a closed tab is not a standing capability to bind a guild
  * onto a chapter.
  */
-export const OAUTH_STATE_TTL_MS = 15 * 60_000;
+const OAUTH_STATE_TTL_MS = 15 * 60_000;
 
 /** Where the browser lands when the flow ends and nothing said otherwise. */
 export const DEFAULT_RETURN_PATH = '/discord-import';
@@ -95,7 +95,7 @@ export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=discord';
  * browser follows immediately rather than a human reading a consent screen.
  * Anything longer leaves a pending guild activatable for no reason.
  */
-export const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
+const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
 
 /**
  * Guild permissions that count as "runs this server".

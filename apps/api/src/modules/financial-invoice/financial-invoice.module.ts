@@ -5,6 +5,8 @@ import { SupabaseFinancialInvoiceRepository } from '../../infrastructure/supabas
 import { SupabaseFinancialTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-financial-transaction.repository';
 import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
 import { StripeBillingService } from '../../infrastructure/billing/stripe.service';
 import { NotificationModule } from '../notification/notification.module';
@@ -29,6 +31,9 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     // is stateless, so a second instance is harmless — same pattern as
     // BillingModule binding the chapter/member/role repositories itself.
     { provide: BILLING_PROVIDER, useClass: StripeBillingService },
+    // Bound locally for the same reason: `create` checks the invoice's member
+    // belongs to the chapter.
+    { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
   exports: [FinancialInvoiceService],
 })

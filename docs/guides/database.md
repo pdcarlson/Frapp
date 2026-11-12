@@ -209,7 +209,8 @@ npm run supabase -- db push --local
   type-checked. The file is hand-maintained and composed from the domain
   entities; **do not** overwrite it with `supabase gen types` output. See
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
-  → "Keeping `database.types.ts` in sync" for the constraints that make
+  → "Keeping `database.types.ts` in sync" for where new entries go (in
+  alphabetical order) and the constraints that make
   the typing actually bind (`Row`/`Insert`/`Update` are mapped types so
   GenericSchema stays bound; write methods take `TablesInsert<'table'>` /
   `TablesUpdate<'table'>` and reach PostgREST uncast). The client is
@@ -220,7 +221,7 @@ npm run supabase -- db push --local
   Do not add a generic base repository; keep each repository's query
   logic and only parameterize the write methods.
   `no-as-never.spec.ts` guards every `*.repository.ts` under
-  `apps/api/src`, wherever it lives (repository count,
+  `apps/api/src`, wherever it lives (a floor on the repository count,
   `FrappSupabaseClient` injection, and no cast, `@ts-expect-error`, or
   erased `.from()`/client binding on a write path). It names its own
   gaps in its docblock — read them there before reading a green run as
@@ -237,8 +238,8 @@ The design (canonical: [`docs/security/authorization-model.md`](../security/auth
   service-role client, which bypasses RLS; tenant isolation is therefore **application-layer**:
   every API query must filter on `chapter_id`.
 - Client-reachable policies exist only where the browser deliberately reads Postgres directly
-  (the chat hot path); `authorization-model.md` holds the per-table inventory and the policy
-  details. Do not add a permissive policy for a new table unless you are deliberately opening a
+  (the chat hot path); `authorization-model.md` § 4 gives the query that lists the API-only tables, and names every
+  table that carries a policy, with the details. Do not add a permissive policy for a new table unless you are deliberately opening a
   client-direct path; enable RLS and stop.
 
 When adding tables:

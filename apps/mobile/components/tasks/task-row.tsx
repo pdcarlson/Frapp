@@ -75,16 +75,11 @@ export interface TaskRowProps {
 /** The checkbox's hit area past its drawn 24pt, to a 44pt target. */
 const CHECKBOX_SLOP = 10;
 
-export function TaskRow({
-  row,
-  now,
-  onToggle,
-  onOpen,
-  isPending = false,
-  isFirst = false,
-}: TaskRowProps) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+/**
+ * What a task says, read once for its row and its Grid card alike (#4175), so
+ * the two layouts can't drift on a status word, the red, or the points chip.
+ */
+function taskFacts(row: TaskRowModel, now: Date) {
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
   const confirmed = row.isDone && row.pointsAwarded;
@@ -115,7 +110,27 @@ export function TaskRow({
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen
     : TASK_ACTION_LABELS.complete;
+  const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
 
+  return { chip, started, confirmed, subtitle, urgent, toggleLabel, label };
+}
+
+type TaskStyles = ReturnType<typeof createStyles>;
+
+/** The checkbox, pressable when the task can be toggled. */
+function TaskCheckbox({
+  row,
+  started,
+  onToggle,
+  styles,
+  tokens,
+}: {
+  row: TaskRowModel;
+  started: boolean;
+  onToggle?: () => void;
+  styles: TaskStyles;
+  tokens: SignetTokens;
+}) {
   const box = (
     <View
       style={[
@@ -132,25 +147,61 @@ export function TaskRow({
       ) : null}
     </View>
   );
+  if (!onToggle) return box;
+  // Hidden from screen readers: the row carries the same move as a named
+  // action, so VoiceOver and TalkBack reach it without a second focus stop
+  // nested inside the row's.
+  return (
+    <Pressable
+      testID={`task-checkbox-${row.id}`}
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      hitSlop={CHECKBOX_SLOP}
+      onPress={onToggle}
+    >
+      {box}
+    </Pressable>
+  );
+}
+
+/** The trailing points chip, accent while open and green once awarded. */
+function PointsChip({
+  chip,
+  styles,
+}: {
+  chip: ReturnType<typeof formatPointsChip>;
+  styles: TaskStyles;
+}) {
+  if (!chip) return null;
+  return chip.tone === "awarded" ? (
+    <Text style={styles.awardedChip}>{chip.label}</Text>
+  ) : (
+    <AccentChip label={chip.label} />
+  );
+}
+
+export function TaskRow({
+  row,
+  now,
+  onToggle,
+  onOpen,
+  isPending = false,
+  isFirst = false,
+}: TaskRowProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const facts = taskFacts(row, now);
+  const { subtitle, urgent, confirmed } = facts;
 
   const body = (
     <>
-      {onToggle ? (
-        // Hidden from screen readers: the row carries the same move as a
-        // named action, so VoiceOver and TalkBack reach it without a second
-        // focus stop nested inside the row's.
-        <Pressable
-          testID={`task-checkbox-${row.id}`}
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          hitSlop={CHECKBOX_SLOP}
-          onPress={onToggle}
-        >
-          {box}
-        </Pressable>
-      ) : (
-        box
-      )}
+      <TaskCheckbox
+        row={row}
+        started={facts.started}
+        onToggle={onToggle}
+        styles={styles}
+        tokens={tokens}
+      />
 
       <View style={styles.body}>
         <Text
@@ -172,13 +223,7 @@ export function TaskRow({
         ) : null}
       </View>
 
-      {chip ? (
-        chip.tone === "awarded" ? (
-          <Text style={styles.awardedChip}>{chip.label}</Text>
-        ) : (
-          <AccentChip label={chip.label} />
-        )
-      ) : null}
+      <PointsChip chip={facts.chip} styles={styles} />
     </>
   );
 
@@ -190,7 +235,6 @@ export function TaskRow({
     isPending ? styles.rowPending : null,
     confirmed ? styles.rowDone : null,
   ];
-  const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
 
   if (!onOpen) {
     return (
@@ -201,9 +245,11 @@ export function TaskRow({
           disabled: !onToggle,
           busy: isPending,
         }}
-        accessibilityLabel={label}
+        accessibilityLabel={facts.label}
         accessibilityActions={
-          onToggle ? [{ name: "activate", label: toggleLabel }] : undefined
+          onToggle
+            ? [{ name: "activate", label: facts.toggleLabel }]
+            : undefined
         }
         onAccessibilityAction={onToggle}
         style={rowStyle}
@@ -217,13 +263,13 @@ export function TaskRow({
     <PressableRow
       accessibilityRole="button"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
-      accessibilityLabel={label}
+      accessibilityLabel={facts.label}
       accessibilityHint="Opens the task."
       // The box's move as a named action, so it is one swipe-up away on
       // VoiceOver and in TalkBack's actions menu, rather than the row's
       // default tap, which opens the task.
       accessibilityActions={
-        onToggle ? [{ name: "toggle", label: toggleLabel }] : undefined
+        onToggle ? [{ name: "toggle", label: facts.toggleLabel }] : undefined
       }
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "toggle") onToggle?.();
@@ -232,6 +278,78 @@ export function TaskRow({
       style={rowStyle}
     >
       {body}
+    </PressableRow>
+  );
+}
+
+/**
+ * s08's Grid layout (#4175): one task as a card, two to a line
+ * (`components/grid-line.tsx` lays the lines out). The card is the row stood
+ * on end, the box and points chip over the title and its due line, and it
+ * takes the row's two targets: the box completes or takes back, anywhere else
+ * opens the task's detail sheet, where Edit sits for an officer. Linear's and
+ * Asana's board cards carry the same facts as their list rows.
+ */
+export function TaskTile({
+  row,
+  now,
+  onToggle,
+  onOpen,
+  isPending = false,
+}: Omit<TaskRowProps, "isFirst" | "onOpen"> & { onOpen: () => void }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const facts = taskFacts(row, now);
+  const { subtitle, urgent, confirmed } = facts;
+
+  return (
+    <PressableRow
+      onCard
+      accessibilityRole="button"
+      accessibilityState={{ checked: row.isDone, busy: isPending }}
+      accessibilityLabel={facts.label}
+      accessibilityHint="Opens the task."
+      accessibilityActions={
+        onToggle ? [{ name: "toggle", label: facts.toggleLabel }] : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "toggle") onToggle?.();
+      }}
+      onPress={onOpen}
+      style={[
+        styles.tile,
+        isPending ? styles.rowPending : null,
+        confirmed ? styles.rowDone : null,
+      ]}
+    >
+      <View style={styles.tileHead}>
+        <TaskCheckbox
+          row={row}
+          started={facts.started}
+          onToggle={onToggle}
+          styles={styles}
+          tokens={tokens}
+        />
+        <PointsChip chip={facts.chip} styles={styles} />
+      </View>
+      <Text
+        numberOfLines={3}
+        style={[styles.title, row.isDone ? styles.titleDone : null]}
+      >
+        {row.title}
+      </Text>
+      {subtitle ? (
+        <Text
+          numberOfLines={2}
+          style={[
+            styles.subtitle,
+            urgent ? styles.subtitleUrgent : null,
+            confirmed ? styles.subtitleDone : null,
+          ]}
+        >
+          {subtitle}
+        </Text>
+      ) : null}
     </PressableRow>
   );
 }
@@ -279,6 +397,24 @@ function createStyles(tokens: SignetTokens) {
       // bleeds the same way: content on the gutter line, press feedback clear
       // of it.
       ...gutterBleed(tokens, { rounded: false }),
+    },
+    // Documents' tile shape (`documents/document-tiles.tsx`): `card` fill,
+    // card radius, a hairline. Its own padding, since it doesn't bleed.
+    tile: {
+      flex: 1,
+      gap: tokens.spacing.xs,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+    },
+    tileHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+      marginBottom: tokens.spacing.xs,
     },
     rowDivider: {
       borderTopWidth: StyleSheet.hairlineWidth,

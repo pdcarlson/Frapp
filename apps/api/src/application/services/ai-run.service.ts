@@ -23,7 +23,7 @@ import {
 } from '../workers/ai-run-worker.service';
 
 /** The refusal every AI run route gives while `AI_ENABLED` is off. */
-export function aiNotAvailable(): NotFoundException {
+function aiNotAvailable(): NotFoundException {
   return new NotFoundException({
     code: 'ai.not_available',
     message: 'AI features are not available.',

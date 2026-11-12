@@ -149,7 +149,7 @@ const HOLDING_STATUSES: ReadonlySet<DiscordImportStatus> = new Set([
   'purging',
 ]);
 
-export const ONE_IMPORT_MESSAGE =
+const ONE_IMPORT_MESSAGE =
   'Your chapter already has a Discord import. Delete it before starting another.';
 
 /**

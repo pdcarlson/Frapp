@@ -11,6 +11,8 @@ import {
 import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
 import type { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
 import {
   BILLING_PROVIDER,
@@ -118,6 +120,8 @@ export class FinancialInvoiceService {
     private readonly billingProvider: IBillingProvider,
     private readonly notificationService: NotificationService,
     private readonly chapterWorkflows: ChapterWorkflowsService,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<FinancialInvoice> {
@@ -156,6 +160,18 @@ export class FinancialInvoiceService {
     const dueDate = new Date(input.due_date);
     if (Number.isNaN(dueDate.getTime())) {
       throw new BadRequestException('due_date must be a valid date');
+    }
+
+    // An invoice is for a member of this chapter (spec/behavior/billing.md).
+    // `financial_invoices.user_id` references `users` only, so without this a
+    // billing officer could bill, and once it is opened push "You have a new
+    // invoice" to, any user of any chapter.
+    const member = await this.memberRepo.findByUserAndChapter(
+      input.user_id,
+      input.chapter_id,
+    );
+    if (!member) {
+      throw new NotFoundException('Member not found');
     }
 
     return this.invoiceRepo.create({

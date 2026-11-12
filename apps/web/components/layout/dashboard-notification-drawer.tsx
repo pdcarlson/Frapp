@@ -52,6 +52,10 @@ import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { notificationScreensForPath } from "@/lib/notifications/seen-screens";
+import {
+  CHAT_REPORTS_SETTINGS_PATH,
+  DISCORD_IMPORT_SETTINGS_PATH,
+} from "@/components/settings/settings-paths";
 import { usePageVisible } from "@/lib/notifications/use-page-visible";
 
 type DashboardNotificationDrawerProps = {
@@ -133,13 +137,14 @@ function deepLinkFor(notification: Notification): string {
     case "members":
       return "/members";
     // The officer report queue (#2257): the API's new-report notification
-    // targets it with a bare screen, and the queue sits last on Chat Admin.
+    // targets it with a bare screen, and the queue sits last on Chapter
+    // settings' Chat page (#3837).
     case CHAT_REPORTS_NOTIFICATION_SCREEN:
-      return "/chat-admin#reported-messages";
+      return CHAT_REPORTS_SETTINGS_PATH;
     // A Discord import that finished or stopped on an error, sent to the
     // admin who set it up.
     case DISCORD_IMPORT_NOTIFICATION_SCREEN:
-      return "/discord-import";
+      return DISCORD_IMPORT_SETTINGS_PATH;
     default:
       return "/chat";
   }

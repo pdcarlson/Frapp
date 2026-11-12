@@ -34,7 +34,14 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
-import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
+import {
+  TaskRow,
+  TaskRowSkeleton,
+  TaskTile,
+} from "@/components/tasks/task-row";
+import { GridLine, toGridChunks } from "@/components/grid-line";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { useListLayout } from "@/lib/list-layout";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import type { TaskEditTarget } from "@/lib/tasks/create-task";
@@ -100,6 +107,8 @@ export default function TasksScreen() {
   const styles = createStyles(tokens);
 
   const chapterId = useActiveChapterId();
+  // List (the rows) or Grid (task cards two to a line), per phone (#4175).
+  const layout = useListLayout("tasks");
   const viewerUserId = useViewerUserId();
   // The query behind `useViewerUserId`, for its error state: that helper returns
   // `null` for *failed* as well as *pending*, and the board needs to tell them
@@ -415,24 +424,43 @@ export default function TasksScreen() {
   );
 
   const renderRows = useCallback(
-    (rows: TaskRowModel[]) =>
-      rows.map((row, index) => (
-        <TaskRow
-          key={row.id}
-          row={row}
-          now={now}
-          isPending={pendingId === row.id}
-          isFirst={index === 0}
-          // Dropped, not disabled-in-place, while the sequence runs: the row
-          // is mid-ladder, so a second tap would race the compare-and-set.
-          onToggle={canToggle(row) ? () => void toggle(row) : undefined}
-          onOpen={() => {
-            setOpenId(row.id);
-            sheetRef.current?.present();
-          }}
-        />
-      )),
-    [now, pendingId, canToggle, toggle],
+    (rows: TaskRowModel[]) => {
+      // Both layouts take the same two targets: the box (dropped, not
+      // disabled-in-place, while the sequence runs, since the task is
+      // mid-ladder and a second tap would race the compare-and-set) and the
+      // rest, which opens the detail sheet, where an officer's Edit sits.
+      const props = (row: TaskRowModel) => ({
+        row,
+        now,
+        isPending: pendingId === row.id,
+        onToggle: canToggle(row) ? () => void toggle(row) : undefined,
+        onOpen: () => {
+          setOpenId(row.id);
+          sheetRef.current?.present();
+        },
+      });
+      if (layout === "grid") {
+        return (
+          <View style={styles.grid}>
+            {toGridChunks(rows).map((line) => (
+              <GridLine key={line[0]!.id} filled={line.length}>
+                {line.map((row) => (
+                  <TaskTile key={row.id} {...props(row)} />
+                ))}
+              </GridLine>
+            ))}
+          </View>
+        );
+      }
+      return (
+        <View>
+          {rows.map((row, index) => (
+            <TaskRow key={row.id} {...props(row)} isFirst={index === 0} />
+          ))}
+        </View>
+      );
+    },
+    [now, pendingId, canToggle, toggle, layout, styles.grid],
   );
 
   function renderBoard() {
@@ -507,14 +535,14 @@ export default function TasksScreen() {
         {board.dueThisWeek.length > 0 ? (
           <>
             <SectionHeader>DUE THIS WEEK</SectionHeader>
-            <View>{renderRows(board.dueThisWeek)}</View>
+            {renderRows(board.dueThisWeek)}
           </>
         ) : null}
 
         {board.later.length > 0 ? (
           <>
             <SectionHeader>LATER</SectionHeader>
-            <View>{renderRows(board.later)}</View>
+            {renderRows(board.later)}
           </>
         ) : null}
       </>
@@ -523,7 +551,13 @@ export default function TasksScreen() {
 
   return (
     <View style={styles.frame}>
-      <ScreenShell title="Tasks" refresh={refresh}>
+      <ScreenShell
+        title="Tasks"
+        refresh={refresh}
+        headerAction={
+          chapterId ? <ListLayoutToggle screen="tasks" /> : undefined
+        }
+      >
         <PointsSummaryCard summary={summary} rank={rank} />
 
         {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
@@ -578,6 +612,10 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     frame: {
       flex: 1,
+    },
+    // A Grid section's lines, as Documents' (`document-tiles.tsx`).
+    grid: {
+      gap: tokens.spacing.sm,
     },
     // `ScreenShell`'s gap, between the caption and its rows.
     skeleton: {

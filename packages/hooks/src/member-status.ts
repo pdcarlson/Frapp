@@ -92,7 +92,7 @@ export const DEFAULT_LINE_DURATION: LineDuration = "today";
  * sync), so a member who turns DND on for the night is reachable again at the
  * hour they'd expect.
  */
-export const TOMORROW_HOUR = 8;
+const TOMORROW_HOUR = 8;
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -147,7 +147,7 @@ export function lineEndsAt(duration: LineDuration, now: Date): string | null {
  * break) and the Unicode line and paragraph separators.
  */
 // eslint-disable-next-line no-control-regex
-export const LINE_BREAKERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const LINE_BREAKERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /** A custom line's length the way the API counts it: code points. */
 export function codePointLength(value: string): number {
