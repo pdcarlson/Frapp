@@ -594,6 +594,7 @@ vi.mock("@repo/hooks", async () => ({
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
+    typistLabelFor: (id: string) => sidebarState.memberNames[id] ?? null,
     avatarFor: () => null,
   }),
   useChannelNotificationPreferences: () => ({
@@ -657,8 +658,8 @@ vi.mock("@repo/hooks", async () => ({
           refetch: vi.fn(),
         },
   useChapterRoster: () => mockChapterRoster(),
-  useRosterCatchUp: (ids: readonly (string | null | undefined)[]) =>
-    mockRosterCatchUp(ids),
+  useRosterCatchUp: (typists: readonly string[], rows: readonly unknown[]) =>
+    mockRosterCatchUp(typists, rows),
   useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -4639,9 +4640,10 @@ describe("ChatShell block list (#2313)", () => {
 
     // Never "Someone is typing…": the line waits for the roster to name them.
     expect(screen.queryByText(/is typing|are typing/)).not.toBeInTheDocument();
-    expect(mockRosterCatchUp).toHaveBeenLastCalledWith(
-      expect.arrayContaining(["new-joiner"]),
-    );
+    const [typists, rows] = mockRosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual(["new-joiner"]);
+    // The channel's rows go too, so a new joiner's message is named.
+    expect(rows).toBe(mockUseChatChannel.mock.results.at(-1)?.value.messages);
   });
 
   it("names the typist and keeps the line's space when nobody types", () => {

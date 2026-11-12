@@ -406,6 +406,8 @@ const ROSTER = {
   // Only the typing specs read a name: the rest of this file draws rows by id.
   nameFor: (id: string) =>
     ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
+  typistLabelFor: (id: string) =>
+    ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
   avatarFor: () => null,
   isPending: false,
   isError: false,
@@ -435,10 +437,14 @@ const setNotificationLevel = {
 const markRead = { mutate: vi.fn() };
 const requestUploadUrl = { mutateAsync: vi.fn() };
 
+const rosterCatchUp = vi.hoisted(() =>
+  vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
-  useRosterCatchUp: () => undefined,
+  useRosterCatchUp: rosterCatchUp,
   useActiveChapterId: () => "chapter-1",
   useChannel: (id: string) =>
     channelRow === "found"
@@ -991,6 +997,21 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
     } else {
       expect(text).not.toMatch(/typing…/);
     }
+    act(() => tree.unmount());
+  });
+
+  it("holds back a typist the roster can't name yet, hides the empty slot, and asks for a re-read (#4493)", () => {
+    channel = channelState({ typingUsers: ["new-joiner"] });
+    const tree = render();
+
+    expect(screenText(tree)).not.toMatch(/typing…/);
+    const [slot] = tree.root.findAll(
+      (node) => node.props.testID === "typing-line",
+    );
+    expect(slot?.props.accessibilityElementsHidden).toBe(true);
+    const [typists, rows] = rosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual(["new-joiner"]);
+    expect(rows).toBe(channel.messages);
     act(() => tree.unmount());
   });
 });

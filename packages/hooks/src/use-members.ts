@@ -14,7 +14,11 @@ import {
   type MemberDismissalKey,
 } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { resolveDisplayName, type DisplayNameMap } from "./display-names";
+import {
+  memberFallbackLabel,
+  resolveDisplayName,
+  type DisplayNameMap,
+} from "./display-names";
 import { useViewerUserId } from "./use-user";
 import {
   memberAvatarHue,
@@ -92,53 +96,80 @@ export function useChapterRoster() {
 }
 
 /**
+ * Ids each chapter's roster has already been re-read for, shared by every
+ * surface for the life of the app, so one id costs one re-read however many
+ * screens name it or however often they remount.
+ */
+const rosterCatchUpTried = new Map<string, Set<string>>();
+/** Ids whose re-read failed, tried again only when a surface's ids change. */
+const rosterCatchUpFailed = new Set<string>();
+
+/** Clears {@link useRosterCatchUp}'s memory, for specs. */
+export function resetRosterCatchUpForTests(): void {
+  rosterCatchUpTried.clear();
+  rosterCatchUpFailed.clear();
+}
+
+/**
  * Re-reads the roster when a surface is about to name a member it doesn't
  * hold, such as someone who joined after the roster loaded and is now typing
- * or posting (Paul, 2026-11-12). The roster is otherwise only re-read once it
- * is a minute stale *and* something remounts or refocuses, so a new joiner
- * read as `Member 2f4a1c` in the timeline and went unnamed on the typing line
- * for that long, which during the beta's onboarding is most of their first
- * conversation.
+ * or posting (#4493, Paul, 2026-11-12). The roster is otherwise only re-read
+ * once it is a minute stale *and* something remounts or refocuses, so a new
+ * joiner read as `Member 2f4a1c` in the timeline and went unnamed on the
+ * typing line for that long, which during the beta's onboarding is most of
+ * their first conversation.
  *
- * Each missing id triggers at most one re-read per chapter, so a member who
- * really is gone (a removed member's old messages, an imported author) costs
- * one read, not a loop. The system sender is never looked up. Pass every id
- * the surface names: typists and message senders alike.
+ * Pass the surface's typists and the rows it draws. Each missing id triggers
+ * at most one re-read per chapter across every surface, so a member who really
+ * is gone (a removed member's old messages, an imported author) costs one
+ * read, not one per screen or per visit. A re-read that fails is tried again
+ * only when the surface's ids next change (a new message or typist), never in
+ * a loop against a failing API. The system sender is never looked up.
  */
 export function useRosterCatchUp(
-  userIds: readonly (string | null | undefined)[],
+  typists: readonly string[],
+  rows: readonly { sender_id?: string | null }[] = [],
 ): void {
   const chapterId = useActiveChapterId();
   const { data, isFetching, refetch } = useChapterRoster();
-  const tried = useRef<{ chapterId: string | null; ids: Set<string> }>({
-    chapterId: null,
-    ids: new Set(),
-  });
   // A string, so a fresh array of the same ids each render reruns nothing.
   const wanted = useMemo(
     () =>
       [
         ...new Set(
-          userIds.filter((id): id is string => !!id && id !== SYSTEM_SENDER_ID),
+          [...typists, ...rows.map((row) => row.sender_id)].filter(
+            (id): id is string => !!id && id !== SYSTEM_SENDER_ID,
+          ),
         ),
       ]
         .sort()
         .join(","),
-    [userIds],
+    [typists, rows],
   );
+  const lastWanted = useRef(wanted);
 
   useEffect(() => {
-    if (!data || isFetching || !wanted) return;
-    if (tried.current.chapterId !== chapterId) {
-      tried.current = { chapterId, ids: new Set() };
+    const wantedChanged = lastWanted.current !== wanted;
+    lastWanted.current = wanted;
+    if (!chapterId || !data || isFetching || !wanted) return;
+    let tried = rosterCatchUpTried.get(chapterId);
+    if (!tried) {
+      tried = new Set();
+      rosterCatchUpTried.set(chapterId, tried);
+    }
+    if (wantedChanged) {
+      for (const id of rosterCatchUpFailed) tried.delete(id);
+      rosterCatchUpFailed.clear();
     }
     const known = new Set(data.map((row) => row.user_id));
     const missing = wanted
       .split(",")
-      .filter((id) => !known.has(id) && !tried.current.ids.has(id));
+      .filter((id) => !known.has(id) && !tried.has(id));
     if (missing.length === 0) return;
-    for (const id of missing) tried.current.ids.add(id);
-    void refetch();
+    for (const id of missing) tried.add(id);
+    void refetch().then((result) => {
+      if (result.isError) for (const id of missing) rosterCatchUpFailed.add(id);
+    });
   }, [chapterId, data, isFetching, refetch, wanted]);
 }
 
@@ -147,6 +178,14 @@ export interface MemberDisplayNames {
   byId: DisplayNameMap;
   /** Single-id resolver; `null` when unresolved so the caller picks its copy. */
   nameFor: (userId: string) => string | null;
+  /**
+   * The typing line's name for a member (#4493, for `typingLabel`): their
+   * name, or `Member 2f4a1c` when the roster holds them with no name set or
+   * no roster read has landed, as the timeline names them then. `null` only
+   * while a loaded roster doesn't hold them yet, so the line waits a moment
+   * for {@link useRosterCatchUp} rather than saying "Someone".
+   */
+  typistLabelFor: (userId: string) => string | null;
   /**
    * The member's photo as a renderable (signed) URL, or `null` for initials.
    * Same roster read as `nameFor`, so a chat row needs no second request.
@@ -213,6 +252,17 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [byId],
   );
 
+  const rosterLanded = query.data !== undefined;
+  const typistLabelFor = useCallback(
+    (userId: string) => {
+      const name = resolveDisplayName(byId, userId);
+      if (name) return name;
+      if (rosterLanded && !(userId in byId)) return null;
+      return memberFallbackLabel(userId);
+    },
+    [byId, rosterLanded],
+  );
+
   const avatarById = useMemo(
     () =>
       new Map(
@@ -258,6 +308,7 @@ export function useMemberDisplayNames(): MemberDisplayNames {
   return {
     byId,
     nameFor,
+    typistLabelFor,
     avatarFor,
     roleColorFor,
     avatarTintFor,

@@ -90,6 +90,8 @@ export interface ThreadPanelProps extends Pick<
 > {
   channelId: string;
   channelName: string | null;
+  /** The typing line's names (`useMemberDisplayNames().typistLabelFor`). */
+  typistLabelFor: (userId: string) => string | null;
   rootId: string;
   viewerId: string | null;
   blockState: BlockState;
@@ -170,6 +172,7 @@ export function ThreadPanel({
   rootId,
   viewerId,
   nameFor,
+  typistLabelFor,
   avatarFor,
   roleColorFor,
   blockState,
@@ -236,9 +239,7 @@ export function ThreadPanel({
   }
 
   const typists = visibleTypingUsers(thread.typingUsers, blockState, viewerId);
-  const typing = typingLabel(typists, nameFor);
-  // A typist the roster doesn't hold yet is named once it's re-read.
-  useRosterCatchUp(thread.typingUsers);
+  const typing = typingLabel(typists, typistLabelFor);
   const following = thread.followState === "following";
 
   const notSent = useCallback(
@@ -382,6 +383,9 @@ export function ThreadPanel({
     () => (root ? [root, ...thread.messages] : thread.messages),
     [root, thread.messages],
   );
+  // Replies live in the thread's own cache, not the channel's, so the panel
+  // asks after its own typists and authors (#4493).
+  useRosterCatchUp(thread.typingUsers, lookup);
 
   // One tap-reveal state for the parent and the replies, so tapping one row
   // closes the other's action bar (`components.md` § Per-message actions).

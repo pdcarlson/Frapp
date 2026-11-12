@@ -337,6 +337,7 @@ function ChannelThreadScreen() {
   const roster = useMemberDisplayNames();
   const {
     nameFor,
+    typistLabelFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
     avatarTintFor,
@@ -610,14 +611,10 @@ function ChannelThreadScreen() {
     viewerId,
   );
   // Who, by name, as Discord says it and the thread line already does.
-  const typingLine = typingLabel(shownTypingUsers, nameFor);
+  const typingLine = typingLabel(shownTypingUsers, typistLabelFor);
   // Someone who joined after the roster loaded, typing or posting here, is
-  // named a moment later rather than left as `Member 2f4a1c` (2026-11-12).
-  const namedHere = useMemo(
-    () => [...typingUsers, ...messages.map((message) => message.sender_id)],
-    [typingUsers, messages],
-  );
-  useRosterCatchUp(namedHere);
+  // named a moment later rather than left as `Member 2f4a1c` (#4493).
+  useRosterCatchUp(typingUsers, messages);
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
@@ -1475,9 +1472,9 @@ function ChannelThreadScreen() {
           <View
             testID="typing-line"
             style={styles.typingSlot}
-            accessibilityElementsHidden={shownTypingUsers.length === 0}
+            accessibilityElementsHidden={typingLine === null}
             importantForAccessibility={
-              shownTypingUsers.length === 0 ? "no-hide-descendants" : "auto"
+              typingLine === null ? "no-hide-descendants" : "auto"
             }
           >
             <Text style={styles.typing} numberOfLines={1}>

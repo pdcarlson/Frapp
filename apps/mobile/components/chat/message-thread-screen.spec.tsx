@@ -186,10 +186,14 @@ let channelRow: Record<string, unknown> = {
 };
 let viewerId: string | null = VIEWER;
 let permissions: string[] = [];
+const rosterCatchUp = vi.hoisted(() =>
+  vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
-  useRosterCatchUp: () => undefined,
+  useRosterCatchUp: rosterCatchUp,
   useChannel: () => ({ data: channelRow, isFetching: false }),
   useViewerUserId: () => viewerId,
   useAuthorAvatars: () => ({ data: undefined }),
@@ -198,6 +202,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({
     byId: {},
     nameFor: (id: string) => NAMES[id] ?? null,
+    typistLabelFor: (id: string) => NAMES[id] ?? null,
     roleColorFor: () => null,
     avatarFor: () => null,
     isPending: false,
@@ -356,6 +361,18 @@ describe("MessageThreadScreen (#3785)", () => {
     const tree = render();
     expect(screenText(tree)).toContain("Casey is typing…");
     expect(screenText(tree)).not.toContain("Blake");
+    act(() => tree.unmount());
+  });
+
+  it("asks the roster after its typists, replies and the parent's author (#4493)", () => {
+    thread = threadState({ typingUsers: [CASEY] });
+    const tree = render();
+    const [typists, rows] = rosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual([CASEY]);
+    expect(rows).toEqual(expect.arrayContaining(thread.messages));
+    expect((rows as { id: string }[]).some((row) => row.id === ROOT)).toBe(
+      true,
+    );
     act(() => tree.unmount());
   });
 

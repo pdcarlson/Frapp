@@ -6,18 +6,17 @@
  *
  * Who may be named is the caller's filter (`visibleTypingUsers` in
  * `./blocks`: never the viewer, never a member the viewer blocked); this only
- * words it. A typist the roster can't name yet is left out rather than called
- * `Someone`, the anonymous line Paul asked to be rid of (2026-11-12): the chat
- * surfaces re-read the roster when they meet an id it lacks
- * (`useRosterCatchUp` in `@repo/hooks/use-members`), so a member who joined
- * after it loaded is named a moment later. Four or more typists read as
- * `Several people` whether or not each is named.
+ * words it. Pass `typistLabelFor` from `useMemberDisplayNames`: a member the
+ * roster holds with no name reads as `Member 2f4a1c`, as above their messages,
+ * and only one a loaded roster doesn't hold yet comes back `null`. That typist
+ * is left out rather than called `Someone`, the anonymous line Paul asked to be
+ * rid of (#4493, 2026-11-12): the chat surfaces re-read the roster when they
+ * meet an id it lacks (`useRosterCatchUp`), so they are named a moment later.
  */
 export function typingLabel(
   typistIds: readonly string[],
   nameOf: (userId: string) => string | null | undefined,
 ): string | null {
-  if (typistIds.length >= 4) return "Several people are typing…";
   const names = typistIds.flatMap((id) => {
     const name = nameOf(id)?.trim();
     return name ? [name] : [];
@@ -26,5 +25,6 @@ export function typingLabel(
   if (first === undefined) return null;
   if (names.length === 1) return `${first} is typing…`;
   if (names.length === 2) return `${first} and ${second} are typing…`;
-  return `${first}, ${second} and ${third} are typing…`;
+  if (names.length === 3) return `${first}, ${second} and ${third} are typing…`;
+  return "Several people are typing…";
 }

@@ -7,6 +7,7 @@ import {
   useMemberDisplayNames,
   useMembers,
   useMemberSearch,
+  resetRosterCatchUpForTests,
   useRemoveMember,
   useRosterCatchUp,
   useUpdateMemberRoles,
@@ -407,6 +408,40 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
   });
 });
 
+describe("typistLabelFor (#4493)", () => {
+  const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
+
+  it("names, falls back for a nameless member, and holds back an unknown id", async () => {
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    let settle: (value: unknown) => void = () => {};
+    const get = vi.fn(() => new Promise((resolve) => (settle = resolve)));
+    mockUseFrappClient.mockReturnValue({
+      GET: get,
+    } as unknown as ReturnType<typeof useFrappClient>);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    // No roster yet: everyone reads as the timeline's fallback.
+    expect(result.current.typistLabelFor("user-1")).toBe("Member user-1");
+    settle({
+      data: [
+        { user_id: "user-1", display_name: "Marcus Reid", avatar_url: null },
+        { user_id: "user-blank", display_name: "  ", avatar_url: null },
+      ],
+      error: null,
+    });
+    await waitFor(() => expect(result.current.hasData).toBe(true));
+    expect(result.current.typistLabelFor("user-1")).toBe("Marcus Reid");
+    expect(result.current.typistLabelFor("user-blank")).toBe("Member user-b");
+    expect(result.current.typistLabelFor("stranger")).toBeNull();
+  });
+});
+
 // A member who joined after the roster loaded, typing or posting in chat, is
 // named once the roster is re-read, instead of `Member 2f4a1c` or an unnamed
 // typing line (2026-11-12).
@@ -428,6 +463,7 @@ describe("useRosterCatchUp", () => {
     });
     vi.clearAllMocks();
     mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    resetRosterCatchUpForTests();
   });
 
   function mountWith(get: ReturnType<typeof vi.fn>, ids: string[]) {
@@ -436,7 +472,10 @@ describe("useRosterCatchUp", () => {
     } as unknown as ReturnType<typeof useFrappClient>);
     return renderHook(
       ({ wanted }: { wanted: string[] }) => {
-        useRosterCatchUp(wanted);
+        useRosterCatchUp(
+          wanted,
+          wanted.map((id) => ({ sender_id: id })),
+        );
         return useMemberDisplayNames();
       },
       { wrapper: createWrapper(queryClient), initialProps: { wanted: ids } },
@@ -464,6 +503,36 @@ describe("useRosterCatchUp", () => {
     rerender({ wanted: ["gone-member", "user-1"] });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks once per id across surfaces and remounts", async () => {
+    const get = vi.fn().mockResolvedValue({ data: first, error: null });
+    const one = mountWith(get, ["gone-member"]);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    one.unmount();
+    mountWith(get, ["gone-member"]);
+    mountWith(get, ["gone-member"]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again after a re-read that failed", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: first, error: null })
+      .mockResolvedValueOnce({ data: null, error: new Error("503") })
+      .mockResolvedValue({ data: after, error: null });
+    const { result, rerender } = mountWith(get, ["new-joiner"]);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+    // Not in a loop against the failing API.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(get).toHaveBeenCalledTimes(2);
+    // The next change on the surface (a new message, a typist) tries again.
+    rerender({ wanted: ["new-joiner", "user-1"] });
+    await waitFor(() => {
+      expect(result.current.nameFor("new-joiner")).toBe("Alex Kim");
+    });
   });
 
   it("never re-reads for known members or the system sender", async () => {

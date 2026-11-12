@@ -32,9 +32,9 @@ describe("typingLabel (#4014, #3785)", () => {
       "Paul and Shawn are typing…",
     );
   });
-  test("four or more is several people even with an unnamed one", () => {
+  test("counts only the named toward several people", () => {
     expect(typingLabel(["p", "s", "a", "x"], nameOf)).toBe(
-      "Several people are typing…",
+      "Paul, Shawn and Alex are typing…",
     );
   });
 });
