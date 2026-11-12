@@ -76,7 +76,7 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "roles:manage",
     "chapter",
     "Manage roles",
-    "Create, edit and delete roles, give roles to members, and edit pledge classes.",
+    "Create, edit and delete roles, give roles to members, edit pledge classes, and fix the names and graduation years of members ranked below them.",
   ),
   chapterPermission(
     "chapter-config:view",

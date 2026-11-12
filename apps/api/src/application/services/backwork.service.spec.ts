@@ -527,6 +527,95 @@ describe('BackworkService', () => {
       );
     });
 
+    // #3918: a new department is stored by its matching key, so the next
+    // upload typing any case of it finds this row.
+    it('stores a new department code trimmed and upper-cased', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockResolvedValue({
+        id: 'dept-new',
+        chapter_id: 'ch-1',
+        code: 'MATH',
+        name: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-case',
+        department_code: ' math ',
+      });
+
+      expect(mockDepartmentRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        code: 'MATH',
+      });
+    });
+
+    it('files under the department another upload created a moment before', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(baseDepartment);
+      mockDepartmentRepo.create.mockRejectedValue(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-race',
+        department_code: 'Math',
+      });
+
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: baseDepartment.id }),
+      );
+    });
+
+    it('still fails an upload whose department insert fails for another reason', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockRejectedValue(
+        new Error('connection reset'),
+      );
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+          file_hash: 'uniquehash-err',
+          department_code: 'MATH',
+        }),
+      ).rejects.toThrow('connection reset');
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('files no department for a code that is only spaces', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-blank',
+        department_code: '   ',
+      });
+
+      expect(mockDepartmentRepo.findByCode).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.create).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: null }),
+      );
+    });
+
     it('should auto-vivify a new professor', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockProfessorRepo.findByName.mockResolvedValue(null);

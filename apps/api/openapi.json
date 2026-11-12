@@ -2183,6 +2183,63 @@
         ]
       }
     },
+    "/v1/members/{id}/profile": {
+      "patch": {
+        "description": "Needs roles:manage. Refused (403) for your own profile (use PATCH /v1/users/me), for a member ranked at or above you, and for a member who is also in another chapter. Changes are recorded in the chapter audit log as member_profile_corrected. Answers with the member's profile.",
+        "operationId": "MemberController_correctProfile_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectMemberProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fix a member's name or graduation year (officers)",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/me/onboarding": {
       "patch": {
         "operationId": "MemberController_updateOnboarding_v1",
@@ -13893,6 +13950,13 @@
           },
           "current_company": {
             "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32,
+            "description": "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
+            "example": "(518) 555-0142"
           }
         }
       },
@@ -15238,6 +15302,11 @@
           "email": {
             "type": "string"
           },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "description": "The member's own phone number (#3711), as they typed it, or null. Only they set it."
+          },
           "pledge_class_id": {
             "type": "string",
             "format": "uuid",
@@ -15263,6 +15332,10 @@
           "viewer_can_remove": {
             "type": "boolean",
             "description": "Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads."
+          },
+          "viewer_can_edit_profile": {
+            "type": "boolean",
+            "description": "Whether the requesting viewer may fix this member's name and graduation year (PATCH /v1/members/{id}/profile): they hold roles:manage, it is not their own profile, the member ranks below them, and the member is in no other chapter. Present only on single-member reads."
           }
         },
         "required": [
@@ -15282,6 +15355,7 @@
           "current_city",
           "current_company",
           "email",
+          "phone",
           "pledge_class_id",
           "order_number",
           "is_alumni"
@@ -15336,6 +15410,21 @@
         "required": [
           "role_ids"
         ]
+      },
+      "CorrectMemberProfileDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "The member's name as the chapter knows them. Trimmed; it may not be blank.",
+            "maxLength": 100
+          },
+          "graduation_year": {
+            "type": "number",
+            "nullable": true,
+            "description": "The member's graduation year, or null to clear it."
+          }
+        }
       },
       "UpdateOnboardingDto": {
         "type": "object",

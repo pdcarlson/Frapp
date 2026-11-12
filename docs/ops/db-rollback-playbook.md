@@ -3808,6 +3808,23 @@ Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an 
 
 If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
 
+## Rollback a member's phone number (20261112150000)
+
+* **Migration**: `20261112150000_users_phone.sql`
+
+One nullable column on `users` (`phone`) with its length check, and `anonymize_user` redefined to also clear it. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never reads or writes `phone`, so the stored numbers sit unused. That is safe to leave.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the column is gone:
+
+```sql
+-- Re-create anonymize_user from 20261111235900_chat_important_seen.sql, verbatim.
+alter table public.users
+  drop constraint if exists users_phone_length,
+  drop column if exists phone;
+```
+
 ## Rollback member defaults for existing chapters (20261112152000)
 
 * **Migration**: `20261112152000_member_social_trust_defaults.sql`
@@ -3837,4 +3854,4 @@ update public.roles r
    and r.permission_overrides ? 'events:create';
 ```
 
-Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), use a backup taken before the push as in the section above.
+Removing a key from a tier also removes it from every role in it that holds it only through the tier; a role with its own "on" override keeps it. A key an officer added after the push to a tier that lacked it before is removed too, so check the chapter's audit log for role changes since the push and add those back by hand. With no saved rows (staging, which applies it on merge, has none), restore a backup taken before the push into a scratch project ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) and copy the rows from it.

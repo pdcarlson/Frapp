@@ -232,3 +232,70 @@ describe("editing in place", () => {
     expect(props.onSave).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * WCAG 2.2 relative-luminance contrast of two opaque `#RRGGBB` colours.
+ * `@repo/color`'s `contrastRatio` is the repo's one implementation, but
+ * `apps/mobile/package.json` (a frozen hotspot) doesn't declare that package,
+ * so this spec carries the formula, with the same 0.03928 threshold.
+ */
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+describe("the edit badges' glyphs (#4393)", () => {
+  // WCAG 1.4.11: a glyph that carries meaning needs 3:1 on what it sits on.
+  const NON_TEXT = 3;
+
+  // Every badge of a kind: six actions are addable here, one removable.
+  const glyphsOn = (root: Node, path: string) => {
+    const fillOf = (node: Node) =>
+      [node.props.style]
+        .flat(Infinity)
+        .reduce<string | undefined>(
+          (fill, style) => style?.backgroundColor ?? fill,
+          undefined,
+        );
+    const glyphs = root.findAll(
+      (node) => (node.type as unknown) === "Path" && node.props.d === path,
+    );
+    expect(glyphs.length).toBeGreaterThan(0);
+    return glyphs.map((glyph) => {
+      // The badge is the nearest ancestor that paints a fill.
+      let badge = glyph.parent;
+      while (badge && !fillOf(badge)) badge = badge.parent;
+      // A faded ancestor would draw the pair at a lower ratio than the one
+      // measured here (the add tray dims its faces), so nothing above the
+      // glyph may carry opacity.
+      for (let node = glyph.parent; node; node = node.parent) {
+        const opacity = [node.props.style]
+          .flat(Infinity)
+          .reduce<number>((o, style) => style?.opacity ?? o, 1);
+        expect(opacity, "a badge glyph sits under a faded ancestor").toBe(1);
+      }
+      return { ink: glyph.props.stroke as string, fill: fillOf(badge!)! };
+    });
+  };
+
+  it("draws the add badge's plus at 3:1 or better on its success fill", () => {
+    const tree = render(["message"], true);
+    for (const { ink, fill } of glyphsOn(tree.root, "M5 2v6M2 5h6")) {
+      expect(contrast(ink, fill)).toBeGreaterThanOrEqual(NON_TEXT);
+    }
+  });
+
+  it("draws the remove badge's minus at 3:1 or better on its fill", () => {
+    const tree = render(["message"], true);
+    for (const { ink, fill } of glyphsOn(tree.root, "M2 5h6")) {
+      expect(contrast(ink, fill)).toBeGreaterThanOrEqual(NON_TEXT);
+    }
+  });
+});

@@ -5,7 +5,7 @@ import {
 } from "./channel-row-actions";
 
 const WEB = { copyLink: true, edit: true };
-const MOBILE = { copyLink: false, edit: false };
+const MOBILE = { copyLink: false, edit: true, arrange: true };
 
 function input(
   over: Partial<ChannelRowActionInput> = {},
@@ -87,7 +87,18 @@ describe("channelRowActions", () => {
 
   it("leaves out what the surface can't do", () => {
     expect(
-      channelRowActions(input({ surface: MOBILE, permissions: ["*"] })),
+      channelRowActions(
+        input({ surface: { copyLink: false, edit: false }, permissions: ["*"] }),
+      ),
     ).toEqual({ member: ["toggle-pin", "notifications"], officer: ["delete"] });
+  });
+
+  it("gives the phone Edit, Arrange and Delete, with Delete last (#3838)", () => {
+    expect(
+      channelRowActions(input({ surface: MOBILE, permissions: ["*"] })),
+    ).toEqual({
+      member: ["toggle-pin", "notifications"],
+      officer: ["edit", "arrange", "delete"],
+    });
   });
 });
