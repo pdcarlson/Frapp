@@ -5667,7 +5667,12 @@ describe("ChatShell's two lists (#3774)", () => {
     // No remembered DM: a first visit, or the remembered one since hidden.
     channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
     render(<ChatShell view="direct" />);
-    expect(screen.getByText(/Pick a conversation/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Pick a conversation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Choose one from the list to open it."),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
     expect(screen.queryByText(/No direct messages yet/)).not.toBeInTheDocument();
   });

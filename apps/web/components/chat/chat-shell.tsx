@@ -2868,6 +2868,7 @@ export function ChatShell({
             channel={activeChannel}
             name={activeChannelName}
             description={activeChannelDescription}
+            placeholder={directView ? "Pick a conversation" : undefined}
           />
           <div className="flex shrink-0 items-center gap-2">
             {showMemberList ? (
@@ -3166,14 +3167,16 @@ export function ChatShell({
               </InlineNote>
             ) : (
               <InlineNote>
-                {"Pick a conversation"}
-                <span className="lg:hidden">
-                  {" from "}
-                  <InlineNoteAction onClick={() => setNarrowPane("channels")}>
-                    your direct messages
-                  </InlineNoteAction>
+                <span className="max-lg:hidden">
+                  Choose one from the list to open it.
                 </span>
-                .
+                {/* Below `lg` the list is its own screen. */}
+                <InlineNoteAction
+                  className="lg:hidden"
+                  onClick={() => setNarrowPane("channels")}
+                >
+                  Show your direct messages
+                </InlineNoteAction>
               </InlineNote>
             )}
           </div>
