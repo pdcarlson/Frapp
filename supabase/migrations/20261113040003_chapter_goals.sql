@@ -38,4 +38,4 @@ create table if not exists public.chapter_goals (
 alter table public.chapter_goals enable row level security;
 
 comment on table public.chapter_goals is
-  'Goals a chapter sets for points, service hours and study hours (#1062): one row per chapter and metric. API only. See 20261113040002_chapter_goals.sql.';
+  'Goals a chapter sets for points, service hours and study hours (#1062): one row per chapter and metric. API only. See 20261113040003_chapter_goals.sql.';
