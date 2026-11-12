@@ -14,11 +14,11 @@ import { fetchableUrl, isPublicAddress } from './link-title-guards';
 import { headIsComplete, pageTitleFromHtml } from './page-title';
 
 /** The whole read, redirects included, ends here. */
-export const LINK_TITLE_TIMEOUT_MS = 5_000;
+const LINK_TITLE_TIMEOUT_MS = 5_000;
 /** At most this much of a page is read; a title sits in the first few KB. */
 export const LINK_TITLE_MAX_BYTES = 512 * 1024;
 /** `forms.gle` → `docs.google.com` is one; more than three is a loop. */
-export const LINK_TITLE_MAX_REDIRECTS = 3;
+const LINK_TITLE_MAX_REDIRECTS = 3;
 
 const USER_AGENT =
   'Mozilla/5.0 (compatible; FrappLinkTitle/1.0; +https://frapp.live)';

@@ -47,7 +47,7 @@ export type PostedMinutesListener = (
 ) => Promise<void>;
 
 /** The most minutes the list reads; a chapter meets about weekly. */
-export const MEETING_LIST_LIMIT = 500;
+const MEETING_LIST_LIMIT = 500;
 
 /** Who checked in, by the event's own attendance record. */
 export interface MeetingAttendees {

@@ -18,7 +18,7 @@ export const ACT_PLAN_PROMPT_VERSION = 'act.plan@v1';
 export const ACT_MATCH_PROMPT_VERSION = 'act.match@v1';
 
 /** The answer for "none of the actions fits". */
-export const ACT_NO_ACTION = 'none';
+const ACT_NO_ACTION = 'none';
 
 export function actPlanSystem(
   today: string,
