@@ -6,6 +6,7 @@ import { groupPermissionsByModule } from "@repo/validation";
 import { useIsPermissionHidden, useUpdateRole } from "@repo/hooks";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { permissionRows } from "@repo/hooks/role-tiers";
+import { CANT_GIVE } from "@repo/hooks/use-roles-data";
 import {
   useOverrideOverlay,
   type Override,
@@ -120,7 +121,7 @@ export function RoleOverrideList({
                 const tierRefused = !canGive && tierHas && !holds;
                 const rowReason =
                   !lockedReason && (onRefused || tierRefused)
-                    ? "You can't give this, because your role doesn't have it."
+                    ? CANT_GIVE
                     : null;
                 const note =
                   override === null

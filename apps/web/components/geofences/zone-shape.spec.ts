@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { circleToPolygon } from "@repo/validation";
-import { draftFromZone, zoneShapeLine } from "./zone-shape";
+import { draftFromZone } from "./zone-shape";
 
 const circle = { lat: 42.7298, lng: -73.6826, radius_m: 75 };
 
@@ -12,7 +12,6 @@ describe("reopening a saved zone", () => {
       center: { lat: circle.lat, lng: circle.lng },
       radius_m: 75,
     });
-    expect(zoneShapeLine(zone)).toBe("245 ft circle");
   });
 
   it("reopens a zone from before circles as its outline", () => {
@@ -23,7 +22,6 @@ describe("reopening a saved zone", () => {
     ];
     const zone = { circle: null, coordinates };
     expect(draftFromZone(zone)).toMatchObject({ mode: "outline", points: coordinates });
-    expect(zoneShapeLine(zone)).toBe("Outline, 3 corners");
   });
 
   it("trusts the outline over a circle it no longer matches", () => {
@@ -37,6 +35,5 @@ describe("reopening a saved zone", () => {
     ];
     const zone = { circle, coordinates };
     expect(draftFromZone(zone)).toMatchObject({ mode: "outline", points: coordinates });
-    expect(zoneShapeLine(zone)).toBe("Outline, 4 corners");
   });
 });

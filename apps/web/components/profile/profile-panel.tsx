@@ -3,11 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  profileIdentityLine,
+  profileStatsErrorNote,
   useCurrentUser,
+  useMemberByUserId,
   useMemberDisplayNames,
+  useMyProfileStats,
+  usePermissionList,
   useUpdateUser,
 } from "@repo/hooks";
 import {
+  can,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
@@ -26,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
+import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -47,7 +54,9 @@ type CurrentUser = {
 
 /**
  * `/profile`: who you are in the directory. Name, photo, phone, major, year,
- * bio and the after-graduation fields, and nothing else: quiet hours, chapter alerts,
+ * bio and the after-graduation fields, with your points, service hours,
+ * pledge class and order number read-only above the form (#4137), and nothing
+ * else: quiet hours, chapter alerts,
  * chat density, blocked members, Discord history and the account controls
  * moved to the personal Settings page (`/preferences`,
  * `components/personal-settings/`, #3856).
@@ -60,6 +69,25 @@ export function ProfilePanel() {
   const { avatarTintFor } = useMemberDisplayNames();
   const ownId = (userQuery.data as CurrentUser | undefined)?.id;
   const updateUser = useUpdateUser();
+  // Points and approved service hours, read and summed as the phone's Profile
+  // does them (`@repo/hooks` `profile-stats.ts`, #4137).
+  const stats = useMyProfileStats();
+  const statsNote = profileStatsErrorNote(
+    stats.pointsFailed,
+    stats.serviceFailed,
+  );
+  // Your pledge class and order number live on your membership, not on
+  // `/v1/users/me`, behind the Directory's gate (`members:view`); a viewer
+  // without it reads neither and sees no rows, as on the phone (#3939).
+  const canViewMembers = can("members:view", usePermissionList());
+  const memberQuery = useMemberByUserId(canViewMembers ? (ownId ?? "") : "");
+  const membership = memberQuery.data as
+    | {
+        id?: string;
+        pledge_class_id?: string | null;
+        order_number?: number | null;
+      }
+    | undefined;
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   // Set on a submit the phone refused, cleared when the member edits it
@@ -191,6 +219,14 @@ export function ProfilePanel() {
   // "YP", which reads as a person who is not them.
   const storedName = profile.display_name?.trim() ?? "";
   const displayName = storedName || "Your profile";
+  // The phone's line under the name: major · company · '27, from what is
+  // saved, so it doesn't change while the member types in the form below.
+  const saved = userQuery.data as CurrentUser | undefined;
+  const identityMeta = profileIdentityLine({
+    major: saved?.major,
+    company: saved?.current_company,
+    graduationYear: saved?.graduation_year,
+  });
 
   return (
     <div className="space-y-6">
@@ -201,16 +237,18 @@ export function ProfilePanel() {
       */}
       <div className="max-w-2xl space-y-10">
         {/*
-          s15's identity header, as far as the data goes. The initials take
-          your member tint, as everywhere your face appears (#3860). s15 drew it in
-          the house-gold family and this transcribed that as the chapter accent
-          until 2026-11-05, when the accent came off people's avatars
-          (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.
+          s15's identity header. The initials take your member tint, as
+          everywhere your face appears (#3860). s15 drew it in the house-gold
+          family and this transcribed that as the chapter accent until
+          2026-11-05, when the accent came off people's avatars
+          (`foundations.md` §6). The untinted initials are measured in
+          `profile-contrast.spec.ts`.
 
-          s15's role badge and its three stat cards (points / service hrs /
-          attendance) are deliberately NOT here: `GET /v1/users/me` carries none
-          of those fields and no query this screen holds does either, so building
-          them is new feature work rather than a repaint. Filed, not smuggled in.
+          Beside the photo rather than centred over the name, as the phone
+          draws it: a desktop profile reads left to right, as Slack's and
+          LinkedIn's do on the web, and the form under it is left-aligned
+          (#4137, recorded in `spec/ui/web-dashboard/README.md`). The name, the
+          major · company · year line and the photo controls are the phone's.
         */}
         <header className="flex items-center gap-4">
           <Avatar className="h-[84px] w-[84px] border border-border bg-popover">
@@ -224,7 +262,7 @@ export function ProfilePanel() {
             */}
             <AvatarFallback
               tint={ownId ? avatarTintFor(ownId) : null}
-              className="bg-popover text-headline font-bold text-muted-foreground"
+              className="bg-popover text-headline font-bold text-foreground"
             >
               {initials(storedName || profile.email || "")}
             </AvatarFallback>
@@ -233,6 +271,11 @@ export function ProfilePanel() {
             <h2 className="truncate text-headline font-bold tracking-tight">
               {displayName}
             </h2>
+            {identityMeta ? (
+              <p className="truncate text-sm text-muted-foreground">
+                {identityMeta}
+              </p>
+            ) : null}
             {/* An absent email is absent, not a sentence standing in for it. */}
             {profile.email ? (
               <p className="truncate text-sm text-muted-foreground">
@@ -247,6 +290,65 @@ export function ProfilePanel() {
             </div>
           </div>
         </header>
+
+        {/*
+          Your points and approved service hours, the numbers the phone's
+          Profile shows (#4137). A stat on the page surface, the label over
+          the number with no frame, as the Points page draws "My balance":
+          the phone's two cards are its grouped-list grammar, not web's.
+          s15's third card, attendance, is built on neither app: no member
+          can read an attendance rate (`profile-stats.ts`).
+        */}
+        <section aria-label="Your numbers" className="space-y-2">
+          {stats.visible ? (
+            <>
+              <dl className="flex gap-10">
+                <div className="space-y-0.5">
+                  <dt className="text-caption text-muted-foreground">Points</dt>
+                  <dd className="text-headline font-bold tabular-nums text-foreground">
+                    {stats.points === null
+                      ? "—"
+                      : stats.points.toLocaleString()}
+                  </dd>
+                </div>
+                <div className="space-y-0.5">
+                  <dt className="text-caption text-muted-foreground">
+                    Service hours
+                  </dt>
+                  <dd className="text-headline font-bold tabular-nums text-foreground">
+                    {stats.serviceHours ?? "—"}
+                  </dd>
+                </div>
+              </dl>
+              {!stats.hasChapter ? (
+                <p className="text-caption text-muted-foreground">
+                  Choose a chapter to see your points.
+                </p>
+              ) : statsNote ? (
+                <p className="text-caption text-muted-foreground">
+                  {statsNote}
+                </p>
+              ) : null}
+            </>
+          ) : null}
+          {/*
+            Your class and number, read-only as on the phone: they are an
+            officer's to set, from your Directory profile or Settings. Each
+            shows only when set, so a chapter that keeps neither sees nothing.
+          */}
+          <MemberPledgeClassSection
+            open
+            memberId={membership?.id ?? null}
+            displayName={displayName}
+            pledgeClassId={membership?.pledge_class_id ?? null}
+            orderNumber={
+              typeof membership?.order_number === "number"
+                ? membership.order_number
+                : null
+            }
+            canEdit={false}
+          />
+        </section>
 
         <ProfileSection
           id="directory-profile"

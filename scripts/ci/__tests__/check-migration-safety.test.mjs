@@ -44,6 +44,7 @@ import {
   staleDocs,
   unexcusedRemovals,
 } from "../../check-migration-safety.mjs";
+import { MIGRATION_LEDGER_DIR } from "../lib/ops-docs.mjs";
 
 const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
@@ -511,6 +512,23 @@ test("the ratchet holds against the real corpus", () => {
     migrations,
     ledgerPageEntries(readLedgerPages()).covered,
   );
+  // A ledger page stands in for an entry in both shared docs, as the gate's
+  // own run counts it; without this, the first migration ledgered on a page
+  // reads as missing from both.
+  const pageDir = join(REPO_ROOT, MIGRATION_LEDGER_DIR);
+  const pages = ledgerPageEntries(
+    readdirSync(pageDir).map((name) => ({
+      name,
+      text: readFileSync(join(pageDir, name), "utf8"),
+    })),
+  );
+  assert.deepEqual(pages.malformed, []);
+  const onDisk = new Set(migrations);
+  for (const entries of entriesByDoc.values()) {
+    for (const migration of pages.covered) {
+      if (onDisk.has(migration)) entries.add(migration);
+    }
+  }
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
   assert.deepEqual(

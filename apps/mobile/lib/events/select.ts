@@ -50,7 +50,7 @@ export interface EventRow {
    * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`) on a series head,
    * `null` on a generated occurrence or a one-off. The list collapses a series
    * by it (`collapseSeries`), and the edit flow reads it (`seriesRuleOf` in
-   * `edit-event.ts`) to tell a series from a one-off.
+   * `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
    */
   recurrence_rule: string | null;
   /**

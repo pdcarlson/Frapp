@@ -18,6 +18,7 @@ import { useOwnStatus } from "@/lib/account/own-status";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
  * Chat home's top-right pair (owner, 2026-11-07, option B of the round-two
@@ -62,6 +63,9 @@ export function MessagesButton({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
+  // A leftward flick that starts on the door is also the swipe to Messages:
+  // the door drops that press, so Messages opens once (`lib/swipe-claim.ts`).
+  const openMessages = useGuardedBySwipe(() => router.push("/messages"));
   return (
     <Pressable
       accessibilityRole="button"
@@ -81,7 +85,7 @@ export function MessagesButton({
         borderless: true,
         radius: 22,
       }}
-      onPress={() => router.push("/messages")}
+      onPress={openMessages}
       style={({ pressed }) => [
         styles.glass,
         pressed && Platform.OS !== "android" ? styles.pressed : null,
@@ -170,6 +174,15 @@ export function AccountButton({
   );
   const showPhoto =
     !!photoUrl && !(failed?.url === photoUrl && failed.at === fetchedAt);
+  // Dropped when it came from the swipe to Messages (`lib/swipe-claim.ts`).
+  const toggleMenu = useGuardedBySwipe(() => {
+    if (menu.visible) return menu.close();
+    const node = ref.current;
+    if (!node?.measureInWindow) return menu.open(0);
+    node.measureInWindow((_x, y, _width, height) =>
+      menu.open(y + height + tokens.spacing.xs),
+    );
+  });
 
   return (
     <Pressable
@@ -183,14 +196,7 @@ export function AccountButton({
       )}
       accessibilityState={{ expanded: menu.visible }}
       hitSlop={4}
-      onPress={() => {
-        if (menu.visible) return menu.close();
-        const node = ref.current;
-        if (!node?.measureInWindow) return menu.open(0);
-        node.measureInWindow((_x, y, _width, height) =>
-          menu.open(y + height + tokens.spacing.xs),
-        );
-      }}
+      onPress={toggleMenu}
       style={({ pressed }) => [
         styles.avatar,
         tint ? { backgroundColor: tint.fill } : null,

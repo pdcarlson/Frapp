@@ -55,6 +55,21 @@ describe("filterSlashCommands", () => {
     expect(result.some((command) => command.name === "announce")).toBe(true);
   });
 
+  // #3414: the server refuses an announcement from anyone who can't post in
+  // the announcements channel, so the palette doesn't offer it to them.
+  it("leaves /announce out when the member can't announce, and keeps it otherwise", () => {
+    const has = (canAnnounce?: boolean) =>
+      filterSlashCommands("", allEnabled, { canAnnounce }).some(
+        (command) => command.name === "announce",
+      );
+    expect(has(false)).toBe(false);
+    expect(has(true)).toBe(true);
+    expect(has(undefined)).toBe(true);
+    expect(
+      filterSlashCommands("announce", allEnabled, { canAnnounce: false }),
+    ).toEqual([]);
+  });
+
   it("always includes commands with a null requiredModule regardless of gating", () => {
     const result = filterSlashCommands("", noneEnabled);
     expect(result.every((command) => command.requiredModule === null)).toBe(

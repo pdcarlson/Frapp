@@ -3,7 +3,12 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft } from "lucide-react";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +61,8 @@ type PanelDock = {
   onClose: () => void;
   backLabel: string;
   titleId: string;
+  /** The id `PanelDescription` takes, read as the panel's description. */
+  descriptionId: string;
 };
 
 const PanelDockContext = React.createContext<PanelDock | null>(null);
@@ -85,6 +92,8 @@ export function Panel({
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
+  const descriptionId = React.useId();
+  useOpenerTracking(docked);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
   const column = React.useSyncExternalStore<Element | null | undefined>(
@@ -94,8 +103,13 @@ export function Panel({
   );
 
   const dock = React.useMemo<PanelDock>(
-    () => ({ onClose: () => onOpenChange(false), backLabel, titleId }),
-    [onOpenChange, backLabel, titleId],
+    () => ({
+      onClose: () => onOpenChange(false),
+      backLabel,
+      titleId,
+      descriptionId,
+    }),
+    [onOpenChange, backLabel, titleId, descriptionId],
   );
 
   // Docked with no tool column to land in (a page outside the shell, a
@@ -122,35 +136,145 @@ export function Panel({
  * the form. Focus moves in on open and goes back where it was on close.
  * Escape goes back, unless a field or an open popover had it first.
  */
+/**
+ * The control last pressed with a pointer, and when. Safari doesn't focus a
+ * clicked button, so at the moment a docked panel opens `activeElement` is
+ * `<body>` (or wherever focus was before), not the button that opened it;
+ * this is how the panel still finds its opener to hand focus back to.
+ */
+let lastPressed: { control: HTMLElement; at: number } | null = null;
+let pressListeners = 0;
+function onPress(event: PointerEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const control = target.closest<HTMLElement>(
+    'button, a[href], [role="button"], [role="menuitem"]',
+  );
+  lastPressed = control ? { control, at: Date.now() } : null;
+}
+/** Records presses while a docked `Panel` is on the page. */
+function useOpenerTracking(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled) return;
+    if (pressListeners++ === 0) {
+      document.addEventListener("pointerdown", onPress, true);
+    }
+    return () => {
+      if (--pressListeners === 0) {
+        document.removeEventListener("pointerdown", onPress, true);
+        lastPressed = null;
+      }
+    };
+  }, [enabled]);
+}
+/** How recent a press must be to count as what opened the panel. */
+const OPENER_WINDOW_MS = 1000;
+
+function openerOf(box: HTMLElement): HTMLElement | null {
+  const pressed = lastPressed;
+  if (
+    pressed &&
+    Date.now() - pressed.at < OPENER_WINDOW_MS &&
+    pressed.control.isConnected &&
+    !box.contains(pressed.control)
+  ) {
+    return pressed.control;
+  }
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body
+    ? active
+    : null;
+}
+
 function DockedPanel({
   dock,
   className,
+  onCloseAutoFocus,
   children,
 }: {
   dock: PanelDock;
   className?: string;
+  /**
+   * The sheet's close-focus hook, honoured docked too: a caller that sends
+   * focus somewhere else on close (the subscription gate's notice, when a
+   * block closed the form) calls `preventDefault()` and focuses it itself.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLElement>(null);
+  const closeFocus = React.useRef(onCloseAutoFocus);
+  React.useEffect(() => {
+    closeFocus.current = onCloseAutoFocus;
+  }, [onCloseAutoFocus]);
+  const descriptionId = dock.descriptionId;
   React.useEffect(() => {
     const box = ref.current;
     const column = box?.parentElement;
     if (!box || !column) return;
-    const returnTo =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    // What opened the panel gets focus back when it closes: the button
+    // pressed for it, or, from the keyboard, the element that had focus.
+    const returnTo = openerOf(box);
     const covered = Array.from(column.children).filter(
       (child): child is HTMLElement =>
         child !== box && child instanceof HTMLElement && !child.inert,
     );
     for (const child of covered) child.inert = true;
+    // A `PanelDescription` is the panel's description, as a sheet's is its
+    // dialog's, so a screen reader reads it with the title when focus lands.
+    // Set before the focus, and only when one is drawn, so the id never
+    // points at nothing.
+    if (box.querySelector(`[id="${descriptionId}"]`)) {
+      box.setAttribute("aria-describedby", descriptionId);
+    }
     box.focus({ preventScroll: true });
+
+    // Focus that was in the panel and fell to `<body>` comes back to it. A
+    // sheet's focus trap did this for free, and a docked panel has none: the
+    // focused row a revoke removes, or a dialog opened from the panel with no
+    // trigger of its own (Edit name and graduation year), would otherwise
+    // leave focus nowhere, and Escape, which the panel hears only from
+    // inside, would stop going back. Focus the member moved elsewhere (a
+    // click or Tab into chat) is theirs, and stays where they put it.
+    let ours = true;
+    const overlay = '[role="dialog"], [role="alertdialog"], [role="menu"]';
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Into an overlay opened from the panel, it is still the panel's turn.
+      ours = box.contains(target) || (ours && !!target.closest(overlay));
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (box.contains(target)) ours = true;
+      else if (!target.closest(overlay)) ours = false;
+    };
+    const recover = () => {
+      if (!ours) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    const observer = new MutationObserver(recover);
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("pointerdown", onPointerDown, true);
     return () => {
+      observer.disconnect();
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("pointerdown", onPointerDown, true);
       for (const child of covered) child.inert = false;
+      // Closed while the member was working elsewhere (an upload finishing
+      // while they type in chat): focus is theirs, so leave it there.
+      if (!ours) return;
+      const event = new Event("focus.closeAutoFocus", { cancelable: true });
+      closeFocus.current?.(event);
+      if (event.defaultPrevented) return;
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
     };
-  }, []);
+  }, [descriptionId]);
 
   return (
     <section
@@ -181,6 +305,18 @@ function DockedPanel({
 const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
 
 /**
+ * A docked panel's body and footer keep to the panel's width, centred, on a
+ * page wider than it (chat closed, the tool column the whole window): a
+ * profile or a form stretched to 1200px reads as a table, not a record. The
+ * inset grows rather than a `max-w` box, so the body's scrollbar stays at the
+ * column's edge. Beside chat the column is narrower than this and it is the
+ * plain 20px inset.
+ */
+// 576px is `PANEL_WIDTH_CLASS`'s width. Tailwind needs each as a literal, so
+// a change to one is a change to both.
+const DOCKED_INSET_CLASS = "px-[max(1.25rem,calc((100%_-_576px)/2_+_1.25rem))]";
+
+/**
  * Marks content that answers Escape itself, such as a task card in edit
  * (#4512): Escape pressed inside it is its own, so the panel stays open.
  * Radix hears Escape on the document before any React handler, so the
@@ -196,7 +332,11 @@ export const PanelContent = React.forwardRef<
   const dock = React.useContext(PanelDockContext);
   if (dock) {
     return (
-      <DockedPanel dock={dock} className={className}>
+      <DockedPanel
+        dock={dock}
+        className={className}
+        onCloseAutoFocus={props.onCloseAutoFocus}
+      >
         {props.children}
       </DockedPanel>
     );
@@ -244,7 +384,12 @@ export function PanelHeader({
   actions,
   className,
 }: {
-  children: React.ReactNode;
+  /**
+   * The title. Leave it out when the body heads the record itself with
+   * `PanelTitle` (the member panel's name under the photo): the row then
+   * carries only the way back or the close, and `actions`.
+   */
+  children?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
 }) {
@@ -262,15 +407,19 @@ export function PanelHeader({
         >
           <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
         </IconButton>
-        <h2
-          id={dock.titleId}
-          className={cn(
-            "min-w-0 flex-1 truncate text-body font-semibold",
-            className,
-          )}
-        >
-          {children}
-        </h2>
+        {children ? (
+          <h2
+            id={dock.titleId}
+            className={cn(
+              "min-w-0 flex-1 truncate text-body font-semibold",
+              className,
+            )}
+          >
+            {children}
+          </h2>
+        ) : (
+          <div className="flex-1" />
+        )}
         {actions ? (
           <div className="flex shrink-0 items-center">{actions}</div>
         ) : null}
@@ -284,9 +433,13 @@ export function PanelHeader({
         className,
       )}
     >
-      <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
-        {children}
-      </SheetTitle>
+      {children ? (
+        <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
+          {children}
+        </SheetTitle>
+      ) : (
+        <div className="flex-1" />
+      )}
       {actions ? (
         <div className="flex h-[26px] shrink-0 items-center self-start">
           {actions}
@@ -294,6 +447,57 @@ export function PanelHeader({
       ) : null}
     </div>
   );
+}
+
+/**
+ * A title drawn in the body rather than the header row (the member panel's
+ * name under the photo). It names the panel either way: the sheet's dialog
+ * title, or the heading a docked panel's region is labelled by. Use it only
+ * with a `PanelHeader` that has no title of its own.
+ */
+export function PanelTitle({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const dock = React.useContext(PanelDockContext);
+  if (dock) {
+    return (
+      <h2 id={dock.titleId} className={className}>
+        {children}
+      </h2>
+    );
+  }
+  return <SheetTitle className={className}>{children}</SheetTitle>;
+}
+
+/**
+ * A line under the title that says what the panel is for. As a sheet it is
+ * the dialog's description; docked there is no dialog, so it is a plain
+ * paragraph in the same style, which the docked panel names as its own
+ * description.
+ */
+export function PanelDescription({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const dock = React.useContext(PanelDockContext);
+  if (dock) {
+    return (
+      <p
+        id={dock.descriptionId}
+        className={cn("text-sm text-muted-foreground", className)}
+      >
+        {children}
+      </p>
+    );
+  }
+  return <SheetDescription className={className}>{children}</SheetDescription>;
 }
 
 /**
@@ -309,10 +513,12 @@ export function PanelBody<T extends "div" | "form" = "div">({
   ...props
 }: { as?: T } & React.ComponentPropsWithoutRef<T>) {
   const Component = (as ?? "div") as React.ElementType;
+  const docked = React.useContext(PanelDockContext) !== null;
   return (
     <Component
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-1",
+        docked && DOCKED_INSET_CLASS,
         className,
       )}
       {...props}
@@ -332,10 +538,12 @@ export function PanelFooter({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<"div">) {
+  const docked = React.useContext(PanelDockContext) !== null;
   return (
     <div
       className={cn(
         "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-4",
+        docked && DOCKED_INSET_CLASS,
         className,
       )}
       {...props}

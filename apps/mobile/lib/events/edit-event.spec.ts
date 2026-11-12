@@ -1,13 +1,11 @@
-import { editRepeatDraft, pickRepeatPreset } from "@repo/validation";
+import {
+  editRepeatDraft,
+  isEmptyEventPatch,
+  pickRepeatPreset,
+} from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
   draftFromEvent,
-  isEmptyPatch,
-  isInSeries,
-  leavesAfterSave,
-  saveRequestFor,
-  saveScopeFor,
-  seriesRuleOf,
   validateEventEdit,
   type EventEditTarget,
 } from "./edit-event";
@@ -70,7 +68,7 @@ function patchOf(
 
 describe("validateEventEdit", () => {
   it("sends nothing for an untouched form", () => {
-    expect(isEmptyPatch(patchOf(single, () => {}))).toBe(true);
+    expect(isEmptyEventPatch(patchOf(single, () => {}))).toBe(true);
   });
 
   it("sends the check-in lead only when it changed", () => {
@@ -141,7 +139,7 @@ describe("validateEventEdit", () => {
       ...single,
       event: { ...EVENT, name: "Chapter ", location: "Sanctuary " },
     };
-    expect(isEmptyPatch(patchOf(target, () => {}))).toBe(true);
+    expect(isEmptyEventPatch(patchOf(target, () => {}))).toBe(true);
   });
 
   it("clears a description emptied out", () => {
@@ -237,145 +235,9 @@ describe("validateEventEdit", () => {
       seriesRule: rule,
     };
     expect(
-      isEmptyPatch(
+      isEmptyEventPatch(
         patchOf(head, (d) => (d.repeat = editRepeatDraft(d.repeat, {}))),
       ),
     ).toBe(true);
-  });
-});
-
-describe("saveScopeFor", () => {
-  it("asks for an event in a series", () => {
-    expect(saveScopeFor(occurrence, { name: "x" }, NOW)).toBe("ask");
-    const head = {
-      ...single,
-      event: { ...EVENT, recurrence_rule: "WEEKLY" },
-      seriesRule: "WEEKLY" as const,
-    };
-    expect(saveScopeFor(head, { name: "x" }, NOW)).toBe("ask");
-  });
-
-  it("doesn't ask for a one-time event", () => {
-    expect(saveScopeFor(single, { name: "x" }, NOW)).toBe("instance");
-  });
-
-  it("doesn't offer All upcoming for an event already under way", () => {
-    // The server never edits a started event with the series, so the choice
-    // would skip the event on screen.
-    const during = new Date("2026-11-10T00:00:00Z");
-    expect(saveScopeFor(occurrence, { name: "x" }, during)).toBe("instance");
-  });
-
-  it("doesn't offer All upcoming when the series parent couldn't be read", () => {
-    const orphan = { ...occurrence, parent: null };
-    expect(saveScopeFor(orphan, { name: "x" }, NOW)).toBe("instance");
-  });
-
-  it("treats a Repeat change as a series change", () => {
-    expect(saveScopeFor(single, { recurrence_rule: "WEEKLY" }, NOW)).toBe(
-      "series",
-    );
-    expect(saveScopeFor(occurrence, { recurrence_rule: null }, NOW)).toBe(
-      "series",
-    );
-  });
-});
-
-describe("saveRequestFor", () => {
-  it("sends this-event edits to the event", () => {
-    expect(saveRequestFor(occurrence, { name: "x" }, "instance")).toEqual({
-      id: "evt-1",
-      scope: "instance",
-      body: { name: "x" },
-    });
-  });
-
-  it("moves the whole series by the same shift, through the parent", () => {
-    // 6:45 PM → 7:00 PM on this occurrence, and 15 minutes longer.
-    const request = saveRequestFor(
-      occurrence,
-      {
-        name: "Chapter",
-        start_time: "2026-11-10T00:00:00.000Z",
-        end_time: "2026-11-10T01:45:00.000Z",
-      },
-      "series",
-    );
-    expect(request).toEqual({
-      id: "evt-parent",
-      scope: "series",
-      body: {
-        name: "Chapter",
-        start_time: "2026-09-07T23:00:00.000Z",
-        end_time: "2026-09-08T00:45:00.000Z",
-      },
-    });
-  });
-
-  it("sends a series rename to the parent without times", () => {
-    expect(saveRequestFor(occurrence, { name: "x" }, "series")).toEqual({
-      id: "evt-parent",
-      scope: "series",
-      body: { name: "x" },
-    });
-  });
-
-  it("falls back to the occurrence when its parent can't be read", () => {
-    const orphan = { ...occurrence, parent: null };
-    expect(saveRequestFor(orphan, { name: "x" }, "series").id).toBe("evt-1");
-  });
-});
-
-describe("leavesAfterSave", () => {
-  it("stays for a this-event edit", () => {
-    const request = saveRequestFor(occurrence, { name: "x" }, "instance");
-    expect(leavesAfterSave(request, occurrence, "evt-1")).toBe(false);
-  });
-
-  it("stays for a series rename, patched in place", () => {
-    const request = saveRequestFor(occurrence, { name: "x" }, "series");
-    expect(leavesAfterSave(request, occurrence, "evt-parent")).toBe(false);
-  });
-
-  it("leaves when a series move rebuilds the occurrence on screen", () => {
-    const request = saveRequestFor(
-      occurrence,
-      { start_time: "2026-11-10T00:00:00.000Z" },
-      "series",
-    );
-    expect(leavesAfterSave(request, occurrence, "evt-parent")).toBe(true);
-  });
-
-  it("leaves when a started series moves onto its next event", () => {
-    const head = { ...single, seriesRule: "WEEKLY" as const };
-    const request = saveRequestFor(head, { name: "x" }, "series");
-    expect(leavesAfterSave(request, head, "evt-next")).toBe(true);
-    expect(leavesAfterSave(request, head, "evt-1")).toBe(false);
-  });
-});
-
-describe("seriesRuleOf", () => {
-  it("reads a parent's own rule and an occurrence's parent's", () => {
-    expect(seriesRuleOf({ ...EVENT, recurrence_rule: "MONTHLY" }, null)).toBe(
-      "MONTHLY",
-    );
-    expect(
-      seriesRuleOf(occurrence.event, { recurrence_rule: "BIWEEKLY" }),
-    ).toBe("BIWEEKLY");
-    expect(seriesRuleOf(occurrence.event, null)).toBeNull();
-  });
-});
-
-describe("isInSeries", () => {
-  it("counts a head carrying a structured rule as a series", () => {
-    const structured = {
-      ...EVENT,
-      recurrence_rule:
-        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=8;TZID=America/New_York",
-    };
-    expect(isInSeries(structured)).toBe(true);
-    // The Repeat control reads it (#4488).
-    expect(seriesRuleOf(structured, null)).toBe(structured.recurrence_rule);
-    expect(isInSeries({ ...EVENT, recurrence_rule: null })).toBe(false);
   });
 });

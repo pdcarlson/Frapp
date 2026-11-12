@@ -528,6 +528,18 @@ describe('RbacService', () => {
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a role named so it reads as @here', async () => {
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      await expect(
+        service.create('ch-1', ACTOR, { name: 'Here', permissions: [] }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'role.everyone_name',
+          message: '"Here" is what @here reads as. Pick another name.',
+        }),
+      });
+    });
+
     it('keeps its name and tier, and leaves the rest editable', async () => {
       mockRoleRepo.findById.mockResolvedValue(everyone);
       await expect(
@@ -2118,6 +2130,29 @@ describe('RbacService', () => {
       const [entry] = await service.getChapterMemberAccess('ch-1');
 
       expect(entry?.top_role).toEqual({ id: 'r-a', name: 'Alpha' });
+    });
+
+    it('marks the Everyone role, so chat can file its holders as Members (#4191)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-everyone',
+          chapter_id: 'ch-1',
+          name: 'Everyone',
+          system_key: 'MEMBER',
+          display_order: 5,
+        }),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['r-everyone'] }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({
+        id: 'r-everyone',
+        name: 'Everyone',
+        everyone: true,
+      });
     });
   });
 });

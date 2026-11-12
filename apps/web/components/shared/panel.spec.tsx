@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Sheet } from "@/components/ui/sheet";
 import {
   Panel,
@@ -8,6 +8,7 @@ import {
   PanelContent,
   PanelFooter,
   PanelHeader,
+  PanelTitle,
   OWNS_ESCAPE,
 } from "./panel";
 
@@ -140,6 +141,168 @@ describe("Panel docked", () => {
       </Panel>,
     );
     expect(screen.getByRole("dialog")).toHaveAccessibleName("Create event");
+  });
+});
+
+/**
+ * A record whose name heads its body (the member profile) draws a header with
+ * no title: the back arrow and its actions only. `PanelTitle` then names the
+ * surface from the body, docked or as a sheet.
+ */
+function HeadlessRecord({
+  docked,
+  removable,
+}: {
+  docked: boolean;
+  removable?: boolean;
+}) {
+  const [showRow, setShowRow] = useState(true);
+  return (
+    <div data-tool-column="">
+      <Panel
+        open
+        onOpenChange={() => undefined}
+        docked={docked}
+        backLabel="Back to directory"
+      >
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader actions={<button type="button">More</button>} />
+          <PanelBody>
+            <PanelTitle>Trevor Nakamura</PanelTitle>
+            {removable && showRow ? (
+              <button type="button" onClick={() => setShowRow(false)}>
+                Revoke
+              </button>
+            ) : null}
+          </PanelBody>
+          <PanelFooter>
+            <button type="button">Message</button>
+          </PanelFooter>
+        </PanelContent>
+      </Panel>
+    </div>
+  );
+}
+
+/** A page whose button opens a docked panel, beside a chat field. */
+function OpenerHarness({
+  open,
+  onOpen,
+  onClose,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div>
+      <input aria-label="Message" />
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <button type="button" onClick={onOpen}>
+            New minutes
+          </button>
+        </div>
+        <Panel
+          open={open}
+          onOpenChange={(next) => (next ? onOpen() : onClose())}
+          docked
+          backLabel="Back to meetings"
+        >
+          <PanelContent>
+            <PanelHeader>New minutes</PanelHeader>
+          </PanelContent>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+describe("Panel docked focus on close", () => {
+  it("hands focus back to the button pressed to open it, though a click left it unfocused (Safari)", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    // fireEvent.click, unlike a real Chrome click, doesn't focus the button.
+    fireEvent.pointerDown(opener);
+    fireEvent.click(opener);
+    expect(opener).not.toHaveFocus();
+    rerender(<OpenerHarness open onOpen={() => undefined} onClose={onClose} />);
+    expect(screen.getByRole("region", { name: "New minutes" })).toHaveFocus();
+
+    rerender(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    expect(opener).toHaveFocus();
+  });
+
+  it("leaves focus in chat when the panel closes while the member is typing there", () => {
+    const noop = () => undefined;
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={noop} onClose={noop} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    fireEvent.pointerDown(opener);
+    opener.focus();
+    rerender(<OpenerHarness open onOpen={noop} onClose={noop} />);
+
+    const chat = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.pointerDown(chat);
+    chat.focus();
+    rerender(<OpenerHarness open={false} onOpen={noop} onClose={noop} />);
+    expect(chat).toHaveFocus();
+  });
+});
+
+describe("Panel with the title in its body", () => {
+  it("names the docked region from PanelTitle and draws no header title", () => {
+    render(<HeadlessRecord docked />);
+    const region = screen.getByRole("region", { name: "Trevor Nakamura" });
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "Back to directory" }),
+    ).toBeInTheDocument();
+    expect(region).toContainElement(
+      screen.getByRole("button", { name: "More" }),
+    );
+  });
+
+  it("names the sheet from PanelTitle when there is no tool column", () => {
+    render(
+      <Panel open onOpenChange={() => undefined} docked>
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader />
+          <PanelBody>
+            <PanelTitle>Trevor Nakamura</PanelTitle>
+          </PanelBody>
+        </PanelContent>
+      </Panel>,
+    );
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Trevor Nakamura");
+  });
+
+  it("centres a docked body and footer at the panel width", () => {
+    render(<HeadlessRecord docked />);
+    const body = screen.getByText("Trevor Nakamura").parentElement!;
+    expect(body.className).toContain(
+      "px-[max(1.25rem,calc((100%_-_576px)/2_+_1.25rem))]",
+    );
+    const footer = screen.getByRole("button", {
+      name: "Message",
+    }).parentElement!;
+    expect(footer.className).toContain("calc((100%_-_576px)/2_+_1.25rem)");
+  });
+
+  it("keeps focus in the docked panel when the focused control goes away", async () => {
+    render(<HeadlessRecord docked removable />);
+    const region = screen.getByRole("region", { name: "Trevor Nakamura" });
+    const revoke = screen.getByRole("button", { name: "Revoke" });
+    fireEvent.pointerDown(revoke);
+    revoke.focus();
+    fireEvent.click(revoke);
+    await waitFor(() => expect(region).toHaveFocus());
   });
 });
 

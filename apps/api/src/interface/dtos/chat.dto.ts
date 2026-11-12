@@ -314,7 +314,7 @@ export class ChannelMemberDto {
     type: String,
     nullable: true,
     description:
-      "That role's name, the group's heading, or null when they hold no role.",
+      "The group's heading: that role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role.",
   })
   role_name: string | null;
 }

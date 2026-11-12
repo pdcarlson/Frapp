@@ -22,7 +22,10 @@ import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
+import { useActivity } from "@repo/hooks";
 import { useAiSurfaces } from "@/lib/ai/availability";
+import { activityCountChip } from "@/lib/activity/count-chip";
+import { useActivityRereadOnTab } from "@/lib/activity/use-activity-reread";
 import { TabLabel } from "@/components/tab-glyphs";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -36,12 +39,13 @@ import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The four tabs, in the locked order (`spec/ui/mobile/navigation.md` § Tab
- * bar). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`); every
- * other screen is pushed on the stack above it and covers the bar
+ * The four tabs, in order (`spec/ui/mobile/navigation.md` § Tab bar): Chat,
+ * Activity, Calendar (the `events` route) and More, since 2026-11-12
+ * (#4610). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`);
+ * every other screen is pushed on the stack above it and covers the bar
  * (`spec/ui/mobile/navigation.md` § Going back).
  */
-export const TAB_ROUTES = ["index", "events", "tasks", "more"] as const;
+export const TAB_ROUTES = ["index", "activity", "events", "more"] as const;
 
 /** The pill's radius: half its height, so its ends are round. */
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
@@ -66,6 +70,12 @@ export function GlassTabBar({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const { width } = useWindowDimensions();
+  // Activity's tab carries the count of things waiting on the member
+  // (`needs_you_count`), which More's Activity row carried before the screen
+  // became a tab (#4610). It is read again on every change of tab, on every
+  // return to the tabs from a pushed screen, on every visit to Activity, and
+  // on every return to the app.
+  const needsYou = activityCountChip(useActivity().data);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
   // Two of the first-run tour's stops: the + and the More tab.
@@ -76,6 +86,7 @@ export function GlassTabBar({
   });
 
   const focusedRoute = state.routes[state.index];
+  useActivityRereadOnTab(focusedRoute.key, focusedRoute.name === "activity");
 
   // Open on the tab it was opened from: moving to another tab closes it. The
   // close is kept, so coming back to the tab doesn't open it again (state
@@ -248,7 +259,11 @@ export function GlassTabBar({
                 ref={name === "more" ? moreAnchor : undefined}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
-                accessibilityLabel={label}
+                accessibilityLabel={
+                  name === "activity" && needsYou
+                    ? `${label}, ${needsYou.spoken}`
+                    : label
+                }
                 testID={`tab-${route.name}`}
                 onPress={() => {
                   const event = navigation.emit({
@@ -273,6 +288,28 @@ export function GlassTabBar({
                         (iconography.md §1 rule 2). */}
                 {focused ? <View style={styles.activeCapsule} /> : null}
                 {options.tabBarIcon?.({ focused, color, size: 24 })}
+                {name === "activity" && needsYou ? (
+                  // A count is not direct address, so it is house gold, never
+                  // the accent or mention red (components.md § App bar chips),
+                  // as the Notifications count in Chat home's menu is.
+                  <View
+                    testID="tab-activity-badge"
+                    pointerEvents="none"
+                    style={[
+                      styles.badge,
+                      { backgroundColor: tokens.color.gold.house },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: tokens.color.gold.onHouse },
+                      ]}
+                    >
+                      {needsYou.label}
+                    </Text>
+                  </View>
+                ) : null}
                 <TabLabel focused={focused} color={color}>
                   {label}
                 </TabLabel>
@@ -373,6 +410,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 6,
+  },
+  badge: {
+    position: "absolute",
+    top: 4,
+    left: "50%",
+    marginLeft: 4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    ...typeRole({ size: 11, weight: 700 }),
+    lineHeight: 14,
   },
   tab: {
     flex: 1,

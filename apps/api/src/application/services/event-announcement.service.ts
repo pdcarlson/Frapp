@@ -35,10 +35,10 @@ function sameInstant(a: string, b: string): boolean {
 
 /**
  * Which of when and where `patch` actually moves on `before`, or null when it
- * moves neither. Compares values, not key presence: both clients round-trip
- * the whole event, so a rename arrives carrying the same times and location,
- * and announcing that as "rescheduled" would push the whole chapter for a typo
- * fix. Instants are compared as instants (`+00:00` vs `Z` is no change), and a
+ * moves neither. Compares values, not key presence: a client that
+ * round-trips the whole event (web did until #3667; an older build still may)
+ * sends a rename carrying the same times and location, and announcing that as
+ * "rescheduled" would push the whole chapter for a typo fix. Instants are compared as instants (`+00:00` vs `Z` is no change), and a
  * new recurrence pattern counts as a change of time.
  */
 export function eventChangeOf(

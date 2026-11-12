@@ -21,8 +21,9 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
+import { Slot } from "@radix-ui/react-slot";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelHeader,
@@ -210,9 +211,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * Reopening starts a fresh invite, so the chapter default applies again
    * rather than the role picked during a previous session.
    *
-   * Every open and close path routes through here. Radix only fires
-   * `onOpenChange` for its own paths (Escape, the overlay, X, the trigger), so
-   * a `setOpen` wired directly to a button would skip the reset.
+   * Every open and close path routes through here: the trigger, and the
+   * panel's own ways out (the back arrow, Escape; the sheet's X and overlay
+   * where it falls back to one), so none of them skips the reset.
    *
    * Opening re-reads invites and roles: the list is mounted with the page and
    * cached for a minute, so an invite another officer revoked, or someone
@@ -368,78 +369,90 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     ) : null;
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+    <>
+      <Slot onClick={() => handleOpenChange(true)}>{trigger}</Slot>
       {/*
         A panel, not a dialog (`components.md` § Surface size): the composer
         and the list of everyone invited grow with the chapter. No footer:
-        Send sits with the addresses it sends to.
+        Send sits with the addresses it sends to. Docked: it opens in place of
+        the Directory, beside chat, rather than over everything (Paul,
+        2026-11-12).
 
         `aria-describedby={undefined}`: with no `SheetDescription` rendered,
         Radix warns on every open for a `Content` pointing at a description id
         nothing renders.
       */}
-      <PanelContent aria-describedby={undefined}>
-        <PanelHeader>Invite members</PanelHeader>
-        <PanelBody className="gap-6">
-          {hasLiveDataError ? (
-            <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {/* The only explanation for the paused controls below, so it
+      <Panel
+        open={open}
+        onOpenChange={handleOpenChange}
+        docked
+        backLabel="Back to directory"
+      >
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader>Invite members</PanelHeader>
+          <PanelBody className="gap-6">
+            {hasLiveDataError ? (
+              <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {/* The only explanation for the paused controls below, so it
                   stays, with the retry beside the reason. */}
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-                <span>
-                  Invite data could not load, so inviting and revoking are
-                  paused.
-                </span>
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-caption font-semibold text-warning"
-                  onClick={refetchLiveData}
-                >
-                  Try again
-                </Button>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    Invite data could not load, so inviting and revoking are
+                    paused.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-caption font-semibold text-warning"
+                    onClick={refetchLiveData}
+                  >
+                    Try again
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          <InviteComposer
-            role={roleName}
-            roleControl={roleControl}
-            disabled={hasLiveDataError || roleOptions.length === 0}
-            gate={gate}
-          />
-          <SubscriptionNotice gate={gate} feature="sending invites" />
+            <InviteComposer
+              role={roleName}
+              roleControl={roleControl}
+              disabled={hasLiveDataError || roleOptions.length === 0}
+              gate={gate}
+            />
+            <SubscriptionNotice gate={gate} feature="sending invites" />
 
-          <section aria-labelledby="invite-list-label" className="space-y-2">
-            <SectionLabel
-              id="invite-list-label"
-              count={invitesQuery.data ? rows.length : null}
-            >
-              Invited
-            </SectionLabel>
-            <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
-            {invitesQuery.data && rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nobody yet. People you invite show up here until they join.
-              </p>
-            ) : (
-              <ul className="-mx-2">
-                {rows.map((invite) => (
-                  <InviteRow
-                    key={invite.id}
-                    invite={invite}
-                    entries={entriesFor(invite)}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-        </PanelBody>
-      </PanelContent>
-    </Sheet>
+            <section aria-labelledby="invite-list-label" className="space-y-2">
+              <SectionLabel
+                id="invite-list-label"
+                count={invitesQuery.data ? rows.length : null}
+              >
+                Invited
+              </SectionLabel>
+              <SubscriptionNotice
+                gate={revokeGate}
+                feature="revoking invites"
+              />
+              {invitesQuery.data && rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nobody yet. People you invite show up here until they join.
+                </p>
+              ) : (
+                <ul className="-mx-2">
+                  {rows.map((invite) => (
+                    <InviteRow
+                      key={invite.id}
+                      invite={invite}
+                      entries={entriesFor(invite)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </PanelBody>
+        </PanelContent>
+      </Panel>
+    </>
   );
 }
 

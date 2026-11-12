@@ -70,7 +70,7 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.subscription.invite_blocked",
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
-  // An officer named a role so it reads as @everyone (#4191).
+  // An officer named a role so it reads as @everyone (#4191) or @here.
   "role.everyone_name",
   "chat.since_not_found",
   // An AI route while `AI_ENABLED` is off on the server (#4310, and
