@@ -4292,3 +4292,18 @@ alter table public.study_geofences
   drop column if exists circle;
 ```
 
+## Rollback calendar subscription links (20261112287400)
+
+* **Migration**: `20261112287400_calendar_feeds.sql`
+
+One new table, `calendar_feeds`, its function `calendar_feeds_drop_for_deleted_user` and the trigger `users_drop_calendar_feeds` on `users`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/calendar-feed` routes, so every member's subscribed calendar fails its next fetch with a 404 and keeps the last events it fetched, frozen, until the API ships again (calendar apps keep their copy when a fetch fails). Rows written before the revert stay, so the same links work again once the API is back. The trigger keeps deleting a deleted account's links, which is harmless.
+
+**Keep the table unless it is itself the problem.** Dropping it ends every member's subscription for good: their links answer 404 even once the API ships again, and each member has to subscribe anew. To remove it, after the code revert has shipped, in a later forward migration:
+
+```sql
+drop trigger if exists users_drop_calendar_feeds on public.users;
+drop function if exists public.calendar_feeds_drop_for_deleted_user();
+drop table if exists public.calendar_feeds;
+```

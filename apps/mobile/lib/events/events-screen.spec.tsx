@@ -73,6 +73,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 // Its own spec covers it; here it would need the AI reads.
+// The Subscribe sheet (#3322) has its own spec; here only its door matters.
+vi.mock("@/components/events/calendar-subscribe-sheet", () => ({
+  CalendarSubscribeSheet: () => null,
+}));
 vi.mock("@/components/events/suggested-events-entry", () => ({
   SuggestedEventsEntry: () => null,
 }));

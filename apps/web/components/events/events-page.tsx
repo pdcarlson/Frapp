@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
+import { CalendarSubscribeMenu } from "./calendar-subscribe-menu";
 import { ChevronDown, ListFilter, Plus } from "lucide-react";
 import {
   RolesGlyph,
@@ -860,12 +861,14 @@ export function EventsPage() {
       {/*
         One toolbar row (board `1f` pin 2): the List/Calendar toggle leads, as
         the page's primary control, then search and the one Filter button
-        beside it; New event holds the trailing edge, as every route's actions
-        do. The route's title is in the top bar (`top-bar.tsx`).
+        beside it, then Subscribe (#3322), which goes with them because it
+        acts on the calendar as a whole; New event holds the trailing edge, as
+        every route's actions do. The route's title is in the top bar
+        (`top-bar.tsx`).
 
         `PageActions` renders its children as direct flex items, so a phone can
         reorder them: there the first line keeps the view toggle and New event,
-        and search and Filter drop to their own row under it
+        and search, Filter and Subscribe drop to their own row under it
         (`order-last w-full`).
       */}
       <PageActions className="justify-between gap-x-3 gap-y-2">
@@ -950,6 +953,7 @@ export function EventsPage() {
               </div>
             </PopoverContent>
           </Popover>
+          <CalendarSubscribeMenu />
         </div>
         <Can allOf={EVENT_CREATE_PERMISSIONS}>
           <Button

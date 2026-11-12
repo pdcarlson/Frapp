@@ -4530,6 +4530,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/calendar-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The caller's calendar subscription link, made on first ask. Asking again returns the same link. */
+        post: operations["CalendarFeedController_ensure_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace the caller's calendar link. Calendars subscribed to the old link show nothing from their next check. */
+        post: operations["CalendarFeedController_reset_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/feed.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The iCalendar feed behind a calendar subscription link. Called by calendar apps, not by Frapp clients. */
+        get: operations["CalendarFeedFetchController_fetch_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -8301,6 +8352,18 @@ export interface components {
              * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
              */
             expected_updated_at: string;
+        };
+        CalendarFeedLinkDto: {
+            /**
+             * @description The private link, as https. Google Calendar and Outlook subscribe to it by URL; anyone holding it can read the calendar it serves, so it is shown only to its member.
+             * @example https://api.frapp.live/v1/calendar-feed/feed.ics?token=3q2-7wLx9Vb0mH1e8nYkC4oPq5rS6tU7vW8xY9zA0bC
+             */
+            url: string;
+            /**
+             * @description The same link as webcal://, which Apple Calendar (and most desktop calendar apps) open as a new subscription.
+             * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=3q2-7wLx9Vb0mH1e8nYkC4oPq5rS6tU7vW8xY9zA0bC
+             */
+            webcal_url: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -18813,6 +18876,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDraftDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_ensure_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedFetchController_fetch_v1: {
+        parameters: {
+            query: {
+                token: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No link has this token. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
