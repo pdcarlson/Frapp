@@ -1024,4 +1024,143 @@ describe("ChannelList as the Direct messages list (#3774)", () => {
       ),
     ).toHaveLength(2);
   });
+
+  it("runs newest first with each conversation's last line, pinned ones still on top", () => {
+    const third: ChatChannel = {
+      id: "c-third",
+      name: "Alpha team",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, OTHER, "x"],
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group, third]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={
+          new Map([
+            ["c-dm", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        previews={
+          new Map([
+            ["c-dm", "thanks, see you there"],
+            ["c-group", "Cole: I do, sending it tonight"],
+            ["c-third", "No messages yet"],
+          ])
+        }
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(["c-third"]),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: false },
+          },
+        })}
+      />,
+    );
+    const rows = Array.from(document.querySelectorAll("li")).map(
+      (li) => li.textContent ?? "",
+    );
+    // Pinned first, then the newest conversation, then the older one.
+    expect(rows[0]).toContain("Alpha team");
+    expect(rows[1]).toContain("Rush planning");
+    expect(rows[1]).toContain("Cole: I do, sending it tonight");
+    expect(rows[2]).toContain("thanks, see you there");
+    // Two lines: the row is 48px, where a channel row is 32px.
+    expect(screen.getByRole("button", { name: /Rush planning/ })).toHaveClass(
+      "h-12",
+    );
+  });
+
+  it("keeps a blank line, and A–Z order, until the latest messages answer", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[group, dm]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: /Rush planning/ });
+    expect(button).toHaveClass("h-12");
+    expect(button.querySelector("[data-preview]")?.textContent).toBe("\u00a0");
+  });
+
+  it("sorts the pinned DMs newest first too", () => {
+    const third: ChatChannel = {
+      id: "c-third",
+      name: "Alpha team",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, OTHER, "x"],
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group, third]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={
+          new Map([
+            ["c-third", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(["c-third", "c-group"]),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: false },
+          },
+        })}
+      />,
+    );
+    const rows = Array.from(document.querySelectorAll("li")).map(
+      (li) => li.textContent ?? "",
+    );
+    // A–Z would put Alpha team first; newest first puts Rush planning there.
+    expect(rows[0]).toContain("Rush planning");
+    expect(rows[1]).toContain("Alpha team");
+  });
+
+  it("puts an open hidden DM first, and keeps Hidden conversations rows one line", () => {
+    const hiddenOpen: ChatChannel = { ...group, hidden: true };
+    const hiddenOther: ChatChannel = {
+      id: "c-hidden",
+      name: "dm-x-y",
+      type: "DM",
+      member_ids: [VIEWER, "x"],
+      hidden: true,
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, hiddenOpen, hiddenOther]}
+        activeChannelId="c-group"
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={new Map([["c-dm", "2026-11-12T01:00:00.000Z"]])}
+        previews={new Map([["c-dm", "thanks, see you there"]])}
+        sidebar={sidebarControls()}
+      />,
+    );
+    const main = screen.getByRole("list", { name: "Direct messages" });
+    const rows = Array.from(main.querySelectorAll("li"));
+    // The open hidden DM has no latest row (the server keeps none) and leads.
+    expect(rows[0]?.textContent).toContain("Rush planning");
+    fireEvent.click(screen.getByRole("button", { name: /Hidden conversations/ }));
+    const hidden = screen.getByRole("list", { name: "Hidden conversations" });
+    const hiddenButton = hidden.querySelector("button")!;
+    expect(hiddenButton).toHaveClass("h-8");
+    expect(hiddenButton.querySelector("[data-preview]")).toBeNull();
+  });
 });

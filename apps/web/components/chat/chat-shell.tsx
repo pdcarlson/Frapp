@@ -36,6 +36,7 @@ import {
   useChannelNotificationPreferences,
   claimViewedChannel,
   useChannelUnreadCounts,
+  useChannelLatestMessages,
   useChannels,
   useChapterScope,
   useSetChannelNotificationLevel,
@@ -74,6 +75,10 @@ import {
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import {
+  channelPreviewLine,
+  NO_MESSAGES_PREVIEW,
+} from "@repo/chat-core/channel-preview";
 import { TypingLine } from "./typing-line";
 import {
   can,
@@ -84,7 +89,7 @@ import {
   type MentionChipTargets,
 } from "@repo/validation";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
@@ -1936,6 +1941,52 @@ export function ChatShell({
   // definition would disagree on exactly those cases
   // (`spec/behavior/chat/README.md` § Read Receipts).
   const unreadQuery = useChannelUnreadCounts();
+  /*
+    Direct messages read like the phone's Messages screen (#3774): newest
+    conversation first, each with its last line, worded by the rule both
+    clients share (`channelPreviewLine`; spec/behavior/chat/README.md
+    § Channel list previews). The channels rail draws neither, so the read
+    runs only while the panel shows direct messages.
+
+    The list waits for the read's first answer behind its skeleton, as the
+    phone's does, so the rows never re-sort under the pointer. After that the
+    last good answer stands: a background refetch that fails keeps its data,
+    and so the order and the lines. A hidden DM has no latest row (the server
+    leaves it out), so it gets no line rather than a false "No messages yet".
+  */
+  const latestQuery = useChannelLatestMessages({ enabled: directView });
+  const latestRows = latestQuery.data;
+  // Settled once it has data, has failed, or isn't fetching at all (paused
+  // offline, or never enabled for want of a chapter): only a first read in
+  // flight holds the list.
+  const latestSettled =
+    latestRows !== undefined ||
+    latestQuery.isError ||
+    latestQuery.fetchStatus !== "fetching";
+  const directLatest = useMemo(() => {
+    if (!directView || !latestRows) return undefined;
+    const byId = new Map(latestRows.map((row) => [row.channel_id, row]));
+    const at = new Map<string, string>();
+    const previews = new Map<string, string>();
+    for (const channel of railChannels) {
+      if (channel.hidden) continue;
+      const latest = byId.get(channel.id);
+      if (latest) at.set(channel.id, latest.created_at);
+      previews.set(
+        channel.id,
+        latest
+          ? channelPreviewLine(latest, {
+              isOneToOne: channel.type === "DM",
+              viewerId: userId,
+              nameOf: (author) => resolveAuthorName(author, nameFor),
+              fallbackLabel: (author) =>
+                resolveAuthorLabel(author, nameFor, null),
+            })
+          : NO_MESSAGES_PREVIEW,
+      );
+    }
+    return { at, previews };
+  }, [directView, latestRows, railChannels, userId, nameFor]);
   // A failed fetch must not read as "everything is read". `ChannelList` maps
   // an absent row to zero, so handing it an empty map on error would render
   // every row calm and unbadged — telling a member they have no @-mentions at
@@ -2673,10 +2724,31 @@ export function ChatShell({
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
         <h2 className="text-sm font-semibold text-foreground">{railTitle}</h2>
-        <ChannelFilters
-          filters={sidebarPreferences.filters}
-          onChange={sidebarControls.onSetFilters}
-        />
+        <div className="ml-auto flex items-center gap-1">
+          {directView && channelsPaneState === "ready" ? (
+            // New message (#3774), where the phone's Messages screen, iMessage
+            // and Instagram keep it. A DM starts from a member, so it opens
+            // the Directory, whose member sheet has Message.
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className={compactControlClassName}
+            >
+              <Link
+                href="/members"
+                aria-label="New message"
+                title="New message: pick someone in the Directory"
+              >
+                <SquarePen className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
+          <ChannelFilters
+            filters={sidebarPreferences.filters}
+            onChange={sidebarControls.onSetFilters}
+          />
+        </div>
       </header>
       {/*
         The gutter is on an inner wrapper, not the scroller: a scroller's own
@@ -2706,9 +2778,13 @@ export function ChatShell({
           {channelsPaneState === "ready" && !directView ? (
             <SetupChecklistSection />
           ) : null}
-          {channelsPaneState === "ready" ? (
+          {channelsPaneState === "ready" && directView && !latestSettled ? (
+            <ChannelListSkeleton />
+          ) : channelsPaneState === "ready" ? (
             <ChannelList
               kind={view}
+              latestAt={directLatest?.at}
+              previews={directLatest?.previews}
               viewerId={userId}
               memberNames={memberNames}
               avatarTintFor={avatarTintFor}
