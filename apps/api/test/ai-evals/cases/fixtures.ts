@@ -42,8 +42,8 @@ export const ALUMNUS: EvalCaller = {
 };
 
 /**
- * Seeded Member role: members:view, backwork:upload, service:log,
- * polls:create, and the six member recruitment keys (#4070).
+ * Seeded Member role: members:view, events:create (#3709), backwork:upload,
+ * service:log, polls:create, and the six member recruitment keys (#4070).
  */
 export const MEMBER: EvalCaller = {
   memberId: 'member-rank-and-file',
@@ -51,6 +51,7 @@ export const MEMBER: EvalCaller = {
   roleName: 'Member',
   permissions: [
     'members:view',
+    'events:create',
     'backwork:upload',
     'service:log',
     'polls:create',
@@ -81,7 +82,9 @@ export const DOC_UPLOADER: EvalCaller = {
 
 /**
  * Seeded Treasurer role: what its starting tier gives every role in it
- * (#4071, the Exec board's officer defaults included), then the Treasurer's own billing, points, reports and events grants.
+ * (#4071: the member defaults of #3709, editing and deleting any event, and the
+ * Exec board's officer defaults), then the Treasurer's own billing, points
+ * and reports grants.
  */
 export const TREASURER: EvalCaller = {
   memberId: 'member-treasurer',
@@ -89,6 +92,18 @@ export const TREASURER: EvalCaller = {
   roleName: 'Treasurer',
   permissions: [
     'members:view',
+    'events:create',
+    'backwork:upload',
+    'service:log',
+    'polls:create',
+    'rush:view',
+    'rush:add',
+    'rush:notes',
+    'rush:vote',
+    'rush:view_results',
+    'rush:bid',
+    'events:update',
+    'events:delete',
     'polls:view_all',
     'announcements:post',
     'channels:create',
@@ -103,8 +118,6 @@ export const TREASURER: EvalCaller = {
     'points:adjust',
     'points:view_all',
     'reports:export',
-    'events:create',
-    'events:update',
   ],
 };
 
@@ -122,6 +135,18 @@ export const PRESIDENT: EvalCaller = {
   roleName: 'President',
   permissions: [
     'members:view',
+    'events:create',
+    'backwork:upload',
+    'service:log',
+    'polls:create',
+    'rush:view',
+    'rush:add',
+    'rush:notes',
+    'rush:vote',
+    'rush:view_results',
+    'rush:bid',
+    'events:update',
+    'events:delete',
     'polls:view_all',
     'announcements:post',
     'channels:create',

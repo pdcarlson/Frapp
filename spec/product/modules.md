@@ -103,7 +103,7 @@
 
 ## Events & Attendance
 
-- Admins create events with name, description, location, start/end time, point value, mandatory flag, and optional recurrence rule.
+- Members create events with name, description, location, start/end time, and optional recurrence rule: every member holds `events:create` by default (#3709). Point value and the mandatory flag are for officers who hold `events:update`; anyone else's event is worth 0 points and required for nobody.
 - **Recurring events:** Weekly, biweekly, or monthly. Auto-generates individual event instances.
 - **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
@@ -256,7 +256,7 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | Line | Shown to holders of | Module | Done when |
 | --- | --- | --- | --- |
 | Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
-| Schedule the first event | `events:create` and `members:view` (the events controller requires both) | `events` | the chapter has an event |
+| Schedule the first event | `events:create`, `events:update` and `members:view` (the events controller requires the first and last; every member holds `events:create` since #3709, so `events:update` keeps the line with the officers who run the calendar) | `events` | the chapter has an event |
 | Add a study zone | `geofences:manage` | `geofences` | the chapter has an active study zone |
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
