@@ -1,23 +1,11 @@
 import { isProductionSupabaseUrl } from '@repo/validation';
+import { isAiEnabled } from '#domain/utils/ai-enabled';
 
 type Env = Record<string, unknown>;
 
-/**
- * The server switch for every AI feature (ADR-28, the AI build's rule that
- * everything ships off).
- *
- * On is exactly `AI_ENABLED=true`. Unset, empty or anything else is off, and
- * off means the API behaves as it did before any AI code existed: every AI
- * route answers 404 `ai.disabled` (`AiEnabledGuard`), the gateway makes no
- * call and asks no seam, and no AI entry point is offered to a client.
- *
- * It is the outermost of the gates, not the only one. With it on, a call
- * still needs the provider's credential, the chapter's switch and the
- * member's yes (`spec/behavior/ai.md` § Consent), and room under the caps.
- */
-export function isAiEnabled(env: Env = process.env): boolean {
-  return env.AI_ENABLED === 'true';
-}
+// The switch itself is domain code (`#domain/utils/ai-enabled`), so every
+// layer reads the same definition. Re-exported for this file's callers.
+export { isAiEnabled };
 
 /**
  * Which adapters serve the catalog's tasks.

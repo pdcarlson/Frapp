@@ -14,7 +14,7 @@ describe('AiEnabledGuard', () => {
   });
 
   it.each([undefined, 'false', ''])(
-    'answers 404 ai.disabled when AI_ENABLED is %p',
+    'answers 404 ai.not_available when AI_ENABLED is %p',
     (value) => {
       if (value === undefined) delete process.env.AI_ENABLED;
       else process.env.AI_ENABLED = value;
@@ -27,7 +27,7 @@ describe('AiEnabledGuard', () => {
       }
       expect(thrown).toBeInstanceOf(NotFoundException);
       expect((thrown as NotFoundException).getResponse()).toEqual({
-        code: 'ai.disabled',
+        code: 'ai.not_available',
         message: 'AI features are not available.',
       });
     },
