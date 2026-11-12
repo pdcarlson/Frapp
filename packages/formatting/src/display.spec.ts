@@ -8,6 +8,9 @@ import {
   formatDayTimeRange,
   formatDueLabel,
   formatDueOn,
+  formatEventWindow,
+  formatPoints,
+  formatPointsChip,
   formatRelativeDayTime,
   formatSentLabel,
   formatTimestampFull,
@@ -194,5 +197,84 @@ describe("a due time (#4003)", () => {
     expect(formatDueOn(FRI_5PM, NOW)).toBe("Due Nov 6 at 5 PM");
     expect(formatDueOn("2026-11-06", NOW)).toBe("Due Nov 6");
     expect(formatDueOn(undefined, NOW)).toBeNull();
+  });
+});
+
+describe("formatEventWindow (#4135)", () => {
+  const pt = (iso: string) => new Date(iso).toISOString();
+
+  it("says Tonight for an evening event today and the day period once", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-04T18:00:00-08:00"),
+        pt("2026-11-04T19:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Tonight · 6:00 – 7:00 PM");
+  });
+
+  it("says Today, not Tonight, for a morning event", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-04T10:00:00-08:00"),
+        pt("2026-11-04T11:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Today · 10:00 – 11:00 AM");
+  });
+
+  it("names tomorrow, the weekday within the week, and the date beyond", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-05T18:00:00-08:00"),
+        pt("2026-11-05T19:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Tomorrow · 6:00 – 7:00 PM");
+    expect(formatEventWindow(FRI_5PM, "", NOW)).toBe("Friday · 5:00 PM");
+    expect(
+      formatEventWindow(
+        pt("2026-11-20T18:00:00-08:00"),
+        pt("2026-11-20T19:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Fri, Nov 20 · 6:00 – 7:00 PM");
+    expect(
+      formatEventWindow(pt("2027-01-08T18:00:00-08:00"), "", NOW),
+    ).toBe("Fri, Jan 8, 2027 · 6:00 PM");
+  });
+
+  it("keeps both day periods when the event crosses noon", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-05T11:00:00-08:00"),
+        pt("2026-11-05T13:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Tomorrow · 11:00 AM – 1:00 PM");
+  });
+
+  it("names the end's day when it ends on another one", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-05T22:00:00-08:00"),
+        pt("2026-11-06T01:00:00-08:00"),
+        NOW,
+      ),
+    ).toBe("Tomorrow · 10:00 PM – Fri, Nov 6 · 1:00 AM");
+  });
+
+  it("leaves an unreadable start out", () => {
+    expect(formatEventWindow("not-a-date", "", NOW)).toBeNull();
+    expect(formatEventWindow(undefined, undefined, NOW)).toBeNull();
+  });
+});
+
+describe("points wording (#4135)", () => {
+  it("writes a count in words and a chip short", () => {
+    expect(formatPoints(1)).toBe("1 point");
+    expect(formatPoints(10)).toBe("10 points");
+    expect(formatPoints(0)).toBe("0 points");
+    expect(formatPointsChip(5)).toBe("+5 pts");
   });
 });

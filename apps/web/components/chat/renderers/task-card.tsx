@@ -26,7 +26,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
-import { formatDueOn } from "@repo/formatting";
+import {
+  formatDueLabel,
+  formatDueOn,
+  formatPointsChip,
+} from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -52,6 +56,16 @@ export const STATUS_BADGE: Record<
   COMPLETED: "default",
   OVERDUE: "destructive",
 };
+
+/**
+ * The due line. A countdown ("Due tomorrow", "Overdue by 2 days") only while
+ * the live task is still open, since that is when it is true; a finished
+ * task, or one this viewer can't read, gets the plain date. The rule the
+ * phone's task card follows (`dueLine` there), so both read the same (#4135).
+ */
+function dueLine(due: string, status: TaskStatus | null): string | null {
+  return status && status !== "COMPLETED" ? formatDueLabel(due) : formatDueOn(due);
+}
 
 /**
  * What a refused confirm says, wherever a card's Confirm runs: the task card
@@ -206,7 +220,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         </span>
         <span aria-hidden="true">·</span>
         <span>
-          {formatDueOn(payload.due_at ?? payload.due_date) ??
+          {dueLine(payload.due_at ?? payload.due_date, status) ??
             `Due ${payload.due_date}`}
         </span>
         {live && live.subtasks.length > 0 ? (
@@ -216,7 +230,9 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           </>
         ) : null}
         {payload.point_reward ? (
-          <Badge variant="outline">+{payload.point_reward} pts</Badge>
+          <Badge variant="outline">
+            {formatPointsChip(payload.point_reward)}
+          </Badge>
         ) : null}
       </div>
       {memberControls.length > 0 || managerControls.length > 0 ? (

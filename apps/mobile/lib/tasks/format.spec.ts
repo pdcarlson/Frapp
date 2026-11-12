@@ -119,14 +119,14 @@ describe("formatPointsChip", () => {
   it("offers points in gold before the ledger moves", () => {
     expect(formatPointsChip(5, false)).toEqual({
       tone: "offered",
-      label: "+5",
+      label: "+5 pts",
     });
   });
 
   it("marks an award only once points_awarded is true", () => {
     expect(formatPointsChip(15, true)).toEqual({
       tone: "awarded",
-      label: "+15 ✓",
+      label: "+15 pts ✓",
     });
   });
 
@@ -135,7 +135,7 @@ describe("formatPointsChip", () => {
     // claim an award that has not happened.
     expect(formatPointsChip(15, false)).toEqual({
       tone: "offered",
-      label: "+15",
+      label: "+15 pts",
     });
   });
 });

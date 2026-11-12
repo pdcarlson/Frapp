@@ -23,6 +23,7 @@ import {
   dayDelta,
   formatDueLabel,
   formatDueOn,
+  formatPointsChip as pointsChipLabel,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -58,10 +59,12 @@ export function daysSinceCompletion(
 }
 
 /**
- * The subtitle under an open task's title.
+ * The subtitle under an open task's title: `@repo/formatting`'s countdown
+ * ("Due today", "Due Friday", "Overdue by 2 days", "Due today at 5 PM" for a
+ * task due at a time, #4003), the one web's chat task card reads too (#4135).
  *
- * Returns `null` for a date this module cannot read, so the row draws a title
- * with no subtitle rather than "Invalid Date" — `narrow.ts` states the same
+ * Returns `null` for a date it cannot read, so the row draws a title with no
+ * subtitle rather than "Invalid Date" — `narrow.ts` states the same
  * preference. The caller keeps the row: dropping a task the member owes is
  * worse than an odd-looking one.
  */
@@ -69,25 +72,7 @@ export function formatDueSubtitle(
   dueDate: string | null,
   now: Date,
 ): string | null {
-  if (!dueDate) return null;
-  // A task due at a time of day carries its `due_at` instant (#4003): the
-  // shared countdown names the time ("Due today at 5 PM") and counts an
-  // overdue one by the minute or hour.
-  if (isTimed(dueDate)) return formatDueLabel(dueDate, now);
-  const due = parseTaskDate(dueDate);
-  if (!due) return null;
-
-  const days = dayDelta(now, due);
-  if (days < 0) {
-    const overdueBy = -days;
-    return `Overdue by ${overdueBy} ${overdueBy === 1 ? "day" : "days"}`;
-  }
-  if (days === 0) return "Due today";
-  if (days === 1) return "Due tomorrow";
-  if (days < 7) {
-    return `Due ${due.toLocaleDateString(undefined, { weekday: "long" })}`;
-  }
-  return dueOn(due);
+  return dueDate ? formatDueLabel(dueDate, now) : null;
 }
 
 /**
@@ -97,19 +82,7 @@ export function formatDueSubtitle(
  * `null` for a date this module cannot read, as `formatDueSubtitle` returns.
  */
 export function formatDueDate(dueDate: string | null): string | null {
-  if (!dueDate) return null;
-  if (isTimed(dueDate)) return formatDueOn(dueDate);
-  const due = parseTaskDate(dueDate);
-  return due ? dueOn(due) : null;
-}
-
-/** A full timestamp (a task's `due_at`) rather than a bare `YYYY-MM-DD`. */
-function isTimed(value: string): boolean {
-  return value.length > 10;
-}
-
-function dueOn(due: Date): string {
-  return `Due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  return dueDate ? formatDueOn(dueDate) : null;
 }
 
 export type PointsChip =
@@ -133,7 +106,7 @@ export function formatPointsChip(
   pointsAwarded: boolean,
 ): PointsChip | null {
   if (pointReward === null || pointReward <= 0) return null;
-  const label = `+${pointReward}`;
+  const label = pointsChipLabel(pointReward);
   return pointsAwarded
     ? { tone: "awarded", label: `${label} ✓` }
     : { tone: "offered", label };

@@ -110,6 +110,59 @@ export function formatDayTimeRange(
 }
 
 /**
+ * An event's when, worded for someone deciding whether to go:
+ * `"Tonight · 6:00 – 7:00 PM"` (today from 5 PM on), `"Today · 9:00 –
+ * 10:00 AM"`, `"Tomorrow · …"`, the weekday within the coming week
+ * (`"Friday · …"`), otherwise `"Sat, Mar 14 · …"` with the year outside the
+ * current one. An end on another day names that day, as
+ * {@link formatDayTimeRange} does. Both apps' chat event cards and the phone's
+ * event detail read this one (#4135), so a member reads the same line on each.
+ */
+export function formatEventWindow(
+  start: unknown,
+  end: unknown,
+  now: Date = new Date(),
+): string | null {
+  const from = toDate(start);
+  if (!from) return null;
+  const days = dayDelta(now, from);
+  let day: string;
+  if (days === 0) {
+    // "Tonight" only when it reads true; a 9am meeting today is not tonight.
+    day = from.getHours() >= 17 ? "Tonight" : "Today";
+  } else if (days === 1) {
+    day = "Tomorrow";
+  } else if (days > 1 && days < 7) {
+    day = weekdayName(from);
+  } else {
+    day = weekdayMonthDay(from, now);
+  }
+  const to = toDate(end);
+  if (!to) return `${day} · ${time(from)}`;
+  if (dayDelta(from, to) !== 0) {
+    return `${day} · ${time(from)} – ${formatDayTime(end, now)}`;
+  }
+  return `${day} · ${formatTimeOfDayShort(from.toISOString(), to.toISOString())} – ${time(to)}`;
+}
+
+/**
+ * A point count in a sentence or a metadata line: `"1 point"`, `"10
+ * points"`. Both apps write a count this way wherever it is read as text
+ * (#4135); a chip, where space is tight, takes {@link formatPointsChip}.
+ */
+export function formatPoints(value: number): string {
+  return `${value} ${value === 1 ? "point" : "points"}`;
+}
+
+/**
+ * A reward on a chip or badge: `"+10 pts"`. The one short form both apps
+ * draw on a points chip (#4135).
+ */
+export function formatPointsChip(value: number): string {
+  return `+${value} pts`;
+}
+
+/**
  * `"Aug 24 – Dec 12, 2026"`: a span of days, the year said once at the end
  * when both ends share it, and on each end when they don't.
  */
