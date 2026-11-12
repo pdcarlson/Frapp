@@ -112,6 +112,23 @@ export function selectUnreadIds(data: unknown): string[] {
 }
 
 /**
+ * Ids of read rows whose target is **not** chat: the in-app rows whose pushes
+ * `clearReadNonChatNotifications` may take out of the tray (#4011). Chat rows
+ * are left to the channel counts (`clearReadChatNotifications`).
+ */
+export function selectReadNonChatIds(data: unknown): Set<string> {
+  const ids = new Set<string>();
+  for (const row of records(data)) {
+    if (str(row, "read_at") === null || targetScreen(row.data) === "chat") {
+      continue;
+    }
+    const id = str(row, "id");
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+/**
  * Count of unread rows whose target is **not** chat.
  *
  * The API's chat push worker writes a `notifications` row

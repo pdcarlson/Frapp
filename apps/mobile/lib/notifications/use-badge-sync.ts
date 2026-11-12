@@ -61,8 +61,15 @@ import {
 } from "@repo/hooks";
 import { isDirectChannel, selectChannels } from "../chat/channel-list";
 import { useShownUnreadCounts } from "../chat/unread-first-paint";
-import { selectUnreadNonChatCount } from "../more/notifications";
-import { clearReadChatNotifications, setBadgeCount } from "./push";
+import {
+  selectReadNonChatIds,
+  selectUnreadNonChatCount,
+} from "../more/notifications";
+import {
+  clearReadChatNotifications,
+  clearReadNonChatNotifications,
+  setBadgeCount,
+} from "./push";
 
 export function useBadgeSyncRuntime(): void {
   const chapterId = useActiveChapterId();
@@ -115,4 +122,13 @@ export function useBadgeSyncRuntime(): void {
     );
     void clearReadChatNotifications(read);
   }, [chapterId, channelUnread.data]);
+
+  // Non-chat pushes leave once their in-app row reads as read (#4011). On
+  // Android this is what a badge of 0 used to do, by cancelling the whole tray.
+  useEffect(() => {
+    if (!chapterId || !notifications.data) return;
+    void clearReadNonChatNotifications(
+      selectReadNonChatIds(notifications.data),
+    );
+  }, [chapterId, notifications.data]);
 }

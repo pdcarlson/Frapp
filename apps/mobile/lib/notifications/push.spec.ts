@@ -531,3 +531,55 @@ describe("clearReadChatNotifications", () => {
     expect(mod.dismissNotificationAsync).not.toHaveBeenCalled();
   });
 });
+
+describe("clearReadNonChatNotifications", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    constantsState.executionEnvironment = "bare";
+    constantsState.projectId = "00000000-0000-4000-8000-000000000000";
+  });
+
+  it("dismisses only non-chat pushes whose in-app row is read (#4011)", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+    mod.getPresentedNotificationsAsync.mockResolvedValue([
+      presented("event-read", {
+        target: { screen: "events", eventId: "e1" },
+        notificationId: "n-read",
+      }),
+      presented("event-unread", {
+        target: { screen: "events", eventId: "e2" },
+        notificationId: "n-unread",
+      }),
+      // A chat push is the channel counts' to clear, even with its row read.
+      presented("chat-read-row", {
+        target: { screen: "chat", channelId: "busy" },
+        notificationId: "n-chat",
+      }),
+      // A local notification (study pause) has no row.
+      presented("local", null),
+    ]);
+
+    await push.clearReadNonChatNotifications(new Set(["n-read", "n-chat"]));
+
+    expect(mod.dismissNotificationAsync.mock.calls).toEqual([["event-read"]]);
+  });
+
+  it("does nothing with no read rows, or when the tray can't be read", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.clearReadNonChatNotifications(new Set());
+    expect(mod.getPresentedNotificationsAsync).not.toHaveBeenCalled();
+
+    mod.getPresentedNotificationsAsync.mockRejectedValue(
+      new Error("old build"),
+    );
+    await expect(
+      push.clearReadNonChatNotifications(new Set(["n"])),
+    ).resolves.toBeUndefined();
+    expect(mod.dismissNotificationAsync).not.toHaveBeenCalled();
+  });
+});
