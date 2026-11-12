@@ -4,6 +4,7 @@ import {
   canReadCardTask,
   isTaskStatus,
   readLiveTask,
+  taskDueLine,
   taskCardControls,
   taskStatusLabel,
   canReopenOwnTask,
@@ -20,6 +21,7 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     points_awarded: false,
     assignee_id: undefined,
     subtasks: [],
+    due: undefined,
     ...overrides,
   };
 }
@@ -254,5 +256,66 @@ describe("viewerIsCardAssignee (#4296)", () => {
     expect(viewerIsCardAssignee("u-old", "u-old", null)).toBe(true);
     expect(viewerIsCardAssignee("", "", null)).toBe(false);
     expect(viewerIsCardAssignee(null, undefined, live())).toBe(false);
+  });
+});
+
+describe("readLiveTask's due (#4135)", () => {
+  it("takes due_at over due_date, and neither when blank", () => {
+    const base = { id: "task-1", status: "TODO" };
+    expect(readLiveTask({ ...base, due_date: "2026-11-20" })?.due).toBe(
+      "2026-11-20",
+    );
+    expect(
+      readLiveTask({
+        ...base,
+        due_date: "2026-11-20",
+        due_at: "2026-11-20T22:00:00.000Z",
+      })?.due,
+    ).toBe("2026-11-20T22:00:00.000Z");
+    expect(readLiveTask({ ...base, due_date: "", due_at: null })?.due).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("taskDueLine (#4133, #4135)", () => {
+  const NOW = new Date(2026, 10, 12, 12);
+
+  it("counts down while open and is red only once overdue", () => {
+    expect(taskDueLine("2026-11-12", "TODO", NOW)).toEqual({
+      text: "Due today",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-13", "IN_PROGRESS", NOW)).toEqual({
+      text: "Due tomorrow",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-10", "TODO", NOW)).toEqual({
+      text: "Overdue by 2 days",
+      overdue: true,
+    });
+  });
+
+  it("is red when the server already says OVERDUE", () => {
+    expect(taskDueLine("2026-11-12", "OVERDUE", NOW)?.overdue).toBe(true);
+  });
+
+  it("never charges a finished task with lateness", () => {
+    expect(taskDueLine("2026-11-10", "COMPLETED", NOW)).toEqual({
+      text: "Due Nov 10",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-13", "COMPLETED", NOW)?.text).toBe(
+      "Due tomorrow",
+    );
+  });
+
+  it("gives the plain date when the status is unknown, and null for no date", () => {
+    expect(taskDueLine("2026-11-10", null, NOW)).toEqual({
+      text: "Due Nov 10",
+      overdue: false,
+    });
+    expect(taskDueLine(null, "TODO", NOW)).toBeNull();
+    expect(taskDueLine("banana", "TODO", NOW)).toBeNull();
   });
 });

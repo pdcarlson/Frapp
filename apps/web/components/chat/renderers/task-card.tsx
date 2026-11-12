@@ -10,7 +10,9 @@ import {
   taskStatusLabel,
   useMyPermissions,
   subtaskProgress,
+  useNow,
   useTask,
+  taskDueLine,
   useUpdateTaskStatus,
   useConfirmTask,
   useRejectTask,
@@ -27,11 +29,7 @@ import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
-import {
-  formatDueLabel,
-  formatDueOn,
-  formatPointsChip,
-} from "@repo/formatting";
+import { formatPointsChip } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -45,16 +43,6 @@ interface TaskCardProps {
   viewerId: string;
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
-}
-
-/**
- * The due line. A countdown ("Due tomorrow", "Overdue by 2 days") only while
- * the live task is still open, since that is when it is true; a finished
- * task, or one this viewer can't read, gets the plain date. The rule the
- * phone's task card follows (`dueLine` there), so both read the same (#4135).
- */
-function dueLine(due: string, status: TaskStatus | null): string | null {
-  return status && status !== "COMPLETED" ? formatDueLabel(due) : formatDueOn(due);
 }
 
 /**
@@ -114,6 +102,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // surface itself is `@FreeTier`, so it is easy to assume a card rendered inside
   // chat inherits that; it does not. The route decides, not the host (#841).
   const gate = useSubscriptionGate();
+  // The due countdown's clock, a hook for the same reason.
+  const now = useNow();
 
   if (!payload) {
     return (
@@ -129,6 +119,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // a finished task "To do".
   const status: TaskStatus | null = live?.status ?? null;
   const statusLabel = live ? taskStatusLabel(live) : null;
+  // The due line (#4135): the live due date once read, since an edit can move
+  // it after this card was posted, counting down against a ticking clock.
+  const due = taskDueLine(
+    live?.due ?? payload.due_at ?? payload.due_date,
+    status,
+    new Date(now),
+  );
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   // The controls follow whom the task is assigned to now (#4296): an edit
@@ -209,9 +206,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           {payload.assigner_name} → {payload.assignee_name}
         </span>
         <span aria-hidden="true">·</span>
-        <span>
-          {dueLine(payload.due_at ?? payload.due_date, status) ??
-            `Due ${payload.due_date}`}
+        <span className={cn(due?.overdue && "text-destructive-text")}>
+          {due?.text ?? `Due ${payload.due_date}`}
         </span>
         {live && live.subtasks.length > 0 ? (
           <>

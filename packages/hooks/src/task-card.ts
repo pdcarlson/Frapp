@@ -1,3 +1,4 @@
+import { formatDueLabel, formatDueOn, isDueOverdue } from "@repo/formatting";
 import { STATUS_LABELS } from "@repo/validation";
 import type { TaskStatus } from "./use-tasks";
 
@@ -96,6 +97,42 @@ export interface LiveTask {
   assignee_id: string | undefined;
   /** Whether each subtask is done, in order (#4003); empty for none. */
   subtasks: { done_at: string | null }[];
+  /**
+   * When the task is due now: its `due_at` when it has a time of day, else
+   * its `due_date`. An edit can move it after a card was posted, so a card's
+   * countdown reads this rather than the snapshot's date (#4135).
+   */
+  due: string | undefined;
+}
+
+/**
+ * A task's due line, worded the same on every task surface of both apps
+ * (#4133, #4135): the countdown (`"Due tomorrow"`, `"Overdue by 2 days"`,
+ * `"Due today at 5 PM"`) while it means something, red only once the task is
+ * overdue (Shawn's pick, #4133). A finished task past its date reads the plain
+ * `"Due Sep 3"`, never as a charge against handed-in work, and a task whose
+ * status the viewer can't read gets the plain date too, since its countdown
+ * might not be true. `null` for a missing or unreadable date.
+ */
+export function taskDueLine(
+  due: string | null | undefined,
+  status: TaskStatus | null | undefined,
+  now: Date = new Date(),
+): { text: string; overdue: boolean } | null {
+  if (!due) return null;
+  if (!status) {
+    const on = formatDueOn(due, now);
+    return on ? { text: on, overdue: false } : null;
+  }
+  const label = formatDueLabel(due, now);
+  if (!label) return null;
+  const pastDue = isDueOverdue(due, now);
+  if (status === "COMPLETED") {
+    if (!pastDue) return { text: label, overdue: false };
+    const on = formatDueOn(due, now);
+    return on ? { text: on, overdue: false } : null;
+  }
+  return { text: label, overdue: pastDue || status === "OVERDUE" };
 }
 
 /**
@@ -137,6 +174,12 @@ export function readLiveTask(data: unknown): LiveTask | null {
             done_at: typeof row.done_at === "string" ? row.done_at : null,
           }))
       : [],
+    due:
+      typeof r.due_at === "string" && r.due_at !== ""
+        ? r.due_at
+        : typeof r.due_date === "string" && r.due_date !== ""
+          ? r.due_date
+          : undefined,
   };
 }
 

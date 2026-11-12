@@ -30,7 +30,7 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * 20pt (since 2026-11-05 the shared nav set's shapes, not the board's
  * geometry), both at rest in the inactive tab's muted paint: the shape says
  * at a glance whether a row is an event or a task (a dot said neither). The
- * event's trailing time is the foreground text; an imminent task due date is
+ * event's trailing time is the foreground text; an overdue task due date is
  * `semantic.destructive`, which is the drawn danger red — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
@@ -310,7 +310,9 @@ export function UpNextStrip({
           </Text>
           <Text
             style={
-              isDueUrgent(task.due_date, at) ? styles.dueUrgent : styles.dueCalm
+              task.status === "OVERDUE" || isDueUrgent(task.due_date, at)
+                ? styles.dueUrgent
+                : styles.dueCalm
             }
           >
             {formatDueDate(task.due_date, at)}

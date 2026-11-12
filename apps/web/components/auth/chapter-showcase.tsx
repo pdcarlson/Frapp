@@ -218,7 +218,7 @@ function EventCard({ t }: { t: number }) {
       </div>
       <p className="mt-2 text-base font-bold">Chapter meeting</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-        <span>Today, 8:00 – 9:00 PM</span>
+        <span>Tonight · 8:00 – 9:00 PM</span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1">
           <LocationGlyph className="h-4 w-4" />

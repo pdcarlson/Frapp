@@ -80,9 +80,13 @@ export function formatDueSubtitle(
  * countdown would not be true, such as one already done: the chat task card
  * draws it once the live task is finished, or when the viewer can't read it.
  * `null` for a date this module cannot read, as `formatDueSubtitle` returns.
+ * The year shows outside `now`'s year, as everywhere else in the app.
  */
-export function formatDueDate(dueDate: string | null): string | null {
-  return dueDate ? formatDueOn(dueDate) : null;
+export function formatDueDate(
+  dueDate: string | null,
+  now: Date = new Date(),
+): string | null {
+  return dueDate ? formatDueOn(dueDate, now) : null;
 }
 
 export type PointsChip =
