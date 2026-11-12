@@ -268,9 +268,11 @@ function RoleChip({ chip }: { chip: MemberRoleChip }) {
  * (Shawn, 2026-11-09).
  *
  * **Header.** No title word and no name in the title row: the name heads the
- * body under the photo, and the row carries the close alone, as
+ * body under the photo, and the row carries the close (as a sheet) or the
+ * back arrow (`docked`, in the Directory) plus the `⋯` when it has rows, as
  * `components.md` § Surface size has the member sheet do. The name is the
- * dialog's title (`SheetTitle`), so the sheet is still announced by it.
+ * surface's title (`PanelTitle`: the sheet's `SheetTitle`, or the docked
+ * region's heading), so it is still announced by it.
  *
  * **Roles** are read-only chips for everyone. A viewer holding `roles:manage`
  * (the gate on `PATCH /v1/members/{id}/roles`) also gets Edit, which swaps the

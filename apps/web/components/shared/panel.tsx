@@ -146,7 +146,43 @@ function DockedPanel({
     );
     for (const child of covered) child.inert = true;
     box.focus({ preventScroll: true });
+
+    // Focus that was in the panel and fell to `<body>` comes back to it. A
+    // sheet's focus trap did this for free, and a docked panel has none: the
+    // focused row a revoke removes, or a dialog opened from the panel with no
+    // trigger of its own (Edit name and graduation year), would otherwise
+    // leave focus nowhere, and Escape, which the panel hears only from
+    // inside, would stop going back. Focus the member moved elsewhere (a
+    // click or Tab into chat) is theirs, and stays where they put it.
+    let ours = true;
+    const overlay = '[role="dialog"], [role="alertdialog"], [role="menu"]';
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Into an overlay opened from the panel, it is still the panel's turn.
+      ours = box.contains(target) || (ours && !!target.closest(overlay));
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (box.contains(target)) ours = true;
+      else if (!target.closest(overlay)) ours = false;
+    };
+    const recover = () => {
+      if (!ours) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    const observer = new MutationObserver(recover);
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("pointerdown", onPointerDown, true);
     return () => {
+      observer.disconnect();
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("pointerdown", onPointerDown, true);
       for (const child of covered) child.inert = false;
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
     };
@@ -188,6 +224,8 @@ const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
  * column's edge. Beside chat the column is narrower than this and it is the
  * plain 20px inset.
  */
+// 576px is `PANEL_WIDTH_CLASS`'s width. Tailwind needs each as a literal, so
+// a change to one is a change to both.
 const DOCKED_INSET_CLASS = "px-[max(1.25rem,calc((100%_-_576px)/2_+_1.25rem))]";
 
 /**
