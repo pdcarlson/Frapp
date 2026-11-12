@@ -248,6 +248,16 @@ describe("Roles (#4074)", () => {
     }
   });
 
+  it("notes the President's and Everyone's roles as web's list does", () => {
+    h.roles = [
+      ...h.roles,
+      role({ id: "r-all", name: "Everyone", tier_id: "t-bro", permissions: ["members:view"], is_system: true, system_key: "MEMBER" }),
+    ];
+    const text = screenText(render(<ChapterRolesScreen />));
+    expect(text).toContain("Can do everything");
+    expect(text).toContain("Pinged as @everyone");
+  });
+
   it("names tiers in the chapter's own word", () => {
     h.vocabulary = { tier: "Level" };
     const text = screenText(render(<ChapterRolesScreen />));

@@ -23,6 +23,7 @@ import {
   anyReadUncached,
 } from "@/components/shared/async-states";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { compactControlClassName } from "@/components/shared/table-controls";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -347,9 +348,22 @@ function TierList({
         {menu}
       </li>
     );
-    // Everyone (#4191) neither moves nor goes: its page edits the rest.
-    if (!canManage || isEveryoneRole(role)) {
+    if (!canManage) {
       return <RowFragment key={role.id}>{row(null)}</RowFragment>;
+    }
+    // Everyone (#4191) neither moves nor goes: its page edits the rest. It
+    // keeps the ⋯ button's room, so its chevron lines up with the rows'.
+    if (isEveryoneRole(role)) {
+      return (
+        <RowFragment key={role.id}>
+          {row(
+            <span
+              aria-hidden="true"
+              className={cn(compactControlClassName, "shrink-0")}
+            />,
+          )}
+        </RowFragment>
+      );
     }
     return (
       <RowMenu key={role.id} entries={entries} label={`More for ${role.name}`}>
