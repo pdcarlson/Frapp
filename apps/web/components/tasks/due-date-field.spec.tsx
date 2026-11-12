@@ -50,9 +50,9 @@ describe("DueDateField (#3928)", () => {
     type("11/14");
     expect(onValue).toHaveBeenLastCalledWith("2026-11-14");
     // What it was read as shows while the text is still the member's own.
-    expect(screen.getByText("Sat, Nov 14")).toBeInTheDocument();
+    expect(screen.getByText("Saturday, November 14")).toBeInTheDocument();
     fireEvent.blur(field());
-    expect(field()).toHaveValue("Sat, Nov 14");
+    expect(field()).toHaveValue("Saturday");
   });
 
   it("shows the year when the date is not in the current one", () => {
@@ -61,7 +61,7 @@ describe("DueDateField (#3928)", () => {
     type("jan 5");
     expect(onValue).toHaveBeenLastCalledWith("2027-01-05");
     fireEvent.blur(field());
-    expect(field()).toHaveValue("Jan 5, 2027");
+    expect(field()).toHaveValue("January 5, 2027");
   });
 
   it("takes a typed year for a date further out", () => {
@@ -69,7 +69,7 @@ describe("DueDateField (#3928)", () => {
     render(<Harness onValue={onValue} />);
     type("Nov 14 2028");
     expect(onValue).toHaveBeenLastCalledWith("2028-11-14");
-    expect(screen.getByText("Nov 14, 2028")).toBeInTheDocument();
+    expect(screen.getByText("Tuesday, November 14, 2028")).toBeInTheDocument();
   });
 
   it("is not a native date input, which asks for the year", () => {
@@ -99,7 +99,9 @@ describe("DueDateField (#3928)", () => {
   it("says how to write one when the form was submitted with unreadable text", () => {
     render(<Harness missing />);
     type("soon");
-    expect(screen.getByRole("alert")).toHaveTextContent(/Nov 14 or Friday/);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /November 14 or Friday/,
+    );
     type("11/14");
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -107,34 +109,35 @@ describe("DueDateField (#3928)", () => {
   it("reads a time with the date, and hands the parent both (#4003)", () => {
     render(<Harness />);
     type("11/14 5pm");
-    expect(screen.getByText("Sat, Nov 14 · 5 PM")).toBeInTheDocument();
+    expect(screen.getByText("Saturday, November 14")).toBeInTheDocument();
+    fireEvent.blur(field());
+    expect(field()).toHaveValue("Saturday · 5 PM");
   });
 
-  it("lays the reading over the form, so blur changes no height", () => {
+  it("heads the floating month with the reading, so blur changes no height", () => {
     const { container } = render(<Harness />);
     type("11/14");
-    const reading = screen.getByText("Sat, Nov 14");
-    expect(reading.tagName).toBe("SPAN");
-    expect(reading).toHaveClass("absolute");
+    // The month is portaled over the page, out of the form's flow.
+    const reading = screen.getByText("Saturday, November 14");
+    expect(container.contains(reading)).toBe(false);
     // A screen reader hears the reading, the filled-in year included.
-    expect(field()).toHaveAccessibleDescription("Sat, Nov 14");
-    // Out of the flow: no line under the field for a blur to remove.
+    expect(field()).toHaveAccessibleDescription("Saturday, November 14");
     expect(container.querySelectorAll("p")).toHaveLength(0);
   });
 
   it("keeps a past date's year, so editing it doesn't move it a year on", () => {
     const onValue = vi.fn();
     render(<Harness initial="2026-11-02" onValue={onValue} />);
-    expect(field()).toHaveValue("Nov 2, 2026");
-    type("Nov 2, 2026 ");
+    expect(field()).toHaveValue("November 2, 2026");
+    type("November 2, 2026 ");
     expect(onValue).toHaveBeenLastCalledWith("2026-11-02");
   });
 
   it("follows a date the parent sets, and clears with it", () => {
     render(<Harness initial="2026-11-12" />);
-    expect(field()).toHaveValue("Thu, Nov 12");
+    expect(field()).toHaveValue("Thursday");
     fireEvent.click(screen.getByRole("button", { name: "prefill" }));
-    expect(field()).toHaveValue("Mar 14, 2027");
+    expect(field()).toHaveValue("March 14, 2027");
     fireEvent.click(screen.getByRole("button", { name: "reset" }));
     expect(field()).toHaveValue("");
   });
