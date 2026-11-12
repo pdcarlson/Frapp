@@ -511,6 +511,34 @@ export class AiSuggestionService {
   }
 
   /**
+   * One suggestion, when `userId` could see it in their Suggested list now,
+   * else null: what "Report this" may keep (#4315).
+   */
+  async findVisible(
+    chapterId: string,
+    id: string,
+    userId: string,
+    enabledModules: EnabledModules | null,
+  ): Promise<AiSuggestion | null> {
+    const row = await this.repo.findById(chapterId, id);
+    // The Suggested list holds only pending suggestions that have not run out.
+    if (
+      !row ||
+      row.status !== 'pending' ||
+      new Date(row.expires_at).getTime() <= this.now().getTime()
+    ) {
+      return null;
+    }
+    const [visible] = await this.visibleTo(
+      chapterId,
+      userId,
+      [row],
+      enabledModules,
+    );
+    return visible ?? null;
+  }
+
+  /**
    * Of `rows`, the ones `userId` could accept now: a known kind whose module
    * is on (when `enabledModules` is given), its permission held, and its
    * source open to them.

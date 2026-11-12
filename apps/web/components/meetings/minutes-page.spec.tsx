@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useMeeting: () => mocks.meeting.current,
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
   usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
@@ -615,6 +616,8 @@ describe("MinutesPage", () => {
       expect(
         screen.getByText("The notes don't say who is booking the venue."),
       ).toBeTruthy();
+      // A draft the AI wrote can be reported (#4315).
+      expect(screen.getByRole("button", { name: "Report this" })).toBeTruthy();
       expect(
         screen.getByText(
           "One drafted line was left out because nothing in your notes backed it.",

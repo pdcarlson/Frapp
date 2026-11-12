@@ -157,6 +157,8 @@ interface Setup {
   consent?: Awaited<ReturnType<IAiConsentCheck['check']>>;
   spend?: Awaited<ReturnType<IAiSpendReservation['reserve']>>;
   stored?: Meeting;
+  /** What the caller holds, for "Report this" (default: may record minutes). */
+  permissions?: string[];
 }
 
 function setup(options: Setup = {}) {
@@ -218,6 +220,9 @@ function setup(options: Setup = {}) {
       findByChapter: jest
         .fn()
         .mockResolvedValue([{ id: 'r-t', name: 'Treasurer' }]),
+      getEffectivePermissions: jest
+        .fn()
+        .mockResolvedValue(options.permissions ?? ['meetings:record']),
     } as unknown as RbacService,
     runs as unknown as AiRunService,
     registry,
@@ -655,6 +660,55 @@ describe('MeetingDraftService', () => {
     await service.discard(CHAPTER, MEETING, SECRETARY);
     expect(runs.cancel).toHaveBeenCalledWith(CHAPTER, RUN);
     expect(drafts.row).toBeNull();
+  });
+
+  describe('what a report may keep (#4315)', () => {
+    it('gives the draft and the notes it came from, under its request', async () => {
+      const { service, drafts, ask, work } = setup();
+      await ask();
+      await work();
+      const kept = await service.forReport(CHAPTER, MEETING, SECRETARY, null);
+      expect(kept).toEqual(
+        expect.objectContaining({
+          requestId: drafts.row?.request_id,
+          notes: NOTES,
+          requestedBy: SECRETARY,
+        }),
+      );
+    });
+
+    it('gives nothing while the draft is still being written', async () => {
+      const { service, ask } = setup();
+      await ask();
+      await expect(
+        service.forReport(CHAPTER, MEETING, SECRETARY, null),
+      ).resolves.toBeNull();
+    });
+
+    it('gives nothing to a member the draft routes refuse: no meetings:record, or meetings off', async () => {
+      const refused = setup({ permissions: ['members:view'] });
+      await refused.ask();
+      await refused.work();
+      await expect(
+        refused.service.forReport(CHAPTER, MEETING, SECRETARY, null),
+      ).resolves.toBeNull();
+
+      const off = setup();
+      await off.ask();
+      await off.work();
+      await expect(
+        off.service.forReport(CHAPTER, MEETING, SECRETARY, { meetings: false }),
+      ).resolves.toBeNull();
+    });
+
+    it('never gives Standards minutes', async () => {
+      const { service } = setup({
+        stored: meeting({ meeting_type: 'standards' as never }),
+      });
+      await expect(
+        service.forReport(CHAPTER, MEETING, SECRETARY, null),
+      ).resolves.toBeNull();
+    });
   });
 
   it('the sweep deletes requests older than thirty days', async () => {

@@ -4007,3 +4007,25 @@ delete from storage.buckets where id = 'meeting-audio';
 ```
 
 Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112130000_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
+
+
+## Rollback Report this (20261112220000)
+
+* **Migration**: `20261112220000_ai_reports.sql`
+
+One new table, `ai_reports`, with an insert trigger of its own, and one trigger on `users`. No existing row or function changed. What the table holds is sealed text that exists only to be deleted within 30 days, so nothing in it needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides every Report this button and refuses the route; the hourly sweep still deletes reports at their date. To delete every report at once, run:
+
+```sql
+delete from public.ai_reports;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_reports` every hour):
+
+```sql
+drop trigger if exists users_drop_ai_reports on public.users;
+drop function if exists public.ai_reports_drop_for_deleted_user();
+drop table if exists public.ai_reports;
+drop function if exists public.ai_reports_refuse_deleted_users();
+```

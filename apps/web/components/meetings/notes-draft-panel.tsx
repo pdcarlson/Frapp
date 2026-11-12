@@ -22,6 +22,7 @@ import type {
   ConfirmResult,
 } from "@/components/shared/confirm-dialog";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { ReportAiButton } from "@/components/ai/report-ai";
 import { RecordingUpload } from "@/components/meetings/recording-upload";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -363,6 +364,15 @@ export function NotesDraftPanel({
           >
             Clear notes
           </Button>
+        ) : null}
+        {/* A draft the AI wrote can be reported, like an Ask answer. */}
+        {reviewed && !drafting ? (
+          <ReportAiButton
+            // Each draft is its own thing to report.
+            key={state.requested_at ?? "draft"}
+            className="ml-auto"
+            target={{ subject: "meeting_draft", subjectId: meetingId }}
+          />
         ) : null}
       </div>
       <p

@@ -4386,6 +4386,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a report keeps, for the sheet to say before it is sent */
+        get: operations["AiReportController_policy_v1"];
+        put?: never;
+        /**
+         * Report something the AI made
+         * @description Keeps that one exchange, encrypted, for 30 days, for the Frapp team; then it is deleted. Without a sealing key on the server, only the reason and note are kept. A second report of the same thing by the same member keeps nothing new (`already_reported`).
+         */
+        post: operations["AiReportController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/draft": {
         parameters: {
             query?: never;
@@ -7821,6 +7842,44 @@ export interface components {
             question: string;
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
+        };
+        AiReportPolicyDto: {
+            /** @description Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so. */
+            keeps_text: boolean;
+            /**
+             * @description How many days a report is kept.
+             * @example 30
+             */
+            retention_days: number;
+        };
+        CreateAiReportDto: {
+            /**
+             * @description What is reported: an Ask answer, the draft of a meeting’s minutes, or a suggestion.
+             * @enum {string}
+             */
+            subject: "ask_answer" | "meeting_draft" | "ai_suggestion";
+            /**
+             * Format: uuid
+             * @description The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), or the suggestion’s id.
+             */
+            subject_id: string;
+            /** @enum {string} */
+            reason: "wrong" | "harmful" | "private" | "other";
+            /** @description The member’s own words, if they add any. */
+            note?: string;
+            /** @description Ask only: the answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. */
+            receipt?: string;
+        };
+        AiReportOutcomeDto: {
+            /** @description This member had already reported this; nothing new was kept. */
+            already_reported: boolean;
+            /** @description Whether the text itself was kept, sealed, or only the reason and note. */
+            kept_text: boolean;
+            /**
+             * Format: date-time
+             * @description When what was kept is deleted.
+             */
+            expires_at: string;
         };
         MeetingDraftSourceDto: {
             /** @enum {string} */
@@ -17940,6 +17999,87 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_policy_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportPolicyDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAiReportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportOutcomeDto"];
+                };
+            };
+            /** @description An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`). */
             404: {
                 headers: {
                     [name: string]: unknown;

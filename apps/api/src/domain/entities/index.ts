@@ -43,4 +43,5 @@ export * from './ai-run.entity';
 export * from './corpus.entity';
 export * from './ai-consent.entity';
 export * from './ask-diagnostics.entity';
+export * from './ai-report.entity';
 export * from './ai-suggestion.entity';

@@ -36,6 +36,7 @@ import {
   meetingHref,
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
+import { ReportAiButton } from "@/components/ai/report-ai";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
@@ -487,6 +488,11 @@ function SuggestedTaskRow({
           />
         </div>
         <div className="ml-auto flex items-center gap-1">
+          <ReportAiButton
+            iconOnly
+            name={task.title}
+            target={{ subject: "ai_suggestion", subjectId: item.id }}
+          />
           <Button
             size="icon"
             variant="ghost"

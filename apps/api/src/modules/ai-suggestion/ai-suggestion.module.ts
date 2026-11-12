@@ -104,5 +104,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
   ],
+  // Report this reads one suggestion the reporter can see (#4315).
+  exports: [AiSuggestionService],
 })
 export class AiSuggestionModule {}

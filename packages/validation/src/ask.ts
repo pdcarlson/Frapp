@@ -151,6 +151,14 @@ export const AskAnswerSchema = z.object({
   truncated: z.boolean(),
   /** This exchange was kept by the beta diagnostics window. */
   saved: z.boolean(),
+  /**
+   * What "Report this" sends back (#4315): the exchange as the model saw it
+   * and as the member was shown it, sealed by the server so only the server
+   * can open it. Nothing is stored until the member reports. Null when the
+   * server cannot keep reported text (no sealing key) or there is nothing
+   * AI-made to report; absent from servers before reports existed.
+   */
+  report_receipt: z.string().nullish(),
 });
 export type AskAnswer = z.infer<typeof AskAnswerSchema>;
 

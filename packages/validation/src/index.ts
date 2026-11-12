@@ -1063,6 +1063,10 @@ export * from "./meeting-recording";
 export * from "./ask";
 export * from "./last-year";
 
+// Report this (#4315): the reasons, the request, and the words about what a
+// report keeps.
+export * from "./ai-report";
+
 export {
   AI_CONSENT_COPY,
   AI_SETTINGS_COPY,
