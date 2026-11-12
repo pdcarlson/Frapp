@@ -147,7 +147,7 @@ export function SettingsGroupsTab({ canManage }: { canManage: boolean }) {
         <ProfileSection
           id="settings-groups-automatic"
           title="Pledge classes and class years"
-          hint="Frapp keeps these from each member's pledge class and graduation year, so who's in them changes with that. You can set their color and whether anyone can ping them."
+          hint="Frapp keeps these from each member's pledge class and graduation year, so who's in them changes with that. You can set their color and whether anyone can ping them. Class years can't decide who sees a channel, because members set their own graduation year."
         >
           <div className="space-y-1">
             {automatic.length === 0 ? (
