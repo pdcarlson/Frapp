@@ -795,8 +795,9 @@ export default function ChatHomeScreen() {
         />
       ) : channels.length === 0 ? (
         // No line saying channels appear here, which would only restate what
-        // Chat is for; the one line says what to do, since mobile has no way
-        // to create a channel (writing.md §4, as amended 2026-11-05).
+        // Chat is for; the one line says what to do (writing.md §4, as
+        // amended 2026-11-05): an officer starts one here (#3838), and
+        // anyone else asks.
         canManageChannels ? (
           <InlineNote
             action={{
