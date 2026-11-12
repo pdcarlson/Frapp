@@ -24,6 +24,7 @@ import { InviteController } from '../controllers/invite.controller';
 import { ActController } from '../controllers/act.controller';
 import { EventController } from '../controllers/event.controller';
 import { AskController } from '../controllers/ask.controller';
+import { ChatCatchUpController } from '../controllers/chat-catch-up.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChatController } from '../controllers/chat.controller';
@@ -718,6 +719,12 @@ describe('CustomThrottlerGuard', () => {
         'POST /ai/act/event-audience',
         ActController,
         ActController.prototype.eventAudience,
+        10,
+      ),
+      route(
+        'POST /ai/catch-up',
+        ChatCatchUpController,
+        ChatCatchUpController.prototype.catchUp,
         10,
       ),
       route(

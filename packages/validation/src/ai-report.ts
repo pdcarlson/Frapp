@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Report this (#4315, `spec/behavior/ai.md` § Stored AI text): a member flags
  * something the AI made (an Ask answer, a drafted set of minutes, a
- * suggested task) for the Frapp team. Defined once, here, for the API that
+ * suggested task, a channel summary) for the Frapp team. Defined once, here, for the API that
  * checks it and for web and mobile that ask it, so the reasons and the words
  * about what is kept cannot drift between clients.
  *
@@ -17,6 +17,7 @@ export const AI_REPORT_SUBJECTS = [
   "ask_answer",
   "meeting_draft",
   "ai_suggestion",
+  "chat_summary",
 ] as const;
 export type AiReportSubject = (typeof AI_REPORT_SUBJECTS)[number];
 
@@ -43,11 +44,17 @@ export const AI_REPORT_RECEIPT_MAX_LENGTH = 200_000;
 /** `POST /v1/ai/reports`. */
 export const AiReportRequestSchema = z.object({
   subject: z.enum(AI_REPORT_SUBJECTS),
-  /** The ask's id, the meeting's id (for its draft), or the suggestion's id. */
+  /**
+   * The ask's id, the meeting's id (for its draft), the suggestion's id, or
+   * the summary's id.
+   */
   subject_id: z.string().uuid(),
   reason: z.enum(AI_REPORT_REASONS),
   note: z.string().trim().max(AI_REPORT_NOTE_MAX_LENGTH).optional(),
-  /** Ask only: the answer's `report_receipt`, exactly as the server sent it. */
+  /**
+   * An Ask answer or a channel summary: its `report_receipt`, exactly as the
+   * server sent it.
+   */
   receipt: z.string().min(1).max(AI_REPORT_RECEIPT_MAX_LENGTH).optional(),
 });
 export type AiReportRequest = z.infer<typeof AiReportRequestSchema>;
@@ -59,6 +66,7 @@ const ATTACHED: Record<AiReportSubject, string> = {
   meeting_draft:
     "the notes the draft was written from and the draft itself, as it is now",
   ai_suggestion: "the suggestion and the words it came from",
+  chat_summary: "the summary and the messages the AI read to write it",
 };
 
 /** The words both clients show. */
@@ -70,6 +78,7 @@ export const AI_REPORT_COPY = {
     ask_answer: "Report this answer",
     meeting_draft: "Report this draft",
     ai_suggestion: "Report this suggestion",
+    chat_summary: "Report this summary",
   } satisfies Record<AiReportSubject, string>,
   prompt: "What's wrong with it?",
   reasons: {
@@ -95,6 +104,11 @@ export const AI_REPORT_COPY = {
   /** A receipt this server can no longer open (its key was replaced). */
   receipt_invalid:
     "This answer can't be reported any more. Ask again, then report the new answer.",
+  /** The same two, for a summary. */
+  summary_too_old:
+    "This summary is too old to report. Summarize again, then report the new one.",
+  summary_receipt_invalid:
+    "This summary can't be reported any more. Summarize again, then report the new one.",
   /** The draft or suggestion went away while the sheet was open. */
   gone: "There's nothing to report here any more. It may have been changed or removed.",
   done: "Done",

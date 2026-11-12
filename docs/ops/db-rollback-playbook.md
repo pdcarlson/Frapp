@@ -4030,6 +4030,26 @@ drop table if exists public.ai_reports;
 drop function if exists public.ai_reports_refuse_deleted_users();
 ```
 
+
+## Rollback Report this on a channel summary (20261112233000)
+
+* **Migration**: `20261112233000_ai_reports_chat_summary.sql`
+
+One check constraint on `ai_reports` allows a fourth subject, `chat_summary`. No column, table or function changed.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides Catch me up and its Report this, so no such report is written. Leaving the wider check in place harms nothing.
+
+**To narrow the check again**, in a later forward migration after the code revert has shipped. It can only be narrowed once no report names a summary, so delete those first (they are sealed text that exists only to be deleted within 30 days):
+
+```sql
+delete from public.ai_reports where subject_type = 'chat_summary';
+alter table public.ai_reports drop constraint if exists ai_reports_subject_type_allowed;
+alter table public.ai_reports
+  add constraint ai_reports_subject_type_allowed
+  check (subject_type in ('ask_answer', 'meeting_draft', 'ai_suggestion')) not valid;
+alter table public.ai_reports validate constraint ai_reports_subject_type_allowed;
+```
+
 ## Rollback AI act suggestions (20261112240000)
 
 * **Migration**: `20261112240000_ai_act_suggestions.sql`

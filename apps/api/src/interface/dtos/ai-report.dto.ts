@@ -16,7 +16,7 @@ export class CreateAiReportDto {
   @ApiProperty({
     enum: AI_REPORT_SUBJECTS,
     description:
-      'What is reported: an Ask answer, the draft of a meeting’s minutes, or a suggestion.',
+      'What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary.',
   })
   @IsIn(AI_REPORT_SUBJECTS)
   subject: AiReportSubject;
@@ -24,7 +24,7 @@ export class CreateAiReportDto {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), or the suggestion’s id.',
+      'The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`.',
   })
   @IsUUID()
   subject_id: string;
@@ -48,7 +48,7 @@ export class CreateAiReportDto {
   @ApiPropertyOptional({
     maxLength: AI_REPORT_RECEIPT_MAX_LENGTH,
     description:
-      'Ask only: the answer’s `report_receipt`, exactly as the server sent it. Opaque to clients.',
+      'An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients.',
   })
   @IsOptional()
   @IsString()

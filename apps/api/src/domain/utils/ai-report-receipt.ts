@@ -156,3 +156,119 @@ export function openAskReportReceipt(
   }
   return receipt;
 }
+
+/**
+ * Catch me up's report receipt (#3946). The same idea as Ask's: a summary is
+ * stored nowhere, so the exchange is sealed into the response and kept only
+ * if the member hands it back with a report. Bound to the reader and the
+ * chapter, and good for as long as Ask's.
+ */
+export const CHAT_SUMMARY_REPORT_RECEIPT_VERSION = 1;
+
+export interface ChatSummaryReportReceipt {
+  v: typeof CHAT_SUMMARY_REPORT_RECEIPT_VERSION;
+  summary_id: string;
+  issued_at: string;
+  channel_id: string;
+  /** Set when the summary was of one thread. */
+  thread_root_id: string | null;
+  /** The conversation as the model was handed it. */
+  given: string;
+  /** What the model wrote, before Frapp's checks changed what was shown. */
+  written: Array<{
+    kind: string;
+    text: string;
+    message: string;
+    quote: string;
+  }>;
+  /** What the member was shown. */
+  shown: {
+    points: Array<{
+      kind: string;
+      text: string;
+      message_id: string;
+      quote: string;
+    }>;
+    messages_read: number;
+    messages_total: number;
+    left_out_messages: number;
+    unverified_points: number;
+  };
+  model: string;
+  prompt_version: string;
+  /** The members whose messages are in `given`, other than the reader. */
+  quoted_user_ids: string[];
+}
+
+function chatSummaryReceiptContext(chapterId: string, userId: string): string {
+  return `chat-summary-report-receipt:${chapterId}:${userId}`;
+}
+
+/** Seals a receipt, or returns null when there is no key to seal with. */
+export function sealChatSummaryReportReceipt(
+  ring: AiTextKeyRing | null,
+  receipt: ChatSummaryReportReceipt,
+  binding: { chapterId: string; userId: string },
+): string | null {
+  if (!ring?.length) return null;
+  const packed =
+    PLAINTEXT_PREFIX +
+    deflateRawSync(Buffer.from(JSON.stringify(receipt), 'utf8')).toString(
+      'base64',
+    );
+  return sealAiText(
+    ring,
+    packed,
+    chatSummaryReceiptContext(binding.chapterId, binding.userId),
+  );
+}
+
+/**
+ * Opens a summary's receipt handed back with a report. Throws as
+ * {@link openAskReportReceipt} does: `invalid`, `expired`, or the cipher's
+ * `no_key`.
+ */
+export function openChatSummaryReportReceipt(
+  ring: AiTextKeyRing | null,
+  envelope: string,
+  binding: { chapterId: string; userId: string },
+  now: Date,
+): ChatSummaryReportReceipt {
+  let packed: string;
+  try {
+    packed = openAiText(
+      ring,
+      envelope,
+      chatSummaryReceiptContext(binding.chapterId, binding.userId),
+    );
+  } catch (error) {
+    if (error instanceof AiTextCipherError && error.reason === 'no_key') {
+      throw error;
+    }
+    throw new AskReportReceiptError('invalid');
+  }
+  if (!packed.startsWith(PLAINTEXT_PREFIX)) {
+    throw new AskReportReceiptError('invalid');
+  }
+  let receipt: ChatSummaryReportReceipt;
+  try {
+    receipt = JSON.parse(
+      inflateRawSync(
+        Buffer.from(packed.slice(PLAINTEXT_PREFIX.length), 'base64'),
+      ).toString('utf8'),
+    ) as ChatSummaryReportReceipt;
+  } catch {
+    throw new AskReportReceiptError('invalid');
+  }
+  if (receipt?.v !== CHAT_SUMMARY_REPORT_RECEIPT_VERSION) {
+    throw new AskReportReceiptError('invalid');
+  }
+  const issued = Date.parse(receipt.issued_at);
+  if (
+    Number.isNaN(issued) ||
+    now.getTime() - issued > ASK_REPORT_RECEIPT_MAX_AGE_MS
+  ) {
+    throw new AskReportReceiptError('expired');
+  }
+  return receipt;
+}

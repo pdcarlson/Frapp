@@ -44,6 +44,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // Changes for one kind of suggestion sent to accept another kind. The
   // review screen sends a suggestion's edits under its own kind (#4309).
   "ai.suggestion.edits_kind",
+  // Catch me up asked for on a DM or an audit log (#3946). No client offers
+  // it there.
+  "ai.catch_up.not_a_channel",
   // Minutes typed Standards (#4312). No minutes screen offers the type, so
   // only a client that skipped its own type list sends it.
   "meeting.standards_refused",

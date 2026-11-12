@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 export interface AiReportTarget {
   subject: AiReportSubject;
   subjectId: string;
-  /** Ask only: the answer's `report_receipt`, exactly as it came. */
+  /** An Ask answer or a channel summary: its `report_receipt`, as it came. */
   receipt?: string | null;
 }
 
@@ -140,8 +140,9 @@ export function ReportAiDialog({
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
-  // An answer from a server with no key carries no receipt; neither keeps
-  // the text, and the sheet says so. Until the server has said, the line
+  // An answer or a summary from a server with no key carries no receipt, and
+  // neither does one whose receipt could not be sealed; nothing of either is
+  // kept then, and the sheet says so. Until the server has said, the line
   // keeps its place and Send waits, so the member never confirms unseen.
   // If the server's answer can't be read, the sheet says the most a report
   // could keep, so a member never sends more than they were told.
@@ -150,10 +151,14 @@ export function ReportAiDialog({
     : policy.isError || policy.data === null
       ? true
       : null;
+  // The subjects whose text exists only in the receipt the response carried.
+  const sealed =
+    target.subject === "ask_answer" || target.subject === "chat_summary";
+  const summary = target.subject === "chat_summary";
   const keepsText =
     serverKeeps === null
       ? null
-      : serverKeeps && (target.subject !== "ask_answer" || !!target.receipt);
+      : serverKeeps && (!sealed || !!target.receipt);
 
   async function submit() {
     if (!reason || report.isPending || keepsText === null) return;
@@ -172,9 +177,13 @@ export function ReportAiDialog({
       const code = codeOf(error);
       setFailure(
         code === "ai.report.too_old"
-          ? AI_REPORT_COPY.too_old
+          ? summary
+            ? AI_REPORT_COPY.summary_too_old
+            : AI_REPORT_COPY.too_old
           : code === "ai.report.receipt_invalid"
-            ? AI_REPORT_COPY.receipt_invalid
+            ? summary
+              ? AI_REPORT_COPY.summary_receipt_invalid
+              : AI_REPORT_COPY.receipt_invalid
             : code === "ai.report.not_found"
               ? AI_REPORT_COPY.gone
               : AI_REPORT_COPY.failed,

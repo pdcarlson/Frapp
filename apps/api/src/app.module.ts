@@ -52,6 +52,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
 import { AskModule } from './modules/ask/ask.module';
 import { ActModule } from './modules/act/act.module';
+import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { validateEnv } from './config/env.validation';
 
@@ -118,6 +119,7 @@ import { validateEnv } from './config/env.validation';
     AiConsentModule,
     AskModule,
     ActModule,
+    ChatCatchUpModule,
     AiReportModule,
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
