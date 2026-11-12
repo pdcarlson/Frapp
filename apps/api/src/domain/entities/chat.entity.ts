@@ -594,10 +594,11 @@ export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
  * not a whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
- * size optimization: `ChatService.deleteMessage` blanks `content` and
- * `metadata` but not `payload`, so serving the full row meant a bookmarked poll
- * or event card that had since been deleted shipped its payload on an endpoint
- * whose declared type says the message reads `[message deleted]`. The
+ * size optimization: `ChatService.deleteMessage` blanked `content` and
+ * `metadata` but, until #1575, not `payload`, so serving the full row meant a
+ * bookmarked poll or event card that had since been deleted shipped its
+ * payload on an endpoint whose declared type says the message reads
+ * `[message deleted]`. The
  * repository's `BOOKMARK_MESSAGE_COLUMNS` and `BookmarkedMessageDto` are the
  * other two copies of this list; all three must stay in step.
  */
