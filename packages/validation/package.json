@@ -16,7 +16,11 @@
       "require": "./dist/*.js",
       "import": "./src/*.ts",
       "default": "./dist/*.js"
-    }
+    },
+    "./analytics": null,
+    "./everyone-role": null,
+    "./release-notes": null,
+    "./upload-allowlists": null
   },
   "scripts": {
     "build": "tsc",

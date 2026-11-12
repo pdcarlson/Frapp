@@ -22,6 +22,7 @@ export {
 // Client-side analytics opt-out. Fourth shared client gate alongside `can`,
 // `isModuleEnabled`, and `subscriptionWriteState`.
 export * from "./analytics-opt-out";
+export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
 export * from "./backwork";

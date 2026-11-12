@@ -2,9 +2,11 @@ import { z } from "zod";
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from "./field-limits";
 
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
-// Originally shared with the Deno Edge Functions; kept dependency-light
-// (zod only) so any future Deno consumer can still import this file
-// directly via an import map without Node.js-specific resolution. ──────
+// Originally shared with the Deno Edge Functions, which no longer import it.
+// (Corrected 2026-11-12: this said the code was kept zod-only so a Deno
+// consumer could import it through an import map. It also imports
+// `./field-limits` by an extensionless path, which an import map doesn't
+// resolve.) ──────
 
 /**
  * `users.id` of the system actor behind server-originated chat messages — the

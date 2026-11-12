@@ -4,7 +4,8 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    "./*": "./src/*.ts",
+    "./use-chat-sidebar": null
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
