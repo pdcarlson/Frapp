@@ -561,6 +561,25 @@ describe('PollService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
+    it("lets a member who manages channels close someone else's poll (#4046)", async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.update.mockResolvedValue(basePollMessage);
+
+      await service.close('msg-1', 'user-2', 'ch-1', true);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            closed_at: expect.any(String),
+            // The moderator who closed it, not the creator.
+            closed_by: 'user-2',
+          }),
+        }),
+      );
+    });
+
     it('rejects closing an already-expired poll', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...basePollMessage,
@@ -693,13 +712,32 @@ describe('PollService', () => {
         });
       });
 
-      it('refuses anyone but the creator with 403', async () => {
+      it('refuses anyone but the creator or a moderator with 403', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
 
         await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
           ForbiddenException,
         );
         expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('lets a moderator close an open-ended card whose creator can no longer close it, keeping the tally (#4046)', async () => {
+        const openEnded = {
+          ...cardPoll,
+          payload: { ...(cardPoll.payload as object), closes_at: null },
+        };
+        mockMessageRepo.findById.mockResolvedValue(openEnded);
+        mockMessageRepo.update.mockResolvedValue(openEnded);
+
+        await service.close('msg-1', 'user-2', 'ch-1', true);
+
+        expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-1', {
+          payload: {
+            ...(openEnded.payload as object),
+            closed_at: expect.any(String),
+            closed_by: 'user-2',
+          },
+        });
       });
 
       it('refuses a card already closed early', async () => {

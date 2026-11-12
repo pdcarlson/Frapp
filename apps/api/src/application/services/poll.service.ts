@@ -338,8 +338,11 @@ export class PollService {
 
   /**
    * Manual early close (`spec/behavior/polls.md`: "Once expired (or manually
-   * closed by the creator), the poll is locked"). Creator-only, enforced by
-   * the `sender_id` check below — channel access is authorized as a `vote`
+   * closed), the poll is locked"). Its creator may close it whatever their
+   * permissions now, and so may a member who holds `channels:manage`
+   * (`canModerate`, resolved by the controller), so a poll with no deadline
+   * whose creator lost `polls:create` or left the chapter can still end with
+   * its tally kept (#4046). Channel access is authorized as a `vote`
    * (like `vote`/`removeVote`, exempt from the Alumni post restriction) even
    * though `close` isn't a vote, because gating it as a `post` would strand
    * an open-ended (no `expires_at`) poll forever the moment its creator loses
@@ -350,6 +353,7 @@ export class PollService {
     messageId: string,
     userId: string,
     chapterId: string,
+    canModerate = false,
   ): Promise<ChatMessage> {
     const message = await this.loadPollForOperation(
       messageId,
@@ -368,8 +372,10 @@ export class PollService {
       throw new BadRequestException('Cannot close a deleted poll');
     }
 
-    if (message.sender_id !== userId) {
-      throw new ForbiddenException('Only the poll creator can close it');
+    if (message.sender_id !== userId && !canModerate) {
+      throw new ForbiddenException(
+        'Only the poll creator or a member who manages channels can close it',
+      );
     }
 
     if (message.kind === 'poll') return this.closeCard(message, userId);
@@ -401,7 +407,7 @@ export class PollService {
    * UPDATE, which is how both cards draw it closed live, and the card vote
    * path (`ChatReactionService`) refuses a vote once `closed_at` is set.
    *
-   * Creator, deletion and access checks are `close`'s, shared with the REST
+   * Who-may-close, deletion and access checks are `close`'s, shared with the REST
    * shape; only the storage differs.
    */
   private async closeCard(

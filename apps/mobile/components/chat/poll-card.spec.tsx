@@ -393,19 +393,29 @@ describe("PollCard closed early by its creator (#3794)", () => {
     expect(onClosePoll).toHaveBeenCalledWith("msg-1");
   });
 
-  it("offers it to nobody else", () => {
+  it("offers it to nobody else without channels:manage", () => {
     const { tree } = renderWithClose(poll({ sender_id: OTHER, payload: card }));
     expect(closeButton(tree)).toHaveLength(0);
   });
 
-  it("withholds it from a creator the close route would refuse", () => {
-    // No polls:create: a New Member can post a card (#3007) but not close it.
+  it("offers it on anyone's poll to a member who manages channels (#4046)", () => {
+    myPermissions.current = ["members:view", "channels:manage"];
+    const { tree } = renderWithClose(
+      poll({ sender_id: OTHER, payload: { ...card, closes_at: null } }),
+    );
+    expect(closeButton(tree)).toHaveLength(1);
+  });
+
+  it("offers it to a creator without polls:create (#4046)", () => {
+    // A role change took it away; the poll is still theirs to close.
     myPermissions.current = ["members:view"];
     expect(
       closeButton(renderWithClose(poll({ payload: card })).tree),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
+  });
 
-    // Polls off: the module guard refuses the close too.
+  it("withholds it while Polls is off", () => {
+    // Polls off: the module guard refuses the close.
     myPermissions.current = ["members:view", "polls:create"];
     chapterRead.current.data = { enabled_modules: { polls: false } };
     expect(

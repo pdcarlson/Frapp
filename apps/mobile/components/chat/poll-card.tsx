@@ -101,10 +101,11 @@ export function PollCard(props: PollCardProps) {
   // reads the same chapter through `plusMenuModel`, which greys its Poll row
   // instead (`components/chat/use-composer-plus.tsx`).
   const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
-  // The close route requires `polls:create`, which posting a card doesn't
-  // (#3007). Unknown until the read lands, which withholds Close poll.
-  const canCreatePolls = can(
-    "polls:create",
+  // A `channels:manage` holder may close anyone's poll, as its creator may
+  // their own (#4046). Unknown until the read lands, which offers it to the
+  // creator only.
+  const canManageChannels = can(
+    "channels:manage",
     useMyPermissions().data?.permissions,
   );
 
@@ -127,7 +128,7 @@ export function PollCard(props: PollCardProps) {
     );
   }
 
-  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // Closed by its deadline or, early, by its creator or a moderator (#3794). The server row's
   // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
   // redraws closed the moment the creator closes it.
   const isClosed = isPollCardClosed(payload, now);
@@ -135,7 +136,7 @@ export function PollCard(props: PollCardProps) {
     !!onClosePoll &&
     canClosePoll(message, payload, viewerId, now, {
       pollsGate,
-      canCreatePolls,
+      canManageChannels,
     });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });

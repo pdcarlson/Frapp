@@ -334,7 +334,7 @@ describe("PollCard closed early by its creator (#3794)", () => {
     expect(onClosePoll).toHaveBeenCalledWith("msg-1");
   });
 
-  it("offers it to nobody else", () => {
+  it("offers it to nobody else without channels:manage", () => {
     renderWithClose(poll({ sender_id: OTHER, payload: card }));
 
     expect(
@@ -342,24 +342,29 @@ describe("PollCard closed early by its creator (#3794)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("withholds it from a creator the close route would refuse", () => {
-    // No polls:create: a New Member can post a card (#3007) but not close it.
-    myPermissions.current = ["members:view"];
-    const { unmount } = render(
-      <PollCard
-        message={poll({ sender_id: VIEWER, payload: card })}
-        viewerId={VIEWER}
-        isConfirmed
-        onVote={vi.fn()}
-        onClosePoll={vi.fn()}
-      />,
+  it("offers it on anyone's poll to a member who manages channels (#4046)", () => {
+    myPermissions.current = ["members:view", "channels:manage"];
+    const { onClosePoll } = renderWithClose(
+      poll({ sender_id: OTHER, payload: { ...card, closes_at: null } }),
     );
-    expect(
-      screen.queryByRole("button", { name: "Close poll" }),
-    ).not.toBeInTheDocument();
-    unmount();
 
-    // Polls off: the module guard refuses the close too.
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers it to a creator without polls:create (#4046)", () => {
+    // A role change took it away; the poll is still theirs to close.
+    myPermissions.current = ["members:view"];
+    const { onClosePoll } = renderWithClose(
+      poll({ sender_id: VIEWER, payload: card }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("withholds it while Polls is off", () => {
+    // Polls off: the module guard refuses the close.
     myPermissions.current = ["members:view", "polls:create"];
     chapterRead.current = {
       ...chapterRead.current,

@@ -11473,7 +11473,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
+        "summary": "Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]
