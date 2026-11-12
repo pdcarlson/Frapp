@@ -1220,7 +1220,9 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     expect(
       screen.getByText(/Showing the newest 1,000 documents\./),
     ).toBeInTheDocument();
-  });
+    // A thousand rows render, which takes about 3s here and passed 5s on a
+    // busy CI runner (#4614), timing out this test and the next with it.
+  }, 20_000);
 
   it("distinguishes 'no matches' from an empty library", async () => {
     const user = userEvent.setup();
