@@ -9672,6 +9672,216 @@
         ]
       }
     },
+    "/v1/ai/suggestions": {
+      "get": {
+        "operationId": "AiSuggestionController_list_v1",
+        "parameters": [
+          {
+            "name": "source_type",
+            "required": false,
+            "in": "query",
+            "description": "Only suggestions drawn from this source. Send with `source_id`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "meeting",
+                "event",
+                "channel"
+              ]
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The Suggested list: waiting suggestions the caller could accept, newest first",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/accept": {
+      "post": {
+        "operationId": "AiSuggestionController_accept_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptAiSuggestionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/dismiss": {
+      "post": {
+        "operationId": "AiSuggestionController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss a suggestion",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/decide": {
+      "post": {
+        "operationId": "AiSuggestionController_decide_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideAiSuggestionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecideResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
     "/v1/pledge-classes": {
       "get": {
         "operationId": "PledgeClassController_list_v1",
@@ -19174,6 +19384,345 @@
         },
         "required": [
           "done"
+        ]
+      },
+      "AiSuggestionSourceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "meeting",
+              "event",
+              "channel"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "TaskSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "assignee_id",
+          "due_date",
+          "due_at",
+          "subtasks"
+        ]
+      },
+      "AiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AiSuggestionSourceDto"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Suggestions made together (one push) share it."
+          },
+          "task": {
+            "nullable": true,
+            "description": "The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionDto"
+              }
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The words it came from, exactly as they appear in the source. Null when there are none to show."
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "Accepted with changes."
+          },
+          "result_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "What accepting made (a task id), once accepted."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "source",
+          "batch_id",
+          "task",
+          "quote",
+          "edited",
+          "result_id",
+          "created_at",
+          "expires_at"
+        ]
+      },
+      "AiSuggestionListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDto"
+            }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "More waiting suggestions exist than one list returns."
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ]
+      },
+      "TaskSuggestionEditsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Who the task is for. Required to accept when none was suggested."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD). Required to accept when none was suggested."
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment it is due, or null for no time. A new `due_date` sent without it clears the time."
+          },
+          "subtasks": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AcceptAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          }
+        }
+      },
+      "AiSuggestionResultDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      },
+      "AiSuggestionDecisionDto": {
+        "type": "object",
+        "properties": {
+          "suggestion": {
+            "$ref": "#/components/schemas/AiSuggestionDto"
+          },
+          "result": {
+            "nullable": true,
+            "description": "What accepting made. Null for a dismissal.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionResultDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "suggestion",
+          "result"
+        ]
+      },
+      "AiSuggestionDecideItemDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "dismiss"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      },
+      "DecideAiSuggestionsDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AiSuggestionDecideOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+          },
+          "status": {
+            "type": "number",
+            "description": "The HTTP status the single-item route would have answered."
+          },
+          "code": {
+            "type": "string",
+            "description": "Why it was refused, e.g. ai.suggestion.decided."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "AiSuggestionDecideResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideOutcomeDto"
+            }
+          }
+        },
+        "required": [
+          "outcomes"
         ]
       },
       "PledgeClassDto": {

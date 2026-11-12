@@ -471,6 +471,19 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 
+## AI Suggestion Events
+
+AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run and expired by an hourly sweep, neither of which is a request, so they are not feature events. `AiSuggestionService` sends four events itself, through `AnalyticsService`:
+
+| Event | Sent when | Keyed by | Properties |
+| --- | --- | --- | --- |
+| `ai-suggestions-proposed` | A run saves a batch | Chapter (`trackForChapter`) | `kind`, `count` |
+| `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
+| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind` |
+| `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
+
+`kind` is a closed set (`task` today). No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed, by `kind`, and how often officers change a suggestion first is `edited = true` over accepted.
+
 ## Member Onboarding Funnel
 
 The activation funnel follows a chapter. This one follows a member, from the
