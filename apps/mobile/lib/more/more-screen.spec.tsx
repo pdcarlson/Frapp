@@ -536,7 +536,11 @@ describe("More hub anatomy (#1048)", () => {
       .at(-1)
       ?.findAllByType(ListRow)
       .map((row) => row.props.label);
-    expect(labels).toEqual(["Invite members", "Host check-in"]);
+    expect(labels).toEqual([
+      "Invite members",
+      "Host check-in",
+      "Chapter settings",
+    ]);
     const row = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -548,6 +552,34 @@ describe("More hub anatomy (#1048)", () => {
       row.props.onPress();
     });
     expect(push).toHaveBeenCalledWith("/invite");
+  });
+
+  it("gives Chapter settings to whoever has a page in it, and fails closed (#4074)", () => {
+    const hasRow = () => screenText(render()).includes("Chapter settings");
+    // `[]` is also what the permission list is while it loads.
+    permissions = [];
+    expect(hasRow()).toBe(false);
+    permissions = ["members:view", "events:update"];
+    expect(hasRow()).toBe(false);
+    // Plan and billing doesn't come to the phone, so a treasurer who holds
+    // only that gets no door to an empty screen.
+    permissions = ["billing:view"];
+    expect(hasRow()).toBe(false);
+    permissions = ["chapter-config:view"];
+    expect(hasRow()).toBe(true);
+    permissions = ["roles:manage"];
+    const tree = render();
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Chapter settings",
+    );
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
+      row.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith("/chapter-settings");
   });
 
   it("draws no Invite members row for a role that can't invite", () => {

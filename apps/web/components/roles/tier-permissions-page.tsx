@@ -8,7 +8,7 @@ import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleto
 import { PermissionSwitchList } from "@/components/roles/permission-switch-list";
 import { useTierPermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { useRolesData } from "@/components/roles/use-roles-data";
-import { byDisplayOrder, mayGrant, reachesTier } from "@/lib/role-tiers";
+import { byDisplayOrder, mayGrant, reachesTier } from "@repo/hooks/role-tiers";
 
 /**
  * A tier's permissions (#3990): "open a tier, choose edit permissions, and
