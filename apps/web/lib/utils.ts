@@ -1,4 +1,9 @@
-import { localIsoDate } from "@repo/formatting";
+import {
+  CURRENCY_AMOUNT,
+  localIsoDate,
+  neutralizeFormulaCell,
+  toCsvCell,
+} from "@repo/formatting";
 import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { type ClassValue, clsx } from "clsx";
@@ -131,38 +136,6 @@ export function labelled(
   return formatted ? `${label} ${formatted}` : null;
 }
 
-/** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */
-export function quoteCsvCell(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-/**
- * A cell that a spreadsheet would run as a formula, made inert.
- *
- * Excel, Google Sheets and LibreOffice evaluate a text cell that starts with
- * `=`, `+`, `-` or `@` (and Excel also one that starts with a tab or carriage
- * return, which it strips first), so a member-typed description of
- * `=HYPERLINK(...)` in an export would run on the officer's machine (CSV
- * injection, OWASP). A leading apostrophe makes the app read the cell as text.
- *
- * A plain number or a currency amount is left alone: `-5` and `-$12.00` are
- * values, not formulas, and prefixing them would turn every negative points
- * adjustment into text. Applies to CSV and to the tab-separated clipboard
- * copy; an `.xlsx` string cell is typed as text in the file and needs no
- * prefix.
- */
-export function neutralizeFormulaCell(value: string): string {
-  if (!/^[=+\-@\t\r]/.test(value)) return value;
-  if (PLAIN_NUMBER.test(value) || CURRENCY_AMOUNT.test(value)) return value;
-  return `'${value}`;
-}
-
-const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
-const CURRENCY_AMOUNT = /^-?\$\d{1,3}(,?\d{3})*(\.\d+)?$/;
-
 /** Column order for an export: every row's own keys, in first-seen order. */
 function exportHeaders(rows: Record<string, string>[]): string[] {
   const headerSet = new Set<string>();
@@ -177,18 +150,19 @@ function exportHeaders(rows: Record<string, string>[]): string[] {
  * Excel renders umlauts/emoji correctly and downstream spreadsheet behavior
  * stays predictable without extra client libs. Column order is the union of
  * every row's own keys, in first-seen order, so rows with different shapes
- * still produce one header. Formula-shaped cells are made inert
- * (`neutralizeFormulaCell`). Shared by every dashboard export (Points,
- * Billing, Reports) through `exportRows` rather than each hand-rolling the
+ * still produce one header. Each cell goes through `toCsvCell`
+ * (`@repo/formatting`): formula-shaped text made inert, then quoted. Shared
+ * by every dashboard export (Points, Billing, Reports) through `exportRows` rather than each hand-rolling the
  * same escaping and BOM/CRLF handling.
  */
 export function rowsToCsv(rows: Record<string, string>[]): string {
   if (rows.length === 0) return "";
   const headers = exportHeaders(rows);
-  const cell = (value: string) => quoteCsvCell(neutralizeFormulaCell(value));
-  const lines = [headers.map(cell).join(",")];
+  const lines = [headers.map(toCsvCell).join(",")];
   for (const row of rows) {
-    lines.push(headers.map((header) => cell(row[header] ?? "")).join(","));
+    lines.push(
+      headers.map((header) => toCsvCell(row[header] ?? "")).join(","),
+    );
   }
   return `\uFEFF${lines.join("\r\n")}`;
 }
