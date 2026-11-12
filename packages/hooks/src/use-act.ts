@@ -7,7 +7,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
  * Asking Frapp to do something (#718, `spec/behavior/ai.md` § Asking Frapp to
- * do something), shared by web and, when its slice comes, mobile.
+ * do something), shared by web and mobile.
  *
  * A request is answered with a proposal, never a change. The proposal is an
  * AI suggestion only the asker can open, so Confirm and Cancel are the

@@ -70,7 +70,7 @@ export function useAiSurfaces(): AiSurfaces {
  * The things this member can ask Frapp to do (#718), or an empty list: the
  * Do side of the Ask sheet shows only for a member the server lists actions
  * for, which takes Ask itself, `ai:act` and a permission to do at least one
- * of them. The server is asked only once Ask is known to be on, and only
+ * of them. The server is asked only for a member who holds `ai:act`, and only
  * while `enabled` (the sheet is open), so a member without Ask never sends
  * the request.
  */
@@ -79,6 +79,16 @@ export function useActActions(options?: {
   enabled?: boolean;
 }): readonly string[] {
   const { ask } = useAiSurfaces();
-  const status = useActStatus({ enabled: ask && (options?.enabled ?? true) });
-  return ask && Array.isArray(status.data) ? status.data : NO_ACTIONS;
+  const permissionsQuery = useMyPermissions();
+  // No request for a member without `ai:act`: the server would answer 403,
+  // and every Ask sheet a member opened would count as a denied request.
+  // Web's panel checks the same way first.
+  const mayAct =
+    ask &&
+    Array.isArray(permissionsQuery.data?.permissions) &&
+    can("ai:act", permissionsQuery.data.permissions);
+  const status = useActStatus({
+    enabled: mayAct && (options?.enabled ?? true),
+  });
+  return mayAct && Array.isArray(status.data) ? status.data : NO_ACTIONS;
 }

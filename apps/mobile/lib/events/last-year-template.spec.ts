@@ -75,4 +75,19 @@ describe("lastYearTemplate", () => {
     expect(draft.end).toBeNull();
     expect(draft.name).toBe("Winter Formal 2025");
   });
+
+  it("keeps the length of an event a week or longer, however far the start moved", () => {
+    const retreat = {
+      ...FORMAL,
+      // Nine days.
+      start_time: "2025-11-03T15:00:00.000Z",
+      end_time: "2025-11-12T15:00:00.000Z",
+    };
+    const draft = lastYearTemplate(retreat, new Date("2026-11-12T12:00:00Z"));
+    expect(draft.end!.getTime() - draft.start!.getTime()).toBe(9 * 24 * 60 * 60 * 1000);
+
+    const week = { ...retreat, end_time: "2025-11-10T15:00:00.000Z" };
+    const weekDraft = lastYearTemplate(week, new Date("2026-11-12T12:00:00Z"));
+    expect(weekDraft.end!.getTime() - weekDraft.start!.getTime()).toBe(WEEK);
+  });
 });

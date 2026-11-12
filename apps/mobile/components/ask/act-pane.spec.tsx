@@ -8,6 +8,7 @@ import {
   AI_REPORT_COPY,
   actConfirmRefusalLine,
   actMissingLine,
+  actNoteLine,
   actPointsDoneLine,
   actPointsHeadline,
   actUnavailableLine,
@@ -78,9 +79,17 @@ let session!: ReturnType<typeof useActSession>;
 const keep = (value: ReturnType<typeof useActSession>) => {
   session = value;
 };
-function Harness({ onValue }: { onValue: typeof keep }) {
+function Harness({
+  onValue,
+  shown = true,
+}: {
+  onValue: typeof keep;
+  shown?: boolean;
+}) {
   const value = useActSession(ensureConsent);
   onValue(value);
+  // The sheet holds the session; the body comes and goes with the Do side.
+  if (!shown) return null;
   return (
     <ActBody
       session={value}
@@ -315,6 +324,131 @@ describe("the Do side of Ask", () => {
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     expect(hooks.accept).not.toHaveBeenCalled();
     expect((hooks.seed as { title: string }).title).toBe("Book the bus");
+  });
+
+  it("confirms an event proposal, and links to Events", async () => {
+    hooks.request.mockResolvedValue({
+      ...BASE,
+      status: "proposed",
+      action: "create_event",
+      suggestion: {
+        id: "sg-3",
+        kind: "event",
+        points: null,
+        task: null,
+        new_event: {
+          name: "Study night",
+          start_time: "2026-11-17T23:00:00Z",
+          end_time: "2026-11-18T01:00:00Z",
+          location: "Library",
+          is_mandatory: false,
+          point_value: null,
+          description: null,
+        },
+      },
+    });
+    const tree = await say(render(), "Put a study night on the calendar");
+    const text = screenText(tree);
+    expect(text).toContain("Study night");
+    expect(text).toContain("Library");
+    expect(text).toContain(ACT_COPY.optional);
+    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    act(() => byLabel(tree, ACT_COPY.open_events).props.onPress());
+    expect(onOpen).toHaveBeenCalledWith({
+      href: "/events",
+      label: ACT_COPY.open_events,
+    });
+  });
+
+  it("says which names it couldn't place, above the control that adds them", async () => {
+    hooks.request.mockResolvedValue({
+      ...POINTS,
+      notes: [
+        { type: "unmatched_name", name: "Jordy" },
+        { type: "ambiguous_name", name: "Sam" },
+      ],
+    });
+    const tree = await say(render(), "Give Ana, Jordy and Sam 5 points");
+    const text = screenText(tree);
+    expect(text).toContain(actNoteLine({ type: "unmatched_name", name: "Jordy" }));
+    expect(text).toContain(actNoteLine({ type: "ambiguous_name", name: "Sam" }));
+    expect(byLabel(tree, ACT_COPY.add_member)).toBeDefined();
+  });
+
+  it("accepts a task finished in the form with what the officer set there", async () => {
+    hooks.request.mockResolvedValue({
+      ...TASK,
+      suggestion: {
+        ...TASK.suggestion,
+        task: { ...TASK.suggestion.task, assignee_id: null },
+      },
+    });
+    const tree = await say(render(), "Make a task to book the bus");
+    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    const seed = hooks.seed as { accept: (form: unknown) => Promise<void> };
+    await act(async () =>
+      seed.accept({
+        title: "Book the bus",
+        assignee_id: "u1",
+        due_date: "2026-11-20",
+        subtasks: [],
+      }),
+    );
+    expect(hooks.accept).toHaveBeenCalledWith({
+      id: "sg-2",
+      task: { assignee_id: "u1" },
+    });
+    expect(screenText(tree)).toContain(ACT_COPY.done_task);
+  });
+
+  it("keeps the members an officer left on the card through a close and reopen", async () => {
+    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    act(() =>
+      byLabel(tree, `${ACT_COPY.remove_member} Jordan Lee`).props.onPress(),
+    );
+    // The sheet closes, or the officer looks at the Ask side: the pane goes.
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <Harness onValue={keep} shown={false} />
+        </FrappThemeProvider>,
+      ),
+    );
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <Harness onValue={keep} />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(screenText(tree)).toContain(actPointsHeadline(5, 1));
+    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    expect(hooks.accept).toHaveBeenCalledWith({
+      id: "sg-1",
+      points: { target_user_ids: ["u1"] },
+    });
+  });
+
+  it("sends nothing else while a Confirm is out", async () => {
+    let land!: (value: unknown) => void;
+    hooks.accept.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    await act(async () => {
+      void byLabel(tree, ACT_COPY.confirm).props.onPress();
+    });
+    expect(session.working).toBe(true);
+    expect(session.submit("Give Sam 2 points")).toBe(false);
+    expect(hooks.request).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      land({ result: { outcome: { adjusted: 2, skipped: 0 } } }),
+    );
+    expect(session.working).toBe(false);
+    expect(screenText(tree)).toContain(actPointsDoneLine(5, 2, 0));
   });
 
   it("asks which event, and sends the pick with the amount and reason it had", async () => {

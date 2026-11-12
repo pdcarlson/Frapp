@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { codeOf } from "@repo/api-sdk";
 import {
   CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_MAX_UNREAD,
   can,
   type ChatCatchUp,
 } from "@repo/validation";
@@ -20,7 +21,7 @@ import { useMyPermissions } from "./use-user";
 
 /**
  * Catch me up on the client (#3946, `spec/behavior/ai.md` § Catch me up),
- * shared by web and, when its slice comes, mobile.
+ * shared by web and mobile.
  *
  * The summary is held in the screen's own state and nowhere else: not in the
  * query cache, not in storage. Nothing about it is kept on the server either,
@@ -115,7 +116,19 @@ export function useChatCatchUp(): {
   useEffect(() => stop, [stop]);
 
   const run = useCallback(
-    async (channelId: string, target: ChatCatchUpTarget) => {
+    async (channelId: string, asked: ChatCatchUpTarget) => {
+      // The most a request may name. A longer stretch is read from its newest
+      // messages either way, and an uncapped count (a channel never opened,
+      // after an import) would be refused whole.
+      const target: ChatCatchUpTarget =
+        "unread" in asked && asked.unread
+          ? {
+              unread: {
+                ...asked.unread,
+                count: Math.min(asked.unread.count, CHAT_CATCH_UP_MAX_UNREAD),
+              },
+            }
+          : asked;
       stop();
       const abort = new AbortController();
       inFlight.current = abort;

@@ -153,7 +153,7 @@ It is used once a week by one person, in a chapter room with weak wifi, with the
 
 ## Suggested tasks
 
-Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); the phone reads the same list (#4415; [`../ui/mobile/screens.md`](../ui/mobile/screens.md) § Suggested tasks), one suggestion at a time: it has no Accept all.
+Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); the phone reads the same list (#4415; [`../ui/mobile/screens.md`](../ui/mobile/screens.md), the Suggested row), one suggestion at a time: it has no Accept all.
 
 - **When.** Posting minutes turns each action item into a suggested task. A draft suggests nothing: its action items are still being written, and a draft is its author's. Hand-written minutes are treated exactly as drafted ones are.
 - **No model is asked.** By the time minutes post, an action item already holds what a task needs: its words, an owner only when one was named, a day only when one was said. A drafted item got those from the notes under the checks in [Drafting from notes](#drafting-from-notes), and the officer read it before posting. So a suggested task is the action item as posted, and nothing leaves Frapp to make it.

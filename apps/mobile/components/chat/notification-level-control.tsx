@@ -59,6 +59,11 @@ export const NOTIFICATION_LEVEL_OPTIONS: {
   },
 ];
 
+/** The trigger, when its menu holds channel actions and no level is known. */
+export const CHANNEL_MENU_LABEL = "Channel menu";
+/** Said after the level, so the actions in the menu can be found by ear. */
+export const CHANNEL_MENU_HINT = "Also holds this channel's actions.";
+
 export function triggerAccessibilityLabel(
   level: ChatNotificationLevel | null,
 ): string {
@@ -112,6 +117,8 @@ export type NotificationLevelMenuState = {
   writeBlockedReason: string | null;
   /** The control cannot write: disabled, level unknown, or writes blocked. */
   blocked: boolean;
+  /** The menu holds channel actions besides the levels. */
+  hasActions: boolean;
   /** The menu is on screen. */
   visible: boolean;
   toggle: () => void;
@@ -123,15 +130,25 @@ export function useNotificationLevelMenu({
   fromChapterLevel = false,
   disabled = false,
   writeBlockedReason = null,
+  hasActions = false,
 }: {
   level: ChatNotificationLevel | null;
   fromChapterLevel?: boolean;
   disabled?: boolean;
   writeBlockedReason?: string | null;
+  /**
+   * The menu also holds the channel's own actions (Catch me up, #3946),
+   * which need nothing from the notification level: an unread level then no
+   * longer shuts the menu, or those actions would have no way in.
+   */
+  hasActions?: boolean;
 }): NotificationLevelMenuState {
   const [isOpen, setIsOpen] = useState(false);
 
-  const blocked = disabled || level === null || Boolean(writeBlockedReason);
+  const blocked =
+    disabled ||
+    Boolean(writeBlockedReason) ||
+    (level === null && !hasActions);
   // Close, don't just hide (#2034). The trigger is disabled while blocked, so a
   // menu merely hidden then could not be dismissed, and it came back by itself
   // once writes unblocked: over the whole screen, taking the member's next tap.
@@ -158,6 +175,7 @@ export function useNotificationLevelMenu({
     fromChapterLevel,
     writeBlockedReason,
     blocked,
+    hasActions,
     visible,
     toggle,
     close,
@@ -189,8 +207,15 @@ export function NotificationLevelControl({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={triggerAccessibilityLabel(menu.level)}
-      accessibilityHint={menu.writeBlockedReason ?? undefined}
+      accessibilityLabel={
+        menu.hasActions && menu.level === null
+          ? CHANNEL_MENU_LABEL
+          : triggerAccessibilityLabel(menu.level)
+      }
+      accessibilityHint={
+        menu.writeBlockedReason ??
+        (menu.hasActions ? CHANNEL_MENU_HINT : undefined)
+      }
       accessibilityState={{ disabled: menu.blocked }}
       disabled={menu.blocked}
       hitSlop={12}

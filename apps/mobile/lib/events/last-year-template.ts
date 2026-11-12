@@ -20,8 +20,15 @@ export function lastYearTemplate(
   now: Date = new Date(),
 ): NewEventDraft {
   const start = sameWeekdayThisYear(event.start_time, now);
-  // The end keeps its distance from the start, not its own next week.
-  const end = start ? sameWeekdayThisYear(event.end_time, start) : null;
+  // The end keeps its distance from the start. Moving it on its own would
+  // shorten an event of a week or more to what is left over after whole
+  // weeks, and one of exactly a week to nothing.
+  const length =
+    new Date(event.end_time).getTime() - new Date(event.start_time).getTime();
+  const end =
+    start && Number.isFinite(length) && length > 0
+      ? new Date(start.getTime() + length)
+      : null;
   return {
     ...draftFromEvent({ event, seriesRule: null, parent: null }),
     name: nameForThisYear(event.name, event.start_time, start),

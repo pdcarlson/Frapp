@@ -580,6 +580,16 @@ describe("Catch me up on a thread (#3946)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers nothing in the audit log", () => {
+    catchUp.surface = true;
+    channelRow = { ...channelRow, is_audit_log: true, is_read_only: true };
+    thread = longThread(40);
+    const tree = render();
+    expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(0);
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
   it("summarizes this thread from the reply count's line", () => {
     catchUp.surface = true;
     thread = longThread(8);

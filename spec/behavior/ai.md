@@ -155,7 +155,7 @@ A member asks a question in their own words and gets an answer from what they co
 
 ## Catch me up
 
-A member back to a busy channel asks for the short version and gets a few lines, each tied to the message it came from. Built 2026-11-12 on web (#3946) and on the phone (the wave 5 mobile change, 2026-11-12). It is off unless the server has `AI_ENABLED` on and the chapter's president has turned on both Ask and "Include channel messages", and it needs the member's yes on the AI sheet.
+A member back to a busy channel asks for the short version and gets a few lines, each tied to the message it came from. Built 2026-11-12 on web (#3946) and on the phone (#3946, the mobile half, 2026-11-12). It is off unless the server has `AI_ENABLED` on and the chapter's president has turned on both Ask and "Include channel messages", and it needs the member's yes on the AI sheet.
 
 - **Only when a member asks.** Nothing summarizes in the background, on a schedule, or for a channel nobody asked about. One request is one summary for one reader.
 - **Chapter channels only.** Never a direct message, a group DM or the audit log. The reader must be able to open the channel, by the timeline's own check.
@@ -177,7 +177,7 @@ A member back to a busy channel asks for the short version and gets a few lines,
 
 ## Asking Frapp to do something
 
-An officer types what they want done ("give 5 points to everyone who came to chapter tonight", "make a task for Jordan to book the bus by Friday") and gets back a card that says exactly what would happen. Nothing changes until they press Confirm. Built 2026-11-12 on web (#718) and on the phone (the wave 5 mobile change, 2026-11-12).
+An officer types what they want done ("give 5 points to everyone who came to chapter tonight", "make a task for Jordan to book the bus by Friday") and gets back a card that says exactly what would happen. Nothing changes until they press Confirm. Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-12).
 
 - **Who can.** A member who holds `ai:use` and `ai:act` (and `members:view`, as every member does), in a chapter whose president has Ask on, on a server with `AI_ENABLED` on, after their yes on the AI sheet. No starting role holds `ai:act`: a chapter grants it on the Roles page. `ai:act` adds no authority of its own. It lets a member ask for the changes they could already make by hand.
 - **Where it is.** The Ask panel gains two sides, Ask and Do, for a member who can ask for at least one action. Everyone else sees Ask as it was ([`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar). A question and a request use separate routes, so a question can never reach an action.

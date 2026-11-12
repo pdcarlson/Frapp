@@ -73,7 +73,7 @@ beforeEach(() => {
     isPending: false,
   };
   state.permissions = {
-    data: { permissions: ["ai:use"] },
+    data: { permissions: ["ai:use", "ai:act"] },
     isPending: false,
   };
   state.actions = ["points", "task"];
@@ -147,6 +147,19 @@ describe("useAiSurfaces", () => {
     };
     expect(read().catchUp).toBe(false);
   });
+
+  it("keeps Catch me up from a member whose role can't use AI, and from a server with none", () => {
+    state.settings = {
+      data: { ask: true, meeting_notes: true, chat_source: true },
+      isPending: false,
+    };
+    state.permissions = { data: { permissions: [] }, isPending: false };
+    expect(read().catchUp).toBe(false);
+
+    state.permissions = { data: { permissions: ["ai:use"] }, isPending: false };
+    state.consent = { data: null, isError: false };
+    expect(read().catchUp).toBe(false);
+  });
 });
 
 describe("useActActions", () => {
@@ -157,6 +170,12 @@ describe("useActActions", () => {
 
   it("asks nothing while the sheet is closed", () => {
     expect(readActions(false)).toEqual([]);
+    expect(state.actEnabled).toBe(false);
+  });
+
+  it("asks nothing for a member without ai:act: the server would only refuse", () => {
+    state.permissions = { data: { permissions: ["ai:use"] }, isPending: false };
+    expect(readActions()).toEqual([]);
     expect(state.actEnabled).toBe(false);
   });
 

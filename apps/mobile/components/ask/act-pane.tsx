@@ -128,7 +128,17 @@ export function useActSession(ensureConsent: () => Promise<boolean>) {
   // Only the latest request may write the answer: one sent, then replaced
   // before it came back, is dropped.
   const latest = useRef(0);
-  const working = turn?.phase === "working";
+  // The members an officer left on a points card, by proposal. Held here and
+  // not on the card: the card unmounts with a look at the Ask side and with
+  // the sheet, and a list that quietly went back to the first one would give
+  // points to someone the officer had taken off.
+  const [kept, setKept] = useState<{ id: string; targets: string[] } | null>(
+    null,
+  );
+  // A Confirm or Cancel is out. Nothing else is sent until it is back, so
+  // its answer can't land on another request's turn.
+  const [deciding, setDeciding] = useState(false);
+  const working = turn?.phase === "working" || deciding;
 
   async function settle(said: string, run: () => Promise<ActResponse>) {
     const mine = ++latest.current;
@@ -154,6 +164,10 @@ export function useActSession(ensureConsent: () => Promise<boolean>) {
     turn,
     setTurn,
     working,
+    kept,
+    setKept,
+    deciding,
+    setDeciding,
     /** Sends what the member typed. False when there was nothing to send. */
     submit(text: string): boolean {
       const said = text.trim();
@@ -308,6 +322,7 @@ export function ActBody({
             report={report}
             onAnswerConsent={() => session.submit(turn.request)}
             onPickEvent={session.pickEvent}
+            session={session}
             onDone={(line, link) =>
               setTurn({ phase: "done", request: turn.request, line, link })
             }
@@ -375,6 +390,7 @@ function ActLinkButton({
 
 function ActAnswer({
   response,
+  session,
   report,
   onAnswerConsent,
   onPickEvent,
@@ -383,6 +399,7 @@ function ActAnswer({
   styles,
 }: {
   response: ActResponse;
+  session: ActSession;
   report: Reporting;
   onAnswerConsent: () => void;
   onPickEvent: (eventId: string) => void;
@@ -397,6 +414,7 @@ function ActAnswer({
         key={response.suggestion.id}
         suggestion={response.suggestion}
         notes={response.notes}
+        session={session}
         report={report}
         onDone={onDone}
         onCancelled={onCancelled}
@@ -522,6 +540,7 @@ function dueLine(task: { due_date: string | null; due_at: string | null }) {
 function ActCard({
   suggestion,
   notes,
+  session,
   report,
   onDone,
   onCancelled,
@@ -529,6 +548,7 @@ function ActCard({
 }: {
   suggestion: AiSuggestion;
   notes: ActResponse["notes"];
+  session: ActSession;
   report: Reporting;
   onDone: (line: string, link: ActLink | null) => void;
   onCancelled: () => void;
@@ -555,9 +575,14 @@ function ActCard({
   };
 
   const { points, task, new_event: event } = suggestion;
-  const [targets, setTargets] = useState<string[]>(
-    points?.target_user_ids ?? [],
+  const { kept, setKept, deciding, setDeciding } = session;
+  const proposed = points?.target_user_ids;
+  const targets = useMemo(
+    () => (kept?.id === suggestion.id ? kept.targets : (proposed ?? [])),
+    [kept, suggestion.id, proposed],
   );
+  const setTargets = (change: (list: string[]) => string[]) =>
+    setKept({ id: suggestion.id, targets: change(targets) });
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with nobody left: say so, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -568,7 +593,7 @@ function ActCard({
   useEffect(() => {
     if (formOpen) formRef.current?.present();
   }, [formOpen]);
-  const busy = accept.isPending || dismiss.isPending;
+  const busy = accept.isPending || dismiss.isPending || deciding;
 
   const noteLines = notes.flatMap((note) => {
     const line = actNoteLine({
@@ -601,6 +626,7 @@ function ActCard({
       setFormOpen(true);
       return;
     }
+    setDeciding(true);
     try {
       const decision = await accept.mutateAsync({ id: suggestion.id, ...edits });
       if (points) {
@@ -627,11 +653,14 @@ function ActCard({
       }
     } catch (error) {
       setProblem(refusalLine(error));
+    } finally {
+      setDeciding(false);
     }
   }
 
   async function cancel() {
     setProblem(null);
+    setDeciding(true);
     try {
       await dismiss.mutateAsync(suggestion.id);
     } catch (error) {
@@ -644,6 +673,8 @@ function ActCard({
         setProblem(refusalLine(error));
         return;
       }
+    } finally {
+      setDeciding(false);
     }
     onCancelled();
   }
@@ -689,10 +720,15 @@ function ActCard({
         dueAt: task.due_at,
         subtasks: task.subtasks,
         accept: async (form) => {
-          await accept.mutateAsync({
-            id: suggestion.id,
-            task: suggestionEdits(task, form),
-          });
+          setDeciding(true);
+          try {
+            await accept.mutateAsync({
+              id: suggestion.id,
+              task: suggestionEdits(task, form),
+            });
+          } finally {
+            setDeciding(false);
+          }
           onDone(ACT_COPY.done_task, {
             href: "/tasks",
             label: ACT_COPY.open_tasks,

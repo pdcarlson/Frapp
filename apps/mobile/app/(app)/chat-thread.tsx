@@ -39,7 +39,7 @@ import { setChannelLocked } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { canFlagMessage } from "@repo/chat-core/flags";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
@@ -64,7 +64,6 @@ import {
 } from "@repo/hooks";
 import {
   CHAT_CATCH_UP_COPY,
-  CHAT_CATCH_UP_MAX_UNREAD,
   CHAT_CATCH_UP_OFFER_AT,
   can,
   chatCatchUpOfferLine,
@@ -709,6 +708,20 @@ function ChannelThreadScreen() {
       offerDismissed: false,
     });
   }
+  // The counts can land after the channel does: a cold launch opens the last
+  // channel while Chat home's read is still out. Taken once, as web does;
+  // never asked for from here.
+  const liveUnread = arrivalUnread(
+    useQuery({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, enabled: false }).data,
+    channelId,
+  );
+  if (
+    arrival.channelId === channelId &&
+    arrival.unread === null &&
+    liveUnread !== null
+  ) {
+    setArrival({ ...arrival, unread: liveUnread });
+  }
   const openCatchUpPoint = useCallback(
     (point: ChatCatchUpPoint) => {
       // A reply lives in its thread, not on the timeline.
@@ -736,9 +749,8 @@ function ChannelThreadScreen() {
       unread:
         arrival.channelId === channelId && arrival.unread
           ? {
-              // The most a request may name; a longer stretch is read from
-              // its newest messages either way.
-              count: Math.min(arrival.unread, CHAT_CATCH_UP_MAX_UNREAD),
+              // Capped to what a request may name by `useChatCatchUp`.
+              count: arrival.unread,
               as_of: arrival.at,
             }
           : null,
@@ -1231,6 +1243,7 @@ function ChannelThreadScreen() {
     ),
     disabled: !channelId,
     writeBlockedReason,
+    hasActions: canCatchUpHere,
   });
   const [headerFrame, setHeaderFrame] = useState({ bottom: 0, width: 0 });
   const [muteTriggerRight, setMuteTriggerRight] = useState(0);
