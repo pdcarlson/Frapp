@@ -7,6 +7,20 @@ const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
   () => ({ isPending: false, data: undefined }),
 );
 const mockInvalidate = vi.fn();
+/**
+ * How many times the page re-read its list. Each re-read also re-reads the
+ * standing ("This semester"), so counting every invalidation would double.
+ */
+const listRereads = () =>
+  mockInvalidate.mock.calls.filter(
+    ([options]) =>
+      Array.isArray(options?.queryKey) &&
+      !JSON.stringify(options.queryKey).includes("standing"),
+  ).length;
+const standingRereads = () =>
+  mockInvalidate.mock.calls.filter(([options]) =>
+    JSON.stringify(options?.queryKey ?? "").includes("standing"),
+  ).length;
 const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
 const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
@@ -27,6 +41,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityGroups: actual.activityGroups,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
+    activityStandingKeys: actual.activityStandingKeys,
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
     activitySummary: actual.activitySummary,
@@ -654,14 +669,16 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
     fireEvent.click(screen.getByRole("button", { name: "close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
-    expect(mockInvalidate).toHaveBeenCalledTimes(1);
+    expect(listRereads()).toBe(1);
+    expect(standingRereads()).toBe(1);
 
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
     fireEvent.click(screen.getByRole("button", { name: "acted" }));
     fireEvent.click(screen.getByRole("button", { name: "settled close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
     // `acted` re-read; the settled close did not read a second time.
-    expect(mockInvalidate).toHaveBeenCalledTimes(2);
+    expect(listRereads()).toBe(2);
+    expect(standingRereads()).toBe(2);
   });
 
   it("does not close the open row when another row's action answers late", () => {
@@ -834,7 +851,7 @@ describe("ActivityPage", () => {
       expect(mockMarkRead).toHaveBeenCalledWith([
         { kind: "hours_entry", item_id: "h1" },
       ]);
-      expect(mockInvalidate).toHaveBeenCalledTimes(1);
+      expect(listRereads()).toBe(1);
     });
 
     it("keeps every ask in its row, opening the panel, when the chapter's plan refuses the writes", () => {
