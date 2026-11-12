@@ -10,7 +10,7 @@ export interface AiSpendEstimate {
   maxOutputTokens: number;
   /**
    * Both, at the catalog's prices, in millionths of a US dollar. For a
-   * transcription, the recording's stated length at the price per hour.
+   * transcription, the longest recording the feature takes at the price per hour.
    */
   maxCostMicroUsd: number;
 }

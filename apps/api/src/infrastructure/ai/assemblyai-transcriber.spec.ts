@@ -20,6 +20,7 @@ function request(
       sizeBytes: 1000,
       durationSeconds: 600,
     },
+    maxSeconds: 7200,
     vocabulary: ['Priya Natarajan', '  ', 'one two three four five six seven'],
     resumeJobId: null,
     onJobStarted: jest.fn().mockResolvedValue(undefined),
@@ -91,6 +92,8 @@ describe('AssemblyAiTranscriber', () => {
       audio_url: 'https://storage.test/secret-link',
       speech_models: ['universal-3-5-pro'],
       speaker_labels: true,
+      // Two hours, however long the file really is.
+      audio_end_at: 7_200_000,
       // Blank and over-long phrases are dropped.
       keyterms_prompt: ['Priya Natarajan'],
     });

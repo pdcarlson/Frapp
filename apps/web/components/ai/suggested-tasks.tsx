@@ -38,7 +38,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SectionLabel } from "@/components/shared/section-label";
-import { DueDateField } from "@/components/tasks/due-date-field";
+import {
+  DueDateField,
+  dueEntryPassed,
+} from "@/components/tasks/due-date-field";
 import { TaskForm, type TaskDraft } from "@/components/tasks/task-form";
 import {
   meetingDayLabel,
@@ -192,7 +195,12 @@ export function SuggestedTasks({
 
   async function acceptRow(item: WaitingSuggestion) {
     const values = rowValues(item, edits[item.id]);
-    if (!values.assigneeId || !values.due) {
+    if (
+      !values.assigneeId ||
+      !values.due ||
+      // A newly picked time already gone by; the suggestion's own is kept.
+      dueEntryPassed(values.due, new Date(), dueEntryOf(item.task))
+    ) {
       setFlagged((previous) => new Set(previous).add(item.id));
       return false;
     }
@@ -398,6 +406,8 @@ function SuggestedTaskRow({
   const { task } = item;
   const missingWho = flagged && !values.assigneeId;
   const missingDue = flagged && !values.due;
+  const passedDue =
+    flagged && dueEntryPassed(values.due, new Date(), dueEntryOf(item.task));
 
   if (formOpen) {
     const initialDraft: TaskDraft = {
@@ -482,8 +492,10 @@ function SuggestedTaskRow({
         <div className="min-w-32 max-w-56 flex-1">
           <DueDateField
             aria-label={`Due date for ${task.title}`}
+            timeLabel={`Due time for ${task.title}`}
             placeholder="Due: Fri 5pm"
             missing={missingDue}
+            passed={passedDue}
             value={values.due}
             onChange={(value) => onEdit({ due: value })}
             disabled={disabled}

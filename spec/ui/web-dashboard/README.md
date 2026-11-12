@@ -69,7 +69,7 @@ A Chat anchor of two rows, Chat and Direct messages ([#3774](https://github.com/
 | Chapter | Points | `/points` | `points` | — |
 | Chapter | Study hours | `/study` | `hours` | — (hidden while the chapter has no active study zone: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
 | Chapter | Service hours | `/service` | `hours` | — (log/approve gated inline via `service:log` / `service:approve`) |
-| Resources | Meetings | `/meetings` | `meetings` | — (every member while the module is on; the page lists only the minutes the viewer may read, [`meetings.md` § Who can read minutes](../../behavior/meetings.md#who-can-read-minutes). Off for every chapter while `meetings` is in `BETA_OFF_MODULES`) |
+| Resources | Meetings | `/meetings` | `meetings` | — (every member while the module is on; the page lists only the minutes the viewer may read, [`meetings.md` § Who can read minutes](../../behavior/meetings.md#who-can-read-minutes)) |
 | Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`; hidden from a viewer without `chapter_docs:upload` while there are no documents: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
 | Resources | Backwork | `/backwork` | `backwork` | `backwork:upload` or `backwork:admin`, the pair the API gates browsing on at controller level (upload needs `backwork:upload` specifically) |
 | _(unlabeled)_ | Directory | `/members` | — | `members:view` |
@@ -200,6 +200,7 @@ Per-route decisions that still bind. Each is either the product declining to be 
 - Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
 - **Folder management is a mode.** The rail is navigation; an officer's Edit reveals each folder's move, rename and delete controls and Done puts them away (2026-11-05). Pin joined them in #3934 (2026-11-11). Edit is not a write and is not gated; the controls it reveals are.
 - **Pinned and starred lead Documents** (#3934, Shawn's idea): cards for what's pinned and starred above the unfiltered All files, Pinned, Starred and Other folders groups in the rail, and a Star and (for `chapter_docs:manage`) a Pin on each row. The rules are in [`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred).
+- **Documents is a List or a Grid** ([#4175](https://github.com/pdcarlson/Frapp/issues/4175), Shawn's idea, 2026-11-12). The List / Grid switch ([`components.md` § Segmented control](../design-system/components.md)) ends the list's toolbar row, after the Sort chip, where Google Drive keeps its own. Grid draws each file as a hairline tile in Drive's shape: a panel naming the file's type (`classifyFile`'s label, not a page preview, which would mean fetching every file), then its title, who uploaded it when, folder, type, effective date and description, with the row's Star, Pin, Download and Delete at its foot. One column, then two, three and four as the list widens. The folder rail, the Pinned and Starred cards and the toolbar are the same in both.
 
 ### Directory
 

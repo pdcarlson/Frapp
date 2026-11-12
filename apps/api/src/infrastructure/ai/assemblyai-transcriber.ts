@@ -41,6 +41,10 @@ interface AssemblyAiTranscript {
  * - **Submit** hands AssemblyAI a short-lived link to the recording, with
  *   speaker labels on and the roster's names as key terms. AssemblyAI fetches
  *   the file itself, so the audio never passes through this process.
+ * - The submit also carries `audio_end_at`, so a file longer than it says is
+ *   transcribed only up to Frapp's limit. Whether AssemblyAI then bills the
+ *   part it transcribed or the whole file is unverified; the ledger records
+ *   the length AssemblyAI reports either way.
  * - **Read** is polled until the transcript is `completed` or `error`. The
  *   transcript's id is handed back through `onJobStarted` first, so a try
  *   that dies while waiting is picked up by the next one rather than paid
@@ -123,6 +127,9 @@ export class AssemblyAiTranscriber implements ITranscriber {
         audio_url: request.audio.url,
         speech_models: [request.model],
         speaker_labels: true,
+        // Stop here however long the file really is: its stated length is
+        // the uploader's word (#4504). Milliseconds from the start.
+        audio_end_at: Math.floor(request.maxSeconds * 1000),
         ...(keyterms.length > 0 ? { keyterms_prompt: keyterms } : {}),
       },
       request.signal,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   arrangeEntries,
+  categoryMovedAnnouncement,
+  moveCategory,
   moveChannelEntry,
   movedAnnouncement,
 } from "./arrange-channels";
@@ -95,6 +97,22 @@ describe("moveChannelEntry", () => {
     const moved = moveChannelEntry(entries, 1, 3)!;
     expect(movedAnnouncement(moved.entries, 3)).toBe(
       "announcements moved to 1 of 2 in Exec",
+    );
+  });
+});
+
+describe("moveCategory (#4478)", () => {
+  it("moves a category one place and refuses past either end", () => {
+    expect(moveCategory(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"]);
+    expect(moveCategory(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"]);
+    expect(moveCategory(["a", "b", "c"], "a", -1)).toBeNull();
+    expect(moveCategory(["a", "b", "c"], "c", 1)).toBeNull();
+    expect(moveCategory(["a"], "missing", 1)).toBeNull();
+  });
+
+  it("announces the new place", () => {
+    expect(categoryMovedAnnouncement(["b", "a"], "Social", "a")).toBe(
+      "Social moved to 2 of 2 categories",
     );
   });
 });

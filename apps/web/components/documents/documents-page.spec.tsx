@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 import { ConnectionPill } from "@/components/shared/connection-pill";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 const {
   mockCurrentChapter,
@@ -94,6 +95,7 @@ const BYLAWS = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
+  useViewerUserId: () => "viewer-1",
   useMyPermissions: () => ({
     data: {
       permissions: canGate.granted ? ["chapter_docs:upload"] : [],
@@ -2264,5 +2266,72 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     expect(screen.getByText(/couldn't load your stars/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(mockStarsRefetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4175: List or Grid, picked at the toolbar's end and kept per viewer. A
+ * tile shows what the row shows and keeps the row's controls, so the layout
+ * changes nothing a member can do with a file.
+ */
+describe("DocumentsPage as a grid (#4175)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("switches to tiles from the toolbar, and remembers the pick", async () => {
+    const user = userEvent.setup();
+    const { container, unmount } = render(<DocumentsPage />);
+
+    const layout = screen.getByRole("radiogroup", { name: "Layout" });
+    expect(within(layout).getByRole("radio", { name: "List" })).toBeChecked();
+    await user.click(within(layout).getByRole("radio", { name: "Grid" }));
+
+    const list = screen
+      .getByRole("region", { name: /all documents/i })
+      .querySelector("ul");
+    expect(list?.className).toContain("grid");
+    expect(list?.className).not.toContain("divide-y");
+    // Hairline tiles on the page, not cards.
+    expect(cardFilledContainers(container)).toHaveLength(0);
+    expect(window.localStorage.getItem("frapp.documents.layout.viewer-1")).toBe(
+      "grid",
+    );
+
+    unmount();
+    render(<DocumentsPage />);
+    expect(screen.getByRole("radio", { name: "Grid" })).toBeChecked();
+  });
+
+  it("shows the row's facts and type on the tile, and keeps its controls", async () => {
+    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    const tile = screen.getByRole("button", { name: /^Chapter bylaws/ });
+    expect(tile).toHaveTextContent("Chapter bylaws");
+    expect(tile).toHaveTextContent(/Uploaded/);
+    expect(tile).toHaveTextContent("Governance");
+    // The preview names the file's type, as the viewer and File type do.
+    expect(tile).toHaveTextContent("PDF");
+
+    for (const name of [
+      "Star Chapter bylaws",
+      "Download Chapter bylaws",
+      "Delete Chapter bylaws",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeEnabled();
+    }
+
+    await user.click(tile);
+    expect(
+      await screen.findByRole("dialog", { name: "Chapter bylaws" }),
+    ).toBeInTheDocument();
   });
 });

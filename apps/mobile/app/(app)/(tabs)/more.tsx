@@ -312,8 +312,7 @@ export default function MoreScreen() {
             onPress={() => router.push("/documents")}
           />
         )}
-        {/* Only on a chapter that keeps minutes in Frapp; off for every
-            chapter while `meetings` is beta-off (`BETA_OFF_MODULES`). */}
+        {/* Only on a chapter that keeps minutes in Frapp. */}
         {moduleGate?.("meetings") ? (
           <ListRow
             label="Minutes"
