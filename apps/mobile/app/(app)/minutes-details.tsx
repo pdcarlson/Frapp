@@ -7,6 +7,7 @@ import {
   useAiSuggestions,
   useMeeting,
   useMeetingDraft,
+  useMeetingRecording,
   useMemberDisplayNames,
   usePostMeeting,
   type MeetingMinutes,
@@ -30,6 +31,11 @@ import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { MinutesBody } from "@/components/minutes/minutes-body";
 import { NotesDraftSheet } from "@/components/minutes/notes-draft-sheet";
+import {
+  RecordingRow,
+  RecordingRowPlaceholder,
+} from "@/components/minutes/recording-row";
+import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -43,6 +49,8 @@ import { StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { confirmAlert } from "@/lib/minutes/meetings-on";
+import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
+import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -60,6 +68,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * by hand is on the web, and the page says so in one line, because the web's
  * editor (decisions with vote counts, action items with owners and due days)
  * is a form built for a keyboard and has no phone twin yet.
+ *
+ * **And records the meeting here** (§ Recording in the app): above Draft
+ * minutes, where the server offers transcription, `RecordingRow` is the
+ * recorder for this meeting. The transcript becomes the notes the draft is
+ * written from.
  *
  * Posting asks first, as web does: it tells every invited member once.
  */
@@ -150,6 +163,23 @@ function LoadedMinutes({
   // moves under a thumb and the line below never says "web" and then changes.
   const draftLoading = finishing && notesOffered && draftQuery.isPending;
 
+  // The recorder is offered with drafting, which is what a transcript is for,
+  // and only where the server can transcribe.
+  const recordingQuery = useMeetingRecording(meeting.id, {
+    enabled: finishing && notesOffered,
+  });
+  const recordingState =
+    (finishing && notesOffered ? recordingQuery.data : null) ?? null;
+  const recorderOffered = recordingState?.available === true;
+  // A recording this phone holds for this meeting always has its row here,
+  // whatever the server says or hasn't said yet (its read out or failed, the
+  // minutes posted meanwhile): the pill steps aside on this screen, so
+  // without the row an open microphone would have no Stop anywhere.
+  const heldHere = recorderMeetingId(useMeetingRecorder().state) === meeting.id;
+  const recordingLoading =
+    finishing && notesOffered && recordingQuery.isPending && !heldHere;
+  const { ensureConsent, consentSheet } = useAiConsentGate();
+
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
   const suggestions = useAiSuggestions({
@@ -170,6 +200,7 @@ function LoadedMinutes({
   const refresh = useRefetchAll([
     { refetch: meetingRefresh },
     draftQuery,
+    recordingQuery,
     suggestions,
   ]);
 
@@ -248,38 +279,53 @@ function LoadedMinutes({
           </ListSection>
         ) : null}
 
-        {finishing ? (
+        {finishing || heldHere ? (
           <View style={styles.actions}>
-            {draftState || draftLoading ? (
-              <OnboardingSecondaryButton
-                fill
-                label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
-                disabled={!draftState}
-                onPress={() => notesRef.current?.present()}
+            {(recorderOffered && recordingState) || heldHere ? (
+              <RecordingRow
+                meetingId={meeting.id}
+                eventName={meeting.event_name}
+                server={recorderOffered ? recordingState : null}
+                ensureConsent={ensureConsent}
+                onOpenNotes={() => notesRef.current?.present()}
               />
+            ) : recordingLoading ? (
+              <RecordingRowPlaceholder />
             ) : null}
-            <SheetPrimaryButton
-              label={MEETING_COPY.post}
-              busy={post.isPending}
-              disabled={post.isPending || drafting || empty}
-              accessibilityHint={
-                empty ? MEETING_COPY.nothingWritten : undefined
-              }
-              onPress={() => void handlePost()}
-              accent={accent}
-              onAccent={accentOnPrimary}
-            />
-            {/* One line, always there for a draft's editor, that carries a
-                failed post in its place, so nothing moves when one fails. */}
-            <Text
-              accessibilityLiveRegion="polite"
-              style={[styles.meta, problem ? styles.problem : null]}
-            >
-              {problem ??
-                (empty && !draftState && !draftLoading
-                  ? MEETING_COPY.writeOnWeb
-                  : MEETING_COPY.editOnWeb)}
-            </Text>
+            {finishing ? (
+              <>
+                {draftState || draftLoading ? (
+                  <OnboardingSecondaryButton
+                    fill
+                    label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
+                    disabled={!draftState}
+                    onPress={() => notesRef.current?.present()}
+                  />
+                ) : null}
+                <SheetPrimaryButton
+                  label={MEETING_COPY.post}
+                  busy={post.isPending}
+                  disabled={post.isPending || drafting || empty}
+                  accessibilityHint={
+                    empty ? MEETING_COPY.nothingWritten : undefined
+                  }
+                  onPress={() => void handlePost()}
+                  accent={accent}
+                  onAccent={accentOnPrimary}
+                />
+                {/* One line, always there for a draft's editor, that carries a
+                    failed post in its place, so nothing moves when one fails. */}
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.meta, problem ? styles.problem : null]}
+                >
+                  {problem ??
+                    (empty && !draftState && !draftLoading
+                      ? MEETING_COPY.writeOnWeb
+                      : MEETING_COPY.editOnWeb)}
+                </Text>
+              </>
+            ) : null}
           </View>
         ) : null}
       </ScreenShell>
@@ -290,10 +336,12 @@ function LoadedMinutes({
           eventStart={meeting.event_start_time}
           state={draftState}
           hasContent={!empty}
+          recording={recorderOffered ? recordingState : null}
           getVersion={async () => (await refetch())?.updated_at ?? null}
           onSettled={() => void refetch()}
         />
       ) : null}
+      {consentSheet}
     </>
   );
 }

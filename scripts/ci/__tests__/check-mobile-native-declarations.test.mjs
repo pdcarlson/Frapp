@@ -14,6 +14,7 @@ import {
   ANDROID_REMOVED_PERMISSIONS,
   ANDROID_RUNTIME_PERMISSIONS,
   ANDROID_TEMPLATE_PERMISSIONS,
+  IOS_BACKGROUND_MODES,
   IOS_PURPOSE_STRINGS,
   MANIFESTLESS_REQUIRED_REASON_USERS,
   androidPermissionProblems,
@@ -42,7 +43,7 @@ const KEYS = "NSPrivacyAccessedAPICategoryActiveKeyboards";
 
 /** The Info.plist the roster describes, plus the keys a real one also carries. */
 function rosterInfoPlist(extra = {}) {
-  const plist = { CFBundleDisplayName: "Frapp", ITSAppUsesNonExemptEncryption: false };
+  const plist = { CFBundleDisplayName: "Frapp", ITSAppUsesNonExemptEncryption: false, UIBackgroundModes: [...IOS_BACKGROUND_MODES] };
   for (const [key, { text }] of IOS_PURPOSE_STRINGS) plist[key] = text;
   return { ...plist, ...extra };
 }
@@ -59,6 +60,10 @@ function manifestOf(entries) {
 
 const REMOVE = { "tools:node": "remove" };
 
+/** The meeting recorder's calls the rosters name, as its device file makes them. */
+const RECORDER =
+  "requestRecordingPermissionsAsync( requestNotificationPermissionsAsync( setAudioModeAsync( allowsBackgroundRecording";
+
 /** The app manifest `expo config --type introspect` returned when this gate landed. */
 function currentManifest() {
   return manifestOf([
@@ -70,7 +75,12 @@ function currentManifest() {
     ["android.permission.CAMERA"],
     ["android.permission.ACCESS_COARSE_LOCATION"],
     ["android.permission.ACCESS_FINE_LOCATION"],
-    ["android.permission.RECORD_AUDIO", REMOVE],
+    // The meeting recorder's, from expo-audio's plugin.
+    ["android.permission.RECORD_AUDIO"],
+    ["android.permission.MODIFY_AUDIO_SETTINGS"],
+    ["android.permission.POST_NOTIFICATIONS"],
+    ["android.permission.FOREGROUND_SERVICE"],
+    ["android.permission.FOREGROUND_SERVICE_MICROPHONE"],
   ]);
 }
 
@@ -102,12 +112,12 @@ test("the roster's own Info.plist passes", () => {
 });
 
 test("an omitted option's plugin default fails (blind spot 1)", () => {
-  // What deleting expo-camera's `"microphonePermission": false` ships.
+  // What deleting expo-secure-store's `"faceIDPermission": false` ships.
   const problems = purposeStringProblems(
-    rosterInfoPlist({ NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone" }),
+    rosterInfoPlist({ NSFaceIDUsageDescription: "Allow $(PRODUCT_NAME) to access your Face ID biometric data." }),
   );
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /NSMicrophoneUsageDescription.*not in IOS_PURPOSE_STRINGS/);
+  assert.match(problems[0], /NSFaceIDUsageDescription.*not in IOS_PURPOSE_STRINGS/);
 });
 
 test("a key written by a vendor option spelled any way, or by hand, fails (blind spot 2)", () => {
@@ -161,7 +171,7 @@ test("every roster entry's requester call exists in the app today", () => {
 });
 
 test("a purpose string whose feature is gone fails", () => {
-  const read = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(");
+  const read = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : `useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`);
   const problems = requesterProblems(read);
   assert.deepEqual(
     problems,
@@ -173,7 +183,7 @@ test("a purpose string whose feature is gone fails", () => {
 });
 
 test("a requester call that survives only in a comment fails", () => {
-  const live = "requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  const live = `requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
   for (const leftover of [
     "// was useCameraPermissions() before the check-in rebuild",
     "/* useCameraPermissions(); */",
@@ -223,7 +233,7 @@ test("a declined linked-only purpose string fails, because App Store Connect rej
 });
 
 test("a linked-only key has no requester to check", () => {
-  const live = "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  const live = `useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
   assert.deepEqual(requesterProblems(() => live), []);
 });
 
@@ -344,26 +354,37 @@ test("a removal alongside the add still fails, since the removal wins the merge"
 });
 
 test("a new removal of a library's permission fails", () => {
-  // POST_NOTIFICATIONS comes from expo-notifications' own manifest, which
+  // WAKE_LOCK comes from expo-notifications' own manifest, which
   // introspection never sees; a removal in the app manifest would strip it.
   const manifest = currentManifest();
-  manifest.manifest["uses-permission"].push({ $: { "android:name": "android.permission.POST_NOTIFICATIONS", ...REMOVE } });
+  manifest.manifest["uses-permission"].push({ $: { "android:name": "android.permission.WAKE_LOCK", ...REMOVE } });
   const problems = androidPermissionProblems(manifest);
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /removes android\.permission\.POST_NOTIFICATIONS.*not in ANDROID_REMOVED_PERMISSIONS/);
+  assert.match(problems[0], /removes android\.permission\.WAKE_LOCK.*not in ANDROID_REMOVED_PERMISSIONS/);
 });
 
-test("losing the RECORD_AUDIO removal fails, since the picker then adds it (blind spot 1, Android half)", () => {
+test("a declined microphone option on the picker fails, since it strips the recorder's permission", () => {
+  // `microphonePermission: false` on expo-image-picker compiles to
+  // withBlockedPermissions(RECORD_AUDIO), which is how the app shipped before
+  // it had a recorder.
   const manifest = currentManifest();
   manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].map((entry) =>
     entry.$["android:name"] === "android.permission.RECORD_AUDIO"
-      ? { $: { "android:name": "android.permission.RECORD_AUDIO" } }
+      ? { $: { "android:name": "android.permission.RECORD_AUDIO", ...REMOVE } }
       : entry,
   );
   const problems = androidPermissionProblems(manifest);
   assert.equal(problems.length, 2);
-  assert.match(problems[0], /declares android\.permission\.RECORD_AUDIO, which is in neither/);
-  assert.match(problems[1], /no longer removes android\.permission\.RECORD_AUDIO/);
+  assert.match(problems[0], /doesn't declare android\.permission\.RECORD_AUDIO/);
+  assert.match(problems[1], /removes android\.permission\.RECORD_AUDIO.*#2296/);
+});
+
+test("a removal the roster lists must still be there", () => {
+  const removed = new Map([["android.permission.READ_CONTACTS", "nothing reads contacts"]]);
+  assert.match(
+    androidPermissionProblems(currentManifest(), { removed }).join("\n"),
+    /no longer removes android\.permission\.READ_CONTACTS/,
+  );
 });
 
 test("a manifest with no permission list fails instead of checking nothing", () => {
@@ -400,15 +421,19 @@ test("a template permission that disappears fails, so the roster stays exact", (
   ]);
 });
 
-test("no background mode ships today, and one a plugin adds fails", () => {
+test("only the recorder's audio background mode ships, and one a plugin adds fails", () => {
+  assert.deepEqual(IOS_BACKGROUND_MODES, ["audio"]);
   assert.deepEqual(backgroundModeProblems(rosterInfoPlist()), []);
-  assert.deepEqual(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: [] })), []);
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: [] })), [
+    'iOS no longer ships the "audio" background mode the roster lists',
+  ]);
+  assert.deepEqual(backgroundModeProblems({}, []), []);
   // isIosBackgroundLocationEnabled: true
-  const problems = backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: ["location"] }));
+  const problems = backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: ["audio", "location"] }));
   assert.equal(problems.length, 1);
   assert.match(problems[0], /"location" background mode.*Guideline 2\.5\.4/);
   assert.match(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: "location" }))[0], /not a list/);
-  assert.deepEqual(backgroundModeProblems(rosterInfoPlist(), ["remote-notification"]), [
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist(), ["audio", "remote-notification"]), [
     'iOS no longer ships the "remote-notification" background mode the roster lists',
   ]);
 });
@@ -706,6 +731,7 @@ function fixture({
   };
   put("apps/mobile/app/(app)/check-in.tsx", checkIn);
   put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
+  put("apps/mobile/lib/minutes/recorder/device.ts", RECORDER);
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
   podDirs["expo-location"] = join(root, "node_modules/expo-location/ios");

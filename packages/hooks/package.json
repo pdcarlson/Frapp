@@ -9,6 +9,7 @@
     "./channel-start": "./src/channel-start.ts",
     "./field-reveal": "./src/field-reveal.ts",
     "./error-copy": "./src/error-copy.ts",
+    "./resumable-upload": "./src/resumable-upload.ts",
     "./member-removal-copy": "./src/member-removal-copy.ts",
     "./activity-rows": "./src/activity-rows.ts",
     "./notification-rows": "./src/notification-rows.ts",

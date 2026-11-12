@@ -38,9 +38,10 @@ import type {
 } from "@/components/shared/confirm-dialog";
 import {
   ResumableUploadError,
-  readAudioDuration,
+  blobSource,
   uploadResumable,
-} from "@/lib/resumable-upload";
+} from "@repo/hooks/resumable-upload";
+import { readAudioDuration } from "@/lib/audio-duration";
 import { getErrorMessage } from "@/lib/utils";
 
 /** "1 hour 12 minutes" inside a sentence. */
@@ -266,7 +267,7 @@ export function RecordingUpload({
     setSending({ uploadId: target.upload_id, sent: 0, total: file.size });
     try {
       await uploadResumable(
-        file,
+        blobSource(file),
         {
           bucket: target.bucket,
           path: target.path,

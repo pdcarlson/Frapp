@@ -91,13 +91,17 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
   }),
 }));
 
-vi.mock("@/lib/resumable-upload", () => ({
+vi.mock("@repo/hooks/resumable-upload", () => ({
   ResumableUploadError: class extends Error {
     constructor(readonly failure: string) {
       super(failure);
     }
   },
+  blobSource: (blob: Blob) => blob,
   uploadResumable: mocks.uploadResumable,
+}));
+
+vi.mock("@/lib/audio-duration", () => ({
   readAudioDuration: mocks.readAudioDuration,
 }));
 

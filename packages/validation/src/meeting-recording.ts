@@ -247,3 +247,186 @@ export function meetingRecordingLengthLabel(seconds: number): string {
     rest === 0 ? "" : rest === 1 ? "1 minute" : `${rest} minutes`;
   return [hourPart, minutePart].filter(Boolean).join(" ");
 }
+
+// ── Recording a meeting in the app (the phone's recorder) ───────────────────
+
+/**
+ * What the phone's recorder makes (`spec/behavior/meetings.md` § Recording in
+ * the app): one voice channel of AAC at a rate every phone's encoder takes,
+ * so two hours is about 58 MB, well under `MAX_MEETING_RECORDING_BYTES`.
+ *
+ * The container is ADTS (`.aac`), not MPEG-4 (`.m4a`). An MPEG-4 file is
+ * unreadable until the recorder closes it, so a phone that dies ninety
+ * minutes into a meeting would leave nothing; an ADTS file is a run of
+ * self-contained frames, and whatever was written before the app died plays.
+ */
+export const MEETING_RECORDER_FORMAT = {
+  extension: "aac",
+  mimeType: "audio/aac",
+  sampleRate: 44_100,
+  channels: 1,
+  bitRate: 64_000,
+} as const;
+
+/** The name the recording carries to the server and shows on the web. */
+export const MEETING_RECORDER_FILE_NAME = "Recorded in Frapp.aac";
+
+/** About how large a recording of this length is. */
+export function meetingRecorderBytes(seconds: number): number {
+  return Math.ceil((Math.max(0, seconds) * MEETING_RECORDER_FORMAT.bitRate) / 8);
+}
+
+/**
+ * About how long a recording of this size is: what a recording cut short by
+ * the app closing is taken to be, since an ADTS file states no length.
+ */
+export function meetingRecorderSeconds(bytes: number): number {
+  return Math.floor((Math.max(0, bytes) * 8) / MEETING_RECORDER_FORMAT.bitRate);
+}
+
+const MEGABYTE = 1024 * 1024;
+
+/**
+ * The free space a phone needs before recording starts: the longest
+ * recording, a quarter again, and room for the phone itself to keep working.
+ */
+export function meetingRecorderSpaceNeeded(maxSeconds: number): number {
+  return Math.ceil(meetingRecorderBytes(maxSeconds) * 1.25) + 50 * MEGABYTE;
+}
+
+/** Below this much free space a recording under way stops and is kept. */
+export const MEETING_RECORDER_STOP_FREE_BYTES = 25 * MEGABYTE;
+
+/** A recording left on the phone this long is deleted from it, unsent. */
+export const MEETING_RECORDER_KEEP_DAYS = 7;
+
+/** "0:07", "12:05", "1:02:33": the recorder's clock. */
+export function meetingRecorderClock(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = String(whole % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
+    : `${minutes}:${rest}`;
+}
+
+/**
+ * The notice the phone shows before it records (`meetings.md` § Recording
+ * notice). The rule, the script and the Standards line are the upload
+ * step's; only what is in another tense is said again, because here the room
+ * is told now, not afterwards.
+ */
+export const MEETING_RECORDER_NOTICE = {
+  heading: "Before you record",
+  rule: MEETING_RECORDING_NOTICE.rule,
+  scriptLabel: "Read this out before you start",
+  script: MEETING_RECORDING_NOTICE.script,
+  confirmLabel:
+    "Everyone in the room has been told this meeting is being recorded, and nobody objected.",
+  whatHappens:
+    "Frapp records until you tap Stop, with the screen locked or not. The recording then goes to an AI provider to be written out as text. It is deleted from this phone once it is uploaded and from Frapp as soon as the transcript is written, and Frapp tells the members who were at the meeting.",
+  standards:
+    "Never record a Standards hearing. Those minutes are written by hand.",
+  unconfirmed: "Tell the room first. If anyone objects, don't record.",
+  start: "Start recording",
+  limit: (maxSeconds: number) =>
+    `Up to ${meetingRecordingLengthLabel(maxSeconds).toLowerCase()}. Keep the phone on the table, near whoever is speaking.`,
+} as const;
+
+/** "1 hour 12 minutes" inside a sentence. */
+function lengthInWords(seconds: number): string {
+  return meetingRecordingLengthLabel(seconds).toLowerCase();
+}
+
+/** "58 MB" or "640 KB", for the upload line. */
+function sizeLabel(bytes: number): string {
+  return bytes >= MEGABYTE
+    ? `${Math.round(bytes / MEGABYTE)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * Every line the phone's recorder says. One row on the minutes screen holds
+ * them, so each fits in three lines of caption.
+ */
+export const MEETING_RECORDER_COPY = {
+  record: "Record the meeting",
+  offer:
+    "Set the phone on the table and record. Frapp writes it out as your notes.",
+  checking: "Getting the microphone ready",
+  recording: "Recording",
+  recordingHint:
+    "Frapp keeps recording with the screen locked. Tap Stop when the meeting ends.",
+  paused: "Paused",
+  pausedHint: "Nothing is being recorded. Tap Resume to carry on.",
+  interruptedHint:
+    "A call or another app took the microphone, so nothing is being recorded. Tap Resume to carry on.",
+  pause: "Pause",
+  resume: "Resume",
+  stop: "Stop",
+  stopTitle: "Stop recording?",
+  stopBody: "The recording is uploaded and written out as your notes.",
+  saving: "Saving the recording",
+  uploading: (sentBytes: number, totalBytes: number) =>
+    `Uploading the recording: ${totalBytes > 0 ? Math.floor((sentBytes / totalBytes) * 100) : 0}% of ${sizeLabel(totalBytes)}. Keep Frapp open until it finishes.`,
+  upload: "Upload",
+  tryAgain: "Try again",
+  cancel: "Cancel",
+  delete: "Delete",
+  deleteTitle: "Delete the recording?",
+  deleteBody:
+    "It is removed from this phone and nothing is transcribed. This can't be undone.",
+  kept: (seconds: number) =>
+    `A recording of ${lengthInWords(seconds)} is on this phone, not yet uploaded.`,
+  recovered: (seconds: number) =>
+    `Frapp closed while it was recording. About ${lengthInWords(seconds)} was kept on this phone.`,
+  uploadFailed:
+    "The connection dropped and the upload didn't finish. The recording is safe on this phone.",
+  uploadRefused:
+    "The upload was refused. The recording is safe on this phone. Try again.",
+  maxReached: (maxSeconds: number) =>
+    `Recording stopped at ${lengthInWords(maxSeconds)}, the longest Frapp takes.`,
+  storageStopped:
+    "This phone ran out of space, so recording stopped. What was recorded is kept.",
+  stoppedOutside: "Recording was stopped from outside Frapp. What was recorded is kept.",
+  tooShort: `That recording is shorter than ${MIN_MEETING_RECORDING_SECONDS} seconds, so there is nothing to transcribe.`,
+  microphoneDenied:
+    "Frapp can't use the microphone. Allow it in Settings, then record.",
+  notificationsDenied:
+    "Android keeps a recording going with the screen off only while Frapp shows a notification. Allow notifications in Settings, then record.",
+  openSettings: "Open Settings",
+  lowStorage: (neededBytes: number) =>
+    `This phone needs about ${sizeLabel(neededBytes)} free to record a meeting. Free some space, then record.`,
+  startFailed: "The recording couldn't start. Close other apps using the microphone and try again.",
+  lost: "The recording could no longer be found on this phone.",
+  elsewhere: (eventName: string) =>
+    `This phone holds a recording of ${eventName}. Finish that one first.`,
+  openElsewhere: "Open it",
+  otherDevice:
+    "A recording is being uploaded from another device. It shows here once it arrives.",
+  transcribing: (seconds: number) =>
+    `Transcribing ${lengthInWords(seconds)} of audio. This takes a few minutes, and you can leave.`,
+  stopTranscribing: "Stop",
+  stopTranscribingTitle: "Stop transcribing?",
+  stopTranscribingBody: "The recording is removed. Nothing is written out.",
+  ready: (seconds: number) =>
+    `The transcript is ready (${lengthInWords(seconds)}), and the recording has been deleted. Speakers are numbered, not named.`,
+  openNotes: "Open your notes",
+  recordAgain: "Record again",
+  replaceTitle: "Record again?",
+  replaceBody:
+    "The earlier transcript is removed. What is already in your notes stays.",
+  addTranscript: "Add the transcript",
+  /** The bar shown on every other screen while the phone records. */
+  bar: (eventName: string) => `Recording ${eventName}`,
+  barPaused: (eventName: string) => `Recording paused: ${eventName}`,
+  barUploading: (sentBytes: number, totalBytes: number) =>
+    `Uploading ${totalBytes > 0 ? Math.floor((sentBytes / totalBytes) * 100) : 0}%`,
+  barUploadingFull: (eventName: string) =>
+    `Uploading the recording of ${eventName}. Keep Frapp open until it finishes.`,
+  barKept: "Recording not uploaded",
+  barKeptFull: (eventName: string) =>
+    `The recording of ${eventName} is on this phone and hasn't been uploaded.`,
+  barHint: "Opens the minutes this recording is for.",
+} as const;

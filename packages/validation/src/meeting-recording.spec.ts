@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_MEETING_RECORDING_BYTES,
+  MAX_MEETING_RECORDING_SECONDS,
+  MEETING_RECORDER_COPY,
+  MEETING_RECORDER_FILE_NAME,
+  MEETING_RECORDER_FORMAT,
+  MEETING_RECORDER_KEEP_DAYS,
+  MEETING_RECORDER_NOTICE,
+  MEETING_RECORDER_STOP_FREE_BYTES,
+  meetingRecorderBytes,
+  meetingRecorderClock,
+  meetingRecorderSeconds,
+  meetingRecorderSpaceNeeded,
   MEETING_RECORDING_ACCEPT,
   MEETING_RECORDING_FAILURES,
   MEETING_RECORDING_FAILURE_COPY,
@@ -120,5 +131,83 @@ describe("recording copy", () => {
     // About 150 words a minute, six characters a word, for two hours.
     expect(MEETING_NOTES_MAX_LENGTH).toBeGreaterThanOrEqual(120 * 150 * 6);
     expect(MAX_MEETING_RECORDING_BYTES).toBe(200 * 1024 * 1024);
+  });
+});
+
+describe("the phone's recorder", () => {
+  it("records a format the upload takes as it is", () => {
+    expect(
+      meetingRecordingMimeType(
+        MEETING_RECORDER_FILE_NAME,
+        MEETING_RECORDER_FORMAT.mimeType,
+      ),
+    ).toBe("audio/aac");
+    expect(MEETING_RECORDER_FILE_NAME.endsWith(MEETING_RECORDER_FORMAT.extension)).toBe(
+      true,
+    );
+    expect(MEETING_RECORDER_FORMAT.channels).toBe(1);
+  });
+
+  it("keeps the longest meeting well under the size the server takes", () => {
+    const longest = meetingRecorderBytes(MAX_MEETING_RECORDING_SECONDS);
+    expect(longest).toBe(57_600_000);
+    expect(longest).toBeLessThan(MAX_MEETING_RECORDING_BYTES / 2);
+  });
+
+  it("measures a recording cut short by its size", () => {
+    expect(meetingRecorderSeconds(meetingRecorderBytes(5400))).toBe(5400);
+    expect(meetingRecorderSeconds(0)).toBe(0);
+    expect(meetingRecorderSeconds(-5)).toBe(0);
+  });
+
+  it("asks for room for the whole meeting and some to spare, and stops well before the disk is full", () => {
+    const needed = meetingRecorderSpaceNeeded(MAX_MEETING_RECORDING_SECONDS);
+    expect(needed).toBeGreaterThan(meetingRecorderBytes(MAX_MEETING_RECORDING_SECONDS));
+    expect(needed).toBeLessThan(150 * 1024 * 1024);
+    expect(MEETING_RECORDER_STOP_FREE_BYTES).toBeGreaterThan(
+      meetingRecorderBytes(15 * 60),
+    );
+    expect(MEETING_RECORDER_KEEP_DAYS).toBe(7);
+  });
+
+  it("writes the clock without abbreviating it", () => {
+    expect(meetingRecorderClock(0)).toBe("0:00");
+    expect(meetingRecorderClock(7.9)).toBe("0:07");
+    expect(meetingRecorderClock(725)).toBe("12:05");
+    expect(meetingRecorderClock(3753)).toBe("1:02:33");
+    expect(meetingRecorderClock(-3)).toBe("0:00");
+  });
+
+  it("says the upload step's rule and script before recording, in the present tense", () => {
+    expect(MEETING_RECORDER_NOTICE.rule).toBe(MEETING_RECORDING_NOTICE.rule);
+    expect(MEETING_RECORDER_NOTICE.script).toBe(MEETING_RECORDING_NOTICE.script);
+    expect(MEETING_RECORDER_NOTICE.confirmLabel).toContain("has been told");
+    expect(MEETING_RECORDER_NOTICE.whatHappens).toContain("deleted from this phone");
+    expect(MEETING_RECORDER_NOTICE.standards).toContain("Standards");
+    expect(MEETING_RECORDER_NOTICE.limit(7200)).toContain("Up to 2 hours");
+  });
+
+  it("says each state in whole words: no emoji, no abbreviations, no internals", () => {
+    const lines = Object.values(MEETING_RECORDER_COPY).map((value) =>
+      typeof value === "function"
+        ? (value as (a: never, b: never) => string)(
+            1_048_576 as never,
+            (28 * 1_048_576) as never,
+          )
+        : value,
+    );
+    for (const line of lines) {
+      expect(line).not.toMatch(/\p{Extended_Pictographic}/u);
+      expect(line).not.toMatch(/\b(mins?|secs?|hrs?|tmrw|ADTS|TUS|upload_id)\b/i);
+      expect(line).not.toContain("undefined");
+    }
+    expect(MEETING_RECORDER_COPY.uploading(14 * 1_048_576, 28 * 1_048_576)).toBe(
+      "Uploading the recording: 50% of 28 MB. Keep Frapp open until it finishes.",
+    );
+    expect(MEETING_RECORDER_COPY.uploading(0, 0)).toContain("0%");
+    expect(MEETING_RECORDER_COPY.kept(4320)).toBe(
+      "A recording of 1 hour 12 minutes is on this phone, not yet uploaded.",
+    );
+    expect(MEETING_RECORDER_COPY.lowStorage(122 * 1_048_576)).toContain("122 MB");
   });
 });

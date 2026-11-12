@@ -3,12 +3,13 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeetingDraftState } from "@repo/hooks";
+import type { MeetingDraftState, MeetingRecordingState } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
+  MEETING_RECORDER_COPY,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
@@ -22,6 +23,7 @@ const hooks = vi.hoisted(() => ({
   request: vi.fn(),
   discard: vi.fn(),
   use: vi.fn(),
+  removeRecording: vi.fn(),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -34,6 +36,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useUseMeetingDraft: () => ({ mutateAsync: hooks.use, isPending: false }),
+  useRemoveMeetingRecording: () => ({
+    mutateAsync: hooks.removeRecording,
+    isPending: false,
+  }),
 }));
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
 vi.mock("@/components/ai/ai-consent-sheet", () => ({
@@ -79,7 +85,23 @@ function draftState(over: Partial<MeetingDraftState> = {}): MeetingDraftState {
 const getVersion = vi.fn();
 const onSettled = vi.fn();
 
-function element(state: MeetingDraftState, hasContent = false) {
+function recordingState(
+  over: Partial<MeetingRecordingState> = {},
+): MeetingRecordingState {
+  return {
+    status: "ready",
+    upload_id: "upload-1",
+    transcript: "Speaker 1: Call to order.\nSpeaker 2: Budget passed.",
+    duration_seconds: 3600,
+    ...over,
+  } as MeetingRecordingState;
+}
+
+function element(
+  state: MeetingDraftState,
+  hasContent = false,
+  recording: MeetingRecordingState | null = null,
+) {
   return (
     <FrappThemeProvider>
       <NotesDraftSheet
@@ -88,16 +110,21 @@ function element(state: MeetingDraftState, hasContent = false) {
         eventStart="2026-11-09T23:00:00Z"
         state={state}
         hasContent={hasContent}
+        recording={recording}
         getVersion={getVersion}
         onSettled={onSettled}
       />
     </FrappThemeProvider>
   );
 }
-function render(state: MeetingDraftState, hasContent = false) {
+function render(
+  state: MeetingDraftState,
+  hasContent = false,
+  recording: MeetingRecordingState | null = null,
+) {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(element(state, hasContent));
+    tree = create(element(state, hasContent, recording));
   });
   return tree;
 }
@@ -121,10 +148,83 @@ beforeEach(() => {
   hooks.request.mockResolvedValue({});
   hooks.discard.mockResolvedValue({});
   hooks.use.mockResolvedValue({});
+  hooks.removeRecording.mockResolvedValue({});
   gate.ensureConsent.mockResolvedValue(true);
   confirm.mockResolvedValue(true);
   reporting.offered = true;
   reporting.reported = false;
+});
+
+describe("a recording's transcript in the notes", () => {
+  it("goes into an empty box by itself, so Open your notes finds it there", () => {
+    const tree = render(draftState(), false, recordingState());
+    expect(field(tree).props.value).toBe(
+      "Speaker 1: Call to order.\nSpeaker 2: Budget passed.",
+    );
+    expect(button(tree, MEETING_RECORDER_COPY.addTranscript)).toBeUndefined();
+  });
+
+  it("arrives while the sheet is already mounted, when transcription finishes", () => {
+    const tree = render(
+      draftState(),
+      false,
+      recordingState({ status: "transcribing", transcript: null }),
+    );
+    expect(field(tree).props.value).toBe("");
+    act(() => tree.update(element(draftState(), false, recordingState())));
+    expect(field(tree).props.value).toContain("Call to order");
+  });
+
+  it("waits behind a button when the officer already typed notes, and is added under them", async () => {
+    const tree = render(
+      draftState({ notes: "My own notes." }),
+      false,
+      recordingState(),
+    );
+    expect(field(tree).props.value).toBe("My own notes.");
+    await press(tree, MEETING_RECORDER_COPY.addTranscript);
+    expect(field(tree).props.value).toBe(
+      "My own notes.\n\nSpeaker 1: Call to order.\nSpeaker 2: Budget passed.",
+    );
+    expect(button(tree, MEETING_RECORDER_COPY.addTranscript)).toBeUndefined();
+  });
+
+  it("is put in once per recording: a box emptied by hand stays emptied", () => {
+    const tree = render(draftState(), false, recordingState());
+    act(() => field(tree).props.onChangeText(""));
+    act(() => tree.update(element(draftState(), false, recordingState())));
+    expect(field(tree).props.value).toBe("");
+    // A new recording is a new transcript to put in.
+    act(() =>
+      tree.update(
+        element(
+          draftState(),
+          false,
+          recordingState({ upload_id: "upload-2", transcript: "Speaker 1: Round two." }),
+        ),
+      ),
+    );
+    expect(field(tree).props.value).toBe("Speaker 1: Round two.");
+  });
+
+  it("is removed with the notes when they are cleared, and the question says so", async () => {
+    const tree = render(draftState(), false, recordingState());
+    await press(tree, MEETING_NOTES_COPY.clear);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ body: MEETING_NOTES_COPY.clearBodyRecording }),
+    );
+    expect(hooks.removeRecording).toHaveBeenCalledWith({ id: "m1" });
+    expect(field(tree).props.value).toBe("");
+  });
+
+  it("removes no recording when there is none", async () => {
+    const tree = render(draftState({ notes: "Typed." }));
+    await press(tree, MEETING_NOTES_COPY.clear);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ body: MEETING_NOTES_COPY.clearBody }),
+    );
+    expect(hooks.removeRecording).not.toHaveBeenCalled();
+  });
 });
 
 describe("NotesDraftSheet", () => {
