@@ -192,9 +192,7 @@ describe("the More options summary", () => {
         },
         (id) => (id === "a" ? "Alumni" : undefined),
       ),
-    ).toBe(
-      "10 pts · Required for everyone, optional for Alumni · Every 2 weeks",
-    );
+    ).toBe("10 pts · Alumni optional, everyone else required · Every 2 weeks");
     expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
       "10 pts · Optional for everyone · Doesn't repeat",
     );

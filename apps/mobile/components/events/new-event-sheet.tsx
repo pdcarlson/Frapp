@@ -904,6 +904,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           ref={attendanceRef}
           value={draft.attendance}
           onChange={(attendance) => update({ attendance }, ["attendance"])}
+          allowRequired={setsRequirements}
         />
       </>
     );

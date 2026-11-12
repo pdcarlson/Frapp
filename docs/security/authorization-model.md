@@ -31,7 +31,8 @@ Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, stil
 `ChapterGuard` shares two of its reads between requests that arrive together (`InFlightLookups` in
 `guards/guard-lookup.ts`, #3728): the caller's `users` row id and the chapter's subscription and module state. A request
 joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its answer can predate the request by at most
-that. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
+that. Only the guard's own reads share this way: when the request names a chapter, the prefetch below reads both rows
+per request in `get_request_context` (#3583), so on that path nothing is shared between requests. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
 [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
 
 *Within* one request those reads happen once (`infrastructure/supabase/request-reads.ts`, #3728). Every
@@ -40,7 +41,10 @@ read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChap
 chapter rows: the guards read them first, and the handler's access checks (`ChannelAccessService`,
 `RbacService`) reuse them. The guards' reads start while `auth.getUser` is still in flight, on the `sub`
 that `CustomThrottlerGuard` already verified (`prefetchChapterContext`); they are used only once the
-session check passes for that same user. A `GET` or `HEAD` keeps the store to its end. Any other method
+session check passes for that same user. With a chapter named, the user, chapter, membership and roles
+come from one call, `get_request_context`, and each lands in the store under the key its own read uses; if
+the call fails, they are read separately as before #3583, one failed call later, and Sentry gets one warning per
+process every ten minutes. A `GET` or `HEAD` keeps the store to its end. Any other method
 keeps it only through its guards: `RequestReadsInterceptor` seals it before the handler, so a handler
 that writes a membership or a role and reads it back reads the database. The store is created per request and never outlives it.
 

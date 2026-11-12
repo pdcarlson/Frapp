@@ -914,6 +914,7 @@ export function EventEditorDialog({
                   <AttendanceEditor
                     value={attendance}
                     onChange={setAttendance}
+                    allowRequired={canSetRequirements}
                     roles={roleOptions}
                     rolesState={
                       rolesQuery.isError

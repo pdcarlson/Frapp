@@ -15,7 +15,8 @@ export const CHAT_NOTIFICATION_LEVELS = ["all", "mentions", "off"] as const;
 export type ChatNotificationLevel = (typeof CHAT_NOTIFICATION_LEVELS)[number];
 
 /**
- * A member's chapter-wide chat level (#3840), set in Settings → Notifications.
+ * A member's chapter-wide chat level (#3840), set in the phone's Settings →
+ * Notifications and web's Settings → Chapter alerts (#4124).
  *
  * - `all`: "All messages", each channel at its own default.
  * - `mentions`: "Mentions and DMs only". Every ordinary channel acts as

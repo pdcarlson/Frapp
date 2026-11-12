@@ -215,7 +215,7 @@ describe("New event", () => {
       }),
     );
     expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
-      "Who's coming: Required for everyone, optional for Alumni",
+      "Who's coming: Alumni optional, everyone else required",
     );
     act(() => chip(tree, "Every week").props.onPress());
     // Read against the default start, Thursday the 5th at 7 PM.
@@ -292,6 +292,13 @@ describe("New event", () => {
       );
       act(() => byLabel(tree, "More options").props.onPress());
       expect(screenText(tree)).not.toContain("Points for attending");
+      // The Who's coming sheet offers no Required answer (#4483).
+      const attendance = tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.value?.everyone !== undefined,
+      );
+      expect(attendance.props.allowRequired).toBe(false);
 
       act(() => createButton(tree).props.onPress());
       expect(mutate.mock.calls[0]![0]).toMatchObject({

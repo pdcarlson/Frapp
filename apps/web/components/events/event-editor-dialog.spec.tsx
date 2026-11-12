@@ -190,9 +190,10 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     fillRequiredFields();
     openMoreOptions();
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
     // The app's Select (Radix), not a native one.
     fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
     fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
@@ -229,7 +230,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     fillRequiredFields();
     openMoreOptions();
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     fireEvent.click(
       within(everyone).getByRole("radio", { name: "Not invited" }),
@@ -264,12 +265,17 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
 
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     expect(
       within(everyone).getByRole("radio", { name: "Not invited" }),
     ).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Remove Exec" }));
+    // Exec back to the default's answer leaves it following everyone else.
+    fireEvent.click(
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Not invited" }),
+    );
     fireEvent.click(within(everyone).getByRole("radio", { name: "Optional" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -287,7 +293,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
   });
 
-  it("shows a role missing from the loaded list as a removable row", async () => {
+  it("shows a role missing from the loaded list as a row it can reset", async () => {
     render(
       <EventEditorDialog
         open
@@ -307,7 +313,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove Removed role" }),
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Removed role" }),
+      ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -828,13 +836,16 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     openMoreOptions();
     fireEvent.click(
       within(
-        screen.getByRole("radiogroup", { name: "Attendance for everyone" }),
+        screen.getByRole("radiogroup", {
+          name: "Attendance for everyone else",
+        }),
       ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -1081,23 +1092,17 @@ describe("EventEditorDialog for a member who can't edit events", () => {
     ).toHaveTextContent("Optional for everyone");
   });
 
-  it("is told, not sent, when the event is made required", async () => {
+  it("offers no Required answer, so nobody is made required", () => {
     renderCreate();
-    fillRequiredFields();
     openMoreOptions();
     const everyone = screen.getByRole("radiogroup", {
       name: /everyone/i,
     });
-    fireEvent.click(within(everyone).getByRole("radio", { name: "Required" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
-
-    await waitFor(() =>
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Only officers who manage events can make one required",
-        }),
-      ),
-    );
-    expect(createMutate).not.toHaveBeenCalled();
+    expect(
+      within(everyone).queryByRole("radio", { name: "Required" }),
+    ).toBeNull();
+    expect(
+      within(everyone).getByRole("radio", { name: "Optional" }),
+    ).toBeInTheDocument();
   });
 });
