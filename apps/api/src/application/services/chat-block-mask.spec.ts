@@ -1,8 +1,12 @@
 import {
   BLOCKED_MESSAGE_CONTENT,
+  DELETED_MESSAGE_CONTENT,
   maskBlockedMessages,
 } from './chat-block-mask';
-import type { ChatMessage } from '#domain/entities/chat.entity';
+import {
+  CHAT_MESSAGE_KINDS,
+  type ChatMessage,
+} from '#domain/entities/chat.entity';
 
 /**
  * `spec/behavior/chat/README.md` § What a block does and does not hide, and
@@ -254,5 +258,75 @@ describe('maskBlockedMessages', () => {
     maskBlockedMessages([original], [BLOCKED]);
 
     expect(original.content).toBe('go away');
+  });
+});
+
+/**
+ * `spec/behavior/chat/README.md` § Edit and delete: a deleted message is served
+ * as its tombstone, whatever its row still holds (#1575).
+ */
+describe('maskBlockedMessages over a deleted message', () => {
+  const deletedRow = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+    id: 'msg-1',
+    channel_id: 'chan-1',
+    sender_id: 'user-author',
+    content: '[message deleted]',
+    type: 'TEXT',
+    kind: 'event',
+    // What a delete before #1575 left in the row.
+    payload: { name: 'Standards Board — Doe hearing', location: 'House' },
+    reply_to_id: null,
+    metadata: { attachment_count: 2 },
+    is_pinned: true,
+    pinned_at: '2026-03-01T00:00:00.000Z',
+    edited_at: null,
+    is_deleted: true,
+    created_at: '2026-03-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  // Every kind, so a card kind added later is covered without anyone
+  // remembering to add it here.
+  it.each(CHAT_MESSAGE_KINDS)(
+    'serves a deleted %s message with no payload and no metadata',
+    (kind) => {
+      const [served] = maskBlockedMessages([deletedRow({ kind })], []);
+
+      expect(served.payload).toBeNull();
+      expect(served.metadata).toEqual({});
+      expect(served.content).toBe(DELETED_MESSAGE_CONTENT);
+      expect(JSON.stringify(served)).not.toContain('Doe hearing');
+      // Structure stays, so the client draws the tombstone in place.
+      expect(served).toMatchObject({
+        id: 'msg-1',
+        kind,
+        is_deleted: true,
+        is_pinned: true,
+        sender_blocked: false,
+      });
+    },
+  );
+
+  it('keeps an imported tombstone\'s import id, which its import purge selects on', () => {
+    const [served] = maskBlockedMessages(
+      [
+        deletedRow({
+          kind: 'imported',
+          metadata: { discord_import_id: 'imp-1', attachment_count: 2 },
+        }),
+      ],
+      [],
+    );
+    expect(served.metadata).toEqual({ discord_import_id: 'imp-1' });
+  });
+
+  it('leaves a live card untouched', () => {
+    const live = deletedRow({
+      is_deleted: false,
+      content: '/event',
+      metadata: {},
+    });
+    const [served] = maskBlockedMessages([live], []);
+    expect(served.payload).toEqual(live.payload);
   });
 });

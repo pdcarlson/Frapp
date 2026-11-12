@@ -60,7 +60,13 @@ import {
   attachmentMetadataOf,
   type SendMessageAttachmentInput,
 } from './chat-attachment.service';
-import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
+import {
+  DELETED_MESSAGE_CONTENT,
+  maskBlockedMessages,
+  redactDeletedMessage,
+  tombstoneMetadata,
+  type MaskedChatMessage,
+} from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChannelAccessListService } from './channel-access-list.service';
@@ -1520,9 +1526,16 @@ export class ChatService {
   ): Promise<ChatMessage> {
     const messageId = message.id;
     const deleted = await this.messageRepo.update(messageId, {
-      content: '[message deleted]',
+      content: DELETED_MESSAGE_CONTENT,
       is_deleted: true,
       metadata: tombstoneMetadata(message),
+      // A card's data lives here (an event's name and place, a poll's
+      // question and options, a task's fields), so a delete that left it
+      // would remove only the words around it (#1575). Cleared, not kept for
+      // an undelete: there is none, and an officer's removal of a reported
+      // card has to remove what was reported. `maskBlockedMessages` strips it
+      // on read too, for rows deleted before this cleared it.
+      payload: null,
       // A flag labels content that is now gone (#3921), and a deleted
       // message must not keep raising the Important strip.
       flag: null,
@@ -1544,7 +1557,7 @@ export class ChatService {
     // member asked for, or turn it into a 500.
     await this.attachments.purgeRemovedMessageAttachments(messageId, chapterId);
 
-    return deleted;
+    return redactDeletedMessage(deleted);
   }
 
   // ── Flags (#3921) ────────────────────────────────────────────────────
@@ -1698,10 +1711,12 @@ export class ChatService {
       );
     }
 
-    return this.messageRepo.update(messageId, {
-      is_pinned: true,
-      pinned_at: new Date().toISOString(),
-    });
+    return redactDeletedMessage(
+      await this.messageRepo.update(messageId, {
+        is_pinned: true,
+        pinned_at: new Date().toISOString(),
+      }),
+    );
   }
 
   async unpinMessage(
@@ -1719,10 +1734,12 @@ export class ChatService {
       throw new BadRequestException('Message is not pinned');
     }
 
-    return this.messageRepo.update(messageId, {
-      is_pinned: false,
-      pinned_at: null,
-    });
+    return redactDeletedMessage(
+      await this.messageRepo.update(messageId, {
+        is_pinned: false,
+        pinned_at: null,
+      }),
+    );
   }
 
   /**
@@ -1882,22 +1899,4 @@ function clientMetadata(
   delete own.attachment_count;
   delete own.attachment_photos;
   return own;
-}
-
-/**
- * What a soft-deleted message keeps of its `metadata`.
- *
- * Nothing, except an imported row's `discord_import_id`: it is the only key the
- * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
- * so wiping it would leave the tombstone behind when its import is deleted,
- * still carrying the Discord author and an avatar path into purged storage. A
- * linked member can delete their own imported messages (#2878), so this is
- * reachable by any member, not only a moderator.
- */
-export function tombstoneMetadata(
-  message: Pick<ChatMessage, 'kind' | 'metadata'>,
-): Record<string, unknown> {
-  if (message.kind !== 'imported') return {};
-  const importId: unknown = message.metadata?.discord_import_id;
-  return typeof importId === 'string' ? { discord_import_id: importId } : {};
 }

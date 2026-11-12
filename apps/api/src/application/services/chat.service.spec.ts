@@ -14,7 +14,8 @@ import {
   EMPTY_ACCESS_HOLDER,
   type ChannelAccessHolder,
 } from '#domain/utils/channel-access';
-import { ChatService, tombstoneMetadata } from './chat.service';
+import { tombstoneMetadata } from './chat-block-mask';
+import { ChatService } from './chat.service';
 import { ChatAttachmentService } from './chat-attachment.service';
 import {
   baseChannel,
@@ -3254,6 +3255,7 @@ describe('ChatService', () => {
         content: '[message deleted]',
         is_deleted: true,
         metadata: { discord_import_id: 'imp-1' },
+        payload: null,
         flag: null,
         flagged_by: null,
         flagged_at: null,
@@ -3305,6 +3307,41 @@ describe('ChatService', () => {
       expect(result.is_deleted).toBe(true);
       expect(result.content).toBe('[message deleted]');
     });
+
+    it.each(['event', 'poll', 'task', 'points', 'hours', 'rush'] as const)(
+      'clears a %s card\'s payload, so a delete removes the card and not only its words (#1575)',
+      async (kind) => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          kind,
+          payload: { name: 'Standards Board — Doe hearing' },
+          metadata: { attachment_count: 1 },
+        });
+        // A repository that hands back what it stored. Cleared on the write,
+        // so the answer and the Realtime UPDATE echo carry no payload either.
+        mockMessageRepo.update.mockImplementation(
+          async (_id: string, patch: Record<string, unknown>) => ({
+            ...baseMessage,
+            kind,
+            ...patch,
+          }),
+        );
+
+        const result = await service.deleteMessage(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          false,
+        );
+
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({ payload: null, metadata: {} }),
+        );
+        expect(result.payload).toBeNull();
+        expect(JSON.stringify(result)).not.toContain('Doe hearing');
+      },
+    );
 
     it('should allow admin to delete any message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
@@ -3879,6 +3916,28 @@ describe('ChatService', () => {
       expect(result.is_pinned).toBe(false);
     });
 
+    it('answers a deleted message without the card data a pre-#1575 delete left behind', async () => {
+      // A pinned card deleted before the delete cleared `payload` still holds
+      // it in the row; the unpin answer must not hand it back.
+      const deletedCard = {
+        ...baseMessage,
+        kind: 'event' as const,
+        content: '[message deleted]',
+        is_deleted: true,
+        is_pinned: true,
+        payload: { name: 'Standards Board — Doe hearing' },
+      };
+      mockMessageRepo.findById.mockResolvedValue(deletedCard);
+      mockMessageRepo.update.mockResolvedValue({
+        ...deletedCard,
+        is_pinned: false,
+      });
+
+      const result = await service.unpinMessage('msg-1', 'ch-1', 'user-1');
+      expect(result.payload).toBeNull();
+      expect(result.is_deleted).toBe(true);
+    });
+
     it('should reject unpinning non-pinned message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
@@ -3966,6 +4025,7 @@ describe('ChatService', () => {
         content: '[message deleted]',
         is_deleted: true,
         metadata: {},
+        payload: null,
         flag: null,
         flagged_by: null,
         flagged_at: null,
