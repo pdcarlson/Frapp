@@ -10,10 +10,15 @@
 // Lines fold in file-name order.
 //
 // Which list it joins is its folder: `web/` and `phone/` hold lines only true
-// there, the folder itself lines true on both (`changes`). A line at the top
-// that still opens "On the web, " or "On your phone, " (the rule before the
-// split) joins that list without those words, so a PR written the old way
-// still lands under the right heading.
+// there, the folder itself lines true on both (`changes`); the notes file's
+// `RELEASE_NOTE_PLACES` owns the places and their order. A line in `web/` or
+// `phone/` that still opens "On the web, " or "On your phone, " loses those
+// words, since the subheading says it. A line at the top written the old way
+// (the rule before the split) moves when it opens with its place: "On the
+// web, " to `web` and "On your phone, " to `phone` without those words, and
+// "On Android, ", "On iPhone, " or "On iOS, " to `phone` keeping them. One
+// that names its place mid-sentence stays with the lines for both, words
+// intact, which still reads true there.
 //
 // The notes file is edited as text, keeping `date:` and `changes: [...]`,
 // `web: [...]` and `phone: [...]` literal, one string per line, as
@@ -31,7 +36,10 @@ import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { releaseNoteLineProblem } from "../packages/validation/src/release-notes.ts";
+import {
+  RELEASE_NOTE_PLACES,
+  releaseNoteLineProblem,
+} from "../packages/validation/src/release-notes.ts";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,19 +53,19 @@ export const DEFAULT_TITLE = "New in this update";
 /** A line file's name: lowercase, ending `.md`. */
 const LINE_FILE = /^[a-z0-9][a-z0-9._-]*\.md$/;
 
-/** The places a line can be, and the folder each one's files sit in. */
-const PLACE_DIRS = Object.freeze({ web: "web", phone: "phone" });
-/** Where each place's lines go in an entry, in the order they're written. */
-const PLACE_KEYS = Object.freeze({
-  everywhere: "changes",
-  web: "web",
-  phone: "phone",
+/** The folders that hold one place's lines: `web/`, `phone/`. */
+const PLACE_FOLDERS = new Set(
+  RELEASE_NOTE_PLACES.filter(({ place }) => place !== "everywhere").map(
+    ({ key }) => key,
+  ),
+);
+/** The opening that names a place, which its folder or subheading now says. */
+const OWN_PREFIX = Object.freeze({
+  web: "On the web, ",
+  phone: "On your phone, ",
 });
-/** The old way to say a line's place, kept for lines written before the split. */
-const LEGACY_PREFIXES = Object.freeze([
-  ["On the web, ", "web"],
-  ["On your phone, ", "phone"],
-]);
+/** Old-way openings that name a phone without being the whole phone app. */
+const KEPT_PHONE_PREFIX = /^On (Android|iPhone|iOS), /;
 
 function readDir(dir) {
   try {
@@ -76,11 +84,10 @@ function readDir(dir) {
 export function lineFiles(dir = LINES_DIR) {
   const files = [];
   const stray = [];
-  const places = new Set(Object.values(PLACE_DIRS));
   for (const entry of readDir(dir)) {
     if (entry.isFile() && entry.name === "README.md") continue;
     if (entry.isFile() && LINE_FILE.test(entry.name)) files.push(entry.name);
-    else if (entry.isDirectory() && places.has(entry.name)) {
+    else if (entry.isDirectory() && PLACE_FOLDERS.has(entry.name)) {
       for (const inner of readDir(join(dir, entry.name))) {
         const name = `${entry.name}/${inner.name}`;
         if (inner.isFile() && LINE_FILE.test(inner.name)) files.push(name);
@@ -91,17 +98,46 @@ export function lineFiles(dir = LINES_DIR) {
   return { files: files.sort(), stray: stray.sort() };
 }
 
+/** `text` without `prefix`, its first word capitalised unless it is "iPhone"-like. */
+function withoutPrefix(text, prefix) {
+  const rest = text.slice(prefix.length);
+  return /^[a-z](?![A-Z])/.test(rest)
+    ? rest[0].toUpperCase() + rest.slice(1)
+    : rest;
+}
+
 /** A line file's place and text, from its folder or an old-style opening. */
 export function placeOf(name, text) {
   const folder = name.includes("/") ? name.slice(0, name.indexOf("/")) : null;
-  if (folder) return { place: folder, line: text };
-  for (const [prefix, place] of LEGACY_PREFIXES) {
+  if (folder) {
+    const prefix = OWN_PREFIX[folder];
+    const line =
+      prefix && text.startsWith(prefix) && text.length > prefix.length
+        ? withoutPrefix(text, prefix)
+        : text;
+    return { place: folder, line };
+  }
+  for (const [place, prefix] of Object.entries(OWN_PREFIX)) {
     if (text.startsWith(prefix) && text.length > prefix.length) {
-      const rest = text.slice(prefix.length);
-      return { place, line: rest[0].toUpperCase() + rest.slice(1) };
+      return { place, line: withoutPrefix(text, prefix) };
     }
   }
+  if (KEPT_PHONE_PREFIX.test(text)) return { place: "phone", line: text };
   return { place: "everywhere", line: text };
+}
+
+/**
+ * What's wrong with a line for its place, or `null`: a `web/` or `phone/`
+ * line that still names its own place where the subheading would say it.
+ */
+function placeProblem({ place, line }) {
+  if (place === "web" && /^on the web\b/i.test(line)) {
+    return 'opens "On the web": the Web subheading says it, so start with what changed';
+  }
+  if (place === "phone" && /^on your phone\b/i.test(line)) {
+    return 'opens "On your phone": the Mobile subheading says it, so start with what changed';
+  }
+  return null;
 }
 
 /** Reads and checks the waiting lines; throws naming every bad file. */
@@ -113,9 +149,10 @@ export function readLines(dir = LINES_DIR) {
   );
   const lines = files.map((name) => {
     const text = readFileSync(join(dir, name), "utf8");
-    const problem = releaseNoteLineProblem(text);
+    const placed = placeOf(name, text.trim());
+    const problem = releaseNoteLineProblem(text) ?? placeProblem(placed);
     if (problem) problems.push(`${name} ${problem}`);
-    return { name, ...placeOf(name, text.trim()) };
+    return { name, ...placed };
   });
   if (problems.length > 0) {
     throw new Error(
@@ -155,7 +192,9 @@ const DATE = /\bdate:\s*["'](\d{4}-\d{2}-\d{2})["']/g;
 
 /** `lines` as `{place, line}`; a bare string is a line for both. */
 function byPlace(lines) {
-  const groups = { everywhere: [], web: [], phone: [] };
+  const groups = Object.fromEntries(
+    RELEASE_NOTE_PLACES.map(({ place }) => [place, []]),
+  );
   for (const item of lines) {
     const { place, line } =
       typeof item === "string" ? { place: "everywhere", line: item } : item;
@@ -223,44 +262,42 @@ export function foldLines(source, lines, date) {
   if (newest && newest[1] >= date) {
     let out = source;
     // One place at a time, finding the entry again after each edit.
-    for (const [place, key] of Object.entries(PLACE_KEYS)) {
-      if (groups[place].length === 0) continue;
+    RELEASE_NOTE_PLACES.forEach(({ place, key }, index) => {
+      if (groups[place].length === 0) return;
       const start = newest.index;
       DATE.lastIndex = start + 1;
       const next = DATE.exec(out);
       const end = next ? next.index : out.length;
-      const changes = listIn(out, "changes", start, end);
-      if (!changes) {
+      if (!listIn(out, "changes", start, end)) {
         throw new Error(`The ${newest[1]} entry has no changes list`);
       }
       const list = listIn(out, key, start, end);
       if (list) {
         out = appendTo(out, list.close, quoted(groups[place]));
-        continue;
+        return;
       }
-      // No list for this place yet: open one after the lists before it.
-      let after = changes.close;
-      if (key === "phone")
-        after = listIn(out, "web", start, end)?.close ?? after;
+      // No list for this place yet: open one after the last list before it.
+      const after = RELEASE_NOTE_PLACES.slice(0, index)
+        .map((earlier) => listIn(out, earlier.key, start, end)?.close ?? -1)
+        .reduce((a, b) => Math.max(a, b), -1);
       const comma = out[after + 1] === "," ? after + 2 : after + 1;
       out =
         out.slice(0, comma) +
         `${out[after + 1] === "," ? "" : ","}\n    ${key}: [\n${quoted(groups[place]).join("\n")}\n    ],` +
         out.slice(comma);
-    }
+    });
     return out;
   }
 
-  const lists = [
-    `    changes: [\n${quoted(groups.everywhere)
-      .map((l) => `${l}\n`)
-      .join("")}    ],\n`,
-  ];
-  for (const key of ["web", "phone"]) {
-    if (groups[key].length > 0) {
-      lists.push(`    ${key}: [\n${quoted(groups[key]).join("\n")}\n    ],\n`);
-    }
-  }
+  // `changes` always, even empty, since the deploy check and the type expect it.
+  const lists = RELEASE_NOTE_PLACES.filter(
+    ({ place, key }) => key === "changes" || groups[place].length > 0,
+  ).map(
+    ({ place, key }) =>
+      `    ${key}: [\n${quoted(groups[place])
+        .map((l) => `${l}\n`)
+        .join("")}    ],\n`,
+  );
   const entry =
     `  {\n    date: "${date}",\n    title: ${JSON.stringify(DEFAULT_TITLE)},\n` +
     `${lists.join("")}  },\n`;

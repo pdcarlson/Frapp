@@ -20,8 +20,8 @@ export const metadata: Metadata = routeMetadata({
  * account menu → What's new and `npm run release-notes`, so this page and the
  * apps cannot disagree. Entries are written there, never here; how to write
  * one is the comment at the top of `packages/validation/src/release-notes.ts`.
- * An entry split by place lists its lines under Everywhere, On the web and On
- * your phone, as the apps do (`releaseNoteGroups`).
+ * An entry split by place lists its lines for both first, then a Web and a
+ * Mobile subheading, as the apps do (`releaseNoteGroups`).
  *
  * Built at deploy time like the rest of the site, so a new entry appears here
  * on the next landing deploy after it merges.

@@ -22,10 +22,11 @@
  * Where a line goes: `changes` holds what reads the same on the web and on
  * the phone, `web` what is only on the web dashboard, and `phone` what is only
  * in the phone app (iPhone and Android alike; say "On Android" inside the line
- * when it is one of them). A line under `web` or `phone` doesn't say "on the
- * web" or "on your phone": every surface shows it under that place, as a
- * switch in the apps and a heading in text ({@link releaseNoteGroups}). Entries before 2026-11-12 keep everything in
- * `changes`, with the place written into the line, and show no headings.
+ * when it is one of them). Every surface lists `changes` first, then a Web
+ * and a Mobile subheading over the other two ({@link releaseNoteGroups}), so
+ * a line under `web` or `phone` doesn't say "on the web" or "on your phone".
+ * Entries before 2026-11-12 keep everything in `changes`, with the place
+ * written into the line, and show no subheadings.
  *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
@@ -67,79 +68,54 @@ export type ReleaseNote = {
 export type ReleaseNotePlace = "everywhere" | "web" | "phone";
 
 /**
- * Each place's heading in text (the public changelog, the pasted block) and
- * its short name on the apps' switch between places, in the order every
- * surface lists them.
+ * Where each place's lines live in an entry (`key`) and the subheading they
+ * show under (`label`), in the order every surface lists them. Lines true on
+ * both come first with no subheading; Web and Mobile follow (Paul,
+ * 2026-11-12: "just 2 subheadings"). The fold script and the deploy check
+ * read the keys from here.
  */
 export const RELEASE_NOTE_PLACES: readonly {
   readonly place: ReleaseNotePlace;
-  readonly label: string;
-  readonly short: string;
+  readonly key: "changes" | "web" | "phone";
+  readonly label: string | null;
 }[] = Object.freeze([
-  { place: "everywhere", label: "Everywhere", short: "Both" },
-  { place: "web", label: "On the web", short: "Web" },
-  { place: "phone", label: "On your phone", short: "Phone" },
+  { place: "everywhere", key: "changes", label: null },
+  { place: "web", key: "web", label: "Web" },
+  { place: "phone", key: "phone", label: "Mobile" },
 ]);
 
 export interface ReleaseNoteGroup {
   readonly place: ReleaseNotePlace;
-  /** The heading, or `null` for an entry with no `web` or `phone` lines. */
+  /** The subheading, or `null` for the lines true on both. */
   readonly label: string | null;
-  /** The name on the apps' switch between places ("Both", "Web", "Phone"). */
-  readonly short: string;
   readonly lines: readonly string[];
-}
-
-function linesAt(note: ReleaseNote, place: ReleaseNotePlace): readonly string[] {
-  if (place === "web") return note.web ?? [];
-  if (place === "phone") return note.phone ?? [];
-  return note.changes;
 }
 
 /**
  * An entry's lines by place, in {@link RELEASE_NOTE_PLACES} order, leaving
  * out empty places: the one grouping behind the web dialog and page, the
- * phone's sheet and screen (a switch between places, opening on the one the
- * reader is using), the public changelog and the pasted text (a heading
- * over each). An
- * entry with only `changes` is one group with no heading, which is how every
- * entry before the split reads. `only` keeps just those places (the store
- * text skips web-only lines).
+ * phone's sheet and screen, the public changelog, the dev log post and the
+ * pasted text. The lines true on both have no subheading; Web and Mobile
+ * do. An entry from before the split is one group with no subheading.
+ * `only` keeps just those places (the store text skips web-only lines).
  */
 export function releaseNoteGroups(
   note: ReleaseNote,
   only?: readonly ReleaseNotePlace[],
 ): ReleaseNoteGroup[] {
-  const split = (note.web?.length ?? 0) + (note.phone?.length ?? 0) > 0;
   return RELEASE_NOTE_PLACES.filter(
-    ({ place }) => (!only || only.includes(place)) && linesAt(note, place).length > 0,
-  ).map(({ place, label, short }) => ({
-    place,
-    label: split ? label : null,
-    short,
-    lines: linesAt(note, place),
-  }));
-}
-
-/**
- * Which place an app's switch opens on: the reader's own surface (`web` on
- * the dashboard, `phone` in the app) when the entry has lines there, else
- * the first place it has.
- */
-export function openingReleaseNotePlace(
-  groups: readonly ReleaseNoteGroup[],
-  surface: "web" | "phone",
-): ReleaseNotePlace | null {
-  return (
-    groups.find((group) => group.place === surface)?.place ??
-    groups[0]?.place ??
-    null
-  );
+    ({ place }) => !only || only.includes(place),
+  )
+    .map(({ place, key, label }) => ({ place, label, lines: note[key] ?? [] }))
+    .filter((group) => group.lines.length > 0);
 }
 
 /** Every line of an entry, whatever its place. */
 export function releaseNoteLineCount(note: ReleaseNote): number {
-  return note.changes.length + (note.web?.length ?? 0) + (note.phone?.length ?? 0);
+  return RELEASE_NOTE_PLACES.reduce(
+    (sum, { key }) => sum + (note[key]?.length ?? 0),
+    0,
+  );
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
@@ -509,10 +485,10 @@ export function formatReleaseNoteDate(date: string): string {
 }
 
 /**
- * A plain-text block for a text message, group chat, TestFlight's "What to
- * Test", or Play's release notes: the title, then one dash line per change,
- * under each place's heading when the entry has them ({@link releaseNoteGroups};
- * `only` keeps just those places, as the store text keeps the phone's).
+ * A plain-text block for a text message or group chat: the title, then one
+ * dash line per change, the Web and Mobile ones under their subheadings
+ * ({@link releaseNoteGroups}; `only` keeps just those places, as
+ * {@link releaseNoteStoreText} keeps the phone's).
  */
 export function releaseNoteText(
   note: ReleaseNote,
@@ -529,4 +505,30 @@ export function releaseNoteText(
     note.title,
     ...groups,
   ].join("\n");
+}
+
+/** The places a phone tester can see: the lines for both and the Mobile ones. */
+const PHONE_PLACES: readonly ReleaseNotePlace[] = ["everywhere", "phone"];
+
+/**
+ * The block for TestFlight's "What to Test" and Play's release notes, which
+ * only phone testers read: {@link releaseNoteText} without the web-only
+ * lines. With `limit` (Play takes 500 characters), as many whole lines as
+ * fit, in the order the block lists them.
+ */
+export function releaseNoteStoreText(note: ReleaseNote, limit?: number): string {
+  const full = releaseNoteText(note, PHONE_PLACES);
+  if (limit === undefined || full.length <= limit) return full;
+  let short: ReleaseNote = { ...note, changes: [], web: [], phone: [] };
+  for (const group of releaseNoteGroups(note, PHONE_PLACES)) {
+    const key = group.place === "phone" ? "phone" : "changes";
+    for (const line of group.lines) {
+      const next = { ...short, [key]: [...(short[key] ?? []), line] };
+      if (releaseNoteText(next, PHONE_PLACES).length > limit) {
+        return releaseNoteText(short, PHONE_PLACES);
+      }
+      short = next;
+    }
+  }
+  return releaseNoteText(short, PHONE_PLACES);
 }

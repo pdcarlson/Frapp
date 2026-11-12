@@ -1,1 +1,1 @@
-What's new now splits each update into Both, Web and Phone, and opens on the one you're using.
+What's new now lists what changed on the web and on your phone under their own Web and Mobile headings.

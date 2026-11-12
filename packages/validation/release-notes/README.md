@@ -8,10 +8,9 @@ here per line: a lowercase name ending `.md` that no other PR will pick (your
 branch name works, such as `claude-poll-choices.md`), holding one sentence by
 those rules. A PR that changes nothing a member would notice adds none.
 
-**Where it goes.** What's new splits each update's lines into Both, Web and
-Phone (the apps put a switch over them; the changelog and the pasted text head
-them Everywhere, On the web and On your phone), so the folder you put the file
-in says where the change is:
+**Where it goes.** What's new lists each update's lines for both first, then
+a Web and a Mobile subheading, so the folder you put the file in says where
+the change is:
 
 | Folder | The change is |
 | ------ | ------------- |
@@ -19,13 +18,11 @@ in says where the change is:
 | `web/` | only on the web |
 | `phone/` | only in the phone app (say "On Android" or "On iPhone" in the line when it is just one) |
 
-A line in `web/` or `phone/` doesn't say "on the web" or "on your phone": the
-switch or heading does. A line written the old way, in this folder and opening "On the
-web, " or "On your phone, ", still lands under that heading with those words
-taken off. Don't edit
-`RELEASE_NOTES` to add a line: parallel PRs would conflict on it all day, and
-one file per line never does. Every PR checks the files here, so a bad line or
-a misnamed file fails in the PR that adds it.
+A line in `web/` or `phone/` doesn't open with "On the web" or "On your
+phone": the subheading says it, so a file that does is refused in its PR. A
+line written the old way, in this folder and opening "On the web, " or "On
+your phone, ", still lands under that subheading with those words taken off,
+and one opening "On Android, " or "On iPhone, " lands under Mobile as it is.
 
 **How it reaches members.** After each merge to `main` that touches this folder
 or the notes, the What's new fold workflow

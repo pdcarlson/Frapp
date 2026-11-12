@@ -46,7 +46,10 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
-import { isNewerReleaseNoteVersion } from "../../packages/validation/src/release-notes.ts";
+import {
+  RELEASE_NOTE_PLACES,
+  isNewerReleaseNoteVersion,
+} from "../../packages/validation/src/release-notes.ts";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { latestReleaseTag } from "./lib/release-tag.mjs";
 
@@ -114,8 +117,9 @@ export function countArrayElements(source, open) {
 
 /**
  * The newest entry of `RELEASE_NOTES` (newest first; its spec enforces the
- * order): its date and how many lines it has, across its `changes`, `web`
- * and `phone` lists (`releaseNoteLineCount` in the notes file). `null` when
+ * order): its date and how many lines it has, across every place's list
+ * (`RELEASE_NOTE_PLACES` and `releaseNoteLineCount` in the notes file, read
+ * from this job's trusted checkout). `null` when
  * the file has no such list, as before What's new existed.
  */
 export function newestReleaseNote(source) {
@@ -130,7 +134,7 @@ export function newestReleaseNote(source) {
   const to = dates.exec(source)?.index ?? source.length;
   const entry = source.slice(from, to);
   let lines = 0;
-  for (const key of ["changes", "web", "phone"]) {
+  for (const { key } of RELEASE_NOTE_PLACES) {
     const open = new RegExp(`\\b${key}:\\s*\\[`).exec(entry);
     if (!open) continue;
     lines += countArrayElements(source, from + open.index + open[0].length - 1) ?? 0;

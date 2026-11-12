@@ -12,8 +12,8 @@ import {
   RELEASE_NOTE_VERSION_PATTERN,
   releaseNoteLineProblem,
   releaseNoteGroups,
+  releaseNoteStoreText,
   releaseNoteLineCount,
-  openingReleaseNotePlace,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -98,29 +98,56 @@ describe("releaseNoteText with places", () => {
     phone: ["Phone."],
   };
 
-  it("lists each place under its heading, Everywhere first", () => {
+  it("lists the lines for both first, then Web and Mobile under their subheadings", () => {
     expect(releaseNoteText(split)).toBe(
       "What's new in Frapp (November 12, 2026)\n\nA title\n\n" +
-        "Everywhere\n- Both.\n\nOn the web\n- Web.\n\nOn your phone\n- Phone.",
+        "- Both.\n\nWeb\n- Web.\n\nMobile\n- Phone.",
     );
   });
 
   it("keeps only the places asked for, as the store text does", () => {
-    expect(releaseNoteText(split, ["everywhere", "phone"])).not.toContain("Web.");
+    expect(releaseNoteText(split, ["everywhere", "phone"])).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n- Both.\n\nMobile\n- Phone.",
+    );
+  });
+});
+
+describe("releaseNoteStoreText", () => {
+  const note: ReleaseNote = {
+    date: "2026-11-12",
+    title: "T",
+    changes: ["Both one.", "Both two."],
+    web: ["Web only."],
+    phone: ["Phone only."],
+  };
+
+  it("leaves the web-only lines out, for phone testers", () => {
+    const text = releaseNoteStoreText(note);
+    expect(text).not.toContain("Web only.");
+    expect(text).toContain("Mobile\n- Phone only.");
+  });
+
+  it("keeps as many whole lines as fit under a limit, in order", () => {
+    const full = releaseNoteStoreText(note);
+    const short = releaseNoteStoreText(note, full.length - 1);
+    expect(short.length).toBeLessThan(full.length);
+    expect(short).toContain("- Both two.");
+    expect(short).not.toContain("Phone only.");
+    expect(releaseNoteStoreText(note, full.length)).toBe(full);
   });
 });
 
 describe("releaseNoteGroups", () => {
-  it("gives an entry with no web or phone lines one group with no heading", () => {
+  it("gives an entry from before the split one group with no subheading", () => {
     expect(
       releaseNoteGroups({ date: "2026-11-07", title: "t", changes: ["A."] }),
-    ).toEqual([{ place: "everywhere", label: null, short: "Both", lines: ["A."] }]);
+    ).toEqual([{ place: "everywhere", label: null, lines: ["A."] }]);
   });
 
-  it("names every place once any line is split, leaving out empty ones", () => {
+  it("subheads Web and Mobile, leaving out empty places", () => {
     expect(
       releaseNoteGroups({ date: "2026-11-12", title: "t", changes: [], phone: ["P."] }),
-    ).toEqual([{ place: "phone", label: "On your phone", short: "Phone", lines: ["P."] }]);
+    ).toEqual([{ place: "phone", label: "Mobile", lines: ["P."] }]);
     expect(
       releaseNoteGroups({
         date: "2026-11-12",
@@ -128,22 +155,7 @@ describe("releaseNoteGroups", () => {
         changes: ["A."],
         web: ["W."],
       }).map((group) => group.label),
-    ).toEqual(["Everywhere", "On the web"]);
-  });
-});
-
-describe("openingReleaseNotePlace", () => {
-  const groups = releaseNoteGroups({
-    date: "2026-11-12",
-    title: "t",
-    changes: ["A."],
-    web: ["W."],
-  });
-
-  it("opens on the reader's own surface when it has lines, else the first place", () => {
-    expect(openingReleaseNotePlace(groups, "web")).toBe("web");
-    expect(openingReleaseNotePlace(groups, "phone")).toBe("everywhere");
-    expect(openingReleaseNotePlace([], "phone")).toBeNull();
+    ).toEqual([null, "Web"]);
   });
 });
 
@@ -231,6 +243,14 @@ describe("decideWhatsNew", () => {
     const extended = { ...NOTES[0]!, changes: [...NOTES[0]!.changes, "More."] };
     const notes = [extended, NOTES[1]!, NOTES[2]!];
     expect(decide({ notes, seen: ID[0]! })).toEqual({
+      show: [extended],
+      record: releaseNoteVersion(extended),
+    });
+  });
+
+  it("shows the same day's entry again when a later release added only Web or Mobile lines", () => {
+    const extended = { ...NOTES[0]!, phone: ["Mobile only."] };
+    expect(decide({ notes: [extended, NOTES[1]!], seen: ID[0]! })).toEqual({
       show: [extended],
       record: releaseNoteVersion(extended),
     });

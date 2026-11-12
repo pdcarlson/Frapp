@@ -10,10 +10,11 @@
 // TestFlight's "What to Test" and Play Console's "Release notes", which only
 // phone testers read. Play caps a language's notes at 500 characters, so the
 // script says when the store block is longer and prints a short version to
-// use there (the title plus as many lines as fit).
+// use there (the title plus as many lines as fit). Both blocks are
+// `releaseNoteStoreText` in the notes file.
 import {
   RELEASE_NOTES,
-  releaseNoteGroups,
+  releaseNoteStoreText,
   releaseNoteText,
 } from "../packages/validation/src/release-notes.ts";
 
@@ -32,8 +33,7 @@ console.log(notes.map((note) => releaseNoteText(note)).join("\n\n"));
 
 if (!all) {
   const [note] = notes;
-  const phone = ["everywhere", "phone"];
-  const store = releaseNoteText(note, phone);
+  const store = releaseNoteStoreText(note);
   if (note.web?.length) {
     console.log(
       "\n---- TestFlight and Google Play (leaves out the web-only lines) ----\n",
@@ -41,24 +41,9 @@ if (!all) {
     console.log(store);
   }
   if (store.length > PLAY_LIMIT) {
-    // Lines in the order the block shows them, until the next would not fit.
-    let short = { ...note, changes: [], web: [], phone: [] };
-    for (const group of releaseNoteGroups(note, phone)) {
-      const key = group.place === "everywhere" ? "changes" : group.place;
-      let full = false;
-      for (const change of group.lines) {
-        const next = { ...short, [key]: [...short[key], change] };
-        if (releaseNoteText(next, phone).length > PLAY_LIMIT) {
-          full = true;
-          break;
-        }
-        short = next;
-      }
-      if (full) break;
-    }
     console.log(
       `\n---- Google Play (the store block is ${store.length} characters; Play takes ${PLAY_LIMIT}) ----\n`,
     );
-    console.log(releaseNoteText(short, phone));
+    console.log(releaseNoteStoreText(note, PLAY_LIMIT));
   }
 }

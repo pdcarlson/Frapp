@@ -99,6 +99,13 @@ describe("lineFiles and readLines", () => {
     assert.throws(() => readLines(dir), /Polls\.MD isn't a line file/);
   });
 
+  it("refuse a web/ or phone/ line that still opens with its place, naming its file", () => {
+    const dir = scratch({});
+    mkdirSync(join(dir, "web"));
+    writeFileSync(join(dir, "web", "a.md"), "On the web the list sorts.");
+    assert.throws(() => readLines(dir), /web\/a\.md opens "On the web"/);
+  });
+
   it("refuse a line that breaks the writing rules, naming its file", () => {
     const dir = scratch({ "good.md": "Fine.", "bad.md": "See #42." });
     assert.throws(() => readLines(dir), /bad\.md names an issue number/);
@@ -131,14 +138,18 @@ describe("lineFiles and readLines", () => {
 });
 
 describe("placeOf", () => {
-  it("takes the place from the folder, keeping the words", () => {
+  it("takes the place from the folder, dropping an opening that names it", () => {
     assert.deepEqual(placeOf("web/a.md", "On the web, a thing."), {
       place: "web",
-      line: "On the web, a thing.",
+      line: "A thing.",
+    });
+    assert.deepEqual(placeOf("phone/a.md", "Tap a row."), {
+      place: "phone",
+      line: "Tap a row.",
     });
   });
 
-  it("moves a line written the old way under its heading, without those words", () => {
+  it("moves a line written the old way under its subheading, without those words", () => {
     assert.deepEqual(placeOf("a.md", "On the web, officers can now X."), {
       place: "web",
       line: "Officers can now X.",
@@ -147,10 +158,29 @@ describe("placeOf", () => {
       place: "phone",
       line: "Tap a row.",
     });
-    assert.deepEqual(placeOf("a.md", "Polls, on the web and on your phone."), {
-      place: "everywhere",
-      line: "Polls, on the web and on your phone.",
+  });
+
+  it("leaves a word like iPhone as written when it starts what's left", () => {
+    assert.deepEqual(placeOf("a.md", "On your phone, iPhone widgets work."), {
+      place: "phone",
+      line: "iPhone widgets work.",
     });
+  });
+
+  it("moves an old-way Android or iPhone line to Mobile, keeping its words", () => {
+    assert.deepEqual(placeOf("a.md", "On Android, the box sits higher."), {
+      place: "phone",
+      line: "On Android, the box sits higher.",
+    });
+  });
+
+  it("leaves a line that names its place mid-sentence with the lines for both", () => {
+    for (const line of [
+      "Polls, on the web and on your phone.",
+      "In Documents on the web, a photo opens.",
+    ]) {
+      assert.deepEqual(placeOf("a.md", line), { place: "everywhere", line });
+    }
   });
 });
 
