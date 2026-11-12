@@ -88,8 +88,14 @@ function RowContent({
           </span>
         ) : null}
       </span>
-      {row.badge && !askOnRow ? (
-        activityBadgeIsAsk(row) ? (
+      {row.badge ? (
+        askOnRow ? (
+          // Holds the ask's place, so the button laid over it lines up with
+          // every other row's badge and the chevron stays in its column.
+          <span aria-hidden="true" className="invisible">
+            <ActivityAsk label={row.badge.label} />
+          </span>
+        ) : activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} />
         ) : (
           <Badge variant={row.badge.variant} className="shrink-0">
@@ -122,8 +128,9 @@ interface RowActions {
 /**
  * A row that opens its record in the panel. One whose ask is a single press
  * (Confirm, Approve, Check in; `activityRowAction`) carries it as a button
- * beside the row, as a link row carries Done, so the common case takes one
- * click and the row still opens the panel for the rest.
+ * where the ask was drawn, so the common case takes one click and the rest
+ * of the row still opens the panel, as GitHub's notification rows carry
+ * their quick actions.
  */
 function PanelRow({
   row,
@@ -136,21 +143,22 @@ function PanelRow({
 }) {
   const action = rowActions.gate ? activityRowAction(row) : null;
   return (
-    <li className={action ? "flex items-center gap-1" : undefined}>
-      <button
-        type="button"
-        className={action ? cn(ROW_CLASS, "min-w-0 flex-1") : ROW_CLASS}
-        onClick={() => onOpen(row)}
-      >
+    <li className={action ? "relative" : undefined}>
+      <button type="button" className={ROW_CLASS} onClick={() => onOpen(row)}>
         <RowContent row={row} askOnRow={action !== null} />
       </button>
       {action && rowActions.gate ? (
-        <ActivityRowActionButton
-          row={row}
-          action={action}
-          gate={rowActions.gate}
-          onActed={rowActions.onActed}
-        />
+        // Laid over the place the row keeps for its ask (a sibling, not
+        // nested: a button can't hold a button), right of it only the
+        // row's chevron: its 8px padding, 12px gap and 16px glyph.
+        <span className="absolute right-9 top-1/2 z-10 -translate-y-1/2">
+          <ActivityRowActionButton
+            row={row}
+            action={action}
+            gate={rowActions.gate}
+            onActed={rowActions.onActed}
+          />
+        </span>
       ) : null}
     </li>
   );

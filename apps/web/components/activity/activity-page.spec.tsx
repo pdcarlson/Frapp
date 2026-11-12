@@ -602,10 +602,13 @@ describe("ActivityPage", () => {
       ]) {
         expect(screen.getByRole("button", { name })).toBeInTheDocument();
       }
-      // The ask moved out of the row: the row itself no longer names it.
+      // The ask moved out of the row: the row itself no longer names it,
+      // and only holds its place for the button laid over it.
+      const row = screen.getByRole("button", { name: /^Sweep the porch/ });
+      expect(row).not.toHaveAccessibleName(/Confirm/);
       expect(
-        screen.getByRole("button", { name: /^Sweep the porch/ }),
-      ).not.toHaveTextContent("Confirm");
+        row.querySelector('[aria-hidden="true"].invisible'),
+      ).toHaveTextContent("Confirm");
       // A vote asks which option, so it stays the row's ask and opens the panel.
       expect(
         screen.queryByRole("button", { name: /^act:.*Formal/ }),
@@ -640,7 +643,7 @@ describe("ActivityPage", () => {
       expect(screen.queryByRole("button", { name: /^act:/ })).toBeNull();
       expect(
         screen.getByRole("button", { name: /^Sweep the porch/ }),
-      ).toHaveTextContent("Confirm");
+      ).toHaveAccessibleName(/Confirm/);
     });
   });
 
