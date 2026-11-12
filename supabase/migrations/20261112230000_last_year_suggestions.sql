@@ -8,7 +8,7 @@
 --    earlier task (last year's). Last year's events use the existing `event`.
 -- 3. A delete trigger on `tasks`, as `events`, `chat_channels` and `meetings`
 --    have: a waiting suggestion goes with the task it was drawn from.
--- 4. An index for "has this chapter been asked about this thing this year":
+-- 4. An index for "has this chapter been asked about this thing lately":
 --    the weekly check raises a thing once across the chapter, whatever
 --    record it was drawn from, so it looks a fingerprint up by chapter
 --    (`idx_ai_suggestions_source_dedupe` leads with the source).

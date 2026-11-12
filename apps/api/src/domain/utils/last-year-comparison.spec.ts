@@ -110,11 +110,7 @@ describe('compareWithLastYear', () => {
     expect(things).toEqual([
       {
         type: 'event',
-        dedupeKey: lastYearDedupeKey(
-          'event',
-          'philanthropy week',
-          new Date('2027-04-12T22:00:00.000Z'),
-        ),
+        dedupeKey: lastYearDedupeKey('event', 'philanthropy week'),
         sourceId: 'e1',
         name: 'Philanthropy Week',
         lastYearAt: '2026-04-13T22:00:00.000Z',
@@ -167,20 +163,23 @@ describe('compareWithLastYear', () => {
     expect(things[0]).toMatchObject({ sourceId: 'c1', times: 3 });
   });
 
-  it('puts the soonest anniversary first, and events before tasks', () => {
+  it('puts the soonest anniversary first, whatever it is', () => {
     const things = compareWithLastYear({
       now: NOW,
       lastYearEvents: [
         event('later', 'Alumni Golf Outing', '2026-04-18T15:00:00.000Z'),
         event('sooner', 'Parents Weekend', '2026-03-21T15:00:00.000Z'),
+        event('same-day', 'Founders Day', '2026-03-12T23:00:00.000Z'),
       ],
+      // Three days out: next week it has left the window for good.
       tasks: [task('t1', 'Submit the housing contract', '2026-03-12')],
       thisYearTitles: [],
     });
     expect(things.map((thing) => thing.sourceId)).toEqual([
+      'same-day',
+      't1',
       'sooner',
       'later',
-      't1',
     ]);
   });
 
@@ -227,6 +226,23 @@ describe('compareWithLastYear', () => {
       expect(things).toEqual([]);
     });
 
+    it('still raises a yearly task after three years of it: the same month is one month', () => {
+      const things = compareWithLastYear({
+        now: NOW,
+        lastYearEvents: [],
+        tasks: [
+          task('y1', 'Submit the housing contract', '2024-03-22'),
+          task('y2', 'Submit the housing contract', '2025-03-21'),
+          task('y3', 'Submit the housing contract', '2026-03-20'),
+          // And one done every term is not a chore either.
+          task('s1', 'Order composite photos', '2025-10-10'),
+          task('s2', 'Order composite photos', '2026-03-13'),
+        ],
+        thisYearTitles: [],
+      });
+      expect(things.map((thing) => thing.sourceId)).toEqual(['s2', 'y3']);
+    });
+
     it('raises a title once however many tasks carried it', () => {
       const things = compareWithLastYear({
         now: NOW,
@@ -253,17 +269,36 @@ describe('compareWithLastYear', () => {
     });
   });
 
-  it('keys a thing by the year of its anniversary, never by its words', () => {
-    const a = lastYearDedupeKey('event', 'formal', new Date('2027-04-03'));
+  it('keys a thing by its name alone, never by its words or a date', () => {
+    const a = lastYearDedupeKey('event', 'formal');
     expect(a).toMatch(/^[0-9a-f]{32}$/);
-    expect(a).toBe(
-      lastYearDedupeKey('event', 'formal', new Date('2027-11-03')),
+    expect(a).not.toContain('formal');
+    expect(a).not.toBe(lastYearDedupeKey('task', 'formal'));
+    expect(a).not.toBe(lastYearDedupeKey('event', 'philanthropy week'));
+  });
+
+  it('gives a series one key as the window slides across the new year', () => {
+    const weekly = [
+      '2025-12-10',
+      '2025-12-17',
+      '2025-12-24',
+      '2025-12-31',
+      '2026-01-07',
+      '2026-01-14',
+      '2026-01-21',
+    ].map((day, index) =>
+      event(`s${index}`, 'Study Tables', `${day}T23:00:00.000Z`),
     );
-    expect(a).not.toBe(
-      lastYearDedupeKey('event', 'formal', new Date('2028-04-03')),
-    );
-    expect(a).not.toBe(
-      lastYearDedupeKey('task', 'formal', new Date('2027-04-03')),
+    const keyOn = (now: string) =>
+      compareWithLastYear({
+        now: new Date(now),
+        lastYearEvents: weekly,
+        tasks: [],
+        thisYearTitles: [],
+      })[0]?.dedupeKey;
+    expect(keyOn('2026-12-07T15:00:00.000Z')).toBeDefined();
+    expect(keyOn('2027-01-04T15:00:00.000Z')).toBe(
+      keyOn('2026-12-07T15:00:00.000Z'),
     );
   });
 });

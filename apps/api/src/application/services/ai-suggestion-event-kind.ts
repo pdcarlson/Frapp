@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestionPayload } from '#domain/entities/ai-suggestion.entity';
 import type { AiSuggestionKindHandler } from './ai-suggestion-kinds';
@@ -111,6 +115,15 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
     return { ...payload, event_id: eventId };
   }
 
+  /**
+   * Never: the event is made in its own form, so what the officer changed
+   * there is not this suggestion's to know, and the id every accept carries
+   * is not a change.
+   */
+  countsAsEdited(): boolean {
+    return false;
+  }
+
   assertAcceptable(payload: AiSuggestionPayload): void {
     if (!readEventPayload(payload).event_id) {
       throw new BadRequestException({
@@ -133,13 +146,12 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
         message: 'Add the event from its form first.',
       });
     }
-    // Missing, or another chapter's, answers 404 as the event route does.
+    // Missing, another chapter's, or not this member's own: all answer 404,
+    // as the event route does for an event the member can't see. Saying
+    // "someone else's" would confirm a role-targeted event exists.
     const event = await this.events.findById(eventId, input.chapterId);
     if (event.created_by !== input.userId) {
-      throw new BadRequestException({
-        code: 'ai.suggestion.not_your_event',
-        message: 'That event was added by someone else.',
-      });
+      throw new NotFoundException('Event not found');
     }
     return { resultId: event.id };
   }

@@ -40,10 +40,18 @@ export const LAST_YEAR_MAX_NEW_PER_SWEEP = 3;
 /** With this many still waiting, a sweep adds none. */
 export const LAST_YEAR_MAX_WAITING = 5;
 /**
- * A task title due in this many different months is a routine chore (clean
- * the kitchen), not something the chapter does once a year.
+ * A task title due in this many different months of the year up to last
+ * year's stretch is a routine chore (clean the kitchen), not something the
+ * chapter does once a year or once a term.
  */
 export const LAST_YEAR_ROUTINE_TASK_MONTHS = 3;
+/**
+ * Once a thing is raised, how long before it can be raised again, whatever
+ * became of the first time. Long enough that a series dismissed in its first
+ * week stays gone for the term it runs through, and short enough that the
+ * formal a chapter holds every term is raised for each.
+ */
+export const LAST_YEAR_QUIET_DAYS = 150;
 
 export interface LastYearWindows {
   /** Last year's stretch: now to six weeks on, 52 weeks back. */
@@ -185,7 +193,7 @@ export interface LastYearTaskRecord {
 export type LastYearThing =
   | {
       type: 'event';
-      /** Told apart by, once per year: never the title itself. */
+      /** What it is told apart by: a fingerprint of the name, never the name. */
       dedupeKey: string;
       /** The first of last year's occurrences in the stretch. */
       sourceId: string;
@@ -207,19 +215,24 @@ export type LastYearThing =
     };
 
 /**
- * Which thing, in which year, as a fingerprint: a suggestion keeps it after
- * it is decided (and keeps no words), so the same thing is never raised
- * twice in a year, whatever became of the first time.
+ * Which thing, as a fingerprint of its name: a suggestion keeps it after it
+ * is decided (and keeps no words), so the same thing is not raised again
+ * within `LAST_YEAR_QUIET_DAYS`, whatever became of the first time. It
+ * carries no date: a weekly series is read through a window that slides, and
+ * a date taken from the window would change the fingerprint under it.
  */
-export function lastYearDedupeKey(
-  type: 'event' | 'task',
-  key: string,
-  anniversary: Date,
-): string {
+export function lastYearDedupeKey(type: 'event' | 'task', key: string): string {
   return createHash('sha256')
-    .update(`last-year:v1:${type}:${key}:${anniversary.getUTCFullYear()}`)
+    .update(`last-year:v2:${type}:${key}`)
     .digest('hex')
     .slice(0, 32);
+}
+
+/** When a thing last year falls this year: 52 weeks on. */
+function anniversaryOf(thing: LastYearThing): number {
+  return thing.type === 'event'
+    ? Date.parse(thing.lastYearAt)
+    : Date.parse(`${thing.lastYearOn}T12:00:00Z`);
 }
 
 export interface LastYearComparisonInput {
@@ -237,7 +250,7 @@ export interface LastYearComparisonInput {
 
 /**
  * Everything last year's stretch holds that this year's record doesn't, the
- * soonest anniversary first, events before tasks. The caller drops what was
+ * soonest anniversary first. The caller drops what was
  * already raised this year and keeps the first few.
  */
 export function compareWithLastYear(
@@ -247,7 +260,6 @@ export function compareWithLastYear(
   const from = lastYear.from.getTime();
   const to = lastYear.to.getTime();
   const seen = input.thisYearTitles.map(titleTokens);
-  const shift = LAST_YEAR_SHIFT_DAYS * DAY_MS;
 
   // Events: one thing per name, however many times it was held.
   const events = new Map<string, LastYearEventRecord[]>();
@@ -265,30 +277,25 @@ export function compareWithLastYear(
     if (seenThisYear(first.name, seen)) continue;
     eventThings.push({
       type: 'event',
-      dedupeKey: lastYearDedupeKey(
-        'event',
-        key,
-        new Date(Date.parse(first.start_time) + shift),
-      ),
+      dedupeKey: lastYearDedupeKey('event', key),
       sourceId: first.id,
       name: first.name,
       lastYearAt: first.start_time,
       times: held.length,
     });
   }
-  eventThings.sort((a, b) =>
-    a.type === 'event' && b.type === 'event'
-      ? Date.parse(a.lastYearAt) - Date.parse(b.lastYearAt)
-      : 0,
-  );
-
   // Tasks: finished ones due in the stretch, unless the title is a chore.
+  // A chore is told by the year up to the end of last year's stretch: the
+  // same April over three years is one month, not three.
+  const choreFrom = new Date(to - 365 * DAY_MS).toISOString().slice(0, 10);
+  const choreTo = new Date(to).toISOString().slice(0, 10);
   const months = new Map<string, Set<string>>();
   for (const task of input.tasks) {
+    if (task.due_date <= choreFrom || task.due_date > choreTo) continue;
     const key = titleKey(task.title);
     if (!key) continue;
     const set = months.get(key) ?? new Set<string>();
-    set.add(task.due_date.slice(0, 7));
+    set.add(task.due_date.slice(5, 7));
     months.set(key, set);
   }
   const taskThings: LastYearThing[] = [];
@@ -315,7 +322,7 @@ export function compareWithLastYear(
     taken.add(key);
     taskThings.push({
       type: 'task',
-      dedupeKey: lastYearDedupeKey('task', key, new Date(at + shift)),
+      dedupeKey: lastYearDedupeKey('task', key),
       sourceId: task.id,
       title: task.title,
       description: task.description,
@@ -324,5 +331,11 @@ export function compareWithLastYear(
     });
   }
 
-  return [...eventThings, ...taskThings];
+  // Soonest first, whatever it is: the one about to leave the window is the
+  // one with no second chance. On the same day, the event leads.
+  return [...eventThings, ...taskThings].sort(
+    (a, b) =>
+      Math.floor(anniversaryOf(a) / DAY_MS) -
+      Math.floor(anniversaryOf(b) / DAY_MS),
+  );
 }

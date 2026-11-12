@@ -29,6 +29,7 @@ import { isAiEnabled } from '#domain/utils/ai-enabled';
 import {
   LAST_YEAR_MAX_NEW_PER_SWEEP,
   LAST_YEAR_MAX_WAITING,
+  LAST_YEAR_QUIET_DAYS,
   LAST_YEAR_SHIFT_DAYS,
   compareWithLastYear,
   lastYearWindows,
@@ -105,8 +106,9 @@ function lastYearTitle(row: AiSuggestion): string | null {
  *   quiet: something already planned for a group the president is not in is
  *   still planned.
  * - **Never nagging.** At most three new suggestions a week, none while five
- *   are waiting, and a thing is raised once a year: dismissed, accepted or
- *   expired, it does not come back until next year. A waiting suggestion is
+ *   are waiting, and a thing is raised once: dismissed, accepted or
+ *   expired, it does not come back for five months, so not before next year
+ *   for a yearly thing and next term for one held every term. A waiting suggestion is
  *   taken back by the next sweep once the thing shows up on this year's
  *   record.
  * - **One push a week at most**, to the president, and only when something
@@ -121,9 +123,9 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
   readonly actsForMember = true;
 
   private readonly logger = new Logger(LastYearSuggestionsService.name);
-  /** Chapters already queued this week by this process, so a daily tick is cheap. */
+  /** Chapters with nothing to queue this week, so a daily tick skips them. */
   private queuedWeek = -1;
-  private readonly queued = new Set<string>();
+  private readonly skipped = new Set<string>();
 
   constructor(
     @Inject(AI_SUGGESTION_REPOSITORY)
@@ -156,12 +158,12 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
     const week = lastYearWeekIndex(now);
     if (week !== this.queuedWeek) {
       this.queuedWeek = week;
-      this.queued.clear();
+      this.skipped.clear();
     }
 
     let visited = 0;
     for (const chapterId of await this.consent.chaptersWithSwitchOn('ask')) {
-      if (this.queued.has(chapterId)) continue;
+      if (this.skipped.has(chapterId)) continue;
       try {
         const chapter = await this.chapters.findById(chapterId);
         const old =
@@ -178,10 +180,13 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
             input: { week },
           });
           visited += 1;
+        } else {
+          // A chapter with no president, or too young, is asked again next
+          // week: neither changes within one. A chapter that was queued is
+          // offered again each day, which is what re-queues a failed run
+          // (the queue's dedupe key makes a finished or waiting one a no-op).
+          this.skipped.add(chapterId);
         }
-        // A chapter with no president, or too young, is asked again next
-        // week: neither changes within one.
-        this.queued.add(chapterId);
       } catch (error) {
         // One chapter's failure must not cost the others their week.
         reportCaughtFailure(this.logger, {
@@ -240,7 +245,14 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
         endsAfter: windows.thisYear.from.toISOString(),
         startsBefore: windows.thisYear.to.toISOString(),
       }),
-      this.tasks.list(chapterId, actor, true),
+      // Whole, like this year's events, and only as far back as the year
+      // before last year's stretch (what tells a chore from a yearly task).
+      this.tasks.listSince(chapterId, {
+        dueFrom: new Date(windows.lastYear.to.getTime() - 366 * DAY_MS)
+          .toISOString()
+          .slice(0, 10),
+        createdFrom: windows.thisYear.from.toISOString(),
+      }),
     ]);
 
     // A task counts as this year's when it is due in the window, or was
@@ -270,15 +282,12 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
       })
     ).flatMap((row) => {
       const title = lastYearTitle(row);
-      return title === null ? [] : [{ id: row.id, title }];
+      return title === null ? [] : [{ id: row.id, kind: row.kind, title }];
     });
     const nowSeen = waiting.filter((row) =>
       seenThisYear(row.title, seenTokens),
     );
-    const withdrawn = await this.suggestionRows.deletePending(
-      chapterId,
-      nowSeen.map((row) => row.id),
-    );
+    const withdrawn = await this.suggestions.withdraw(chapterId, nowSeen);
     const room = Math.min(
       LAST_YEAR_MAX_NEW_PER_SWEEP,
       LAST_YEAR_MAX_WAITING - (waiting.length - withdrawn),
@@ -295,7 +304,8 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
             description: task.description,
             due_date: task.due_date,
             completed: task.stored_status === TaskStatus.COMPLETED,
-            subtasks: (task.subtasks ?? []).map((subtask) => subtask.title),
+            // Read for the few that are raised, below.
+            subtasks: [],
           }))
         : [],
       thisYearTitles,
@@ -303,13 +313,15 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
     const taken = await this.suggestionRows.findTakenDedupeKeys(
       chapterId,
       things.map((thing) => thing.dedupeKey),
+      new Date(now.getTime() - LAST_YEAR_QUIET_DAYS * DAY_MS).toISOString(),
     );
     const fresh = things
       .filter((thing) => !taken.has(thing.dedupeKey))
       .slice(0, room);
 
     const created: { row: AiSuggestion; thing: LastYearThing }[] = [];
-    for (const thing of fresh) {
+    for (const found of fresh) {
+      const thing = await this.withChecklist(chapterId, found);
       const row = await this.propose(chapterId, run.id, actor, thing);
       if (row) created.push({ row, thing });
     }
@@ -317,6 +329,24 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
       await this.tellPresident(chapterId, actor, modules, created);
     }
     return { proposed: created.length, withdrawn };
+  }
+
+  /** A raised task with last year's checklist; anything else as it is. */
+  private async withChecklist(
+    chapterId: string,
+    thing: LastYearThing,
+  ): Promise<LastYearThing> {
+    if (thing.type !== 'task') return thing;
+    try {
+      const task = await this.tasks.findById(thing.sourceId, chapterId);
+      return {
+        ...thing,
+        subtasks: (task.subtasks ?? []).map((subtask) => subtask.title),
+      };
+    } catch {
+      // Deleted since it was read: `propose` drops it at the source check.
+      return thing;
+    }
   }
 
   /**
@@ -398,7 +428,7 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
         body:
           mine.length === 1
             ? `The chapter had “${title}” around now last year, and I don’t see it this year. Correct me if it’s already planned.`
-            : `${mine.length} things the chapter did around now last year aren’t on this year’s calendar or task board. Correct me if they’re already planned.`,
+            : `The chapter did ${mine.length} things around now last year that I don’t see on this year’s calendar or task board. Correct me if they’re already planned.`,
         priority: 'NORMAL',
         category: thing.type === 'event' ? 'events' : 'tasks',
         data: {

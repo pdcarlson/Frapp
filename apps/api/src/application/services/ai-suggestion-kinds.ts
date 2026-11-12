@@ -43,6 +43,14 @@ export interface AiSuggestionKindHandler {
     edits: Record<string, unknown>,
   ): AiSuggestionPayload;
   /**
+   * Whether an accept changed what was proposed, for the `edited` figure.
+   * Absent, any difference in the payload counts.
+   */
+  countsAsEdited?(
+    proposed: AiSuggestionPayload,
+    accepted: AiSuggestionPayload,
+  ): boolean;
+  /**
    * Throws a 400 naming what is missing when the payload can't be accepted
    * as it stands (a task with no owner yet). Checked before the claim, so a
    * refusal changes nothing.

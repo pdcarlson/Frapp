@@ -140,7 +140,8 @@ export function SuggestedEvents({
       });
       const template = source as unknown as Record<string, unknown>;
       const start = sameWeekdayThisYear(template.start_time);
-      const end = sameWeekdayThisYear(template.end_time);
+      // The end keeps its distance from the start, not its own next week.
+      const end = sameWeekdayThisYear(template.end_time, start ?? undefined);
       onPlan({
         suggestionId: item.id,
         template: {

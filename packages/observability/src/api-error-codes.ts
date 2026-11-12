@@ -91,7 +91,6 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.suggestion.decided",
   "ai.suggestion.accepting",
   "ai.suggestion.incomplete",
-  "ai.suggestion.not_your_event",
   // Two officers started minutes for one event at once, or one saved over
   // the other's newer version (#4312).
   "meeting.already_started",

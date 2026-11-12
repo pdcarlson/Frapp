@@ -30,12 +30,21 @@ export function lastYearBareDay(day: string | null | undefined): string {
 /**
  * The same weekday and time of day this year, in the reader's zone: 52 weeks
  * on by the calendar, so a clock change in between doesn't move the hour.
+ * A suggestion waits up to two weeks, so by the time an officer opens it that
+ * day may have passed: it then moves on a week at a time to the next one
+ * still ahead, and the form never opens on a date already gone.
  */
-export function sameWeekdayThisYear(instant: unknown): Date | null {
+export function sameWeekdayThisYear(
+  instant: unknown,
+  notBefore: Date = new Date(),
+): Date | null {
   const at = parseInstant(instant);
   if (!at) return null;
   const moved = new Date(at);
   moved.setDate(moved.getDate() + SHIFT_DAYS);
+  while (moved.getTime() < notBefore.getTime()) {
+    moved.setDate(moved.getDate() + 7);
+  }
   return moved;
 }
 

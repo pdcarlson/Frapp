@@ -82,13 +82,15 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
   async findTakenDedupeKeys(
     chapterId: string,
     keys: readonly string[],
+    since: string,
   ): Promise<Set<string>> {
     if (keys.length === 0) return new Set();
     const { data, error } = await this.supabase
       .from('ai_suggestions')
       .select('dedupe_key')
       .eq('chapter_id', chapterId)
-      .in('dedupe_key', [...keys]);
+      .in('dedupe_key', [...keys])
+      .gte('created_at', since);
     if (error) throw new SupabaseQueryError(error);
     return new Set(
       (data ?? [])

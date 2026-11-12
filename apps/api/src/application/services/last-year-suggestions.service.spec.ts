@@ -80,14 +80,19 @@ class FakeRows {
             query.permissions.includes(row.required_permission)),
       )
       .slice(query.offset, query.offset + query.limit);
-  findTakenDedupeKeys = async (chapterId: string, keys: readonly string[]) =>
+  findTakenDedupeKeys = async (
+    chapterId: string,
+    keys: readonly string[],
+    since: string,
+  ) =>
     new Set(
       this.rows
         .filter(
           (row) =>
             row.chapter_id === chapterId &&
             row.dedupe_key !== null &&
-            keys.includes(row.dedupe_key),
+            keys.includes(row.dedupe_key) &&
+            row.created_at >= since,
         )
         .map((row) => row.dedupe_key as string),
     );
@@ -247,7 +252,17 @@ function build(
     }),
   };
   const tasks = {
-    list: jest.fn(async () => state.tasks),
+    // As the query reads: due since, or made since.
+    listSince: jest.fn(
+      async (_c: string, since: { dueFrom: string; createdFrom: string }) =>
+        state.tasks
+          .filter(
+            (task) =>
+              task.due_date >= since.dueFrom ||
+              task.created_at >= since.createdFrom,
+          )
+          .map(({ subtasks: _subtasks, ...task }) => task),
+    ),
     findById: jest.fn(async (id: string) => {
       const task = state.tasks.find((row) => row.id === id);
       if (!task) throw new NotFoundException('Task not found');
@@ -362,6 +377,7 @@ function build(
     consent,
     runs,
     registry,
+    chapters,
     run,
   };
 }
@@ -453,8 +469,64 @@ describe('LastYearSuggestionsService', () => {
       expect(chapterId).toBe(CHAPTER);
       expect(to).toEqual([PRESIDENT]);
       expect(payload.title).toBe('This time last year');
-      expect(payload.body).toContain('2 things');
+      // What it doesn't see, never what is missing; and the way out.
+      expect(payload.body).toBe(
+        'The chapter did 2 things around now last year that I don’t see on this year’s calendar or task board. Correct me if they’re already planned.',
+      );
       expect(payload.data.target.screen).toBe('ai_suggestions');
+    });
+
+    it('names the one thing when it raised one, in the same voice', async () => {
+      const { run, notifications } = build({ events: LAST_YEAR.slice(0, 1) });
+      await run();
+      const [, , payload] = notifications.notifyMembers.mock
+        .calls[0] as unknown as [
+        string,
+        string[],
+        {
+          body: string;
+          category: string;
+          data: { target: { sourceType: string; sourceId: string } };
+        },
+      ];
+      expect(payload.body).toBe(
+        `The chapter had “${LAST_YEAR[0].name}” around now last year, and I don’t see it this year. Correct me if it’s already planned.`,
+      );
+      expect(payload.category).toBe('events');
+      expect(payload.data.target).toMatchObject({
+        sourceType: 'event',
+        sourceId: LAST_YEAR[0].id,
+      });
+    });
+
+    it('stays quiet about a task already on this year’s board, and one nobody finished', async () => {
+      const { run, rows } = build({
+        tasks: [
+          aTask('done', 'Submit the housing contract', '2026-03-20'),
+          // Made last week, due after the window: on the board all the same.
+          aTask('again', 'Submit housing contract', '2027-08-01', {
+            created_at: '2027-03-01T00:00:00.000Z',
+            stored_status: TaskStatus.TODO,
+          }),
+          aTask('never', 'Repaint the letters', '2026-03-22', {
+            stored_status: TaskStatus.TODO,
+          }),
+        ],
+      });
+      await expect(run()).resolves.toEqual({ proposed: 0, withdrawn: 0 });
+      expect(rows.rows).toEqual([]);
+    });
+
+    it('can raise a thing again once five months have passed: the formal held every term', async () => {
+      const { run, rows } = build({ events: LAST_YEAR.slice(0, 1) });
+      await run();
+      expect(rows.rows).toHaveLength(1);
+      rows.rows[0].status = 'dismissed';
+      await expect(run()).resolves.toMatchObject({ proposed: 0 });
+      rows.rows[0].created_at = new Date(
+        NOW.getTime() - 151 * 24 * 3600_000,
+      ).toISOString();
+      await expect(run()).resolves.toMatchObject({ proposed: 1 });
     });
 
     it('raises nothing, and tells nobody, when this year already has it all', async () => {
@@ -519,12 +591,20 @@ describe('LastYearSuggestionsService', () => {
     });
 
     it('takes back a waiting suggestion once the thing shows up on this year’s calendar', async () => {
-      const { run, rows, state } = build({ events: LAST_YEAR.slice(0, 1) });
+      const { run, rows, state, analytics } = build({
+        events: LAST_YEAR.slice(0, 1),
+      });
       await run();
       expect(rows.rows).toHaveLength(1);
       state.events.push(anEvent('p', 'Philanthropy week', '2027-04-12'));
       await expect(run()).resolves.toEqual({ proposed: 0, withdrawn: 1 });
       expect(rows.rows).toEqual([]);
+      // Counted, so proposed still adds up to what became of each.
+      expect(analytics.trackForChapter).toHaveBeenCalledWith(
+        'ai-suggestions-withdrawn',
+        CHAPTER,
+        { kind: 'event', count: 1 },
+      );
     });
 
     it('raises at most three in a week, the soonest first, and none while five wait', async () => {
@@ -606,7 +686,7 @@ describe('LastYearSuggestionsService', () => {
       });
       await expect(run()).rejects.toBeInstanceOf(AiRunFailure);
       expect(events.findByChapter).not.toHaveBeenCalled();
-      expect(tasks.list).not.toHaveBeenCalled();
+      expect(tasks.listSince).not.toHaveBeenCalled();
     });
   });
 
@@ -650,6 +730,8 @@ describe('LastYearSuggestionsService', () => {
         payload: {},
         quote: null,
         result_id: NEW_EVENT,
+        // Naming the event is how it is accepted, not a change to it.
+        edited: false,
       });
       expect(tasks.create).not.toHaveBeenCalled();
     });
@@ -670,7 +752,7 @@ describe('LastYearSuggestionsService', () => {
           enabledModules: {},
         }),
       ).rejects.toMatchObject({
-        response: { code: 'ai.suggestion.not_your_event' },
+        status: 404,
       });
       expect(rows.rows[0].status).toBe('pending');
     });
@@ -712,12 +794,35 @@ describe('LastYearSuggestionsService', () => {
         actingUserId: PRESIDENT,
         input: { week: lastYearWeekIndex(NOW) },
       });
-      // The next day, same week: nothing more to do.
+      // The next day, same week: offered again under the same key, which is
+      // a no-op for a finished run and what re-queues a failed one.
       await service.sweep(new Date(NOW.getTime() + 24 * 3600_000));
-      expect(runs.enqueue).toHaveBeenCalledTimes(1);
-      // The next week: again.
-      await service.sweep(new Date(NOW.getTime() + 7 * 24 * 3600_000));
       expect(runs.enqueue).toHaveBeenCalledTimes(2);
+      expect(runs.enqueue).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          dedupeKey: `last-year:${CHAPTER}:w${lastYearWeekIndex(NOW)}`,
+        }),
+      );
+      // The next week: a new key.
+      await service.sweep(new Date(NOW.getTime() + 7 * 24 * 3600_000));
+      expect(runs.enqueue).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          dedupeKey: `last-year:${CHAPTER}:w${lastYearWeekIndex(NOW) + 1}`,
+        }),
+      );
+    });
+
+    it('does not look again that week at a chapter with nothing to queue', async () => {
+      const { service, runs, chapters } = build({
+        chapterCreatedAt: '2026-12-01T00:00:00.000Z',
+      });
+      await service.sweep(NOW);
+      await service.sweep(new Date(NOW.getTime() + 24 * 3600_000));
+      // Once for each of the two chapters, on the first day only.
+      expect(chapters.findById).toHaveBeenCalledTimes(2);
+      expect(runs.enqueue).not.toHaveBeenCalled();
     });
 
     it('starts a week on Monday', () => {

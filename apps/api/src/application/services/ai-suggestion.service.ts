@@ -628,7 +628,11 @@ export class AiSuggestionService {
       ? handler.applyEdits(row.payload, options.edits.fields)
       : row.payload;
     handler.assertAcceptable(payload);
-    const edited = !samePayload(payload, row.payload);
+    // A kind whose accept always carries a field (the event an officer
+    // made) says for itself whether that counts as a change.
+    const edited = handler.countsAsEdited
+      ? handler.countsAsEdited(row.payload, payload)
+      : !samePayload(payload, row.payload);
 
     const claimed = await this.repo.claim(chapterId, id, {
       status: 'accepting',
@@ -693,6 +697,44 @@ export class AiSuggestionService {
       },
       result: { kind: row.kind, id: resultId },
     };
+  }
+
+  /**
+   * Takes back waiting suggestions whose thing has since been done another
+   * way, for a feature that keeps its own list of them (#3930). Counted like
+   * any withdrawal, so proposed still adds up.
+   */
+  async withdraw(
+    chapterId: string,
+    rows: readonly { id: string; kind: AiSuggestionKind }[],
+  ): Promise<number> {
+    const taken = await this.repo.deletePending(
+      chapterId,
+      rows.map((row) => row.id),
+    );
+    if (taken > 0) {
+      // By kind, as every suggestion event is. A row another request decided
+      // first is not deleted, so a mixed batch may overcount one kind by it.
+      const byKind = new Map<AiSuggestionKind, number>();
+      for (const row of rows) {
+        byKind.set(row.kind, (byKind.get(row.kind) ?? 0) + 1);
+      }
+      let left = taken;
+      for (const [kind, count] of byKind) {
+        const counted = Math.min(count, left);
+        left -= counted;
+        if (counted > 0) {
+          this.emit(
+            this.analytics.trackForChapter(
+              'ai-suggestions-withdrawn',
+              chapterId,
+              { kind, count: counted },
+            ),
+          );
+        }
+      }
+    }
+    return taken;
   }
 
   /**
