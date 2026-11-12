@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { DueDateField } from "./due-date-field";
+import { DueDateField, dueEntryPassed } from "./due-date-field";
 
 // Monday, 9 November 2026.
 const NOW = new Date(2026, 10, 9, 12);
@@ -10,10 +10,12 @@ const NOW = new Date(2026, 10, 9, 12);
 function Harness({
   initial = "",
   missing,
+  passed,
   onValue,
 }: {
   initial?: string;
   missing?: boolean;
+  passed?: boolean;
   onValue?: (value: string) => void;
 }) {
   const [value, setValue] = useState(initial);
@@ -23,6 +25,7 @@ function Harness({
         aria-label="Due date"
         now={NOW}
         missing={missing}
+        passed={passed}
         value={value}
         onChange={(next) => {
           setValue(next);
@@ -140,5 +143,74 @@ describe("DueDateField (#3928)", () => {
     expect(field()).toHaveValue("March 14, 2027");
     fireEvent.click(screen.getByRole("button", { name: "reset" }));
     expect(field()).toHaveValue("");
+  });
+});
+
+describe("DueDateField's time of day (#4512)", () => {
+  const addTime = () => screen.getByRole("button", { name: "Add a time" });
+  const time = () => screen.getByLabelText("Due time");
+
+  it("starts with no time, as a quiet Add a time", () => {
+    render(<Harness initial="2026-11-14" />);
+    expect(addTime()).toBeInTheDocument();
+    expect(screen.queryByLabelText("Due time")).toBeNull();
+  });
+
+  it("adds a time at 5 PM, the phone's starting point", () => {
+    const onValue = vi.fn();
+    render(<Harness initial="2026-11-14" onValue={onValue} />);
+    fireEvent.click(addTime());
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-14T17:00");
+    expect(time()).toHaveValue("17:00");
+    // The date field writes the time in with the day.
+    expect(field()).toHaveValue("Saturday · 5 PM");
+  });
+
+  it("gives a time with no date picked yet today's date", () => {
+    const onValue = vi.fn();
+    render(<Harness onValue={onValue} />);
+    fireEvent.click(addTime());
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-09T17:00");
+  });
+
+  it("changes the time and keeps the day", () => {
+    const onValue = vi.fn();
+    render(<Harness initial="2026-11-14T17:00" onValue={onValue} />);
+    fireEvent.change(time(), { target: { value: "09:30" } });
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-14T09:30");
+    expect(field()).toHaveValue("Saturday · 9:30 AM");
+  });
+
+  it("takes the time off and keeps the day", () => {
+    const onValue = vi.fn();
+    render(<Harness initial="2026-11-14T17:00" onValue={onValue} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove the time" }));
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-14");
+    expect(addTime()).toBeInTheDocument();
+    expect(field()).toHaveValue("Saturday");
+  });
+
+  it("shows a time typed into the date field", () => {
+    render(<Harness />);
+    type("11/14 5pm");
+    expect(time()).toHaveValue("17:00");
+  });
+
+  it("says when the form was submitted with a time already gone by", () => {
+    render(<Harness initial="2026-11-09T09:00" passed />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That time has already passed.",
+    );
+  });
+});
+
+describe("dueEntryPassed", () => {
+  it("refuses a new time already gone by, never a task's own", () => {
+    expect(dueEntryPassed("2026-11-09T09:00", NOW)).toBe(true);
+    expect(dueEntryPassed("2026-11-09T13:00", NOW)).toBe(false);
+    expect(dueEntryPassed("2026-11-09", NOW)).toBe(false);
+    expect(dueEntryPassed("2026-11-09T09:00", NOW, "2026-11-09T09:00")).toBe(
+      false,
+    );
   });
 });

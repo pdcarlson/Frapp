@@ -30,7 +30,10 @@ import {
   primarySize,
   useReportDraft,
 } from "@/components/shared/short-form";
-import { DueDateField } from "@/components/tasks/due-date-field";
+import {
+  DueDateField,
+  dueEntryPassed,
+} from "@/components/tasks/due-date-field";
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { pointsLabel } from "@/components/events/event-labels";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -77,6 +80,8 @@ type Missing = {
   titleTooLong?: boolean;
   assignee?: boolean;
   due?: boolean;
+  /** The due time has already gone by (#4512). */
+  passed?: boolean;
 };
 
 export interface TaskFormProps {
@@ -160,13 +165,19 @@ export function TaskForm({
       titleTooLong: trimmed.length > TASK_TITLE_MAX_LENGTH,
       assignee: !draft.assigneeId,
       due: !draft.dueDate,
+      // An edit keeps the task's own time even once it has passed (#4296).
+      passed: dueEntryPassed(
+        draft.dueDate,
+        new Date(),
+        editing ? initialDraft?.dueDate : undefined,
+      ),
     };
     setMissing(nextMissing);
     if (nextMissing.title || nextMissing.titleTooLong) {
       return titleRef.current?.focus();
     }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
-    if (nextMissing.due) return dueRef.current?.focus();
+    if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
     setPosting(true);
     try {
       const result = await onPost({
@@ -283,21 +294,25 @@ export function TaskForm({
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-1">
           <Label htmlFor={`${ids}-due`}>Due date</Label>
-          <div>
-            <DueDateField
-              ref={dueRef}
-              id={`${ids}-due`}
-              className={field}
-              placeholder="Friday 5pm"
-              missing={missing.due}
-              value={draft.dueDate}
-              onChange={(value) => {
-                edit({ dueDate: value });
-                if (value) setMissing((prev) => ({ ...prev, due: false }));
-              }}
-              {...gate.controlProps()}
-            />
-          </div>
+          <DueDateField
+            ref={dueRef}
+            id={`${ids}-due`}
+            className={field}
+            placeholder="Friday 5pm"
+            timeClassName={field}
+            missing={missing.due}
+            passed={missing.passed}
+            value={draft.dueDate}
+            onChange={(value) => {
+              edit({ dueDate: value });
+              setMissing((prev) => ({
+                ...prev,
+                due: prev.due && !value,
+                passed: false,
+              }));
+            }}
+            {...gate.controlProps()}
+          />
         </div>
       </div>
       {editing ? (

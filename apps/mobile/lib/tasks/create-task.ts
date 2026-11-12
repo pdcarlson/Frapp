@@ -1,5 +1,6 @@
 import {
   dueEntryFields,
+  dueTimePassed,
   formatWeekdayDay,
   localIsoDate,
 } from "@repo/formatting";
@@ -206,55 +207,6 @@ export interface ValidatedNewTask {
 }
 
 /**
- * The time field's text: `"5 PM"`, `"9:30 AM"`. The minutes only when there
- * are some, as a calendar writes a time.
- */
-export function formatDueTimeLabel(time: string): string {
-  const [hours = 0, minutes = 0] = time.split(":").map(Number);
-  const period = hours < 12 ? "AM" : "PM";
-  const hour = hours % 12 === 0 ? 12 : hours % 12;
-  return minutes === 0
-    ? `${hour} ${period}`
-    : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
-}
-
-/**
- * Where "Add a time" starts: 5 PM, the end of a chapter's working day, or
- * for a task due today once that has passed, the next whole hour (up to
- * 11 PM), so a fresh time is never already behind.
- */
-export function suggestedDueTime(dueDate: string, now: Date): string {
-  if (dueDate !== localIsoDate(now) || now.getHours() < 17) return "17:00";
-  return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, "0")}:00`;
-}
-
-/**
- * True when the draft names a time on today that has already gone by: a
- * task created like that would be overdue the moment it exists.
- */
-export function dueTimePassed(
-  draft: Pick<NewTaskDraft, "dueDate" | "dueTime">,
-  now: Date,
-  /**
-   * An edit's due as the task already has it (#4296). A task that is
-   * overdue can still have its title or points changed, so its own due
-   * isn't refused for having passed; only a newly picked one is.
-   */
-  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
-): boolean {
-  if (!draft.dueTime) return false;
-  if (
-    kept &&
-    kept.dueDate === draft.dueDate &&
-    (kept.dueTime ?? null) === draft.dueTime
-  ) {
-    return false;
-  }
-  const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
-  return due_at !== undefined && Date.parse(due_at) <= now.getTime();
-}
-
-/**
  * The draft as a request body, or `null` while it is not yet postable.
  *
  * Mirrors `CreateTaskDto`: title non-empty and ≤ 255, `assignee_id` a member id,
@@ -266,7 +218,7 @@ export function dueTimePassed(
 export function validateNewTask(
   draft: NewTaskDraft,
   now: Date = new Date(),
-  /** An edit's stored due, which may have passed (see `dueTimePassed`). */
+  /** An edit's stored due, which may have passed (`dueTimePassed`). */
   kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
 ): ValidatedNewTask | null {
   const title = draft.title.trim();

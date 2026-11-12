@@ -353,6 +353,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
 | Add row or chat Task form, due date typed but not readable | — | `Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
+| Any web task form, a new due time already gone by | — | `That time has already passed. Pick a later time or another day.` (under the due field on submit; goes when the date or time changes; #4512) |
 | Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
