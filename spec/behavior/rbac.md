@@ -42,6 +42,8 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `service:log`         | Log service hours (typically all members)              |
 | `service:approve`     | Approve or reject service hour entries                 |
 | `semester:rollover`   | Trigger a new semester rollover                        |
+| `ai:use`              | Use AI features. No seeded role or starting tier holds it, and it gates no route yet ([ADR-28](../architecture/adr/adr-28.md)). The catalog leaves it and `ai:act` out on a server whose AI switch (`AI_ENABLED`) is off |
+| `ai:act`              | Let AI take actions the member could take, each one confirmed. Held by no seeded role; gates nothing until the acting agent is built ([#718](https://github.com/pdcarlson/Frapp/issues/718)) |
 | `reports:export`      | Export attendance, points, and roster reports          |
 | `chapter-config:view` | Read chapter config and custom fields; with `members:view`, the audit log |
 | `chapter-config:manage` | With `chapter-config:view`, which every one of these routes also requires: change chapter config (including the theme-palette recompute), write custom fields, and edit the chapter profile, accent and logo (`PATCH /v1/chapters/current` and the logo routes, #2575). The profile routes need `view` too because the Settings tabs they are edited from need it to show ([`settings/README.md`](settings/README.md#who-sees-what) § Who sees what), so `manage` alone would reach a save the page never shows. The API and the Settings page read that pair from `CHAPTER_PROFILE_PERMISSIONS` in `@repo/validation` |

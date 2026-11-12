@@ -1726,6 +1726,13 @@ const SPAN_FIELD_ALLOWLIST = new Set([
  * The `chat.push.*` keys are the API push worker's fan-out span (#2507): three
  * counts it sets itself (audience size, pushes sent, open presence channels),
  * never an id or a message.
+ *
+ * The `ai.*` keys are the API's AI gateway span (ADR-28 decision 12): the
+ * task and model from the catalog, how the call ended, and two token counts.
+ * No `gen_ai.*` key is here, on purpose: that is the namespace the SDK's AI
+ * integrations write prompts and answers under (`gen_ai.input.messages`,
+ * `gen_ai.output.messages`, `gen_ai.system_instructions`), so every span
+ * they emit arrives here with its attributes dropped (#3280).
  */
 const SPAN_DATA_KEY_ALLOWLIST = new Set([
   'http.request.method',
@@ -1735,6 +1742,12 @@ const SPAN_DATA_KEY_ALLOWLIST = new Set([
   'chat.push.recipients',
   'chat.push.sent',
   'chat.push.presence_channels',
+  'ai.task',
+  'ai.provider',
+  'ai.model',
+  'ai.outcome',
+  'ai.input_tokens',
+  'ai.output_tokens',
 ]);
 
 /**

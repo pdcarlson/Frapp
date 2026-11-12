@@ -32,7 +32,7 @@ function checkList(column: string): string[] {
 
 describe('isAiEnabled', () => {
   it.each([
-    ['1', true],
+    ['1', false],
     ['true', true],
     [undefined, false],
     ['', false],

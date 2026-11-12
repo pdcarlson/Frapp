@@ -43,6 +43,7 @@ import { ScheduledJobsModule } from './modules/scheduled-jobs/scheduled-jobs.mod
 import { DiscordImportModule } from './modules/discord-import/discord-import.module';
 import { ClientPolicyModule } from './modules/client-policy/client-policy.module';
 import { DevLogModule } from './modules/dev-log/dev-log.module';
+import { AiModule } from './modules/ai/ai.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -101,6 +102,7 @@ import { validateEnv } from './config/env.validation';
     DiscordImportModule,
     ClientPolicyModule,
     DevLogModule,
+    AiModule,
   ],
   providers: [
     {

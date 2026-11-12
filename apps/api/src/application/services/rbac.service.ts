@@ -18,12 +18,14 @@ import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import { permissionDefinition, permissionModuleLabel } from '@repo/validation';
 import {
+  AI_PERMISSIONS,
   SystemPermissions,
   SystemRoleKeys,
   WILDCARD,
   type PermissionCatalogEntry,
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
+import { isAiEnabled } from '../../config/ai-config';
 import {
   addedPermissions,
   canReach,
@@ -852,7 +854,12 @@ export class RbacService {
    * description, module and scope come from `PERMISSION_REGISTRY`.
    */
   getPermissionsCatalog(): PermissionCatalogEntry[] {
-    return Object.entries(SystemPermissions).map(([key, value]) => {
+    // With the server's AI switch off, a role editor reads exactly as it did
+    // before the AI permissions existed.
+    const offered = Object.entries(SystemPermissions).filter(
+      ([, value]) => isAiEnabled() || !AI_PERMISSIONS.has(value),
+    );
+    return offered.map(([key, value]) => {
       const definition = permissionDefinition(value);
       if (!definition) {
         // `permissions.spec.ts` pins the two lists together, so this is a

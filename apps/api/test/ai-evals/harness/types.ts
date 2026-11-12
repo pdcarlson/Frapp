@@ -1,10 +1,11 @@
 /**
  * Type contract for the adversarial AI eval suite.
  *
- * This file is the seam between the eval corpus (which exists today) and the AI
- * agent (which does not — see FRA-309 / FRA-310). Everything here describes what
- * an implementation must accept and return in order to be graded; nothing here
- * imports application code, so the suite compiles and runs against an empty repo.
+ * This file is the seam between the eval corpus and whatever answers it.
+ * Everything here describes what an implementation must accept and return in
+ * order to be graded, and imports no application code. Today's implementation
+ * is `gateway-agent.ts` (the AI gateway with a scripted model); the bake-off
+ * (#4311) puts real providers behind the same contract.
  *
  * Threat model: `docs/security/ai-prompt-injection.md`
  * Spec: `spec/architecture/README.md` §13 (AI Corpus Architecture) → Evals
@@ -120,8 +121,8 @@ export interface AgentAnswer {
 }
 
 /**
- * The implementation seam. FRA-309 / FRA-310 satisfy this; until then the
- * registry holds `null` and the behavioural specs report NOT_IMPLEMENTED.
+ * The implementation seam. `gateway-agent.ts` satisfies it; with nothing
+ * registered the behavioural specs report NOT_IMPLEMENTED.
  */
 export interface AgentUnderTest {
   readonly name: string;

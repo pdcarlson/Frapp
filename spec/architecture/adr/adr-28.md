@@ -10,6 +10,12 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 `apps/api/src/modules`, no AI SDK in any `package.json`, and no vector or usage table in
 `supabase/migrations/`.
 
+> **Updated 2026-11-12 ([#4306](https://github.com/pdcarlson/Frapp/issues/4306)).** The gateway of
+> decisions 1, 2, 4 and 12 is built: the `ai` module, the port, the model catalog, the Anthropic
+> and scripted adapters, the quote check and the content-free telemetry. It is off unless the
+> server sets `AI_ENABLED=true`, and no feature calls it yet. Consent, the caps and the ledger are
+> still to come; the gateway asks for each through an interface that allows everything today.
+
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
 [#2534](https://github.com/pdcarlson/Frapp/issues/2534) asked for, and records that issue's

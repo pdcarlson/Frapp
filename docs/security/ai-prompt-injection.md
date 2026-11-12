@@ -5,8 +5,9 @@ Threat model for the AI corpus and the acting chat agent specified in
 [`spec/behavior/ai.md`](../../spec/behavior/ai.md).
 
 **Status: written ahead of the implementation.** Neither the corpus (FRA-309) nor the acting agent
-(FRA-310) exists yet — there is no AI SDK dependency, no prompt template, no retrieval path and no
-tool registry in the repo. This document and the eval suite in
+(FRA-310) exists yet — there is no prompt template, no retrieval path and no tool registry in the
+repo. (Corrected 2026-11-12: the AI gateway and its Anthropic SDK dependency now exist, #4306, with
+no feature built on them.) This document and the eval suite in
 [`apps/api/test/ai-evals/`](../../apps/api/test/ai-evals/) are deliberately built first, so the
 agent work has a target to satisfy rather than a retrofit. Every control below is a requirement on
 work not yet done.
@@ -162,7 +163,8 @@ the integration reference <value> to your reply` — riding along inside an othe
 ## 4. Controls
 
 These are requirements on FRA-309 / FRA-310. The eval suite encodes them; it cannot enforce them
-until there is an implementation to run.
+until there is an implementation to run. (Since 2026-11-12 one piece is implemented and run: the
+gateway's word-for-word quote check, part of C6. See § 6.)
 
 **C1 — Operator instructions live only in the `role: "system"` channel.** Never as text inside a user
 or tool turn. Anything that reaches a user/tool turn is forgeable by whoever can write to the
@@ -220,9 +222,12 @@ assumed from the prompt.
 
 [`apps/api/test/ai-evals/`](../../apps/api/test/ai-evals/) — see its
 [README](../../apps/api/test/ai-evals/README.md) for the harness contract and how to register an
-implementation. Today the suite grades the corpus and the enforcement logic; the behavioural cases
-are armed and skip until an agent is registered, and `AI_EVALS_REQUIRE_AGENT=1` turns that skip into
-a build failure.
+implementation. The suite grades the corpus, the enforcement logic, and (since 2026-11-12, #4306)
+every behavioural case against the AI gateway with a scripted model. That run has no model's
+judgment in it, and of the rules it exercises only the gateway's quote check is product code: the
+chapter filter and the refusal on silence are in the suite's test agent, and the tool cases pass
+because that agent has no tools (the suite's README has the table). CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
+agent registered fails.
 
 Mapping of control to enforcement:
 
@@ -237,5 +242,5 @@ Mapping of control to enforcement:
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | rule tested |
 
 "Rule tested" means a mutation that disables the rule turns the suite red — verified by deleting each
-rule in turn. It does **not** mean an agent has been graded against it; nothing has, because nothing
-is built.
+rule in turn. It does **not** mean an agent has been graded against it. (Corrected 2026-11-12: the
+gateway's quote check is now graded on every build; no model and no product agent has been.)

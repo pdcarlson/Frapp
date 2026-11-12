@@ -10,20 +10,8 @@ import type {
  * the words a person reads when a run fails.
  */
 
-/**
- * Whether AI runs on this server at all (`AI_ENABLED`, ADR-28). Only the exact
- * strings `"1"` and `"true"` switch it on, as `EXPO_PUBLIC_ASK_ENABLED` does:
- * unset, empty, `"0"`, `"yes"` and `"TRUE"` all leave it off. With it off the
- * worker never queries the table and every AI run route answers "not
- * available", so the API behaves as it did before AI existed.
- *
- * Read on each call, not cached, so a test (or a restart with a new value)
- * changes it without rebuilding anything.
- */
-export function isAiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = env.AI_ENABLED;
-  return value === '1' || value === 'true';
-}
+// The server switch lives in one place; re-exported for the run queue's files.
+export { isAiEnabled } from './ai-enabled';
 
 /** How long one claim holds a run before another worker may take it over. */
 export const AI_RUN_LEASE_MS = 5 * 60_000;

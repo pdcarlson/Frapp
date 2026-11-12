@@ -96,6 +96,20 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Start a new semester",
     "Close the current semester and start the next one.",
   ),
+  // AI (ADR-28). The API leaves these two out of the catalog it serves while
+  // its AI switch is off, so no role editor offers them on such a server.
+  chapterPermission(
+    "ai:use",
+    "chapter",
+    "Use AI",
+    "Ask for AI drafts and answers, once the chapter has turned AI on.",
+  ),
+  chapterPermission(
+    "ai:act",
+    "chapter",
+    "Let AI take actions",
+    "Have AI carry out things the member could do themselves, after they confirm each one.",
+  ),
 
   chapterPermission(
     "members:view",
