@@ -1115,7 +1115,7 @@ export function ChatShell({
   // The same predicate the push worker uses (#2771). An exact-name match could
   // pick a group DM a member named "announcements" once the real channel is
   // renamed, and send the officer's /announce there.
-  const announcementsChannelId = useMemo(
+  const announcementsChannel = useMemo(
     () =>
       channels.find((ch) =>
         isAnnouncementChannel({
@@ -1123,9 +1123,15 @@ export function ChatShell({
           type: ch.type,
           is_read_only: ch.is_read_only ?? null,
         }),
-      )?.id ?? null,
+      ) ?? null,
     [channels],
   );
+  const announcementsChannelId = announcementsChannel?.id ?? null;
+  // `/announce` is offered only to a member the server would let post there:
+  // that channel's `can_post`, from the same gate the send goes through
+  // (#3414). No announcements channel, or none this member can read, hides it
+  // too, where it could only fail.
+  const canAnnounce = announcementsChannel?.can_post === true;
 
   // Backs `@member` resolution for member-targeted slash commands (/points).
   // Reads the roster projection rather than the full member list: `matchMember`
@@ -3575,11 +3581,17 @@ export function ChatShell({
             <CatchUpOffer
               line={catchUpOfferLine}
               onStart={() => {
-                setArrival((previous) => ({ ...previous, offerDismissed: true }));
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }));
                 startChannelCatchUp();
               }}
               onDismiss={() =>
-                setArrival((previous) => ({ ...previous, offerDismissed: true }))
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }))
               }
             />
             {/*
@@ -3790,6 +3802,7 @@ export function ChatShell({
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
+            canAnnounce={canAnnounce}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the

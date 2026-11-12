@@ -177,16 +177,24 @@ export function getSlashCommand(
  *
  * Pass `options.recruitment` so the rush row matches and displays the chapter's
  * vocabulary token (`/intake`, `/recruitment`, …) without changing `name`.
+ *
+ * Pass `options.canAnnounce: false` to leave `/announce` out for a member who
+ * can't post in the announcements channel; the server refuses their
+ * announcement anyway (#3414), so offering it would only lead to a refusal.
+ * Absent reads as allowed.
  */
 export function filterSlashCommands(
   query: string,
   isModuleEnabled: (moduleKey: string) => boolean,
-  options?: { recruitment?: string },
+  options?: { recruitment?: string; canAnnounce?: boolean },
 ): SlashCommand[] {
   const needle = query.trim().toLowerCase();
   const displayName = recruitmentCommandSlug(options?.recruitment);
   return SLASH_COMMANDS.filter((command) => {
     if (command.requiredModule && !isModuleEnabled(command.requiredModule)) {
+      return false;
+    }
+    if (command.name === "announce" && options?.canAnnounce === false) {
       return false;
     }
     if (needle.length === 0) return true;

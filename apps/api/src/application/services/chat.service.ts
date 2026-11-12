@@ -10,6 +10,7 @@ import {
 import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
+  isAnnouncementChannel,
   isDirectChannel,
   isModuleEnabled,
   withoutObjectReplacement,
@@ -240,6 +241,30 @@ function cardPayloadForSend(
     return { ...checked.card };
   }
   return withoutServerPollFields(kind, payload);
+}
+
+/**
+ * An announcement card is drawn with the chapter's official chrome (the
+ * megaphone and the "Announcement" label), so only the place that makes a
+ * message an announcement may carry one: a timeline post in the announcements
+ * channel (`isAnnouncementChannel`), whose who-can-post list `assertChannelAccess`
+ * has already checked (#3722). That is the predicate the push worker decides
+ * an announcement push by, so the card and the push can't disagree. Anywhere
+ * else (`#general`, a DM, a thread under an announcement) the send is refused
+ * rather than stored as plain text: `/announce` only ever posts to that
+ * channel, so a refusal here is a hand-built request, and quietly changing
+ * its kind would hide that from the sender (#3414).
+ */
+function assertAnnouncementPlacement(
+  kind: ChatMessageKind,
+  channel: Pick<ChatChannel, 'name' | 'type' | 'is_read_only'>,
+  threadRootId: string | null,
+): void {
+  if (kind !== 'announcement') return;
+  if (threadRootId === null && isAnnouncementChannel(channel)) return;
+  throw new ForbiddenException(
+    'Announcements can only be posted in the announcements channel',
+  );
 }
 
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
@@ -1060,6 +1085,7 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+    assertAnnouncementPlacement(kind, channel, threadRootId);
     // Before anything is written (thread follows, the attachment repair), so
     // a card that can't be stored costs nothing.
     const payload = cardPayloadForSend(kind, input.payload);
