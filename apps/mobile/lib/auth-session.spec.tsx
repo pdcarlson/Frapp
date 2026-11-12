@@ -69,6 +69,10 @@ vi.mock("./observability/reset", () => ({
   resetObservabilityOnLogout,
 }));
 
+const reportAuthFailure = vi.hoisted(() => vi.fn());
+
+vi.mock("./sentry/auth-failures", () => ({ reportAuthFailure }));
+
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(
     async (key: string) => mockState.secureStore.get(key) ?? null,
@@ -789,6 +793,31 @@ describe("AuthSessionProvider — sign-in", () => {
     expect(mockState.secureStore.has(AUTH_TOKEN_STORAGE_KEY)).toBe(false);
   });
 
+  it("reports a refused sign-in by its error, never the credentials (#3832)", async () => {
+    mockState.signInWithPasswordResult = {
+      error: { message: "Invalid login credentials" },
+    };
+    reportAuthFailure.mockClear();
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current
+        .signInWithPassword({ email: "officer@university.edu", password: "wrong" })
+        .catch(() => undefined);
+    });
+
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    const [input] = reportAuthFailure.mock.calls[0]!;
+    expect(input).toEqual({
+      flow: "password_sign_in",
+      screen: "/sign-in",
+      error: { message: "Invalid login credentials" },
+    });
+    expect(JSON.stringify(input)).not.toContain("officer@university.edu");
+    expect(JSON.stringify(input)).not.toContain("wrong");
+  });
+
   it("sends a magic link without creating a session", async () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
@@ -924,6 +953,46 @@ describe("AuthSessionProvider — magic-link callback", () => {
     );
     expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
     expect(result.current.callbackError).toBeNull();
+  });
+
+  it("reports a dead link by its code, never its URL (#3832)", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl =
+      "frapp://#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: undefined,
+      code: "otp_expired",
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("frapp:");
+  });
+
+  it("reports a code exchange Auth refused, with nothing from the link", async () => {
+    reportAuthFailure.mockClear();
+    mockState.deepLinkUrl = "frapp:///?code=single-use-secret";
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    const refusal = { name: "AuthApiError", status: 400, code: "bad_code_verifier", message: "invalid" };
+    vi.mocked(client!.auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: refusal,
+    } as never);
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.callbackError).not.toBeNull());
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error: refusal,
+      code: undefined,
+    });
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("single-use-secret");
   });
 
   it("maps an OAuth identity collision on the callback URL", async () => {

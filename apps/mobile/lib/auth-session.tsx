@@ -21,6 +21,7 @@ import {
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
+import { reportAuthFailure } from "./sentry/auth-failures";
 import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -176,7 +177,20 @@ async function createSessionFromUrl(
     errorCode,
   } = readAuthParams(url);
 
+  // A link or provider return that didn't become a session (#3832). Only the
+  // code is read, never the URL, which holds the code or token itself.
+  const reportCallback = (error: unknown, linkCode?: string) =>
+    reportAuthFailure({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error,
+      code: linkCode,
+    });
+
   if (errorDescription || errorCode) {
+    // `error` is GoTrue's or the provider's identifier (`access_denied`);
+    // `error_description` is a sentence, which the reporter drops.
+    reportCallback(undefined, errorCode ?? errorDescription ?? undefined);
     return describeOAuthKickoffError({
       message: errorDescription ?? errorCode ?? undefined,
       code: errorCode ?? undefined,
@@ -190,24 +204,29 @@ async function createSessionFromUrl(
         access_token: accessToken,
         refresh_token: refreshToken,
       });
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
+        reportCallback(undefined, "verify_failed");
         return "That sign-in link could not be used. Request a new one.";
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     return null;
   } catch (error) {
+    reportCallback(error);
     return error instanceof Error
       ? describeOAuthKickoffError(error)
       : "That sign-in link could not be used. Request a new one.";
@@ -504,7 +523,10 @@ export function AuthSessionProvider({
         email,
         password,
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "password_sign_in", screen: "/sign-in", error });
+        throw error;
+      }
     },
     [supabase],
   );
@@ -525,7 +547,10 @@ export function AuthSessionProvider({
         email,
         options: { emailRedirectTo },
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
+        throw error;
+      }
     },
     [supabase],
   );
