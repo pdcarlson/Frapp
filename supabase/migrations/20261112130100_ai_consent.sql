@@ -52,7 +52,7 @@ create table if not exists public.chapter_ai_settings (
 alter table public.chapter_ai_settings enable row level security;
 
 comment on table public.chapter_ai_settings is
-  'The president''s AI switches, one per feature family; no row is all off. API only. See 20261112031000_ai_consent.sql.';
+  'The president''s AI switches, one per feature family; no row is all off. API only. See 20261112130100_ai_consent.sql.';
 
 -- 2. ------------------------------------------------------------------------
 
@@ -68,7 +68,7 @@ create table if not exists public.user_ai_consents (
 alter table public.user_ai_consents enable row level security;
 
 comment on table public.user_ai_consents is
-  'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112031000_ai_consent.sql.';
+  'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112130100_ai_consent.sql.';
 
 -- 3. Account deletion purges consent rows ------------------------------------
 

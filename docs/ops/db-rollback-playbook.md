@@ -3783,20 +3783,6 @@ drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
 
-## Rollback AI consent (20261112031000)
-
-* **Migration**: `20261112031000_ai_consent.sql`
-
-Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
-
-**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API makes every AI route answer 404 `ai.not_available` and stops every model call. Switches and answers stay as they were, and hold again when it is on. Do not roll back to an API whose consent seam allows every call while `AI_ENABLED` is on: that build sends member data to a model without the chapter's switch or the member's Yes.
-
-**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the table is gone:
-
-```sql
-drop table if exists public.user_ai_consents;
-drop table if exists public.chapter_ai_settings;
-
 ## Rollback the AI usage ledger (20261112130000)
 
 * **Migration**: `20261112130000_ai_usage_ledger.sql`
@@ -3814,4 +3800,19 @@ drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, tex
 drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
 drop table if exists public.ai_usage_events;
 drop function if exists public.ai_usage_charge(text, bigint, bigint);
+```
+
+## Rollback AI consent (20261112130100)
+
+* **Migration**: `20261112130100_ai_consent.sql`
+
+Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API makes every AI route answer 404 `ai.not_available` and stops every model call. Switches and answers stay as they were, and hold again when it is on. Do not roll back to an API whose consent seam allows every call while `AI_ENABLED` is on: that build sends member data to a model without the chapter's switch or the member's Yes.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.user_ai_consents;
+drop table if exists public.chapter_ai_settings;
 ```

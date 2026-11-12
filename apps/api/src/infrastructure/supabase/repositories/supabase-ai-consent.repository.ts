@@ -18,7 +18,7 @@ const ID_BATCH = 200;
 
 /**
  * `chapter_ai_settings` and `user_ai_consents` through the service role
- * (#4308, `20261112031000_ai_consent.sql`).
+ * (#4308, `20261112130100_ai_consent.sql`).
  *
  * The settings are per chapter and every read and write is keyed by it. The
  * consents are per person, not per chapter: one answer covers every chapter

@@ -256,7 +256,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        // #4308. Its line in the delete block (20261112031000): deleting an
+        // #4308. Its line in the delete block (20261112130100): deleting an
         // account counts as turning AI off, and only the member's rows go.
         name: "current-state purged: AI sheet answers, and only the member's",
         sql: `select (select count(*)::int from user_ai_consents where user_id = '${U}') as leftovers,

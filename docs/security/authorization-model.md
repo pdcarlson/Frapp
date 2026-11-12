@@ -195,7 +195,7 @@ tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **74**. Counted 2026-11-12 by adding `ai_usage_events` (#714, migration
 `20261112130000`), `chapter_ai_settings` and `user_ai_consents` (#4308, migration
-`20261112031000`), and before them `ai_runs` (#4310, migration
+`20261112130100`), and before them `ai_runs` (#4310, migration
 `20261112020000`), to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
 `20261111235900`, which added `chat_message_important_seen` (#4186), after
 `20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
