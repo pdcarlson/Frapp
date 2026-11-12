@@ -75,8 +75,9 @@ export function rewriteReferences(text, renames) {
   let next = text;
   if (map.size > 0) {
     const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // The lookahead keeps `…_a` from matching inside main's `…_ab`.
     const pattern = new RegExp(
-      [...map.keys()].sort((a, b) => b.length - a.length).map(escape).join("|"),
+      `(?:${[...map.keys()].sort((a, b) => b.length - a.length).map(escape).join("|")})(?![a-z0-9_])`,
       "g",
     );
     next = text.replace(pattern, (stem) => map.get(stem));

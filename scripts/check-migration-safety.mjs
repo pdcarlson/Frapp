@@ -687,7 +687,6 @@ function validateLedgerCoverage(migrations) {
 
   const remedy = {
     missing: (doc) => `needs an entry in ${doc}`,
-    // Shown once per migration, below the per-doc lines.
     covered: (doc) =>
       `is now recorded in ${doc}: delete its line from UNLEDGERED in scripts/check-migration-safety.mjs`,
     absent: (doc) =>

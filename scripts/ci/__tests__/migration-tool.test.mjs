@@ -109,3 +109,11 @@ test("rewriteReferences leaves main's same-version migration alone and reports t
   );
   assert.deepEqual(stale, ["20261112150000"]);
 });
+
+test("rewriteReferences doesn't touch a longer name that starts with the stem", () => {
+  const renames = [{ from: "20261112150000_a.sql", to: "20261112193005_a.sql" }];
+  assert.equal(
+    rewriteReferences("20261112150000_a.sql and 20261112150000_ab.sql", renames).text,
+    "20261112193005_a.sql and 20261112150000_ab.sql",
+  );
+});
