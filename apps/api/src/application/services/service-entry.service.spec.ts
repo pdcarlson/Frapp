@@ -80,6 +80,7 @@ describe('ServiceEntryService', () => {
     reviewed_by: null,
     review_comment: null,
     points_awarded: false,
+    awarded_points: null,
     created_at: '2026-02-26T10:00:00.000Z',
   };
 
@@ -205,6 +206,7 @@ describe('ServiceEntryService', () => {
         reviewed_by: null,
         review_comment: null,
         points_awarded: false,
+        awarded_points: null,
       });
       expect(result).toEqual(baseEntry);
     });
@@ -880,6 +882,7 @@ describe('ServiceEntryService', () => {
         reviewed_by: 'admin-1',
         review_comment: null,
         points_awarded: true,
+        awarded_points: 1,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
       mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
@@ -928,6 +931,7 @@ describe('ServiceEntryService', () => {
         status: 'APPROVED' as const,
         reviewed_by: 'admin-1',
         points_awarded: false,
+        awarded_points: 0,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(shortEntry);
       mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);

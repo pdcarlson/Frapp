@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Service entries record the points their approval awarded (#3868)
+
+### 20261112150000_service_entry_awarded_points.sql
+
+- **Purpose**: Adds `service_entries.awarded_points integer` (nullable, `>= 0`): the SERVICE points an entry's approval awarded, 0 for a sub-rate approval, NULL until approved. Redefines `approve_service_entry(uuid, uuid, uuid, text, integer)` with the same signature and body plus `awarded_points = greatest(p_points, 0)` in its compare-and-set and the `search_path = public, pg_temp` pin from `20261107160000` restated (a `create or replace` drops it), so the EXECUTE grants from `20260603120000` (service role only) carry over. Backfills approved or awarded entries from their SERVICE ledger row (`point_transactions.metadata->>'service_entry_id'`), 0 for an approved entry with `points_awarded = false`; an awarded entry whose ledger row is gone stays NULL, which clients show as the old "Points awarded" flag. The rule is [`spec/behavior/service-hours.md` § Approval Workflow](../../../spec/behavior/service-hours.md#approval-workflow).
+- **Checks**: After `db push`, `select count(*) from service_entries where status = 'APPROVED' and awarded_points is null;` returns 0 or only entries whose ledger row was removed, and `select has_function_privilege('authenticated', 'public.approve_service_entry(uuid, uuid, uuid, text, integer)', 'execute');` still returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API selects `*` and ignores the column; the newer API against an unmigrated database still works (the field reads as absent and clients fall back to the flag). The `add column` with a check constraint and no default is a catalog change plus a scan to validate it; the backfill updates each approved entry once, a few thousand rows at most. `if not exists`, `create or replace` and the `awarded_points is null` guard make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-service-entry-awarded-points-20261112150000) § Rollback service entry awarded points.
+
 ## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
 
 ### 20261112131300_chat_search_filter_only.sql

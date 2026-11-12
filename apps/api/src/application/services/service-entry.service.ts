@@ -392,6 +392,7 @@ export class ServiceEntryService {
       reviewed_by: null,
       review_comment: null,
       points_awarded: false,
+      awarded_points: null,
     });
 
     // The `/hours log` slash command asks us to surface a read-only hours

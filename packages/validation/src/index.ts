@@ -994,6 +994,8 @@ export {
 } from "./error-copy";
 export {
   SERVICE_MINUTES_PER_POINT_DEFAULT,
+  awardedPointsLabel,
+  type AwardedPointsSource,
   effectiveMinutesPerPoint,
   servicePointsForDuration,
 } from "./service-points";

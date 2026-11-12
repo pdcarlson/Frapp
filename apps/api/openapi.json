@@ -8802,7 +8802,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceEntryResponseDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8976,7 +8986,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceEntryResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9148,7 +9165,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceEntryResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -18809,6 +18833,82 @@
           }
         }
       },
+      "ServiceEntryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "duration_minutes": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "proof_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "reviewed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "review_comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "points_awarded": {
+            "type": "boolean",
+            "description": "Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number."
+          },
+          "awarded_points": {
+            "type": "number",
+            "nullable": true,
+            "description": "SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "user_id",
+          "date",
+          "duration_minutes",
+          "description",
+          "proof_path",
+          "status",
+          "reviewed_by",
+          "review_comment",
+          "points_awarded",
+          "awarded_points",
+          "created_at"
+        ]
+      },
       "ServicePointsRateResponseDto": {
         "type": "object",
         "properties": {
@@ -18949,7 +19049,13 @@
             "nullable": true
           },
           "points_awarded": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number."
+          },
+          "awarded_points": {
+            "type": "number",
+            "nullable": true,
+            "description": "SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then."
           },
           "created_at": {
             "type": "string",
@@ -18972,6 +19078,7 @@
           "reviewed_by",
           "review_comment",
           "points_awarded",
+          "awarded_points",
           "created_at"
         ]
       },

@@ -39,7 +39,7 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
-import { statusLabel } from "@repo/validation";
+import { awardedPointsLabel, statusLabel } from "@repo/validation";
 import { formatDay, formatMinutesRounded } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 import { approvePointsPreview } from "@/components/service/service-points-preview";
@@ -57,6 +57,7 @@ type ServiceEntry = {
   reviewed_by: string | null;
   review_comment: string | null;
   points_awarded: boolean;
+  awarded_points?: number | null;
   created_at: string;
 };
 
@@ -468,6 +469,7 @@ export function ServiceHoursPage() {
               const name =
                 memberNameById.get(entry.user_id) ??
                 memberFallbackLabel(entry.user_id);
+              const pointsLabel = awardedPointsLabel(entry);
               return (
                 <li
                   key={entry.id}
@@ -491,8 +493,8 @@ export function ServiceHoursPage() {
                     <Badge variant={serviceStatusKind(entry.status)}>
                       {statusLabel("serviceEntry", entry.status)}
                     </Badge>
-                    {entry.points_awarded ? (
-                      <Badge variant="outline">Points awarded</Badge>
+                    {pointsLabel ? (
+                      <Badge variant="outline">{pointsLabel}</Badge>
                     ) : null}
                   </div>
                 </li>

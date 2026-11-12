@@ -3748,6 +3748,22 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback service entry awarded points (20261112150000)
+
+* **Migration**: `20261112150000_service_entry_awarded_points.sql`
+
+One nullable column on `service_entries` (`awarded_points`), backfilled from the SERVICE ledger, and `approve_service_entry` redefined to write it. No ledger row changes.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API ignores the column, and the function keeps writing it, which is harmless.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped, re-create `approve_service_entry(uuid, uuid, uuid, text, integer)` with its body from `20260603120000_add_approve_service_entry_rpc.sql` plus `set search_path = public, pg_temp` (`create or replace` keeps its grants but drops that setting), then:
+
+```sql
+alter table public.service_entries drop column if exists awarded_points;
+```
+
+Dropping the column first would fail every approval, since the function's update names it.
+
 ## Rollback chat search with a filter and no text (20261112131300)
 
 * **Migration**: `20261112131300_chat_search_filter_only.sql`

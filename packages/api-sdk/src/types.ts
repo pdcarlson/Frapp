@@ -5947,6 +5947,30 @@ export interface components {
             /** @description Professor name */
             name?: string;
         };
+        ServiceEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: date */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            proof_path: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            reviewed_by: string | null;
+            review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
+            points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
+            /** Format: date-time */
+            created_at: string;
+        };
         ServicePointsRateResponseDto: {
             /**
              * @description Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).
@@ -6004,7 +6028,10 @@ export interface components {
             /** Format: uuid */
             reviewed_by: string | null;
             review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
             points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -13033,7 +13060,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13152,7 +13181,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13272,7 +13303,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {
