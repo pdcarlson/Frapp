@@ -2226,6 +2226,38 @@ describe('ChatService', () => {
   });
 
   describe('sendMessage', () => {
+    describe('U+FFFC, the "OBJ" box (#4346)', () => {
+      it('saves the text with each one turned into a space', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'take a look\uFFFC',
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ content: 'take a look ' }),
+        );
+      });
+
+      it('refuses a message that was only the placeholder, as an empty one', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: '\uFFFC ',
+          }),
+        ).rejects.toThrow('A message needs content or at least one attachment');
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -3134,6 +3166,23 @@ describe('ChatService', () => {
   });
 
   describe('editMessage', () => {
+    it('saves an edit with U+FFFC turned into a space, and refuses one left blank (#4346)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', 'fixed\uFFFCit');
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ content: 'fixed it' }),
+      );
+
+      mockMessageRepo.update.mockClear();
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', '\uFFFC\n'),
+      ).rejects.toThrow('An edited message needs some text');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
     it('should edit own message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.update.mockResolvedValue({

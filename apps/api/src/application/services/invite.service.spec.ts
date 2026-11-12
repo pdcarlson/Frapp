@@ -1785,7 +1785,7 @@ describe('InviteService', () => {
           title: 'Alex Smith joined',
           priority: 'NORMAL',
           category: 'members',
-          data: { target: { screen: 'members' } },
+          data: { target: { screen: 'members' }, memberUserId: 'user-2' },
         }),
       );
     });

@@ -35,6 +35,7 @@ import {
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
+  withoutObjectReplacement,
 } from '@repo/validation';
 import {
   canAccessChannel,
@@ -95,7 +96,9 @@ interface ChatMessageRow {
 export function chatPushPreview(
   row: Pick<ChatMessageRow, 'content' | 'metadata'>,
 ): string {
-  const text = row.content?.trim() ?? '';
+  // U+FFFC drawn as an "OBJ" box on the lock screen and in the list (#4346).
+  // `ChatService` cleans what it saves; this covers a row written any other way.
+  const text = withoutObjectReplacement(row.content ?? '').trim();
   if (text) return Array.from(text).slice(0, 200).join('');
   const raw = Number(row.metadata?.attachment_count);
   const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
@@ -132,6 +135,38 @@ export function chatPushThreadId(channelId: string): string {
 
 /** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
+
+/**
+ * The kind of conversation a chat notification came from, as `data.chatKind`
+ * carries it to the in-app list (#4346): a 1:1 DM, a group DM, an
+ * announcement, or any other channel. The announcement test is the push's own
+ * (`isAnnouncementPush`), so the badge and the URGENT priority can't disagree.
+ */
+export type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
+
+export function chatNotificationKind(
+  channel: Pick<CachedChannelRow, 'type'>,
+  isAnnouncement: boolean,
+): ChatNotificationKind {
+  if (channel.type === 'DM') return 'dm';
+  if (channel.type === 'GROUP_DM') return 'group';
+  return isAnnouncement ? 'announcement' : 'channel';
+}
+
+/**
+ * `{ channelName }` when the channel has a name a member would recognize, else
+ * nothing. A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
+ * `group-dm-<timestamp>`, both internal, so neither ever reaches a member.
+ */
+export function readableChannelName(
+  channel: Pick<CachedChannelRow, 'type' | 'name'>,
+): { channelName?: string } {
+  if (channel.type === 'DM') return {};
+  if (channel.type === 'GROUP_DM' && UNNAMED_GROUP_DM.test(channel.name)) {
+    return {};
+  }
+  return channel.name ? { channelName: channel.name } : {};
+}
 
 /**
  * Most presence channels one process keeps open (#2507).
@@ -589,6 +624,7 @@ export class ChatPushWorkerService
         burst,
         await senderName,
         threadRootId,
+        mentions.includes(recipientId),
       );
       try {
         await this.notificationService.notifyUser(
@@ -950,6 +986,7 @@ export class ChatPushWorkerService
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
     threadRootId: string | null = null,
+    mentioned = false,
   ) {
     // One predicate for the title, the priority and the category, bundled or
     // not. A burst of announcements is still announcements: it used to go out
@@ -978,17 +1015,33 @@ export class ChatPushWorkerService
       ? { screen: 'chat', channelId: channel.id, threadRootId }
       : { screen: 'chat', channelId: channel.id };
     const sender = senderId ? { senderId } : {};
+    // What the in-app list draws a row by (#4346): the kind of conversation,
+    // the channel's name where it has a readable one, and whether this
+    // message mentioned the recipient. The title says the first two in words,
+    // and a client must not parse a title. Only this message's mention
+    // counts: a bundle's earlier messages were each decided on their own.
+    const shape = {
+      chatKind: chatNotificationKind(channel, isAnnouncement),
+      ...readableChannelName(channel),
+      ...(mentioned ? { mentioned: true } : {}),
+    };
     if (burst.action === 'bundle') {
       return {
         ...shared,
         body: `${burst.count} new messages`,
-        data: { target, ...sender, bundled: true, count: burst.count },
+        data: {
+          target,
+          ...sender,
+          ...shape,
+          bundled: true,
+          count: burst.count,
+        },
       };
     }
     return {
       ...shared,
       body: preview,
-      data: { target, ...sender },
+      data: { target, ...sender, ...shape },
     };
   }
 
@@ -1031,10 +1084,7 @@ export class ChatPushWorkerService
         : 'New Announcement';
     }
     if (isDirectChannel(channel)) {
-      const groupName =
-        channel.type === 'GROUP_DM' && !UNNAMED_GROUP_DM.test(channel.name)
-          ? channel.name
-          : null;
+      const groupName = readableChannelName(channel).channelName ?? null;
       if (senderName) {
         return groupName ? `${senderName} in ${groupName}` : senderName;
       }
