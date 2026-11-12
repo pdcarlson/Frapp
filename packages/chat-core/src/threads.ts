@@ -52,7 +52,7 @@ import { IncompleteActionsError, readMessageActions } from "./history";
 export { chatThreadKey, chatThreadRepliesKey };
 
 /** How many replies one read brings: the newest page, then older on demand. */
-export const THREAD_PAGE_LIMIT = 50;
+const THREAD_PAGE_LIMIT = 50;
 
 export type ThreadFollowState = "following" | "muted";
 export type ThreadFollowChoice = ThreadFollowState | "none";
@@ -95,7 +95,7 @@ async function readActions(
  * the timeline's newest-page read puts its rows right
  * (`reconcileNewestPage`). Replies outside `ids` keep theirs.
  */
-export function reconcileReplyActions(
+function reconcileReplyActions(
   cache: ChannelCache,
   ids: ReadonlySet<string>,
   actions: readonly RawChatMessageAction[],

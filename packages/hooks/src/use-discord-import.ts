@@ -19,7 +19,7 @@ export type DiscordImportStatus =
   components["schemas"]["DiscordImportResponseDto"]["status"];
 
 /** Statuses the worker is actively moving. Only these are worth polling. */
-export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
+const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
   "ready",
   "running",
   "purging",

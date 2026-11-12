@@ -24,7 +24,7 @@ import { errorCopy, MemberFacingError } from "./error-copy";
 export const AUTH_FALLBACK_COPY = "Something went wrong. Please try again.";
 
 /** GoTrue's `error_code` on an `AuthApiError`, or undefined. */
-export function authCodeOf(error: unknown): string | undefined {
+function authCodeOf(error: unknown): string | undefined {
   if (!error || typeof error !== "object" || !("code" in error)) return undefined;
   return typeof error.code === "string" && error.code.length > 0
     ? error.code
@@ -177,7 +177,7 @@ export function isIdentityCollisionError(error: unknown): boolean {
 }
 
 /** The provider is switched off in the project's Auth settings. */
-export function isProviderUnavailableError(error: unknown): boolean {
+function isProviderUnavailableError(error: unknown): boolean {
   const code = authCodeOf(error);
   if (code === "provider_disabled" || code === "oauth_provider_not_supported") {
     return true;
@@ -194,7 +194,7 @@ export function isProviderUnavailableError(error: unknown): boolean {
  * already opened (GoTrue reports both as `otp_expired`, with `access_denied`
  * as the bare `error`).
  */
-export function isDeadEmailLink(error: unknown): boolean {
+function isDeadEmailLink(error: unknown): boolean {
   return authCodeOf(error) === "otp_expired";
 }
 
