@@ -311,6 +311,8 @@ vi.mock("@repo/hooks", async () => {
     // New channel and Edit channel (#3838).
     useCreateChannel: () => ({ mutateAsync: createMutateAsync }),
     useUpdateChannel: () => ({ mutateAsync: updateMutateAsync }),
+    // Who can see and post (#3702): read while the form is open.
+    useChannelAccessOptions: () => query([]),
     DELETE_CHANNEL_CONFIRM_BODY: actual.DELETE_CHANNEL_CONFIRM_BODY,
     DELETE_CHANNEL_LABEL: actual.DELETE_CHANNEL_LABEL,
     MARK_AS_READ_LABEL: actual.MARK_AS_READ_LABEL,
@@ -1217,8 +1219,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const field = sheet.findByProps({
       accessibilityLabel: "Type general to confirm",
     });
-    const button = () =>
-      sheet.findAllByType(SheetPrimaryButton).at(-1)!;
+    const button = () => sheet.findAllByType(SheetPrimaryButton).at(-1)!;
     act(() => field.props.onChangeText("General"));
     expect(button().props.disabled).toBe(true);
     act(() => field.props.onChangeText("general"));
@@ -1246,11 +1247,45 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         description: "",
         categoryId: null,
         isPrivate: false,
+        access: { who_can_see: ["tier:exec"], who_can_post: null },
       }),
     );
     expect(createMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "rush" }),
+      expect.objectContaining({
+        name: "rush",
+        who_can_see: ["tier:exec"],
+        who_can_post: null,
+      }),
     );
+  });
+
+  it("sends only the access the officer changed when editing a channel (#3702)", async () => {
+    channelsData.value = [
+      { ...general, who_can_see: null, who_can_post: ["role:r1"] },
+    ];
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    longPress(officer, "general");
+    pressItem(officer, "Edit channel");
+    const form = officer.root.findByType(ChannelFormSheet);
+    expect(form.props.mode.channel).toMatchObject({
+      who_can_see: null,
+      who_can_post: ["role:r1"],
+    });
+    updateMutateAsync.mockResolvedValue(undefined);
+    await act(async () =>
+      form.props.onSubmit({
+        name: general.name,
+        description: "",
+        categoryId: null,
+        isPrivate: false,
+        access: { who_can_post: null },
+      }),
+    );
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: general.id,
+      body: { who_can_post: null },
+    });
   });
 
   it.each(["pin", "fold", "filter"] as const)(

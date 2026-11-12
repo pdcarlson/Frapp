@@ -28,6 +28,10 @@ import {
   useUpdateChannel,
   resolveAuthorLabel,
 } from "@repo/hooks";
+import {
+  isEmptyChannelAccessChoice,
+  matchesCategoryAccess,
+} from "@repo/hooks/channel-access";
 import { formatClock } from "@repo/formatting";
 import {
   builtInChannelDefault,
@@ -153,11 +157,6 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
-/** A chosen list with nothing on it: the API refuses it, so the form does. */
-function isEmptyChoice(list: readonly string[] | null): boolean {
-  return list !== null && list.length === 0;
-}
-
 /** A category's two answers in one line, for its row in the list. */
 function categoryAccessSummary(
   category: AdminCategory,
@@ -173,19 +172,6 @@ function categoryAccessSummary(
       ? "everyone who can see it"
       : describeChannelAccess(post, "post", options);
   return `Seen by ${seen}. Posts: ${posters}`;
-}
-
-/** Whether a channel's two lists equal its category's (it "matches" and follows it). */
-function matchesCategory(
-  see: readonly string[] | null,
-  post: readonly string[] | null,
-  category: AdminCategory | null | undefined,
-): boolean {
-  if (!category) return false;
-  return (
-    sameChannelAccessList(see, category.who_can_see ?? null) &&
-    sameChannelAccessList(post, category.who_can_post ?? null)
-  );
 }
 
 /**
@@ -338,7 +324,10 @@ function ChatAdminBody({
   }
 
   async function handleSaveCategoryAccess(category: AdminCategory) {
-    if (isEmptyChoice(categorySeeDraft) || isEmptyChoice(categoryPostDraft)) {
+    if (
+      isEmptyChannelAccessChoice(categorySeeDraft) ||
+      isEmptyChannelAccessChoice(categoryPostDraft)
+    ) {
       return;
     }
     // Only the lists the officer changed go out, so a list another officer
@@ -530,8 +519,8 @@ function ChatAdminBody({
   // doesn't block saving its name.
   const accessIncomplete =
     selectedTakesLists &&
-    ((seeChanged && isEmptyChoice(seeDraft)) ||
-      (postChanged && isEmptyChoice(postDraft)));
+    ((seeChanged && isEmptyChannelAccessChoice(seeDraft)) ||
+      (postChanged && isEmptyChannelAccessChoice(postDraft)));
   /** A private channel made read-only before #3722, which can be opened up. */
   const clearsPrivatePosters =
     selectedChannel?.type === "PRIVATE" && postChanged && postDraft === null;
@@ -1310,7 +1299,7 @@ function ChannelAccessSection({
       </InlineNote>
     );
   }
-  const matches = matching || matchesCategory(see, post, category);
+  const matches = matching || matchesCategoryAccess(see, post, category);
   return (
     <section
       aria-labelledby="ca-access-label"
@@ -1403,14 +1392,15 @@ function CategoryAccessEditor({
       channel.is_audit_log !== true,
   );
   const following = inCategory.filter((channel) =>
-    matchesCategory(
+    matchesCategoryAccess(
       channel.who_can_see ?? null,
       channel.who_can_post ?? null,
       category,
     ),
   );
   const custom = inCategory.length - following.length;
-  const incomplete = isEmptyChoice(see) || isEmptyChoice(post);
+  const incomplete =
+    isEmptyChannelAccessChoice(see) || isEmptyChannelAccessChoice(post);
   return (
     <div className="mb-2 mt-1 grid gap-4 rounded-md border border-border p-3">
       <ChannelAccessField

@@ -20,38 +20,22 @@ import {
 } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
 
-/**
- * One thing a who-can-see or who-can-post list can name, as
- * `GET /v1/channels/access-options` serves it (#3722).
- */
-export type ChannelAccessOption = {
-  entry: string;
-  /** `tier` and `role` today; groups (#4076) add theirs. */
-  kind: string;
-  id: string;
-  name: string;
-  color: string | null;
-  tier_id: string | null;
-  user_ids: readonly string[];
-};
+import {
+  channelAccessKindHeading,
+  channelAccessReach,
+  compareChannelAccessKinds,
+  type ChannelAccessOption,
+  type ChannelAccessQuestion,
+} from "@repo/hooks/channel-access";
 
-/** The two questions a channel answers. */
-export type ChannelAccessQuestion = "see" | "post";
-
-/**
- * Headings for the kinds the picker knows. A kind it doesn't know (a newer
- * API's) still shows, under its own name, so a new kind needs no change here.
- */
-const KIND_HEADINGS: Record<string, string> = {
-  tier: "Tiers",
-  role: "Roles",
-};
-
-const KIND_ORDER = ["tier", "role"];
-
-function kindHeading(kind: string): string {
-  return KIND_HEADINGS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
-}
+// The reading of a list lives in `@repo/hooks/channel-access`, shared with
+// the phone's Edit channel sheet (#3702); re-exported for this page's callers.
+export {
+  channelAccessReach,
+  describeChannelAccess,
+  type ChannelAccessOption,
+  type ChannelAccessQuestion,
+} from "@repo/hooks/channel-access";
 
 const EVERYONE = "everyone";
 const CHOSEN = "chosen";
@@ -77,38 +61,6 @@ const QUESTION_LABEL: Record<ChannelAccessQuestion, string> = {
 
 function peopleCount(count: number): string {
   return `${count} ${count === 1 ? "person" : "people"}`;
-}
-
-/** Everyone a list reaches, each counted once. */
-export function channelAccessReach(
-  list: readonly string[],
-  options: readonly ChannelAccessOption[],
-): number {
-  const byEntry = new Map(options.map((option) => [option.entry, option]));
-  const users = new Set<string>();
-  for (const entry of list) {
-    for (const userId of byEntry.get(entry)?.user_ids ?? []) users.add(userId);
-  }
-  return users.size;
-}
-
-/**
- * How a list reads in one line, for a category row or a summary: "Everyone",
- * or the names it holds.
- */
-export function describeChannelAccess(
-  list: readonly string[] | null | undefined,
-  question: ChannelAccessQuestion,
-  options: readonly ChannelAccessOption[],
-): string {
-  if (list == null) {
-    return question === "see" ? "Everyone" : "Everyone who can see it";
-  }
-  if (list.length === 0) return "Only the President";
-  const byEntry = new Map(options.map((option) => [option.entry, option]));
-  return list
-    .map((entry) => byEntry.get(entry)?.name ?? "A removed role")
-    .join(", ");
 }
 
 /**
@@ -294,9 +246,7 @@ function AddEntry({
       ? options
       : options.filter((option) => matchesWordStarts(option.name, query));
   const kinds = [...new Set(shown.map((option) => option.kind))].sort(
-    (a, b) =>
-      (KIND_ORDER.indexOf(a) + 1 || KIND_ORDER.length + 1) -
-      (KIND_ORDER.indexOf(b) + 1 || KIND_ORDER.length + 1),
+    compareChannelAccessKinds,
   );
   const close = () => {
     setOpen(false);
@@ -359,7 +309,10 @@ function AddEntry({
               </p>
             ) : (
               kinds.map((kind) => (
-                <CommandGroup key={kind} heading={kindHeading(kind)}>
+                <CommandGroup
+                  key={kind}
+                  heading={channelAccessKindHeading(kind)}
+                >
                   {shown
                     .filter((option) => option.kind === kind)
                     .map((option) => (
