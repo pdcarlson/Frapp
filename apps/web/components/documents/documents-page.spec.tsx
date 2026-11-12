@@ -2389,4 +2389,65 @@ describe("DocumentsPage as a grid (#4175)", () => {
       await screen.findByRole("dialog", { name: "Chapter bylaws" }),
     ).toBeInTheDocument();
   });
+
+  // #4647: a photo or a PDF previews itself; anything else, or a file too
+  // large to fetch for a tile, has no preview panel and its glyph sits beside
+  // the title instead.
+  it("previews photos and PDFs, and gives other files no empty panel", () => {
+    documentsQuery.data = [
+      BYLAWS,
+      {
+        ...BYLAWS,
+        id: "doc-photo",
+        title: "Formal photo",
+        storage_path: "chap-1/formal.jpg",
+        content_type: "image/jpeg",
+        byte_size: 2_000_000,
+      },
+      {
+        ...BYLAWS,
+        id: "doc-word",
+        title: "Minutes draft",
+        storage_path: "chap-1/minutes.docx",
+        content_type:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        byte_size: 40_000,
+      },
+      {
+        ...BYLAWS,
+        id: "doc-huge",
+        title: "Scanned archive",
+        storage_path: "chap-1/archive.pdf",
+        content_type: "application/pdf",
+        byte_size: 40 * 1024 * 1024,
+      },
+    ];
+    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
+    render(<DocumentsPage />);
+
+    const panel = (title: RegExp) =>
+      screen
+        .getByRole("button", { name: title })
+        .querySelector("[data-thumbnail]")
+        ?.getAttribute("data-thumbnail") ?? null;
+    expect(panel(/^Chapter bylaws/)).toBe("pdf");
+    expect(panel(/^Formal photo/)).toBe("image");
+    expect(panel(/^Minutes draft/)).toBeNull();
+    expect(panel(/^Scanned archive/)).toBeNull();
+    // The compact tile still names its type, beside who uploaded it.
+    expect(
+      screen.getByRole("button", { name: /^Minutes draft/ }),
+    ).toHaveTextContent(/Word/);
+  });
+
+  it("lays tiles out at a capped width rather than a fixed column count", () => {
+    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
+    render(<DocumentsPage />);
+    const list = screen
+      .getByRole("region", { name: /all documents/i })
+      .querySelector("ul");
+    expect(list?.className).toContain(
+      "grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))]",
+    );
+  });
 });

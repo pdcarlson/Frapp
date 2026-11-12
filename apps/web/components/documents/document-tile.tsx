@@ -11,30 +11,37 @@ import {
 import { gridTileFrameClassName } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
+import {
+  DocumentThumbnail,
+  thumbnailKind,
+} from "@/components/documents/document-thumbnail";
 import { cn } from "@/lib/utils";
 
 /**
- * The Grid layout's columns (#4175). Wider tiles than the Directory's
- * (`denseGridClassName`): a file tile carries up to four controls along its
- * foot, which need about 160px, so it starts at one column and adds one per
- * step of the list's own width, as Google Drive's file grid does.
+ * The Grid layout's columns (#4175, narrowed in #4647). As many tiles as fit,
+ * so a tile stays about 200 to 260px wide on a desktop, as Google Drive's and
+ * Dropbox's file grids are, rather than a fixed count stretched across the
+ * list. Under a 768px list (beside chat, or at the 375px floor) a tile may
+ * narrow to 160px, so two still fit side by side; its controls wrap there.
  */
 export const documentGridClassName =
-  "grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4";
+  "grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2 @3xl:grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))]";
 
 /**
  * One file in the Grid layout (#4175), drawn the way Google Drive draws a
- * file in its grid: a preview panel naming the file's type over its name and
- * who uploaded it when. It shows every fact the row shows (uploader and date,
- * folder, type, effective date, description), and keeps the row's Star, Pin,
- * Download and Delete at its foot (`DocumentControls`), so the grid changes
- * the shape of the list and nothing a member can do with it.
+ * file in its grid. A photo or a PDF leads with a preview of itself
+ * (`DocumentThumbnail`, #4647): the photo, or the PDF's first page. Any other
+ * file, and one too large to fetch for a tile, has no preview panel at all:
+ * its type glyph sits beside the title, so the tile isn't padded with an
+ * empty box (Word and Excel previews are #3889's call). Under the title, every
+ * fact the row shows (type, uploader and date, folder, document type,
+ * effective date, description), and right under those the row's Star, Pin,
+ * Download and Delete (`DocumentControls`), so the grid changes the shape of
+ * the list and nothing a member can do with it.
  *
- * The preview is the file's type, not its pages: drawing a page means
- * fetching every file on the screen, which the list never does. The type is
- * the one `classifyFile` gives the filter and the viewer, so the tile, the
- * File type chip and the viewer all name a file alike. A pinned file's glyph
- * takes the accent duotone, as its card on the strip above does.
+ * The type is the one `classifyFile` gives the filter and the viewer, so the
+ * tile, the File type chip and the viewer all name a file alike. A pinned
+ * file's glyph takes the accent duotone, as its card on the strip above does.
  *
  * A hairline-bordered tile on the page, not a `--card` panel, like the
  * Directory's member tiles: the route still has no cards in its list.
@@ -65,6 +72,7 @@ export function DocumentTile({
 }) {
   const pinned = !!doc.pinned_at;
   const { label: typeLabel } = classifyFile(doc);
+  const preview = thumbnailKind(doc);
   // The row's facts (`documentFacts`), over three lines: when and by whom,
   // then where and what, then the description, last as the row puts it.
   const facts = documentFacts(doc, uploader);
@@ -73,7 +81,8 @@ export function DocumentTile({
     <li className={cn("flex min-w-0 flex-col", gridTileFrameClassName)}>
       {/*
         The preview and the lines under it are one button that opens the
-        viewer, as the row's name is; the controls sit below it, never inside.
+        viewer, as the row's name is; the controls sit right below the facts,
+        never inside, and never pushed to the tile's far edge.
       */}
       <button
         type="button"
@@ -84,36 +93,42 @@ export function DocumentTile({
           FOCUS_RING_OFFSET,
         )}
       >
-        <span
-          className="flex h-24 w-full flex-col items-center justify-center gap-1.5 rounded-sm bg-surface-1"
-          aria-hidden
-        >
-          <DocumentsGlyph
-            className={cn(
-              "h-8 w-8",
-              pinned ? "text-accent-text" : "text-muted",
-            )}
-            active={pinned}
+        {preview !== "none" ? (
+          <DocumentThumbnail
+            doc={doc}
+            kind={preview}
+            typeLabel={typeLabel}
+            pinned={pinned}
           />
-          <span className="text-caption text-muted">{typeLabel}</span>
-        </span>
-        <span className="block min-w-0 px-1">
-          <span className="block truncate text-sm font-semibold">
-            {doc.title}
-          </span>
-          <span className="block truncate text-caption text-muted">
-            {facts.uploaded}
-          </span>
-          {filed ? (
-            <span className="block truncate text-caption text-muted">
-              {filed}
-            </span>
+        ) : null}
+        <span className="flex min-w-0 items-start gap-2 px-1">
+          {preview === "none" ? (
+            <DocumentsGlyph
+              className={cn(
+                "mt-0.5 h-5 w-5 shrink-0",
+                pinned ? "text-accent-text" : "text-muted",
+              )}
+              active={pinned}
+            />
           ) : null}
-          {facts.description ? (
-            <span className="block truncate text-caption text-muted">
-              {facts.description}
+          <span className="block min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">
+              {doc.title}
             </span>
-          ) : null}
+            <span className="block truncate text-caption text-muted">
+              {[typeLabel, facts.uploaded].filter(Boolean).join(" · ")}
+            </span>
+            {filed ? (
+              <span className="block truncate text-caption text-muted">
+                {filed}
+              </span>
+            ) : null}
+            {facts.description ? (
+              <span className="block truncate text-caption text-muted">
+                {facts.description}
+              </span>
+            ) : null}
+          </span>
         </span>
       </button>
       <DocumentControls
@@ -125,7 +140,7 @@ export function DocumentTile({
         onDelete={onDelete}
         onToggleStar={onToggleStar}
         onTogglePin={onTogglePin}
-        className="justify-end px-1 pb-1"
+        className="flex-wrap px-1.5 pb-1"
       />
     </li>
   );
