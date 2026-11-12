@@ -4,6 +4,7 @@ import {
 } from '@repo/validation';
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
 import { validateDevLogEnv } from '../application/services/dev-log.service';
+import { validateAiEnv } from './ai-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -81,6 +82,14 @@ const REQUIRED_ENV_VARS = [
 // "off" and hide the typo. Rules: validateDevLogEnv.
 //   - DEV_LOG_TOKEN_SHA256 / DEV_LOG_CHAPTER_ID / DEV_LOG_CHANNEL_ID
 //
+// Also optional (ADR-28): the AI features. Unset, every AI route answers 404
+// and the gateway makes no call. A value that IS set is checked here, because
+// a typo in a switch would read as "off", or as the live provider. Rules:
+// validateAiEnv (config/ai-config.ts).
+//   - AI_ENABLED         the server switch; on is exactly "true"
+//   - AI_PROVIDER        "live" (default) or "scripted" (canned, no network)
+//   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -122,6 +131,11 @@ export function validateEnv(config: Record<string, unknown>) {
   const devLogProblems = validateDevLogEnv(config);
   if (devLogProblems.length > 0) {
     throw new Error(devLogProblems.join(' '));
+  }
+
+  const aiProblems = validateAiEnv(config);
+  if (aiProblems.length > 0) {
+    throw new Error(aiProblems.join(' '));
   }
 
   // Production invite emails are built from APP_URL. https: alone still

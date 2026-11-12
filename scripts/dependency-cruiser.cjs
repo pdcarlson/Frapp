@@ -262,6 +262,22 @@ module.exports = {
     ...(isApi ? apiLayerRules : []),
     ...boundaryRules,
     {
+      name: "ai-provider-sdks-only-in-adapters",
+      severity: "error",
+      comment:
+        "A model provider's SDK is imported only by its adapter under " +
+        "apps/api/src/infrastructure/ai/ (ADR-28 decision 1). Everything else goes through " +
+        "the AI gateway, which is where consent, the spend caps, the citation check and the " +
+        "usage record happen; a feature that calls a provider directly skips all four, and " +
+        "ties itself to that provider's shapes. The rule is in every workspace's cruise, not " +
+        "only the API's, so a client or a package cannot hold a provider key either. " +
+        "`type-only` imports are refused too: a provider's types in a feature are the same " +
+        "coupling. The path matches a resolved module under node_modules and an unresolved " +
+        "specifier alike.",
+      from: { pathNot: isApi ? "^src/infrastructure/ai/" : "$^" },
+      to: { path: "(^|node_modules/)(@anthropic-ai/sdk|@google/genai)(/|$)" },
+    },
+    {
       name: "not-to-dev-dep",
       severity: "error",
       comment:

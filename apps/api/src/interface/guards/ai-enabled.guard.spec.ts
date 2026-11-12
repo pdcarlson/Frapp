@@ -8,29 +8,28 @@ describe('AiEnabledGuard', () => {
     else process.env.AI_ENABLED = original;
   });
 
-  it.each([undefined, '', 'false', '0', 'TRUE', 'yes'])(
+  it('lets the request through when the server switch is on', () => {
+    process.env.AI_ENABLED = 'true';
+    expect(new AiEnabledGuard().canActivate()).toBe(true);
+  });
+
+  it.each([undefined, 'false', ''])(
     'answers 404 ai.not_available when AI_ENABLED is %p',
     (value) => {
       if (value === undefined) delete process.env.AI_ENABLED;
       else process.env.AI_ENABLED = value;
-      expect(() => new AiEnabledGuard().canActivate()).toThrow(
-        NotFoundException,
-      );
+
+      let thrown: unknown;
       try {
         new AiEnabledGuard().canActivate();
       } catch (error) {
-        expect((error as NotFoundException).getResponse()).toMatchObject({
-          code: 'ai.not_available',
-        });
+        thrown = error;
       }
-    },
-  );
-
-  it.each(['true', '1'])(
-    'lets the request through when AI_ENABLED is %p, as the job queue does',
-    (value) => {
-      process.env.AI_ENABLED = value;
-      expect(new AiEnabledGuard().canActivate()).toBe(true);
+      expect(thrown).toBeInstanceOf(NotFoundException);
+      expect((thrown as NotFoundException).getResponse()).toEqual({
+        code: 'ai.not_available',
+        message: 'AI features are not available.',
+      });
     },
   );
 });

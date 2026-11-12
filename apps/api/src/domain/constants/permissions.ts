@@ -69,6 +69,14 @@ export const SystemPermissions = {
 
   SEMESTER_ROLLOVER: 'semester:rollover',
 
+  // AI (ADR-28). No seeded role or starting tier holds either, so only the
+  // President's wildcard has them until a chapter grants them. They gate no
+  // route yet: `AI_USE` is for the first member-facing AI route, `AI_ACT` for
+  // the acting agent (#718). Left out of the permissions catalog while the
+  // server switch is off (`RbacService.getPermissionsCatalog`).
+  AI_USE: 'ai:use',
+  AI_ACT: 'ai:act',
+
   REPORTS_EXPORT: 'reports:export',
 
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
@@ -79,6 +87,12 @@ export const SystemPermissions = {
   // `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` owns the value.
   ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
+
+/** Shown in the catalog only on a server with `AI_ENABLED` on. */
+export const AI_PERMISSIONS: ReadonlySet<string> = new Set([
+  SystemPermissions.AI_USE,
+  SystemPermissions.AI_ACT,
+]);
 
 /** One row of `GET /v1/roles/permissions-catalog`. */
 export interface PermissionCatalogEntry extends PermissionDefinition {

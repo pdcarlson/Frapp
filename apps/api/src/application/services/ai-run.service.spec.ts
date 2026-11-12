@@ -41,7 +41,7 @@ describe('AiRunService', () => {
     });
 
   beforeEach(() => {
-    process.env.AI_ENABLED = '1';
+    process.env.AI_ENABLED = 'true';
     runs = new FakeAiRunRepository();
     registry = new AiRunRegistry();
     registry.register(minutes);

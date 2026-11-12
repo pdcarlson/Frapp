@@ -1,19 +1,26 @@
-import { Injectable, type CanActivate } from '@nestjs/common';
-import { isAiEnabled } from '#domain/utils/ai-runs';
-import { aiNotAvailable } from '../../application/services/ai-run.service';
+import { CanActivate, Injectable, NotFoundException } from '@nestjs/common';
+import { isAiEnabled } from '#domain/utils/ai-enabled';
 
 /**
- * The server switch for an AI controller (ADR-28): the one switch the job
- * queue reads too (`isAiEnabled`). Off, every route behind it answers 404
- * `ai.not_available` before auth runs, so a server with AI off behaves as
- * one that never had it.
+ * Every AI route carries this guard, first in its chain, so a server with
+ * `AI_ENABLED` off answers as if the route did not exist, before
+ * authentication and whatever the caller's role. Clients treat 404
+ * `ai.not_available` as "this server has no AI" and hide the entry point.
  *
- * Put it first: `@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ...)`.
+ * It is the server switch only. The chapter's switch and the member's answer
+ * are checked by the gateway's consent seam, per call.
  */
 @Injectable()
 export class AiEnabledGuard implements CanActivate {
   canActivate(): boolean {
-    if (isAiEnabled()) return true;
-    throw aiNotAvailable();
+    if (!isAiEnabled()) {
+      throw new NotFoundException({
+        // The same code `AiRunService` answers with (`aiNotAvailable`): one
+        // code for "AI is off here", whichever layer says it.
+        code: 'ai.not_available',
+        message: 'AI features are not available.',
+      });
+    }
+    return true;
   }
 }

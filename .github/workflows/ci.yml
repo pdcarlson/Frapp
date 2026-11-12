@@ -366,8 +366,12 @@ jobs:
         run: npm run test:e2e -w apps/api
 
       # Spec §13 → Evals. Unconditional costs ~1.5s, less than a path-gated job would (ADR-15).
+      # The cases run against the AI gateway with a scripted model (#4306), so
+      # a build where no agent is registered fails instead of skipping them.
       - name: Run AI evals
         run: npm run test:ai-evals -w apps/api
+        env:
+          AI_EVALS_REQUIRE_AGENT: '1'
 
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
