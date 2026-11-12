@@ -125,7 +125,7 @@ describe('InviteService', () => {
 
     mockRoleRepo = {
       findById: jest.fn(),
-      findByChapter: jest.fn(),
+      findByChapter: jest.fn().mockResolvedValue([]),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       findByChapterAndSystemKey: jest.fn(),
@@ -2417,14 +2417,33 @@ describe('InviteService', () => {
     });
 
     it('lets an explicit role win over the chapter default', async () => {
-      chapterDefaultRoleId = 'role-pledge';
+      chapterDefaultRoleId = 'role-member';
 
-      const invite = await service.create('ch-1', 'user-1', 'Member');
+      const invite = await service.create('ch-1', 'user-1', 'New Member');
 
-      expect(invite.role).toBe('Member');
+      expect(invite.role).toBe('New Member');
       // The explicit path short-circuits before any lookup, so naming a role
       // costs neither the roles read nor the chapters read.
       expect(mockRoleRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('reads an older build\'s "Member" as the Everyone role once no role has that name (#4191)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role({ name: 'Everyone' }),
+        pledgeRole,
+      ]);
+      await expect(
+        service.create('ch-1', 'user-1', 'Member'),
+      ).resolves.toMatchObject({ role: 'Everyone' });
+
+      // A role the chapter still calls Member keeps the name.
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role({ name: 'Everyone' }),
+        role({ id: 'role-custom', name: 'Member', system_key: null }),
+      ]);
+      await expect(
+        service.create('ch-1', 'user-1', 'Member'),
+      ).resolves.toMatchObject({ role: 'Member' });
     });
 
     it('falls back to the seeded Member role when no default is configured', async () => {

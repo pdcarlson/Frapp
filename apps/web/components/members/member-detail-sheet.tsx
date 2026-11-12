@@ -348,7 +348,7 @@ export function MemberDetailSheet({
     [rolesQuery.data, memberRoleIds],
   );
   // Distinct from "no role": while the read is in flight an empty list would
-  // flash a wrong "No roles yet".
+  // flash a wrong "No roles".
   const rolesLoading = rolesQuery.isPending;
   // A failed roles read resolves no chip, which must not read as a member
   // with no roles: say it failed and offer the read again.
@@ -803,9 +803,10 @@ export function MemberDetailSheet({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-caption text-muted-foreground">
-                    No roles yet
-                  </p>
+                  // A plain member holds only Everyone, which draws no chip
+                  // (#4191): "No roles", as Discord shows a member with only
+                  // @everyone, not "yet", which read as an unfinished join.
+                  <p className="text-caption text-muted-foreground">No roles</p>
                 )}
               </section>
 

@@ -12,7 +12,8 @@ import { db, miss } from "../harness.mjs";
 //     switched off for mentions, keeping its id, tier, permissions, overrides
 //     and color;
 //   - another role whose name reads as @everyone is renamed "(role)", or
-//     "(role 2)" when that is taken, and keeps its id and permissions;
+//     "(role 2)" when that is taken, keeps its id and permissions, and its
+//     pending invites follow it;
 //   - pending invites naming the Member role by its old name now name
 //     Everyone, and redeemed, revoked or other roles' invites keep theirs;
 //   - every member's effective permissions (the union of their roles') are
@@ -109,6 +110,9 @@ console.log(
         ('t4191-used', '${A}', 'Actives', now() + interval '7 days', '${U}', now(), null),
         ('t4191-revoked', '${A}', 'Actives', now() + interval '7 days', '${U}', null, now()),
         ('t4191-brothers', '${A}', 'Brothers', now() + interval '7 days', '${U}', null, null),
+        ('t4191-lower', '${A}', 'everyone', now() + interval '7 days', '${U}', null, null),
+        ('t4191-dashed', '${A}', 'Every-One', now() + interval '7 days', '${U}', null, null),
+        ('t4191-dashed-used', '${A}', 'Every-One', now() + interval '7 days', '${U}', now(), null),
         ('t4191-b', '${B}', 'Everyone', now() + interval '7 days', '${U}', null, null);
     `);
 
@@ -141,6 +145,16 @@ console.log(
         dashed.name === "Every-One (role)" &&
         JSON.stringify(lower.permissions) === '["members:view"]',
       { lower, dashed },
+    );
+    check(
+      "pending invites for a renamed role follow it; a redeemed one keeps its name",
+      (await invite("t4191-lower")) === "everyone (role 2)" &&
+        (await invite("t4191-dashed")) === "Every-One (role)" &&
+        (await invite("t4191-dashed-used")) === "Every-One",
+      {
+        lower: await invite("t4191-lower"),
+        dashed: await invite("t4191-dashed"),
+      },
     );
     check(
       "a role whose name only contains the word is left alone",

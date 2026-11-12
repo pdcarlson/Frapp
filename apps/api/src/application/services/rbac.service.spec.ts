@@ -541,6 +541,24 @@ describe('RbacService', () => {
       });
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
+
+    it('lets it take the name Everyone, and go into a tier from outside them', async () => {
+      // A row the previous API seeded as Member after the migration ran.
+      const stray: Role = { ...everyone, name: 'Member', tier_id: null };
+      mockRoleRepo.findById.mockResolvedValue(stray);
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.update.mockResolvedValue({ ...stray, name: 'Everyone' });
+      await service.update('role-everyone', 'ch-1', ACTOR, {
+        name: 'Everyone',
+      });
+      expect(mockRoleRepo.update).toHaveBeenCalledWith(
+        'role-everyone',
+        expect.objectContaining({ name: 'Everyone' }),
+      );
+      await expect(
+        service.update('role-everyone', 'ch-1', ACTOR, { tier_id: 'tier-3' }),
+      ).resolves.not.toThrow();
+    });
   });
 
   it('should reject rename to existing name', async () => {

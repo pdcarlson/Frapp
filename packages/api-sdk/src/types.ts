@@ -3408,7 +3408,7 @@ export interface paths {
         };
         /**
          * List polls across the chapter
-         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Everyone role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
          */
         get: operations["PollController_listPolls_v1"];
         put?: never;
@@ -6447,7 +6447,7 @@ export interface components {
              */
             end_date: string;
             /**
-             * @description Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @description Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.
              * @default false
              */
             promote_new_members: boolean;

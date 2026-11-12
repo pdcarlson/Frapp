@@ -17,6 +17,7 @@ import type { IRoleTierRepository } from '#domain/repositories/role-tier.reposit
 import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
+  EVERYONE_ROLE_NAME,
   isEveryoneRoleName,
   permissionDefinition,
   permissionModuleLabel,
@@ -510,15 +511,26 @@ export class RbacService {
     // The Everyone role (#4191) is the base under every tier: it keeps its
     // name, which `@everyone` reads, and its tier, which is where plain
     // members rank and where presidency's claim walk stops. Its permissions
-    // and its `@everyone` switch stay editable.
+    // and its `@everyone` switch stay editable. Two moves stay open because
+    // they only bring it to where it belongs: renaming it Everyone (a row
+    // the previous API seeded as Member after the migration ran), and
+    // putting it in a tier when it sits outside them.
     if (role.system_key === SystemRoleKeys.MEMBER) {
-      if (data.name !== undefined && data.name !== role.name) {
+      if (
+        data.name !== undefined &&
+        data.name !== role.name &&
+        data.name !== EVERYONE_ROLE_NAME
+      ) {
         throw new BadRequestException({
           code: 'role.everyone_fixed',
           message: 'The Everyone role keeps its name.',
         });
       }
-      if (data.tier_id !== undefined && data.tier_id !== role.tier_id) {
+      if (
+        data.tier_id !== undefined &&
+        data.tier_id !== role.tier_id &&
+        !(role.tier_id === null && data.tier_id !== null)
+      ) {
         throw new BadRequestException({
           code: 'role.everyone_fixed',
           message: 'The Everyone role stays in its tier.',

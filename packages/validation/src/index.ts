@@ -692,7 +692,6 @@ export {
   isEveryoneRole,
   isEveryoneRoleName,
   rolesAfterSave,
-  withoutEveryoneRole,
 } from "./everyone-role";
 
 // What each system permission is called and which module it belongs to. The

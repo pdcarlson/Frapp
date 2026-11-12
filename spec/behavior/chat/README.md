@@ -1115,8 +1115,8 @@ channel that reports a different one fails the import rather than being skipped.
     count, so "ΔΔ Class" and "ΓΓ Class" differ); then a close match to a
     seeded role, read from the end of the Discord name ("Recording Secretary"
     is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
-    pledge), except Member, the widest role, which matches only a whole name
-    ("Brothers", never "Board Member"), and except a name that starts by
+    pledge), except Everyone (once Member, #4191), the widest role, which
+    matches only a whole name ("Brothers", never "Board Member"), and except a name that starts by
     saying it is not the sitting officer ("Past Treasurer", "PC President",
     "Assistant Treasurer"), which only a same-name role matches; then a new
     role named after it.

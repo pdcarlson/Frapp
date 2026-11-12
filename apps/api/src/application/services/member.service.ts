@@ -432,10 +432,14 @@ export class MemberService {
     const after = resolve(roleIds);
     const beforeIds = new Set(before.map((role) => role.id));
     const afterIds = new Set(after.map((role) => role.id));
+    // The Everyone role moves only as `rolesAfterSave` settles it, never at
+    // the caller's request (#4191), so it is not one the caller gives or
+    // takes: a chair who may make a member a pledge isn't refused because
+    // making them one takes Everyone away.
     const changed = [
       ...after.filter((role) => !beforeIds.has(role.id)),
       ...before.filter((role) => !afterIds.has(role.id)),
-    ];
+    ].filter((role) => role.system_key !== SystemRoleKeys.MEMBER);
     if (changed.length === 0) return;
 
     const isSelf = reach.memberId === member.id;
@@ -449,8 +453,8 @@ export class MemberService {
     }
     // Nobody hands out a permission they don't hold, to anyone: a lower role
     // can still carry one (a role outside the tiers, an override), and a
-    // second account would otherwise collect it. What the Member role carries
-    // is exempt, since every member gets it.
+    // second account would otherwise collect it. What the Everyone role
+    // carries is exempt, since every member gets it.
     const base = new Set(
       roles.find((role) => role.system_key === SystemRoleKeys.MEMBER)
         ?.permissions ?? [],

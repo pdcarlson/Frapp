@@ -203,6 +203,17 @@ describe('ChatMentionService.resolveForSend', () => {
       ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4']));
     });
 
+    it('is not silenced by a member whose display name reads the same', async () => {
+      const named = [
+        ...members,
+        { user_id: 'u9', display_name: 'Every One', role_ids: [] },
+      ];
+      const officer = service(named, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@everyone hi'),
+      ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4', 'u9']));
+    });
+
     it('reaches nobody from a member until the chapter opens it', async () => {
       const member = service(members, roles, ['members:view']);
       await expect(

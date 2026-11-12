@@ -65,10 +65,12 @@ function words(name: string): string[] {
  * educator, not a pledge, and matching it to New Member would let every
  * pledge read the officer channels.
  *
- * An alias marked `whole` matches only the whole name. Member used to be one
- * ("member", "brother", "active"); since it became the Everyone role (#4191),
- * which is no mapping target, a "Brothers" Discord role starts as a new role
- * of its own.
+ * The Everyone role (`MEMBER`, once called Member, #4191) is the exception,
+ * matched only as the WHOLE name: a Discord "Brothers" role still lands on
+ * it, so its channels open to the chapter's members. It is the widest role a
+ * chapter has, and "member" ends too many officer titles ("Board
+ * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
+ * opens an exec channel to everyone.
  */
 const CLOSE_MATCHES: Record<
   string,
@@ -93,6 +95,18 @@ const CLOSE_MATCHES: Record<
   },
   ALUMNI: {
     aliases: ["alumni", "alum", "alumnus", "alumna", "alumnae", "graduate"],
+  },
+  MEMBER: {
+    aliases: [
+      "member",
+      "active member",
+      "brother",
+      "active brother",
+      "sister",
+      "active sister",
+      "active",
+    ],
+    whole: true,
   },
 };
 
@@ -250,7 +264,7 @@ export function roleIssues(
         message: `The new role for ${role.roleName} needs a shorter name (at most ${maxNameLength} characters).`,
       });
     } else if (isEveryoneRoleName(name)) {
-      // Every chapter has an Everyone role, which no list offers (#4191).
+      // `@everyone` names the chapter's Everyone role, and no other (#4191).
       issues.push({
         roleId: role.roleId,
         message: `"${name}" is what @everyone reads as. Give the new role for ${role.roleName} another name.`,

@@ -34,11 +34,6 @@ export function isEveryoneRole(role: unknown): boolean {
   );
 }
 
-/** `roles` without the Everyone role, in the same order. */
-export function withoutEveryoneRole<T>(roles: readonly T[]): T[] {
-  return roles.filter((role) => !isEveryoneRole(role));
-}
-
 /**
  * Whether `name` would read as `@everyone` in a message: another role named
  * so would make the token ambiguous, which reaches nobody (§ Role mentions),
@@ -66,17 +61,22 @@ export interface EveryoneSaveRole {
  * The role ids a member ends up with when a save asks for `requested` (#4191).
  * Nobody ticks or unticks Everyone: the clients don't offer it, and a mobile
  * build already in the store draws it as a chip whose tap must not move it.
- * So whatever the save sent, Everyone follows what the save means:
+ * So whatever the save sent, Everyone follows what the save means, read from
+ * the roles it leaves the member with:
  *
- * - **Given** when the save leaves the member with no role granting member
- *   access (`members:view` or `*`, as `memberAccessRoleIds` reads it), the way
- *   a redeem has always added it and the way Discord leaves a member with no
- *   roles holding `@everyone`. Taking New Member away is how an officer makes
- *   a new member a plain member now that Member is no longer a role to tick.
- * - **Taken away** when the save gives the member the New Member or Alumni
- *   role, which rank below it: graduating a member used to mean unticking
- *   Member and ticking Alumni, and an alumnus must not keep what members get.
- * - **Kept as held** otherwise, so a member promoted to a chair keeps it.
+ * - **Never beside New Member or Alumni**, which rank below it: graduating a
+ *   member used to mean unticking Member and ticking Alumni, and an alumnus
+ *   or a pledge must not keep what members get. This holds whatever those
+ *   roles carry, so a chapter that took `members:view` off them still
+ *   demotes.
+ * - **Given** when the save takes the member's last New Member or Alumni role
+ *   away (a pledge made a member, a chair or both), and when it leaves them
+ *   no role granting member access (`members:view` or `*`, as
+ *   `memberAccessRoleIds` reads it), the way a redeem has always added it and
+ *   the way Discord leaves a member with no roles holding `@everyone`.
+ * - **Kept as held** otherwise, so a member made a chair keeps it, and one
+ *   who never held it (an officer invited straight into their role) isn't
+ *   handed it.
  *
  * A chapter with no Everyone role (the legacy `system_key` gap) gets
  * `requested` unchanged. The API applies this to every
@@ -92,18 +92,16 @@ export function rolesAfterSave(
   if (!everyone) return [...requested];
   const others = requested.filter((id) => id !== everyone.id);
   const byId = new Map(roles.map((role) => [role.id, role]));
+  const isLower = (id: string) =>
+    BELOW_EVERYONE_SYSTEM_KEYS.has(byId.get(id)?.system_key);
+  if (others.some(isLower)) return others;
+  const withEveryone = requested.includes(everyone.id)
+    ? [...requested]
+    : [...others, everyone.id];
+  const leftLower = held.some(isLower);
   const givesAccess = others.some((id) =>
     can("members:view", byId.get(id)?.permissions),
   );
-  if (!givesAccess) return [...others, everyone.id];
-  const madeLower = others.some(
-    (id) =>
-      !held.includes(id) &&
-      BELOW_EVERYONE_SYSTEM_KEYS.has(byId.get(id)?.system_key),
-  );
-  if (madeLower || !held.includes(everyone.id)) return others;
-  // Kept where the save put it, or where the member had it.
-  return requested.includes(everyone.id)
-    ? [...requested]
-    : [...others, everyone.id];
+  if (leftLower || !givesAccess) return withEveryone;
+  return held.includes(everyone.id) ? withEveryone : others;
 }

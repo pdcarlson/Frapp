@@ -127,3 +127,14 @@ describe("effectiveActivesFilter", () => {
     expect(countActivesFilters(NO_ACTIVES_FILTER)).toBe(0);
   });
 });
+
+describe("parseFilterRoles and the Everyone role (#4191)", () => {
+  it("offers no filter for it", () => {
+    expect(
+      parseFilterRoles([
+        { id: "r-everyone", name: "Everyone", system_key: "MEMBER" },
+        { id: "r-chair", name: "Rush Chair", system_key: null },
+      ]).map((role) => role.id),
+    ).toEqual(["r-chair"]);
+  });
+});

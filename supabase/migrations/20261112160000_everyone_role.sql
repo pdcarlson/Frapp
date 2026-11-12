@@ -14,7 +14,8 @@
 -- 1. Any other role whose name reads as `@everyone` (letters and digits only,
 --    any case: "Everyone", "every-one") is renamed "<name> (role)", then
 --    "<name> (role 2)" and so on if that is taken, so `@everyone` names one
---    role. Its id, holders and permissions don't change.
+--    role. Its id, holders and permissions don't change, and its pending
+--    invites are pointed at the new name.
 -- 2. Pending invites (not used, not revoked) whose role is the Member role's
 --    current name are pointed at "Everyone", so a later role taking the old
 --    name can't capture them. Redeemed and revoked invites are history and
@@ -67,6 +68,14 @@ begin
       n := n + 1;
     end loop;
     update public.roles set name = candidate where id = r.id;
+    -- Its pending invites follow it: they are matched by name at redeem, and
+    -- the old name is about to be the Everyone role's.
+    update public.invites
+       set role = candidate
+     where chapter_id = r.chapter_id
+       and role = r.name
+       and used_at is null
+       and revoked_at is null;
   end loop;
 
   -- 2. Pending invites naming the Member role by its current name.

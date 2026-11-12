@@ -373,7 +373,7 @@ export class ChapterConfigService {
       beta_config: chapter.beta_config ?? {},
       analytics_opt_out: chapter.analytics_opt_out ?? false,
       // #422. `null` is meaningful here — "no default configured", which
-      // InviteService reads as "fall back to the seeded Member role". A
+      // InviteService reads as "fall back to the seeded Everyone role". A
       // deleted role clears this via `on delete set null`, so a client never
       // sees an id that no longer resolves.
       default_invite_role_id: chapter.default_invite_role_id ?? null,

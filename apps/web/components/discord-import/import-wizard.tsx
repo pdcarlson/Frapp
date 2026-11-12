@@ -17,7 +17,7 @@ import {
   useSetDiscoveredChannelMapping,
   useStartDiscordImport,
 } from "@repo/hooks";
-import { can, isEveryoneRole, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
+import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
 import { parseBareDateLocalMidnight } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
@@ -388,11 +388,7 @@ export function ImportWizard({
       asArray<{ id?: unknown; name?: unknown; system_key?: unknown }>(
         frappRolesQuery.data,
       ).flatMap((role) =>
-        // The Everyone role (#4191) is no mapping target: it names the
-        // members holding it, not a Discord role's people.
-        typeof role.id === "string" &&
-        typeof role.name === "string" &&
-        !isEveryoneRole(role)
+        typeof role.id === "string" && typeof role.name === "string"
           ? [
               {
                 id: role.id,

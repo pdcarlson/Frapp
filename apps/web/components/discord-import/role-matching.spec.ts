@@ -13,6 +13,7 @@ const frappRoles: FrappRole[] = [
   { id: "vp", name: "Vice President", system_key: "VICE_PRESIDENT" },
   { id: "treasurer", name: "Treasurer", system_key: "TREASURER" },
   { id: "secretary", name: "Secretary", system_key: "SECRETARY" },
+  { id: "member", name: "Everyone", system_key: "MEMBER" },
   { id: "new-member", name: "New Member", system_key: "NEW_MEMBER" },
   { id: "alumni", name: "Alumni", system_key: "ALUMNI" },
   { id: "exec", name: "Exec Board", system_key: null },
@@ -34,18 +35,19 @@ describe("matchFrappRole (#2818)", () => {
     expect(matched("Pledges")).toEqual(["new-member", "close"]);
     expect(matched("Pledge Class 2026")).toBeNull();
     expect(matched("Alum")).toEqual(["alumni", "close"]);
+    expect(matched("Brothers")).toEqual(["member", "close"]);
     expect(matched("VP")).toEqual(["vp", "close"]);
     // The longest alias wins, so a vice president is never the President.
     expect(matched("Executive Vice President")).toEqual(["vp", "close"]);
   });
 
-  it("reads no Discord role as the Everyone role (#4191)", () => {
-    // Everyone was Member, matched from "Actives" and "Brothers"; it is no
-    // mapping target now, so they start as roles of their own.
-    expect(matched("Actives")).toBeNull();
-    expect(matched("Active Members")).toBeNull();
-    expect(matched("Brothers")).toBeNull();
+  it("reads Member only from a whole name, since it is the widest role", () => {
+    expect(matched("Actives")).toEqual(["member", "close"]);
+    expect(matched("Active Members")).toEqual(["member", "close"]);
+    // Officer titles that end in "member" are not every member.
     expect(matched("Board Member")).toBeNull();
+    expect(matched("Executive Board Member")).toBeNull();
+    expect(matched("Alumni Member")).toBeNull();
   });
 
   it("tells names in other scripts apart, and matches nothing on an emoji alone", () => {
