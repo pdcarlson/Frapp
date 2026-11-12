@@ -8,6 +8,7 @@ import {
   activityNeedsYouHeadline,
   activityNextUpLine,
   activityPollIsOpen,
+  activityRowAction,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -987,5 +988,53 @@ describe("activityNextUpLine", () => {
 
   it("is nothing when no event is ahead", () => {
     expect(activityNextUpLine({ nextEvent: null })).toBeNull();
+  });
+});
+
+describe("activityRowAction (#4402)", () => {
+  it("puts the one-press asks on the row, and never Vote or a status", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ id: "mine", title: "Mine" })],
+        task_confirmations: [
+          task({ id: "done", title: "Done", status: "COMPLETED" }),
+        ],
+        hours_approvals: [
+          {
+            id: "h1",
+            user_id: "u2",
+            member_name: "Sam",
+            date: "2026-11-10",
+            duration_minutes: 60,
+            description: "Food bank",
+            created_at: "2026-11-10T00:00:00.000Z",
+          },
+        ],
+        polls: [poll()],
+      },
+      coming_up: [
+        event({
+          id: "open",
+          name: "Open",
+          check_in_open: true,
+          checked_in: false,
+        }),
+        event({ id: "later", name: "Later" }),
+      ],
+    });
+    const actions = Object.fromEntries(
+      activityGroups(data, "all", new Date("2026-11-12T00:00:00.000Z"))
+        .flatMap((group) => group.rows)
+        .map((row) => [row.title, activityRowAction(row)]),
+    );
+    expect(actions).toEqual({
+      // Not yet: an event may need a location the web can't give (#4427).
+      Open: null,
+      Mine: null,
+      Done: "confirm",
+      "Food bank": "approve",
+      "Formal venue?": null,
+      Later: null,
+    });
   });
 });

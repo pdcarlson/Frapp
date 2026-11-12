@@ -8,6 +8,7 @@ import {
   activityGroups,
   activitySummary,
   useActivity,
+  useActivityUnread,
   useNowDate,
   useCurrentChapter,
   useClearActivityLinkState,
@@ -130,7 +131,11 @@ export default function ActivityScreen() {
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
+  // Dots (#4405): opening a row from here is what reads it; scrolling past
+  // doesn't, and neither does acting on the item elsewhere in Frapp.
+  const { markRead } = useActivityUnread(activity.data);
   const open = (row: ActivityRow) => {
+    if (row.unread) markRead([row.readRef]);
     setOpened(row);
     setOpenedKey(row.key);
   };

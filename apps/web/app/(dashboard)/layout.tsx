@@ -8,7 +8,9 @@ import {
 import {
   CHAT_OPEN_COOKIE,
   CHAT_SPLIT_COOKIE,
+  CHAT_VIEW_COOKIE,
   parseChatOpen,
+  parseChatView,
   parseToolShare,
 } from "@/components/layout/shell-prefs";
 import {
@@ -33,8 +35,9 @@ export default async function DashboardLayout({
     cookieStore.get(NAV_COLLAPSED_COOKIE)?.value,
   );
   // The same for the chat panel the shell hosts (#3779): open or closed, the
-  // divider's position, and its member column.
+  // divider's position, which list it shows (#3774), and its member column.
   const chatOpen = parseChatOpen(cookieStore.get(CHAT_OPEN_COOKIE)?.value);
+  const chatView = parseChatView(cookieStore.get(CHAT_VIEW_COOKIE)?.value);
   const toolShare = parseToolShare(cookieStore.get(CHAT_SPLIT_COOKIE)?.value);
   const membersHidden = parseMembersHidden(
     cookieStore.get(CHAT_MEMBERS_HIDDEN_COOKIE)?.value,
@@ -65,6 +68,7 @@ export default async function DashboardLayout({
       <DashboardShell
         defaultNavCollapsed={navCollapsed}
         defaultChatOpen={chatOpen}
+        defaultChatView={chatView}
         defaultToolShare={toolShare}
         defaultMembersHidden={membersHidden}
       >

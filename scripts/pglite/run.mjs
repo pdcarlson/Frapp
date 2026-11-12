@@ -219,6 +219,7 @@ await import("./tiers/event-types.mjs");
 await import("./tiers/activity-item-reads.mjs");
 await import("./tiers/chat-channel-access-lists.mjs");
 await import("./tiers/role-tier-reorder.mjs");
+await import("./tiers/clear-deleted-message-payloads.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

@@ -14,6 +14,7 @@ export * from "./unset-features";
 export * from "./use-events";
 export * from "./use-event-types";
 export * from "./use-activity";
+export * from "./use-activity-unread";
 export * from "./use-activity-links";
 export * from "./activity-rows";
 export * from "./event-series";

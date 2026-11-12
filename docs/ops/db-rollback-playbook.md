@@ -3302,7 +3302,7 @@ Four columns, a check, a trigger and two partial indexes on `chat_messages`; one
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies. *Since 2026-11-12:* remove the thread card's latest-reply preview first ([§ Rollback the thread card's latest-reply preview](#rollback-the-thread-cards-latest-reply-preview-20261112020000)), because its trigger's `when` clause reads `thread_root_id` and the column won't drop while it stands:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies. *Since 2026-11-12:* remove the thread card's latest-reply preview first ([§ Rollback the thread card's latest-reply preview](#rollback-the-thread-cards-latest-reply-preview-20261112121000)), because its trigger's `when` clause reads `thread_root_id` and the column won't drop while it stands:
 
 ```sql
 drop trigger if exists chat_messages_thread_summary on public.chat_messages;
@@ -3748,9 +3748,9 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback the thread card's latest-reply preview (20261112020000)
+## Rollback the thread card's latest-reply preview (20261112121000)
 
-* **Migration**: `20261112020000_chat_thread_last_reply.sql`
+* **Migration**: `20261112121000_chat_thread_last_reply.sql`
 
 One nullable column on `chat_messages` (`thread_last_reply`), the helper `chat_thread_reply_preview`, the insert trigger function `chat_messages_bump_thread_summary` redefined with one more column, and the update trigger `chat_messages_thread_last_reply` with its function. The backfill wrote the column on existing thread parents; nothing else changed.
 
@@ -3764,3 +3764,11 @@ drop function if exists public.chat_messages_keep_thread_last_reply();
 drop function if exists public.chat_thread_reply_preview(public.chat_messages);
 alter table public.chat_messages drop column if exists thread_last_reply;
 ```
+
+## Rollback clear deleted chat card payloads (20261112060000)
+
+* **Migration**: `20261112060000_clear_deleted_message_payloads.sql`
+
+Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an imported row, cut down to `source` and `author_username`. **It cannot be reverted by a migration**: the cleared values are gone from the database. Once #4421 is live nothing needs them back: no API read serves a deleted message's payload, and there is no undelete.
+
+If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
