@@ -542,7 +542,7 @@ them can take a payment anyway. `EXPO_PUBLIC_APP_URL` and `EXPO_PUBLIC_LANDING_U
 are optional in the same way — unset, invite links and legal pages fall back to
 the production origins documented in the table.
 
-**`EXPO_PUBLIC_ASK_ENABLED` was removed 2026-11-12** (#C4PR). It was a build-time switch for
+**`EXPO_PUBLIC_ASK_ENABLED` was removed 2026-11-12** (#4415). It was a build-time switch for
 the s17 Ask sheet over a mocked corpus, fenced out of EAS production builds by `app.config.js`
 (2026-09-22). Ask now answers through the API, and whether the app draws it is the server's
 `AI_ENABLED` plus the chapter's and member's own switches, so no mobile variable governs it and

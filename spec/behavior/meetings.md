@@ -92,7 +92,7 @@ The Notes way in, without the AI draft: an officer writes the minutes themselves
 
 ## Drafting from notes
 
-The officer who takes the minutes pastes or types what they wrote down during the meeting and asks for a draft ([ADR-28](../architecture/adr/adr-28.md) decision 6). The draft lands in the same sections as hand-written minutes, for them to fix and post. Web first (#4312); the recording path reuses the same draft, and so does the phone (#C4PR): an officer who may edit a draft pastes notes in a tall sheet, uses the draft and posts, and changes a section by hand on the web, because the section editor has no phone twin yet. The phone offers Write minutes on an event only where drafting is offered, so it never leaves an empty draft it can't fill.
+The officer who takes the minutes pastes or types what they wrote down during the meeting and asks for a draft ([ADR-28](../architecture/adr/adr-28.md) decision 6). The draft lands in the same sections as hand-written minutes, for them to fix and post. Web first (#4312); the recording path reuses the same draft, and so does the phone (#4415): an officer who may edit a draft pastes notes in a tall sheet, uses the draft and posts, and changes a section by hand on the web, because the section editor has no phone twin yet. The phone offers Write minutes on an event only where drafting is offered, so it never leaves an empty draft it can't fill.
 
 - **Where it is.** A "Your notes" box sits above the sections of a draft the officer may edit. It shows only to a holder of `meetings:record`, when the server has AI on and the president has turned meeting notes on ([`ai.md` § Consent](ai.md#consent)). An officer who has not answered the AI sheet sees the box with one plain line saying so, and can't ask until they have.
 - **Asking** needs the right to edit these minutes as well. Typing in the sections is saved first. If the sections already hold something, the page asks before the draft replaces them. Attendees are never touched.
@@ -129,7 +129,7 @@ The officer who recorded the meeting on their phone uploads the file on web and 
 
 ## Suggested tasks
 
-Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); the phone reads the same list (#C4PR; [`../ui/mobile/screens.md`](../ui/mobile/screens.md) § Suggested tasks), one suggestion at a time: it has no Accept all.
+Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); the phone reads the same list (#4415; [`../ui/mobile/screens.md`](../ui/mobile/screens.md) § Suggested tasks), one suggestion at a time: it has no Accept all.
 
 - **When.** Posting minutes turns each action item into a suggested task. A draft suggests nothing: its action items are still being written, and a draft is its author's. Hand-written minutes are treated exactly as drafted ones are.
 - **No model is asked.** By the time minutes post, an action item already holds what a task needs: its words, an owner only when one was named, a day only when one was said. A drafted item got those from the notes under the checks in [Drafting from notes](#drafting-from-notes), and the officer read it before posting. So a suggested task is the action item as posted, and nothing leaves Frapp to make it.

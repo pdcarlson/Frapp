@@ -43,7 +43,7 @@ permissions for free rather than reimplementing them at the index layer.
 It also follows directly from the non-goal below: structured data already *is* canon, so the AI
 should query canon rather than keep a stale copy of it.
 
-> **The mobile s17 mock that flattened this split is gone** (2026-11-12, #C4PR). Until then
+> **The mobile s17 mock that flattened this split is gone** (2026-11-12, #4415). Until then
 > `apps/mobile/lib/ask/corpus.ts` answered from one keyword table that mixed events and dues
 > amounts in with indexed prose, behind a build flag (`EXPO_PUBLIC_ASK_ENABLED`), so the
 > screen could be reviewed before any API existed. This note said a real implementation MUST
@@ -137,7 +137,7 @@ The model is also prompted to surface conflicts ("I see two different answers โ€
 
 ## Ask Frapp
 
-A member asks a question in their own words and gets an answer from what they could open themselves, with each claim tied to its source. Built 2026-11-12 on web (#450, #451) and on the phone (#C4PR; the sheet is [`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17, with the same words and the same answer cutting as web). On the phone a channel-message source opens its channel at the newest message, since the channel screen has no jump-to-message yet. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned Ask on, and it needs the member's yes on the AI sheet.
+A member asks a question in their own words and gets an answer from what they could open themselves, with each claim tied to its source. Built 2026-11-12 on web (#450, #451) and on the phone (#4415; the sheet is [`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17, with the same words and the same answer cutting as web). On the phone a channel-message source opens its channel at the newest message, since the channel screen has no jump-to-message yet. It is off unless the server has `AI_ENABLED` on and the chapter's president has turned Ask on, and it needs the member's yes on the AI sheet.
 
 - **Where it is.** The Ask pill in the web top bar opens a panel on the right edge that leaves the page usable beside it ([`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) ยง Top bar). With Ask off for the chapter, or for a member without `ai:use`, there is no pill.
 - **One question, one answer.** Each question is answered on its own. Ask keeps no conversation, and the panel says so under the field. Follow-up questions that build on the last answer are not built.
