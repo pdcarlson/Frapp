@@ -1,4 +1,5 @@
 import { isBetaOffModule } from "@repo/validation";
+import { VOICE_PROTOTYPE_ENABLED } from "@/lib/voice/flag";
 
 /**
  * The personal Settings page's sections (`/preferences`, #3856).
@@ -20,6 +21,8 @@ export const PERSONAL_SETTINGS_PATH = "/preferences";
 export const PERSONAL_SETTINGS_SECTIONS = [
   { value: "notifications", label: "Notifications", group: "account" },
   { value: "appearance", label: "Appearance and chat", group: "account" },
+  // Voice prototype (#3866): shown only while its dev flag is on.
+  { value: "voice", label: "Voice and audio", group: "account" },
   { value: "account", label: "Account", group: "account" },
   { value: "alerts", label: "Chapter alerts", group: "chapter" },
   { value: "blocked", label: "Blocked members", group: "chapter" },
@@ -43,6 +46,7 @@ const SECTION_MODULES: Partial<Record<PersonalSettingsSection, string>> = {
 export function isPersonalSettingsSectionShown(
   section: PersonalSettingsSection,
 ): boolean {
+  if (section === "voice" && !VOICE_PROTOTYPE_ENABLED) return false;
   const moduleKey = SECTION_MODULES[section];
   return !(moduleKey && isBetaOffModule(moduleKey));
 }

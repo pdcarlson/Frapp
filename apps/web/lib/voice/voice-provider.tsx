@@ -39,11 +39,19 @@ import {
   type VoiceSignal,
 } from "@/lib/voice/voice-mesh";
 import { aloneScale, aloneStage } from "@/lib/voice/alone-timer";
+import {
+  applyOutput,
+  audioConstraints,
+  readVoicePrefs,
+  useVoicePrefs,
+} from "@/lib/voice/voice-prefs";
 
 export type VoiceParticipant = {
   peerId: string;
   userId: string;
   muted: boolean;
+  /** Hears nothing, as Discord's deafen; always muted too. */
+  deafened: boolean;
   joinedAt: number;
 };
 
@@ -57,6 +65,7 @@ export type VoiceState = {
   status: "idle" | "connecting" | "live";
   error: string | null;
   localMuted: boolean;
+  localDeafened: boolean;
   /** The channel whose room this state describes (joined, else viewed). */
   observedChannelId: string | null;
   /** Who is in the observed room, you included once you join. */
@@ -75,6 +84,7 @@ export type VoiceState = {
   join: (channelId: string, channelName: string) => Promise<void>;
   leave: () => void;
   toggleMute: () => void;
+  toggleDeafen: () => void;
 };
 
 const noop = () => {};
@@ -86,6 +96,7 @@ const DISABLED: VoiceState = {
   status: "idle",
   error: null,
   localMuted: false,
+  localDeafened: false,
   observedChannelId: null,
   participants: [],
   speaking: EMPTY,
@@ -98,6 +109,7 @@ const DISABLED: VoiceState = {
   join: async () => {},
   leave: noop,
   toggleMute: noop,
+  toggleDeafen: noop,
 };
 
 const VoiceContext = createContext<VoiceState>(DISABLED);
@@ -130,6 +142,7 @@ function rosterFrom(channel: RealtimeChannel): VoiceParticipant[] {
         peerId: meta.peerId,
         userId: meta.userId,
         muted: meta.muted === true,
+        deafened: meta.deafened === true,
         joinedAt: typeof meta.joinedAt === "number" ? meta.joinedAt : 0,
       });
     }
@@ -152,6 +165,11 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<VoiceState["status"]>("idle");
   const [error, setError] = useState<string | null>(null);
   const [localMuted, setLocalMuted] = useState(false);
+  const [localDeafened, setLocalDeafened] = useState(false);
+  const deafenedRef = useRef(false);
+  /** The mute state to go back to on undeafen, as Discord does. */
+  const mutedBeforeDeafenRef = useRef(false);
+  const prefs = useVoicePrefs();
   const [participants, setParticipants] = useState<VoiceParticipant[]>([]);
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(EMPTY);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(
@@ -179,6 +197,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
         peerId: selfPeerId,
         userId,
         muted: mutedRef.current,
+        deafened: deafenedRef.current,
         joinedAt: joinedAtRef.current,
       });
     },
@@ -241,6 +260,8 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     setStatus("idle");
     setLocalMuted(false);
     mutedRef.current = false;
+    setLocalDeafened(false);
+    deafenedRef.current = false;
     aloneSinceRef.current = null;
     setAloneAsk(false);
   }, [teardown]);
@@ -255,11 +276,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
+          audio: audioConstraints(readVoicePrefs()),
           video: false,
         });
       } catch (cause) {
@@ -272,8 +289,11 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
         return;
       }
       localStreamRef.current = stream;
-      mutedRef.current = false;
-      setLocalMuted(false);
+      // "Join muted" from Voice and audio settings.
+      const startMuted = readVoicePrefs().joinMuted;
+      mutedRef.current = startMuted;
+      setLocalMuted(startMuted);
+      for (const track of stream.getAudioTracks()) track.enabled = !startMuted;
       joinedAtRef.current = Date.now();
       const next = { channelId, channelName };
       joinedRef.current = next;
@@ -306,7 +326,33 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     [leave, observedChannelId, selfPeerId, trackSelf, userId],
   );
 
+  const setMicEnabled = useCallback((enabled: boolean) => {
+    for (const track of localStreamRef.current?.getAudioTracks() ?? []) {
+      track.enabled = enabled;
+    }
+  }, []);
+
+  const toggleDeafen = useCallback(() => {
+    const deafen = !deafenedRef.current;
+    deafenedRef.current = deafen;
+    setLocalDeafened(deafen);
+    if (deafen) {
+      mutedBeforeDeafenRef.current = mutedRef.current;
+      mutedRef.current = true;
+    } else {
+      mutedRef.current = mutedBeforeDeafenRef.current;
+    }
+    setLocalMuted(mutedRef.current);
+    setMicEnabled(!mutedRef.current);
+    trackSelf(channelRef.current);
+  }, [setMicEnabled, trackSelf]);
+
   const toggleMute = useCallback(() => {
+    // Unmuting while deafened undeafens too, as in Discord.
+    if (deafenedRef.current && mutedRef.current) {
+      deafenedRef.current = false;
+      setLocalDeafened(false);
+    }
     const muted = !mutedRef.current;
     mutedRef.current = muted;
     setLocalMuted(muted);
@@ -315,6 +361,37 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
     }
     trackSelf(channelRef.current);
   }, [trackSelf]);
+
+  // A new microphone, or new processing, mid-call: swap the track in place.
+  const inputKey = `${prefs.inputDeviceId ?? ""}|${prefs.noiseSuppression}|${prefs.echoCancellation}`;
+  const inputKeyRef = useRef(inputKey);
+  const [localStreamVersion, setLocalStreamVersion] = useState(0);
+  useEffect(() => {
+    if (inputKeyRef.current === inputKey) return;
+    inputKeyRef.current = inputKey;
+    if (!joinedRef.current || !localStreamRef.current) return;
+    let cancelled = false;
+    void navigator.mediaDevices
+      .getUserMedia({ audio: audioConstraints(readVoicePrefs()), video: false })
+      .then((next) => {
+        if (cancelled || !joinedRef.current) {
+          for (const track of next.getTracks()) track.stop();
+          return;
+        }
+        const previous = localStreamRef.current;
+        for (const track of next.getAudioTracks()) {
+          track.enabled = !mutedRef.current;
+        }
+        localStreamRef.current = next;
+        meshRef.current?.replaceLocalStream(next);
+        for (const track of previous?.getTracks() ?? []) track.stop();
+        setLocalStreamVersion((v) => v + 1);
+      })
+      .catch(() => setError("Couldn't switch to that microphone."));
+    return () => {
+      cancelled = true;
+    };
+  }, [inputKey]);
 
   // Leaving the page leaves the room. `pagehide` untracks at once, so the
   // others don't keep seeing you until presence notices the socket is gone.
@@ -394,7 +471,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       window.clearInterval(timer);
       for (const meter of meters.values()) meter.dispose();
     };
-  }, [joined, remoteStreams, selfPeerId]);
+  }, [joined, remoteStreams, selfPeerId, localStreamVersion]);
 
   const connectedPeers = useMemo(
     () => new Set(remoteStreams.keys()) as ReadonlySet<string>,
@@ -409,6 +486,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       status,
       error,
       localMuted,
+      localDeafened,
       observedChannelId,
       participants,
       speaking,
@@ -421,6 +499,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       join,
       leave,
       toggleMute,
+      toggleDeafen,
     }),
     [
       selfPeerId,
@@ -428,6 +507,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       status,
       error,
       localMuted,
+      localDeafened,
       observedChannelId,
       participants,
       speaking,
@@ -439,6 +519,7 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       join,
       leave,
       toggleMute,
+      toggleDeafen,
     ],
   );
 
@@ -448,14 +529,27 @@ function VoiceProviderInner({ children }: { children: ReactNode }) {
       {/* The other people's audio. Hidden: the bar is the only call UI. */}
       <div hidden aria-hidden>
         {[...remoteStreams].map(([peerId, stream]) => (
-          <RemoteAudio key={peerId} stream={stream} />
+          <RemoteAudio
+            key={peerId}
+            stream={stream}
+            deafened={localDeafened}
+            outputDeviceId={prefs.outputDeviceId}
+          />
         ))}
       </div>
     </VoiceContext.Provider>
   );
 }
 
-function RemoteAudio({ stream }: { stream: MediaStream }) {
+function RemoteAudio({
+  stream,
+  deafened,
+  outputDeviceId,
+}: {
+  stream: MediaStream;
+  deafened: boolean;
+  outputDeviceId: string | null;
+}) {
   const ref = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     const element = ref.current;
@@ -466,5 +560,8 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
       element.srcObject = null;
     };
   }, [stream]);
-  return <audio ref={ref} autoPlay />;
+  useEffect(() => {
+    if (ref.current) applyOutput(ref.current, outputDeviceId);
+  }, [outputDeviceId]);
+  return <audio ref={ref} autoPlay muted={deafened} />;
 }

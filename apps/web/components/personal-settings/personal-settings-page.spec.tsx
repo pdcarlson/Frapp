@@ -122,6 +122,7 @@ describe("personal settings sections", () => {
     ).toEqual([
       "/preferences",
       "/preferences?section=appearance",
+      "/preferences?section=voice",
       "/preferences?section=account",
       "/preferences?section=alerts",
       "/preferences?section=blocked",

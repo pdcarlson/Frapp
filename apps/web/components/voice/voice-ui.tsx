@@ -14,7 +14,15 @@
  * Every piece renders nothing unless the prototype flag is on.
  */
 
-import { Headphones, Mic, MicOff, PhoneOff } from "lucide-react";
+import Link from "next/link";
+import {
+  HeadphoneOff,
+  Headphones,
+  Mic,
+  MicOff,
+  PhoneOff,
+  Settings,
+} from "lucide-react";
 import { useEffect } from "react";
 import { useMemberDisplayNames } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -55,7 +63,14 @@ function VoiceAvatar({
           {initials(name)}
         </AvatarFallback>
       </Avatar>
-      {participant.muted ? (
+      {participant.deafened ? (
+        <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-surface-1">
+          <HeadphoneOff
+            className="h-2.5 w-2.5 text-destructive-text"
+            aria-hidden
+          />
+        </span>
+      ) : participant.muted ? (
         <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-surface-1">
           <MicOff className="h-2.5 w-2.5 text-destructive-text" aria-hidden />
         </span>
@@ -166,6 +181,23 @@ export function VoiceRowParticipants({ channelId }: { channelId: string }) {
 /** The connected panel at the bottom of the nav, on every route. */
 export function VoiceBar({ collapsed }: { collapsed: boolean }) {
   const voice = useVoice();
+  const inCall = voice.joined !== null;
+  const { toggleMute, toggleDeafen } = voice;
+  // Discord's shortcuts, so nobody learns new ones: Ctrl/Cmd+Shift+M and +D.
+  // Only the expanded bar binds them; the rail copy renders alongside it.
+  useEffect(() => {
+    if (!inCall || collapsed) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "m") toggleMute();
+      else if (key === "d") toggleDeafen();
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inCall, collapsed, toggleMute, toggleDeafen]);
   if (!voice.enabled) return null;
   if (!voice.joined && voice.autoLeftFrom) {
     return (
@@ -202,6 +234,35 @@ export function VoiceBar({ collapsed }: { collapsed: boolean }) {
   const roster = voice.participants;
   const waitingForOthers = roster.every((p) => p.peerId === voice.selfPeerId);
   const muteLabel = voice.localMuted ? "Unmute" : "Mute";
+  const deafenLabel = voice.localDeafened ? "Undeafen" : "Deafen";
+  const muteButton = (
+    <IconButton
+      label={muteLabel}
+      title="Ctrl+Shift+M"
+      onClick={voice.toggleMute}
+      aria-pressed={voice.localMuted}
+    >
+      {voice.localMuted ? (
+        <MicOff className="h-5 w-5 text-destructive-text" aria-hidden />
+      ) : (
+        <Mic className="h-5 w-5" aria-hidden />
+      )}
+    </IconButton>
+  );
+  const deafenButton = (
+    <IconButton
+      label={deafenLabel}
+      title="Ctrl+Shift+D"
+      onClick={voice.toggleDeafen}
+      aria-pressed={voice.localDeafened}
+    >
+      {voice.localDeafened ? (
+        <HeadphoneOff className="h-5 w-5 text-destructive-text" aria-hidden />
+      ) : (
+        <Headphones className="h-5 w-5" aria-hidden />
+      )}
+    </IconButton>
+  );
 
   if (collapsed) {
     return (
@@ -209,14 +270,9 @@ export function VoiceBar({ collapsed }: { collapsed: boolean }) {
         data-voice-bar=""
         className="mx-auto mb-2 flex flex-col items-center gap-1 rounded-md border border-border bg-card p-1"
       >
-        <Headphones className="h-4 w-4 text-success" aria-label="In voice" />
-        <IconButton label={muteLabel} onClick={voice.toggleMute}>
-          {voice.localMuted ? (
-            <MicOff className="h-5 w-5 text-destructive-text" aria-hidden />
-          ) : (
-            <Mic className="h-5 w-5" aria-hidden />
-          )}
-        </IconButton>
+        <span className="h-2 w-2 rounded-full bg-success" aria-label="In voice" />
+        {muteButton}
+        {deafenButton}
         <IconButton label="Leave voice" onClick={voice.leave}>
           <PhoneOff className="h-5 w-5 text-destructive-text" aria-hidden />
         </IconButton>
@@ -239,17 +295,8 @@ export function VoiceBar({ collapsed }: { collapsed: boolean }) {
             #{voice.joined.channelName}
           </span>
         </span>
-        <IconButton
-          label={muteLabel}
-          onClick={voice.toggleMute}
-          aria-pressed={voice.localMuted}
-        >
-          {voice.localMuted ? (
-            <MicOff className="h-5 w-5 text-destructive-text" aria-hidden />
-          ) : (
-            <Mic className="h-5 w-5" aria-hidden />
-          )}
-        </IconButton>
+        {muteButton}
+        {deafenButton}
         <IconButton label="Leave voice" onClick={voice.leave}>
           <PhoneOff className="h-5 w-5 text-destructive-text" aria-hidden />
         </IconButton>
@@ -289,6 +336,14 @@ export function VoiceBar({ collapsed }: { collapsed: boolean }) {
             Waiting for others to join
           </span>
         ) : null}
+        <Link
+          href="/preferences?section=voice"
+          className="ml-auto flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground hover:bg-card-hover hover:text-foreground"
+          aria-label="Voice and audio settings"
+          title="Voice and audio settings"
+        >
+          <Settings className="h-4 w-4" aria-hidden />
+        </Link>
       </div>
     </section>
   );

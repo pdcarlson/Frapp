@@ -128,6 +128,22 @@ export class VoiceMesh {
     }
   }
 
+  /**
+   * Swap the microphone under every live connection (a new device, or new
+   * processing settings) without renegotiating.
+   */
+  replaceLocalStream(stream: MediaStream): void {
+    const track = stream.getAudioTracks()[0] ?? null;
+    (this.options as { localStream: MediaStream }).localStream = stream;
+    for (const { pc } of this.peers.values()) {
+      for (const sender of pc.getSenders()) {
+        if (sender.track?.kind === "audio" || sender.track === null) {
+          void sender.replaceTrack(track);
+        }
+      }
+    }
+  }
+
   close(): void {
     this.closed = true;
     for (const peerId of [...this.peers.keys()]) this.drop(peerId);

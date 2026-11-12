@@ -19,6 +19,7 @@ import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
 import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
 import { ProfileSection } from "@/components/profile/profile-section";
+import { VoiceSettingsSection } from "@/components/voice/voice-settings-section";
 import {
   SettingsNavRail,
   type SettingsNavGroup,
@@ -100,6 +101,8 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
           <ChatDensityControl />
         </ProfileSection>
       );
+    case "voice":
+      return <VoiceSettingsSection />;
     case "account":
       return <AccountSection />;
     case "alerts":
