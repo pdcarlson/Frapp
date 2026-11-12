@@ -3747,3 +3747,21 @@ The new index is harmless to keep, and nothing needs the dropped one back. To re
 drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
+
+## Rollback chat search with a filter and no text (20261112020000)
+
+* **Migration**: `20261112020000_chat_search_filter_only.sql`
+
+One new function and two new partial indexes. It writes no row on apply.
+
+**Revert the API first**, because the API from the same PR calls the function for every message search with a filter and no text: redeploy the earlier API, whose `SupabaseSearchRepository.searchMessages` queried `chat_messages` directly for that case. Then the function is unused and harmless to keep.
+
+**To remove it as well, revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop function if exists public.search_chat_messages_filtered(uuid[], uuid, timestamptz, timestamptz, text[], integer);
+drop index if exists public.idx_chat_messages_search_poll;
+drop index if exists public.idx_chat_messages_search_link;
+```
+
+Dropping the indexes only makes `has=poll` and `has=link` slower; nothing reads them for correctness.

@@ -206,9 +206,10 @@ export class SearchService {
    * expose a per-query `statement_timeout` — but every scan is capped at
    * {@link SEARCH_LIMIT} and a message search with text is index-backed rather
    * than a sequential `ILIKE`, so tripping it should be rare rather than
-   * routine. A filter with no text (#3958) is the exception: it has no text
-   * match to narrow by, and its cost is spec/behavior/search.md § Message
-   * filters'.
+   * routine. A filter with no text (#3958) has no text match to narrow by and
+   * is answered per channel through indexes instead (#3965); an attachment
+   * filter over a large archive is the slowest case left
+   * (spec/behavior/search.md § Message filters).
    */
   async searchWithinBudget(
     chapterId: string,
