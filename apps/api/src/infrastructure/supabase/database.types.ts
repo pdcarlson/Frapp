@@ -195,6 +195,17 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       /**
+       * `20261112151000` (#3583). The caller's `users.id`, the chapter's
+       * subscription state and module toggles, the caller's membership row
+       * in it and the roles that row names, in one round trip, for the
+       * chapter guards' prefetch. Service role only. Each part is `null`
+       * (`roles` is `[]`) when its row does not exist.
+       */
+      get_request_context: {
+        Args: { p_auth_id: string; p_chapter_id: string };
+        Returns: Json;
+      };
+      /**
        * `20260816190000` (C1 of #937). Unread and mention tallies for every
        * channel in a chapter, for one viewer, in one round trip.
        *

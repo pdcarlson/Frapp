@@ -19,7 +19,7 @@ import {
   resolveDisplayName,
   type DisplayNameMap,
 } from "./display-names";
-import { useViewerUserId } from "./use-user";
+import { PROFILE_QUERY_FILTERS, useViewerUserId } from "./use-user";
 import {
   memberAvatarHue,
   memberAvatarTint,
@@ -421,6 +421,46 @@ export function useUpdateMemberRoles() {
         queryKey: ["user", "me", "permissions", chapterId],
       });
     },
+  });
+}
+
+/**
+ * An officer fixes another member's name or graduation year (#4367,
+ * `PATCH /v1/members/{id}/profile`). Offer it only where the profile read says
+ * `viewer_can_edit_profile`: the API also refuses your own profile, anyone
+ * ranked at or above you, and a member who is in another chapter too.
+ *
+ * The name shows wherever the member does (the directory, chat's author
+ * labels through the roster, the alumni list, the activity feed), so this
+ * refetches the same reads a member's own profile edit does.
+ */
+export function useCorrectMemberProfile() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["members", "correct-member-profile"],
+    mutationFn: async ({
+      id,
+      ...body
+    }: {
+      id: string;
+      display_name?: string;
+      graduation_year?: number | null;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/members/{id}/profile", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () =>
+      Promise.all(
+        PROFILE_QUERY_FILTERS.filter(
+          // `["user", "me"]` is the viewer's own row, which this never touches.
+          (filters) => filters.queryKey?.[0] !== "user",
+        ).map((filters) => queryClient.invalidateQueries(filters)),
+      ),
   });
 }
 

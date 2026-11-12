@@ -252,7 +252,11 @@ const sidebarState = {
   levelsError: false,
   unreadError: false,
   pinnedIds: new Set<string>(),
-  levels: [] as { channel_id: string; level: string }[],
+  levels: [] as {
+    channel_id: string;
+    level: string;
+    from_chapter_level?: boolean;
+  }[],
   /** `users.id` → display name, as the roster read serves it. */
   memberNames: {} as Record<string, string>,
 };
@@ -1220,7 +1224,9 @@ vi.mock("./channel-menu", () => ({
     displayLock,
     searchChannels,
     searchMembers,
+    notificationFromChapterLevel,
   }: {
+    notificationFromChapterLevel?: boolean;
     displayLock?: { saving: boolean; onChange: (locked: boolean) => void };
     searchChannels: Array<{ id: string; label: string }>;
     searchMembers: Array<{ id: string; label: string }>;
@@ -1235,6 +1241,9 @@ vi.mock("./channel-menu", () => ({
     hideConversation?: { name: string; onHide: () => void };
   }) => (
     <div>
+      <span data-testid="menu-from-chapter-level">
+        {String(Boolean(notificationFromChapterLevel))}
+      </span>
       {/* What the Pinned panel would read: the block list's cases assert on it. */}
       <span data-testid="menu-messages">
         {messages.map((m) => m.id).join(",")}
@@ -5140,6 +5149,33 @@ describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
     expect(mockRouterPush).toHaveBeenCalledWith(
       "/chat-admin?channel=chan-random",
     );
+  });
+
+  // #4124: a level Settings → Chat messages decided reaches both menus, so
+  // each can say "(your default)"; one the member set on the channel doesn't.
+  it("marks levels from the chapter-wide setting for the rail and the header", () => {
+    sidebarState.levels = [
+      {
+        channel_id: "chan-general",
+        level: "mentions",
+        from_chapter_level: true,
+      },
+      { channel_id: "chan-random", level: "mentions" },
+    ];
+    try {
+      render(<ChatShell initialChannelId="chan-general" />);
+      expect(
+        railRowActions.value!.notificationFromChapterLevel!("chan-general"),
+      ).toBe(true);
+      expect(
+        railRowActions.value!.notificationFromChapterLevel!("chan-random"),
+      ).toBe(false);
+      expect(screen.getByTestId("menu-from-chapter-level").textContent).toBe(
+        "true",
+      );
+    } finally {
+      sidebarState.levels = [];
+    }
   });
 
   it("toasts each failed level change, not only the latest", async () => {

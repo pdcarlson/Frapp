@@ -3,9 +3,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ChevronDown,
   Loader2,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   UserMinus,
 } from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
@@ -21,7 +23,9 @@ import {
 } from "@repo/hooks";
 import {
   can,
+  CORRECTION_MENU_LABEL,
   memberAccessRoleIds,
+  phoneHref,
   removesMemberAccess,
   resolveRoleChips,
   type MemberRoleChip,
@@ -63,6 +67,7 @@ import {
   DetailRow,
 } from "@/components/members/member-detail-rows";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
+import { MemberCorrectionDialog } from "@/components/members/member-correction-dialog";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -239,8 +244,17 @@ function RoleChip({ chip }: { chip: MemberRoleChip }) {
  * they click a name. Mobile's sheet
  * (`apps/mobile/components/directory/member-detail-sheet.tsx`) is the
  * reference, and this draws its order: photo, name and the class-year line,
- * Message, roles as colored chips in the chapter's rank, email, member since,
- * then the custom fields the viewer may see, and the bio.
+ * Message, then how to reach them (phone, email) with member since, roles as
+ * colored chips in the chapter's rank, pledge class, the custom fields the
+ * viewer may see folded under More details, and the bio.
+ *
+ * **A contact card first** (#3711). A profile is opened to reach someone, so
+ * their phone and email come right under Message, before roles (Evan,
+ * 2026-11-10: "Contact info in the profile"). The phone is the member's own
+ * (`PATCH /v1/users/me`) and is a `tel:` link. A chapter's custom fields
+ * (T-shirt size, dietary, emergency contact) are logistics, not why a profile
+ * is opened, so they sit behind a More details row, closed on every opening
+ * (Shawn, 2026-11-09).
  *
  * **Header.** No title word and no name in the title row: the name heads the
  * body under the photo, and the row carries the close alone, as
@@ -263,6 +277,12 @@ function RoleChip({ chip }: { chip: MemberRoleChip }) {
  *
  * **Pledge class and order number** (#3939) sit under the roles, in the
  * chapter's own words; `MemberPledgeClassSection` owns them.
+ *
+ * **Edit name and graduation year** (#4367) is in the same `⋯`, for an officer
+ * the API says may fix them (`viewer_can_edit_profile`: `roles:manage`, the
+ * member ranks below them, and is in no other chapter). It opens
+ * `MemberCorrectionDialog`. Nothing else on someone's profile is an officer's
+ * to change.
  */
 export function MemberDetailSheet({
   open,
@@ -298,6 +318,14 @@ export function MemberDetailSheet({
   // the stale editor.
   if (!open && editingUserId !== null) setEditingUserId(null);
   const editingRoles = open && userId !== null && editingUserId === userId;
+  // Whose More details are open, keyed by member like the role editor, so the
+  // custom fields start folded on every member and every opening.
+  const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
+  if (!open && detailsUserId !== null) setDetailsUserId(null);
+  const detailsOpen = open && userId !== null && detailsUserId === userId;
+  const detailsRegionId = useId();
+  const [correcting, setCorrecting] = useState(false);
+  if (!open && correcting) setCorrecting(false);
 
   const fetched =
     memberQuery.data && typeof memberQuery.data === "object"
@@ -344,6 +372,9 @@ export function MemberDetailSheet({
     stringField(member, "avatar_url") ?? seedIdentity?.avatarUrl ?? null;
   const meta = metaLine(member);
   const email = stringField(member, "email");
+  const phone = stringField(member, "phone");
+  const phoneLink = phoneHref(phone, "call");
+  const textLink = phoneHref(phone, "text");
   const joined = formatDay(member?.created_at);
   const bio = stringField(member, "bio");
   const onboardingPending = member?.has_completed_onboarding === false;
@@ -388,6 +419,15 @@ export function MemberDetailSheet({
     !memberQuery.isError &&
     fetched?.viewer_can_remove === true &&
     dmTargetUserId !== currentUserId;
+  // The same kind of answer for fixing their name and year (#4367), from the
+  // profile read only, never the directory row that seeded the sheet.
+  const canCorrect =
+    !!memberId &&
+    !memberQuery.isError &&
+    fetched?.viewer_can_edit_profile === true &&
+    dmTargetUserId !== currentUserId;
+  const graduationYear =
+    typeof member?.graduation_year === "number" ? member.graduation_year : null;
 
   function startEditingRoles() {
     setSelectedRoleIds(memberRoleIds);
@@ -518,7 +558,7 @@ export function MemberDetailSheet({
           profile's face. Absent when it would hold nothing.
         */}
         <div className="flex h-14 shrink-0 items-start justify-end py-[15px] pr-14">
-          {canRemove ? (
+          {canRemove || canCorrect ? (
             <div className="flex h-[26px] items-center">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -535,13 +575,21 @@ export function MemberDetailSheet({
                   </IconButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-[220px]">
-                  <DropdownMenuItem
-                    onSelect={() => void handleRemoveMember()}
-                    className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
-                  >
-                    <UserMinus aria-hidden="true" />
-                    {REMOVE_FROM_CHAPTER_LABEL}
-                  </DropdownMenuItem>
+                  {canCorrect ? (
+                    <DropdownMenuItem onSelect={() => setCorrecting(true)}>
+                      <Pencil aria-hidden="true" />
+                      {CORRECTION_MENU_LABEL}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canRemove ? (
+                    <DropdownMenuItem
+                      onSelect={() => void handleRemoveMember()}
+                      className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
+                    >
+                      <UserMinus aria-hidden="true" />
+                      {REMOVE_FROM_CHAPTER_LABEL}
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -620,6 +668,65 @@ export function MemberDetailSheet({
                   Message
                 </Button>
               ) : null}
+
+              <dl className={cn("mt-6", DETAIL_LIST)}>
+                {phone ? (
+                  <DetailRow label="Phone">
+                    {phoneLink ? (
+                      <a
+                        href={phoneLink}
+                        className={cn(
+                          "rounded-sm underline-offset-2 hover:underline",
+                          FOCUS_RING_OFFSET,
+                        )}
+                      >
+                        {phone}
+                      </a>
+                    ) : (
+                      phone
+                    )}
+                    {textLink ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={textLink}
+                          aria-label={`Text ${displayName}`}
+                          className={cn(
+                            "rounded-sm underline-offset-2 hover:underline",
+                            FOCUS_RING_OFFSET,
+                          )}
+                        >
+                          Text
+                        </a>
+                      </>
+                    ) : null}
+                  </DetailRow>
+                ) : null}
+                {email ? (
+                  <DetailRow label="Email">
+                    <a
+                      href={`mailto:${email}`}
+                      className={cn(
+                        "rounded-sm underline-offset-2 hover:underline",
+                        FOCUS_RING_OFFSET,
+                      )}
+                    >
+                      {email}
+                    </a>
+                  </DetailRow>
+                ) : null}
+                <DetailRow label="Member since">
+                  {joined ?? "Not recorded"}
+                </DetailRow>
+                {typeof points === "number" ? (
+                  <DetailRow label="Points">{points}</DetailRow>
+                ) : null}
+                {onboardingPending ? (
+                  <DetailRow label="Onboarding">
+                    <Badge variant="warning">Pending</Badge>
+                  </DetailRow>
+                ) : null}
+              </dl>
 
               <section
                 className="mt-6 space-y-2"
@@ -719,45 +826,38 @@ export function MemberDetailSheet({
                 }
               />
 
-              <dl className={cn("mt-6", DETAIL_LIST)}>
-                {email ? (
-                  <DetailRow label="Email">
-                    <a
-                      href={`mailto:${email}`}
-                      className={cn(
-                        "rounded-sm underline-offset-2 hover:underline",
-                        FOCUS_RING_OFFSET,
-                      )}
-                    >
-                      {email}
-                    </a>
-                  </DetailRow>
-                ) : null}
-                <DetailRow label="Member since">
-                  {joined ?? "Not recorded"}
-                </DetailRow>
-                {typeof points === "number" ? (
-                  <DetailRow label="Points">{points}</DetailRow>
-                ) : null}
-                {onboardingPending ? (
-                  <DetailRow label="Onboarding">
-                    <Badge variant="warning">Pending</Badge>
-                  </DetailRow>
-                ) : null}
-              </dl>
-
               {customFields.length > 0 ? (
                 <section className="mt-6 space-y-2">
-                  <h3 className="text-label font-semibold text-muted-foreground">
-                    Custom fields
-                  </h3>
-                  <dl className={DETAIL_LIST}>
-                    {customFields.map((field) => (
-                      <DetailRow key={field.field_id} label={field.label}>
-                        {formatCustomValue(field)}
-                      </DetailRow>
-                    ))}
-                  </dl>
+                  <button
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    aria-controls={detailsRegionId}
+                    onClick={() =>
+                      setDetailsUserId(detailsOpen ? null : userId)
+                    }
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md border border-border px-3 py-2.5 text-left text-sm hover:bg-card-hover",
+                      FOCUS_RING_OFFSET,
+                    )}
+                  >
+                    More details
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        detailsOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                  {detailsOpen ? (
+                    <dl id={detailsRegionId} className={DETAIL_LIST}>
+                      {customFields.map((field) => (
+                        <DetailRow key={field.field_id} label={field.label}>
+                          {formatCustomValue(field)}
+                        </DetailRow>
+                      ))}
+                    </dl>
+                  ) : null}
                 </section>
               ) : null}
 
@@ -797,6 +897,18 @@ export function MemberDetailSheet({
           this sheet while it is still open (#2302).
         */}
         {confirmDialog}
+        {memberId && canCorrect ? (
+          <MemberCorrectionDialog
+            open={correcting}
+            onOpenChange={setCorrecting}
+            memberId={memberId}
+            label={displayName}
+            // The stored name, not the "Member 1a2b3c4d" label an unnamed
+            // member shows as: the field opens blank for them.
+            displayName={(stringField(member, "display_name") ?? "").trim()}
+            graduationYear={graduationYear}
+          />
+        ) : null}
       </PanelContent>
     </Sheet>
   );

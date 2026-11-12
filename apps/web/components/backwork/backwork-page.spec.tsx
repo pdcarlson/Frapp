@@ -942,6 +942,25 @@ describe("BackworkPage upload: course name (#3848)", () => {
     expect(within(dialog).queryByLabelText(/course name/i)).toBeNull();
   });
 
+  // #3918: the API files "math" under "MATH", so the sheet must find the
+  // course the same way, and label it with the stored spelling.
+  it("finds a named course whatever case its department code is typed in", async () => {
+    taxonomyData.courses = [
+      {
+        id: "c1",
+        department_id: "dept-math",
+        course_number: "1010",
+        course_key: "1010",
+        name: "Calculus I",
+        nicknames: [],
+      },
+    ];
+    const dialog = await typeCourse(" math", "1010");
+
+    expect(within(dialog).getByText("Calculus I")).toBeInTheDocument();
+    expect(within(dialog).getByText(/MATH 1010 ·/)).toBeInTheDocument();
+  });
+
   it("asks for a new course's name and confirms the upload with it", async () => {
     const dialog = await typeCourse("MATH", "1010");
 
