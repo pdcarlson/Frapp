@@ -30,6 +30,7 @@ All meeting summaries use a **single global template** with toggleable sections 
 
 - Attendees (default ON)
 - Summary / Overview (default ON)
+- Announcements (default ON)
 - Decisions (default ON)
 - Action items with owner + due date (default ON)
 - Discussion log (default OFF — verbose)
@@ -37,7 +38,9 @@ All meeting summaries use a **single global template** with toggleable sections 
 - New business (default OFF)
 - Officer reports (default OFF)
 
-Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)). The template is the same across all meeting types — type only affects AI summarization behavior.
+Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)), on the Meetings page's Rules. The template is the same across all meeting types — type only affects AI summarization behavior. The sections always show in the order above. A section switched off keeps what minutes already wrote in it, and those minutes still show it.
+
+> **Added 2026-11-12 (#4312).** Announcements joined the list: the Chapter type's minutes above name announcements, and there was no section to hold them. The list and its defaults are `MEETING_SECTIONS` in `@repo/validation`.
 
 Per-meeting-type template variants are deferred to v2+ pending real usage signal that chapters want them.
 
@@ -68,7 +71,24 @@ A meeting's **audience** is the members its event invites, by the event's own ru
 - Minutes and a transcript are readable by the audience, in the app and through AI alike. There is no second, wider rule for AI.
 - An Exec meeting is an event that invites the exec roles. Its minutes are then exec-only without any setting on the minutes themselves.
 - Changing who the event invites changes who can read the minutes, from that moment.
-- An event already has a notes field that officers use for minutes ([`events.md` § Event Creation](events.md#event-creation), "Meeting minutes"). Drafted minutes must not become a second place for the same meeting's minutes. How the two are stored is settled with the meetings schema ([#3290](https://github.com/pdcarlson/Frapp/issues/3290)).
+- **A draft is its author's.** Until minutes are posted, only the officer who started them and holders of `meetings:edit` can read them. Posting is what shows them to the audience. The author is held to the event's audience like anyone else: an author the event no longer shows itself to can't read, change, post or delete the minutes until it does.
+- **Minutes outlive their event.** Deleting an event keeps its minutes, which then have no audience: only holders of `meetings:edit` can read them, and they still say the event's name and date. Removing them takes `meetings:delete`.
+
+### Where minutes live
+
+Settled 2026-11-12 with the meetings schema (#4312, [#3290](https://github.com/pdcarlson/Frapp/issues/3290)'s storage question). Minutes are their own record (`meetings`), at most one per event, not the event's notes field. The notes field stays the event's own notes ([`events.md` § Event Creation](events.md#event-creation)): while the meetings module is on, the event sheet labels it "Notes" and shows the event's minutes beside it. Starting minutes copies the event's notes into the Summary once, so nothing typed there is typed twice; after that the two are separate. A chapter with the module off keeps using the notes field as before.
+
+## Writing minutes by hand
+
+The Notes way in, without the AI draft: an officer writes the minutes themselves. The AI draft ([ADR-28](../architecture/adr/adr-28.md) decision 6) fills the same sections later, and the officer reviews it on the same page.
+
+- **Start from the event.** The event sheet's Minutes row offers Write minutes to a holder of `meetings:record`, which starts them in one tap with the type the event's name suggests ("Exec meeting" opens on Exec), and Open minutes to anyone who can read them. The Meetings page's New minutes lists the last month of events, newest first.
+- **A meeting that isn't on the calendar** gets an event when its minutes start, by an officer who also holds `events:create`: its name, date and times, and who reads the minutes (everyone, or only some roles). That event requires nobody, earns no points and sends no new-event push, so writing up a meeting after the fact never pings the chapter or changes anyone's attendance record.
+- **Writing.** The minutes page is the document and its editor, as a shared doc is: the author's draft opens ready to type, and posted minutes open to read with Edit for whoever may change them. Attendees come from the event's check-ins (present, late, excused) and aren't typed. A decision may carry a vote count (for, against, abstaining), only when the meeting took one. An action item names someone only when the meeting did, and takes a due date. Empty decision and action rows are dropped on save.
+- **Two people editing.** A save carries the version it was made on. If someone saved since, the save is refused, the officer's typing stays on screen, and the page offers to load the other version. Nothing is overwritten silently.
+- **Posting** asks first, then shows the minutes to the audience and tells each member of it once, except the officer who posted: "Minutes posted", "The minutes from {event} are up." in the `events` notification category. Posting again tells nobody, and edits after posting tell nobody.
+- **Who changes them.** The author edits their own minutes, draft or posted, while the event still shows itself to them; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
+- **Off by default during the beta.** The `meetings` module is in `BETA_OFF_MODULES`, so no chapter sees Meetings in the nav or its settings page, and every write is refused, until it is taken out of that list.
 
 ## Suggested tasks
 
@@ -84,9 +104,9 @@ Minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) 
 A Standards meeting (a standards board or member-conduct hearing) is never recorded, never transcribed and never sent to a model.
 
 - **None of the three ways offers the type.** Notes are covered as much as recordings: an officer can't paste hearing notes into the drafter and pick Standards.
-- **The server refuses it too.** A request to draft minutes for a meeting typed Standards is rejected before any text is sent anywhere. The check does not live only in the app.
+- **The server refuses it too.** A request to draft minutes for a meeting typed Standards is rejected before any text is sent anywhere. The check does not live only in the app. Hand-written minutes can't be typed Standards either: `POST /v1/meetings` answers 400 `meeting.standards_refused`, and the table's own check refuses the type.
 - **An officer writes Standards minutes by hand,** and they are stored in the [vault](vault.md), which the AI never reads. Until the vault exists they are kept outside Frapp.
-- **Filing a hearing under another type to get a draft breaks this rule,** and the product can't detect it. The notes screen says so in one line where the type is picked.
+- **Filing a hearing under another type to get a draft breaks this rule,** and the product can't detect it. The notes screen says so in one line where the type is picked, as the hand-written minutes' type picker already does.
 
 ## Recording notice
 
@@ -105,9 +125,10 @@ Frapp stores no voiceprint and never recognises a member by voice. Speaker label
 
 ## Permissions
 
-- Starting minutes, by notes, upload or recording, requires the `meetings:record` permission. Default seeds: President, Secretary, exec roles.
-- Editing a posted summary requires `meetings:edit` (default: original recorder + President).
-- Deleting a meeting record requires `meetings:delete` (default: President only).
+- Starting minutes, by notes, upload or recording, requires the `meetings:record` permission. Default seeds: President, Secretary, exec roles. It is on the Exec board tier, so every role in the chapter's top tier holds it ([`rbac.md`](rbac.md)).
+- Editing someone else's minutes requires `meetings:edit` (default: President). The officer who started them always edits their own.
+- Deleting minutes requires `meetings:delete` (default: President only). The officer who started them may delete their own unposted draft.
+- Reading needs no meetings permission: the audience rule above decides it.
 
 ## Retention
 

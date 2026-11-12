@@ -12,10 +12,9 @@ import { AI_CONSENT_REPOSITORY } from '#domain/repositories/ai-consent.repositor
 import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
+import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { AiConsentService } from '../../application/services/ai/ai-consent.service';
-import { DiscardingAiUsageRecorder } from '../../infrastructure/ai/discarding-ai-usage-recorder';
-import { UnlimitedAiSpendReservation } from '../../infrastructure/ai/unlimited-ai-spend-reservation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentSeamModule } from './ai-consent-seam.module';
@@ -46,11 +45,37 @@ const fakeConsentRepository = {
 })
 class FakeAnalyticsModule {}
 
-// The consent routes' guards take the Supabase client, which the app's
-// global SupabaseModule provides. Nothing here calls it.
+const RESERVATION = '0c000000-0000-4000-8000-000000000714';
+const rpc = jest.fn((fn: string) => {
+  if (fn === 'reserve_ai_spend') {
+    return Promise.resolve({
+      data: [
+        {
+          reservation_id: RESERVATION,
+          refused: null,
+          platform_spent_before: 0,
+          platform_spent_after: 1,
+        },
+      ],
+      error: null,
+    });
+  }
+  if (fn === 'settle_ai_spend') {
+    return Promise.resolve({ data: 'settled', error: null });
+  }
+  return Promise.resolve({
+    data: null,
+    error: { message: `unexpected ${fn}` },
+  });
+});
+
+/**
+ * The app's Supabase module is global; this stands in for it. The spend
+ * ledger calls its RPCs; the consent routes' guards take it and never call it.
+ */
 @Global()
 @Module({
-  providers: [{ provide: SUPABASE_CLIENT, useValue: {} }],
+  providers: [{ provide: SUPABASE_CLIENT, useValue: { rpc } }],
   exports: [SUPABASE_CLIENT],
 })
 class FakeSupabaseModule {}
@@ -88,21 +113,25 @@ describe('AiModule', () => {
     if (original === undefined) delete process.env.AI_ENABLED;
     else process.env.AI_ENABLED = original;
     track.mockClear();
+    rpc.mockClear();
     consentRows.settings = null;
     consentRows.consent = null;
   });
 
-  it('binds consent to the consent gates, and the other seams to their no-op defaults', async () => {
+  it('binds each seam from its own module: consent to the gates, spend and usage to one ledger', async () => {
     const moduleRef = await compile({});
     expect(
       moduleRef.select(AiConsentSeamModule).get<unknown>(AI_CONSENT_CHECK),
     ).toBeInstanceOf(AiConsentService);
-    expect(
-      moduleRef.select(AiSpendSeamModule).get<unknown>(AI_SPEND_RESERVATION),
-    ).toBeInstanceOf(UnlimitedAiSpendReservation);
-    expect(
-      moduleRef.select(AiUsageSeamModule).get<unknown>(AI_USAGE_RECORDER),
-    ).toBeInstanceOf(DiscardingAiUsageRecorder);
+    const spend = moduleRef
+      .select(AiSpendSeamModule)
+      .get<unknown>(AI_SPEND_RESERVATION);
+    const usage = moduleRef
+      .select(AiUsageSeamModule)
+      .get<unknown>(AI_USAGE_RECORDER);
+    expect(spend).toBeInstanceOf(AiSpendLedgerService);
+    // One instance: a hold and its settlement go through the same ledger.
+    expect(usage).toBe(spend);
   });
 
   it('boots with nothing configured and answers "not available"', async () => {
@@ -128,6 +157,8 @@ describe('AiModule', () => {
       ),
     ).resolves.toEqual({ status: 'unavailable', reason: 'not_configured' });
     expect(track).not.toHaveBeenCalled();
+    // Nothing was held: a call that is not made touches no ledger.
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('refuses a call for a member who has not said yes, or in a chapter with the family off', async () => {
@@ -198,5 +229,30 @@ describe('AiModule', () => {
       citations: [],
     });
     expect(track).toHaveBeenCalledTimes(1);
+
+    // Held before the call, settled after it, against the same row, with no
+    // text in either.
+    expect(rpc.mock.calls.map(([fn]) => fn)).toEqual([
+      'reserve_ai_spend',
+      'settle_ai_spend',
+    ]);
+    const [[, held], [, settled]] = rpc.mock.calls as unknown as [
+      [string, Record<string, unknown>],
+      [string, Record<string, unknown>],
+    ];
+    expect(held).toMatchObject({
+      p_chapter_id: 'c',
+      p_user_id: 'u',
+      p_task: 'ask.answer',
+      p_provider: 'scripted',
+      // Scripted replies cost nothing: no platform cap.
+      p_platform_cap_micro_usd: null,
+    });
+    expect(settled).toMatchObject({
+      p_reservation_id: RESERVATION,
+      p_outcome: 'completed',
+      p_bill_reservation: false,
+    });
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain('When is formal?');
   });
 });

@@ -162,6 +162,7 @@ const MODULE_ROWS = [
   "Study zones",
   "Tasks",
   "Polls",
+  "Meetings",
   "Documents",
   "Backwork",
   "Reports",

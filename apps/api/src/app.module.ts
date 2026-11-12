@@ -14,6 +14,7 @@ import { MemberModule } from './modules/member/member.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
+import { MeetingModule } from './modules/meeting/meeting.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -74,6 +75,7 @@ import { validateEnv } from './config/env.validation';
     RbacModule,
     InviteModule,
     EventModule,
+    MeetingModule,
     AttendanceModule,
     PointsModule,
     BillingModule,

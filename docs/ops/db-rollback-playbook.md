@@ -3748,6 +3748,24 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback meeting minutes (20261112120400)
+
+* **Migration**: `20261112120400_meetings.sql`
+
+Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping the tables loses every set of minutes, so do it only before any chapter has written some, and export them first otherwise. In a later migration:
+
+```sql
+drop table if exists public.meeting_templates;
+drop table if exists public.meetings;
+update public.role_tiers
+   set permissions = array_remove(permissions, 'meetings:record')
+ where 'meetings:record' = any(permissions);
+```
+
+Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
+
 ## Rollback the AI run queue (20261112020000)
 
 * **Migration**: `20261112020000_ai_runs.sql`
@@ -3778,4 +3796,22 @@ Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_use
 ```sql
 drop table if exists public.user_ai_consents;
 drop table if exists public.chapter_ai_settings;
+
+## Rollback the AI usage ledger (20261112130000)
+
+* **Migration**: `20261112130000_ai_usage_ledger.sql`
+
+One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops every AI call, and with it every hold. Reverting the API code alone is not enough while `AI_ENABLED` is on: the gateway's seams would fall back to no caps at all, so turn AI off before reverting.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses the spend record every allowance, overage and reconciliation is computed from, so export it first if any chapter has used AI:
+
+```sql
+drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
+drop function if exists public.expire_ai_spend_holds(timestamptz);
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
+drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
+drop table if exists public.ai_usage_events;
+drop function if exists public.ai_usage_charge(text, bigint, bigint);
 ```

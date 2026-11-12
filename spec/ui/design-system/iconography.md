@@ -316,6 +316,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Study hours | `StudyGlyph` | `study`, `graduation-cap` |
 | Service hours | `ServiceGlyph` | `service`, `hand-heart` |
 | Polls (no nav row since #3871; kept for the chat composer's + menu, #3865) | `PollsGlyph` | `polls`, `chart-bar` |
+| Meetings (minutes) | `MeetingsGlyph` | `meetings`, `notebook` |
 | Documents | `DocumentsGlyph` | `documents`, `file-text` |
 | Backwork | `BackworkGlyph` | `backwork`, `books` |
 | Directory | `DirectoryGlyph` | `directory`, `users-three` |

@@ -47,7 +47,9 @@ describe("resolvePageTitle", () => {
       title: "Bulk upload",
       parent: { label: "Backwork", href: "/backwork" },
     });
-    expect(resolvePageTitle("/backwork/upload", (item) => item.href !== "/backwork")).toEqual({
+    expect(
+      resolvePageTitle("/backwork/upload", (item) => item.href !== "/backwork"),
+    ).toEqual({
       title: "Bulk upload",
     });
   });
@@ -61,6 +63,14 @@ describe("resolvePageTitle", () => {
     expect(resolvePageTitle("/preferences")).toEqual({ title: "Settings" });
     expect(resolvePageTitle("/settings")).toEqual({
       title: "Chapter settings",
+    });
+  });
+
+  it("titles one meeting's minutes under Meetings, and Meetings alone at its root", () => {
+    expect(resolvePageTitle("/meetings")).toEqual({ title: "Meetings" });
+    expect(resolvePageTitle("/meetings/0b9d1c1e")).toEqual({
+      title: "Minutes",
+      parent: { label: "Meetings", href: "/meetings" },
     });
   });
 

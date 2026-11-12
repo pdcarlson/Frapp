@@ -92,6 +92,15 @@ describe('SupabaseEventRepository — tenant scope', () => {
     expect(before).toEqual([]);
   });
 
+  it('findByIds returns only the ids that are in the caller chapter', async () => {
+    const events = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByIds([EVENT_A, EVENT_B], CHAPTER_B),
+    );
+
+    expect(events.map((e) => e.id)).toEqual([EVENT_B]);
+    expect(await repo.findByIds([], CHAPTER_B)).toEqual([]);
+  });
+
   it('findCreatedBy returns only the maker’s events in the caller chapter, not ended by the cutoff', async () => {
     // The maker has an event in each chapter; only the chapter separates them,
     // and only the maker separates theirs from someone else's in chapter B.

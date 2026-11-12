@@ -58,7 +58,7 @@ push (`apps/api/src/application/services/notification.service.ts`), which is wha
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
 its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread reply
 (mobile opens that as the thread over its channel; web's drawer opens the channel,
-[`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId`, `tasks` sends
+[`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId` (and `meetingId` for "Minutes posted", which web opens at `/meetings/<id>`; mobile opens the event until it shows minutes), `tasks` sends
 `taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
 `discord_import` send a bare `screen`. `chat_reports` names the officer report queue
 (the new-report notification, [`chat/README.md`](./chat/README.md#report)); web

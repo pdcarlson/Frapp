@@ -105,6 +105,22 @@ export class EventService {
   }
 
   /**
+   * The events among `ids` that `viewerId` may read, by the same rule as the
+   * list. One read however many ids, so a caller holding rows that point at
+   * events (minutes) doesn't read the whole calendar to check a few.
+   */
+  async findVisibleByIds(
+    ids: readonly string[],
+    chapterId: string,
+    viewerId: string,
+  ): Promise<Event[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const events = await this.eventRepo.findByIds(unique, chapterId);
+    return this.visibleOf(events, chapterId, viewerId);
+  }
+
+  /**
    * The events a member made that have not ended by `endsAfter`, earliest
    * start first, as many as `limit`. Narrowed by the same visibility rule as
    * the list: making an event grants no read of it, so a maker it leaves out
@@ -282,11 +298,13 @@ export class EventService {
       }
     }
 
-    await this.announcements.notifyEventCreated(
-      input.chapter_id,
-      parent,
-      input.created_by,
-    );
+    if (!input.silent) {
+      await this.announcements.notifyEventCreated(
+        input.chapter_id,
+        parent,
+        input.created_by,
+      );
+    }
 
     // The `/event` slash command asks us to surface an interactive event card
     // in chat. The card is server-originated (a client cannot forge
