@@ -36,6 +36,7 @@ export * from "./calendar-tasks";
 export * from "./service-entry-card";
 export * from "./rush-card";
 export * from "./use-points";
+export * from "./profile-stats";
 export * from "./use-chat";
 export * from "./chat-activity";
 export * from "./hide-conversation";

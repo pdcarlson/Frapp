@@ -238,6 +238,10 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
 ### Profile
 
 - **One form-width column** (`max-w-2xl`): the identity header, then the directory profile form as a section under its label. The settings blocks that used to follow it (quiet hours, notifications, chat density, blocked members, Discord history, the Account rows) are the personal Settings page since 2026-11-10 ([§ Two doors](#two-doors-chapter-settings-and-your-settings)), in the same grammar: a section under its label with at most one line under it, switches and Account rows as flush lists.
+- **Same content as the phone's s15, web's own grammar** ([#4137](https://github.com/pdcarlson/Frapp/issues/4137), Shawn, 2026-11-12). The header carries the name, the phone's major · company · 'YY line (from the saved profile), the email, and the photo controls; the initials take the member tint, or `--foreground` without one, as on the phone. Under it, the viewer's points and approved service hours (`useMyProfileStats` in `@repo/hooks`, shared with the phone so the two can't disagree) and their pledge class and order number, read-only and each only when set, as [`../mobile/screens.md`](../mobile/screens.md) s15 draws them. Three differences are deliberate:
+  - The photo sits beside the name, not centred over it: a desktop profile reads left to right, as Slack's and LinkedIn's do on the web, and the form under it is left-aligned.
+  - The two numbers are stats on the page surface, label over number with no frame, as the Points page draws "My balance" ([§ Page grammar](#page-grammar)); the phone's two cards are its grouped-list grammar.
+  - Editing is an inline form with Save profile; the phone shows read-only rows that open a sheet. A desktop has the room to show every field editable at once, as Slack's and LinkedIn's web profile editors do, while the phone keeps a readable profile and edits on demand.
 
 ### Two doors: Chapter settings and your Settings
 

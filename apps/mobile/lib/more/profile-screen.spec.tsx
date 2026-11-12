@@ -9,7 +9,6 @@ import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
-import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
  * s12's service-hours total reads `GET /v1/service-entries`, which the
@@ -46,20 +45,19 @@ const usePledgeClasses = vi.fn((options?: { enabled?: boolean }) =>
     ? { data: undefined, isPending: true, isSuccess: false }
     : { data: pledgeClasses, isPending: false, isSuccess: true },
 );
-const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
-  data: [],
-  isPending: false,
-  isError: false,
-}));
-
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useOwnAvatarTint: () => null,
-  useActiveChapterId: () => "chapter-1",
   useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,
-  useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
-  useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
+  // The reads behind the cards are `profile-stats.hook.spec.tsx`'s business.
+  useMyProfileStats: () => ({
+    points: null,
+    serviceHours: null,
+    hasChapter: true,
+    pointsFailed: false,
+    serviceFailed: false,
+  }),
   useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
   useMemberByUserId: (userId: string) => useMemberByUserId(userId),
   usePermissionList: () => permissions,
@@ -95,26 +93,6 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
-
-describe("Profile reads only the viewer's service entries", () => {
-  beforeEach(() => {
-    useServiceEntries.mockClear();
-  });
-
-  it("asks for the viewer's entries once the viewer is known", () => {
-    viewerUserId = "user-1";
-    const tree = render();
-    expectViewerScopedReads(useServiceEntries.mock.calls, "user-1");
-    act(() => tree.unmount());
-  });
-
-  it("sends nothing while the viewer is still unknown", () => {
-    viewerUserId = null;
-    const tree = render();
-    expectViewerScopedReads(useServiceEntries.mock.calls, null);
-    act(() => tree.unmount());
-  });
-});
 
 /**
  * #3022. s15 is opened from More's profile card and draws `‹ More`, in its

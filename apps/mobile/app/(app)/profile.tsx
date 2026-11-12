@@ -2,14 +2,13 @@ import { useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
-  useActiveChapterId,
   useCurrentUser,
   useMemberByUserId,
-  useMyPoints,
+  useMyProfileStats,
   usePermissionList,
-  useServiceEntries,
   useViewerUserId,
   useOwnAvatarTint,
+  profileStatsErrorNote,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
@@ -37,10 +36,7 @@ import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import {
   formatGraduationYear,
-  formatHours,
-  selectPointsBalance,
   selectViewerProfile,
-  sumApprovedServiceMinutes,
 } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -83,18 +79,13 @@ export default function ProfileScreen() {
   const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const { email: sessionEmail } = useAuthSession();
-  const chapterId = useActiveChapterId();
 
   const userQuery = useCurrentUser();
   const editSheetRef = useRef<BottomSheetModal>(null);
   const viewerUserId = useViewerUserId();
-  const pointsQuery = useMyPoints();
-  // Scoped to the viewer for the same reason `service-hours.tsx` is: unscoped,
-  // this endpoint hands a `service:approve` holder the whole chapter, and this
-  // card presents the total as the viewer's own service hours.
-  const serviceQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
-    enabled: !!viewerUserId,
-  });
+  // Points and approved service hours, read and summed as web's Profile does
+  // them (`@repo/hooks` `profile-stats.ts`, #4137).
+  const stats = useMyProfileStats();
 
   const profile = useMemo(
     () => selectViewerProfile(userQuery.data),
@@ -118,12 +109,10 @@ export default function ProfileScreen() {
     [memberQuery.data],
   );
   const classRows = usePledgeClassRows(membership);
-  const pointsBalance = selectPointsBalance(pointsQuery.data);
-  // `null` until the entries land, so the card shows an em dash rather than a
-  // confident "0 service hrs" beside a correct name and points balance.
-  const serviceMinutes = sumApprovedServiceMinutes(serviceQuery.data);
-  const serviceHours =
-    serviceMinutes === null ? null : formatHours(serviceMinutes);
+  const statsNote = profileStatsErrorNote(
+    stats.pointsFailed,
+    stats.serviceFailed,
+  );
 
   // The session's email is the one value available before `/v1/users/me`
   // resolves, and it is the same address — so the row never sits blank while
@@ -196,17 +185,17 @@ export default function ProfileScreen() {
           {/* Both stats in the foreground text: a number is never the chapter
               accent (foundations.md §6, "Where the accent goes"). */}
           <Text style={styles.statValue}>
-            {pointsBalance === null ? "—" : pointsBalance.toLocaleString()}
+            {stats.points === null ? "—" : stats.points.toLocaleString()}
           </Text>
           <Text style={styles.statLabel}>points</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{serviceHours ?? "—"}</Text>
+          <Text style={styles.statValue}>{stats.serviceHours ?? "—"}</Text>
           <Text style={styles.statLabel}>service hrs</Text>
         </View>
       </View>
 
-      {!chapterId ? (
+      {!stats.hasChapter ? (
         // Points are chapter-scoped, so without one the card would sit on a
         // dash forever with nothing explaining why. The claim is absent until
         // a membership exists (and during a hook-off incident), so this is
@@ -214,14 +203,8 @@ export default function ProfileScreen() {
         <Text style={styles.statNote}>
           Choose a chapter from More → Switch chapter to see your points.
         </Text>
-      ) : pointsQuery.isError || serviceQuery.isError ? (
-        <Text style={styles.statNote}>
-          {pointsQuery.isError && serviceQuery.isError
-            ? "Points and service hours couldn't load just now."
-            : pointsQuery.isError
-              ? "Points couldn't load just now."
-              : "Service hours couldn't load just now."}
-        </Text>
+      ) : statsNote ? (
+        <Text style={styles.statNote}>{statsNote}</Text>
       ) : null}
 
       <SectionHeader>Details</SectionHeader>
