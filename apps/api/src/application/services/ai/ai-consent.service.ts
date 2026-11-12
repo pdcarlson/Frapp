@@ -196,6 +196,14 @@ export class AiConsentService implements IAiConsentCheck {
   }
 
   /**
+   * Every chapter whose president has one feature family switched on, for a
+   * scheduled feature that visits each of them (#3930).
+   */
+  chaptersWithSwitchOn(key: AiChapterSwitch): Promise<string[]> {
+    return this.consents.listChapterIdsWithSwitchOn(SWITCH_COLUMN[key]);
+  }
+
+  /**
    * The chapter's switches, and whether `viewerRoleIds` may change them, so
    * the settings page draws them read-only for everyone but the president.
    */

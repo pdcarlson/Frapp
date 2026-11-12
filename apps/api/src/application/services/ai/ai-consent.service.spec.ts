@@ -51,6 +51,15 @@ class FakeAiConsentRepository implements IAiConsentRepository {
     return Promise.resolve(row);
   }
 
+  listChapterIdsWithSwitchOn(column: keyof ChapterAiSettingsPatch) {
+    return Promise.resolve(
+      [...this.settings.values()]
+        .filter((row) => row[column] === true)
+        .map((row) => row.chapter_id)
+        .sort(),
+    );
+  }
+
   findConsent(userId: string, sheetVersion: number) {
     return Promise.resolve(
       this.consents.get(`${userId}:${sheetVersion}`) ?? null,

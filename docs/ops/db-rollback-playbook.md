@@ -3945,6 +3945,28 @@ drop index if exists public.idx_ai_suggestions_source_dedupe;
 alter table public.ai_suggestions drop column if exists dedupe_key;
 ```
 
+## Rollback this time last year (20261112230000)
+
+* **Migration**: `20261112230000_last_year_suggestions.sql`
+
+Two widened checks and one index on `ai_suggestions`, and a delete trigger on `tasks`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset, or the chapter's Ask switch off, no weekly check is queued and nothing is proposed. Suggestions already waiting expire after 14 days as any do, and events and tasks already made from one are ordinary rows and stay.
+
+To remove it all, in a later forward migration (the API from this release must be rolled back first, because it writes both new values). The deletes come first: the narrower checks refuse rows that hold `event` or `task`.
+
+```sql
+drop trigger if exists tasks_drop_ai_suggestions on public.tasks;
+drop index if exists public.idx_ai_suggestions_chapter_dedupe;
+delete from public.ai_suggestions where kind = 'event' or source_type = 'task';
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_kind_check;
+alter table public.ai_suggestions add constraint ai_suggestions_kind_check
+  check (kind in ('task'));
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_source_type_check;
+alter table public.ai_suggestions add constraint ai_suggestions_source_type_check
+  check (source_type in ('meeting', 'event', 'channel'));
+```
+
 ## Rollback Ask diagnostics window (20261112200000)
 
 * **Migration**: `20261112200000_ai_ask_diagnostics.sql`
@@ -4009,9 +4031,9 @@ drop function if exists public.ai_reports_refuse_deleted_users();
 ```
 
 
-## Rollback Report this on a channel summary (20261112230000)
+## Rollback Report this on a channel summary (20261112233000)
 
-* **Migration**: `20261112230000_ai_reports_chat_summary.sql`
+* **Migration**: `20261112233000_ai_reports_chat_summary.sql`
 
 One check constraint on `ai_reports` allows a fourth subject, `chat_summary`. No column, table or function changed.
 

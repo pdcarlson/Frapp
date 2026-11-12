@@ -117,7 +117,9 @@ function deepLinkFor(notification: Notification): string {
       return "/tasks";
     // Suggested tasks to review (#4313): on the minutes they came from, where
     // the action items are; from any other source, the board's Suggested list.
+    // One drawn from last year's event (#3930) is reviewed on Events.
     case AI_SUGGESTIONS_NOTIFICATION_SCREEN:
+      if (target.sourceType === "event") return "/events";
       return target.sourceType === "meeting" && target.sourceId
         ? `/meetings/${target.sourceId}`
         : "/tasks";

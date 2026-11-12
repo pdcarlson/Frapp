@@ -65,6 +65,7 @@ describe('TaskService', () => {
     mockTaskRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findSince: jest.fn(),
       findByAssignee: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

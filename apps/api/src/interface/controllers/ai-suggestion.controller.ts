@@ -39,14 +39,19 @@ import {
   AiSuggestionDto,
   AiSuggestionListDto,
   DecideAiSuggestionsDto,
+  DismissAiSuggestionDto,
   ListAiSuggestionsQueryDto,
+  type EventSuggestionAcceptDto,
   type TaskSuggestionEditsDto,
 } from '../dtos/ai-suggestion.dto';
 
-function taskEdits(
-  edits: TaskSuggestionEditsDto | undefined,
-): AiSuggestionEdits | undefined {
-  return edits ? { kind: 'task', fields: { ...edits } } : undefined;
+/** A request names changes for one kind; a suggested event's come first. */
+function editsOf(dto: {
+  task?: TaskSuggestionEditsDto;
+  event?: EventSuggestionAcceptDto;
+}): AiSuggestionEdits | undefined {
+  if (dto.event) return { kind: 'event', fields: { ...dto.event } };
+  return dto.task ? { kind: 'task', fields: { ...dto.task } } : undefined;
 }
 
 /**
@@ -113,7 +118,7 @@ export class AiSuggestionController {
   ): Promise<AiSuggestionDecisionDto> {
     return AiSuggestionDecisionDto.from(
       await this.suggestions.accept(chapterId, userId, id, {
-        edits: taskEdits(dto.task),
+        edits: editsOf(dto),
         enabledModules,
       }),
     );
@@ -127,9 +132,10 @@ export class AiSuggestionController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DismissAiSuggestionDto,
   ): Promise<AiSuggestionDecisionDto> {
     return AiSuggestionDecisionDto.from(
-      await this.suggestions.dismiss(chapterId, userId, id),
+      await this.suggestions.dismiss(chapterId, userId, id, dto?.reason),
     );
   }
 
@@ -151,7 +157,7 @@ export class AiSuggestionController {
       userId,
       dto.items.map((item) =>
         item.action === 'accept'
-          ? { id: item.id, action: 'accept', edits: taskEdits(item.task) }
+          ? { id: item.id, action: 'accept', edits: editsOf(item) }
           : { id: item.id, action: 'dismiss' },
       ),
       enabledModules,
