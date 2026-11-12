@@ -8,8 +8,11 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { useRoles } from "@repo/hooks";
 import {
+  ALUMNI_FOLLOWING_NOTE,
+  ATTENDANCE_SEARCH_FROM,
   EVENT_ATTENDANCE_LABELS,
-  EVENT_ATTENDANCE_STATUSES,
+  alumniRoleIdOf,
+  attendanceChoices,
   attendanceOfRole,
   attendanceRows,
   describeAttendance,
@@ -55,7 +58,7 @@ import {
  *
  * Built for a chapter at real scale (an imported Discord server brings a
  * hundred roles): the list is virtualized, a search narrows it once there are
- * more than {@link SEARCH_FROM} roles, and the roles set apart when the sheet
+ * more than {@link ATTENDANCE_SEARCH_FROM} roles, and the roles set apart when the sheet
  * opened lead the list. The order is taken once per visit, so a row never
  * jumps out from under a finger.
  *
@@ -65,19 +68,12 @@ export interface AttendanceSheetProps {
   value: EventAttendanceDraft;
   onChange: (next: EventAttendanceDraft) => void;
   /**
-   * False drops Required from every row, Everyone else included, for a
-   * member who may create events but not require attendance (#3709).
+   * False drops Required from the answers, for a member who may make events
+   * but not require attendance; a row already Required keeps it so its answer
+   * stays visible (`attendanceChoices`).
    */
   allowRequired?: boolean;
 }
-
-/** Past this many roles the list gets a search field. */
-export const SEARCH_FROM = 8;
-
-const OPTIONS = EVENT_ATTENDANCE_STATUSES.map((value) => ({
-  value,
-  label: EVENT_ATTENDANCE_LABELS[value],
-}));
 
 export const AttendanceSheet = forwardRef<
   BottomSheetModal,
@@ -135,18 +131,23 @@ function AttendanceBody({
     () => roleOptionsFrom(rolesQuery.data),
     [rolesQuery.data],
   );
+  // Until the roles load, a set-apart id can't be told from a deleted one.
+  const missingName = rolesQuery.isSuccess ? "Removed role" : "Role";
   const nameOf = useMemo(() => {
     const byId = new Map(options.map((role) => [role.id, role.name]));
-    return (id: string) => byId.get(id);
-  }, [options]);
+    return (id: string) => byId.get(id) ?? missingName;
+  }, [options, missingName]);
   const rows = useMemo(
-    () => attendanceRows(options, pinned, search, "Removed role"),
-    [options, pinned, search],
+    () => attendanceRows(options, pinned, search, missingName),
+    [options, pinned, search, missingName],
   );
-  const searchable = options.length > SEARCH_FROM;
-  const choices = allowRequired
-    ? OPTIONS
-    : OPTIONS.filter((option) => option.value !== "required");
+  const alumniId = alumniRoleIdOf(rolesQuery.data);
+  const searchable = options.length > ATTENDANCE_SEARCH_FROM;
+  const choices = (current: EventAttendanceStatus) =>
+    attendanceChoices(current, allowRequired).map((status) => ({
+      value: status,
+      label: EVENT_ATTENDANCE_LABELS[status],
+    }));
 
   const header = (
     <View style={styles.header}>
@@ -168,7 +169,7 @@ function AttendanceBody({
         </Text>
         <View style={styles.choice}>
           <Segmented
-            options={choices}
+            options={choices(value.everyone)}
             value={value.everyone}
             onChange={(everyone: EventAttendanceStatus) =>
               onChange(withEveryone(value, everyone))
@@ -178,6 +179,12 @@ function AttendanceBody({
           />
         </View>
       </View>
+      {rolesQuery.isError && rows.length > 0 ? (
+        <Text style={styles.note}>
+          Couldn&apos;t load your chapter&apos;s roles, so role names may be
+          missing.
+        </Text>
+      ) : null}
       {searchable ? (
         <BottomSheetTextInput
           value={search}
@@ -216,18 +223,30 @@ function AttendanceBody({
       }
       renderItem={({ item }: { item: RoleOption }) => {
         const setApart = item.id in value.roles;
+        const current = attendanceOfRole(value, item.id);
+        const note =
+          item.id === alumniId && !setApart && value.everyone !== "not_invited"
+            ? ALUMNI_FOLLOWING_NOTE
+            : null;
         return (
           <View style={[styles.row, styles.roleRow]}>
-            <Text
-              style={[styles.roleName, setApart ? null : styles.following]}
-              numberOfLines={1}
-            >
-              {item.name}
-            </Text>
+            <View style={styles.nameColumn}>
+              <Text
+                style={[styles.roleName, setApart ? null : styles.following]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
+              {note ? (
+                <Text style={styles.note} numberOfLines={2}>
+                  {note}
+                </Text>
+              ) : null}
+            </View>
             <View style={styles.choice}>
               <Segmented
-                options={choices}
-                value={attendanceOfRole(value, item.id)}
+                options={choices(current)}
+                value={current}
                 onChange={(next: EventAttendanceStatus) =>
                   onChange(withRole(value, item.id, next))
                 }
@@ -260,7 +279,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
       // Two lines held, so a longer rule never pushes the rows down (P4).
-      minHeight: tokens.typography.role.body.size * 2.6,
+      minHeight:
+        2 *
+        (tokens.typography.role.body.lineHeight ??
+          tokens.typography.role.body.size * 1.5),
     },
     caption: {
       ...typeRole(tokens.typography.role.caption),
@@ -289,8 +311,14 @@ function createStyles(tokens: SignetTokens, accent: string) {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
     },
-    roleName: {
+    nameColumn: {
       flex: 1,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    roleName: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },

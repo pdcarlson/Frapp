@@ -16,7 +16,7 @@ import { screenText } from "@/test/screen-text";
 const ROLES = [
   { id: "role-officers", name: "Officers" },
   { id: "role-new", name: "New Members" },
-  { id: "role-alumni", name: "Alumni" },
+  { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
   ...Array.from({ length: 100 }, (_, i) => ({
     id: `role-${i}`,
     name: `Committee ${i}`,
@@ -40,15 +40,22 @@ import { AttendanceSheet } from "./attendance-sheet";
 
 let latest: EventAttendanceDraft;
 
+const dismiss = vi.fn();
+
 function Host({
   initial = { everyone: "optional", roles: {} },
+  allowRequired,
 }: {
   initial?: EventAttendanceDraft;
+  allowRequired?: boolean;
 }) {
   const [value, setValue] = useState<EventAttendanceDraft>(initial);
+  const ref = React.useRef(null);
   return (
     <AttendanceSheet
+      ref={ref}
       value={value}
+      allowRequired={allowRequired}
       onChange={(next) => {
         latest = next;
         setValue(next);
@@ -57,13 +64,21 @@ function Host({
   );
 }
 
-function render(initial?: EventAttendanceDraft): ReactTestRenderer {
+function render(
+  initial?: EventAttendanceDraft,
+  allowRequired?: boolean,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <Host initial={initial} />
+        <Host initial={initial} allowRequired={allowRequired} />
       </FrappThemeProvider>,
+      // The sheet's ref lands on the modal stand-in: give it the dismiss Done calls.
+      {
+        createNodeMock: (element) =>
+          element.type === ("BottomSheetModal" as never) ? { dismiss } : {},
+      },
     );
   });
   return tree;
@@ -211,13 +226,62 @@ describe("Who's coming", () => {
     act(() => tree.unmount());
   });
 
-  it("closes with Done, not an X", () => {
+  it("closes with Done, not an X, back onto the form underneath", () => {
+    dismiss.mockClear();
     const tree = render();
     const { header } = list(tree);
-    expect(screenText(header)).toContain("Done");
+    const done = header.root.find(
+      (each) =>
+        each.props.accessibilityRole === "button" &&
+        typeof each.props.onPress === "function" &&
+        screenTextOf(each) === "Done",
+    );
     expect(
       header.root.findAll((each) => each.props.accessibilityLabel === "Close"),
     ).toHaveLength(0);
+    act(() => done.props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("drops Required when it isn't allowed, but keeps a row already Required readable", () => {
+    const tree = render(
+      { everyone: "optional", roles: { "role-officers": "required" } },
+      false,
+    );
+    const radios = (drawn: ReactTestRenderer, group: string) =>
+      drawn.root
+        .findAll((each) => each.props.accessibilityLabel === group)[0]!
+        .findAll((each) => each.props.accessibilityRole === "radio")
+        .map((each) => each.props.accessibilityLabel);
+    expect(radios(list(tree).header, "Attendance for everyone else")).toEqual([
+      "Optional",
+      "Not invited",
+    ]);
+    expect(
+      radios(row(tree, "role-officers", "Officers"), "Attendance for Officers"),
+    ).toEqual(["Required", "Optional", "Not invited"]);
+    act(() => tree.unmount());
+  });
+
+  it("says the Alumni role is left out while it follows everyone else", () => {
+    const tree = render({ everyone: "required", roles: {} });
+    expect(screenText(row(tree, "role-alumni", "Alumni"))).toContain(
+      "Left out unless set here",
+    );
+    expect(screenText(row(tree, "role-new", "New Members"))).not.toContain(
+      "Left out",
+    );
     act(() => tree.unmount());
   });
 });
+
+function screenTextOf(node: { children: unknown[] }): string {
+  return node.children
+    .map((child) =>
+      typeof child === "string"
+        ? child
+        : screenTextOf(child as { children: unknown[] }),
+    )
+    .join("");
+}

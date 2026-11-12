@@ -261,6 +261,47 @@ export function describeAttendance(
 
 // The editors' moves, shared so web and mobile set a rule the same way.
 
+/** Past this many roles an editor's list gets a search field. */
+export const ATTENDANCE_SEARCH_FROM = 8;
+
+/**
+ * The answers a row offers. `allowRequired` false drops Required, for a
+ * member who may make events but not require attendance, except on a row
+ * already set to Required, which keeps it so its answer stays visible.
+ */
+export function attendanceChoices(
+  current: EventAttendanceStatus,
+  allowRequired: boolean,
+): EventAttendanceStatus[] {
+  return EVENT_ATTENDANCE_STATUSES.filter(
+    (status) =>
+      allowRequired || status !== "required" || current === "required",
+  );
+}
+
+/**
+ * The chapter's Alumni role id from a `GET /v1/roles` payload, or undefined.
+ * An alumnus is held to an event only when a role of theirs is set apart
+ * (`spec/behavior/alumni.md`), so the editors say so on the Alumni row.
+ */
+export function alumniRoleIdOf(roles: unknown): string | undefined {
+  if (!Array.isArray(roles)) return undefined;
+  for (const row of roles) {
+    if (
+      row &&
+      typeof row === "object" &&
+      (row as { system_key?: unknown }).system_key === "ALUMNI" &&
+      typeof (row as { id?: unknown }).id === "string"
+    ) {
+      return (row as { id: string }).id;
+    }
+  }
+  return undefined;
+}
+
+/** The line under the Alumni row while it follows Everyone else. */
+export const ALUMNI_FOLLOWING_NOTE = "Left out unless set here";
+
 /** A role's answer under a draft: its own when set apart, else the default. */
 export function attendanceOfRole(
   draft: EventAttendanceDraft,

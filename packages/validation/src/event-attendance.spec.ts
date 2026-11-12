@@ -3,6 +3,7 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
+  attendanceChoices,
   attendanceOfRole,
   attendanceRows,
   describeAttendance,
@@ -205,6 +206,25 @@ describe("attendanceRows", () => {
     expect(
       attendanceRows(roles, [], "new mem", "Removed role").map((r) => r.id),
     ).toEqual(["n"]);
+  });
+});
+
+describe("attendanceChoices", () => {
+  it("drops Required unless allowed or already held", () => {
+    expect(attendanceChoices("optional", true)).toEqual([
+      "required",
+      "optional",
+      "not_invited",
+    ]);
+    expect(attendanceChoices("optional", false)).toEqual([
+      "optional",
+      "not_invited",
+    ]);
+    expect(attendanceChoices("required", false)).toEqual([
+      "required",
+      "optional",
+      "not_invited",
+    ]);
   });
 });
 

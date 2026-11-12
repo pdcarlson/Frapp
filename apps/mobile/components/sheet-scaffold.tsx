@@ -240,7 +240,9 @@ export function useTallSheetProps() {
  * The close control a tall sheet's header carries: the app-wide `CloseGlyph`
  * in the shared `IconButton` (`components.md` § Icon-only actions), muted,
  * whose slop reaches the 44pt touch floor (`foundations.md` § 9). A word
- * ("Done", "Cancel") would repeat what the X already says (`components.md`
+ * ("Done", "Cancel") would repeat what the X already says, except on a tall
+ * step over a form, which closes with Done (`TallSheetHeader`'s `doneAccent`;
+ * `components.md`
  * § Surface size: a big surface closes with an X).
  */
 export function SheetCloseButton({
