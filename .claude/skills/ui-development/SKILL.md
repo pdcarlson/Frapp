@@ -156,8 +156,12 @@ constraints web habits most often break:
 
 - **Fetching:** use TanStack Query through the shared hooks in `@repo/hooks`, never raw `fetch`.
   Import from the package root. `packages/hooks/src/` (one module per feature domain, re-exported
-  by `index.ts`) is the inventory, so check it before writing a new hook. Reads are `useQuery` with
-  `queryFn` calling `client.GET`. Writes are `useMutation` calling `client.POST/PATCH/DELETE`,
+  by `index.ts`) is the inventory, so check it before writing a new hook. A new module goes in that
+  barrel in its alphabetical place, never appended at the end; `packages/validation/src/index.ts`
+  works the same way and holds re-exports only. Neither needs a `package.json` entry:
+  `@repo/hooks`, `@repo/chat-core` and `@repo/validation` resolve any `./<file>` subpath through one
+  `"./*"` export rule. `scripts/ci/__tests__/package-barrels.test.mjs` fails on an unsorted barrel.
+  Reads are `useQuery` with `queryFn` calling `client.GET`. Writes are `useMutation` calling `client.POST/PATCH/DELETE`,
   with `onSuccess` invalidating queries. Hooks need both `QueryClientProvider` and
   `FrappClientProvider` above them.
 - **API client:** `@repo/api-sdk` is the `openapi-fetch` client generated from
