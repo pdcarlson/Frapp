@@ -276,7 +276,7 @@ alter table public.ai_usage_events
 -- caller that does not pass it (every token call, and an API process from
 -- before this migration) still resolves to this one function. A parameter
 -- cannot be added with `create or replace`, so the old signature is dropped
--- first, in the same transaction. The body is 20261112130000's with the one
+-- first, in the same transaction. The body is 20261112131420's with the one
 -- column added.
 drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
 
@@ -350,10 +350,10 @@ end;
 $$;
 
 comment on function public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer) is
-  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. p_audio_seconds is the audio a transcription was billed for. Returns settled, inserted or missing. See 20261112130000_ai_usage_ledger.sql and 20261112210000_meeting_recordings.sql.';
+  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. p_audio_seconds is the audio a transcription was billed for. Returns settled, inserted or missing. See 20261112131420_ai_usage_ledger.sql and 20261112210000_meeting_recordings.sql.';
 
 -- `ai_chapter_usage` returns the seconds too. A function's return columns
--- cannot change with `create or replace` either. The body is 20261112130000's
+-- cannot change with `create or replace` either. The body is 20261112131420's
 -- with the one sum added.
 drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
 
@@ -404,7 +404,7 @@ as $$
 $$;
 
 comment on function public.ai_chapter_usage(uuid, timestamptz, timestamptz) is
-  'A chapter''s AI usage in [p_from, p_to), one row per task, provider and model: calls, token counts, seconds of audio transcribed, cost in micro-USD (holds count at their hold), the part of it that is estimated, and calls not yet settled. See 20261112130000_ai_usage_ledger.sql.';
+  'A chapter''s AI usage in [p_from, p_to), one row per task, provider and model: calls, token counts, seconds of audio transcribed, cost in micro-USD (holds count at their hold), the part of it that is estimated, and calls not yet settled. See 20261112131420_ai_usage_ledger.sql.';
 
 -- Service role only, as every RPC the API alone calls. Dropping a function
 -- drops its grants, so both are revoked again.

@@ -13,7 +13,7 @@
 --    record it was drawn from, so it looks a fingerprint up by chapter
 --    (`idx_ai_suggestions_source_dedupe` leads with the source).
 --
--- Both checks were written inline in `20261112130001_ai_suggestions.sql`, so
+-- Both checks were written inline in `20261112131430_ai_suggestions.sql`, so
 -- Postgres named them `ai_suggestions_kind_check` and
 -- `ai_suggestions_source_type_check`.
 --

@@ -368,7 +368,37 @@ export interface ChatMessage {
   thread_reply_count?: number;
   thread_last_reply_at?: string | null;
   thread_recent_sender_ids?: string[];
+  /**
+   * On a thread's parent: its newest reply that isn't deleted, for the thread
+   * card's preview line (#4297). Kept by the same trigger, and by
+   * `chat_messages_thread_last_reply` when that reply is edited, deleted or
+   * re-attributed. `null` on every other row, and on a parent whose replies
+   * are all deleted. The REPLIER's content: a read that masks nulls it for a
+   * viewer who blocked them (`chat-block-mask.ts`).
+   */
+  thread_last_reply?: ChatThreadLastReply | null;
   created_at: string;
+}
+
+/**
+ * What a thread's parent holds of its newest reply (#4297). `content` is cut
+ * to 500 characters; `attachment_count` is the reply's
+ * `metadata.attachment_count`, or 0 when it is absent or not a number.
+ */
+export interface ChatThreadLastReply {
+  id: string;
+  sender_id: string | null;
+  content: string;
+  kind: string | null;
+  attachment_count: number;
+  created_at: string;
+  /**
+   * Set by a read that masks: `true` when the viewer blocked this replier, so
+   * the preview is withheld (`content` empty) and the client keeps that
+   * verdict through the parent's Realtime echo; `false` when it was cleared.
+   * Absent on the Realtime echo and on a read that doesn't mask.
+   */
+  sender_blocked?: boolean;
 }
 
 /**
@@ -594,10 +624,11 @@ export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
  * not a whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
- * size optimization: `ChatService.deleteMessage` blanks `content` and
- * `metadata` but not `payload`, so serving the full row meant a bookmarked poll
- * or event card that had since been deleted shipped its payload on an endpoint
- * whose declared type says the message reads `[message deleted]`. The
+ * size optimization: `ChatService.deleteMessage` blanked `content` and
+ * `metadata` but, until #1575, not `payload`, so serving the full row meant a
+ * bookmarked poll or event card that had since been deleted shipped its
+ * payload on an endpoint whose declared type says the message reads
+ * `[message deleted]`. The
  * repository's `BOOKMARK_MESSAGE_COLUMNS` and `BookmarkedMessageDto` are the
  * other two copies of this list; all three must stay in step.
  */

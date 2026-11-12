@@ -30,6 +30,9 @@ const mockState = vi.hoisted(() => ({
   clearRead: vi.fn(async (ids: ReadonlySet<string>) => {
     void ids;
   }),
+  clearReadNonChat: vi.fn(async (ids: ReadonlySet<string>) => {
+    void ids;
+  }),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -52,6 +55,8 @@ vi.mock("./push", () => ({
   setBadgeCount: (count: number) => mockState.setBadgeCount(count),
   clearReadChatNotifications: (ids: ReadonlySet<string>) =>
     mockState.clearRead(ids),
+  clearReadNonChatNotifications: (ids: ReadonlySet<string>) =>
+    mockState.clearReadNonChat(ids),
 }));
 
 const { useBadgeSyncRuntime } = await import("./use-badge-sync");
@@ -67,6 +72,7 @@ beforeEach(() => {
   mockState.channels = [];
   mockState.setBadgeCount.mockClear();
   mockState.clearRead.mockClear();
+  mockState.clearReadNonChat.mockClear();
 });
 
 afterEach(() => {
@@ -191,5 +197,17 @@ describe("useBadgeSyncRuntime", () => {
     mockState.channelUnread = [{ channel_id: "read", unread_count: 0 }];
     renderHook(() => useBadgeSyncRuntime());
     expect(mockState.clearRead).not.toHaveBeenCalled();
+    expect(mockState.clearReadNonChat).not.toHaveBeenCalled();
+  });
+
+  it("takes read non-chat rows' pushes out of the tray, never chat rows' (#4011)", () => {
+    const read = notificationRow("2026-08-01T00:00:00.000Z", "events");
+    const unread = notificationRow(null, "events");
+    const readChat = notificationRow("2026-08-01T00:00:00.000Z", "chat");
+    mockState.notifications = [read, unread, readChat];
+    renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearReadNonChat).toHaveBeenLastCalledWith(
+      new Set([read.id]),
+    );
   });
 });

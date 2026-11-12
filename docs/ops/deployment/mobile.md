@@ -435,8 +435,12 @@ nothing is still building.
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
   `npm run eas -- submit … --id` and record it.
 - **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
-  other by hand from the latest `v*` tag (below), and record it. The wait step's log says whether
-  a transient network failure was retried (and names both builds) or why it wasn't.
+  other by hand from the latest `v*` tag (below), and record it. Or merge the uploaded platform's
+  record PR and let the next `auto` ship build the other: the plan gives a platform with no
+  recorded build of the version a store build, and the recorded one an update. The wait step's log
+  says whether a transient network failure was retried (and names both builds) or why it wasn't,
+  and carries EAS's error; a profile that "doesn't include the … capability" is the capability
+  item under What a run needs outside the repo, below.
 - **Production shipped another commit before or while EAS was building:** nothing from this run
   may upload. The next store build comes with the next ship.
 - **A tag check failed without finding production moved** (a GitHub API error that outlasted its
@@ -467,15 +471,31 @@ nothing is still building.
   `github-deploy-production` (role Developer) on the `pdcarlson` Expo account, so it isn't tied to
   a person. To rotate it, create a new token for that robot on that page, replace the secret, then
   revoke the old token.
-- **The Associated Domains capability on the App ID, before the first build of 0.11.0** (#4002).
-  `apps/mobile/app.json` declares `applinks:app.frapp.live` from 0.11.0, which adds the
-  `com.apple.developer.associated-domains` entitlement. The App Store profile in EAS predates it,
-  and a non-interactive run has no Apple sign-in to turn the capability on or make a new profile,
-  so the archive would fail on signing. Before Deploy production builds 0.11.0 for iOS, run one
-  interactive `npm run eas -- build --platform ios --profile production` (EAS turns the capability on
-  and makes the profile), or enable **Associated Domains** on the `live.frapp.mobile` identifier in
-  the Apple developer console and refresh the profile with `npm run eas -- credentials --platform ios`.
-  *Derived from how eas-cli syncs capabilities, not run; correct this from the first build.*
+- **Every capability the app declares, turned on for the App ID and carried by the App Store
+  profile, before the first store build that declares it** (#4002). A non-interactive build can't
+  add one. eas-cli turns capabilities on only when it is signed in to Apple before it sets up the
+  profile (`SetUpTargetBuildCredentials`), and a non-interactive run skips that sign-in
+  (`bestEffortAppStoreAuthenticateAsync` returns at once). Its profile check then looks at the
+  certificate, the bundle identifier, the expiry and, when it can reach Apple, whether the profile
+  still exists and is active (`validateProvisioningProfileAsync`); it never compares entitlements.
+  So the build starts as usual and fails in Xcode's signing, about four minutes in. iOS 0.11.0 (17)
+  did, on `applinks:app.frapp.live` (`ios.associatedDomains` in `apps/mobile/app.json`, new in
+  0.11.0), which the profile made in September 2026 doesn't carry: `XCODE_BUILD_ERROR`,
+  "Provisioning profile "*[expo] live.frapp.mobile AppStore 2026-09-17T20:30:23.750Z" doesn't
+  include the Associated Domains capability" (Deploy production run 43138604118, 2026-11-12; the
+  web, the API and Android shipped). Before the first store build of a version that adds a
+  capability (`associatedDomains`, `usesAppleSignIn`, a key under `ios.entitlements`, or a config
+  plugin that writes one), from a checkout that has the change, run
+  `npm run eas -- credentials --platform ios` → `production` → log in to the Apple account →
+  **Build Credentials: Manage everything needed to build your project** → **All: Set up all the
+  required credentials to build your project**. It prints `Synced capabilities: Enabled: <name>`
+  and remakes the profile when Apple no longer reports the old one active (answer yes if it asks
+  whether to reuse the original profile: it is reconfigured in place). If the profile was left as
+  it was, delete it (**Provisioning Profile: Delete one from your project**) and run **All** again.
+  An interactive `npm run eas -- build --platform ios --profile production` runs the same setup,
+  but also starts a build outside Deploy production. *The failure is from the run. The cause and
+  the commands are read from eas-cli 24.8.0's source (2026-11-12); the fix itself hasn't been run
+  yet, so correct this from the first time it is.*
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
   One interactive `npm run eas -- build --platform ios --profile production` creates it. *Status

@@ -243,7 +243,7 @@ end;
 $$;
 
 comment on function public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz) is
-  'Holds an AI call''s worst-case cost against the platform''s monthly cap for its provider, the chapter''s monthly cap and the member''s daily cap (UTC), serialized per chapter then per provider. Returns the new reserved row''s id, or the cap it would cross. See 20261112130000_ai_usage_ledger.sql.';
+  'Holds an AI call''s worst-case cost against the platform''s monthly cap for its provider, the chapter''s monthly cap and the member''s daily cap (UTC), serialized per chapter then per provider. Returns the new reserved row''s id, or the cap it would cross. See 20261112131420_ai_usage_ledger.sql.';
 
 -- Settle a hold with what the call really used, or record a call made with no
 -- hold (`p_reservation_id` null, which the gateway sends only when the spend
@@ -327,7 +327,7 @@ end;
 $$;
 
 comment on function public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz) is
-  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. Returns settled, inserted or missing. See 20261112130000_ai_usage_ledger.sql.';
+  'Settles an AI spend hold with the call''s real counts and cost (or charges the hold itself when the provider never reported usage), or records a call made with no hold. Returns settled, inserted or missing. See 20261112131420_ai_usage_ledger.sql.';
 
 -- Expire holds nobody settled: the API process died between the hold and the
 -- call's end. An expired hold keeps counting toward the caps at its full
@@ -354,7 +354,7 @@ end;
 $$;
 
 comment on function public.expire_ai_spend_holds(timestamptz) is
-  'Marks AI spend holds reserved before p_older_than as expired; they keep counting toward the caps at their full hold. Returns the count. See 20261112130000_ai_usage_ledger.sql.';
+  'Marks AI spend holds reserved before p_older_than as expired; they keep counting toward the caps at their full hold. Returns the count. See 20261112131420_ai_usage_ledger.sql.';
 
 -- A chapter's usage in a period, one row per task, model and provider: what
 -- the allowance and overage are computed from (billing.md § Implementation
@@ -404,7 +404,7 @@ as $$
 $$;
 
 comment on function public.ai_chapter_usage(uuid, timestamptz, timestamptz) is
-  'A chapter''s AI usage in [p_from, p_to), one row per task, provider and model: calls, token counts, cost in micro-USD (holds count at their hold), the part of it that is estimated, and calls not yet settled. See 20261112130000_ai_usage_ledger.sql.';
+  'A chapter''s AI usage in [p_from, p_to), one row per task, provider and model: calls, token counts, cost in micro-USD (holds count at their hold), the part of it that is estimated, and calls not yet settled. See 20261112131420_ai_usage_ledger.sql.';
 
 -- Service role only, as every RPC the API alone calls.
 revoke execute on function public.ai_usage_charge(text, bigint, bigint) from public;

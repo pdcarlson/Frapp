@@ -1225,8 +1225,9 @@ export interface ClosePollArgs extends RowTarget {
 }
 
 /**
- * Close a chat-card poll early (#3794). Creator only, and refused on a poll
- * that is already closed or past its deadline: the API enforces both
+ * Close a chat-card poll early (#3794). Its creator or a `channels:manage`
+ * holder only (#4046), and refused on a poll that is already closed or past
+ * its deadline: the API enforces both
  * (`PollService.close`), the card only offers the control when it should work
  * (`canClosePoll` in `./polls`).
  *

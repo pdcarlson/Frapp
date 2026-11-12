@@ -6,6 +6,7 @@ import {
 } from "@repo/hooks/activity-rows";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { buttonVariants } from "@/components/ui/button";
+import { UnreadDot } from "@/components/shared/unread-dot";
 import { cn } from "@/lib/utils";
 
 /** The tile both leads share: 40px, so a row with either is the same height. */
@@ -69,5 +70,20 @@ export function ActivityAsk({ label }: { label: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * The unread mark (#4405, `spec/behavior/activity.md` § Unread): the
+ * dashboard's `UnreadDot` in a slot of its own before the lead, as the
+ * notification drawer's rows draw it and Linear's and GitHub's inboxes do,
+ * and "Unread:" before the title for a screen reader.
+ */
+export function ActivityUnreadDot({ unread }: { unread: boolean }) {
+  return (
+    <>
+      <UnreadDot unread={unread} />
+      {unread ? <span className="sr-only">Unread: </span> : null}
+    </>
   );
 }

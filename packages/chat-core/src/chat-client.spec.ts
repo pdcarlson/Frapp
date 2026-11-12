@@ -558,7 +558,10 @@ describe("closePoll (#3794)", () => {
     const apiClient = {
       POST: vi.fn().mockResolvedValue({
         data: null,
-        error: { message: "Only the poll creator can close it" },
+        error: {
+          message:
+            "Only the poll creator or a member who manages channels can close it",
+        },
         response: { status: 403 },
       }),
     };

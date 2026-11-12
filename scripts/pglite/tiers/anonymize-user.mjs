@@ -267,7 +267,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        // #4308. Its line in the delete block (20261112130100): deleting an
+        // #4308. Its line in the delete block (20261112131440): deleting an
         // account counts as turning AI off, and only the member's rows go.
         name: "current-state purged: AI sheet answers, and only the member's",
         sql: `select (select count(*)::int from user_ai_consents where user_id = '${U}') as leftovers,
@@ -276,7 +276,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 && rows[0].leftovers === 0 && rows[0].others === 1,
       },
       {
-        // #4309. Its line in the same block (20261112130100): the member's
+        // #4309. Its line in the same block (20261112131440): the member's
         // words leave waiting suggestions, which stay; others' quotes stay.
         name: "AI suggestions drop the member's quotes, and only theirs",
         sql: `select (select count(*)::int from ai_suggestions where quote_author_id = '${U}' or quote = 'hi, Doomed User here') as leftovers,

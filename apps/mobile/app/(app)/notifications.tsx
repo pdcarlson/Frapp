@@ -65,6 +65,7 @@ import { AnnouncementGlyph } from "@/components/chat/card-glyphs";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
+import { createUnreadDotStyles, unreadDotSize } from "@/components/unread-dot";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -258,6 +259,7 @@ export function NotificationListRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const dotStyles = createUnreadDotStyles(tokens);
   const feedback = usePressFeedback();
 
   const look = notificationLook(row);
@@ -288,7 +290,11 @@ export function NotificationListRow({
       style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
       testID={`notification-row-${look.kind}`}
     >
-      <View style={row.isUnread ? styles.dot : styles.dotSpacer} />
+      <View
+        style={
+          row.isUnread ? [dotStyles.dot, styles.dotPlace] : dotStyles.spacer
+        }
+      />
       <NotificationPicture
         kind={look.kind}
         personId={look.personId}
@@ -456,6 +462,7 @@ const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
 export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const dotStyles = createUnreadDotStyles(tokens);
   const { label } = tokens.typography.role;
 
   return (
@@ -463,7 +470,7 @@ export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
       <SectionHeaderSkeleton width="16%" />
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
-          <View style={styles.dotSpacer} />
+          <View style={dotStyles.spacer} />
           <SkeletonBlock
             width={PICTURE_SIZE}
             height={PICTURE_SIZE}
@@ -500,7 +507,7 @@ const BADGE_GLYPH_SIZE = 11;
 const TILE_GLYPH_SIZE = 20;
 
 function createStyles(tokens: SignetTokens) {
-  const DOT_SIZE = tokens.spacing.sm;
+  const DOT_SIZE = unreadDotSize(tokens);
   return StyleSheet.create({
     group: {
       gap: tokens.spacing.xs,
@@ -523,18 +530,9 @@ function createStyles(tokens: SignetTokens) {
       borderBottomColor: tokens.color.border.hairline,
     },
     // Centred on the picture, which the title's first line is centred on too.
-    dot: {
-      width: DOT_SIZE,
-      height: DOT_SIZE,
-      borderRadius: DOT_SIZE / 2,
+    // The dot itself is the shared one (`components/unread-dot.ts`).
+    dotPlace: {
       marginTop: (PICTURE_SIZE - DOT_SIZE) / 2,
-      // Neutral, as the web drawer's and chat's unread are: the accent is
-      // never a state (`components.md` § A list inside a drawer or popover
-      // is flat; foundations.md §5). It was the accent until #4346.
-      backgroundColor: tokens.color.text.foreground,
-    },
-    dotSpacer: {
-      width: DOT_SIZE,
     },
     picture: {
       width: PICTURE_SIZE,

@@ -46,11 +46,10 @@ export function useUnreadFirstPaintRuntime(): void {
       : null;
 
   // The tray, at launch and on each return from the background. At launch it
-  // is read at once, signed in or not: on Android, badging the icon to zero
-  // cancels every notification (`use-badge-sync.ts` does that while it has
-  // nothing to count), so a read that waited for the session would find the
-  // tray already empty. `background`, not `inactive`, the line
-  // `useChatRealtimeBinding` draws for its resume.
+  // is read at once, signed in or not. That was first needed because badging
+  // the icon to zero on Android cancelled every notification; #4011 stopped
+  // that, and only read channels' chat pushes leave the tray now. `background`,
+  // not `inactive`, the line `useChatRealtimeBinding` draws for its resume.
   useEffect(() => {
     let cancelled = false;
     const isCancelled = () => cancelled;

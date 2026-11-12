@@ -59,6 +59,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
@@ -576,7 +577,7 @@ export default function ChatHomeScreen() {
     </View>
   );
 
-  return (
+  const screen = (
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
@@ -860,6 +861,14 @@ export default function ChatHomeScreen() {
         }}
       />
     </ScreenShell>
+  );
+  // Swipe left to Messages (#3774), beside the top-right door.
+  return (
+    <MessagesSwipeArea
+      enabled={!filterMenu.visible && !accountMenu.visible && !menuTarget}
+    >
+      {screen}
+    </MessagesSwipeArea>
   );
 }
 

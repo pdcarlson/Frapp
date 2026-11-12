@@ -25,8 +25,15 @@ export const MEMBER_HASH_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filt
   (swatch) => swatch.key !== "sand" && swatch.key !== "slate",
 ).map((swatch) => swatch.hex);
 
-/** The tint's opacity over `--popover`. At 22% Violet and Rose fall below AA. */
-export const MEMBER_AVATAR_TINT_ALPHA = 0.18;
+/**
+ * The tint's opacity over `--card`. Until the 2026-11-12 surface ladder (#3826)
+ * it was 18% over `--popover` (`#1E1E1E`), where 22% put Violet and Rose under
+ * AA. The new `--popover` (`#313131`) is too light for that recipe: 18% over it
+ * leaves Violet's initials at 3.80:1. 14% over `--card` (`#262626`) paints
+ * nearly the fill the old recipe did (Orange `#43362B`, was `#443426`) and
+ * keeps every hue's initials at 4.69:1 or better.
+ */
+export const MEMBER_AVATAR_TINT_ALPHA = 0.14;
 
 /**
  * 32-bit FNV-1a over the string's UTF-16 code units, as an unsigned integer.
@@ -61,19 +68,19 @@ export function memberAvatarHue(
 
 /** An initials avatar's paint: the circle's fill and the initials' color. */
 export interface MemberAvatarTint {
-  /** The hue at 18% over `--popover`, flattened to an opaque hex. */
+  /** The hue at 14% over `--card`, flattened to an opaque hex. */
   fill: string;
   /** The full hue. */
   text: string;
 }
 
-/** Style A ("tinted"): the hue at 18% over `--popover`, initials in the hue. */
+/** Style A ("tinted"): the hue at 14% over `--card`, initials in the hue. */
 export function memberAvatarTint(hue: string): MemberAvatarTint {
   return {
     fill: applyAlpha(
       hue,
       MEMBER_AVATAR_TINT_ALPHA,
-      signetDarkTokens.color.surface.popover,
+      signetDarkTokens.color.surface.card,
     ),
     text: hue,
   };

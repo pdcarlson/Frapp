@@ -12,7 +12,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ThreadLastReply } from "@repo/chat-core/types";
 import {
   messageFlagCaption,
   type MessageFlagView,
@@ -54,7 +54,7 @@ import {
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MemberAvatar } from "@/components/member-avatar";
 import { AlertGlyph } from "@/components/control-glyphs";
-import { ThreadChip } from "./thread-chip";
+import { ThreadChip, threadCardMiddle } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
@@ -178,6 +178,16 @@ export interface MessageItemProps {
    * chip as a plain label.
    */
   onOpenThread?: () => void;
+  /** Replies in this message's thread new to the viewer (#4297). */
+  threadUnread?: number;
+  /**
+   * The thread's latest reply to preview on the card (#4297), already cleared
+   * against the viewer's block list by the row (`threadPreviewVisible`);
+   * `null` or absent draws none.
+   */
+  threadPreview?: ThreadLastReply | null;
+  /** A member's photo by id, for the thread card's faces (#4297). */
+  memberAvatarFor?: (userId: string) => string | null;
   /**
    * The flag a member put on the message (#3921), as the thread resolved it
    * against the viewer's block list (`messageFlagView` in
@@ -352,6 +362,7 @@ export function MessageRowFrame({
   authorInline = false,
   onOpenProfile,
   flag,
+  threadSpine = null,
   children,
 }: {
   message: ChatMessage;
@@ -382,6 +393,12 @@ export function MessageRowFrame({
   onOpenProfile?: (userId: string) => void;
   /** The row's flag (#3921); see `MessageItemProps`. */
   flag?: MessageFlagView | null;
+  /**
+   * The row ends in a thread card (#4297): in cozy a connector runs down the
+   * gutter from the author's photo and curves into the card's edge, as web's
+   * does. Compact and Bubbles draw the card alone.
+   */
+  threadSpine?: { hasPreview: boolean } | null;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -524,6 +541,19 @@ export function MessageRowFrame({
         </>
       ) : (
         <View style={styles.main}>
+          {threadSpine ? (
+            <View
+              pointerEvents="none"
+              testID="thread-spine"
+              style={[
+                styles.threadSpine,
+                {
+                  top: startsRun ? MESSAGE_AVATAR_SIZE + 4 : 4,
+                  bottom: threadCardMiddle(threadSpine.hasPreview),
+                },
+              ]}
+            />
+          ) : null}
           {startsRun ? (
             <RowAvatar
               message={message}
@@ -717,6 +747,9 @@ export function MessageItem({
   onJumpToParent,
   onOpenProfile,
   onOpenThread,
+  threadUnread = 0,
+  threadPreview = null,
+  memberAvatarFor,
   flag,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
@@ -729,14 +762,18 @@ export function MessageItem({
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
   const reactions = groupReactions(message, viewerId);
-  // The thread chip (#3785): under the reactions, on the speaker's side in
-  // Bubbles. A deleted parent keeps it, so its replies stay reachable.
+  // The thread card (#3785, #4297): under the reactions, on the speaker's
+  // side in Bubbles. A deleted parent keeps it, so its replies stay reachable.
   const threadChip = (align: "start" | "end") =>
     message.thread ? (
       <ThreadChip
         summary={message.thread}
         nameFor={nameFor}
         roleColorFor={roleColorFor}
+        avatarFor={memberAvatarFor}
+        unread={threadUnread}
+        preview={threadPreview}
+        viewerId={viewerId}
         onPress={onOpenThread}
         align={align}
         onImportantRow={flag?.important === true}
@@ -973,6 +1010,7 @@ export function MessageItem({
       quote={quote}
       flag={flag}
       authorInline={leadsWithAuthor}
+      threadSpine={message.thread ? { hasPreview: !!threadPreview } : null}
       onOpenActions={onOpenActions}
       onOpenProfile={onOpenProfile}
       // The body's container carries the jump when there is text; a photo-only
@@ -1465,7 +1503,10 @@ function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
     <View
       testID="message-flag-important"
       pointerEvents="none"
-      style={[style, { backgroundColor: tint(danger), borderLeftColor: danger }]}
+      style={[
+        style,
+        { backgroundColor: tint(danger), borderLeftColor: danger },
+      ]}
     />
   );
 }
@@ -1847,6 +1888,18 @@ function createStyles(tokens: SignetTokens) {
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
     gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
+    // The thread card's connector (#4297): from under the photo, down the
+    // gutter's middle, curving into the card's left edge (the column starts
+    // one gap past the gutter).
+    threadSpine: {
+      position: "absolute",
+      left: MESSAGE_AVATAR_SIZE / 2 - 1,
+      width: MESSAGE_AVATAR_SIZE / 2 + 1 + tokens.spacing.md,
+      borderLeftWidth: 2,
+      borderBottomWidth: 2,
+      borderBottomLeftRadius: 10,
+      borderColor: tokens.color.border.hairline,
+    },
     // Compact's follow-on handle: the row's 16pt left inset, its full height.
     gutterInset: {
       position: "absolute",

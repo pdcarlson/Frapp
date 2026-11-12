@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAlpha } from "@repo/color";
+import { applyAlpha, parseHex, relativeLuminance } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
@@ -40,6 +40,8 @@ import {
  * the call-site half is `elevation-call-sites.spec.ts` beside this file.
  */
 
+const luminance = (hex: string) => relativeLuminance(parseHex(hex)!);
+
 describe("the aliases that made two fills invisible (deleted, #3036)", () => {
   // These two stay as the record of why the ShadCN names were wrong (see the
   // file header: they hold for any value): the scaffold's `--accent`
@@ -60,13 +62,34 @@ describe("the aliases that made two fills invisible (deleted, #3036)", () => {
   });
 });
 
+describe("every ladder step is perceptibly its own surface (#3826, #2399)", () => {
+  // The floor the 2026-11-12 ladder was chosen to clear. Before it, the steps
+  // were 1.05 / 1.05 / 1.08 and nothing asserted a minimum: the pins in this
+  // file only recorded that two fills aliased, so a ladder could get tighter
+  // and stay green. This one fails if any adjacent pair drops under the bound.
+  const LADDER = [
+    ["--background", SURFACE.background],
+    ["--surface-1", SURFACE.surface1],
+    ["--card", SURFACE.card],
+    ["--popover", SURFACE.popover],
+  ] as const;
+  it.each(LADDER.slice(1).map((step, i) => [LADDER[i]![0], step[0], LADDER[i]![1], step[1]]))(
+    "%s to %s",
+    (_lower, _upper, lower, upper) => {
+      expect(luminance(upper)).toBeGreaterThan(luminance(lower));
+      expect(ratio(upper, lower)).toBeGreaterThanOrEqual(INDISTINGUISHABLE);
+    },
+  );
+});
+
 describe("a state cannot elevate above the step it renders in", () => {
   it("would have caught the attendance panel's card inside a sheet", () => {
     // `--popover` is the top of the ladder, so a `--card` panel inside a
     // `SheetContent` is a step DOWN — it reads as a hole, not as elevation.
-    expect(ratio(SURFACE.card, SURFACE.popover)).toBeLessThan(
-      INDISTINGUISHABLE,
-    );
+    // Until the 2026-11-12 ladder (#3826) the step was also imperceptible;
+    // now it is visible (1.16:1), which makes the hole plainer, not better.
+    expect(ratio(SURFACE.card, SURFACE.popover)).toBeCloseTo(1.163, 2);
+    expect(luminance(SURFACE.card)).toBeLessThan(luminance(SURFACE.popover));
   });
 
   it("shows that dropping the fill improves the boundary rather than costing one", () => {
@@ -151,12 +174,18 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
    * elevated step lifted toward white, which is distinct from every step by
    * being above all of them.
    */
-  it("is --popover lifted 6% toward white, so a ladder change cannot leave it behind", () => {
+  it("is the lowest neutral perceptibly above --popover, so a ladder change cannot leave it behind", () => {
     // An opaque literal (no `color-mix` floor), held to its derivation here
     // rather than trusted to be re-derived by whoever next moves the ladder.
-    expect(CARD_HOVER.toUpperCase()).toBe(
-      applyAlpha("#ffffff", 0.06, SURFACE.popover).toUpperCase(),
-    );
+    // Until the 2026-11-12 ladder (#3826) the derivation was `--popover` lifted
+    // 6% toward white; on the lighter `--popover` that overshot what the text
+    // on it can afford (role-colors-contrast.spec.ts), so it is now the first
+    // neutral grey that clears the perceptible bound, and no higher.
+    const grey = (v: number) =>
+      "#" + v.toString(16).padStart(2, "0").toUpperCase().repeat(3);
+    let v = parseHex(SURFACE.popover)!.r;
+    while (ratio(grey(v), SURFACE.popover) < INDISTINGUISHABLE) v += 1;
+    expect(CARD_HOVER.toUpperCase()).toBe(grey(v));
   });
 
   it.each(STEPS)("reads as a state on %s", (_name, step) => {
@@ -165,17 +194,28 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
     expect(ratio(CARD_HOVER, step)).toBeGreaterThan(INDISTINGUISHABLE);
   });
 
-  it("keeps the label over the text gate", () => {
-    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
+  it.each([
+    ["foreground", TEXT.foreground],
+    ["muted-foreground", TEXT.mutedForeground],
+    ["muted", TEXT.muted],
+  ] as const)("keeps %s text over the text gate on it", (_name, tone) => {
+    // A hovered row's title, its sub-line and its timestamp all sit on it,
+    // and since 2026-11-09 it is also the quiet fill under text. `--muted` is
+    // the one the 2026-11-12 ladder (#3826) had to lift for: at `#9E9E9E` it
+    // fell to 4.18:1 here. The 7:1 reading floor is the four ladder steps';
+    // on this state fill the gate is AA (`--muted-foreground` 6.42:1).
+    expect(ratio(tone, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("does not need a chapter: a white alpha would have, and failed on --background", () => {
     // The recipe weighed first: `rgba(255,255,255,.06)` tracks its container
     // the way a hairline does, which is the problem. Over `--background` it
-    // composites to about the button's own card rest fill, so hovering a page
-    // level Secondary button changed nothing.
+    // composited to about the button's own card rest fill on the 2026-11-05
+    // ladder, so hovering a page level Secondary button changed nothing. On
+    // the 2026-11-12 ladder (#3826) it lands *under* the card rest fill, so
+    // the hover would step down instead: the same defect, the other way.
     const alphaOverBackground = applyAlpha("#ffffff", 0.06, SURFACE.background);
-    expect(ratio(alphaOverBackground, SURFACE.card)).toBeLessThan(1.05);
+    expect(luminance(alphaOverBackground)).toBeLessThan(luminance(SURFACE.card));
   });
 });
 

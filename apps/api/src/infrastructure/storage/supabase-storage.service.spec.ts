@@ -261,7 +261,7 @@ describe('SupabaseStorageService', () => {
   });
 
   describe('getSignedInlineAndAttachmentUrls', () => {
-    it('signs once and adds the download parameter createSignedUrl would', async () => {
+    it('signs once and adds the download parameter, encoded once', async () => {
       createSignedUrl.mockResolvedValueOnce({
         data: {
           signedUrl:
@@ -277,21 +277,30 @@ describe('SupabaseStorageService', () => {
       );
 
       expect(createSignedUrl).toHaveBeenCalledTimes(1);
-      expect(createSignedUrl).toHaveBeenCalledWith('a/b.pdf', 3600, undefined);
+      expect(createSignedUrl).toHaveBeenCalledWith('a/b.pdf', 3600);
       expect(urls).toEqual({
         inline:
           'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t',
         attachment:
-          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t&download=Risk+plan.pdf',
+          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t&download=Risk%20plan.pdf',
       });
     });
   });
 
-  describe('getSignedInlineAndAttachmentUrls against the real storage client', () => {
-    // The attachment link is built here rather than by a second signing call,
-    // so it has to stay what storage-js's own `{ download }` option builds. A
-    // storage-js bump that changes that fails this, not production.
-    it('matches createSignedUrl({ download }) byte for byte', async () => {
+  describe('download names against the real storage client', () => {
+    // Storage decodes the `download` parameter once and serves that as the
+    // saved name, so it must be encoded exactly once. storage-js's own
+    // `{ download }` option encodes twice (#3867): `(` reached the member's
+    // disk as `%28`. Built on a real client's signed URL so a storage-js bump
+    // that changes the URL's shape fails here.
+    const NAMES = [
+      'Risk plan.pdf',
+      'minutes_week-7.pdf',
+      'Q&A (draft).docx',
+      "Midterm 1 (2023) A&B, Bob's #2 100% é+x=1;y.pdf",
+    ];
+
+    async function realSigner() {
       const { StorageClient } = await import('@supabase/storage-js');
       const fakeFetch = jest.fn(() =>
         Promise.resolve(
@@ -312,23 +321,37 @@ describe('SupabaseStorageService', () => {
         (path: string, expiresIn: number, options?: { download?: string }) =>
           real.createSignedUrl(path, expiresIn, options),
       );
+    }
 
-      for (const name of [
-        'Risk plan.pdf',
-        'minutes_week-7.pdf',
-        'Q&A (draft).docx',
-      ]) {
-        const urls = await service.getSignedInlineAndAttachmentUrls(
+    it.each(NAMES)('the attachment link saves as %p', async (name) => {
+      await realSigner();
+      const urls = await service.getSignedInlineAndAttachmentUrls(
+        'documents',
+        'a/b c.pdf',
+        name,
+      );
+
+      const url = new URL(urls.attachment);
+      expect(url.searchParams.get('download')).toBe(name);
+      expect(url.searchParams.get('token')).toBe('t.k');
+      expect(urls.attachment.startsWith(`${urls.inline}&`)).toBe(true);
+    });
+
+    it.each(NAMES)(
+      'getSignedDownloadUrl(downloadAs) saves as %p',
+      async (name) => {
+        await realSigner();
+        const signed = await service.getSignedDownloadUrl(
           'documents',
           'a/b c.pdf',
+          3600,
           name,
         );
-        const expected = await real.createSignedUrl('a/b c.pdf', 3600, {
-          download: name,
-        });
-        expect(urls.attachment).toBe(expected.data?.signedUrl);
-      }
-    });
+
+        expect(new URL(signed).searchParams.get('download')).toBe(name);
+        expect(createSignedUrl).toHaveBeenLastCalledWith('a/b c.pdf', 3600);
+      },
+    );
   });
 
   describe('getSignedDownloadUrls', () => {

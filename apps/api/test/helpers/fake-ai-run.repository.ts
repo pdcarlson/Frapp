@@ -16,7 +16,7 @@ import type {
  * writes conditional on the lock token and `running`.
  *
  * It mirrors `claim_ai_run` and `enqueue_ai_run` in
- * `20261112020000_ai_runs.sql`, so worker and service specs can drive whole
+ * `20261112131400_ai_runs.sql`, so worker and service specs can drive whole
  * lifecycles on a fake clock. It is not the proof of the SQL: the PGlite tier
  * (`scripts/pglite/tiers/ai-runs.mjs`) runs that.
  */

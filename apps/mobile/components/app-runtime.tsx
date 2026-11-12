@@ -67,8 +67,8 @@ export function AppRuntime(): null {
   useOnboardingRedirect();
   // An invite link a member with a chapter opened goes to web `/join` (#4002).
   useMemberInviteHandoff();
-  // Ahead of badge sync: it reads the tray, which badge sync can empty on
-  // Android (`lib/chat/use-unread-first-paint-runtime.ts`).
+  // Ahead of badge sync, which takes read channels' pushes out of the tray
+  // this one reads (`lib/chat/use-unread-first-paint-runtime.ts`).
   useUnreadFirstPaintRuntime();
   useBadgeSyncRuntime();
   useNotificationSyncRuntime();

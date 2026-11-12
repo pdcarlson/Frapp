@@ -361,10 +361,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: 'Returns nothing.',
   },
-  PollController_close_v1: {
-    status: 'no-foreign-content',
-    why: "Creator-only; returns the caller's own poll.",
-  },
+  // Its creator's own poll, or (#4046) a `channels:manage` holder closing
+  // anyone's, which is moderation as pinning is.
+  PollController_close_v1: OFFICER_MODERATION,
   PollController_listPolls_v1: {
     status: 'masked',
     proof: {

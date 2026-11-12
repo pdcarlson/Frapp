@@ -139,14 +139,12 @@ export class SupabaseStorageService implements IStorageProvider {
     assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUrl(
-        path,
-        expiresIn,
-        downloadAs ? { download: downloadAs } : undefined,
-      );
+      .createSignedUrl(path, expiresIn);
 
     if (error) throw error;
-    return data.signedUrl;
+    return downloadAs
+      ? withDownloadName(data.signedUrl, downloadAs)
+      : data.signedUrl;
   }
 
   async getSignedInlineAndAttachmentUrls(
@@ -156,11 +154,7 @@ export class SupabaseStorageService implements IStorageProvider {
     expiresIn = 3600,
   ): Promise<{ inline: string; attachment: string }> {
     const inline = await this.getSignedDownloadUrl(bucket, path, expiresIn);
-    // What `createSignedUrl` does with `{ download }`: the token covers the
-    // path, and `download` is a query parameter beside it, set the same way
-    // (`URLSearchParams`, then `encodeURI` over the whole URL).
-    const query = new URLSearchParams({ download: downloadAs }).toString();
-    return { inline, attachment: `${inline}&${encodeURI(query)}` };
+    return { inline, attachment: withDownloadName(inline, downloadAs) };
   }
 
   async getSignedDownloadUrls(
@@ -350,4 +344,20 @@ export class SupabaseStorageService implements IStorageProvider {
       offset += entries.length;
     }
   }
+}
+
+/**
+ * A signed link that saves as `filename`. The token covers only the path, so
+ * `download` rides beside it as a query parameter, encoded once.
+ *
+ * Not `createSignedUrl(path, ttl, { download })`: storage-js builds that with
+ * `URLSearchParams` and then runs `encodeURI` over the whole URL, encoding
+ * every escape twice, and storage serves the name decoded once. A file
+ * stored as `Midterm (2023) A&B.pdf` saved as `Midterm %282023%29 A%26B.pdf`
+ * (checked against local storage, 2026-11-12, #3867). `download=` with an
+ * empty value still forces the download, under the URL's last segment.
+ */
+function withDownloadName(signedUrl: string, filename: string): string {
+  const separator = signedUrl.includes('?') ? '&' : '?';
+  return `${signedUrl}${separator}download=${encodeURIComponent(filename)}`;
 }

@@ -46,3 +46,8 @@ export {
   nameForThisYear,
   sameWeekdayThisYear,
 } from "./last-year";
+export {
+  CURRENCY_AMOUNT,
+  neutralizeFormulaCell,
+  toCsvCell,
+} from "./spreadsheet-cell";

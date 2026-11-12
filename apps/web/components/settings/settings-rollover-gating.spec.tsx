@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import * as accentPreviewInk from "@/components/settings/accent-preview-ink";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -225,7 +226,10 @@ describe("the accent preview reports its own legibility", () => {
    * and substituting it away, which silently emptied this test. `#0086FE` clears
    * the card floor on the value rather than on the rounding. (The darker
    * neutral ladder, 2026-11-05, keeps `#0080FD` again; the seed stays
-   * `#0086FE`, which has the wider margin.)
+   * `#0086FE`, which has the wider margin.) The 2026-11-12 ladder's lighter
+   * `--card` emptied the band altogether: `#0086FE` is now substituted
+   * (`insufficient_contrast`), and the two tests below drive the warning with
+   * a stubbed ink on `#4DA3FF`, which the resolver keeps at 5.76:1.
    *
    * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.
@@ -235,30 +239,61 @@ describe("the accent preview reports its own legibility", () => {
     chapter.active();
   });
 
+  /**
+   * Since the 2026-11-12 surface ladder (#3826) no colour the resolver keeps
+   * on `--card` has a label under AA (`settings-contrast.spec.ts` sweeps it),
+   * so these two drive the warning with a stubbed ink on a kept colour, the
+   * way the swatch test below always has. What they pin is the screen's half:
+   * that a failing ink surfaces, and how its ratio prints.
+   */
+  const withInkRatio = async (inkRatio: number) => {
+    const real = accentPreviewInk.previewInkFor;
+    const spy = vi
+      .spyOn(accentPreviewInk, "previewInkFor")
+      .mockImplementation((fill) =>
+        fill.toUpperCase() === "#4DA3FF"
+          ? { ink: signetDarkTokens.color.gold.onHouse, ratio: inkRatio }
+          : real(fill),
+      );
+    // Restore here if setup throws, so a broken render can't leak the stub
+    // into the tests after this one; on success the caller restores it.
+    try {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
+      const hex = screen.getByLabelText(/accent color hex value/i);
+      await user.clear(hex);
+      await user.type(hex, "#4DA3FF");
+    } catch (error) {
+      spy.mockRestore();
+      throw error;
+    }
+    return spy;
+  };
+
   it("warns when label text on the typed accent misses AA", async () => {
-    const user = userEvent.setup();
-    render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
-    const hex = screen.getByLabelText(/accent color hex value/i);
-    await user.clear(hex);
-    await user.type(hex, "#0086FE");
-    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
-    expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+    const spy = await withInkRatio(4.45);
+    try {
+      expect(
+        screen.getByText(/under the 4\.5:1 minimum/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("never prints a failing ratio as 4.5:1", async () => {
-    // `#008AF1`'s best ink sits just under 4.5:1 (the band is pinned in
-    // `settings-contrast.spec.ts`): it fails AA, and rounding printed it as
+    // A ratio just under 4.5:1 fails AA, and rounding once printed it as
     // "4.5:1, under the 4.5:1 minimum".
-    const user = userEvent.setup();
-    render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
-    const hex = screen.getByLabelText(/accent color hex value/i);
-    await user.clear(hex);
-    await user.type(hex, "#008AF1");
-    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
-      /reads at 4\.4:1/,
-    );
+    const spy = await withInkRatio(4.4999);
+    try {
+      expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
+        /reads at 4\.4:1/,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("paints the swatch label in the ink the warning measured", async () => {
@@ -275,7 +310,7 @@ describe("the accent preview reports its own legibility", () => {
     const spy = vi
       .spyOn(accentPreviewInk, "previewInkFor")
       .mockImplementation((fill) =>
-        fill.toUpperCase() === "#0086FE"
+        fill.toUpperCase() === "#4DA3FF"
           ? { ink: "#123456", ratio: 3.27 }
           : real(fill),
       );
@@ -285,7 +320,7 @@ describe("the accent preview reports its own legibility", () => {
       await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
       const hex = screen.getByLabelText(/accent color hex value/i);
       await user.clear(hex);
-      await user.type(hex, "#0086FE");
+      await user.type(hex, "#4DA3FF");
       expect(screen.getByText("Preview")).toHaveStyle({ color: "#123456" });
       expect(screen.getByText(/under the 4\.5:1 minimum/i)).toHaveTextContent(
         /reads at 3\.2:1/,
@@ -422,7 +457,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
       ],
     });
     const user = userEvent.setup();
@@ -431,7 +466,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     await saveAccent(user);
 
     expect(
-      screen.getByText(/accent text on the app background reads at 3\.2:1/i),
+      screen.getByText(/accent text on menus and dialogs reads at 3\.2:1/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
     expect(
@@ -445,7 +480,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 4.47 },
+        { role: "--signet-accent-text", against: "#313131", ratio: 4.47 },
       ],
     });
     const user = userEvent.setup();
@@ -454,7 +489,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     await saveAccent(user);
 
     expect(
-      screen.getByText(/accent text on the app background reads at 4\.4:1/i),
+      screen.getByText(/accent text on menus and dialogs reads at 4\.4:1/i),
     ).toBeInTheDocument();
   });
 
@@ -529,7 +564,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
       ],
     });
     const user = userEvent.setup();
@@ -559,7 +594,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
         {
           role: "--signet-accent-on-primary",
           against: "--signet-accent-primary",
@@ -573,7 +608,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     await saveAccent(user);
 
     const warning = screen.getByText(
-      /accent text on the app background/i,
+      /accent text on menus and dialogs/i,
     ).textContent!;
     expect(warning).toMatch(/reads at 3\.2:1, under the 4\.5:1 minimum\./);
     expect(warning).toMatch(/reads at 2\.5:1, under the 4\.5:1 minimum\./);

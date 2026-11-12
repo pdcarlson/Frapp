@@ -1,10 +1,61 @@
-import { Task, TaskSubtask } from '../entities/task.entity';
+import { Task, TaskStatus, TaskSubtask } from '../entities/task.entity';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
+/**
+ * Where a page of tasks resumes: the `created_at` and `id` of the last row of
+ * the page before. Both, because `created_at` alone ties (every row inserted
+ * in one transaction shares `now()`), and a tie at a page boundary would
+ * repeat or drop rows.
+ */
+export interface TaskListCursor {
+  created_at: string;
+  id: string;
+}
+
+/**
+ * Which of a chapter's tasks to read or count (#4037). Every filter is
+ * applied in SQL, on the stored status (never the display `OVERDUE`).
+ */
+export interface TaskListFilter {
+  /** Only this assignee's tasks. */
+  assigneeId?: string;
+  /** Leave out this assignee's tasks. */
+  notAssigneeId?: string;
+  /** Only tasks this member created. */
+  createdBy?: string;
+  /** Only tasks in this stored status. */
+  status?: TaskStatus;
+  /** `true`: only confirmed tasks; `false`: only unconfirmed ones. */
+  confirmed?: boolean;
+}
+
+/**
+ * A read of a chapter's tasks. Both orders are total, so a page never repeats
+ * or skips a row.
+ */
+export interface TaskListQuery extends TaskListFilter {
+  /**
+   * `newest` (the default): `created_at` then `id`, newest first.
+   * `longest_waiting`: `completed_at`, then `created_at` and `id`, oldest
+   * first, for a list of completions waiting on a confirm.
+   */
+  order?: 'newest' | 'longest_waiting';
+  /** Resume after this row. Only with the `newest` order. */
+  after?: TaskListCursor;
+  /**
+   * At most this many rows. Omitted: every matching row, read in pages so the
+   * database's row cap never cuts the list short.
+   */
+  limit?: number;
+}
+
 export interface ITaskRepository {
   findById(id: string, chapterId: string): Promise<Task | null>;
-  findByChapter(chapterId: string): Promise<Task[]>;
+  /** The chapter's tasks that match `query`, in its order (newest first by default). */
+  findByChapter(chapterId: string, query?: TaskListQuery): Promise<Task[]>;
+  /** How many of the chapter's tasks match `query`, counted in SQL. */
+  countByChapter(chapterId: string, query?: TaskListFilter): Promise<number>;
   /**
    * The chapter's tasks due on or after `dueFrom` (`YYYY-MM-DD`), or made at
    * or after `createdFrom`, every row of them: read in pages, so a chapter
@@ -14,7 +65,6 @@ export interface ITaskRepository {
     chapterId: string,
     since: { dueFrom: string; createdFrom: string },
   ): Promise<Task[]>;
-  findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]>;
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;
   /**

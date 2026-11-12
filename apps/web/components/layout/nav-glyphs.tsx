@@ -72,6 +72,10 @@ export function ChatGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.chat} {...props} />;
 }
 
+export function DirectMessagesGlyph(props: NavGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.direct} {...props} />;
+}
+
 export function ActivityGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.activity} {...props} />;
 }

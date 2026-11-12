@@ -139,8 +139,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "Poll has expired": "This poll has closed.",
   "Poll is already closed": "This poll has closed.",
   "Cannot close a deleted poll": "That poll was deleted.",
-  "Only the poll creator can close it":
-    "Only the person who started this poll can close it.",
+  "Only the poll creator or a member who manages channels can close it":
+    "Only the person who started this poll, or an officer who manages channels, can close it.",
   "Duplicate attachment": "That file is already attached.",
   "You cannot block yourself": "You can't block yourself.",
   "This account cannot be blocked": "This account can't be blocked.",

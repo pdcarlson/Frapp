@@ -66,7 +66,7 @@ describe('TaskService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       findSince: jest.fn(),
-      findByAssignee: jest.fn(),
+      countByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       confirmCompletionAtomic: jest.fn(),
@@ -925,24 +925,61 @@ describe('TaskService', () => {
 
       const result = await service.list('ch-1', 'user-1', true);
 
-      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(mockTaskRepo.findByAssignee).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {});
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
     });
 
     it('should list tasks by assignee when not admin', async () => {
-      mockTaskRepo.findByAssignee.mockResolvedValue([baseTask]);
+      mockTaskRepo.findByChapter.mockResolvedValue([baseTask]);
 
       const result = await service.list('ch-1', 'user-1', false);
 
-      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-      );
-      expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
+        assigneeId: 'user-1',
+      });
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
+    });
+
+    it('passes paging and filters through, and keeps a member to their own tasks', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([]);
+      const after = { created_at: '2026-01-01T00:00:00+00:00', id: 'task-9' };
+
+      await service.list('ch-1', 'user-1', false, {
+        confirmed: true,
+        after,
+        limit: 50,
+      });
+
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
+        confirmed: true,
+        after,
+        limit: 50,
+        assigneeId: 'user-1',
+      });
+    });
+
+    it('refuses a calendar-invalid cursor with a 400, not a database 500', async () => {
+      await expect(
+        service.list('ch-1', 'user-1', true, {
+          after: { created_at: '2026-02-30T00:00:00Z', id: 'task-9' },
+          limit: 50,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('counts in SQL, a member only their own', async () => {
+      mockTaskRepo.countByChapter.mockResolvedValue(3);
+
+      await expect(
+        service.count('ch-1', 'user-1', false, { confirmed: false }),
+      ).resolves.toBe(3);
+      expect(mockTaskRepo.countByChapter).toHaveBeenCalledWith('ch-1', {
+        confirmed: false,
+        assigneeId: 'user-1',
+      });
     });
 
     it('should display OVERDUE status for past-due tasks', async () => {

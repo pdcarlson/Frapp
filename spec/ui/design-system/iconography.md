@@ -320,6 +320,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
 |---|---|---|
 | Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
+| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages door keeps its own speech bubble for now. |
 | Activity (what needs you, what you made) | `ActivityGlyph` | `activity`, `tray` |
 | Events | `EventsGlyph` | `events`, `calendar-dots` |
 | Tasks | `TasksGlyph` | `tasks`, `seal-check` |

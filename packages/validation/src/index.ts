@@ -776,6 +776,11 @@ export {
 } from "./field-limits";
 
 export {
+  ORDER_NUMBER_INVALID_MESSAGE,
+  parseOrderNumber,
+} from "./order-number";
+
+export {
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   showsAfterGraduation,

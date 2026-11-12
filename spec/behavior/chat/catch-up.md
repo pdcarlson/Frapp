@@ -73,7 +73,8 @@ declared-but-unassigned role has no holders and so cannot suppress a signal.
 The three bolded gates are the non-obvious ones, and each is load-bearing:
 
 - **Tasks.** `task.controller.ts` resolves `isAdmin` from `tasks:manage` and
-  `task.service.ts` returns `findByAssignee(chapterId, userId)` for everyone else — a plain member
+  `TaskService.list` (`task.service.ts`) pins everyone else's read to `assigneeId: userId`, set
+  after every other option so none can widen it — a plain member
   can only ever see their own tasks, never a chapter-wide overdue count.
 - **Service hours.** `service-entry.controller.ts` does the same against `service:approve`, with the
   comment "Non-admins only ever see their own history". The approval *queue* therefore requires

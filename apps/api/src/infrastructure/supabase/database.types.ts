@@ -220,7 +220,7 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       /**
-       * `20261112020000` (#4310) — the run for (chapter, kind, dedupe key),
+       * `20261112131400` (#4310) — the run for (chapter, kind, dedupe key),
        * new or existing; `returns setof ai_runs`.
        */
       enqueue_ai_run: {
@@ -334,7 +334,7 @@ export interface Database {
         Returns: CorpusCandidate[];
       };
       /**
-       * `20261112020000` (#4310) — leases the oldest claimable run, or returns
+       * `20261112131400` (#4310) — leases the oldest claimable run, or returns
        * no row; `returns setof ai_runs`.
        */
       claim_ai_run: {
@@ -347,7 +347,7 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261112130000` (#714) — holds an AI call's worst-case cost against
+       * `20261112131420` (#714) — holds an AI call's worst-case cost against
        * the platform, chapter and member caps. One row: the hold's id, or the
        * cap it would cross. Amounts are bigint micro-USD.
        */
@@ -375,7 +375,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20261112130000` (#714) — settles a hold with the call's real counts
+       * `20261112131420` (#714) — settles a hold with the call's real counts
        * and cost, or records a call made with no hold. Returns `settled`,
        * `inserted` or `missing`.
        */
@@ -404,13 +404,13 @@ export interface Database {
         };
         Returns: string;
       };
-      /** `20261112130000` (#714) — expires unsettled holds; returns the count. */
+      /** `20261112131420` (#714) — expires unsettled holds; returns the count. */
       expire_ai_spend_holds: {
         Args: { p_older_than: string };
         Returns: number;
       };
       /**
-       * `20261112130000` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
+       * `20261112131420` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
        * row per task, provider and model. Bigint columns may arrive as strings.
        */
       ai_chapter_usage: {
@@ -491,6 +491,23 @@ export interface Database {
           p_limit?: number;
         };
         Returns: ChapterDirectoryEntry[];
+      };
+      /**
+       * `20261112131300` (#3965). Chat search with a filter and no text: each
+       * handed channel's newest matches through an index, merged, newest
+       * first. Reads only the channel ids it is handed (the caller decides
+       * access); `p_has` is `file | image | link | poll`; at most 100 rows.
+       */
+      search_chat_messages_filtered: {
+        Args: {
+          p_channel_ids: string[];
+          p_sender_id: string | null;
+          p_after: string | null;
+          p_before: string | null;
+          p_has: string[];
+          p_limit: number;
+        };
+        Returns: ChatMessage[];
       };
       /**
        * `20261106190000` (#585). Backwork search over title, course,

@@ -28,8 +28,11 @@ import {
   useMediaQueryState,
 } from "@/components/layout/shell-layout";
 import {
+  parseChatView,
   persistChatOpen,
+  persistChatView,
   persistToolShare,
+  type ChatView,
 } from "@/components/layout/shell-prefs";
 import {
   SplitDivider,
@@ -40,7 +43,11 @@ import { ChapterHome } from "@/components/layout/chapter-home";
 import { ChatPanelBoundary } from "@/components/layout/chat-panel-boundary";
 import { ChatPage } from "@/components/chat/chat-page";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
-import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
+import {
+  CHAT_CHANNEL_PARAM,
+  CHAT_MESSAGE_PARAM,
+  CHAT_VIEW_PARAM,
+} from "@/lib/chat/chat-links";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -104,15 +111,16 @@ import { cn } from "@/lib/utils";
 function DrawerNav(
   props: Pick<
     React.ComponentProps<typeof AppNav>,
-    "permissions" | "isModuleEnabled" | "pathname" | "onNavigate"
+    "permissions" | "isModuleEnabled" | "pathname" | "onNavigate" | "chatView"
   >,
 ) {
-  const highlighted = useNavHighlights();
+  const { highlighted, counts } = useNavHighlights();
   return (
     <AppNav
       variant="drawer"
       collapsed={false}
       highlighted={highlighted}
+      counts={counts}
       {...props}
     />
   );
@@ -128,11 +136,16 @@ type DashboardShellProps = {
   defaultNavCollapsed?: boolean;
   /** Chat open or closed, from its cookie (`shell-prefs.ts`). */
   defaultChatOpen?: boolean;
+  /** Which list chat shows, channels or direct messages, from its cookie. */
+  defaultChatView?: ChatView;
   /** The divider's tool-page share, from its cookie. */
   defaultToolShare?: number;
   /** Chat's member column preference (`lib/chat/members-panel.ts`). */
   defaultMembersHidden?: boolean;
 };
+
+/** `/chat`'s title while the panel shows direct messages (#3774). */
+const DIRECT_MESSAGES_TITLE = "Direct messages";
 
 /** Chat's panel enters and leaves with the standard Signet tokens. */
 const PANEL_ENTER_MS = signetDarkTokens.motion.duration.context;
@@ -142,6 +155,7 @@ export function DashboardShell({
   children,
   defaultNavCollapsed = false,
   defaultChatOpen = true,
+  defaultChatView = "channels",
   defaultToolShare = 0.5,
   defaultMembersHidden = false,
 }: DashboardShellProps) {
@@ -179,15 +193,31 @@ export function DashboardShell({
           searchParams?.get(CHAT_MESSAGE_PARAM),
         )),
   );
+  /*
+    Which list the panel shows (#3774): the chapter's channels, or the
+    member's direct messages. The Chat and Direct messages rows switch it, a
+    chat URL's `?view=` sets it, and the panel itself moves it when the
+    channel it opens is the other kind (a notification for a DM, say).
+  */
+  const urlView = onChatRoute ? searchParams?.get(CHAT_VIEW_PARAM) : null;
+  const [chatView, setChatView] = useState<ChatView>(() =>
+    urlView ? parseChatView(urlView) : defaultChatView,
+  );
   const [toolShare, setToolShare] = useState(defaultToolShare);
   const splitRowRef = useRef<HTMLElement>(null);
 
   /*
     Arriving at a chat URL opens chat: a `/chat` link, a notification, a Find
-    result, the directory's Message action. The one arrival that must not is
-    the shell's own, closing a tool (`closeTool`), which goes to `/chat`
-    meaning "no tool" and leaves chat as it was. Adjusted during render, keyed
-    on the URL, so there is no frame of the home view first.
+    result, the directory's Message action. The arrivals that must not are
+    the shell's own: closing a tool (`closeTool`), which goes to `/chat`
+    meaning "no tool" and leaves chat as it was, and dropping a stale `?view=`
+    (`dropUrlView`). Adjusted during render, keyed on the URL, so there is no
+    frame of the home view first.
+
+    The list follows the URL too (#3774). A `?view=` names it. A bare `/chat`
+    is Chat's own link, so arriving there (Back from `/chat?view=direct`, say)
+    shows channels. A link to a conversation names no list: the panel follows
+    the conversation's kind.
   */
   const url = `${pathname}?${searchParams?.toString() ?? ""}`;
   const [seenUrl, setSeenUrl] = useState(url);
@@ -195,20 +225,33 @@ export function DashboardShell({
   // link that opens chat paints it in place. Cleared when the entrance ends,
   // so a later remount (the window narrowing and widening) does not replay it.
   const [animateOpen, setAnimateOpen] = useState(false);
-  const [closingTool, setClosingTool] = useState(false);
+  const [shellNavigating, setShellNavigating] = useState(false);
   if (seenUrl !== url) {
     setSeenUrl(url);
-    if (closingTool) setClosingTool(false);
-    else if (onChatRoute && !chatOpen) {
-      setChatOpen(true);
-      // A link paints chat in place; only the Chat row plays the entrance.
-      setAnimateOpen(false);
+    if (shellNavigating) setShellNavigating(false);
+    else {
+      if (onChatRoute && !chatOpen) {
+        setChatOpen(true);
+        // A link paints chat in place; only the Chat row plays the entrance.
+        setAnimateOpen(false);
+      }
+      if (urlView) setChatView(parseChatView(urlView));
+      else if (
+        onChatRoute &&
+        !searchParams?.get(CHAT_CHANNEL_PARAM) &&
+        !searchParams?.get(CHAT_MESSAGE_PARAM)
+      ) {
+        setChatView("channels");
+      }
     }
   }
-  // The cookie follows the state, whichever way it changed.
+  // The cookies follow the state, whichever way it changed.
   useEffect(() => {
     persistChatOpen(chatOpen);
   }, [chatOpen]);
+  useEffect(() => {
+    persistChatView(chatView);
+  }, [chatView]);
 
   /*
     Closing plays the exit before the panel unmounts. `leaving` is the panel
@@ -241,9 +284,53 @@ export function DashboardShell({
     toolColumnRef.current?.focus();
   }, [chatOpen, toggleChat]);
   const closeTool = useCallback(() => {
-    setClosingTool(true);
+    setShellNavigating(true);
     router.push("/chat");
   }, [router]);
+
+  /*
+    A `?view=` the list has since left: the address would name the other list,
+    so a reload put it back, and below the side-by-side width the row linking
+    to that address would be a link to the page already open, which does
+    nothing. Dropped in place, as the shell's own move.
+  */
+  const dropUrlView = useCallback(
+    (view: ChatView) => {
+      if (!urlView || parseChatView(urlView) === view) return;
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.delete(CHAT_VIEW_PARAM);
+      const query = params.toString();
+      setShellNavigating(true);
+      router.replace(query ? `${pathname}?${query}` : (pathname ?? "/chat"));
+    },
+    [urlView, searchParams, router, pathname],
+  );
+  /** The panel opened a conversation of the other kind (`ChatShell`). */
+  const followPanelView = useCallback(
+    (view: ChatView) => {
+      setChatView(view);
+      dropUrlView(view);
+    },
+    [dropUrlView],
+  );
+
+  /*
+    The Chat and Direct messages rows, from the side-by-side width up
+    (#3774). One panel: the row for the list on screen closes it, the other
+    row switches it in place, and either opens it when it is closed.
+  */
+  const selectChatView = useCallback(
+    (view: ChatView) => {
+      if (chatOpen && chatView === view) {
+        toggleChat();
+        return;
+      }
+      setChatView(view);
+      if (!chatOpen) toggleChat();
+      dropUrlView(view);
+    },
+    [chatOpen, chatView, toggleChat, dropUrlView],
+  );
 
   /*
     The side a divider drag will close if released now (dragged to that
@@ -329,12 +416,16 @@ export function DashboardShell({
   const isModuleEnabled = useChapterModuleGate();
   // The crumb's parent link follows its nav row's gates, so the top bar never
   // offers a member the Settings door the nav hides from them.
+  // `/chat` is titled for the list on screen: the Direct messages row's
+  // label when that is what the panel shows (#3774).
   const pageTitle = useMemo(
     () =>
-      resolvePageTitle(pathname, (item) =>
-        isNavItemVisible(item, permissions, isModuleEnabled),
-      ),
-    [pathname, permissions, isModuleEnabled],
+      onChatRoute && chatView === "direct"
+        ? { title: DIRECT_MESSAGES_TITLE }
+        : resolvePageTitle(pathname, (item) =>
+            isNavItemVisible(item, permissions, isModuleEnabled),
+          ),
+    [onChatRoute, chatView, pathname, permissions, isModuleEnabled],
   );
 
   const { data: notificationsData } = useNotifications();
@@ -450,6 +541,7 @@ export function DashboardShell({
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
+            chatView={chatView}
             onNavigate={() => setMobileNavOpen(false)}
           />
           <div className="mt-2 shrink-0 border-t border-border pt-2">
@@ -501,9 +593,10 @@ export function DashboardShell({
                 // `/chat` it is below the side-by-side width: a toggle would
                 // open a panel the page has no room for.
                 split === true && !fullWidthTool
-                  ? { onSelect: toggleChat, open: chatOpen }
+                  ? { onSelect: selectChatView, open: chatOpen, view: chatView }
                   : undefined
               }
+              chatView={chatView}
               onCloseTool={split === true && hasTool ? closeTool : undefined}
             />
           ),
@@ -549,7 +642,9 @@ export function DashboardShell({
           {chatMounted ? (
             <section
               id="chat-panel"
-              aria-label="Chat"
+              aria-label={
+                chatView === "direct" ? DIRECT_MESSAGES_TITLE : "Chat"
+              }
               data-chat-panel=""
               inert={leaving}
               className={chatPanelClassName}
@@ -567,6 +662,8 @@ export function DashboardShell({
                   <ChatPage
                     defaultMembersHidden={defaultMembersHidden}
                     toolBeside={hasTool}
+                    view={chatView}
+                    onViewChange={followPanelView}
                     onClose={
                       hasTool && split === true ? closeChatPanel : undefined
                     }

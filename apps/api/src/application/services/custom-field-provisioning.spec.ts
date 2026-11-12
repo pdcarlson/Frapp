@@ -7,8 +7,9 @@ import { CUSTOM_FIELDS_SEED } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
 
 // The fixtures below exercise the mapping's branches; the `CUSTOM_FIELDS_SEED`
-// block at the bottom pins the real seed, which `packages/org-archetypes` has
-// no tests of its own for.
+// block at the bottom pins the real seed's contents, which
+// `packages/org-archetypes`' own specs don't check (its `seeds.spec.ts` checks
+// only that a built config copies the seed).
 const CHAPTER = 'ch-1';
 
 function entry(over: Partial<CustomFieldEntry> = {}): CustomFieldEntry {
@@ -257,7 +258,7 @@ describe('buildCustomFieldRows', () => {
 });
 
 // The fixture tests above prove the mapping's branches; these prove the thing
-// that actually ships. `packages/org-archetypes` has no test files, so without
+// that actually ships. Nothing else checks the seed's contents, so without
 // this block a bad seed edit -- a `select` with no choices, two labels
 // slugifying together, a hyphenated id -- would be dropped from every newly
 // onboarded chapter with nothing but a log line, and the suite would stay green.

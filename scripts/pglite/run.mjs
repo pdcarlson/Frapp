@@ -197,6 +197,7 @@ await import("./tiers/unread-counts-skip-audit-mirror.mjs");
 await import("./tiers/unread-counts-filters.mjs");
 await import("./tiers/channel-latest-messages.mjs");
 await import("./tiers/message-threads.mjs");
+await import("./tiers/thread-last-reply.mjs");
 await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");
@@ -206,6 +207,7 @@ await import("./tiers/dm-one-per-pair.mjs");
 await import("./tiers/document-one-row-per-object.mjs");
 await import("./tiers/default-channel-descriptions.mjs");
 await import("./tiers/backwork-search.mjs");
+await import("./tiers/chat-search-filter-only.mjs");
 await import("./tiers/members-keep-base-role.mjs");
 await import("./tiers/transfer-presidency-keeps-member-access.mjs");
 await import("./tiers/check-in-once.mjs");
@@ -225,6 +227,7 @@ await import("./tiers/ai-corpus.mjs");
 await import("./tiers/ai-corpus-chat.mjs");
 await import("./tiers/ai-ask-diagnostics.mjs");
 await import("./tiers/ai-reports.mjs");
+await import("./tiers/clear-deleted-message-payloads.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

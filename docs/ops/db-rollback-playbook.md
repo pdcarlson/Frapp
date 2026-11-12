@@ -3302,7 +3302,7 @@ Four columns, a check, a trigger and two partial indexes on `chat_messages`; one
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies. *Since 2026-11-12:* remove the thread card's latest-reply preview first ([§ Rollback the thread card's latest-reply preview](#rollback-the-thread-cards-latest-reply-preview-20261112121000)), because its trigger's `when` clause reads `thread_root_id` and the column won't drop while it stands:
 
 ```sql
 drop trigger if exists chat_messages_thread_summary on public.chat_messages;
@@ -3748,9 +3748,9 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback meeting minutes (20261112120400)
+## Rollback meeting minutes (20261112131410)
 
-* **Migration**: `20261112120400_meetings.sql`
+* **Migration**: `20261112131410_meetings.sql`
 
 Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
 
@@ -3766,9 +3766,9 @@ update public.role_tiers
 
 Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
 
-## Rollback the AI run queue (20261112020000)
+## Rollback the AI run queue (20261112131400)
 
-* **Migration**: `20261112020000_ai_runs.sql`
+* **Migration**: `20261112131400_ai_runs.sql`
 
 One new table, `ai_runs`, with four indexes, and three functions: `ai_run_ref_is_ids_only` (the table's ids-only check), `enqueue_ai_run` and `claim_ai_run`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
 
@@ -3783,9 +3783,9 @@ drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
 
-## Rollback the AI usage ledger (20261112130000)
+## Rollback the AI usage ledger (20261112131420)
 
-* **Migration**: `20261112130000_ai_usage_ledger.sql`
+* **Migration**: `20261112131420_ai_usage_ledger.sql`
 
 One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
 
@@ -3804,15 +3804,15 @@ drop table if exists public.ai_usage_events;
 drop function if exists public.ai_usage_charge(text, bigint, bigint);
 ```
 
-## Rollback AI suggestions (20261112130001)
+## Rollback AI suggestions (20261112131430)
 
-* **Migration**: `20261112130001_ai_suggestions.sql`
+* **Migration**: `20261112131430_ai_suggestions.sql`
 
 One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
 
-To remove it all, in a later forward migration. Since `20261112130100_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
+To remove it all, in a later forward migration. Since `20261112131440_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
 
 ```sql
 drop trigger if exists events_drop_ai_suggestions on public.events;
@@ -3821,9 +3821,9 @@ drop function if exists public.ai_suggestions_drop_for_source();
 drop table if exists public.ai_suggestions;
 ```
 
-## Rollback AI consent (20261112130100)
+## Rollback AI consent (20261112131440)
 
-* **Migration**: `20261112130100_ai_consent.sql`
+* **Migration**: `20261112131440_ai_consent.sql`
 
 Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents` and clear the member's quotes from `ai_suggestions`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
 
@@ -4006,7 +4006,7 @@ drop table if exists public.meeting_recordings;
 delete from storage.buckets where id = 'meeting-audio';
 ```
 
-Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112130000_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
+Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112131420_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
 
 
 ## Rollback Report this (20261112220000)
@@ -4071,3 +4071,46 @@ alter table public.ai_suggestions
   add constraint ai_suggestions_source_type_check
     check (source_type in ('meeting', 'event', 'channel', 'task'));
 ```
+
+## Rollback chat search with a filter and no text (20261112131300)
+
+* **Migration**: `20261112131300_chat_search_filter_only.sql`
+
+One new function and two new partial indexes. It writes no row on apply.
+
+**Revert the API first**, because the API from the same PR calls the function for every message search with a filter and no text: redeploy the earlier API, whose `SupabaseSearchRepository.searchMessages` queried `chat_messages` directly for that case. Then the function is unused and harmless to keep.
+
+**To remove it as well, revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop function if exists public.search_chat_messages_filtered(uuid[], uuid, timestamptz, timestamptz, text[], integer);
+drop index if exists public.idx_chat_messages_search_poll;
+drop index if exists public.idx_chat_messages_search_link;
+```
+
+Dropping the indexes only makes `has=poll` and `has=link` slower; nothing reads them for correctness.
+
+## Rollback the thread card's latest-reply preview (20261112121000)
+
+* **Migration**: `20261112121000_chat_thread_last_reply.sql`
+
+One nullable column on `chat_messages` (`thread_last_reply`), the helper `chat_thread_reply_preview`, the insert trigger function `chat_messages_bump_thread_summary` redefined with one more column, and the update trigger `chat_messages_thread_last_reply` with its function. The backfill wrote the column on existing thread parents; nothing else changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never serves the new one, so the card draws without a preview. The triggers keep the column current, which is harmless.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. First restore the insert trigger's `20261110220000_chat_message_threads.sql` body (`create or replace function public.chat_messages_bump_thread_summary()` as written there), or every thread reply fails to send once the column is gone:
+
+```sql
+drop trigger if exists chat_messages_thread_last_reply on public.chat_messages;
+drop function if exists public.chat_messages_keep_thread_last_reply();
+drop function if exists public.chat_thread_reply_preview(public.chat_messages);
+alter table public.chat_messages drop column if exists thread_last_reply;
+```
+
+## Rollback clear deleted chat card payloads (20261112060000)
+
+* **Migration**: `20261112060000_clear_deleted_message_payloads.sql`
+
+Two `update`s on deleted `chat_messages` rows: `payload` set to null, or, on an imported row, cut down to `source` and `author_username`. **It cannot be reverted by a migration**: the cleared values are gone from the database. Once #4421 is live nothing needs them back: no API read serves a deleted message's payload, and there is no undelete.
+
+If one must be recovered (a legal hold, for instance), there is no point-in-time recovery ([§ Backup reality](#backup-reality)). Use the backup the promoter took before the push ([`promotion.md`](database/promotion.md)), else the nightly `db-backup.yml` dump or Supabase's daily backup, whichever predates the push (the daily one is kept 7 days). Restore it into a scratch project as in [§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot) and copy the `payload` of the rows needed by `id`. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).

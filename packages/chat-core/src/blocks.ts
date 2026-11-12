@@ -148,6 +148,38 @@ export function classifyMessage(
 }
 
 /**
+ * Whether the thread card may show its latest reply's preview (#4297).
+ *
+ * The preview is the replier's words on the parent's row, so it is
+ * classified as the replier's own message would be, with the parent's
+ * provenance and the server's verdict on the preview itself: a REST read
+ * withholds a blocked replier's preview (`chat-block-mask.ts`,
+ * `sender_blocked: true`, kept onto later echoes by `mergeServerRow`), so one
+ * it served clear was cleared; the parent's Realtime echo carries it raw. Anything short of `visible` shows no
+ * preview: there is no tombstone line on a card, and a held one fails
+ * closed until the list is back. The card itself stays either way.
+ */
+export function threadPreviewVisible(
+  reply: { id: string; sender_id: string | null; sender_blocked?: boolean },
+  parent: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): boolean {
+  return (
+    classifyMessage(
+      {
+        id: reply.id,
+        sender_id: reply.sender_id,
+        sender_blocked: reply.sender_blocked === true,
+        _blockEvaluated: parent._blockEvaluated,
+      },
+      blockState,
+      viewerId,
+    ) === "visible"
+  );
+}
+
+/**
  * Whether a tombstone should offer Unblock.
  *
  * The one case with nothing to undo is a server-masked copy left over from
@@ -256,10 +288,21 @@ export function contradictingRows(
   if (blockState.status !== "ready") return [];
   const rows: string[] = [];
   for (const message of messages) {
-    const sender = message.sender_id;
-    if (!message._blockEvaluated || !message.sender_blocked) continue;
-    if (!isBlockableSender(sender) || blockState.ids.has(sender)) continue;
-    rows.push(message.id);
+    if (!message._blockEvaluated) continue;
+    // The row's own sender, or its thread preview's replier (#4297).
+    const masked = [
+      message.sender_blocked ? message.sender_id : null,
+      message.thread?.last_reply?.sender_blocked
+        ? message.thread.last_reply.sender_id
+        : null,
+    ];
+    if (
+      masked.some(
+        (sender) => isBlockableSender(sender) && !blockState.ids.has(sender),
+      )
+    ) {
+      rows.push(message.id);
+    }
   }
   return rows.sort();
 }
@@ -371,6 +414,9 @@ export function isVisibleMember(
  * purpose (#2257 review, finding 3). It runs against the cache **as it is when
  * the response lands**, never a snapshot taken before the request: a Realtime
  * row, a send or a delete that landed in between is still there afterwards.
+ * A thread parent whose latest-reply preview the server withheld for this
+ * sender (#4297) is a masked copy too, of the preview: it is swapped when the
+ * re-read serves that preview clear, under the same evaluated-only guard.
  * And it only ever swaps a masked row for its clear twin — it never adds a row
  * the cache no longer holds (that would resurrect a deleted message) and never
  * overwrites one the echo has updated since. That row is no longer a *masked
@@ -386,18 +432,42 @@ export function replaceMaskedCopies(
 ): ChannelCache {
   let next = cache;
   for (const row of rows) {
-    if (row.sender_id !== senderId || row.sender_blocked !== false) continue;
     const cached = next.byId[row.id];
-    if (!cached || !cached._blockEvaluated || !cached.sender_blocked) continue;
-    next = mergeServerRow(next, row);
+    if (!cached || !cached._blockEvaluated) continue;
+    if (row.sender_id === senderId && row.sender_blocked === false) {
+      if (cached.sender_blocked) next = mergeServerRow(next, row);
+      continue;
+    }
+    // Another member's thread parent whose latest-reply preview the server
+    // withheld for this sender (#4297), now served clear.
+    const fresh = row.thread_last_reply;
+    if (
+      typeof row.sender_blocked === "boolean" &&
+      maskedPreviewFrom(cached, senderId) &&
+      fresh?.sender_id === senderId &&
+      fresh.sender_blocked === false
+    ) {
+      next = mergeServerRow(next, row);
+    }
   }
   return next;
+}
+
+/** A REST-evaluated parent whose preview the server withheld for `senderId`. */
+function maskedPreviewFrom(message: ChatMessage, senderId: string): boolean {
+  const reply = message.thread?.last_reply;
+  return (
+    message._blockEvaluated &&
+    reply?.sender_blocked === true &&
+    reply.sender_id === senderId
+  );
 }
 
 /**
  * Whether a channel cache holds a server-masked copy from this sender — an
  * evaluated row with its masked body, not an echo carrying the verdict (see
- * `replaceMaskedCopies`).
+ * `replaceMaskedCopies`) — or a thread parent whose latest-reply preview the
+ * server withheld for them (#4297).
  */
 export function hasMaskedCopyFrom(
   cache: ChannelCache | undefined,
@@ -406,9 +476,10 @@ export function hasMaskedCopyFrom(
   if (!cache) return false;
   return Object.values(cache.byId).some(
     (message) =>
-      message.sender_id === senderId &&
-      message._blockEvaluated &&
-      message.sender_blocked,
+      (message.sender_id === senderId &&
+        message._blockEvaluated &&
+        message.sender_blocked) ||
+      maskedPreviewFrom(message, senderId),
   );
 }
 
@@ -636,13 +707,13 @@ function oldestMaskedCopyTime(
   if (!cache) return null;
   let oldest: number | null = null;
   for (const message of Object.values(cache.byId)) {
-    if (
-      message.sender_id !== senderId ||
-      !message._blockEvaluated ||
-      !message.sender_blocked
-    ) {
-      continue;
-    }
+    const ownMasked =
+      message.sender_id === senderId &&
+      message._blockEvaluated &&
+      message.sender_blocked;
+    // A parent holding this sender's withheld preview is read back to by its
+    // own place in the thread (#4297).
+    if (!ownMasked && !maskedPreviewFrom(message, senderId)) continue;
     const time = Date.parse(message.created_at);
     if (oldest === null || time < oldest) oldest = time;
   }

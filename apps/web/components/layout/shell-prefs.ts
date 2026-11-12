@@ -43,3 +43,22 @@ export function parseToolShare(value: string | undefined): number {
 export function persistToolShare(share: number): void {
   writePreferenceValue(CHAT_SPLIT_COOKIE, share.toFixed(3));
 }
+
+/**
+ * Which list the chat panel shows (#3774): the chapter's channels, or the
+ * member's direct messages. The nav's Chat and Direct messages rows switch
+ * one panel between them, so the shell remembers the last one for the next
+ * page load, the way it remembers open or closed.
+ */
+export const CHAT_VIEW_COOKIE = "frapp_chat_view";
+
+export type ChatView = "channels" | "direct";
+
+/** Channels unless the member last had direct messages open. */
+export function parseChatView(value: string | null | undefined): ChatView {
+  return value === "direct" ? "direct" : "channels";
+}
+
+export function persistChatView(view: ChatView): void {
+  writePreferenceValue(CHAT_VIEW_COOKIE, view);
+}

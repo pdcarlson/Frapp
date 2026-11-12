@@ -12,8 +12,8 @@ import { tokenizeQuotedArgs } from "./integrations/parsers";
 
 /**
  * When voting stops, as the form offers it. `never` is a poll with no
- * deadline (#3896): it stays open until its creator closes it from the card
- * (Close poll, #3794).
+ * deadline (#3896): it stays open until it is closed from the card (Close
+ * poll, #3794), by its creator or a `channels:manage` holder (#4046).
  */
 export type PollCloseChoice = "1h" | "1d" | "3d" | "1w" | "never";
 
@@ -32,10 +32,10 @@ export const POLL_CLOSE_CHOICES: readonly {
 
 /**
  * The choices a form offers this member. **Doesn't close** is offered only to
- * a member who could end the poll: Close poll is the creator's alone and needs
- * `polls:create` (`canClosePoll` in `./polls`), which posting a card does not
- * (#3007), so without it an open-ended poll could only be ended by deleting
- * it. Pass `false` while the permission isn't known.
+ * a member who holds `polls:create`; pass `false` while the permission isn't
+ * known. The gate dates from when Close poll needed that permission. Since
+ * #4046 any creator may close their own poll (`canClosePoll` in `./polls`), so
+ * it no longer has a reason, and removing it is #4385.
  */
 export function pollCloseChoicesFor(canCloseEarly: boolean) {
   return canCloseEarly

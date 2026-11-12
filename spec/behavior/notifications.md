@@ -165,7 +165,13 @@ Multiple notifications from the same source are collapsed before they reach the 
 `BurstBundler` (`apps/api/src/application/workers/burst-bundler.ts`) collapses
 3+ messages from the same sender to the same recipient inside a 60s window into a
 single "N new messages" push, and that decision reaches the client only as
-`data.bundled` / `data.count`.
+`data.bundled` / `data.count`. Messages past the threshold in the same window
+push nothing, since the bundle covers them, except the first that mentions the
+recipient: it pushes and writes its row on its own, with `mentioned: true`, so a
+mention is never folded into a count written before it (#4359). Only the first
+in the window, so a sender who mentions in every message (a role ping, a run of
+quote-replies) stays capped like any burst; a mention in the threshold message
+itself rides on the bundle row as `mentioned: true`.
 
 **On the device, a conversation's pushes stack and leave once read.**
 
@@ -195,6 +201,8 @@ above is aspirational: only chat is bundled today.
 The app icon badge counts what addresses the member: unread in-app notifications, chat @-mentions across all channels, and every unread message in a direct or group message. A channel that is merely busy adds nothing, the same rule the channel list's badges follow ([foundations.md](../ui/design-system/foundations.md) §5; owner decision 2026-11-07). Badge count is updated on every notification delivery and when the user reads content.
 
 **Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `mention_count`, or `unread_count` for a direct message (`addressedUnreadTotal` in `@repo/hooks`, which reads `GET /v1/channels` to tell which channels are direct), and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
+
+**On Android a badge of 0 is not sent to the OS** (#4011). `expo-notifications`' Android badge call answers 0 with `NotificationManager.cancelAll()`, which would dismiss every notification in the tray, read or not, each time the count reached 0, including at every cold start before the chapter loads. So `setBadgeCount` (`apps/mobile/lib/notifications/push.ts`) skips the native call for 0 on Android. Android's launcher dot comes from the tray, so it clears as the tray clears. On both platforms, chat pushes leave per channel once read (§ Notification Grouping), and every other push leaves once its in-app row is read: each push carries its row's `notificationId`, and `useBadgeSyncRuntime` passes the read rows to `clearReadNonChatNotifications`. A thread reply's push, a push for a channel the member left, and a push from a chapter they are no longer in stay until opened or swiped, so on Android those can keep the dot lit at a count of 0. Clearing the tray at sign-out is an open question (#4365). A non-zero count is still sent, for the launchers that show a number through ShortcutBadger; such a launcher keeps its last non-zero number until the next one, which `cancelAll` never reset either. iOS sets the number, 0 included.
 
 Two adjustments keep the two sources additive rather than double-counted or unbounded: the chat push worker writes a `notifications` row for every chat push it sends, DMs, group DMs and announcements included (to each recipient who has not blocked its sender and is not in the channel right now) on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
 
