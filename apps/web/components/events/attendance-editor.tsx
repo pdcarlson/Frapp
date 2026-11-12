@@ -221,9 +221,7 @@ function AttendanceRow({
           {name}
         </span>
         {note ? (
-          <span className="text-caption text-muted-foreground">
-            {note}
-          </span>
+          <span className="text-caption text-muted-foreground">{note}</span>
         ) : null}
       </span>
       {children}
