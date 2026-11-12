@@ -580,7 +580,7 @@ describe('BackworkService', () => {
   });
 
   describe('findById', () => {
-    it('should return resource with download URL', async () => {
+    it('returns the resource with a forced-download link named after the stored file (#3867)', async () => {
       mockResourceRepo.findById.mockResolvedValue(baseResource);
       mockStorageProvider.getSignedDownloadUrl.mockResolvedValue(
         'https://storage.supabase.co/download/signed',
@@ -592,6 +592,12 @@ describe('BackworkService', () => {
         'https://storage.supabase.co/download/signed',
       );
       expect(result.id).toBe('res-1');
+      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'backwork',
+        'chapters/ch-1/backwork/res-1/midterm1.pdf',
+        undefined,
+        'midterm1.pdf',
+      );
     });
 
     it('should throw NotFoundException when resource not found', async () => {

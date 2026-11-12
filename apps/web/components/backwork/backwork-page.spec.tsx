@@ -555,15 +555,23 @@ describe("BackworkPage subscription gating", () => {
   // #1040: the call site read `download_url` while the API returns
   // `downloadUrl`, so this opened `undefined`. The SDK types this body as
   // `never` (no OpenAPI response schema), so no type catches the wrong key.
-  it("opens the signed URL the API actually returns", async () => {
+  it("saves through the signed URL the API actually returns, in place (#3867)", async () => {
     const user = userEvent.setup();
+    // jsdom's `location.assign` navigates and can't be spied on; stand it in
+    // for this test only, as `document-viewer.spec.tsx` does.
+    const assign = vi.fn();
+    const realLocation = window.location;
+    Object.defineProperty(window, "location", {
+      value: { ...realLocation, assign },
+      configurable: true,
+    });
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     // The real payload: `BackworkService.findById` returns `{ ...resource, downloadUrl }`.
     // A bare `{ downloadUrl }` fixture would pass even if the selector picked
     // some other string field off the row, so spread a realistic resource.
     mockFetchResource.mockResolvedValue({
       ...RESOURCE,
-      downloadUrl: "https://signed/exam.pdf",
+      downloadUrl: "https://signed/exam.pdf?download=exam.pdf",
     });
     chapter.active();
     render(<BackworkPage />);
@@ -574,16 +582,21 @@ describe("BackworkPage subscription gating", () => {
       );
 
       await waitFor(() =>
-        expect(open).toHaveBeenCalledWith(
-          "https://signed/exam.pdf",
-          "_blank",
-          "noopener",
+        expect(assign).toHaveBeenCalledWith(
+          "https://signed/exam.pdf?download=exam.pdf",
         ),
       );
+      // A forced download opened in a new tab leaves that tab blank.
+      expect(open).not.toHaveBeenCalled();
     } finally {
       open.mockRestore();
+      Object.defineProperty(window, "location", {
+        value: realLocation,
+        configurable: true,
+      });
     }
   });
+
 
   it("never gates the reads", () => {
     // `enforceSubscription` returns early for GET, so a lapsed chapter keeps

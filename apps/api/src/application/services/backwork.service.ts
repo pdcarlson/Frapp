@@ -46,7 +46,10 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
-import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  safeObjectFilename,
+  storedFilename,
+} from '#domain/constants/storage';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -248,6 +251,12 @@ export class BackworkService {
     return created;
   }
 
+  /**
+   * The resource with a signed link to its file, good for an hour. The link
+   * forces a download saved under the stored filename, like every backwork
+   * link: nothing on `/backwork` previews a file, and a member-uploaded file
+   * is never served inline as a page (#3867).
+   */
   async findById(
     id: string,
     chapterId: string,
@@ -260,6 +269,8 @@ export class BackworkService {
     const downloadUrl = await this.storageProvider.getSignedDownloadUrl(
       BACKWORK_BUCKET,
       resource.storage_path,
+      undefined,
+      storedFilename(resource.storage_path),
     );
 
     return { ...resource, downloadUrl };

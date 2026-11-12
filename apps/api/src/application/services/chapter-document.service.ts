@@ -40,6 +40,7 @@ import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
   isObjectKeySegment,
   safeObjectFilename,
+  storedFilename,
 } from '#domain/constants/storage';
 
 const DOCUMENTS_BUCKET = 'documents';
@@ -234,7 +235,9 @@ export class ChapterDocumentService {
    *   stored filename, so following it saves the file. The web Download
    *   control uses it; before it, Download opened a PDF in a tab.
    *
-   * Whether `downloadUrl` should stay inline for every client is #3867.
+   * The inline link is deliberate (#3867): every reader draws or parses the
+   * file and none runs it as a page, and the `document` kind admits no HTML
+   * or SVG. Backwork, which has no viewer, signs only a forced download.
    */
   async findById(
     id: string,
@@ -560,12 +563,4 @@ function normalizeFolderName(folder: string | null | undefined): string | null {
   if (folder === null || folder === undefined) return null;
   const trimmed = folder.trim();
   return trimmed === '' ? null : trimmed;
-}
-
-/**
- * The filename a saved copy takes: the last segment of the storage key, which
- * the upload mint already made safe (`safeObjectFilename`).
- */
-function storedFilename(storagePath: string): string {
-  return storagePath.slice(storagePath.lastIndexOf('/') + 1);
 }

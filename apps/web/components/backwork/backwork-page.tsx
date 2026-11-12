@@ -275,7 +275,9 @@ export function BackworkPage() {
     try {
       const url = selectDownloadUrl(await fetchResource(row.resource.id));
       if (!url) throw new Error("No download URL returned.");
-      window.open(url, "_blank", "noopener");
+      // The link forces a download (#3867), so following it saves the file
+      // and leaves the page where it is; a new tab would be left blank.
+      window.location.assign(url);
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",
