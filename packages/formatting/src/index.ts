@@ -40,4 +40,8 @@ export {
   parseDueEntryWithTime,
 } from "./due-entry";
 export { nextUpLine } from "./next-up";
-export { CURRENCY_AMOUNT, neutralizeFormulaCell } from "./spreadsheet-cell";
+export {
+  CURRENCY_AMOUNT,
+  neutralizeFormulaCell,
+  toCsvCell,
+} from "./spreadsheet-cell";

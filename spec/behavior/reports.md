@@ -87,12 +87,16 @@ writer loads only when Excel is picked. One menu component
 (`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
 exports.
 
-The API's own `format=csv` applies the same rule (#3976), from the same
-function: `neutralizeFormulaCell` lives in `@repo/formatting`
-(`packages/formatting/src/spreadsheet-cell.ts`), and both the dashboard's
-helpers and the API's `toCSV` (`apps/api/src/domain/utils/csv.ts`) call it. In
-the API a text cell (a name, a description, a role list) gets the apostrophe; a
-numeric field such as points or minutes is written as a number and never does.
+The API's own `format=csv` applies the same rule (#3976), through the same
+cell writer: `toCsvCell` in `@repo/formatting`
+(`packages/formatting/src/spreadsheet-cell.ts`) makes a formula-shaped cell
+inert, then quotes a cell holding a comma, double quote, semicolon or line
+break, and both the dashboard's `rowsToCsv` and the API's `toCSV`
+(`apps/api/src/domain/utils/csv.ts`) call it. The semicolon is quoted because
+Excel in a locale whose list separator is `;` splits a CSV on it, which would
+start a new cell, possibly a formula, mid-text. In the API a text cell (a name,
+a description, a role list) can get the apostrophe; a numeric field such as
+points or minutes is written as a number and never does.
 
 ### Retention
 

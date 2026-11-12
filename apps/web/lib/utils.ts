@@ -2,6 +2,7 @@ import {
   CURRENCY_AMOUNT,
   localIsoDate,
   neutralizeFormulaCell,
+  toCsvCell,
 } from "@repo/formatting";
 import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -135,14 +136,6 @@ export function labelled(
   return formatted ? `${label} ${formatted}` : null;
 }
 
-/** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */
-export function quoteCsvCell(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
 /** Column order for an export: every row's own keys, in first-seen order. */
 function exportHeaders(rows: Record<string, string>[]): string[] {
   const headerSet = new Set<string>();
@@ -157,18 +150,19 @@ function exportHeaders(rows: Record<string, string>[]): string[] {
  * Excel renders umlauts/emoji correctly and downstream spreadsheet behavior
  * stays predictable without extra client libs. Column order is the union of
  * every row's own keys, in first-seen order, so rows with different shapes
- * still produce one header. Formula-shaped cells are made inert
- * (`neutralizeFormulaCell`). Shared by every dashboard export (Points,
- * Billing, Reports) through `exportRows` rather than each hand-rolling the
+ * still produce one header. Each cell goes through `toCsvCell`
+ * (`@repo/formatting`): formula-shaped text made inert, then quoted. Shared
+ * by every dashboard export (Points, Billing, Reports) through `exportRows` rather than each hand-rolling the
  * same escaping and BOM/CRLF handling.
  */
 export function rowsToCsv(rows: Record<string, string>[]): string {
   if (rows.length === 0) return "";
   const headers = exportHeaders(rows);
-  const cell = (value: string) => quoteCsvCell(neutralizeFormulaCell(value));
-  const lines = [headers.map(cell).join(",")];
+  const lines = [headers.map(toCsvCell).join(",")];
   for (const row of rows) {
-    lines.push(headers.map((header) => cell(row[header] ?? "")).join(","));
+    lines.push(
+      headers.map((header) => toCsvCell(row[header] ?? "")).join(","),
+    );
   }
   return `\uFEFF${lines.join("\r\n")}`;
 }

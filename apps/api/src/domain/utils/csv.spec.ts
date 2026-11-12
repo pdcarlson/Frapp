@@ -109,6 +109,27 @@ describe('toCSV', () => {
       );
     });
 
+    it('quotes a semicolon, so a `;`-separator spreadsheet keeps one cell', () => {
+      const rows = [
+        {
+          member_name: 'Ann',
+          date: '2026-11-10',
+          duration_minutes: 30,
+          description: 'Late;=HYPERLINK("https://evil.example")',
+          status: 'approved',
+        },
+      ];
+      expect(toCSV(rows, SERVICE_COLUMNS).split('\r\n')[1]).toBe(
+        'Ann,2026-11-10,30,"Late;=HYPERLINK(""https://evil.example"")",approved',
+      );
+    });
+
+    it('writes a number as is, even one a string rule would prefix', () => {
+      expect(toCSV([{ n: -1e-7 }], [{ key: 'n', header: 'N' }])).toBe(
+        'N\r\n-1e-7',
+      );
+    });
+
     it('applies to a header too', () => {
       expect(toCSV([], [{ key: 'x', header: '-Points' }])).toBe("'-Points");
     });

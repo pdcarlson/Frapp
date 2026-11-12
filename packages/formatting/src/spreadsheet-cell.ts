@@ -14,12 +14,33 @@
  *
  * The one rule for every spreadsheet export: the dashboard's CSV and
  * clipboard copy (`apps/web/lib/utils.ts`) and the API's `format=csv`
- * reports (`apps/api/src/domain/utils/csv.ts`, #3976).
+ * reports (`apps/api/src/domain/utils/csv.ts`, #3976), both through
+ * {@link toCsvCell}; the clipboard copy calls it directly.
  */
 export function neutralizeFormulaCell(value: string): string {
   if (!/^[=+\-@\t\r]/.test(value)) return value;
   if (PLAIN_NUMBER.test(value) || CURRENCY_AMOUNT.test(value)) return value;
   return `'${value}`;
+}
+
+/**
+ * One CSV cell, ready to join with commas: formula-shaped text made inert
+ * ({@link neutralizeFormulaCell}), then quoted per RFC 4180 when it holds a
+ * comma, a double quote or a line break, with each `"` doubled.
+ *
+ * A semicolon is quoted too. Excel in a locale whose list separator is `;`
+ * (much of Europe) splits a `.csv` on semicolons, so an unquoted
+ * `Late;=HYPERLINK(...)` would open as two cells, the second a formula the
+ * leading-character check never saw. OWASP's CSV-injection guidance names the
+ * field separators for this reason. Quoting a field is always legal RFC 4180,
+ * so a parser reads the same value either way.
+ *
+ * The one cell writer for both CSV exports: the dashboard's `rowsToCsv` and
+ * the API's `toCSV` (#3976).
+ */
+export function toCsvCell(value: string): string {
+  const cell = neutralizeFormulaCell(value);
+  return /[",;\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
 }
 
 const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
