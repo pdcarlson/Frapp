@@ -20,8 +20,12 @@ import { type Env, envValue } from '#domain/utils/env-value';
  * builds of one version); `validateClientPolicyEnv` refuses anything else at
  * boot, because a typo that parsed as "no minimum" would switch the gate off
  * without a sound.
+ *
+ * @public Exported for `scripts/ci/__tests__/client-version.test.mjs`, which
+ * loads this file by path to pin the deploy check's copy of the rule, so no
+ * import of it shows up to knip or tsc.
  */
-const MINIMUM_VERSION_ENV: Readonly<Record<ClientPlatform, string>> = {
+export const MINIMUM_VERSION_ENV: Readonly<Record<ClientPlatform, string>> = {
   ios: 'MOBILE_MIN_VERSION_IOS',
   android: 'MOBILE_MIN_VERSION_ANDROID',
 };
