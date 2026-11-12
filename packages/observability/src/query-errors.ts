@@ -145,7 +145,7 @@ const ERROR_CODE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
 const REQUEST_ID_RE = /^req_[A-Za-z0-9-]{1,64}$/;
 
 /** The root an event names when the key has none worth naming. */
-export const UNKEYED_ROOT = "unkeyed";
+const UNKEYED_ROOT = "unkeyed";
 
 export type QueryErrorKind = "query" | "mutation";
 

@@ -27,7 +27,7 @@ export const PLUS_MENU_COMMANDS = [
 export type PlusMenuCommand = (typeof PLUS_MENU_COMMANDS)[number];
 
 /** Each row's label, and the plural the footer names it by. */
-export const PLUS_MENU_ROW_COPY: Record<
+const PLUS_MENU_ROW_COPY: Record<
   PlusMenuCommand,
   { label: string; noun: string }
 > = {

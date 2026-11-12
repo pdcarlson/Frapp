@@ -1,14 +1,7 @@
-export {
-  formatClock,
-  formatLocaleDate,
-  formatLocaleDateTime,
-  formatTimeOfDay,
-  formatTimeOfDayShort,
-} from "./locale";
+export { formatClock, formatTimeOfDay, formatTimeOfDayShort } from "./locale";
 export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
 export { parseInstant } from "./instant";
 export {
-  formatBareDate,
   formatBareDateMedium,
   parseBareDateLocalMidnight,
   parseBareDateLocalNoon,

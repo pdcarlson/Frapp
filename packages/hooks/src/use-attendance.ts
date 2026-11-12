@@ -90,7 +90,7 @@ const ATTENDANCE_ROW_STATUS_SET: Record<AttendanceRowStatus, true> = {
   ABSENT: true,
 };
 
-export const ATTENDANCE_ROW_STATUSES = Object.keys(
+const ATTENDANCE_ROW_STATUSES = Object.keys(
   ATTENDANCE_ROW_STATUS_SET,
 ) as AttendanceRowStatus[];
 
@@ -291,7 +291,7 @@ export const CHECK_IN_TOKEN_FALLBACK_POLL_MS = 10_000;
  * that still lands early just asks again, {@link CHECK_IN_TOKEN_MIN_POLL_MS}
  * later.
  */
-export const CHECK_IN_TOKEN_ROTATION_SLACK_MS = 500;
+const CHECK_IN_TOKEN_ROTATION_SLACK_MS = 500;
 /** The shortest wait between two mints, so a mistimed answer can't loop. */
 export const CHECK_IN_TOKEN_MIN_POLL_MS = 1_000;
 

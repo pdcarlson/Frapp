@@ -69,7 +69,7 @@ export type ClientAnalyticsApp = (typeof CLIENT_ANALYTICS_APPS)[number];
  * carry them: `app`, and anything starting with `$`, which is PostHog's
  * namespace (`$groups`, `$set`, `$process_person_profile` and the rest).
  */
-export const RESERVED_ANALYTICS_PROPERTY_KEYS = ['app'] as const;
+const RESERVED_ANALYTICS_PROPERTY_KEYS = ['app'] as const;
 
 export interface AnalyticsEvent {
   /** Behavioral event name in kebab-case, e.g. "search-completed", "task-created". */
