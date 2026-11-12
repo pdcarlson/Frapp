@@ -253,6 +253,7 @@ export function roleIssues(
     if (choice?.action !== "new") continue;
     const name = choice.name.trim();
     const clash = existing.get(name.toLowerCase());
+    const reserved = reservedMentionName(name);
     if (!name) {
       issues.push({
         roleId: role.roleId,
@@ -263,12 +264,12 @@ export function roleIssues(
         roleId: role.roleId,
         message: `The new role for ${role.roleName} needs a shorter name (at most ${maxNameLength} characters).`,
       });
-    } else if (reservedMentionName(name) !== null) {
+    } else if (reserved !== null) {
       // `@everyone` names the chapter's Everyone role, and no other (#4191);
       // `@here` is the members online, never a role (2026-11-12).
       issues.push({
         roleId: role.roleId,
-        message: `"${name}" is what @${reservedMentionName(name)} reads as. Give the new role for ${role.roleName} another name.`,
+        message: `"${name}" is what @${reserved} reads as. Give the new role for ${role.roleName} another name.`,
       });
     } else if (clash) {
       issues.push({

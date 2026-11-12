@@ -1439,6 +1439,7 @@ export class ChatService {
       content,
       message.mentions ?? [],
       await this.quotedAuthorId(message.reply_to_id ?? null),
+      message.content ?? '',
     );
 
     const edited = await this.messageRepo.update(messageId, {

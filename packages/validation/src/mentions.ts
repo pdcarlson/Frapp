@@ -636,8 +636,9 @@ const MAX_ROLE_SUGGESTIONS = 3;
  * given (the chapter's role order). Both pickers draw this list, so web and
  * mobile offer the same rows for the same text.
  *
- * Roles take at most three rows of the eight, and the members fill the rest.
- * A role matches as a member does (its name contains the query) and is left
+ * Roles take at most three rows of the eight, and the members fill the rest;
+ * `@everyone` and `@here` sit between them, outside the three, matched by
+ * prefix only. A role matches as a member does (its name contains the query) and is left
  * out under the same rule: its label must open on a letter to be typeable.
  */
 export function mentionPickerEntries<
@@ -650,26 +651,38 @@ export function mentionPickerEntries<
   limit: number = MAX_MENTION_SUGGESTIONS,
 ): MentionPickerEntry<M, R>[] {
   const needle = matchable(query.trim());
+  // `@everyone` and `@here` (2026-11-12): offered once a letter is typed and
+  // only by the start of their name, as Slack offers them, and outside the
+  // three role rows, so `@er` still lists the chapter's roles.
+  const reservedRows: MentionPickerEntry<M, R>[] = [];
   const roleRows: MentionPickerEntry<M, R>[] = [];
   for (const role of roles) {
-    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) break;
     if (!role.mentionable) continue;
+    const folded = fold(role.name);
+    if (folded === EVERYONE_FOLDED || folded === HERE_FOLDED) {
+      if (needle && folded.startsWith(fold(needle))) {
+        reservedRows.push({ kind: "role", role, label: folded });
+      }
+      continue;
+    }
+    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) continue;
     const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
+  const special = reservedRows.slice(0, Math.max(0, limit - roleRows.length));
   const memberRows = mentionSuggestions(
     roster,
     query,
-    limit - roleRows.length,
+    limit - roleRows.length - special.length,
   ).map(({ member, label }): MentionPickerEntry<M, R> => ({
     kind: "member",
     member,
     label,
   }));
-  return [...memberRows, ...roleRows];
+  return [...memberRows, ...special, ...roleRows];
 }
 
 /** The `@`-query a caret sits in: where its `@` is, and what follows it. */

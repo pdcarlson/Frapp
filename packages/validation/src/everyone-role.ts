@@ -44,15 +44,6 @@ export function isEveryoneRole(role: unknown): boolean {
 }
 
 /**
- * Whether `name` would read as `@everyone` in a message: another role named
- * so would make the token ambiguous, which reaches nobody (§ Role mentions),
- * so the API refuses it for any role but Everyone.
- */
-export function isEveryoneRoleName(name: string): boolean {
-  return foldMentionName(name) === EVERYONE_MENTION_NAME;
-}
-
-/**
  * The chapter-wide mention a role name would read as, `everyone` or `here`,
  * or `null` when it reads as neither. The API refuses either name for a new
  * or renamed role (the Everyone role keeps its own), since the token would

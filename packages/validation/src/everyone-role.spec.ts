@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   isEveryoneRole,
-  isEveryoneRoleName,
   mentionRoleHint,
   reservedMentionName,
   rolesAfterSave,
@@ -34,21 +33,13 @@ describe("isEveryoneRole (#4191)", () => {
   });
 });
 
-describe("isEveryoneRoleName (#4191)", () => {
-  it("catches every name that reads as @everyone", () => {
-    expect(isEveryoneRoleName("Everyone")).toBe(true);
-    expect(isEveryoneRoleName(" every-one ")).toBe(true);
-    expect(isEveryoneRoleName("EVERY ONE")).toBe(true);
-  });
-
+describe("reservedMentionName", () => {
   it("leaves a name that only contains the word", () => {
-    expect(isEveryoneRoleName("Everyone (role)")).toBe(false);
-    expect(isEveryoneRoleName("Everyone else")).toBe(false);
-    expect(isEveryoneRoleName("Member")).toBe(false);
+    expect(reservedMentionName("Everyone (role)")).toBeNull();
+    expect(reservedMentionName("Everyone else")).toBeNull();
+    expect(reservedMentionName("Member")).toBeNull();
   });
-});
 
-describe("reservedMentionName (@here)", () => {
   it("names the chapter-wide mention a role name would read as", () => {
     expect(reservedMentionName("Every One")).toBe("everyone");
     expect(reservedMentionName(" HERE ")).toBe("here");

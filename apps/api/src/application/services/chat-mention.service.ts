@@ -98,9 +98,9 @@ export class ChatMentionService {
    * Then every previous mention is kept: an edit cannot tell the ping apart,
    * and losing it to a read blip is worse than keeping a name the edit removed.
    *
-   * `@here` is not re-read on an edit: it keeps the members the message
-   * already mentions, so an edit never pings someone who came online since,
-   * and one that adds `@here` pings nobody new, as on Discord.
+   * `@here` is not re-read on an edit: it keeps the members the previous
+   * body's `@here` reached, so an edit never pings someone who came online
+   * since, and one that adds `@here` pings nobody new, as on Discord.
    */
   async resolveForEdit(
     chapterId: string,
@@ -108,13 +108,12 @@ export class ChatMentionService {
     content: string,
     previousMentions: readonly string[],
     quotedAuthorId: string | null | undefined,
+    previousContent: string = '',
   ): Promise<string[]> {
-    const body = await this.resolveBody(
-      chapterId,
-      senderId,
-      content,
+    const body = await this.resolveBody(chapterId, senderId, content, {
+      previousContent,
       previousMentions,
-    );
+    });
     if (quotedAuthorId === undefined) {
       return previousMentions.reduce(withMention, body);
     }
@@ -128,14 +127,14 @@ export class ChatMentionService {
 
   /**
    * `here` says who `@here` may reach: `'read'` reads who is online now (a
-   * send), and a list is used as it is (an edit, which passes the message's
-   * previous mentions).
+   * send), and an edit's previous body and mentions say who it reached then
+   * ({@link reachedByHere}).
    */
   private async resolveBody(
     chapterId: string,
     senderId: string,
     content: string,
-    here: 'read' | readonly string[],
+    here: HereSource,
   ): Promise<string[]> {
     // Parse before querying. `content.includes('@')` admits every email
     // address, every `@here`, and every `user@host` in a pasted log, all of
@@ -166,17 +165,7 @@ export class ChatMentionService {
       ]);
       if (candidates.length === 0) return [];
 
-      // Who is online is read only when the body says `@here`, the one token
-      // it decides: a join on the chapter's presence topic is the costliest
-      // read here, and an ordinary send must not wait on it.
-      const hereIds = !tokens.some(
-        (token) => foldMentionName(token) === HERE_MENTION_NAME,
-      )
-        ? []
-        : here === 'read'
-          ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
-          : here;
-      const views = mentionRoleViews(roles, candidates, hereIds);
+      const views = mentionRoleViews(roles, candidates);
       // The sender's permissions cost two more reads, so they are fetched only
       // when a token names a role that is switched off, the one case they decide.
       // Re-read as the resolver will (`sendMentionReading`), now that the
@@ -196,12 +185,24 @@ export class ChatMentionService {
             await this.rbac.getEffectivePermissions(chapterId, senderId),
           )
         : false;
+      const allowed = views.map((view) => withMentionable(view, officer));
 
-      return resolveMentions(
-        content,
-        candidates,
-        views.map((view) => withMentionable(view, officer)),
-      );
+      // Who `@here` reaches is worked out only once the sender may use it:
+      // reading who is online is a join on the chapter's presence topic, the
+      // costliest read here, and neither an ordinary send nor a member's
+      // `@here` that reaches nobody should wait on it.
+      const hereView = allowed.find((view) => view.name === HERE_MENTION_NAME);
+      if (
+        hereView?.mentionable &&
+        tokens.some((token) => foldMentionName(token) === HERE_MENTION_NAME)
+      ) {
+        hereView.member_ids =
+          here === 'read'
+            ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
+            : reachedByHere(here, candidates, allowed);
+      }
+
+      return resolveMentions(content, candidates, allowed);
     } catch (error) {
       // `error`: the message still sends, but everyone it named goes
       // unpinged and is never pinged later, so a fault here (a broken query,
@@ -232,14 +233,43 @@ export class ChatMentionService {
       this.rbac.getEffectivePermissions(chapterId, userId),
     ]);
     const officer = canPingAnyRole(permissions);
-    // `@here` is left out: it is no role, and the clients add its row after
-    // `@everyone`'s (`withHereMention`), which is the switch it follows.
+    // `@here` holds nobody here, so it is left out with the empty roles: it
+    // is no role, and the clients add its row after `@everyone`'s
+    // (`withHereMention`), which is the switch it follows.
     return mentionRoleViews(roles, candidates)
-      .filter(
-        (view) => view.member_ids.length > 0 && view.name !== HERE_MENTION_NAME,
-      )
+      .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
+}
+
+/** Where `@here`'s members come from: read now (a send), or an edit's earlier body. */
+type HereSource =
+  'read' | { previousContent: string; previousMentions: readonly string[] };
+
+/**
+ * The members an edited message's earlier `@here` reached: its mentions less
+ * the ones its body names otherwise, by name or role. None when the earlier
+ * body had no `@here`, so an edit that adds it reaches nobody new. A member
+ * both named and reached by `@here` counts as named, so editing their name
+ * out takes the mention away, as editing out any name does.
+ */
+function reachedByHere(
+  edit: Exclude<HereSource, 'read'>,
+  candidates: readonly ChapterMemberIdentity[],
+  views: readonly MentionRoleView[],
+): string[] {
+  const hadHere = extractMentionTokens(edit.previousContent).some(
+    (token) => foldMentionName(token) === HERE_MENTION_NAME,
+  );
+  if (!hadHere) return [];
+  const named = new Set(
+    resolveMentions(
+      edit.previousContent,
+      candidates,
+      views.filter((view) => view.name !== HERE_MENTION_NAME),
+    ),
+  );
+  return edit.previousMentions.filter((id) => !named.has(id));
 }
 
 /** The parts of a quoted message the reply ping reads. */
@@ -297,16 +327,18 @@ export function canPingAnyRole(permissions: readonly string[]): boolean {
  * switch, then `@here`. `mentionable` is left for the caller to set, since it
  * depends on who is sending.
  *
- * `@here` (2026-11-12) reaches `hereIds`, the members online now, narrowed to
- * the roster. It follows the Everyone role's switch, as Discord's one
- * permission covers `@everyone` and `@here`, and is officers-only where a
- * chapter has no Everyone role. A role an older chapter named "Here" before
- * the name was reserved is left out, so the token means one thing.
+ * `@here` (2026-11-12) holds nobody yet: `resolveBody` fills it with the
+ * members online once the sender may use it. It follows the Everyone role's
+ * switch, as Discord's one permission covers `@everyone` and `@here`, and is
+ * officers-only where a chapter has no Everyone role. With no roles read at
+ * all (a failed read) there is no `@here`, so the token reaches nobody without
+ * asking for the sender's permissions, which would fail the same way. A role
+ * an older chapter named "Here" before the name was reserved is left out, so
+ * the token means one thing.
  */
 export function mentionRoleViews(
   roles: readonly Role[],
   members: readonly ChapterMemberIdentity[],
-  hereIds: readonly string[] = [],
 ): MentionRoleView[] {
   const holders = new Map<string, string[]>();
   for (const member of members) {
@@ -342,13 +374,13 @@ export function mentionRoleViews(
         mentionable: false,
       };
     });
+  if (roles.length === 0) return views;
   const everyone = roles.find(isEveryoneRole);
-  const onRoster = new Set(members.map((member) => member.user_id));
   views.push({
     role_id: everyone?.id ?? HERE_MENTION_NAME,
     name: HERE_MENTION_NAME,
     color: null,
-    member_ids: hereIds.filter((id) => onRoster.has(id)),
+    member_ids: [],
     open_to_all: everyone ? everyone.mentionable !== false : false,
     mentionable: false,
   });

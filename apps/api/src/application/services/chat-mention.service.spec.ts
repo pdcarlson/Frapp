@@ -97,13 +97,10 @@ describe('mentionRoleViews', () => {
     });
   });
 
-  it('adds @here with the online members on the roster, on the Everyone switch', () => {
-    const here = mentionRoleViews(roles, members, ['u2', 'u4', 'stranger']).at(
-      -1,
-    );
-    expect(here).toMatchObject({
+  it('adds an empty @here on the Everyone switch', () => {
+    expect(mentionRoleViews(roles, members).at(-1)).toMatchObject({
       name: 'here',
-      member_ids: ['u2', 'u4'],
+      member_ids: [],
       open_to_all: false,
     });
     const opened = roles.map((r) =>
@@ -118,6 +115,18 @@ describe('mentionRoleViews', () => {
     expect(views.filter((view) => view.name.toLowerCase() === 'here')).toEqual([
       expect.objectContaining({ name: 'here', role_id: 'member' }),
     ]);
+  });
+
+  it('keeps @here for officers only in a chapter with no Everyone role', () => {
+    const legacy = roles.filter((r) => r.id !== 'member');
+    expect(mentionRoleViews(legacy, members).at(-1)).toMatchObject({
+      name: 'here',
+      open_to_all: false,
+    });
+  });
+
+  it('has no @here when no roles were read', () => {
+    expect(mentionRoleViews([], members)).toEqual([]);
   });
 
   it('reads a role with no stored switch as on', () => {
@@ -276,7 +285,7 @@ describe('ChatMentionService.resolveForSend', () => {
         members,
         roles,
         ['channels:manage'],
-        ['u1', 'u3'],
+        ['u1', 'u3', 'not-in-this-chapter'],
       );
       await expect(
         officer.mentions.resolveForSend('ch-1', 'u1', 'anyone free? @here'),
@@ -296,6 +305,8 @@ describe('ChatMentionService.resolveForSend', () => {
         member.mentions.resolveForSend('ch-1', 'u2', '@here'),
       ).resolves.toEqual([]);
       expect(member.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      // Nobody it could reach, so nothing waits on reading who is online.
+      expect(member.onlineUserIds).not.toHaveBeenCalled();
 
       const opened = roles.map((r) =>
         r.id === 'member' ? { ...r, mentionable: true } : r,
@@ -319,7 +330,7 @@ describe('ChatMentionService.resolveForSend', () => {
       }
     });
 
-    it('keeps the earlier mentions on an edit instead of reading again', async () => {
+    it('keeps who the earlier @here reached on an edit instead of reading again', async () => {
       const officer = service(members, roles, ['channels:manage'], ['u2']);
       await expect(
         officer.mentions.resolveForEdit(
@@ -328,9 +339,64 @@ describe('ChatMentionService.resolveForSend', () => {
           '@here (edited)',
           ['u3', 'u4'],
           null,
+          '@here',
         ),
       ).resolves.toEqual(['u3', 'u4']);
       expect(officer.onlineUserIds).not.toHaveBeenCalled();
+    });
+
+    it('drops a name the edit removes, though the message keeps @here', async () => {
+      // Sent "@Dee @here" with Ann and Cal online: Dee by name, Ann and Cal
+      // by @here. Editing Dee out for Ben takes her mention away.
+      const officer = service(members, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ben @here',
+          ['u4', 'u1', 'u3'],
+          null,
+          '@Dee @here',
+        ),
+      ).resolves.toEqual(['u2', 'u1', 'u3']);
+    });
+
+    it('reaches nobody new when an edit adds @here', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u2']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ann @here',
+          ['u1'],
+          null,
+          '@Ann',
+        ),
+      ).resolves.toEqual(['u1']);
+    });
+
+    it('keeps member mentions when the roles read fails', async () => {
+      const memberRepo = {
+        findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+      } as unknown as IMemberRepository;
+      const getEffectivePermissions = jest
+        .fn()
+        .mockRejectedValue(new Error('roles down'));
+      const rbac = {
+        findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
+        getEffectivePermissions,
+      } as unknown as RbacService;
+      const presence = presenceOf(['u3']);
+      const mentions = new ChatMentionService(
+        memberRepo,
+        rbac,
+        presence.reader,
+      );
+      await expect(
+        mentions.resolveForSend('ch-1', 'u1', '@Ben @here'),
+      ).resolves.toEqual(['u2']);
+      expect(getEffectivePermissions).not.toHaveBeenCalled();
+      expect(presence.onlineUserIds).not.toHaveBeenCalled();
     });
   });
 

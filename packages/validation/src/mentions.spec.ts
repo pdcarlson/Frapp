@@ -476,6 +476,48 @@ describe("mentionPickerEntries", () => {
     ).toEqual(["Jane Doe", "Janet Roe", "Bob Stone", "Officers"]);
   });
 
+  describe("@everyone and @here", () => {
+    const withReserved = [
+      { name: "everyone", mentionable: true },
+      { name: "here", mentionable: true },
+      { name: "Treasurer", mentionable: true },
+      { name: "Officers", mentionable: true },
+      { name: "Rush Chair", mentionable: true },
+    ];
+
+    it("waits for a letter, then matches only the start of the name", () => {
+      const labels = (query: string) =>
+        mentionPickerEntries([], withReserved, query).map((e) => e.label);
+      expect(labels("")).toEqual(["Treasurer", "Officers", "Rush Chair"]);
+      expect(labels("he")).toEqual(["here"]);
+      expect(labels("e")).toEqual(["everyone", "Treasurer", "Officers"]);
+      expect(labels("er")).toEqual(["Treasurer", "Officers"]);
+    });
+
+    it("takes none of the three role rows and sits before them", () => {
+      expect(
+        mentionPickerEntries(
+          [],
+          [...withReserved, { name: "Recruitment", mentionable: true }],
+          "e",
+        ).map((e) => e.label),
+      ).toEqual(["everyone", "Treasurer", "Officers", "Recruitment"]);
+      expect(
+        mentionPickerEntries([], withReserved, "h").map((e) => e.label),
+      ).toEqual(["here", "Rush Chair"]);
+    });
+
+    it("is not offered to a viewer who may not use it", () => {
+      expect(
+        mentionPickerEntries(
+          [],
+          [{ name: "here", mentionable: false }],
+          "here",
+        ),
+      ).toEqual([]);
+    });
+  });
+
   it("filters roles by the query as it does members", () => {
     const entries = mentionPickerEntries(roster, roles, "off");
     expect(entries).toEqual([
