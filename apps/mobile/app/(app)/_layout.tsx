@@ -129,6 +129,10 @@ export default function AppLayout() {
         name="whats-new"
         options={{ title: SCREEN_TITLES["whats-new"] }}
       />
+      <Stack.Screen
+        name="arrange-channels"
+        options={{ title: SCREEN_TITLES["arrange-channels"] }}
+      />
     </Stack>
   );
 }

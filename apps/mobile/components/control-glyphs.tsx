@@ -201,3 +201,32 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
     </Frame>
   );
 }
+
+/**
+ * Add one (New channel, #3838): the + beside a Chat home section heading,
+ * as Discord and Slack draw it beside a channel group.
+ */
+export function PlusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M12 5v14M5 12h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * The grip a row is dragged by (Arrange channels, #3838): three lines, the
+ * handle iOS's own list reorder draws.
+ */
+export function DragHandleGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M5 8h14M5 12h14M5 16h14" {...detail} />
+    </Frame>
+  );
+}
