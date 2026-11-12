@@ -309,7 +309,12 @@ describe('chat sources', () => {
           doc.body.toLowerCase().includes(needle.toLowerCase()),
         ),
       ).toBe(true);
-      expect(evalCase.expect.mustReportLeftOut).toBeGreaterThan(0);
+      // An exact count where the corpus is one conversation; a ceiling
+      // where the answer draws on only part of a large one.
+      expect(
+        evalCase.expect.mustReportLeftOut ??
+          evalCase.expect.mustNotReportLeftOutAbove,
+      ).toBeGreaterThan(0);
     },
   );
 });

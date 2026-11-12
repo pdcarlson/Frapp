@@ -155,7 +155,12 @@ export class AnthropicLanguageModel implements ILanguageModel {
         if (!('document_index' in citation)) continue;
         const source = request.sources[citation.document_index];
         if (source) {
-          citations.push({ sourceId: source.id, quote: citation.cited_text });
+          // `at`: the end of the span of prose this citation arrived on.
+          citations.push({
+            sourceId: source.id,
+            quote: citation.cited_text,
+            at: text.length,
+          });
         }
       }
     }

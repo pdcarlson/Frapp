@@ -3,6 +3,8 @@ import type {
   ActivityItemRead,
   AiRun,
   AiSuggestion,
+  AskDiagnosticsExchange,
+  AskDiagnosticsWindow,
   ChapterAiSettings,
   UserAiConsent,
   ActivityUnreadStart,
@@ -208,6 +210,8 @@ export interface Database {
       ai_runs: TableDefinition<AiRun>;
       chapter_ai_settings: TableDefinition<ChapterAiSettings>;
       user_ai_consents: TableDefinition<UserAiConsent>;
+      ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
+      ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
     };
     Views: Record<string, never>;
     Functions: {

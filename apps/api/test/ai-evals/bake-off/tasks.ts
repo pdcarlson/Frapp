@@ -4,7 +4,7 @@
  *
  * - `ask.answer`: every adversarial case in `cases/`, then the synthetic
  *   chapter's Ask cases, through the same agent the suite grades on every
- *   build (`harness/gateway-agent.ts`), graded by `harness/grader.ts`.
+ *   build (`harness/ask-agent.ts`, the product's Ask), graded by `harness/grader.ts`.
  * - `minutes.draft` and `minutes.suggest-tasks`: the synthetic chapter's
  *   meeting notes, through `generateObject`, graded on the decisions and
  *   action items a good draft must hold, the owner rules in
@@ -36,7 +36,7 @@ import type { ScriptedHandler } from '../../../src/infrastructure/ai/scripted-la
 import { isQuoteGrounded } from '#domain/utils/quote-grounding';
 import type { AiGatewayService } from '../../../src/application/services/ai/ai-gateway.service';
 import { allEvalCases } from '../cases';
-import { createGatewayAgent } from '../harness/gateway-agent';
+import { createAskAgent, scriptedAskPlanner } from '../harness/ask-agent';
 import { grade, type EvalViolation } from '../harness/grader';
 import { scriptedAskModel } from '../harness/scripted-model';
 import type { EvalCase } from '../harness/types';
@@ -65,6 +65,11 @@ export interface BakeOffTask {
   caseIds: string[];
   /** Replies for the scripted candidate, so CI can run the whole path. */
   scripted: ScriptedHandler;
+  /**
+   * Replies for the other model calls the task's product path makes: Ask
+   * plans its live reads (`ask.plan`) before it answers.
+   */
+  scriptedAlso?: Record<string, ScriptedHandler>;
   run(
     caseId: string,
     deps: { gateway: AiGatewayService },
@@ -82,10 +87,11 @@ const askTask: BakeOffTask = {
   name: 'ask.answer',
   caseIds: ASK_CASES.map((c) => c.id),
   scripted: scriptedAskModel,
+  scriptedAlso: { 'ask.plan': scriptedAskPlanner },
   async run(caseId, { gateway }) {
     const evalCase = ASK_CASES.find((c) => c.id === caseId);
     if (!evalCase) throw new Error(`No ask case ${caseId}`);
-    const agent = createGatewayAgent({ gateway });
+    const agent = createAskAgent({ gateway });
     const answer = await agent.ask(evalCase.invocation);
     // The citation precision for ask comes from the metered model, which
     // sees the quotes before the gateway's check drops any.

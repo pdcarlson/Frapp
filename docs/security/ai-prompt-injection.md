@@ -258,21 +258,31 @@ withholds a passage whose author no longer does or whom the asker blocked, keeps
 channels the asker can open (`ChannelAccessService`, the timeline's check), orders official
 passages before chat, and reports how many messages were left out, and `chatPassagesStillAllowed`
 checks consent once more before text is sent. Their unit tests and the migration gate
-(`scripts/pglite/tiers/ai-corpus-chat.mjs`) cover them. No eval case runs through that path until
-Ask's test agent does (#450).
+(`scripts/pglite/tiers/ai-corpus-chat.mjs`) cover them. Since #450 the eval cases run through that path.
+
+(Updated 2026-11-12, #450.) Ask is built, and it is the agent the cases grade
+(`apps/api/test/ai-evals/harness/ask-agent.ts`): `AskService` over the product's retrieval, chat
+source and gateway. The controls are enforced in `apps/api/src/application/services/ask/ask.service.ts`,
+which lists them by number. Live data is read by a closed list of read-only tools
+(`ask-tools.ts`). Which of them a question needs is chosen by a planning call that is shown the
+question and the tool list and nothing else, so no retrieved text and no tool result can cause a
+read; each chosen tool is checked against the asker's permissions and the chapter's modules and
+runs with the asker's chapter and id; a result from any other chapter is dropped. What the eval
+stands in for (the SQL's own chapter filter, ranking) is in
+[`apps/api/test/ai-evals/README.md`](../../apps/api/test/ai-evals/README.md).
 
 Mapping of control to enforcement:
 
 | Control | Graded by | Live today |
 | --- | --- | --- |
-| C1 system-channel instructions | *(not gradable without an implementation)* | no — design requirement |
-| C2 caller's permissions | `authority-ceiling` | rule tested |
-| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant | rule tested |
-| C4 chapter scoping | `chapter-scoping` (citations and tool calls) | rule tested |
-| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools` | rule tested |
-| C6 structural, grounded citations | `mustCite` + `citation-grounding` | rule tested |
-| C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | rule tested |
-| C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustCiteFirst`; `gateway-agent.eval-spec.ts` for chat after official sources and labelled as chat | rule tested; consent, channel access, blocks and ordering also in corpus retrieval (#4314) |
+| C1 system-channel instructions | `ask-agent.eval-spec.ts` (what the planner and the answer call are shown) | yes, behind `AI_ENABLED`: the question is the user turn, everything found is a source |
+| C2 caller's permissions | `authority-ceiling`, on tool calls the product made | yes, behind `AI_ENABLED` (`AskService.offeredTools`) |
+| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached |
+| C4 chapter scoping | `chapter-scoping` (citations and tool calls) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
+| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts` | yes, behind `AI_ENABLED`: Ask has no mutating tool and refuses to run one (#718 adds proposals) |
+| C6 structural, grounded citations | `mustCite` + `citation-grounding` | yes, behind `AI_ENABLED` (the gateway) |
+| C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer) |
+| C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450) |
 
 "Rule tested" means a mutation that disables the rule turns the suite red — verified by deleting each
 rule in turn. It does **not** mean an agent has been graded against it. (Corrected 2026-11-12: the

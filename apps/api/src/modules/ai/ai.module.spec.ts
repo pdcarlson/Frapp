@@ -225,7 +225,8 @@ describe('AiModule', () => {
 
     expect(result).toMatchObject({
       status: 'ok',
-      text: 'Scripted reply for ask.answer.',
+      // `scripted-ask.ts`: with no source to quote, it says so.
+      text: 'I could not find that in the sources I was given.',
       citations: [],
     });
     expect(track).toHaveBeenCalledTimes(1);

@@ -6,6 +6,7 @@ import { validateClientPolicyEnv } from '../application/services/client-policy.s
 import { validateDevLogEnv } from '../application/services/dev-log.service';
 import { validateAiEnv } from './ai-config';
 import { validateAiSpendEnv } from './ai-spend-config';
+import { validateAiStoredTextEnv } from './ai-stored-text-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -98,6 +99,12 @@ const REQUIRED_ENV_VARS = [
 //     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD
 //                        the spend caps in dollars; unset is the default in
 //                        config/ai-spend-config.ts (validateAiSpendEnv)
+//   - AI_STORED_TEXT_KEY  seals the AI text Frapp keeps (a reported exchange,
+//                        the Ask diagnostics window); unset, none is kept.
+//                        "<key id>:<base64 of 32 bytes>", checked at boot
+//   - AI_DIAGNOSTICS_CHAPTER_ID  the one chapter offered the 14-day Ask
+//                        diagnostics window; needs the key above
+//                        (config/ai-stored-text-config.ts)
 //
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
@@ -142,7 +149,11 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error(devLogProblems.join(' '));
   }
 
-  const aiProblems = [...validateAiEnv(config), ...validateAiSpendEnv(config)];
+  const aiProblems = [
+    ...validateAiEnv(config),
+    ...validateAiSpendEnv(config),
+    ...validateAiStoredTextEnv(config),
+  ];
   if (aiProblems.length > 0) {
     throw new Error(aiProblems.join(' '));
   }

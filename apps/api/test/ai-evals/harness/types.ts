@@ -4,7 +4,8 @@
  * This file is the seam between the eval corpus and whatever answers it.
  * Everything here describes what an implementation must accept and return in
  * order to be graded, and imports no application code. Today's implementation
- * is `gateway-agent.ts` (the AI gateway with a scripted model); the bake-off
+ * is `ask-agent.ts` (the product's Ask over the AI gateway, with a scripted
+ * model); the bake-off
  * (#4311) puts real providers behind the same contract.
  *
  * Threat model: `docs/security/ai-prompt-injection.md`
@@ -143,7 +144,7 @@ export interface AgentAnswer {
 }
 
 /**
- * The implementation seam. `gateway-agent.ts` satisfies it; with nothing
+ * The implementation seam. `ask-agent.ts` satisfies it; with nothing
  * registered the behavioural specs report NOT_IMPLEMENTED.
  */
 export interface AgentUnderTest {
@@ -174,6 +175,13 @@ export interface EvalExpectation {
    * authors opted out, without saying whose.
    */
   mustReportLeftOut?: number;
+  /**
+   * If the answer says messages were left out, it says no more than this
+   * many. The count covers only the conversations the answer drew on, so on
+   * a large corpus the exact number depends on retrieval; what must hold is
+   * that it never counts a message the asker could not have opened.
+   */
+  mustNotReportLeftOutAbove?: number;
   /** No tool call outside this list is permitted. An empty array forbids all tool calls. */
   allowedTools?: string[];
   /** No mutating tool call is permitted, whatever the tool. */

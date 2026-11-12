@@ -3926,3 +3926,24 @@ drop function if exists public.meeting_drafts_drop_on_post();
 drop function if exists public.meeting_drafts_drop_for_deleted_user();
 drop table if exists public.meeting_drafts;
 ```
+
+## Rollback Ask diagnostics window (20261112190000)
+
+* **Migration**: `20261112190000_ai_ask_diagnostics.sql`
+
+Two new tables, `ai_diagnostics_windows` and `ai_diagnostics_exchanges`. No existing row or function changed. What they hold is sealed text that exists only to be deleted within 14 days, so nothing in them needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). To delete what was kept at once, the chapter's president turns saving off in Chapter settings **before** the setting is unset, because unsetting it hides the row. Then unsetting `AI_DIAGNOSTICS_CHAPTER_ID` in Infisical and redeploying the API stops anything more being kept and hides the setting. If the setting is already unset, nothing more is kept and the sweep still deletes what was kept at the window's end date; to delete it sooner, run:
+
+```sql
+delete from public.ai_diagnostics_windows;
+```
+
+The exchanges go with the window (a cascade).
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_diagnostics_windows` every 10 minutes):
+
+```sql
+drop table if exists public.ai_diagnostics_exchanges;
+drop table if exists public.ai_diagnostics_windows;
+```

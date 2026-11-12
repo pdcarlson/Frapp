@@ -46,6 +46,13 @@ export interface LanguageModelSource {
 export interface LanguageModelCitation {
   sourceId: string;
   quote: string;
+  /**
+   * Where in the result's `text` the model attached the quote: the offset
+   * just past the span it backs, when the provider says (Claude's citations
+   * arrive on a span of prose). Absent when it does not; the feature then
+   * places the marker itself (`#domain/utils/citation-placement`).
+   */
+  at?: number;
 }
 
 export interface LanguageModelUsage {
