@@ -336,13 +336,14 @@ describe("formatDueDate", () => {
 });
 
 describe("isDueUrgent", () => {
-  it("is true for overdue, today, and tomorrow", () => {
+  it("is true only once the due time has passed (#4133)", () => {
     expect(isDueUrgent(at(2026, 6, 1), NOW)).toBe(true);
-    expect(isDueUrgent(at(2026, 7, 16, 23), NOW)).toBe(true);
-    expect(isDueUrgent(at(2026, 7, 17, 1), NOW)).toBe(true);
+    expect(isDueUrgent(at(2026, 7, 16, 11), NOW)).toBe(true);
   });
 
-  it("is false further out", () => {
+  it("is false later today, tomorrow and further out", () => {
+    expect(isDueUrgent(at(2026, 7, 16, 23), NOW)).toBe(false);
+    expect(isDueUrgent(at(2026, 7, 17, 1), NOW)).toBe(false);
     expect(isDueUrgent(at(2026, 7, 18), NOW)).toBe(false);
   });
 

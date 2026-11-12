@@ -354,18 +354,18 @@ system messages posted into DMs (the invite-accept notice, a DM poll's expiry). 
 
 ### Chapter-wide chat level
 
-**Settings → Notifications → Chat messages** (#3840, asked by Shawn, 2026-11-09) is one choice for the whole chapter, the way Slack's "Mentions & DMs only" and Discord's server-wide "Only @mentions" work:
+**Chat messages** (#3840, asked by Shawn, 2026-11-09), on the phone's Settings → Notifications and web's Settings → Chapter alerts (#4124), is one choice for the whole chapter, the way Slack's "Mentions & DMs only" and Discord's server-wide "Only @mentions" work:
 
 - **All messages**: each channel at its own default (the table above). This is the absence of a row; choosing it deletes one.
 - **Mentions and DMs only**: every ordinary channel acts as `mentions`, so it notifies only for an @mention of you, and a reply to your message counts as one (#3844, § Per-Channel Mute). DMs, group DMs and the announcements channel (URGENT) still notify every message.
 
 It is stored as a `scope='chapter'` row with `level='mentions'`, and `resolveLevel` reads it after the channel and kind rows, so **a level the member set on one channel, or on a message kind, still wins**: that is how a member keeps one busy channel loud. It only ever **lowers** a channel's default: it never reaches a DM, a group DM or the announcements channel, and a channel whose default is already quieter (`#chapter-audit`, an officer's `off`, the `system_audit` kind) stays as it is.
 
-The per-channel read reports the result, with `from_chapter_level: true` on a channel the chapter-wide level decided, and the phone's channel menu labels that option "Only @mentions (your default)".
+The per-channel read reports the result, with `from_chapter_level: true` on a channel the chapter-wide level decided, and every channel notification menu labels that option "Only @mentions (your default)": the phone's thread header and long-press menus, and web's channel header `⋯` → Notifications panel and the rail's right-click Notifications submenu (#4124).
 
 **There is no "Off".** The issue asked for one, standing for the Chat switch, but that switch was dropped on 2026-11-06 (owner: "Do we really want users to be able to turn off chat?"; Delivery Flow step 2), and quiet hours are how a member goes silent. The CHECK allows `off` on this arm, so adding it later needs no migration.
 
-Phone first, since push is phone-only. Web's settings follow once the personal Settings page (#4106) lands.
+The phone shipped it first, since push is phone-only; web's Settings → Chapter alerts carries the same two options as radio cards above the category switches (#4124). Both read their words from `CHAT_CHAPTER_LEVEL_OPTIONS` in `@repo/validation`.
 
 **The push worker is the only chat push path** (#2771). `ChatService` used to push DMs and announcements itself as well, so an announcement reached an away member twice, a DM that mentioned its recipient did the same, and a DM the member had muted pushed anyway, since that path never read `chat_notification_preferences`. Every chat push now goes through the rule chain above, once per recipient.
 

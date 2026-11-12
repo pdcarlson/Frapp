@@ -36,7 +36,7 @@ import {
   reachesTier,
   type TierRow,
   type TieredRole,
-} from "@/lib/role-tiers";
+} from "@repo/hooks/role-tiers";
 import { useRolesData } from "@/components/roles/use-roles-data";
 
 /** Where a role is created or moved to: a tier's id, or outside the tiers. */
@@ -56,7 +56,7 @@ type Placement = string | null;
  * instead of a hundred roles.
  *
  * Every control the rank rules would refuse is disabled before it is tried
- * (`lib/role-tiers.ts`); the API stays the authority, and a refusal it sends
+ * (`@repo/hooks/role-tiers`); the API stays the authority, and a refusal it sends
  * anyway lands as a toast naming what was missing.
  */
 export function RolesOverview({

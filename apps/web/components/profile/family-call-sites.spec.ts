@@ -67,6 +67,7 @@ const FAMILY = [
   "components/personal-settings/personal-settings-page.tsx",
   "components/personal-settings/quiet-hours-section.tsx",
   "components/personal-settings/chapter-alerts-section.tsx",
+  "components/personal-settings/chat-level-control.tsx",
   "components/personal-settings/account-section.tsx",
   "components/profile/profile-glyphs.tsx",
   "components/onboarding/chapter-wizard.tsx",
@@ -126,7 +127,8 @@ const OPACITY_WASH = new RegExp(
  * `--destructive` is deliberately absent from `TOKENS` for the border's sake;
  * the separate rule below keeps it honest.
  */
-const SANCTIONED = /\b(?:border-destructive\/\[\.28\]|ring-ring\/25|ring-destructive\/25)/g;
+const SANCTIONED =
+  /\b(?:border-destructive\/\[\.28\]|ring-ring\/25|ring-destructive\/25)/g;
 
 describe("no token is painted through an opacity wash", () => {
   it.each(FAMILY)("%s", (file) => {

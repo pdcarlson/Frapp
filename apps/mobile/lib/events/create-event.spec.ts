@@ -192,9 +192,7 @@ describe("the More options summary", () => {
         },
         (id) => (id === "a" ? "Alumni" : undefined),
       ),
-    ).toBe(
-      "10 pts · Required for everyone, optional for Alumni · Every 2 weeks",
-    );
+    ).toBe("10 pts · Alumni optional, everyone else required · Every 2 weeks");
     expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
       "10 pts · Optional for everyone · Doesn't repeat",
     );
@@ -288,5 +286,75 @@ describe("applyEventType (#3730)", () => {
     );
     expect(plain.ok && plain.body).not.toHaveProperty("event_type_id");
     expect(typed.ok && typed.body.event_type_id).toBe("type-meeting");
+  });
+});
+
+// #3709: any member with `events:create` makes an event, but only an
+// `events:update` holder makes anyone required or attaches points.
+describe("a member who can't edit events", () => {
+  const now = new Date(2026, 10, 5, 14, 0);
+  const meeting = {
+    id: "type-meeting",
+    name: "Chapter meeting",
+    point_value: 10,
+    is_mandatory: true,
+  };
+
+  it("makes an optional event worth no points, whatever the points field says", () => {
+    const result = validateNewEvent(draft({ pointsInput: "25" }), now, false);
+    expect(result.ok && result.body).toMatchObject({
+      point_value: 0,
+      is_mandatory: false,
+    });
+  });
+
+  it("ignores a points field it can't see, even one that wouldn't parse", () => {
+    const result = validateNewEvent(draft({ pointsInput: "1.5" }), now, false);
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ["for everyone", { everyone: "required" as const, roles: {} }],
+    [
+      "for a role",
+      {
+        everyone: "optional" as const,
+        roles: { officers: "required" as const },
+      },
+    ],
+  ])("can't make the event required %s", (_, attendance) => {
+    const result = validateNewEvent(draft({ attendance }), now, false);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors.attendance).toBe(
+      "Only officers who manage events can make one required. Set it to optional.",
+    );
+  });
+
+  it("may still leave a role out", () => {
+    const result = validateNewEvent(
+      draft({
+        attendance: {
+          everyone: "optional",
+          roles: { pledges: "not_invited" },
+        },
+      }),
+      now,
+      false,
+    );
+    expect(result.ok && result.body.excluded_role_ids).toEqual(["pledges"]);
+  });
+
+  it("takes only a type's name, not its points or required default", () => {
+    expect(applyEventType(emptyEventDraft(), meeting, false)).toEqual({
+      eventTypeId: "type-meeting",
+      name: "Chapter meeting",
+      typeFilledName: "Chapter meeting",
+    });
+  });
+
+  it("sees no points in the More options summary", () => {
+    expect(
+      moreOptionsSummary(emptyEventDraft(), () => undefined, false),
+    ).not.toMatch(/pts/);
   });
 });

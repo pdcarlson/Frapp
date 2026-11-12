@@ -247,6 +247,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const updateEvent = useUpdateEvent();
     const deleteEvent = useDeleteEvent();
     const grants = useEventEditGrants();
+    // Making anyone required and attaching points take `events:update`
+    // (#3709), which is also what editing takes: a member who may only
+    // create events makes optional events worth no points.
+    const setsRequirements = grants.edit;
     const attendanceRef = useRef<BottomSheetModal>(null);
     const rolesQuery = useRoles();
     // The chapter's event types (#3730), as chips above the name. Managing
@@ -489,7 +493,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       // Send the times on screen, read against the real clock (the host's
       // ticks every 30 seconds): an unpicked default resolved again here
       // could land on tomorrow while the sheet still shows today.
-      const result = validateNewEvent({ ...draft, start, end }, new Date());
+      const result = validateNewEvent(
+        { ...draft, start, end },
+        new Date(),
+        setsRequirements,
+      );
       if (!result.ok) {
         setErrors(result.errors);
         // An error inside the closed options would otherwise say nothing.
@@ -605,7 +613,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 onSelect={(value) => {
                   const type = eventTypes.find((t) => t.id === value);
                   if (!type) return;
-                  update(applyEventType(draft, type), [
+                  update(applyEventType(draft, type, setsRequirements), [
                     "name",
                     "points",
                     "attendance",
@@ -691,7 +699,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
             <MoreOptionsRow
               open={draft.showMore}
-              summary={moreOptionsSummary(draft, roleName)}
+              summary={moreOptionsSummary(draft, roleName, setsRequirements)}
               onToggle={() => {
                 Keyboard.dismiss();
                 update({ showMore: !draft.showMore }, []);
@@ -723,29 +731,35 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                       direction="right"
                     />
                   </Pressable>
-                  <View style={styles.groupDivider} />
-                  <View style={styles.optionRow}>
-                    <Text style={styles.optionLabel}>Points for attending</Text>
-                    <BottomSheetTextInput
-                      value={draft.pointsInput}
-                      onChangeText={(pointsInput) =>
-                        update({ pointsInput }, ["points"])
-                      }
-                      onFocus={() => setFocused("points")}
-                      onBlur={() => setFocused(null)}
-                      editable={!pending}
-                      placeholder="0"
-                      placeholderTextColor={tokens.color.text.muted}
-                      accessibilityLabel="Points for attending"
-                      keyboardType="number-pad"
-                      selectTextOnFocus
-                      style={[
-                        styles.pointsInput,
-                        focused === "points" ? styles.fieldFocused : null,
-                        errors.points ? styles.fieldError : null,
-                      ]}
-                    />
-                  </View>
+                  {setsRequirements ? (
+                    <>
+                      <View style={styles.groupDivider} />
+                      <View style={styles.optionRow}>
+                        <Text style={styles.optionLabel}>
+                          Points for attending
+                        </Text>
+                        <BottomSheetTextInput
+                          value={draft.pointsInput}
+                          onChangeText={(pointsInput) =>
+                            update({ pointsInput }, ["points"])
+                          }
+                          onFocus={() => setFocused("points")}
+                          onBlur={() => setFocused(null)}
+                          editable={!pending}
+                          placeholder="0"
+                          placeholderTextColor={tokens.color.text.muted}
+                          accessibilityLabel="Points for attending"
+                          keyboardType="number-pad"
+                          selectTextOnFocus
+                          style={[
+                            styles.pointsInput,
+                            focused === "points" ? styles.fieldFocused : null,
+                            errors.points ? styles.fieldError : null,
+                          ]}
+                        />
+                      </View>
+                    </>
+                  ) : null}
                   <View style={styles.groupDivider} />
                   {/* #3703: members arrive early, so check-in opens ahead
                       of the start; 10 minutes unless the officer says. */}
@@ -890,6 +904,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           ref={attendanceRef}
           value={draft.attendance}
           onChange={(attendance) => update({ attendance }, ["attendance"])}
+          allowRequired={setsRequirements}
         />
       </>
     );

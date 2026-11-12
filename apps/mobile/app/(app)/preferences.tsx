@@ -5,22 +5,15 @@ import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
-  useChapterChatBackground,
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
-  useGeofences,
   usePermissionList,
   useSetChapterChatLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  can,
-  canAll,
-  CHAPTER_PROFILE_PERMISSIONS,
-  CHAT_BACKGROUND_LABELS,
   chatChapterLevelLabel,
-  isModuleEnabled,
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
@@ -28,8 +21,6 @@ import { chatDensityLabel } from "@repo/chat-core/density";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { AccentSheet } from "@/components/settings/accent-sheet";
-import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { ChatLevelSheet } from "@/components/settings/chat-level-sheet";
@@ -37,7 +28,6 @@ import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
@@ -65,8 +55,7 @@ import {
  * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
  * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
  *
- * Four sections: NOTIFICATIONS, CHAT, CHAPTER · ADMIN, ACCOUNT. All but CHAT
- * are drawn.
+ * Three sections: NOTIFICATIONS, CHAT, ACCOUNT. All but CHAT are drawn.
  *
  * ## Deviations from the drawing, each deliberate
  *
@@ -85,6 +74,10 @@ import {
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
  *   docblock in `@repo/validation`.
+ * - **No CHAPTER · ADMIN.** The drawn group (accent, chat background, study
+ *   zones) moved whole to Chapter settings (`app/(app)/chapter-settings.tsx`,
+ *   #4074), the chapter's side of settings off More → Admin, so this screen
+ *   is the member's own, as web keeps the two apart.
  * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
  *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through
  *   invites, whose rows carry an opaque, single-use, role-scoped, expiring
@@ -112,8 +105,6 @@ import {
  *   under it says so whenever a tap opens the OS settings (`pushRowCaption()`).
  *   In a build that can't push it stays a status row that states why
  *   (`pushUnavailableReason()`).
- * - **Study zones says where zones are changed**, which the drawing doesn't:
- *   the row is read-only on the phone, and nothing else on it says where to go.
  * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
  *   § Block makes a Settings list the one durable place a block is undone
  *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
@@ -158,7 +149,6 @@ function pushToggleLabel(push: PushState): string {
 export default function PreferencesScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const whatsNewQuiet = useWhatsNewQuiet();
   const { signOut } = useAuthSession();
@@ -205,9 +195,7 @@ export default function PreferencesScreen() {
   // only stated off a confirmed read: "None" from a failed one would claim
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
-  const accentSheetRef = useRef<BottomSheetModal>(null);
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
-  const chatBackgroundSheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
   // states no level rather than claiming "All messages" before it knows.
@@ -290,31 +278,10 @@ export default function PreferencesScreen() {
     storedZoneMissing,
   } = useNotificationPreferencesSync();
 
-  // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
-  // membership test would lock out exactly the people this section is for.
   const permissions = usePermissionList();
-  const canSeeChapterAdmin = can("chapter-config:view", permissions);
-  // The guard on `PATCH /v1/chapters/current`, which the accent save calls.
-  const canEditAccent = canAll(CHAPTER_PROFILE_PERMISSIONS, permissions);
-  const chapterBackground = useChapterChatBackground();
-
   const chapterQuery = useCurrentChapter();
-  const enabledModules = chapterQuery.data?.enabled_modules;
   const donationUrl = chapterQuery.data?.donation_url;
   const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
-  const geofencesEnabled =
-    canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
-  // Gated, not just hidden: the route requires `members:view` **and** the
-  // `geofences` module, so firing it for a member who will not see the row
-  // spends a request to collect a 403.
-  //
-  // `GET /v1/geofences` has no response schema, so the SDK types the body
-  // `never` — narrowed through `unknown` the way every other read in this
-  // cluster is (`lib/more/narrow.ts`).
-  const geofencesQuery = useGeofences({ enabled: geofencesEnabled });
-  const zones = geofencesQuery.data as unknown;
-  const zoneCount = Array.isArray(zones) ? zones.length : null;
-
   // `null` when there is nothing to report. "Synced with your account." was
   // shown in the steady state, which is the one state that needs no line.
   const notificationsMeta = !isHydrated
@@ -474,79 +441,6 @@ export default function PreferencesScreen() {
         />
       </ListSection>
 
-      {canSeeChapterAdmin ? (
-        <>
-          <SectionHeader>Chapter · Admin</SectionHeader>
-          <ListSection>
-            <ListRow
-              label="Chapter accent"
-              // An editor's row is the swatch and a chevron. Anyone else's
-              // can't open, so it says who can change it rather than leaving a
-              // dead row unexplained (design-system README §5).
-              description={
-                canEditAccent
-                  ? null
-                  : "Set by an officer with chapter settings access."
-              }
-              accessibilityHint={
-                canEditAccent
-                  ? "Opens the color picker for the chapter accent."
-                  : undefined
-              }
-              onPress={
-                canEditAccent
-                  ? () => accentSheetRef.current?.present()
-                  : undefined
-              }
-              trailing={
-                <View
-                  accessibilityLabel="Current chapter accent"
-                  style={[styles.swatch, { backgroundColor: accent }]}
-                />
-              }
-            />
-            <ListRow
-              label="Chat background"
-              // The same guard as the accent: the default's route requires
-              // `CHAPTER_PROFILE_PERMISSIONS` (#4031).
-              value={
-                chapterBackground.data
-                  ? CHAT_BACKGROUND_LABELS[chapterBackground.data.background]
-                  : undefined
-              }
-              description={
-                canEditAccent
-                  ? null
-                  : "Set by an officer with chapter settings access."
-              }
-              accessibilityHint={
-                canEditAccent
-                  ? "Choose the background every channel shows unless it has its own."
-                  : undefined
-              }
-              onPress={
-                canEditAccent
-                  ? () => chatBackgroundSheetRef.current?.present()
-                  : undefined
-              }
-            />
-            {geofencesEnabled ? (
-              // Read-only here (the phone has no zone editor), so it says
-              // where zones are changed: the dashboard's Study zones tool.
-              <ListRow
-                label="Study zones"
-                description="Managed on the web dashboard."
-                value={
-                  zoneCount === null
-                    ? "—"
-                    : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
-                }
-              />
-            ) : null}
-          </ListSection>
-        </>
-      ) : null}
-
       <SectionHeader>Account</SectionHeader>
       <ListSection>
         {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
@@ -610,9 +504,7 @@ export default function PreferencesScreen() {
         </Text>
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
-      <AccentSheet ref={accentSheetRef} />
       <ChatDensitySheet ref={chatDensitySheetRef} />
-      <ChatBackgroundSheet ref={chatBackgroundSheetRef} />
       <ChatLevelSheet
         ref={chatLevelSheetRef}
         level={chatLevel.data}
@@ -639,13 +531,6 @@ function createStyles(tokens: SignetTokens) {
       height: 6,
       borderRadius: 3,
       backgroundColor: tokens.color.text.foreground,
-    },
-    swatch: {
-      width: tokens.spacing.xl,
-      height: tokens.spacing.xl,
-      borderRadius: tokens.radius.chipLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
     },
   });
 }

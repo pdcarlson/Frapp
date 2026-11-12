@@ -10,7 +10,12 @@
  * 7:00 PM"). s06's day headings are `@repo/formatting`'s `formatDayHeading`.
  */
 
-import { dayDelta, formatWeekdayDay, parseInstant } from "@repo/formatting";
+import {
+  dayDelta,
+  formatEventWindow as sharedEventWindow,
+  formatWeekdayDay,
+  parseInstant,
+} from "@repo/formatting";
 import { checkInWindowBounds } from "@repo/validation";
 
 function clock(date: Date): string {
@@ -22,38 +27,17 @@ function clock(date: Date): string {
 
 /**
  * The detail header line: "Tonight · 6:00 – 7:00 PM", "Tomorrow · …",
- * "Sat, Mar 14 · …". Returns `""` for unparseable input rather than the string
- * "Invalid Date", which is what `toLocaleString` would otherwise render on
- * screen.
+ * "Sat, Mar 14 · …". The wording is `@repo/formatting`'s `formatEventWindow`,
+ * which web's chat event card reads too (#4135); this returns `""` for
+ * unparseable input rather than `null`, which is what the screens' text
+ * slots take.
  */
 export function formatEventWindow(
   startTime: string,
   endTime: string,
   now: Date,
 ): string {
-  const start = parseInstant(startTime);
-  if (!start) return "";
-  const end = parseInstant(endTime);
-
-  const days = dayDelta(now, start);
-  let day: string;
-  if (days === 0) {
-    // "Tonight" only when it reads true; a 9am meeting today is not tonight.
-    day = start.getHours() >= 17 ? "Tonight" : "Today";
-  } else if (days === 1) {
-    day = "Tomorrow";
-  } else if (days > 1 && days < 7) {
-    day = start.toLocaleDateString(undefined, { weekday: "long" });
-  } else {
-    day = start.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-  }
-
-  const time = end ? `${clock(start)} – ${clock(end)}` : clock(start);
-  return `${day} · ${time}`;
+  return sharedEventWindow(startTime, endTime, now) ?? "";
 }
 
 export type CheckInWindowState =

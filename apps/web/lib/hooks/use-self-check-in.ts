@@ -2,6 +2,7 @@
 
 import { statusOf } from "@repo/api-sdk";
 import { useCheckIn } from "@repo/hooks";
+import { formatPointsChip } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ export function useSelfCheckIn() {
         title: "Checked in",
         description:
           typeof pointValue === "number" && pointValue > 0
-            ? `+${pointValue} pts`
+            ? formatPointsChip(pointValue)
             : undefined,
       });
     } catch (error) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AA_TEXT,
   DESTRUCTIVE_TEXT,
+  INFO_TEXT,
   SEMANTIC,
   STATUS_TINT,
   SURFACE,
@@ -39,6 +40,8 @@ const LABELS: Array<[string, string, keyof typeof STATUS_TINT]> = [
   // And on the warning tint (`chat/block-list-notice`).
   ["--foreground", TEXT.foreground, "warning"],
   ["--muted-foreground", TEXT.mutedForeground, "warning"],
+  // The info badge (a task In progress, #4133), in the lifted info text.
+  ["--info-text", INFO_TEXT, "info"],
 ];
 
 describe("the status tints", () => {
@@ -55,6 +58,7 @@ describe("the status tints", () => {
       hue: SEMANTIC.destructive,
       alpha: 0.2,
     });
+    expect(STATUS_TINT.info).toEqual({ hue: SEMANTIC.info, alpha: 0.13 });
   });
 
   it("put every shipped label over the gate on every surface", () => {

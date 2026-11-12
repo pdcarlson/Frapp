@@ -16,7 +16,7 @@ import {
   normalizeTieredRoles,
   normalizeTiers,
   tierWords,
-} from "@/lib/role-tiers";
+} from "@repo/hooks/role-tiers";
 
 /**
  * Everything the Roles pages read, in one place: the roles, the chapter's

@@ -1,15 +1,11 @@
-import { formatDueLabel, formatDueOn } from "@repo/formatting";
+import { taskDueLine } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 
 /**
- * The due clause of a task tile's meta line, in mobile's `formatDueSubtitle`
- * wording ("Due tomorrow", "Due Friday", "Overdue by 2 days") through the
- * shared `formatDueLabel`, which reads the bare `due_date` at local noon so it
- * keeps its calendar day in every zone.
- *
- * A task awaiting confirmation has been handed in, so "Overdue by 3 days"
- * would read as a charge against finished work: past its date it reads
- * "Due Sep 3" instead, and never takes the destructive tone.
+ * The due clause of a task tile's meta line: `@repo/hooks`' `taskDueLine`,
+ * the rule both apps' chat task cards read too (#4135), so a task's due line
+ * reads the same on the board and in chat. A task due at a time counts down
+ * to that minute (#4003).
  *
  * `null` for a missing or unparseable date, so the clause drops out of the
  * line rather than printing a placeholder.
@@ -22,15 +18,5 @@ export function taskDueClause(
   },
   now: Date = new Date(),
 ): { text: string; overdue: boolean } | null {
-  // A task due at a time counts down to that minute (#4003).
-  const due = task.due_at ?? task.due_date;
-  const label = formatDueLabel(due, now);
-  if (!label) return null;
-  const pastDue = label.startsWith("Overdue");
-  if (task.status === "COMPLETED") {
-    if (!pastDue) return { text: label, overdue: false };
-    const on = formatDueOn(due, now);
-    return on ? { text: on, overdue: false } : null;
-  }
-  return { text: label, overdue: pastDue || task.status === "OVERDUE" };
+  return taskDueLine(task.due_at ?? task.due_date, task.status, now);
 }

@@ -510,13 +510,14 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     // tint recipe is the text's own colour. The tint tokens are `rgba()`
     // literals with no floor, and the utilities must read them as they are.
     const css = await compile(
-      "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover",
+      "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover bg-info-tint",
     );
     for (const token of [
       "success-tint",
       "warning-tint",
       "destructive-tint",
       "destructive-tint-hover",
+      "info-tint",
     ]) {
       expect(css).toMatch(
         new RegExp(

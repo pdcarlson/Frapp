@@ -348,6 +348,7 @@ describe("the status tints are the §5 recipe over a fixed semantic (#2376)", ()
     ["--warning-tint", "--warning", 0.13],
     ["--destructive-tint", "--destructive", 0.13],
     ["--destructive-tint-hover", "--destructive", 0.2],
+    ["--info-tint", "--info", 0.13],
   ])("%s is %s at %s alpha", (token, hue, alpha) => {
     const match = RGBA.exec(root.get(token) ?? "");
     expect(match, `${token} must be an rgba() literal`).not.toBeNull();
@@ -442,6 +443,7 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--warning-tint",
     "--destructive-tint",
     "--destructive-tint-hover",
+    "--info-tint",
     // A card-filled control's hover is a neutral lift above the ladder, the
     // same in every chapter: the Secondary button sits on error surfaces,
     // where components.md §10 bars the chapter accent (#1220).

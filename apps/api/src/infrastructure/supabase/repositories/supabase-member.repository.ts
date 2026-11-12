@@ -21,7 +21,7 @@ export function readMemberByUserAndChapter(
   userId: string,
   chapterId: string,
 ): Promise<Member | null> {
-  return readOncePerRequest(`members:${userId}:${chapterId}`, async () => {
+  return readOncePerRequest(memberReadKey(userId, chapterId), async () => {
     const { data, error } = await supabase
       .from('members')
       .select('*')
@@ -31,6 +31,11 @@ export function readMemberByUserAndChapter(
     if (error) throw new SupabaseQueryError(error);
     return data;
   });
+}
+
+/** The request-store key `readMemberByUserAndChapter` reads under. */
+export function memberReadKey(userId: string, chapterId: string): string {
+  return `members:${userId}:${chapterId}`;
 }
 
 /**

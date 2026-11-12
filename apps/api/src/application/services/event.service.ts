@@ -23,6 +23,7 @@ import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   checkSeriesLength,
   eventLimitsAudience,
+  eventOthersInvited,
 } from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -152,8 +153,8 @@ export class EventService {
     return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
-  async create(input: CreateEventInput): Promise<CreateEventResult> {
-    const { start_time, end_time } = input;
+  async create(rawInput: CreateEventInput): Promise<CreateEventResult> {
+    const { start_time, end_time } = rawInput;
 
     const start = new Date(start_time);
     const end = new Date(end_time);
@@ -165,6 +166,9 @@ export class EventService {
     if (end <= start) {
       throw new BadRequestException('end_time must be after start_time');
     }
+
+    const setsRequirements = await this.canSetRequirements(rawInput);
+    const input = setsRequirements ? rawInput : withoutRequirements(rawInput);
 
     // The DTO checks the rule's shape; whether it fits this first meeting (an
     // UNTIL that leaves no second meeting, or one past the series cap) needs
@@ -237,6 +241,7 @@ export class EventService {
       location: input.location ?? null,
       start_time: input.start_time,
       end_time: input.end_time,
+      // A member's is 0 already (`withoutRequirements`).
       point_value: input.point_value ?? 10,
       is_mandatory: input.is_mandatory ?? false,
       recurrence_rule: input.recurrence_rule ?? null,
@@ -311,6 +316,26 @@ export class EventService {
     return cardPosted === undefined
       ? parent
       : { ...parent, card_posted: cardPosted };
+  }
+
+  /**
+   * `spec/behavior/events.md` § Event Creation (#3709): any member with
+   * `events:create` makes an event, but only an `events:update` holder (the
+   * officers who edit any event and take attendance, and the President's
+   * `*`) makes anyone required or attaches points. Editing an event already
+   * takes `events:update`, so what a create may set never exceeds what its
+   * maker could later edit in.
+   *
+   * A create with no maker (no caller passes none today) is held to the
+   * member rule, so a new internal caller can't grant points by omission.
+   */
+  private async canSetRequirements(input: CreateEventInput): Promise<boolean> {
+    if (!input.created_by) return false;
+    return this.rbac.memberHasAnyPermission(
+      input.chapter_id,
+      input.created_by,
+      [SystemPermissions.EVENTS_UPDATE],
+    );
   }
 
   async update(
@@ -411,4 +436,42 @@ export class EventService {
 
     await this.eventRepo.delete(id, chapterId);
   }
+}
+
+/**
+ * A create by a member who can't make anyone required or attach points
+ * (#3709), as it is stored: worth 0 points, required for nobody, and open to
+ * exactly the members the request invited.
+ *
+ * Lowered rather than refused. Every client sends a point value (the forms
+ * and `/event` default to 10), and app builds already installed copy a
+ * type's "required for everyone" into the form, so a refusal would leave a
+ * member on one of them retrying a save that can never succeed. The current
+ * forms hide points and stop a required choice before it is sent, so only an
+ * older build or a hand-made request reaches this.
+ *
+ * - `is_mandatory` false: nobody is required by default.
+ * - A required role becomes an optional one: still invited, never marked
+ *   absent.
+ * - `others_invited` is written out as the request meant it
+ *   (`eventOthersInvited`), because a null with no required roles left would
+ *   read as "everyone", and an event meant for some roles would open to the
+ *   whole chapter.
+ */
+function withoutRequirements(input: CreateEventInput): CreateEventInput {
+  const required = input.required_role_ids ?? [];
+  const optional = [
+    ...new Set([...(input.optional_role_ids ?? []), ...required]),
+  ];
+  return {
+    ...input,
+    point_value: 0,
+    is_mandatory: false,
+    required_role_ids: null,
+    optional_role_ids: optional.length > 0 ? optional : null,
+    others_invited: eventOthersInvited({
+      others_invited: input.others_invited,
+      required_role_ids: input.required_role_ids,
+    }),
+  };
 }

@@ -106,7 +106,7 @@ import { MODULE_CATALOG } from "@repo/org-archetypes";
  */
 export const COMPOSER_BOX_CLASS = "border-t border-border p-3";
 export const COMPOSER_WELL_CLASS =
-  "rounded-md border border-input bg-surface-1 p-2 transition-colors";
+  "rounded-md border border-control-edge bg-surface-1 p-2 transition-colors";
 export const COMPOSER_INPUT_CLASS =
   "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none";
 /**

@@ -1,6 +1,6 @@
 import { formatDateEntry, parseDateEntry } from "@repo/formatting";
 import type React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
   screen,
@@ -11,13 +11,21 @@ import {
 
 // Capture the create/update mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
-const { createMutate, updateMutate, mockCurrentChapter, mockToast } =
-  vi.hoisted(() => ({
-    createMutate: vi.fn(),
-    updateMutate: vi.fn(),
-    mockCurrentChapter: vi.fn(),
-    mockToast: vi.fn(),
-  }));
+const {
+  createMutate,
+  updateMutate,
+  mockCurrentChapter,
+  mockToast,
+  mockPermissions,
+} = vi.hoisted(() => ({
+  createMutate: vi.fn(),
+  updateMutate: vi.fn(),
+  mockCurrentChapter: vi.fn(),
+  mockToast: vi.fn(),
+  // An officer who edits events unless a case says otherwise (#3709: points
+  // and required attendance are theirs).
+  mockPermissions: { list: ["events:update"] as string[] },
+}));
 
 vi.mock("@repo/hooks", () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
@@ -63,7 +71,7 @@ vi.mock("@repo/hooks", () => ({
   // editing behaviour, so they all run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:manage"] },
+    data: { permissions: mockPermissions.list },
     isPending: false,
     isError: false,
   }),
@@ -182,9 +190,10 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     fillRequiredFields();
     openMoreOptions();
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
     // The app's Select (Radix), not a native one.
     fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
     fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
@@ -221,7 +230,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     fillRequiredFields();
     openMoreOptions();
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     fireEvent.click(
       within(everyone).getByRole("radio", { name: "Not invited" }),
@@ -256,12 +265,17 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
 
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     expect(
       within(everyone).getByRole("radio", { name: "Not invited" }),
     ).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Remove Exec" }));
+    // Exec back to the default's answer leaves it following everyone else.
+    fireEvent.click(
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Not invited" }),
+    );
     fireEvent.click(within(everyone).getByRole("radio", { name: "Optional" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -279,7 +293,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
   });
 
-  it("shows a role missing from the loaded list as a removable row", async () => {
+  it("shows a role missing from the loaded list as a row it can reset", async () => {
     render(
       <EventEditorDialog
         open
@@ -299,7 +313,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove Removed role" }),
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Removed role" }),
+      ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -820,13 +836,16 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     openMoreOptions();
     fireEvent.click(
       within(
-        screen.getByRole("radiogroup", { name: "Attendance for everyone" }),
+        screen.getByRole("radiogroup", {
+          name: "Attendance for everyone else",
+        }),
       ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -1016,5 +1035,74 @@ describe("EventEditorDialog event types (#3730)", () => {
       event_type_id: null,
       name: "Weekly chapter",
     });
+  });
+});
+
+// #3709: any member with `events:create` makes an event, but only an
+// `events:update` holder makes anyone required or attaches points.
+describe("EventEditorDialog for a member who can't edit events", () => {
+  beforeEach(() => {
+    createMutate.mockReset();
+    mockToast.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    chapter.active();
+    mockPermissions.list = ["events:create", "members:view"];
+  });
+  afterEach(() => {
+    mockPermissions.list = ["events:update"];
+  });
+
+  function renderCreate() {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+  }
+
+  it("shows no points, and creates an optional event worth none", async () => {
+    renderCreate();
+    expect(
+      screen.getByRole("button", { name: /More options/ }),
+    ).toHaveTextContent("Optional for everyone · Doesn't repeat");
+    openMoreOptions();
+    expect(screen.queryByLabelText("Points for attending")).toBeNull();
+
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      point_value: 0,
+      is_mandatory: false,
+    });
+  });
+
+  it("takes only the name from a type", async () => {
+    renderCreate();
+    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(
+      screen.getByRole("button", { name: /More options/ }),
+    ).toHaveTextContent("Optional for everyone");
+  });
+
+  it("offers no Required answer, so nobody is made required", () => {
+    renderCreate();
+    openMoreOptions();
+    const everyone = screen.getByRole("radiogroup", {
+      name: /everyone/i,
+    });
+    expect(
+      within(everyone).queryByRole("radio", { name: "Required" }),
+    ).toBeNull();
+    expect(
+      within(everyone).getByRole("radio", { name: "Optional" }),
+    ).toBeInTheDocument();
   });
 });
