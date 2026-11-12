@@ -7,6 +7,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import type {
   JwtPayload,
   PostgrestMaybeSingleResponse,
@@ -37,7 +38,10 @@ import {
   memberReadKey,
   readMemberByUserAndChapter,
 } from '../../infrastructure/supabase/repositories/supabase-member.repository';
-import { rolesReadKey } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import {
+  readRolesByIds,
+  rolesReadKey,
+} from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import {
   keepForRequest,
   readOncePerRequest,
@@ -74,7 +78,9 @@ type ChapterRow = {
  * the requests a mobile resume fires together (#3728) hit several modules'
  * routes. Only two reads are shared: the user's own row id, and the chapter's
  * subscription state and module toggles, for which no spec promises
- * same-instant freshness. A joiner's answer can predate its request by up to
+ * same-instant freshness. Only the guard's own reads join them: with a
+ * chapter named, the prefetch gets both rows from `get_request_context`
+ * per request instead (#3583), so on that path nothing is shared. A joiner's answer can predate its request by up to
  * `IN_FLIGHT_JOIN_WINDOW_MS`. Membership is still read per request, because
  * spec/behavior/multi-tenancy.md promises that a revoked membership refuses
  * every later request.
@@ -187,8 +193,8 @@ interface RequestContextAnswer {
  * prefetch read them as a chain (user, then membership, then roles), about
  * 320 ms at production's p50 on 2026-11-12, while the session check it
  * overlaps took 134 ms. Resolves `null` when the call fails or answers
- * something unexpected, and each lookup then reads its own row as it did
- * before.
+ * something unexpected (`reportRequestContextFailure`), and the prefetch then
+ * reads the rows as it did before #3583, one failed call later.
  *
  * Before resolving it records the membership and roles in the request's store
  * under the keys `readMemberByUserAndChapter` and `readRolesByIds` read, so
@@ -214,8 +220,10 @@ function readRequestContext(
     ),
   )
     .then(({ data, error }) => {
-      const answer = error ? null : asRequestContext(data);
-      if (answer?.user) {
+      if (error) throw new SupabaseQueryError(error);
+      const answer = asRequestContext(data);
+      if (!answer) throw new Error('get_request_context: unexpected answer');
+      if (answer.user) {
         keepForRequest(memberReadKey(answer.user.id, chapterId), answer.member);
         const roleIds = answer.member?.role_ids ?? [];
         if (roleIds.length) {
@@ -224,7 +232,32 @@ function readRequestContext(
       }
       return answer;
     })
-    .catch(() => null);
+    .catch((failure: unknown) => {
+      reportRequestContextFailure(failure);
+      return null;
+    });
+}
+
+const FAILURE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
+let lastFailureReportAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A failed `get_request_context` costs no request anything but time, because
+ * the rows are read separately (`prefetchChapterContext`), so nothing else
+ * would ever report it: a dropped function, a lost grant or a `role_ids`
+ * entry that is not a uuid would only show up as latency. One Sentry warning
+ * per process every ten minutes, grouped as one issue, says so without
+ * spending the error quota on every request.
+ */
+function reportRequestContextFailure(failure: unknown): void {
+  const now = Date.now();
+  if (now - lastFailureReportAt < FAILURE_REPORT_INTERVAL_MS) return;
+  lastFailureReportAt = now;
+  Sentry.captureException(failure, {
+    level: 'warning',
+    fingerprint: ['get_request_context-failed'],
+    tags: { guard: 'chapter-prefetch' },
+  });
 }
 
 function asRequestContext(data: unknown): RequestContextAnswer | null {
@@ -250,7 +283,9 @@ function asRequestContext(data: unknown): RequestContextAnswer | null {
  * somehow not the user `getUser` answers with would find nothing to reuse.
  * Every request still reads its own membership and roles; this changes when
  * the reads start, not whether they happen (#3752). A failed read is not
- * kept (`keepAnswerForRequest`), so the guard that needs it reads again.
+ * kept (`keepAnswerForRequest`), so the guard that needs it reads again. If
+ * the one call fails, the user and chapter are read separately and the
+ * membership and roles chained after the user, as before #3583.
  *
  * Without a store (no request, or past the guards of a write) it does
  * nothing.
@@ -274,10 +309,28 @@ export function prefetchChapterContext(
     supabaseAuthId,
     requested.chapterId,
   );
-  lookupAppUser(supabase, supabaseAuthId, context).catch(ignorePrefetchFailure);
+  const appUser = lookupAppUser(supabase, supabaseAuthId, context);
   lookupChapter(supabase, requested.chapterId, context).catch(
     ignorePrefetchFailure,
   );
+  const { chapterId } = requested;
+  context
+    .then((answer) =>
+      answer
+        ? null
+        : appUser
+            .then(({ data }) =>
+              data
+                ? readMemberByUserAndChapter(supabase, data.id, chapterId)
+                : null,
+            )
+            .then((member) =>
+              member?.role_ids?.length
+                ? readRolesByIds(supabase, member.role_ids, chapterId)
+                : null,
+            ),
+    )
+    .catch(ignorePrefetchFailure);
 }
 
 /** The guard that needs the read makes it again and reports its failure. */

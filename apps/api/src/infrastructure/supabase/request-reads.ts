@@ -11,8 +11,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * the session check is still in flight (`prefetchChapterContext`). The keys
  * are `readMemberByUserAndChapter` and `readRolesByIds` (so every
  * `findByUserAndChapter` / `findByIds` call in the request) and
- * `ChapterGuard`'s user and chapter rows. The prefetch fills all four from
- * one call (`get_request_context`, #3583) through `keepForRequest`.
+ * `ChapterGuard`'s user and chapter rows. With a chapter named, the prefetch
+ * gets all four from one call (`get_request_context`, #3583): the user and
+ * chapter rows through `readOncePerRequest` as before, the membership and
+ * roles recorded with `keepForRequest`.
  *
  * **Never across requests.** `spec/behavior/rbac.md` § Permission Check
  * Algorithm and `spec/behavior/multi-tenancy.md` promise that each request resolves

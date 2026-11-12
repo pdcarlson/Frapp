@@ -22,6 +22,12 @@ import {
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
 import { moduleRefusalFromServerMessage } from '@repo/validation';
 import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
+import * as Sentry from '@sentry/nestjs';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+}));
 
 describe('ChapterGuard', () => {
   let guard: ChapterGuard;
@@ -1175,18 +1181,31 @@ describe('ChapterGuard', () => {
       const reads: string[] = [];
       mockFrom.mockImplementation((table: string) => {
         reads.push(table);
-        const row =
+        // `auth-real` is a different user from everyone else, with a
+        // membership of its own.
+        const filters: Record<string, unknown> = {};
+        const row = () =>
           table === 'users'
-            ? { id: 'user-p' }
+            ? {
+                id:
+                  filters.supabase_auth_id === 'auth-real'
+                    ? 'user-real'
+                    : 'user-p',
+              }
             : table === 'chapters'
               ? { subscription_status: 'active', enabled_modules: null }
               : table === 'members'
-                ? { id: 'member-p', role_ids: ['role-p'], points: 3 }
+                ? filters.user_id === 'user-real'
+                  ? { id: 'member-real', role_ids: ['role-p'] }
+                  : { id: 'member-p', role_ids: ['role-p'], points: 3 }
                 : [{ id: 'role-p', permissions: ['members:view'] }];
-        const answer = () => Promise.resolve({ data: row, error: null });
+        const answer = () => Promise.resolve({ data: row(), error: null });
         const chain: Record<string, unknown> = {};
         chain.select = () => chain;
-        chain.eq = () => chain;
+        chain.eq = (column: string, value: unknown) => {
+          filters[column] = value;
+          return chain;
+        };
         chain.in = () => chain;
         chain.maybeSingle = answer;
         chain.then = (
@@ -1279,6 +1298,31 @@ describe('ChapterGuard', () => {
       expect(reads).toEqual(['rpc:get_request_context']);
     });
 
+    it('reports a failed call to Sentry once, however many requests it fails', async () => {
+      const captured = jest.mocked(Sentry.captureException);
+      captured.mockClear();
+      const { client } = tables({
+        data: null,
+        error: { code: 'PGRST202', message: 'function not found' },
+      });
+
+      for (const authId of ['auth-r1', 'auth-r2']) {
+        const req = request(authId);
+        await runWithRequestReads('GET', async () => {
+          prefetchChapterContext(client, authId, undefined, req.headers);
+          await settle();
+          await guard.canActivate(mockExecutionContext(req));
+        });
+      }
+
+      expect(captured).toHaveBeenCalledTimes(1);
+      expect(captured.mock.calls[0][0]).toBeInstanceOf(SupabaseQueryError);
+      expect(captured.mock.calls[0][1]).toMatchObject({
+        level: 'warning',
+        fingerprint: ['get_request_context-failed'],
+      });
+    });
+
     it.each([
       ['fails', { data: null, error: { code: '57014', message: 'timeout' } }],
       [
@@ -1286,30 +1330,59 @@ describe('ChapterGuard', () => {
         { data: { ...CONTEXT, roles: null }, error: null },
       ],
       ['answers nothing', { data: null, error: null }],
-    ])('reads each row itself when the call %s', async (_label, answer) => {
-      const { reads, client } = tables(answer);
-      const req = request(`auth-p4-${_label}`);
+    ])(
+      'reads each row as before when the call %s, while the session check runs',
+      async (_label, answer) => {
+        const { reads, client } = tables(answer);
+        const req = request(`auth-p4-${_label}`);
+
+        await runWithRequestReads('GET', async () => {
+          prefetchChapterContext(
+            client,
+            req.supabaseUser.id,
+            undefined,
+            req.headers,
+          );
+          await settle();
+          // The pre-#3583 chain: membership and roles are read already.
+          expect([...reads].sort()).toEqual([
+            'chapters',
+            'members',
+            'roles',
+            'rpc:get_request_context',
+            'users',
+          ]);
+          await expect(
+            guard.canActivate(mockExecutionContext(req)),
+          ).resolves.toBe(true);
+        });
+
+        expect(reads).toHaveLength(5);
+        expect(req.member).toEqual({ id: 'member-p', role_ids: ['role-p'] });
+      },
+    );
+
+    it('reads each row itself when the client throws instead of answering', async () => {
+      const { reads } = tables();
+      const throwing = {
+        from: mockFrom,
+        rpc: () => {
+          throw new Error('client gone');
+        },
+      } as never;
+      const req = request('auth-p8');
 
       await runWithRequestReads('GET', async () => {
-        prefetchChapterContext(
-          client,
-          req.supabaseUser.id,
-          undefined,
-          req.headers,
-        );
+        expect(() =>
+          prefetchChapterContext(throwing, 'auth-p8', undefined, req.headers),
+        ).not.toThrow();
         await settle();
         await expect(
           guard.canActivate(mockExecutionContext(req)),
         ).resolves.toBe(true);
       });
 
-      expect(reads.sort()).toEqual([
-        'chapters',
-        'members',
-        'rpc:get_request_context',
-        'users',
-      ]);
-      expect(req.member).toEqual({ id: 'member-p', role_ids: ['role-p'] });
+      expect(reads.sort()).toEqual(['chapters', 'members', 'roles', 'users']);
     });
 
     it('reuses no user row when the session belongs to a different user than the token’s sub', async () => {
@@ -1322,8 +1395,12 @@ describe('ChapterGuard', () => {
         await guard.canActivate(mockExecutionContext(req));
       });
 
-      // Keyed by auth id, so the guard looked its own user up.
+      // Keyed by auth id, so the guard looked its own user up, and by that
+      // user's id, so it read its own membership too: the claimed user's
+      // row and roles from the call are never handed to another user.
       expect(reads.filter((t) => t === 'users')).toHaveLength(1);
+      expect(reads.filter((t) => t === 'members')).toHaveLength(1);
+      expect(req.member).toEqual({ id: 'member-real', role_ids: ['role-p'] });
     });
 
     it('does nothing outside a request, or once a write request has reached its handler', async () => {
