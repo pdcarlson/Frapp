@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useCreateGeofence, useUpdateGeofence } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,16 @@ const RULES: readonly { key: RuleKey; label: string; hint?: string }[] = [
   },
 ];
 
+/** Whether the officer left the zone's shape as it opened. */
+function sameShape(a: ZoneDraft, b: ZoneDraft): boolean {
+  if (a.mode !== b.mode) return false;
+  return a.mode === "circle"
+    ? a.radius_m === b.radius_m &&
+        a.center?.lat === b.center?.lat &&
+        a.center?.lng === b.center?.lng
+    : JSON.stringify(a.points) === JSON.stringify(b.points);
+}
+
 function parseRules(
   draft: Record<RuleKey, string>,
 ): Record<RuleKey, number> | null {
@@ -127,6 +137,9 @@ export function StudyZoneEditor({
 
   const [name, setName] = useState("");
   const [shape, setShape] = useState<ZoneDraft>(emptyZoneDraft);
+  // The shape as it opened, so a rename or a rate change leaves the stored
+  // shape exactly as it was instead of redrawing it from the draft.
+  const [openedShape, setOpenedShape] = useState<ZoneDraft | null>(null);
   const [rules, setRules] = useState<Record<RuleKey, string>>(RULE_DEFAULTS);
   const [shapeError, setShapeError] = useState<string | null>(null);
   const [rulesError, setRulesError] = useState<string | null>(null);
@@ -140,7 +153,9 @@ export function StudyZoneEditor({
     setLoadedKey(formKey);
     if (formKey) {
       setName(zone?.name ?? "");
-      setShape(zone ? draftFromZone(zone) : emptyZoneDraft());
+      const opened = zone ? draftFromZone(zone) : emptyZoneDraft();
+      setShape(opened);
+      setOpenedShape(zone ? opened : null);
       setRules(
         zone
           ? {
@@ -158,7 +173,10 @@ export function StudyZoneEditor({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const shapeBody = zoneShapeBody(shape);
+    const shapeBody =
+      openedShape && sameShape(shape, openedShape)
+        ? ({ ok: true, body: {} } as const)
+        : zoneShapeBody(shape);
     const parsedRules = parseRules(rules);
     setShapeError(shapeBody.ok ? null : shapeBody.error);
     setRulesError(
@@ -197,9 +215,15 @@ export function StudyZoneEditor({
     }
   }
 
-  const others = zones
-    .filter((other) => other.id !== zone?.id)
-    .map((other) => ({ id: other.id, coordinates: other.coordinates }));
+  // Memoized: the map re-tiles the other zones whenever this changes.
+  const zoneId = zone?.id;
+  const others = useMemo(
+    () =>
+      zones
+        .filter((other) => other.id !== zoneId)
+        .map((other) => ({ id: other.id, coordinates: other.coordinates })),
+    [zones, zoneId],
+  );
 
   return (
     <Panel

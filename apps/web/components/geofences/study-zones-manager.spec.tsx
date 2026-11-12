@@ -132,7 +132,7 @@ vi.mock("@/components/geofences/zone-map", () => ({
 }));
 
 const { StudyZonesManager } = await import("./study-zones-manager");
-const GeofencesAdminPage = StudyZonesManager;
+const { searchPlaces } = await import("@/lib/maps/map-provider");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -147,7 +147,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("leaves every write alone on an active chapter", () => {
     chapter.active();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeEnabled();
     expect(editButton()).toBeEnabled();
@@ -160,7 +160,7 @@ describe("StudyZonesManager subscription gating", () => {
   // named for the zone it acts on, with the same words as its tooltip.
   it("draws the row actions as icons named for the zone", () => {
     chapter.active();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     for (const [button, name] of [
       [editButton(), "Edit Main library"],
@@ -175,7 +175,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("disables the create trigger and names blocker plus recovery when incomplete", async () => {
     chapter.incomplete();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     // §5 rule 1: gate the trigger, never the submit.
     expect(createTrigger()).toBeDisabled();
@@ -198,7 +198,7 @@ describe("StudyZonesManager subscription gating", () => {
     // these live would have the page claim writes are blocked while offering
     // three of them.
     chapter.incomplete();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(editButton()).toBeDisabled();
     expect(disableButton()).toBeDisabled();
@@ -207,7 +207,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("ties every disabled control to the one explanation", () => {
     chapter.incomplete();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     const describedBy = createTrigger().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
@@ -219,7 +219,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("blocks paid-ops geofence writes immediately on past_due, grace or not", () => {
     chapter.pastDue();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeDisabled();
     expect(screen.getByText(/past due/i)).toBeInTheDocument();
@@ -227,7 +227,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("points a canceled chapter at the portal rather than checkout", () => {
     chapter.canceled();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeDisabled();
     expect(screen.getByText(/read-only/i)).toBeInTheDocument();
@@ -241,7 +241,7 @@ describe("StudyZonesManager subscription gating", () => {
     // path to the very 403 this gate prevents: a trigger that paints enabled
     // for that round trip still lets a fast click reach a doomed form.
     chapter.loading();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeDisabled();
     expect(screen.getByText(/checking this chapter/i)).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe("StudyZonesManager subscription gating", () => {
     // A failed chapter fetch must not lock a paying chapter out of its study
     // zones; the server guard is still the enforcement.
     chapter.unreadable();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeEnabled();
     expect(editButton()).toBeEnabled();
@@ -267,12 +267,12 @@ describe("StudyZonesManager subscription gating", () => {
     // Radix fires onOpenChange only on an open/close request, so a background
     // refetch that revokes the write cannot be caught there.
     chapter.active();
-    const { rerender } = render(<GeofencesAdminPage />);
+    const { rerender } = render(<StudyZonesManager />);
     await userEvent.click(editButton());
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     chapter.pastDue();
-    rerender(<GeofencesAdminPage />);
+    rerender(<StudyZonesManager />);
 
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
@@ -281,7 +281,7 @@ describe("StudyZonesManager subscription gating", () => {
 
   it("still opens the editor and toggles a zone on an active chapter", async () => {
     chapter.active();
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     await userEvent.click(disableButton());
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
@@ -299,7 +299,7 @@ describe("StudyZonesManager layout", () => {
   });
 
   it("lists zones flush, with no --card panel", () => {
-    const { container } = render(<GeofencesAdminPage />);
+    const { container } = render(<StudyZonesManager />);
 
     expect(cardFilledContainers(container)).toEqual([]);
     const rows = within(
@@ -315,7 +315,7 @@ describe("StudyZonesManager layout", () => {
   });
 
   it("keeps coordinates off the row and out of the editor", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     expect(document.body.textContent).not.toContain("30.286");
     await userEvent.click(editButton());
@@ -328,7 +328,7 @@ describe("StudyZonesManager layout", () => {
   });
 
   it("puts New study zone beside the Zones heading, with no page h1", () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
 
     // The page's title is Chapter settings'; this is one section of it.
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
@@ -346,7 +346,7 @@ describe("StudyZonesManager map editor", () => {
   });
 
   it("creates a circle zone from a dropped pin, at the default radius", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(createTrigger());
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Folsom Library" },
@@ -369,7 +369,7 @@ describe("StudyZonesManager map editor", () => {
   });
 
   it("sizes the circle in feet and stores meters", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(createTrigger());
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Quad" },
@@ -386,7 +386,7 @@ describe("StudyZonesManager map editor", () => {
   });
 
   it("says where to start instead of saving a zone with no place", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(createTrigger());
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Nowhere" },
@@ -399,8 +399,57 @@ describe("StudyZonesManager map editor", () => {
     expect(mockCreateMutate).not.toHaveBeenCalled();
   });
 
+  it("drops the pin on a searched place and names the zone after it", async () => {
+    vi.mocked(searchPlaces).mockResolvedValueOnce([
+      {
+        id: "W1",
+        name: "Folsom Library",
+        detail: "Troy, New York",
+        lat: 42.7297,
+        lng: -73.6826,
+      },
+    ]);
+    render(<StudyZonesManager />);
+    await userEvent.click(createTrigger());
+    const search = screen.getByPlaceholderText("Find a building or address");
+    await userEvent.type(search, "Folsom");
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /folsom library/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
+
+    await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
+    expect(mockCreateMutate.mock.calls[0]![0]).toMatchObject({
+      name: "Folsom Library",
+      circle: { lat: 42.7297, lng: -73.6826, radius_m: 75 },
+    });
+  });
+
+  it("never saves the zone from Enter in the search box", async () => {
+    render(<StudyZonesManager />);
+    await userEvent.click(editButton());
+    await userEvent.type(
+      screen.getByPlaceholderText("Find a building or address"),
+      "Folsom{Enter}",
+    );
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
+  });
+
+  it("renames a zone without resending its shape", async () => {
+    render(<StudyZonesManager />);
+    await userEvent.click(editButton());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Main library, 2nd floor" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
+    const { body } = mockUpdateMutate.mock.calls[0]![0];
+    expect(body.name).toBe("Main library, 2nd floor");
+    expect(body).not.toHaveProperty("coordinates");
+    expect(body).not.toHaveProperty("circle");
+  });
+
   it("saves a traced outline as corners, which clears any circle", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(createTrigger());
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Science library" },
@@ -423,7 +472,7 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
   });
 
   async function openCreate() {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(createTrigger());
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Science library" },
@@ -484,7 +533,7 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
   it.each([/every \(minutes\)/i, /^points$/i, /pause grace/i])(
     "refuses %s under its floor of 1 at save, on edit",
     async (label) => {
-      render(<GeofencesAdminPage />);
+      render(<StudyZonesManager />);
       await userEvent.click(editButton());
       fireEvent.change(rate(label), { target: { value: "0" } });
       fireEvent.submit(document.getElementById("study-zone-form")!);
@@ -530,7 +579,7 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
   });
 
   it("guards the edit form's four rates the same way", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(editButton());
     expectRefusedEntriesKeep(rate(/every \(minutes\)/i), "30");
     expectRefusedEntriesKeep(rate(/^points$/i), "1");
@@ -543,7 +592,7 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
   });
 
   it("saves a 0-minute minimum session as 0, not rewritten to 1", async () => {
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(editButton());
     fireEvent.change(rate(/shortest session/i), { target: { value: "0" } });
     fireEvent.submit(document.getElementById("study-zone-form")!);
@@ -555,7 +604,7 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
   it("saves from the panel footer's Save changes, outside the form", async () => {
     // The footer is pinned below the scrolling body, so the button reaches
     // its form through `form=`. Drop that and Save does nothing.
-    render(<GeofencesAdminPage />);
+    render(<StudyZonesManager />);
     await userEvent.click(editButton());
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
 

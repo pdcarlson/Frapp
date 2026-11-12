@@ -39,17 +39,36 @@ export function emptyZoneDraft(): ZoneDraft {
 }
 
 /**
+ * The zone's circle, when it was drawn as one and its stored outline is still
+ * that circle's. Anything else that rewrote `coordinates` (an older client, a
+ * hand edit) leaves a stale `circle` behind, and the outline is what members
+ * are checked against, so the outline wins.
+ */
+export function zoneCircle(zone: ZoneShapeRow): ZoneCircle | null {
+  if (!isValidZoneCircle(zone.circle)) return null;
+  const points = Array.isArray(zone.coordinates) ? zone.coordinates : [];
+  const derived = circleToPolygon(zone.circle);
+  if (points.length !== derived.length) return null;
+  const close = (a: ZonePoint, b: ZonePoint) =>
+    Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lng - b.lng) < 1e-6;
+  return points.every((point, i) => close(point, derived[i]!))
+    ? zone.circle
+    : null;
+}
+
+/**
  * The draft a saved zone reopens as: a circle when it was drawn as one, else
  * its outline. A zone saved before circles existed is an outline, which is
  * what it always was.
  */
 export function draftFromZone(zone: ZoneShapeRow): ZoneDraft {
   const points = Array.isArray(zone.coordinates) ? zone.coordinates : [];
-  if (isValidZoneCircle(zone.circle)) {
+  const circle = zoneCircle(zone);
+  if (circle) {
     return {
       mode: "circle",
-      center: { lat: zone.circle.lat, lng: zone.circle.lng },
-      radius_m: zone.circle.radius_m,
+      center: { lat: circle.lat, lng: circle.lng },
+      radius_m: circle.radius_m,
       points: [],
     };
   }
@@ -120,9 +139,8 @@ export function draftPolygon(draft: ZoneDraft): ZonePoint[] {
  * or "Outline, 6 corners". Never coordinates (principles.md P2).
  */
 export function zoneShapeLine(zone: ZoneShapeRow): string {
-  if (isValidZoneCircle(zone.circle)) {
-    return `${formatZoneRadius(zone.circle.radius_m)} circle`;
-  }
+  const circle = zoneCircle(zone);
+  if (circle) return `${formatZoneRadius(circle.radius_m)} circle`;
   const corners = Array.isArray(zone.coordinates)
     ? zone.coordinates.length
     : 0;

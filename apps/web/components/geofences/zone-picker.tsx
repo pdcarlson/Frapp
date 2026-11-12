@@ -74,6 +74,9 @@ export function ZonePicker({
   >("idle");
   const [highlight, setHighlight] = useState(0);
   const [focus, setFocus] = useState<ZoneMapFocus | null>(null);
+  // The list shows only while the box has focus, so a search that answers
+  // after the officer has moved on to the map doesn't pop it back open.
+  const [searchFocused, setSearchFocused] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const focusKey = useRef(0);
 
@@ -129,8 +132,9 @@ export function ZonePicker({
           setHighlight(0);
           setSearchState(places.length ? "idle" : "empty");
         })
-        .catch((cause: unknown) => {
-          if ((cause as Error)?.name === "AbortError") return;
+        .catch(() => {
+          // Superseded by newer words: say nothing. A timeout is an error.
+          if (controller.signal.aborted) return;
           setResults([]);
           setSearchState("error");
         });
@@ -179,7 +183,8 @@ export function ZonePicker({
     }
   }
 
-  const showList = results.length > 0 || searchState !== "idle";
+  const showList =
+    searchFocused && (results.length > 0 || searchState !== "idle");
   const hint =
     draft.mode === "circle"
       ? draft.center
@@ -219,11 +224,12 @@ export function ZonePicker({
             onChange={(event) => changeQuery(event.target.value)}
             // Clicking the map instead closes the list; a pick lands first
             // because the options act on mousedown.
-            onBlur={() => {
-              setResults([]);
-              setSearchState("idle");
-            }}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             onKeyDown={(event) => {
+              // Inside the zone form: Enter picks or does nothing, it never
+              // submits the zone.
+              if (event.key === "Enter") event.preventDefault();
               if (!results.length) return;
               if (event.key === "ArrowDown") {
                 event.preventDefault();
@@ -232,8 +238,6 @@ export function ZonePicker({
                 event.preventDefault();
                 setHighlight((i) => Math.max(0, i - 1));
               } else if (event.key === "Enter") {
-                // Inside the zone form: Enter picks, it doesn't submit.
-                event.preventDefault();
                 const place = results[highlight];
                 if (place) pick(place);
               } else if (event.key === "Escape") {

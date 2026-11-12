@@ -236,31 +236,35 @@ export class StudyService {
    * update that only renames or changes a rate).
    */
   private zoneShape(data: {
-    coordinates?: GeofenceCoordinate[];
-    circle?: GeofenceCircle;
+    coordinates?: GeofenceCoordinate[] | null;
+    circle?: GeofenceCircle | null;
   }):
     | { coordinates: GeofenceCoordinate[]; circle: GeofenceCircle | null }
     | undefined {
-    if (data.circle !== undefined && data.coordinates !== undefined) {
+    // `null` counts as not sent: a client echoing a fetched outline zone back
+    // sends `circle: null`, which must not read as a circle.
+    const circle = data.circle ?? undefined;
+    const coordinates = data.coordinates ?? undefined;
+    if (circle && coordinates) {
       throw new BadRequestException(
         'Send a circle or an outline for the study zone, not both',
       );
     }
-    if (data.circle !== undefined) {
-      const circle = {
-        lat: data.circle.lat,
-        lng: data.circle.lng,
-        radius_m: data.circle.radius_m,
+    if (circle) {
+      const kept = {
+        lat: circle.lat,
+        lng: circle.lng,
+        radius_m: circle.radius_m,
       };
-      return { coordinates: circleToPolygon(circle), circle };
+      return { coordinates: circleToPolygon(kept), circle: kept };
     }
-    if (data.coordinates !== undefined) {
-      if (data.coordinates.length < 3) {
+    if (coordinates) {
+      if (coordinates.length < 3) {
         throw new BadRequestException(
           'Coordinates must form a polygon with at least 3 points',
         );
       }
-      return { coordinates: data.coordinates, circle: null };
+      return { coordinates, circle: null };
     }
     return undefined;
   }
@@ -269,8 +273,8 @@ export class StudyService {
     chapterId: string,
     data: {
       name: string;
-      coordinates?: GeofenceCoordinate[];
-      circle?: GeofenceCircle;
+      coordinates?: GeofenceCoordinate[] | null;
+      circle?: GeofenceCircle | null;
       is_active?: boolean;
       minutes_per_point?: number;
       points_per_interval?: number;
@@ -303,8 +307,8 @@ export class StudyService {
     chapterId: string,
     data: Partial<{
       name: string;
-      coordinates: GeofenceCoordinate[];
-      circle: GeofenceCircle;
+      coordinates: GeofenceCoordinate[] | null;
+      circle: GeofenceCircle | null;
       is_active: boolean;
       minutes_per_point: number;
       points_per_interval: number;

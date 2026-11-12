@@ -69,7 +69,7 @@ export class CreateGeofenceDto {
     type: [GeofenceCoordinateDto],
     description: `An outline's corners. ${SHAPE_DESCRIPTION}`,
   })
-  @ValidateIf((dto: CreateGeofenceDto) => dto.circle === undefined)
+  @ValidateIf((dto: CreateGeofenceDto) => dto.circle == null)
   @IsArray()
   @ArrayMinSize(3)
   @ArrayMaxSize(ZONE_OUTLINE_MAX_POINTS)

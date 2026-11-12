@@ -269,7 +269,10 @@ function SettingsPageContent() {
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
     stateBanner = <SettingsBodySkeleton />;
-  } else if (chapterQuery.isError) {
+  } else if (chapterQuery.isError && chapterQuery.data === undefined) {
+    // Only a first load that failed. A background refetch that fails keeps
+    // the page it already drew: unmounting it would throw away a study zone
+    // half drawn in the map editor, or an open delete confirmation.
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"

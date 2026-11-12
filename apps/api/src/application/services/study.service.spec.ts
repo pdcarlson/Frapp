@@ -267,6 +267,26 @@ describe('StudyService', () => {
       expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
     });
 
+    it('answers a null circle with no outline as a missing shape, not a crash', async () => {
+      await expect(
+        service.createGeofence('ch-1', { name: 'Null', circle: null }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('reads a null circle beside an outline as an outline', async () => {
+      mockGeofenceRepo.create.mockResolvedValue(baseGeofence);
+      await service.createGeofence('ch-1', {
+        name: 'Echoed',
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
+      expect(mockGeofenceRepo.create.mock.calls[0][0]).toMatchObject({
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
+    });
+
     it('refuses a zone with no shape at all', async () => {
       await expect(
         service.createGeofence('ch-1', { name: 'Nothing' }),
@@ -332,6 +352,20 @@ describe('StudyService', () => {
       expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
         coordinates: circleToPolygon(circle),
         circle,
+      });
+    });
+
+    it('leaves the shape alone when an update sends only a null circle', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+
+      await service.updateGeofence('geo-1', 'ch-1', {
+        name: 'Renamed',
+        circle: null,
+      });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        name: 'Renamed',
       });
     });
 

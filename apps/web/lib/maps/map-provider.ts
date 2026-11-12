@@ -83,10 +83,22 @@ export async function searchPlaces(
     params.set("lat", String(options.near.lat));
     params.set("lon", String(options.near.lng));
   }
-  const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-  const response = await fetch(`${SEARCH_URL}?${params}`, {
-    signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
-  });
+  // The caller's signal or the timeout, whichever comes first. Built by hand:
+  // `AbortSignal.any` is newer than the Safari versions Next still targets.
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const timer = setTimeout(abort, SEARCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${SEARCH_URL}?${params}`, {
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
+  }
   if (!response.ok) throw new Error(`Place search failed (${response.status})`);
   const body = (await response.json()) as { features?: PhotonFeature[] };
   const seen = new Set<string>();

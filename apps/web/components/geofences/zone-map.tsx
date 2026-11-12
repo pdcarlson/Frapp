@@ -346,6 +346,12 @@ export function ZoneMap({
           radius_m: Math.round(radiusFrom()),
         });
       });
+      // A click on a handle is not a click on the map: the pin stays put.
+      for (const marker of [centerMarker, radiusMarker]) {
+        marker
+          .getElement()
+          .addEventListener("click", (event) => event.stopPropagation());
+      }
       add(centerMarker);
       add(radiusMarker);
     }
