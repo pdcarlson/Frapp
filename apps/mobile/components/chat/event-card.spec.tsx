@@ -169,6 +169,24 @@ function render(
   return tree;
 }
 
+/** The same card element `render()` mounts, for `tree.update` after state changes. */
+function rerenderCard() {
+  return (
+    <FrappThemeProvider>
+      <EventCard
+        message={message()}
+        payload={PAYLOAD}
+        viewerId="viewer-1"
+        isConfirmed
+        onRetry={vi.fn()}
+        onDiscard={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />
+    </FrappThemeProvider>
+  );
+}
+
 function button(tree: ReactTestRenderer, label: string) {
   return tree.root.find(
     (node) =>
@@ -480,6 +498,32 @@ describe("EventCard — already on the list", () => {
     const tree = render();
     expect(screenText(tree)).toContain("Marked excused");
     expect(hasButton(tree, "Check in")).toBe(false);
+  });
+
+  it("shows an officer's mark, not Checked in, when the tap's 409 was the mark", async () => {
+    // The row read before the officer marked the member; the server refuses
+    // the check-in for any existing row, and the re-read row says which.
+    checkIn.mockRejectedValue({ statusCode: 409, message: "Already checked in" });
+    const tree = render();
+    await press(tree, "Check in");
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    act(() => tree.update(rerenderCard()));
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(hasButton(tree, "Checked in")).toBe(false);
+  });
+
+  it("drops an earlier failure once the member's row says checked in", async () => {
+    checkIn.mockRejectedValue(new Error("network down"));
+    const tree = render();
+    await press(tree, "Check in");
+    const failure = screenText(tree);
+    state.mine = {
+      attendance: { status: "PRESENT", check_in_time: "2026-11-05T23:10:00.000Z" },
+    };
+    act(() => tree.update(rerenderCard()));
+    expect(button(tree, "Checked in").props.disabled).toBe(true);
+    expect(failure).toContain("check you in");
+    expect(screenText(tree)).not.toContain("check you in");
   });
 
   it("offers Check in while the member has no row", () => {

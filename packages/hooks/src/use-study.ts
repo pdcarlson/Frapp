@@ -161,6 +161,10 @@ export function useStartStudySession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+      // Start first settles a previous session left paused past its grace
+      // window, which awards its minutes; the response is the new session,
+      // so nothing in it says that happened.
+      void invalidatePointReads(queryClient);
     },
   });
 }

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   usePauseStudySession,
+  useStartStudySession,
   useStudyHeartbeat,
   useStudySessions,
   useStopStudySession,
@@ -256,6 +257,27 @@ describe("a write that ends the session", () => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
     },
   );
+
+  it("refreshes points after a start, which may settle an expired pause", async () => {
+    const queryClient = makeQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { id: "ss-2", status: "ACTIVE" }, error: null });
+    const { result } = renderHook(() => useStartStudySession(), {
+      wrapper: makeWrapper(
+        queryClient,
+        { POST: mockPost },
+        CHAPTER_ID,
+        "StartWrapper",
+      ),
+    });
+
+    await result.current.mutateAsync({ geofence_id: "g-1", lat: 1, lng: 2 });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["study-sessions"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
 
   it("refreshes points only when a pause settles the session", async () => {
     const queryClient = makeQueryClient();

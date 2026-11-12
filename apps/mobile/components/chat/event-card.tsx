@@ -63,11 +63,13 @@ import { LocationGlyph } from "./location-glyph";
  *
  * **Already on the list.** While the window is open the card reads the
  * member's own row (`useMyAttendance`), as Event details does (#3703), so a
- * member who scanned in at the door, checked in from another device, or
- * checked in from this card before it scrolled away and remounted sees
- * "Checked in", not a Check in button the server would only refuse. An
- * officer's mark (excused, absent) shows as that mark, with no button, since
- * the server won't let a check-in replace it.
+ * member who scanned in at the door, or checked in from this card before it
+ * scrolled away and remounted, sees "Checked in", not a Check in button the
+ * server would only refuse. An officer's mark (excused, absent) shows as that
+ * mark, with no button, since the server won't let a check-in replace it.
+ * Once the row has loaded it decides; the tap's own outcome only fills in
+ * while it hasn't (a 409 also answers an officer's mark, so "already" must not
+ * outrank the row that says which).
  *
  * **The checked-in count** is the attendance roster, which only an
  * `events:update` holder can read, so nobody else asks for it or sees a count.
@@ -107,9 +109,11 @@ export function EventCard({
     chapterQuery.data !== undefined &&
     !isModuleEnabled(chapterQuery.data?.enabled_modules, "events");
 
-  // The member's own row, while it can change what the card offers. A
-  // check-in from anywhere invalidates `["attendance", eventId]`, which this
-  // key sits under.
+  // The member's own row, while it can change what the card offers. This
+  // client's own check-ins and an officer's status writes invalidate
+  // `["attendance", eventId]`, which this key sits under; a check-in from
+  // another device shows once the row is re-read (a remount, or the app
+  // returning to the foreground), and a tap before then gets the server's 409.
   const mine = useMyAttendance(open ? payload.event_id : "");
   const own = selectMyAttendance(mine.data);
   // A row without a check-in is an officer's mark.
@@ -149,10 +153,22 @@ export function EventCard({
     }
   };
 
-  const checkedInNow =
-    outcome?.kind === "success" ||
-    outcome?.kind === "already" ||
-    own?.checkedInAt != null;
+  // The row wins once it has loaded: `mine.data` is the server's answer, and
+  // `own` is null in it only when the member has no row at all.
+  const rowKnown = mine.data !== undefined;
+  const checkedInNow = rowKnown
+    ? own?.checkedInAt != null ||
+      // A row-less answer read before this tap's write landed; the write
+      // re-reads the row, which then takes over (an officer's mark included).
+      (own === null &&
+        (outcome?.kind === "success" || outcome?.kind === "already"))
+    : outcome?.kind === "success" || outcome?.kind === "already";
+  // A failure from an earlier tap says nothing once the member is checked in.
+  const shownOutcome =
+    outcome &&
+    (!checkedInNow || outcome.kind === "success" || outcome.kind === "already")
+      ? outcome
+      : null;
   const blockedReason =
     writeBlockedReason ??
     (outcome?.kind === "blocked" ? outcome.message : null);
@@ -232,13 +248,13 @@ export function EventCard({
               />
             )}
           </CardActions>
-          {outcome ? (
+          {shownOutcome ? (
             <CardNote
-              text={outcome.message}
+              text={shownOutcome.message}
               tone={
                 checkedInNow
                   ? "success"
-                  : outcome.kind === "error"
+                  : shownOutcome.kind === "error"
                     ? "error"
                     : "muted"
               }
