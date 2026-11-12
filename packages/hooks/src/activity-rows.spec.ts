@@ -13,7 +13,9 @@ import {
   activityFilterAvailable,
   activityRowIsNow,
   activitySummary,
+  activityDetailParts,
   type Activity,
+  type ActivityRow,
 } from "./activity-rows";
 
 const task = (overrides: Record<string, unknown> = {}) => ({
@@ -1110,5 +1112,177 @@ describe("activityFilterAvailable", () => {
     expect(activityFilterAvailable("link", off)).toBe(true);
     expect(activityFilterAvailable("waiting", off)).toBe(true);
     expect(activityFilterAvailable("hours")).toBe(true);
+  });
+});
+
+describe("faces and closing soon (#4402, item 4)", () => {
+  const NOW = new Date("2026-11-11T12:00:00.000Z");
+  const IN = (minutes: number) =>
+    new Date(NOW.getTime() + minutes * 60_000).toISOString();
+  const rows = (data: Activity): ActivityRow[] =>
+    activityGroups(data, "all", NOW).flatMap((group) => group.rows);
+  const needsYou = (
+    needs: Partial<Record<string, unknown[]>>,
+    rest: Record<string, unknown> = {},
+  ) =>
+    activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+        ...needs,
+      },
+      ...rest,
+    });
+
+  it("leads each row with whoever it is from, never the member themselves", () => {
+    const data = needsYou(
+      {
+        tasks: [
+          task({ id: "from-olive" }),
+          task({ id: "own", title: "Own", created_by: "me" }),
+        ],
+        task_confirmations: [
+          task({
+            id: "done",
+            title: "Done",
+            assignee_id: "pledge",
+            assignee_name: "Pat",
+            created_by: "me",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            completed_at: "2026-11-10T00:00:00.000Z",
+          }),
+        ],
+        hours_approvals: [
+          {
+            id: "hours-1",
+            user_id: "sam",
+            member_name: "Sam",
+            date: "2026-11-10",
+            duration_minutes: 90,
+            description: "Food bank",
+            created_at: "2026-11-10T00:00:00.000Z",
+          },
+        ],
+        polls: [poll()],
+      },
+      {
+        links: [link()],
+        coming_up: [event()],
+        made_by_you: {
+          polls: [poll({ message_id: "mine", question: "Mine?" })],
+          tasks: [task({ id: "assigned", title: "Assigned" })],
+          events: [],
+        },
+      },
+    );
+    expect(
+      Object.fromEntries(rows(data).map((row) => [row.key, row.faceId])),
+    ).toEqual({
+      "needs:task:from-olive": "officer",
+      "needs:task:own": null,
+      "needs-confirm:task:done": "pledge",
+      "needs:hours:hours-1": "sam",
+      "needs:poll:poll-1": "officer",
+      "coming:event:event-1": null,
+      "link:link-1": "olive",
+      "made:poll:mine": null,
+      "made:task:assigned": null,
+    });
+  });
+
+  it("says a poll closing within a day relatively, as the detail's last segment", () => {
+    const [row] = rows(needsYou({ polls: [poll({ closes_at: IN(150) })] }));
+    expect(row!.soon).toBe("closes in 2 hours");
+    expect(row!.detail).toBe("#general · closes in 2 hours");
+    expect(activityDetailParts(row!)).toEqual({
+      lead: "#general",
+      soon: "closes in 2 hours",
+    });
+  });
+
+  it("counts minutes in the last hour, and never says 0", () => {
+    const soonOf = (minutes: number) =>
+      rows(needsYou({ polls: [poll({ closes_at: IN(minutes) })] }))[0]!.soon;
+    expect(soonOf(40)).toBe("closes in 40 minutes");
+    expect(soonOf(0.5)).toBe("closes in 1 minute");
+    expect(soonOf(61)).toBe("closes in 1 hour");
+  });
+
+  it("leaves a poll further out, closed, or with no closing time as it was", () => {
+    const soonOf = (overrides: Record<string, unknown>) =>
+      rows(needsYou({ polls: [poll(overrides)] }))[0]!.soon;
+    expect(soonOf({ closes_at: IN(24 * 60) })).toBeNull();
+    expect(soonOf({ closes_at: null })).toBeNull();
+    // Closed by hand with time still on the clock: it sits in the archive.
+    const archived = activityGroups(
+      activity({
+        made_by_you: {
+          polls: [poll({ is_closed: true, closes_at: IN(30) })],
+          tasks: [],
+          events: [],
+        },
+      }),
+      "all",
+      NOW,
+    ).flatMap((group) => group.archive?.rows ?? []);
+    expect(archived).toHaveLength(1);
+    expect(archived[0]!.soon).toBeNull();
+    expect(archived[0]!.detail).toBe("#general");
+  });
+
+  it("says a timed task due within a day relatively; a bare date and overdue as before", () => {
+    const [timed, bare, overdue] = rows(
+      needsYou({
+        tasks: [
+          task({ id: "a", title: "A", due_at: IN(90), due_date: "2026-11-11" }),
+          task({ id: "b", title: "B", due_at: null, due_date: "2026-11-11" }),
+          task({
+            id: "c",
+            title: "C",
+            status: "OVERDUE",
+            due_at: IN(-90),
+            due_date: "2026-11-11",
+          }),
+        ],
+      }),
+    );
+    expect(timed!.soon).toBe("Due in 1 hour");
+    expect(timed!.detail).toBe("from Olive · Due in 1 hour");
+    expect(bare!.soon).toBeNull();
+    expect(overdue!.soon).toBeNull();
+    expect(overdue!.detail).toBe("from Olive · Overdue by 1 hour");
+  });
+
+  it("gives a finished task waiting on a confirm no countdown, whatever its due time", () => {
+    const [row] = rows(
+      needsYou({
+        task_confirmations: [
+          task({
+            id: "done",
+            assignee_id: "pledge",
+            assignee_name: "Pat",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            completed_at: "2026-11-11T11:00:00.000Z",
+            due_at: IN(120),
+          }),
+        ],
+      }),
+    );
+    expect(row!.soon).toBeNull();
+    expect(row!.detail).toBe("Pat");
+  });
+
+  it("keeps the whole detail when nothing is closing soon", () => {
+    expect(activityDetailParts({ detail: "a · b", soon: null })).toEqual({
+      lead: "a · b",
+      soon: null,
+    });
+    expect(
+      activityDetailParts({ detail: "Due in 3 hours", soon: "Due in 3 hours" }),
+    ).toEqual({ lead: "", soon: "Due in 3 hours" });
   });
 });

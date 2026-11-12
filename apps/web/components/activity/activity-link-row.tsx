@@ -16,7 +16,11 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
-import { ActivityRowLead, ActivityUnreadDot } from "./activity-row-lead";
+import {
+  ActivityRowDetail,
+  ActivityRowLead,
+  ActivityUnreadDot,
+} from "./activity-row-lead";
 import { IconButton } from "@/components/ui/icon-button";
 import { ToastAction } from "@/components/ui/toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -198,11 +202,7 @@ export function ActivityLinkRow({
                 {row.title}
                 <span className="sr-only"> (opens in a new tab)</span>
               </span>
-              {row.detail ? (
-                <span className="block truncate text-caption text-muted-foreground">
-                  {row.detail}
-                </span>
-              ) : null}
+              <ActivityRowDetail row={row} />
             </span>
             <ExternalLink
               className="h-4 w-4 shrink-0 text-muted-foreground"

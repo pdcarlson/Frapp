@@ -19,6 +19,7 @@ export * from "./use-activity";
 export * from "./use-activity-unread";
 export * from "./use-activity-links";
 export * from "./activity-rows";
+export * from "./activity-faces";
 export * from "./event-series";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
