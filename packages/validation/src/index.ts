@@ -32,6 +32,7 @@ export * from "./beta-off-modules";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
+export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 export * from "./chat-backgrounds";
@@ -197,12 +198,3 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
-
-export {
-  GOAL_METRICS,
-  GOAL_ROLE_LIMIT,
-  GOAL_TARGET_MAX,
-  isGoalTarget,
-  isRoleGoalTarget,
-} from "./chapter-goals";
-export type { GoalMetric } from "./chapter-goals";
