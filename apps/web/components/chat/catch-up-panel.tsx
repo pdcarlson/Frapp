@@ -28,6 +28,7 @@ import {
   type ChatCatchUpRange,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { ReportAiButton } from "@/components/ai/report-ai";
 import { PanelBody } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -56,7 +57,8 @@ import { cn } from "@/lib/utils";
  *
  * **Only the member's, and gone when they leave.** The summary lives in this
  * hook's state. Nothing is cached or stored, here or on the server, and
- * switching channels drops it.
+ * switching channels drops it. Report this is the one way any of it is kept
+ * (`report-ai.tsx` says what, for whom and for how long before it sends).
  *
  * **Consent is asked at the first summary**, not when the entry point shows
  * (`useAiConsentGate`). The server checks again.
@@ -447,10 +449,24 @@ function Summary({
         );
       })}
       <Notes summary={summary} />
-      <div>
+      <div className="flex items-center justify-between gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onAgain}>
           {CHAT_CATCH_UP_COPY.again}
         </Button>
+        {/*
+          Report this (#4315), on every AI-made surface. Keyed by the
+          summary, so a new summary is not shown as already reported.
+        */}
+        {summary.summary_id ? (
+          <ReportAiButton
+            key={summary.summary_id}
+            target={{
+              subject: "chat_summary",
+              subjectId: summary.summary_id,
+              receipt: summary.report_receipt ?? null,
+            }}
+          />
+        ) : null}
       </div>
     </>
   );

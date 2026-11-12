@@ -15,7 +15,9 @@ import {
 } from '#domain/adapters/language-model.interface';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import { WILDCARD } from '#domain/constants/permissions';
+import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
+import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import {
   AiGatewayService,
@@ -78,6 +80,8 @@ interface AskSourceEntry {
   model: LanguageModelSource;
   view: AskSource;
   chat: boolean;
+  /** Chat: whose words are in it. Empty for every other source. */
+  authorIds: readonly string[];
 }
 
 type AskEventFields = AskStreamEvent extends infer E
@@ -104,6 +108,7 @@ function emptyAnswer(
     unverified_citations: 0,
     truncated: false,
     saved: false,
+    report_receipt: null,
     ...fields,
   };
 }
@@ -175,6 +180,7 @@ function passageEntry(
           : null;
   return {
     chat,
+    authorIds: chat ? passage.authorIds : [],
     model: {
       id: passage.id,
       // What the model reads as the source's name. Chat is labelled as chat,
@@ -274,7 +280,8 @@ export class AskService {
     input: AskInput,
     now: Date = new Date(),
   ): AsyncGenerator<AskStreamEvent, void, void> {
-    yield event({ type: 'start', ask_id: randomUUID() });
+    const askId = randomUUID();
+    yield event({ type: 'start', ask_id: askId });
     yield this.step('searching');
 
     const context = { chapterId: input.chapterId, actingUserId: input.userId };
@@ -328,6 +335,15 @@ export class AskService {
     if (entries.length === 0) {
       const answer = emptyAnswer('not_found', { left_out_messages: leftOut });
       answer.saved = await this.keep(input, answer, '', entries, planned, now);
+      answer.report_receipt = this.receipt(
+        askId,
+        input,
+        answer,
+        '',
+        entries,
+        planned,
+        now,
+      );
       yield this.done(answer);
       return;
     }
@@ -351,10 +367,20 @@ export class AskService {
     }
 
     const answer = this.answerFrom(result, entries, leftOut);
+    const written = result?.status === 'ok' ? result.text : '';
     answer.saved = await this.keep(
       input,
       answer,
-      result?.status === 'ok' ? result.text : '',
+      written,
+      entries,
+      planned,
+      now,
+    );
+    answer.report_receipt = this.receipt(
+      askId,
+      input,
+      answer,
+      written,
       entries,
       planned,
       now,
@@ -508,6 +534,7 @@ export class AskService {
           }
           return {
             chat: false,
+            authorIds: [],
             model: {
               id: `tool:${tool.name}`,
               title: `${tool.title} (live data, read just now)`,
@@ -571,6 +598,73 @@ export class AskService {
       },
       now,
     );
+  }
+
+  /**
+   * "Report this" (#4315): the exchange, sealed into the answer so it can be
+   * handed back with a report, and nothing stored now. Null when the server
+   * holds no sealing key, or when no answer was attempted. Never throws: a
+   * receipt that could not be made costs the member only the text in a
+   * report, never their answer.
+   */
+  private receipt(
+    askId: string,
+    input: AskInput,
+    answer: AskAnswer,
+    written: string,
+    entries: readonly AskSourceEntry[],
+    planned: readonly AskTool[],
+    now: Date,
+  ): string | null {
+    if (answer.status === 'unavailable') return null;
+    try {
+      const entry = aiCatalogEntry('ask.answer');
+      const quoted = new Set(entries.flatMap((source) => source.authorIds));
+      quoted.delete(input.userId);
+      return sealAskReportReceipt(
+        aiStoredTextKeyRing(),
+        {
+          v: 1,
+          ask_id: askId,
+          issued_at: now.toISOString(),
+          question: input.question,
+          written,
+          shown: {
+            status: answer.status,
+            reason: answer.reason,
+            text: answer.text,
+            citations: answer.citations,
+            sources: answer.sources.map((source) => ({
+              kind: source.kind,
+              title: source.title,
+              detail: source.detail,
+              date: source.date,
+            })),
+            left_out_messages: answer.left_out_messages,
+            unverified_citations: answer.unverified_citations,
+            truncated: answer.truncated,
+          },
+          given: entries.map((source) => ({
+            title: source.model.title,
+            text: source.model.text,
+          })),
+          tools: planned.map((tool) => tool.name),
+          model: entry.model,
+          prompt_version: ASK_ANSWER_PROMPT_VERSION,
+          quoted_user_ids: [...quoted],
+        },
+        { chapterId: input.chapterId, userId: input.userId },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ask-report-receipt',
+        message: 'Ask: the report receipt could not be sealed',
+        // A cipher or encoding error; neither carries the text.
+        error,
+      });
+      return null;
+    }
   }
 
   private step(step: AskStep): AskStreamEvent {

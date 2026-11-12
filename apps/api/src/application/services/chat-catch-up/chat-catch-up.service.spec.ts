@@ -1,3 +1,5 @@
+import { openChatSummaryReportReceipt } from '#domain/utils/ai-report-receipt';
+import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CatchUpMessageRow } from '#domain/repositories/chat-catch-up.repository.interface';
 import type { CatchUpOutput } from '#domain/utils/chat-catch-up';
@@ -518,6 +520,77 @@ describe('ChatCatchUpService', () => {
       await expect(
         service.catchUp(input({ since: undefined, threadRootId: 'x' }), NOW),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('Report this (#4315)', () => {
+    const KEY = `k1:${Buffer.alloc(32, 7).toString('base64')}`;
+    const saved = process.env.AI_STORED_TEXT_KEY;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.AI_STORED_TEXT_KEY;
+      else process.env.AI_STORED_TEXT_KEY = saved;
+    });
+    const summarize = () => {
+      const { service } = build({
+        rows: afternoon(),
+        reply: (prompt) =>
+          ok([
+            {
+              kind: 'decision',
+              text: 'Formal is at the boathouse.',
+              message: refOf(prompt, 'We voted'),
+              quote: 'the boathouse it is',
+            },
+          ]),
+      });
+      return service.catchUp(input(), NOW);
+    };
+
+    it('gives a summary an id and no receipt when the server holds no key', async () => {
+      delete process.env.AI_STORED_TEXT_KEY;
+      const summary = await summarize();
+      expect(summary.summary_id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(summary.report_receipt).toBeNull();
+    });
+
+    it('seals the exchange for the reader alone, and stores nothing', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const summary = await summarize();
+      const envelope = summary.report_receipt ?? '';
+      expect(envelope).not.toContain('boathouse');
+      const ring = parseAiTextKeyRing(KEY);
+      const receipt = openChatSummaryReportReceipt(
+        ring,
+        envelope,
+        { chapterId: CHAPTER, userId: READER },
+        NOW,
+      );
+      expect(receipt.summary_id).toBe(summary.summary_id);
+      expect(receipt.channel_id).toBe(CHANNEL);
+      // What the model was handed, and what the reader was shown.
+      expect(receipt.given).toContain('the boathouse it is');
+      expect(receipt.shown.points).toHaveLength(1);
+      // Whose words are in it, never the reader's own.
+      expect(receipt.quoted_user_ids).not.toContain(READER);
+      expect(receipt.quoted_user_ids.length).toBeGreaterThan(0);
+      // It opens for nobody else.
+      expect(() =>
+        openChatSummaryReportReceipt(
+          ring,
+          envelope,
+          { chapterId: CHAPTER, userId: 'someone-else' },
+          NOW,
+        ),
+      ).toThrow();
+    });
+
+    it('offers nothing to report when no summary stands', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const { service } = build({ rows: afternoon(), reply: () => ok([]) });
+      const summary = await service.catchUp(input(), NOW);
+      expect(summary.status).toBe('not_found');
+      expect(summary.summary_id).toBeUndefined();
+      expect(summary.report_receipt).toBeUndefined();
     });
   });
 

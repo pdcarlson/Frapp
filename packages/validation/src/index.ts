@@ -1064,6 +1064,10 @@ export * from "./ask";
 // Catch me up (#3946): a channel's new messages or a thread, summarized.
 export * from "./chat-catch-up";
 
+// Report this (#4315): the reasons, the request, and the words about what a
+// report keeps.
+export * from "./ai-report";
+
 export {
   AI_CONSENT_COPY,
   AI_SETTINGS_COPY,

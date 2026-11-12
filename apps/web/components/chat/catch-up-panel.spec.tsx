@@ -30,6 +30,23 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
+vi.mock("@/components/ai/report-ai", () => ({
+  ReportAiButton: ({
+    target,
+  }: {
+    target: { subject: string; subjectId: string; receipt?: string | null };
+  }) => (
+    <button
+      data-testid="report"
+      data-subject={target.subject}
+      data-id={target.subjectId}
+      data-receipt={target.receipt ?? ""}
+    >
+      Report this
+    </button>
+  ),
+}));
+
 vi.mock("@/components/ai/ai-consent-sheet", () => ({
   useAiConsentGate: () => ({ ensureConsent: state.consent, consentDialog: null }),
 }));
@@ -260,6 +277,25 @@ describe("useCatchUpPanel", () => {
     expect(onOpenPoint).toHaveBeenCalledWith(
       expect.objectContaining({ message_id: "m2" }),
     );
+  });
+
+  it("offers Report this on a summary that stands, with the server's receipt", async () => {
+    state.current = done({
+      points: [point({})],
+      summary_id: "summary-1",
+      report_receipt: "v1.sealed",
+    });
+    await openPanel();
+    const report = screen.getByTestId("report");
+    expect(report).toHaveAttribute("data-subject", "chat_summary");
+    expect(report).toHaveAttribute("data-id", "summary-1");
+    expect(report).toHaveAttribute("data-receipt", "v1.sealed");
+  });
+
+  it("offers no report where there is no summary to report", async () => {
+    state.current = done({ status: "too_little", messages_read: 2 });
+    await openPanel();
+    expect(screen.queryByTestId("report")).toBeNull();
   });
 
   it("says what was left out and what could not be matched", async () => {

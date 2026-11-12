@@ -81,5 +81,7 @@ import { MeetingTaskSuggestionsService } from '../../application/services/meetin
     // nobody is told).
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
+  // Report this reads one suggestion the reporter can see (#4315).
+  exports: [AiSuggestionService],
 })
 export class AiSuggestionModule {}

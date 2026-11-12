@@ -157,4 +157,21 @@ export class ChatCatchUpDto {
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   covers_to: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary.',
+  })
+  summary_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text.',
+  })
+  report_receipt?: string | null;
 }

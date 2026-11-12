@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  AiReport,
   AiRun,
   AiSuggestion,
   AskDiagnosticsExchange,
@@ -214,6 +215,7 @@ export interface Database {
       user_ai_consents: TableDefinition<UserAiConsent>;
       ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
       ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
+      ai_reports: TableDefinition<AiReport>;
     };
     Views: Record<string, never>;
     Functions: {

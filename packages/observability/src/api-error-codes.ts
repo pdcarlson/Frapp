@@ -120,6 +120,12 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // reached storage.
   "meeting.recording_replaced",
   "meeting.recording_incomplete",
+  // Report this (#4315): the draft or suggestion is gone or out of the
+  // member's sight since the button was drawn, the answer is past its 7 days,
+  // or its receipt no longer opens (a rotated key, another member's answer).
+  "ai.report.not_found",
+  "ai.report.too_old",
+  "ai.report.receipt_invalid",
 ] as const;
 
 export type ClientContractErrorCode =

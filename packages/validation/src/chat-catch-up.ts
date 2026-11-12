@@ -152,6 +152,18 @@ export const ChatCatchUpSchema = z.object({
   /** When the oldest and newest message read were sent, or null with none. */
   covers_from: z.string().nullable(),
   covers_to: z.string().nullable(),
+  /**
+   * This summary's id, for "Report this" (`ai-report.ts`, subject
+   * `chat_summary`). Set only when `points` stands; nothing is stored under
+   * it unless the member reports the summary.
+   */
+  summary_id: z.string().nullish(),
+  /**
+   * The exchange, sealed by the server and opaque to clients, handed back
+   * unchanged with a report. Null when the server cannot keep reported text
+   * (no sealing key).
+   */
+  report_receipt: z.string().nullish(),
 });
 export type ChatCatchUp = z.infer<typeof ChatCatchUpSchema>;
 

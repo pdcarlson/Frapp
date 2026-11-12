@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   CHAT_CATCH_UP_MAX_DAYS,
   CHAT_CATCH_UP_MAX_MESSAGES,
@@ -35,7 +37,11 @@ import {
   catchUpSystem,
   checkCatchUpPoints,
   type CatchUpMessage,
+  type CatchUpOutput,
 } from '#domain/utils/chat-catch-up';
+import { sealChatSummaryReportReceipt } from '#domain/utils/ai-report-receipt';
+import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
+import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { aiConsentRefusal } from '../ai/ai-consent-refusal';
 import { AiConsentService } from '../ai/ai-consent.service';
 import { AiGatewayService, type AiUnavailable } from '../ai/ai-gateway.service';
@@ -110,7 +116,9 @@ function longDate(date: Date, timeZone: string): string {
  *
  * It runs only when a member asks. Nothing here is scheduled, nothing reads
  * a channel nobody asked about, and nothing is stored: the summary is the
- * response and exists nowhere else (ADR-28 decision 8). No message, name or
+ * response and exists nowhere else (ADR-28 decision 8). The one way any of
+ * it is kept is the reader reporting it (`AiReportService`), from the sealed
+ * receipt the response carries. No message, name or
  * point is logged.
  *
  * One request runs these steps, and each rule is here, in the product, not
@@ -145,6 +153,8 @@ function longDate(date: Date, timeZone: string): string {
  */
 @Injectable()
 export class ChatCatchUpService {
+  private readonly logger = new Logger(ChatCatchUpService.name);
+
   constructor(
     private readonly channels: ChannelAccessService,
     private readonly consent: AiConsentService,
@@ -227,6 +237,7 @@ export class ChatCatchUpService {
 
     // 6.
     const readerName = readable.readerName;
+    const conversation = catchUpMessages(lines, readerName);
     const generated = await this.gateway.generateObject(
       TASK,
       {
@@ -237,7 +248,7 @@ export class ChatCatchUpService {
           thread: input.threadRootId !== undefined,
           today: longDate(now, input.timeZone),
         }),
-        messages: catchUpMessages(lines, readerName),
+        messages: conversation,
         schema: CatchUpOutputSchema,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       },
@@ -262,11 +273,87 @@ export class ChatCatchUpService {
         unverified_points: checked.dropped,
       });
     }
-    return result('summarized', {
+    const summary = result('summarized', {
       ...counts,
       points: checked.points,
       unverified_points: checked.dropped,
     });
+    // "Report this" (#4315): an id to report under, and the exchange sealed
+    // for the reader to hand back. Still nothing is stored here.
+    summary.summary_id = randomUUID();
+    summary.report_receipt = this.receipt(
+      summary,
+      input,
+      {
+        given: conversation.map((turn) => turn.content).join('\n'),
+        authors: lines.map((line) => line.message.senderId),
+        written: generated.value,
+      },
+      now,
+    );
+    return summary;
+  }
+
+  /**
+   * The exchange, sealed into the response so a report can hand it back.
+   * Null when the server holds no sealing key. Never throws: a receipt that
+   * could not be made costs the member only the text in a report, never
+   * their summary.
+   */
+  private receipt(
+    summary: ChatCatchUp,
+    input: ChatCatchUpInput,
+    exchange: {
+      /** The conversation as the model was handed it. */
+      given: string;
+      /** Who wrote the messages in it. */
+      authors: readonly string[];
+      written: CatchUpOutput;
+    },
+    now: Date,
+  ): string | null {
+    try {
+      const entry = aiCatalogEntry(TASK);
+      const quoted = new Set(exchange.authors);
+      quoted.delete(input.userId);
+      return sealChatSummaryReportReceipt(
+        aiStoredTextKeyRing(),
+        {
+          v: 1,
+          summary_id: summary.summary_id ?? '',
+          issued_at: now.toISOString(),
+          channel_id: input.channelId,
+          thread_root_id: input.threadRootId ?? null,
+          given: exchange.given,
+          written: exchange.written.points,
+          shown: {
+            points: summary.points.map((point) => ({
+              kind: point.kind,
+              text: point.text,
+              message_id: point.message_id,
+              quote: point.quote,
+            })),
+            messages_read: summary.messages_read,
+            messages_total: summary.messages_total,
+            left_out_messages: summary.left_out_messages,
+            unverified_points: summary.unverified_points,
+          },
+          model: entry.model,
+          prompt_version: CHAT_CATCH_UP_PROMPT_VERSION,
+          quoted_user_ids: [...quoted],
+        },
+        { chapterId: input.chapterId, userId: input.userId },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-catch-up-report-receipt',
+        message: 'Catch me up: the report receipt could not be sealed',
+        // A cipher or encoding error; neither carries the text.
+        error,
+      });
+      return null;
+    }
   }
 
   private async read(

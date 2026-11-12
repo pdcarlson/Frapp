@@ -29,6 +29,26 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Report this on a channel summary (#3946, on `ai-integration`)
+
+### 20261112230000_ai_reports_chat_summary.sql
+
+- **Purpose**: Widens `ai_reports_subject_type_allowed` so a report may name a channel summary (`chat_summary`) beside the three subjects it already allowed ([`spec/behavior/ai.md` § Catch me up](../../../spec/behavior/ai.md#catch-me-up)). Adds no column and no table, and writes no row.
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_reports_subject_type_allowed';` names four subjects, `chat_summary` among them, and `select convalidated from pg_constraint where conname = 'ai_reports_subject_type_allowed';` returns `t`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112220000_ai_reports.sql`, whose constraint it replaces. The check is dropped and re-added NOT VALID, then validated, in the migration's transaction; every existing row already satisfies it, since the old list is a subset of the new. `drop constraint if exists` makes re-applying idempotent. Nothing writes a `chat_summary` report unless the server has `AI_ENABLED=true`. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-report-this-on-a-channel-summary-20261112230000) § Rollback Report this on a channel summary.
+
+## 2026-11-12: Report this (#4315, on `ai-integration`)
+
+### 20261112220000_ai_reports.sql
+
+- **Purpose**: Adds `ai_reports`, one row per report of something the AI made ([`spec/behavior/ai.md` § Stored AI text](../../../spec/behavior/ai.md#stored-ai-text)). `sealed` is AES-256-GCM ciphertext written by the API (a check refuses anything not shaped like the envelope); `quoted_user_ids` names members whose words are inside it; a check holds `expires_at` to at most 30 days after `created_at`; one report per member per thing (unique). Cascading foreign keys to `chapters` and to the reporter's `users` row. Adds the trigger `users_drop_ai_reports` (`after update of deleted_at on users`), which deletes the reports a deleted account made and every report quoting it, instead of another redefinition of `anonymize_user`, and `ai_reports_refuse_deleted_users` (`before insert on ai_reports`), which keeps no report naming an account already deleted. RLS on, no policies (API only, service role). Writes no row.
+- **Checks**: After `db push`, `select count(*) from ai_reports;` returns `0`, `select relrowsecurity from pg_class where relname = 'ai_reports';` returns `true`, `select count(*) from pg_policies where tablename = 'ai_reports';` returns `0`, and `select tgname from pg_trigger where tgname in ('users_drop_ai_reports', 'ai_reports_refuse_deleted_users');` returns 2 rows.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Nothing writes the table unless the server has `AI_ENABLED=true` and a member reports something; without `AI_STORED_TEXT_KEY` a report keeps no text. The sweep that deletes reports past 30 days runs hourly whether or not AI is on. The foreign keys and the trigger take brief `SHARE ROW EXCLUSIVE` locks on `chapters` and `users`. `if not exists` and `drop trigger if exists` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-reports.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-report-this-20261112220000) § Rollback Report this.
+
 ## 2026-11-12: Meeting recording upload (#712, on `ai-integration`)
 
 ### 20261112210000_meeting_recordings.sql
@@ -38,6 +58,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Applies after `20261112130000_ai_usage_ledger.sql` and `20261112180000_meeting_drafts.sql`, whose table, functions and constraint it changes. `settle_ai_spend` and `ai_chapter_usage` are dropped and recreated inside the migration's transaction, so no caller sees them missing. The new `p_audio_seconds` parameter is last and has a default, so an API process from before this migration still resolves its 18-argument call; the older API reads `ai_chapter_usage` by column name and ignores the new column. With `AI_ENABLED` unset nothing calls either. The foreign keys and the two triggers take SHARE ROW EXCLUSIVE locks on `meetings`, `chapters`, `users` and `ai_runs` until commit; the new table is empty, so that is milliseconds. The two re-added checks on `ai_usage_events` and the one on `meeting_drafts` are added NOT VALID and validated after. The hosted projects' project-level upload limit is 100MB and is a dashboard setting: until it is raised to 200MB, storage refuses a recording over 100MB when its upload starts, and the bucket's own 200MB column changes nothing.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-meeting-recording-upload-20261112210000) § Rollback meeting recording upload.
+
 ## 2026-11-12: Ask diagnostics window (#4315, on `ai-integration`)
 
 ### 20261112200000_ai_ask_diagnostics.sql

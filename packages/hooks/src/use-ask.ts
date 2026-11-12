@@ -92,6 +92,11 @@ export function useSetAskDiagnostics() {
 /** One question and what has come back for it so far. */
 export interface AskExchange {
   question: string;
+  /**
+   * The server's id for this ask, from the stream's `start` event: what
+   * "Report this" names (#4315). Null until the stream begins.
+   */
+  askId?: string | null;
   /** `working` until the server's `done`; `failed` when no answer arrived. */
   phase: "working" | "done" | "failed";
   /** The step the server last named, while working. Open on the wire. */
@@ -134,7 +139,7 @@ export function applyAskEvent(
   if (exchange.phase !== "working") return exchange;
   switch (event.type) {
     case "start":
-      return exchange;
+      return { ...exchange, askId: event.ask_id };
     case "status":
       return { ...exchange, step: event.step };
     case "text":
