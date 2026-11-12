@@ -1,0 +1,1 @@
+A sign-up sheet in chat can now be a quick headcount, where people answer Going or Can't make it and add a short note, and any sign-up can end at a set time or be closed early by whoever posted it, on the web and on your phone.

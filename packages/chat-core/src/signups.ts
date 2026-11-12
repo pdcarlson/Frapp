@@ -1,10 +1,13 @@
+import { formatDueLabel, parseInstant } from "@repo/formatting";
 import {
+  SIGNUP_ANSWER_NOTE_MAX_LENGTH,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
   SIGNUP_SLOTS_MAX,
   SIGNUP_TITLE_MAX_LENGTH,
 } from "@repo/validation";
+import { canActOnMessage, isOwnMessage } from "./message-actions";
 import { currentPollPicks, makePollOptionId } from "./polls";
 import type { PendingPollPicks } from "./polls";
 import type { ChatMessage } from "./types";
@@ -21,9 +24,22 @@ import type { ChatMessage } from "./types";
  * vote is (ADR-07). The API checks each slot's limit against everyone else's
  * claims under a lock on the card (`claim_signup_slots`), so a slot can't be
  * over-filled by two taps at once; this module only draws the result.
+ *
+ * A **headcount** (`format: "headcount"`, step 2) is the same card with two
+ * fixed slots the server writes, Going and Can't make it, both with no limit.
+ * A member holds at most one, and may add a short note to it
+ * (`payload.note` on their claim). Either kind may carry an end time
+ * (`closes_at`), and its creator or a `channels:manage` holder may close it
+ * early (`closed_at`); the API then refuses every claim
+ * (`signup-card-rules.ts`).
  */
 
 export const SIGNUP_CLAIM_ACTION_TYPE = "signup";
+
+/** A headcount card's format, and the two slot ids the server gives it. */
+export const SIGNUP_HEADCOUNT_FORMAT = "headcount";
+export const HEADCOUNT_GOING_SLOT_ID = "going";
+export const HEADCOUNT_NOT_GOING_SLOT_ID = "not_going";
 
 export interface SignupSlot {
   id: string;
@@ -36,15 +52,31 @@ export interface SignupPayload {
   title: string;
   /** Details under the title, if the creator wrote any. */
   note?: string;
+  /** `"headcount"`, or absent for a sheet of named slots. */
+  format?: typeof SIGNUP_HEADCOUNT_FORMAT;
   slots: SignupSlot[];
+  /** When sign-ups end on their own (ISO), or absent. */
+  closes_at?: string;
+  /** Set by the server when the card is closed early. */
+  closed_at?: string;
+  closed_by?: string | null;
 }
 
 /** What a member typed into the New sign-up sheet form. */
 export interface SignupMessageInput {
   title: string;
   note?: string;
+  /** A headcount takes no slots: the server writes its two. */
+  format?: typeof SIGNUP_HEADCOUNT_FORMAT;
   slots: readonly { label: string; capacity: number | null }[];
+  /** When sign-ups end, or absent for a card that stays open. */
+  closesAt?: Date | null;
 }
+
+const HEADCOUNT_SLOTS: readonly SignupSlot[] = [
+  { id: HEADCOUNT_GOING_SLOT_ID, label: "Going", capacity: null },
+  { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
+];
 
 /**
  * The `kind: "signup"` message a client posts: `content` is the title, which
@@ -57,6 +89,23 @@ export function buildSignupMessage(
   makeSlotId: () => string = makePollOptionId,
 ): { content: string; payload: SignupPayload } {
   const note = input.note?.trim();
+  const closes = input.closesAt
+    ? { closes_at: input.closesAt.toISOString() }
+    : {};
+  if (input.format === SIGNUP_HEADCOUNT_FORMAT) {
+    return {
+      content: input.title,
+      payload: {
+        title: input.title,
+        ...(note ? { note } : {}),
+        format: SIGNUP_HEADCOUNT_FORMAT,
+        // The server replaces these with its own; sent so the optimistic row
+        // draws the card it will become.
+        slots: HEADCOUNT_SLOTS.map((slot) => ({ ...slot })),
+        ...closes,
+      },
+    };
+  }
   return {
     content: input.title,
     payload: {
@@ -67,6 +116,7 @@ export function buildSignupMessage(
         label: slot.label,
         capacity: slot.capacity,
       })),
+      ...closes,
     },
   };
 }
@@ -98,11 +148,87 @@ export function readSignupPayload(message: ChatMessage): SignupPayload | null {
   }
   if (parsed.length === 0) return null;
   const note = (raw as { note?: unknown }).note;
+  const format = (raw as { format?: unknown }).format;
+  const closesAt = (raw as { closes_at?: unknown }).closes_at;
+  const closedAt = (raw as { closed_at?: unknown }).closed_at;
+  const closedBy = (raw as { closed_by?: unknown }).closed_by;
   return {
     title,
     ...(typeof note === "string" && note.trim() !== "" ? { note } : {}),
+    ...(format === SIGNUP_HEADCOUNT_FORMAT
+      ? { format: SIGNUP_HEADCOUNT_FORMAT }
+      : {}),
     slots: parsed,
+    ...(typeof closesAt === "string" && closesAt !== ""
+      ? { closes_at: closesAt }
+      : {}),
+    ...(typeof closedAt === "string" && closedAt !== ""
+      ? {
+          closed_at: closedAt,
+          closed_by: typeof closedBy === "string" ? closedBy : null,
+        }
+      : {}),
   };
+}
+
+/** Whether the card is a headcount: Going or Can't make it, one answer each. */
+export function isHeadcountSignup(payload: SignupPayload): boolean {
+  return payload.format === SIGNUP_HEADCOUNT_FORMAT;
+}
+
+/**
+ * Whether the card takes no more claims: closed early, or its end time has
+ * come. The API's answer (`isSignupCardClosed`), including `<=` at the end
+ * time itself, so a card never offers a tap the server refuses.
+ */
+export function isSignupClosed(payload: SignupPayload, now: number): boolean {
+  if (payload.closed_at) return true;
+  const deadline = parseInstant(payload.closes_at);
+  return deadline ? deadline.getTime() <= now : false;
+}
+
+/**
+ * Whether the viewer is offered Close sign-ups on this card: it is on the
+ * server and not deleted, still open, and the viewer posted it or holds
+ * `channels:manage`. The same rule as Close poll (`canClosePoll`); the API
+ * enforces it (`ChatService.closeSignup`).
+ */
+export function canCloseSignup(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  payload: SignupPayload,
+  viewerId: string | null,
+  now: number,
+  canManageChannels: boolean,
+): boolean {
+  return (
+    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
+    canActOnMessage(message) &&
+    !isSignupClosed(payload, now)
+  );
+}
+
+/** Close sign-ups asks first, in the same words on web and the phone. */
+export const CLOSE_SIGNUP_LABEL = "Close sign-ups";
+export const CLOSE_SIGNUP_CONFIRM_TITLE = "Close sign-ups?";
+export const CLOSE_SIGNUP_CONFIRM_BODY =
+  "No one can sign up or change their answer after it closes, and it can't be reopened. The names stay on the card.";
+export const CLOSE_SIGNUP_CONFIRM_LABEL = "Close sign-ups";
+
+/**
+ * The line that says when an open card ends: "Ends today at 6 PM", "Ends
+ * Friday at 6 PM", "Ends Nov 14 at 9 AM". `null` for a card with no end time
+ * or one already closed, whose eyebrow says so.
+ */
+export function signupDeadlineLine(
+  payload: SignupPayload,
+  now: number,
+): string | null {
+  if (isSignupClosed(payload, now) || !parseInstant(payload.closes_at)) {
+    return null;
+  }
+  // A task's countdown words, which name the day and time the same way.
+  const due = formatDueLabel(payload.closes_at, new Date(now));
+  return due ? due.replace(/^Due /, "Ends ") : null;
 }
 
 export interface SignupTally {
@@ -112,6 +238,8 @@ export interface SignupTally {
   people: number;
   /** The viewer's slots, in the card's order. */
   mine: string[];
+  /** Each member's note on their answer (a headcount only), by member id. */
+  notes: Record<string, string>;
 }
 
 /**
@@ -136,6 +264,8 @@ export function tallySignups(
     .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
   let people = 0;
   let mine = new Set<string>();
+  const notes: Record<string, string> = {};
+  const headcount = isHeadcountSignup(payload);
   for (const claim of claims) {
     const raw = (claim.payload as { slot_ids?: unknown } | null)?.slot_ids;
     if (!Array.isArray(raw)) continue;
@@ -146,11 +276,16 @@ export function tallySignups(
     people += 1;
     for (const id of held) bySlot[id]!.push(claim.user_id);
     if (viewerId && claim.user_id === viewerId) mine = held;
+    const note = (claim.payload as { note?: unknown } | null)?.note;
+    if (headcount && typeof note === "string" && note.trim() !== "") {
+      notes[claim.user_id] = note.trim();
+    }
   }
   return {
     bySlot,
     people,
     mine: payload.slots.map((s) => s.id).filter((id) => mine.has(id)),
+    notes,
   };
 }
 
@@ -172,14 +307,23 @@ export function signupSlotCount(slot: SignupSlot, tally: SignupTally): string {
 }
 
 /**
- * The card's eyebrow on both clients. "Sign-up · Full" once every slot has a
+ * The card's eyebrow on both clients. "Sign-up · Closed" or "Headcount ·
+ * Closed" once it takes no more claims; a headcount's "Headcount · 4 going".
+ * Otherwise "Sign-up · Full" once every slot has a
  * limit and is at it; "Sign-up · 3 of 4 spots taken" while every slot has a
  * limit; plain "Sign-up" when any slot has none, since there's no total.
  */
 export function signupCardEyebrow(
   payload: SignupPayload,
   tally: SignupTally,
+  now: number,
 ): string {
+  const kind = isHeadcountSignup(payload) ? "Headcount" : "Sign-up";
+  if (isSignupClosed(payload, now)) return `${kind} · Closed`;
+  if (isHeadcountSignup(payload)) {
+    const going = tally.bySlot[HEADCOUNT_GOING_SLOT_ID]?.length ?? 0;
+    return going === 0 ? kind : `${kind} · ${going} going`;
+  }
   if (payload.slots.some((slot) => slot.capacity === null)) return "Sign-up";
   if (payload.slots.every((slot) => isSignupSlotFull(slot, tally))) {
     return "Sign-up · Full";
@@ -196,12 +340,20 @@ export function signupCardEyebrow(
 /**
  * The line under the slots: what the viewer holds, or how many people have
  * signed up. "You're signed up for Friday", "…for Friday and Saturday",
- * "…for 3 slots".
+ * "…for 3 slots". A headcount says the viewer's answer, or how many have
+ * answered.
  */
 export function signupCardFooter(
   payload: SignupPayload,
   tally: SignupTally,
 ): string {
+  if (isHeadcountSignup(payload)) {
+    const answer = tally.mine[0];
+    if (answer === HEADCOUNT_GOING_SLOT_ID) return "You're going";
+    if (answer === HEADCOUNT_NOT_GOING_SLOT_ID) return "You can't make it";
+    if (tally.people === 0) return "No one has answered yet.";
+    return `${tally.people === 1 ? "1 person" : `${tally.people} people`} answered`;
+  }
   if (tally.mine.length > 0) {
     const labels = payload.slots
       .filter((slot) => tally.mine.includes(slot.id))
@@ -224,6 +376,14 @@ export function signupSlotAction(
   tally: SignupTally,
 ): { label: string; held: boolean; full: boolean } {
   const held = tally.mine.includes(slot.id);
+  // A headcount's row already names the answer; its button says whether it
+  // is the viewer's.
+  if (
+    slot.id === HEADCOUNT_GOING_SLOT_ID ||
+    slot.id === HEADCOUNT_NOT_GOING_SLOT_ID
+  ) {
+    return { label: held ? "Your answer" : "Answer", held, full: false };
+  }
   if (held) return { label: "Signed up", held, full: false };
   const full = isSignupSlotFull(slot, tally);
   return { label: full ? "Full" : "Sign up", held, full };
@@ -280,6 +440,37 @@ export function castSignupClaim(
   return claim;
 }
 
+/**
+ * The claim a headcount answer sends: the one slot tapped, or none when the
+ * member taps the answer they already gave. The note rides along on every
+ * claim, because the server stores the claim's payload whole and a claim
+ * without one clears it; giving up the answer drops it.
+ */
+export function headcountAnswerPayload(
+  tally: SignupTally,
+  viewerId: string | null,
+  slotId: string,
+): { slot_ids: string[]; note?: string } {
+  if (tally.mine.includes(slotId)) return { slot_ids: [] };
+  const note = viewerId ? tally.notes[viewerId] : undefined;
+  return { slot_ids: [slotId], ...(note ? { note } : {}) };
+}
+
+/**
+ * The claim that saves a note on the viewer's answer, or `null` when they
+ * have no answer to attach it to. Blank clears the note. The server trims it
+ * and holds it to {@link SIGNUP_ANSWER_NOTE_MAX_LENGTH}.
+ */
+export function headcountNotePayload(
+  tally: SignupTally,
+  note: string,
+): { slot_ids: string[]; note?: string } | null {
+  const answer = tally.mine[0];
+  if (!answer) return null;
+  const trimmed = note.trim().slice(0, SIGNUP_ANSWER_NOTE_MAX_LENGTH);
+  return { slot_ids: [answer], ...(trimmed ? { note: trimmed } : {}) };
+}
+
 // ── The New sign-up sheet form ──────────────────────────────────────────────
 
 /**
@@ -292,11 +483,26 @@ export interface SignupSlotRow {
   capacity: string;
 }
 
+/** What the form makes: a sheet of named slots, or a Going / Can't make it headcount. */
+export type SignupDraftFormat = "sheet" | typeof SIGNUP_HEADCOUNT_FORMAT;
+
 export interface SignupDraft {
+  format: SignupDraftFormat;
   title: string;
   note: string;
+  /** Kept while the member tries Headcount, so switching back loses nothing. */
   slots: SignupSlotRow[];
+  /** When sign-ups end, or `null` for a card that stays open until closed. */
+  closesAt: Date | null;
 }
+
+export const SIGNUP_FORMAT_CHOICES: readonly {
+  id: SignupDraftFormat;
+  label: string;
+}[] = [
+  { id: "sheet", label: "Sheet" },
+  { id: SIGNUP_HEADCOUNT_FORMAT, label: "Headcount" },
+];
 
 let nextSlotKey = 0;
 function newSlotRow(): SignupSlotRow {
@@ -306,7 +512,13 @@ function newSlotRow(): SignupSlotRow {
 
 /** A new sheet starts with two slot rows, the usual "Friday, Saturday". */
 export function emptySignupDraft(): SignupDraft {
-  return { title: "", note: "", slots: [newSlotRow(), newSlotRow()] };
+  return {
+    format: "sheet",
+    title: "",
+    note: "",
+    slots: [newSlotRow(), newSlotRow()],
+    closesAt: null,
+  };
 }
 
 export function canAddSignupSlot(draft: SignupDraft): boolean {
@@ -352,15 +564,37 @@ export type SignupDraftCheck =
 export const SIGNUP_SPOTS_PROBLEM = `Spots is a whole number from 1 to ${SIGNUP_SLOT_CAPACITY_MAX}, or blank for no limit.`;
 export const DUPLICATE_SLOT_PROBLEM =
   "Two slots have the same name. Change one, or remove it.";
+export const SIGNUP_END_PASSED_PROBLEM =
+  "That end time has passed. Pick a later one, or none.";
+export const SIGNUP_END_TOO_FAR_PROBLEM =
+  "Sign-ups can end at most a year from now.";
+
+/** The API's furthest end time (`signup-card-rules.ts`), less a day of slack. */
+const SIGNUP_END_MAX_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * A default end time for a member who turns one on: tomorrow at 6 PM, the
+ * usual "sign up by" for a chapter week.
+ */
+export function defaultSignupEnd(now: Date): Date {
+  const at = new Date(now);
+  at.setDate(at.getDate() + 1);
+  at.setHours(18, 0, 0, 0);
+  return at;
+}
 
 /**
  * Whether the draft can be posted, and what it posts. A row with no name is
  * skipped, as a blank poll option is, unless it has Spots typed, which reads
  * as a slot the member forgot to name. The limits are the API's.
  */
-export function checkSignupDraft(draft: SignupDraft): SignupDraftCheck {
+export function checkSignupDraft(
+  draft: SignupDraft,
+  now: number = Date.now(),
+): SignupDraftCheck {
   const title = draft.title.trim();
   const note = draft.note.trim();
+  const closesAt = draft.closesAt;
   if (title.length > SIGNUP_TITLE_MAX_LENGTH) {
     return {
       ok: false,
@@ -371,6 +605,28 @@ export function checkSignupDraft(draft: SignupDraft): SignupDraftCheck {
     return {
       ok: false,
       problem: `Details can be at most ${SIGNUP_NOTE_MAX_LENGTH} characters.`,
+    };
+  }
+  if (closesAt) {
+    if (Number.isNaN(closesAt.getTime()) || closesAt.getTime() <= now) {
+      return { ok: false, problem: SIGNUP_END_PASSED_PROBLEM };
+    }
+    if (closesAt.getTime() > now + SIGNUP_END_MAX_AHEAD_MS) {
+      return { ok: false, problem: SIGNUP_END_TOO_FAR_PROBLEM };
+    }
+  }
+  const ends = closesAt ? { closesAt } : {};
+  if (draft.format === SIGNUP_HEADCOUNT_FORMAT) {
+    if (!title) return { ok: false, problem: null };
+    return {
+      ok: true,
+      input: {
+        title,
+        ...(note ? { note } : {}),
+        format: SIGNUP_HEADCOUNT_FORMAT,
+        slots: [],
+        ...ends,
+      },
     };
   }
   const slots: { label: string; capacity: number | null }[] = [];
@@ -418,6 +674,6 @@ export function checkSignupDraft(draft: SignupDraft): SignupDraftCheck {
   if (!title || slots.length === 0) return { ok: false, problem: null };
   return {
     ok: true,
-    input: { title, ...(note ? { note } : {}), slots },
+    input: { title, ...(note ? { note } : {}), slots, ...ends },
   };
 }

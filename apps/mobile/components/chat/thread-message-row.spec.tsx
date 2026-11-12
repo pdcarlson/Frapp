@@ -168,6 +168,7 @@ function renderRow(
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
           onClosePoll={overrides.onClosePoll ?? vi.fn()}
+          onCloseSignup={vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}

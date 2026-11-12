@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   actOnCard,
   closePoll as closePollAction,
+  closeSignup as closeSignupAction,
   deleteMessage,
   editMessage,
   react as reactAction,
@@ -39,6 +40,8 @@ export interface ThreadRowWrites {
   remove: (messageId: string) => Promise<void>;
   /** Rejects with the member-facing reason, for the confirm's alert. */
   closePoll: (messageId: string) => Promise<void>;
+  /** Rejects with the member-facing reason, for the confirm's alert. */
+  closeSignup: (messageId: string) => Promise<void>;
   /**
    * Why the latest reaction didn't land, or `null`; the channel's
    * `reactionError`, the same banner (`spec/ui/mobile/patterns.md` § Chat).
@@ -235,6 +238,25 @@ export function useThreadRowWrites({
     [ctx, channelId, targetOf, settle],
   );
 
+  const closeSignup = useCallback(
+    async (messageId: string) => {
+      const failure = "Couldn't close sign-ups. Try again.";
+      if (!ctx) throw new MemberFacingError(failure);
+      await settle(
+        messageId,
+        withFailureMessage(
+          (onError) =>
+            closeSignupAction(
+              { ...ctx, onError },
+              { channelId, messageId, threadRootId: targetOf(messageId) },
+            ),
+          failure,
+        ),
+      );
+    },
+    [ctx, channelId, targetOf, settle],
+  );
+
   return {
     react,
     unreact,
@@ -242,6 +264,7 @@ export function useThreadRowWrites({
     edit,
     remove,
     closePoll,
+    closeSignup,
     reactionError,
     clearReactionError,
     actionError,

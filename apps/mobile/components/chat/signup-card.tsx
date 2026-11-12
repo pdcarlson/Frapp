@@ -1,23 +1,36 @@
-import { useMemo, useRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { PendingPollPicks } from "@repo/chat-core/polls";
 import {
+  CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
+  canCloseSignup,
   castSignupClaim,
+  headcountAnswerPayload,
+  headcountNotePayload,
+  isHeadcountSignup,
+  isSignupClosed,
   readSignupPayload,
+  signupDeadlineLine,
   signupCardEyebrow,
   signupCardFooter,
   signupSlotAction,
   signupSlotCount,
   tallySignups,
 } from "@repo/chat-core/signups";
-import { actorLabel, type NameResolver } from "@repo/hooks";
+import {
+  actorLabel,
+  useMyPermissions,
+  useNow,
+  type NameResolver,
+} from "@repo/hooks";
+import { can, SIGNUP_ANSWER_NOTE_MAX_LENGTH } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useChapterBranding,
   type ChapterBranding,
 } from "@/lib/chapter-branding";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   CardEyebrow,
   CardTitle,
@@ -35,6 +48,11 @@ import {
  * that lost the last spot (409), which the channel's card-action error alert
  * shows. The frame (long-press actions, delivery status, reactions) is
  * `ChatCardShell`, as for every card.
+ *
+ * A headcount (step 2) draws its two answers, Going and Can't make it, the
+ * same way, with an optional note on the viewer's answer. A closed card keeps
+ * its names and takes no taps; Close sign-ups is its creator's or a
+ * `channels:manage` holder's.
  */
 export interface SignupCardProps extends ChatCardFrameProps {
   /** The row's roster lookup, for the names on each slot. */
@@ -44,11 +62,20 @@ export interface SignupCardProps extends ChatCardFrameProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /** Close sign-ups; the caller confirms first (`confirmCloseSignup`). */
+  onCloseSignup?: (messageId: string) => void;
 }
 
 export function SignupCard(props: SignupCardProps) {
-  const { message, viewerId, isConfirmed, nameFor, onClaim, onOpenActions } =
-    props;
+  const {
+    message,
+    viewerId,
+    isConfirmed,
+    nameFor,
+    onClaim,
+    onCloseSignup,
+    onOpenActions,
+  } = props;
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
@@ -58,6 +85,13 @@ export function SignupCard(props: SignupCardProps) {
     [message, payload, viewerId],
   );
   const pending = useRef<PendingPollPicks | null>(null);
+  const now = useNow();
+  const canManageChannels = can(
+    "channels:manage",
+    useMyPermissions().data?.permissions,
+  );
+  // The note being typed, or `null` while the field is shut.
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
 
   if (!payload || !tally) {
     return (
@@ -72,14 +106,30 @@ export function SignupCard(props: SignupCardProps) {
     );
   }
 
-  const canClaim = isConfirmed && !!viewerId;
+  const closed = isSignupClosed(payload, now);
+  const headcount = isHeadcountSignup(payload);
+  const canClaim = isConfirmed && !!viewerId && !closed;
+  const showClose =
+    !!onCloseSignup &&
+    canCloseSignup(message, payload, viewerId, now, canManageChannels);
+  const deadline = signupDeadlineLine(payload, now);
+  const myNote = viewerId ? (tally.notes[viewerId] ?? "") : "";
   const claim = (slotId: string) => {
     if (!canClaim) return;
     onClaim(
       message.id,
       SIGNUP_CLAIM_ACTION_TYPE,
-      castSignupClaim(payload, tally, pending, slotId),
+      headcount
+        ? headcountAnswerPayload(tally, viewerId, slotId)
+        : castSignupClaim(payload, tally, pending, slotId),
     );
+  };
+  const saveNote = () => {
+    if (noteDraft === null) return;
+    const next = headcountNotePayload(tally, noteDraft);
+    setNoteDraft(null);
+    if (!canClaim || !next || noteDraft.trim() === myNote) return;
+    onClaim(message.id, SIGNUP_CLAIM_ACTION_TYPE, next);
   };
 
   return (
@@ -87,7 +137,7 @@ export function SignupCard(props: SignupCardProps) {
       {...props}
       header={
         <>
-          <CardEyebrow label={signupCardEyebrow(payload, tally)} />
+          <CardEyebrow label={signupCardEyebrow(payload, tally, now)} />
           <CardTitle>{payload.title}</CardTitle>
           {payload.note ? (
             <Text style={styles.note}>{payload.note}</Text>
@@ -117,37 +167,39 @@ export function SignupCard(props: SignupCardProps) {
                 >
                   {signupSlotCount(slot, tally)}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${action.label}: ${slot.label}`}
-                  accessibilityState={{ selected: action.held, disabled }}
-                  disabled={disabled}
-                  hitSlop={6}
-                  onPress={() => claim(slot.id)}
-                  onLongPress={onOpenActions}
-                  style={[
-                    styles.button,
-                    action.held
-                      ? {
-                          backgroundColor: brand.accentPrimary,
-                          borderColor: brand.accentPrimary,
-                        }
-                      : null,
-                    disabled && !action.held ? styles.buttonDisabled : null,
-                  ]}
-                >
-                  <Text
+                {closed && !action.held ? null : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${action.label}: ${slot.label}`}
+                    accessibilityState={{ selected: action.held, disabled }}
+                    disabled={disabled}
+                    hitSlop={6}
+                    onPress={() => claim(slot.id)}
+                    onLongPress={onOpenActions}
                     style={[
-                      styles.buttonText,
-                      action.held ? { color: brand.accentOnPrimary } : null,
-                      disabled && !action.held
-                        ? styles.buttonTextDisabled
+                      styles.button,
+                      action.held
+                        ? {
+                            backgroundColor: brand.accentPrimary,
+                            borderColor: brand.accentPrimary,
+                          }
                         : null,
+                      disabled && !action.held ? styles.buttonDisabled : null,
                     ]}
                   >
-                    {action.held ? `${action.label} ✓` : action.label}
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        action.held ? { color: brand.accentOnPrimary } : null,
+                        disabled && !action.held
+                          ? styles.buttonTextDisabled
+                          : null,
+                      ]}
+                    >
+                      {action.held ? `${action.label} ✓` : action.label}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
               {holders.length > 0 ? (
                 <View style={styles.people}>
@@ -168,6 +220,9 @@ export function SignupCard(props: SignupCardProps) {
                           {mine
                             ? "You"
                             : (actorLabel(userId, nameFor) ?? "A member")}
+                          {tally.notes[userId]
+                            ? ` · ${tally.notes[userId]}`
+                            : ""}
                         </Text>
                       </View>
                     );
@@ -175,16 +230,67 @@ export function SignupCard(props: SignupCardProps) {
                 </View>
               ) : (
                 <Text style={styles.empty}>
-                  {slot.capacity === null
-                    ? "No limit · no one yet"
-                    : "No one yet"}
+                  {headcount || slot.capacity !== null
+                    ? "No one yet"
+                    : "No limit · no one yet"}
                 </Text>
               )}
             </View>
           );
         })}
       </View>
-      <Text style={styles.footer}>{signupCardFooter(payload, tally)}</Text>
+      {headcount && canClaim && tally.mine.length > 0 ? (
+        noteDraft === null ? (
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => setNoteDraft(myNote)}
+            style={styles.linkButton}
+          >
+            <Text style={styles.linkText}>
+              {myNote ? "Edit your note" : "Add a note"}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.noteRow}>
+            <TextInput
+              autoFocus
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              onSubmitEditing={saveNote}
+              maxLength={SIGNUP_ANSWER_NOTE_MAX_LENGTH}
+              placeholder="Running late, bringing a friend…"
+              placeholderTextColor={tokens.color.text.mutedForeground}
+              accessibilityLabel="Note on your answer"
+              returnKeyType="done"
+              style={styles.noteInput}
+            />
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={saveNote}
+              style={styles.linkButton}
+            >
+              <Text style={styles.linkText}>Save</Text>
+            </Pressable>
+          </View>
+        )
+      ) : null}
+      <Text style={styles.footer}>
+        {signupCardFooter(payload, tally)}
+        {deadline ? ` · ${deadline}` : ""}
+      </Text>
+      {showClose ? (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          accessibilityLabel={CLOSE_SIGNUP_LABEL}
+          onPress={() => onCloseSignup?.(message.id)}
+          style={styles.linkButton}
+        >
+          <Text style={styles.linkText}>{CLOSE_SIGNUP_LABEL}</Text>
+        </Pressable>
+      ) : null}
     </ChatCardShell>
   );
 }
@@ -280,6 +386,31 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
+    },
+    linkButton: {
+      alignSelf: "flex-start",
+      marginTop: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.xs,
+    },
+    linkText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: brand.accent,
+    },
+    noteRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.sm,
+    },
+    noteInput: {
+      ...fieldTypeRole(tokens.typography.role.caption),
+      flex: 1,
+      minHeight: 36,
+      paddingHorizontal: tokens.spacing.sm,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.control,
+      color: tokens.color.text.foreground,
     },
   });
 }

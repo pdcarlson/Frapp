@@ -6,6 +6,16 @@ import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { SignupCard } from "./signup-card";
 
+const myPermissions = vi.hoisted(() => ({ current: [] as string[] }));
+vi.mock("@repo/hooks", async () => {
+  const actual =
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+  return {
+    ...actual,
+    useMyPermissions: () => ({ data: { permissions: myPermissions.current } }),
+  };
+});
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#DDB844",
@@ -16,7 +26,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 const names: Record<string, string> = { u1: "Devin Okafor" };
 
-function card(claims: { user: string; slots: string[] }[]): ChatMessage {
+function card(
+  claims: { user: string; slots: string[]; note?: string }[],
+  extra: Record<string, unknown> = {},
+): ChatMessage {
   return {
     id: "m1",
     channel_id: "c1",
@@ -33,19 +46,27 @@ function card(claims: { user: string; slots: string[] }[]): ChatMessage {
         { id: "fri", label: "Friday", capacity: 1 },
         { id: "sat", label: "Saturday", capacity: null },
       ],
+      ...extra,
     },
     actions: claims.map((claim, i) => ({
       id: `a${i}`,
       message_id: "m1",
       user_id: claim.user,
       action_type: "signup",
-      payload: { slot_ids: claim.slots },
+      payload: {
+        slot_ids: claim.slots,
+        ...(claim.note ? { note: claim.note } : {}),
+      },
       created_at: `2026-11-12T10:0${i}:00Z`,
     })),
   } as unknown as ChatMessage;
 }
 
-function render(message: ChatMessage, onClaim = vi.fn()): ReactTestRenderer {
+function render(
+  message: ChatMessage,
+  onClaim = vi.fn(),
+  onCloseSignup?: (id: string) => void,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
@@ -56,6 +77,7 @@ function render(message: ChatMessage, onClaim = vi.fn()): ReactTestRenderer {
           isConfirmed
           nameFor={(id) => names[id] ?? null}
           onClaim={onClaim}
+          onCloseSignup={onCloseSignup}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -100,5 +122,48 @@ describe("SignupCard on the phone (#3926)", () => {
     const tree = render(card([]), onClaim);
     act(() => button(tree, "Sign up: Saturday").props.onPress());
     expect(onClaim).toHaveBeenCalledWith("m1", "signup", { slot_ids: ["sat"] });
+  });
+
+  const headcount = {
+    format: "headcount",
+    slots: [
+      { id: "going", label: "Going", capacity: null },
+      { id: "not_going", label: "Can’t make it", capacity: null },
+    ],
+  };
+
+  it("answers a headcount and shows each answer's note", () => {
+    const onClaim = vi.fn();
+    const tree = render(
+      card([{ user: "u1", slots: ["going"], note: "late" }], headcount),
+      onClaim,
+    );
+    expect(text(tree)).toContain("Headcount · 1 going");
+    expect(text(tree)).toContain("late");
+    act(() => button(tree, "Answer: Going").props.onPress());
+    expect(onClaim).toHaveBeenCalledWith("m1", "signup", {
+      slot_ids: ["going"],
+    });
+  });
+
+  it("takes no taps once closed, and offers Close to a moderator while open", () => {
+    const closed = render(
+      card([{ user: "u1", slots: ["fri"] }], {
+        closed_at: "2026-11-12T09:00:00Z",
+      }),
+      vi.fn(),
+      vi.fn(),
+    );
+    expect(text(closed)).toContain("Sign-up · Closed");
+    expect(text(closed)).toContain("Devin Okafor");
+    expect(() => button(closed, "Sign up: Saturday")).toThrow();
+    expect(() => button(closed, "Close sign-ups")).toThrow();
+
+    myPermissions.current = ["channels:manage"];
+    const onClose = vi.fn();
+    const open = render(card([]), vi.fn(), onClose);
+    act(() => button(open, "Close sign-ups").props.onPress());
+    expect(onClose).toHaveBeenCalledWith("m1");
+    myPermissions.current = [];
   });
 });

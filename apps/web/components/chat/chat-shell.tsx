@@ -188,6 +188,11 @@ import {
   CLOSE_POLL_CONFIRM_LABEL,
   CLOSE_POLL_CONFIRM_TITLE,
 } from "@repo/chat-core/polls";
+import {
+  CLOSE_SIGNUP_CONFIRM_BODY,
+  CLOSE_SIGNUP_CONFIRM_LABEL,
+  CLOSE_SIGNUP_CONFIRM_TITLE,
+} from "@repo/chat-core/signups";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -1788,6 +1793,19 @@ export function ChatShell({
       ),
     [confirmThen, closePoll],
   );
+  const closeSignup = channel.closeSignup;
+  const handleCloseSignup = useCallback(
+    (messageId: string, threadRootId?: string | null) =>
+      confirmThen(
+        {
+          title: CLOSE_SIGNUP_CONFIRM_TITLE,
+          description: CLOSE_SIGNUP_CONFIRM_BODY,
+          confirmLabel: CLOSE_SIGNUP_CONFIRM_LABEL,
+        },
+        () => closeSignup(messageId, threadRootId),
+      ),
+    [confirmThen, closeSignup],
+  );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
 
@@ -2552,6 +2570,7 @@ export function ChatShell({
       edit: channelEdit,
       delete: handleDeleteMessage,
       closePoll: handleClosePoll,
+      closeSignup: handleCloseSignup,
       act: channelAct,
     }),
     [
@@ -2561,6 +2580,7 @@ export function ChatShell({
       channelAct,
       handleDeleteMessage,
       handleClosePoll,
+      handleCloseSignup,
     ],
   );
   // The parent as the timeline's cache holds it, kept live by its realtime.
@@ -3698,6 +3718,7 @@ export function ChatShell({
                   }
                   onDelete={handleDeleteMessage}
                   onClosePoll={handleClosePoll}
+                  onCloseSignup={handleCloseSignup}
                   onFlag={(messageId, flag) =>
                     // The action toasts a refusal itself; nothing to add here.
                     void channel.flag(messageId, flag).catch(() => {})

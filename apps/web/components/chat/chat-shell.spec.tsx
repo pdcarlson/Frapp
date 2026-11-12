@@ -1528,6 +1528,7 @@ function chatChannelResult(
     edit: vi.fn(),
     delete: vi.fn(),
     closePoll: vi.fn(),
+    closeSignup: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],

@@ -1247,6 +1247,28 @@ export async function closePoll(
   );
 }
 
+export interface CloseSignupArgs extends RowTarget {
+  messageId: string;
+}
+
+/**
+ * Close a sign-up card early (#3926): its creator or a `channels:manage`
+ * holder, refused on a card already closed or past its end time
+ * (`ChatService.closeSignup`); the card offers it only when it should work
+ * (`canCloseSignup` in `./signups`). Not optimistic, as {@link closePoll}
+ * isn't: the stamped row the server returns is merged as the confirmation.
+ */
+export async function closeSignup(
+  ctx: ChatActionContext,
+  args: CloseSignupArgs,
+): Promise<void> {
+  await writeHeldRow(ctx, args, "Couldn't close sign-ups", () =>
+    ctx.apiClient.POST("/v1/channels/messages/{messageId}/close", {
+      params: { path: { messageId: args.messageId } },
+    }),
+  );
+}
+
 /**
  * What a card action or a poll close needs when it is taken outside the
  * card's thread (the Activity page, #3897): no outbox, no optimistic row, and

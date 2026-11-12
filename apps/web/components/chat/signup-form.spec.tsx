@@ -96,4 +96,36 @@ describe("SignupForm (#3926)", () => {
     expect(onDone).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Slot 1 name")).toHaveValue("A");
   });
+
+  it("posts a headcount with an end time, and no slots to fill in", async () => {
+    const user = userEvent.setup();
+    const onPost = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <SignupForm
+        initialDraft={emptySignupDraft()}
+        onPost={onPost}
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("radio", { name: "Headcount" }));
+    expect(screen.queryByLabelText("Slot 1 name")).toBeNull();
+    await user.type(
+      screen.getByPlaceholderText("Formal on Saturday"),
+      "Formal",
+    );
+    await user.click(
+      screen.getByRole("switch", { name: "Ends at a set time" }),
+    );
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("18:00");
+    await user.click(screen.getByRole("button", { name: "Post sign-up" }));
+
+    await waitFor(() => expect(onPost).toHaveBeenCalled());
+    const [signup] = onPost.mock.calls[0] as unknown as [
+      { payload: { format?: string; closes_at?: string; slots: unknown[] } },
+    ];
+    expect(signup.payload.format).toBe("headcount");
+    expect(signup.payload.slots).toHaveLength(2);
+    expect(new Date(signup.payload.closes_at!).getHours()).toBe(18);
+  });
 });

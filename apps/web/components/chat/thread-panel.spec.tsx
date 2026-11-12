@@ -144,6 +144,7 @@ function makeWrites() {
     edit: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined),
     closePoll: vi.fn(async () => undefined),
+    closeSignup: vi.fn(async () => undefined),
     act: vi.fn(async () => undefined),
   } satisfies ThreadRowWrites;
 }

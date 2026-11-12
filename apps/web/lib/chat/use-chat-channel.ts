@@ -67,6 +67,7 @@ import {
 import {
   actOnCard,
   closePoll as closePollAction,
+  closeSignup as closeSignupAction,
   setMessageFlag as setMessageFlagAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
@@ -169,6 +170,14 @@ export interface UseChatChannelResult {
    * server. Toasts and rejects on failure.
    */
   closePoll: (messageId: string, threadRootId?: string | null) => Promise<void>;
+  /**
+   * Closes a sign-up card early (#3926): its creator's or a `channels:manage`
+   * holder's, enforced on the server. Toasts and rejects on failure.
+   */
+  closeSignup: (
+    messageId: string,
+    threadRootId?: string | null,
+  ) => Promise<void>;
   /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
    * Toasts and rejects on failure, a lost race included.
@@ -631,6 +640,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  // A sign-up card's Close sign-ups (#3926), pessimistic like Close poll.
+  const closeSignupCb = useCallback(
+    async (messageId: string, threadRootId?: string | null) => {
+      if (!channelId) return;
+      await closeSignupAction(ctx, { channelId, messageId, threadRootId });
+    },
+    [channelId, ctx],
+  );
+
   const flagCb = useCallback(
     async (
       messageId: string,
@@ -831,6 +849,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     edit: editCb,
     delete: deleteCb,
     closePoll: closePollCb,
+    closeSignup: closeSignupCb,
     flag: flagCb,
     draft,
     setDraft,
