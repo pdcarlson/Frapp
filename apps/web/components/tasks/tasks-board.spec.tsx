@@ -149,6 +149,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: options?.enabled ? eventsRef.current : undefined };
   },
   useCurrentUser: () => ({ data: currentUserRef.current }),
+  // The List / Grid pick is kept under the viewer's id (`lib/list-layout.ts`).
+  useViewerUserId: () => "viewer-1",
   useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -206,6 +208,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 const { TasksBoard } = await import("./tasks-board");
+const { resetListLayoutForTests } = await import("@/lib/list-layout");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -221,6 +224,8 @@ const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete /i });
 
 beforeEach(() => {
+  window.localStorage.clear();
+  resetListLayoutForTests();
   permissionsRef.current = ["tasks:manage"];
   permissionsFailed.current = false;
   eventsRef.current = [];
@@ -605,6 +610,63 @@ describe("TasksBoard overdue affordances", () => {
     // Still readable, and Delete still offered — only the ambiguous
     // lifecycle transition is withheld.
     expect(screen.getByText(/submit the ride-share list/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * List or Grid (#4175). The board of status columns was the page's only view,
+ * so it is Grid and stays the default; List draws the same groups as rows,
+ * with the same controls, Edit and Delete included.
+ */
+describe("TasksBoard List / Grid", () => {
+  beforeEach(() => {
+    chapter.active();
+    currentUserRef.current = { id: "u-admin" };
+    tasksRef.current = TASKS;
+  });
+
+  const layoutChoice = (name: "List" | "Grid") =>
+    within(screen.getByRole("radiogroup", { name: "Layout" })).getByRole(
+      "radio",
+      { name },
+    );
+
+  it("opens on the board, as Grid, until the person picks", () => {
+    render(<TasksBoard />);
+    expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("region", { name: /to do/i }).querySelector("ul"),
+    ).not.toHaveClass("divide-y");
+  });
+
+  it("draws the same groups as rows in List, keeping Edit and Delete, and remembers it", async () => {
+    const user = userEvent.setup();
+    const { container, unmount } = render(<TasksBoard />);
+    await user.click(layoutChoice("List"));
+
+    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
+    const todo = screen.getByRole("region", { name: /to do/i });
+    expect(todo.querySelector("ul")).toHaveClass("divide-y");
+    expect(
+      within(todo).getByRole("button", {
+        name: /^edit sweep the chapter room$/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(todo).getByRole("button", {
+        name: /^delete sweep the chapter room$/i,
+      }),
+    ).toBeInTheDocument();
+    // The same four groups, and the page stays flush.
+    expect(screen.getAllByRole("region")).toHaveLength(4);
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(window.localStorage.getItem("frapp.tasks.layout.viewer-1")).toBe(
+      "list",
+    );
+
+    unmount();
+    render(<TasksBoard />);
+    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
   });
 });
 
