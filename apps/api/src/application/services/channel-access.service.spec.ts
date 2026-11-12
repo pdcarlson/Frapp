@@ -399,6 +399,34 @@ describe('ChannelAccessService', () => {
       ]);
     });
 
+    it('files an Everyone holder under "Members", never under a role called Everyone (#4191)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        {
+          user_id: 'plain-member',
+          permissions: new Set<string>(),
+          top_role_order: 4,
+          top_role: { id: 'r-everyone', name: 'Everyone', everyone: true },
+          channel_access: EMPTY_ACCESS_HOLDER,
+        },
+      ]);
+
+      const result = await service.listChannelMembers(
+        'ch-public',
+        'chap-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([
+        {
+          user_id: 'plain-member',
+          role_rank: 4,
+          role_id: 'r-everyone',
+          role_name: 'Members',
+        },
+      ]);
+    });
+
     it('refuses a caller who cannot read the channel, before any roster read', async () => {
       mockChannelRepo.findById.mockResolvedValue(privateChannel);
 

@@ -2119,5 +2119,28 @@ describe('RbacService', () => {
 
       expect(entry?.top_role).toEqual({ id: 'r-a', name: 'Alpha' });
     });
+
+    it('marks the Everyone role, so chat can file its holders as Members (#4191)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-everyone',
+          chapter_id: 'ch-1',
+          name: 'Everyone',
+          system_key: 'MEMBER',
+          display_order: 5,
+        }),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['r-everyone'] }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({
+        id: 'r-everyone',
+        name: 'Everyone',
+        everyone: true,
+      });
+    });
   });
 });
