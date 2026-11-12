@@ -29,6 +29,7 @@ import {
   DuesGlyph,
   HostCheckInGlyph,
   InviteGlyph,
+  MinutesGlyph,
   ServiceGlyph,
   SettingsGlyph,
   StudyGlyph,
@@ -307,6 +308,16 @@ export default function MoreScreen() {
             onPress={() => router.push("/documents")}
           />
         )}
+        {/* Only on a chapter that keeps minutes in Frapp; off for every
+            chapter while `meetings` is beta-off (`BETA_OFF_MODULES`). */}
+        {moduleGate?.("meetings") ? (
+          <ListRow
+            label="Minutes"
+            leading={<MinutesGlyph color={glyphColor} />}
+            accessibilityHint="Opens your chapter's meeting minutes."
+            onPress={() => router.push("/minutes")}
+          />
+        ) : null}
         <ListRow
           label="Directory"
           leading={<DirectoryGlyph color={glyphColor} />}

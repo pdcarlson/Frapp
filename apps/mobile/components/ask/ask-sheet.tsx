@@ -1,12 +1,41 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import {
   BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
+import {
+  useAsk,
+  useAskStatus,
+  useDocumentDownloadUrl,
+  type AskExchange,
+} from "@repo/hooks";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  ASK_COPY,
+  ASK_QUESTION_MAX_LENGTH,
+  askSavedLine,
+  formatAiAnswerDate,
+  type AskAnswer,
+  type AskSource,
+} from "@repo/validation";
+import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import {
+  useAiReport,
+  type AiReportTarget,
+} from "@/components/ai/report-ai-sheet";
+import { AskExchangeCard } from "@/components/ask/answer-card";
 import {
   SheetGrabber,
   SheetScrim,
@@ -15,180 +44,240 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import { AnswerCard } from "@/components/ask/answer-card";
+import { askSourceOpening } from "@/lib/ask/source-route";
+import { asRoute, openHref } from "@/lib/href";
+import { selectDownloadUrl } from "@/lib/more/documents";
+import { notificationHref } from "@/lib/notifications/targets";
 import {
-  answerQuestion,
-  SUGGESTED_QUESTIONS,
-  type AskAnswer,
-  type AskSource,
-} from "@/lib/ask/corpus";
-import { isAskAvailable } from "@/lib/ask/flag";
-import { fieldTypeRole, fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+  fieldTypeRole,
+  fontFamilyFor,
+  typeRole,
+  useFrappTheme,
+} from "@/lib/theme";
 
 /**
- * s17 — the ✦ Ask sheet (`canvas-screens.dc.html`, `id="s17"`).
+ * Ask Frapp on the phone (`spec/ui/mobile/screens.md` s17;
+ * `spec/behavior/ai.md` § Ask; #450, #451): one question, answered from the
+ * chapter's own documents, minutes and records, each claim marked with the
+ * source it came from. It talks to the same route web's panel does
+ * (`useAsk`), in the same words (`ASK_COPY`).
  *
- * A sheet rather than a route: `spec/ui/mobile/patterns.md` § Bottom sheets
- * lists "the s17 Ask presentation" among the flows that are sheets hosted by
- * their parent screen, and `navigation.md` § Global entries outside the tab
- * bar makes Ask a global entry that "MUST NOT become a fifth tab". Chat home (s04) and Events (s06) both host it.
+ * A member asks walking to class, so the whole exchange is one sheet over
+ * wherever they are, opened from the tab bar's + (`quick-actions-panel.tsx`).
+ * ChatGPT's and Perplexity's phone apps put the field at the bottom above the
+ * keyboard and the answer above it; so does this.
  *
- * **Signet gold, never the chapter accent.** Nothing in this file or in
- * `answer-card.tsx` reaches `useChapterBranding()` — `components.md:232` scopes
- * this whole surface to the fixed `gold` token group, because "the answer
- * surface speaks in Signet's voice, not the chapter's". It is the one sheet in
- * the app that does not retint.
+ * **One question at a time.** Ask answers each question on its own and keeps
+ * no conversation, so the sheet shows one exchange and says so under the
+ * field, not a thread that would promise it remembers.
+ *
+ * **Consent is asked at the first question**, not when the sheet opens
+ * (`useAiConsentGate`; `ai.md` § Consent). The server checks again.
+ *
+ * **The saved line.** While the beta diagnostics window is on for this
+ * chapter, the line under the field says questions and answers are saved and
+ * until when, and only then does a question carry `saved_notice_shown`: the
+ * server keeps nothing from a client that did not show it. The line's box is
+ * two lines high whichever words it holds, so its arrival never moves the
+ * field.
+ *
+ * **A source opens the real thing.** A document opens in the in-app browser
+ * over the sheet, so the answer is still there when it closes. Anything else
+ * is a screen: the sheet closes and the screen opens, and the answer is back
+ * when the sheet is reopened.
+ *
+ * **Fixed gold, never the chapter accent** (`components.md` §11): nothing in
+ * this file or in `answer-card.tsx` reaches `useChapterBranding()`.
  *
  * ## Why fixed snap points rather than dynamic sizing
  *
- * Every other sheet here uses `enableDynamicSizing`, and this one must not. The
- * body grows without bound as answers land — echo card, answer card, wrapping
- * source chips — and dynamic sizing has no cap, so a long answer would size the
- * sheet past the drawn 78% and then re-lay-out when the next one is shorter.
- * The drawing caps at 78% (`patterns.md`: "tall sheets (s17, s20) cap at
- * roughly 78% of the viewport as drawn"), so that is the detent.
+ * The body grows as an answer streams in, and dynamic sizing would resize the
+ * sheet with every line. The drawing caps at 78% (`patterns.md`), so that is
+ * the one detent; the body scrolls, and the composer is the scrollable's
+ * sibling so it stays pinned above the keyboard. `BottomSheetScrollView` is a
+ * direct child of the sheet for the reason `new-task-sheet.tsx` gives.
  *
- * With fixed detents the body has to scroll, and `BottomSheetScrollView` is a
- * **direct child** of the sheet for the reason `new-task-sheet.tsx` spells out
- * at its second modal: nested inside a `BottomSheetView`, the view and the
- * scrollable write competing heights to the same animated value. The composer
- * is the scrollable's sibling rather than its last row, so it stays pinned
- * above the keyboard as drawn instead of scrolling away under a long answer.
- *
- * ## A build without Ask has no sheet
- *
- * `isAskAvailable()` is false by default (`lib/ask/flag.ts`), and when it is
- * this renders nothing. The hosts mount it unconditionally and gate only the
- * ✦ pill in their header, and `app/(app)/ask.tsx` redirects. It used to open
- * anyway and say "Ask isn't switched on for this build yet"; that was reversed
- * on 2026-09-22 (#2259), and `spec/ui/mobile/navigation.md` § Global entries
- * has why. The gate lives here rather than at each host because this is the
- * one component that reads `lib/ask/corpus.ts`: whatever a future host does,
- * the synthetic answers stay unreachable in a build without the flag.
+ * Whether a member has Ask at all is the host's question (`useAiSurfaces`):
+ * with the server's AI off, nothing mounts this.
  */
 
-/**
- * The drawn cap. A string percentage rather than a computed pixel height, so it
- * tracks the device rather than a phone the drawing was made on.
- */
 const ASK_SNAP_POINTS = ["78%"];
 
-/**
- * How long the in-flight state is held.
- *
- * `answerQuestion` is a synchronous lookup, so without this the skeleton would
- * never paint and the state `spec/ui/design-system/README.md` §4 requires — and
- * that `components.md` §11 carries a TODO-DESIGN for — would exist in the code
- * and never on screen. Real retrieval takes longer than this; the number is a
- * placeholder for a network round trip, not a simulation of one.
- */
-const ANSWER_DELAY_MS = 450;
+/** An answer this client gives without asking the server. */
+function heldExchange(
+  question: string,
+  end:
+    | { failure: string }
+    | { reason: "consent_required" },
+): AskExchange {
+  if ("failure" in end) {
+    return {
+      question,
+      phase: "failed",
+      step: null,
+      preview: "",
+      answer: null,
+      failure: { message: end.failure, retryable: true },
+    };
+  }
+  const answer: AskAnswer = {
+    status: "unavailable",
+    reason: end.reason,
+    text: "",
+    citations: [],
+    sources: [],
+    left_out_messages: 0,
+    unverified_citations: 0,
+    truncated: false,
+    saved: false,
+  };
+  return {
+    question,
+    phase: "done",
+    step: null,
+    preview: "",
+    answer,
+    failure: null,
+  };
+}
 
-export const AskSheet = forwardRef<BottomSheetModal>(
-  function AskSheet(_props, ref) {
-    const closeSheet = useSheetClose(ref);
-    const { tokens } = useFrappTheme();
-    const styles = createStyles(tokens);
-    const backgroundStyle = useSheetBackgroundStyle();
+export const AskSheet = forwardRef<
+  BottomSheetModal,
+  {
+    /**
+     * The sheet closed. `leftForSource` is true when it closed because the
+     * member opened a source's screen, which is now on top: a host must not
+     * navigate over it.
+     */
+    onClosed?: (leftForSource: boolean) => void;
+  }
+>(function AskSheet({ onClosed }, ref) {
+  const closeSheet = useSheetClose(ref);
+  const router = useRouter();
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const backgroundStyle = useSheetBackgroundStyle();
 
-    const [draft, setDraft] = useState("");
-    /** The question being answered — `null` before the first ask. */
-    const [question, setQuestion] = useState<string | null>(null);
-    /** `null` while in flight, so `AnswerCard` draws its skeleton. */
-    const [answer, setAnswer] = useState<AskAnswer | null>(null);
-    const [notice, setNotice] = useState<string | null>(null);
-    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { exchange, ask, reset } = useAsk();
+  const [shownOpen, setShownOpen] = useState(false);
+  const status = useAskStatus({ enabled: shownOpen });
+  const { ensureConsent, consentSheet } = useAiConsentGate();
+  const reporting = useAiReport();
+  const openDocument = useDocumentDownloadUrl();
 
-    const clearTimer = useCallback(() => {
-      if (timer.current === null) return;
-      clearTimeout(timer.current);
-      timer.current = null;
-    }, []);
+  const [draft, setDraft] = useState("");
+  // A question that never reached the server: the member has not said yes,
+  // or their answer couldn't be read.
+  const [held, setHeld] = useState<AskExchange | null>(null);
+  const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
+  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
+  const presenting = useRef(false);
+  const leftForSource = useRef(false);
 
-    // The sheet outlives any one exchange, and a pending answer that lands after
-    // the member has closed and reopened would overwrite their new question.
-    useEffect(() => clearTimer, [clearTimer]);
+  const savedUntil = status.data?.saved_until ?? null;
+  const shown = held ?? exchange;
+  const working = shown?.phase === "working";
 
-    const reset = useCallback(() => {
-      clearTimer();
+  // A question still being answered is dropped with the sheet; a finished
+  // answer is there when it reopens.
+  const workingRef = useRef(working);
+  useEffect(() => {
+    workingRef.current = working;
+  }, [working]);
+  const onDismiss = useCallback(() => {
+    setShownOpen(false);
+    if (workingRef.current) reset();
+    const left = leftForSource.current;
+    leftForSource.current = false;
+    onClosed?.(left);
+  }, [onClosed, reset]);
+
+  const submit = useCallback(
+    async (text: string) => {
+      const question = text.trim();
+      if (!question || workingRef.current) return;
       setDraft("");
-      setQuestion(null);
-      setAnswer(null);
-      setNotice(null);
-    }, [clearTimer]);
+      setHeld(null);
+      setSourceNotice(null);
+      let agreed: boolean;
+      try {
+        agreed = await ensureConsent();
+      } catch (error) {
+        setHeld(
+          heldExchange(question, {
+            failure: errorCopy(error, ASK_COPY.failed),
+          }),
+        );
+        return;
+      }
+      if (!agreed) {
+        setHeld(heldExchange(question, { reason: "consent_required" }));
+        return;
+      }
+      await ask(question, { savedNoticeShown: savedUntil !== null });
+    },
+    [ask, ensureConsent, savedUntil],
+  );
 
-    const ask = useCallback(
-      (text: string) => {
-        const trimmed = text.trim();
-        if (trimmed.length === 0) return;
+  const canOpen = useCallback(
+    (source: AskSource) => askSourceOpening(source) !== null,
+    [],
+  );
 
-        clearTimer();
-        setQuestion(trimmed);
-        setAnswer(null);
-        setNotice(null);
-        setDraft("");
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          setAnswer(answerQuestion(trimmed));
-        }, ANSWER_DELAY_MS);
-      },
-      [clearTimer],
-    );
+  const openSource = useCallback(
+    async (source: AskSource) => {
+      const opening = askSourceOpening(source);
+      if (!opening) return;
+      if (opening.kind === "route") {
+        leftForSource.current = true;
+        closeSheet();
+        openHref(router, asRoute(notificationHref(opening.target)));
+        return;
+      }
+      // One browser at a time: iOS rejects a second presentation.
+      if (presenting.current) return;
+      presenting.current = true;
+      setSourceNotice(null);
+      setOpeningSourceId(source.id);
+      try {
+        const url = selectDownloadUrl(
+          await openDocument.mutateAsync(opening.documentId),
+        );
+        if (!url) {
+          setSourceNotice(SOURCE_OPEN_FAILED);
+          return;
+        }
+        await WebBrowser.openBrowserAsync(url);
+      } catch {
+        setSourceNotice(SOURCE_OPEN_FAILED);
+      } finally {
+        presenting.current = false;
+        setOpeningSourceId(null);
+      }
+    },
+    [closeSheet, openDocument, router],
+  );
 
-    /**
-     * A tapped citation.
-     *
-     * §11 makes each chip a control that opens its source in-app, and the chips
-     * are built as controls. What they cannot do yet is navigate: the corpus is
-     * mocked and its sources carry a label, not a document id, so there is
-     * nothing to resolve. Saying so is the honest middle — the alternative is a
-     * chip that swallows the tap, which is the dead end
-     * `spec/ui/design-system/README.md` §5 rule 2 bans.
-     *
-     * TODO-DESIGN: wire each chip to its source (Documents for a `document`,
-     * the thread for a `channel`) once citations arrive with real ids.
-     */
-    const openSource = useCallback((source: AskSource) => {
-      setNotice(
-        `${source.label} is a sample citation — there's no real document behind it to open yet.`,
-      );
-    }, []);
+  const canSend = draft.trim().length > 0 && !working;
 
-    const trimmedDraft = draft.trim();
-    const canSend = trimmedDraft.length > 0;
-    /**
-     * Wired to the control rather than placed beside it: a member using a screen
-     * reader lands on a dimmed button and needs the reason *there*, not in a
-     * paragraph they may never reach.
-     */
-    const sendHint =
-      trimmedDraft.length === 0
-        ? "Type a question first."
-        : "Send your question to Ask.";
-
-    // After every hook, so the hook order is the same whichever way the flag
-    // reads. The flag is fixed for a build, so this never flips mid-session.
-    if (!isAskAvailable()) return null;
-
-    return (
+  return (
+    <>
       <BottomSheetModal
         ref={ref}
         stackBehavior={SHEET_STACK_BEHAVIOR}
-        // **Required, not redundant.** `enableDynamicSizing` defaults to `true`
-        // in gorhom v5, and when it is on the library computes a content-height
-        // detent, inserts it into the provided snap points and opens at index 0
-        // — the shortest. On first open this sheet's content is a header and two
-        // chips, so it would open ~180pt tall while the composer, sized against
-        // the 78% detent, laid out below the screen edge: a member could see the
-        // header and not reach the input. The whole fixed-detent argument in the
-        // docblock above is delivered by this one prop.
+        // Required: with dynamic sizing on (gorhom v5's default) the sheet
+        // opens at its content height, a header and three rows, and the
+        // composer lays out below the screen edge.
         enableDynamicSizing={false}
         snapPoints={ASK_SNAP_POINTS}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={reset}
+        onAnimate={(_from, to) => {
+          if (to >= 0) setShownOpen(true);
+        }}
+        onDismiss={onDismiss}
       >
         <SheetBackToClose onClose={closeSheet} />
         <BottomSheetScrollView
@@ -197,100 +286,117 @@ export const AskSheet = forwardRef<BottomSheetModal>(
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Not `SheetHeader`: s17 draws no Cancel control — the grabber and the
-            scrim are the dismissal — and its title is gold rather than
-            foreground, with a trailing caption where Cancel would sit. */}
-          <View style={styles.headerRow}>
-            <Text style={styles.headerGlyph}>✦</Text>
-            <Text style={styles.headerTitle}>Ask Frapp</Text>
-            <Text style={styles.headerCaption} numberOfLines={2}>
-              answers from your chapter&apos;s records
-            </Text>
-          </View>
+          <Text accessibilityRole="header" style={styles.headerTitle}>
+            {ASK_COPY.name}
+          </Text>
 
-          {question !== null ? (
-            <View style={styles.echo}>
-              <Text style={styles.echoText}>{question}</Text>
-            </View>
-          ) : null}
-
-          {question !== null ? (
-            <AnswerCard answer={answer} onOpenSource={openSource} />
-          ) : null}
-
-          {notice !== null ? (
-            <Text style={styles.sourceNotice}>{notice}</Text>
-          ) : null}
-
-          <View style={styles.suggestionRow}>
-            {SUGGESTED_QUESTIONS.map((suggestion) => (
-              <Pressable
-                key={suggestion}
-                accessibilityRole="button"
-                accessibilityLabel={suggestion}
-                accessibilityHint="Ask this question."
-                // 32pt drawn against the 44pt minimum — the #939 ruling
-                // `ask-pill.tsx` and `sheet-scaffold.tsx` already apply.
-                //
-                // Asymmetric on purpose: the floor is a *vertical* shortfall
-                // (32 + 6 + 6 = 44), and 6pt horizontally would push each
-                // chip 12pt into an 8pt gap, so adjacent chips' touch regions
-                // would overlap and RN would resolve the seam to whichever
-                // view sits later in the hierarchy. A member aiming between
-                // two suggestions would ask the question they did not tap —
-                // and `ask()` clears the draft immediately, so there is no
-                // undo. 4pt a side is exactly half the gap: no overlap.
-                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                onPress={() => ask(suggestion)}
-                style={({ pressed }) => [
-                  styles.suggestion,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {shown ? (
+            <>
+              <View style={styles.echo}>
+                <Text style={styles.echoText}>{shown.question}</Text>
+              </View>
+              <AskExchangeCard
+                exchange={shown}
+                canOpen={canOpen}
+                openingSourceId={openingSourceId}
+                onOpenSource={(source) => void openSource(source)}
+                onRetry={() => void submit(shown.question)}
+                onAnswerConsent={() => void submit(shown.question)}
+                report={reportFor(shown, reporting)}
+              />
+              {sourceNotice !== null ? (
+                <Text accessibilityLiveRegion="polite" style={styles.caption}>
+                  {sourceNotice}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text style={styles.emptyBody}>{ASK_COPY.empty_body}</Text>
+              <View style={styles.examples}>
+                {ASK_COPY.examples.map((example) => (
+                  <Pressable
+                    key={example}
+                    accessibilityRole="button"
+                    accessibilityLabel={example}
+                    accessibilityHint="Asks this question."
+                    onPress={() => void submit(example)}
+                    style={({ pressed }) => [
+                      styles.example,
+                      pressed ? styles.pressed : null,
+                    ]}
+                  >
+                    <Text style={styles.exampleText}>{example}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
         </BottomSheetScrollView>
 
-        <View style={styles.composerRow}>
-          {/* `BottomSheetTextInput`, never a plain `TextInput`: `patterns.md`
-            makes it mandatory inside a sheet, because a plain input breaks the
-            sheet's keyboard coordination. */}
-          <BottomSheetTextInput
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={() => ask(draft)}
-            placeholder="Ask anything…"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Ask a question"
-            accessibilityHint="Ask about your chapter's bylaws, minutes and announcements."
-            returnKeyType="send"
-            style={styles.composerField}
-          />
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send question"
-            accessibilityHint={sendHint}
-            accessibilityState={{ disabled: !canSend }}
-            disabled={!canSend}
-            // 40pt drawn against the 44pt minimum: 2pt a side closes the gap.
-            hitSlop={2}
-            onPress={() => ask(draft)}
-            style={({ pressed }) => [
-              styles.send,
-              !canSend ? styles.sendDisabled : null,
-              pressed && canSend ? styles.pressed : null,
-            ]}
-          >
-            <SendGlyph color={tokens.color.gold.onHouse} />
-          </Pressable>
+        <View style={styles.composer}>
+          <View style={styles.composerRow}>
+            {/* `BottomSheetTextInput`, never a plain `TextInput`
+                (`patterns.md` § Bottom sheets). */}
+            <BottomSheetTextInput
+              value={draft}
+              onChangeText={setDraft}
+              onSubmitEditing={() => void submit(draft)}
+              maxLength={ASK_QUESTION_MAX_LENGTH}
+              placeholder={ASK_COPY.placeholder}
+              placeholderTextColor={tokens.color.text.muted}
+              accessibilityLabel={ASK_COPY.placeholder}
+              returnKeyType="send"
+              style={styles.composerField}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={ASK_COPY.send}
+              accessibilityState={{ disabled: !canSend }}
+              disabled={!canSend}
+              // 40pt drawn against the 44pt minimum.
+              hitSlop={2}
+              onPress={() => void submit(draft)}
+              style={({ pressed }) => [
+                styles.send,
+                !canSend ? styles.sendDisabled : null,
+                pressed && canSend ? styles.pressed : null,
+              ]}
+            >
+              <SendGlyph color={tokens.color.gold.onHouse} />
+            </Pressable>
+          </View>
+          <Text style={[styles.caption, styles.underField]}>
+            {savedUntil !== null
+              ? askSavedLine(formatAiAnswerDate(savedUntil))
+              : ASK_COPY.single_shot}
+          </Text>
         </View>
       </BottomSheetModal>
-    );
-  },
-);
+      {consentSheet}
+      {reporting.reportSheet}
+    </>
+  );
+});
+
+/** The answer's "Report this", for a member who may report (#4315). */
+function reportFor(
+  exchange: AskExchange,
+  reporting: ReturnType<typeof useAiReport>,
+) {
+  if (!reporting.offered || !exchange.askId) return null;
+  const target: AiReportTarget = {
+    subject: "ask_answer",
+    subjectId: exchange.askId,
+    receipt: exchange.answer?.report_receipt ?? null,
+  };
+  return {
+    reported: reporting.isReported(target),
+    onPress: () => reporting.report(target),
+  };
+}
+
+const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
 
 /**
  * The send arrow, transcribed from `canvas-screens.dc.html` s17 — the visual
@@ -313,49 +419,44 @@ function SendGlyph({ color, size = 17 }: { color: string; size?: number }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const caption = typeRole(tokens.typography.role.caption);
   return StyleSheet.create({
     scroll: {
-      // Takes the space the composer does not, so the composer stays pinned to
-      // the sheet's bottom edge at every content length.
+      // Takes the space the composer does not, so the composer stays pinned
+      // to the sheet's bottom edge at every content length.
       flex: 1,
     },
     scrollContent: {
-      // TODO-DESIGN: Canvas draws the sheet body at padding-x 20 (and
-      // `components.md` §9 says 18); `spacing.lg` is 16 and is the nearest step
-      // on the locked scale, matching `new-task-sheet.tsx`.
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.md,
-      // TODO-DESIGN: Canvas spaces these blocks 16 / 12 / 14 apart; one `md`
-      // gap stands in, because a per-child margin off the locked scale would be
-      // three near-identical magic numbers.
       gap: tokens.spacing.md,
     },
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    headerGlyph: {
-      // The ✦ is a **text glyph**, explicitly exempt from the duotone icon
-      // recipe (`components.md:235`), so it is not an SVG like the others here.
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.askText,
-    },
     headerTitle: {
-      // Drawn 16/700. `body` is the only 16px role and carries weight 400, so
-      // the weight is lifted through the per-weight family — `fontWeight`
-      // alongside an expo-font-registered family resolves the wrong typeface on
-      // Android (`lib/theme.tsx`). Size and weight both land exactly.
+      // 16/700: `body` is the only 16px role, and the weight rides the
+      // per-weight family (`lib/theme.tsx`).
       ...typeRole(tokens.typography.role.body),
       fontFamily: fontFamilyFor(700),
       color: tokens.color.gold.askText,
     },
-    headerCaption: {
-      // Right-aligned where `SheetHeader` would put Cancel. s17 has no Cancel.
-      flex: 1,
-      textAlign: "right",
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+    emptyBody: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    examples: {
+      gap: tokens.spacing.sm,
+    },
+    example: {
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+    },
+    exampleText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     echo: {
       borderRadius: tokens.radius.card,
@@ -363,78 +464,46 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.lg,
-      // TODO-DESIGN: Canvas draws 14 vertical; `spacing.md` is 12 and is the
-      // nearest step on the locked scale.
       paddingVertical: tokens.spacing.md,
     },
     echoText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    sourceNotice: {
-      ...typeRole(tokens.typography.role.caption),
+    caption: {
+      ...caption,
       color: tokens.color.text.mutedForeground,
     },
-    suggestionRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      // TODO-DESIGN: Canvas draws the chip gap at 7; `spacing.sm` is 8.
+    composer: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing["2xl"],
       gap: tokens.spacing.sm,
-    },
-    suggestion: {
-      justifyContent: "center",
-      // Drawn geometry, as `ask-pill.tsx` (36) already carries it; the 44pt
-      // floor is met by `hitSlop`, not by the box.
-      height: 32,
-      paddingHorizontal: tokens.spacing.md,
-      borderRadius: tokens.radius.chipLarge,
-      borderWidth: 1,
-      // Canvas draws `rgba(255,255,255,.1)`; the structural hairline token is
-      // `.08` and `components.md` §2 makes the token canonical, so the token
-      // wins over the drawing's pre-lock value.
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    suggestionText: {
-      // TODO-DESIGN: Canvas draws these at 13px; `caption` is 12.5 and is the
-      // nearest role. Neutral, never gold — the suggestions are chrome that
-      // opens the door, and only the answer surface speaks in Signet's gold
-      // (`components.md` §11).
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     composerRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingTop: tokens.spacing.md,
-      // TODO-DESIGN: Canvas draws 34 at the bottom edge; `spacing.2xl` is 32
-      // and is the nearest step on the locked scale.
-      paddingBottom: tokens.spacing["2xl"],
+    },
+    underField: {
+      // Two lines whichever line it holds, so the saved notice arriving with
+      // the status read never moves the field.
+      minHeight: (caption.lineHeight ?? 18) * 2,
     },
     composerField: {
       flex: 1,
-      // The touch Field step (foundations.md §9), which `touch.button` carries.
       height: tokens.touch.button,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.surface1,
-      // TODO-DESIGN: Canvas draws padding-x 14 and the placeholder at 15.5px;
-      // `spacing.md` (12) and the 16px `body` role are the nearest steps.
       paddingHorizontal: tokens.spacing.md,
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     send: {
-      // Drawn 40×40, below the 44pt floor — met by `hitSlop` above rather than
-      // by growing the box, keeping the drawing honest and the target legal.
       width: 40,
       height: 40,
-      // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
-      // role in the locked radius map (foundations.md § Radius) — the same
-      // deviation `app/(app)/(tabs)/tasks.tsx` carries for its header action.
       borderRadius: tokens.radius.navItem,
       alignItems: "center",
       justifyContent: "center",

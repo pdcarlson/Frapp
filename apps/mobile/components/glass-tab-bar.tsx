@@ -22,6 +22,7 @@ import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
+import { useAiSurfaces } from "@/lib/ai/availability";
 import { TabLabel } from "@/components/tab-glyphs";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -70,7 +71,7 @@ export function GlassTabBar({
   // Two of the first-run tour's stops: the + and the More tab.
   const plusAnchor = useTourAnchor("quickActions");
   const moreAnchor = useTourAnchor("more");
-  const { run, sheets, notice } = useQuickActionsHost({
+  const { run, ask, sheets, notice } = useQuickActionsHost({
     events: available.includes("checkIn") || available.includes("hostCheckIn"),
   });
 
@@ -114,6 +115,13 @@ export function GlassTabBar({
     );
     return () => subscription.remove();
   }, [open, editing, closePanel]);
+
+  // Ask is in the panel only for a member who has it; the server decides.
+  const hasAsk = useAiSurfaces().ask;
+  const openAsk = useCallback(() => {
+    closePanel();
+    ask();
+  }, [ask, closePanel]);
 
   const runAction = useCallback(
     (key: QuickActionKey) => {
@@ -181,6 +189,7 @@ export function GlassTabBar({
             onEditingChange={setEditing}
             onRun={runAction}
             onSave={save}
+            onAsk={hasAsk ? openAsk : undefined}
           />
         </Animated.View>
       ) : null}

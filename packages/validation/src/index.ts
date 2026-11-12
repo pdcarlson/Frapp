@@ -1057,6 +1057,10 @@ export {
 // Minutes drafted from notes (#4312): the model's output schema, the draft's
 // states and the words each failure shows.
 export * from "./meeting-draft";
+// The words and date labels the minutes screens share on web and mobile.
+export * from "./meeting-copy";
+// Suggested tasks (#4313): the words web and mobile share.
+export * from "./ai-suggestion-copy";
 export * from "./meeting-recording";
 
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.

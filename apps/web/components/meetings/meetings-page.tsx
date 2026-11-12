@@ -8,7 +8,11 @@ import {
   useViewerUserId,
   type MeetingSummary,
 } from "@repo/hooks";
-import { meetingTypeLabel, type MeetingType } from "@repo/validation";
+import {
+  MEETING_LIST_COPY,
+  meetingTypeLabel,
+  type MeetingType,
+} from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
@@ -62,8 +66,8 @@ function ChapterMeetingsPage() {
         <MeetingRowsSkeleton />
       ) : meetingsQuery.isError && !meetingsQuery.data ? (
         <ErrorState
-          title="Couldn't load the minutes"
-          description="Check your connection and try again."
+          title={MEETING_LIST_COPY.loadFailedTitle}
+          description={MEETING_LIST_COPY.loadFailedBody}
           onRetry={() => void meetingsQuery.refetch()}
         />
       ) : (
@@ -71,7 +75,7 @@ function ChapterMeetingsPage() {
           {drafts.length > 0 ? (
             <section aria-labelledby="meetings-drafts" className="space-y-2">
               <SectionLabel id="meetings-drafts" count={drafts.length}>
-                Drafts
+                {MEETING_LIST_COPY.drafts}
               </SectionLabel>
               <MeetingList
                 rows={drafts}
@@ -85,11 +89,11 @@ function ChapterMeetingsPage() {
           ) : null}
           <section aria-labelledby="meetings-posted" className="space-y-2">
             <SectionLabel id="meetings-posted" count={posted.length}>
-              Minutes
+              {MEETING_LIST_COPY.posted}
             </SectionLabel>
             {posted.length === 0 ? (
               <InlineNote>
-                Minutes show here once a secretary posts them.
+                {MEETING_LIST_COPY.none}
               </InlineNote>
             ) : (
               <MeetingList rows={posted} />
@@ -135,7 +139,7 @@ function MeetingList({
                   )}
                   {" · "}
                   {meetingDayLabel(row.event_start_time)}
-                  {author ? ` · ${author}'s draft` : null}
+                  {author ? ` · ${MEETING_LIST_COPY.draftOf(author)}` : null}
                 </span>
               </span>
             </Link>

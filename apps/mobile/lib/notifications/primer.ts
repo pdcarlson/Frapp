@@ -239,7 +239,7 @@ export interface PrimerVisibilityInput {
  * s03 can make the build able to push, so a step there could only disable
  * itself and apologise, which is the placeholder App Review Guideline 2.1
  * rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
- * ✦ Ask pill in a build without Ask. Settings (s16) still states the reason on
+ * Ask entry for a member without Ask. Settings (s16) still states the reason on
  * its push row, which is where a member who wonders why goes.
  */
 export function shouldOfferPrimer({

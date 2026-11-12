@@ -80,7 +80,6 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
 import EventsScreen from "@/app/(app)/(tabs)/events";
 
