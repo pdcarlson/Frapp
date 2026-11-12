@@ -159,6 +159,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
       "Officers can set goals for points, service hours and study hours in Chapter settings, for everyone or per role, and each member sees a bar toward theirs on Activity and Study hours.",
       "What's new now lists what changed on the web and on your phone under their own Web and Mobile headings.",
+      "The emoji picker on the web opens faster, and on both the web and your phone it starts with the emoji you used last.",
+      "A sign-up sheet in chat can now be a quick headcount, where people answer Going or Can't make it and add a short note, and any sign-up can end at a set time or be closed early by whoever posted it, on the web and on your phone.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
@@ -189,6 +191,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Your profile now shows your points, service hours, pledge class and number, as it does on your phone.",
       "Upload and Clean up professors and departments in Backwork now open right inside the page instead of sliding over the whole screen.",
       "The study zone map now shows buildings, streets and building names clearly, so you can find the right building without squinting.",
+      "Notifications now open as a list under the bell instead of a panel sliding over the whole screen.",
+      "Tasks can now carry a photo of the job, the person doing it can add a photo when they mark it done, and an officer can require one before it counts.",
     ],
     phone: [
       "Officers who manage roles can now set a member's pledge class and number from their profile.",
@@ -208,6 +212,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity is now its own tab, Events is now called Calendar, and your task board opens from Activity.",
       "A message you send no longer sometimes stays in the box afterward, ready to be sent twice.",
       "The Directory now shows each member's status and custom status line, and its search has a search icon.",
+      "Your profile, status and settings now live together on a You tab with your photo, and the notifications bell is back beside Messages.",
     ],
   },
   {
