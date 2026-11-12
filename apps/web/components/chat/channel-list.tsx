@@ -237,6 +237,13 @@ export function unreadAnnouncement(
 }
 
 export interface ChannelListProps {
+  /**
+   * Which list this is (#3774). `direct` is the Direct messages panel, given
+   * only direct and group messages: its one section needs no heading under a
+   * column already titled "Direct messages", so the rows sit straight under
+   * the header, with Pinned above them and Hidden conversations below.
+   */
+  kind?: "channels" | "direct";
   channels: ChatChannel[];
   activeChannelId: string | null;
   /** Viewer's `users.id`, subtracted when naming a DM by its other participant. */
@@ -389,6 +396,7 @@ function HeldCopy({
  * every chapter seed (foundations.md §5, accent-engine.md §5).
  */
 export function ChannelList({
+  kind = "channels",
   channels,
   activeChannelId,
   viewerId,
@@ -498,7 +506,13 @@ export function ChannelList({
     const arranged = arrangeChannelSidebar({
       sections: inputSections,
       pinnedIds,
-      collapsed: preferences.collapsed,
+      // The Direct messages panel draws no heading for its one section, so
+      // a fold left from when DMs were a section of the channel list must
+      // not hide the whole list with no control to unfold it.
+      collapsed:
+        kind === "direct" && preferences.collapsed.has("direct")
+          ? new Set([...preferences.collapsed].filter((key) => key !== "direct"))
+          : preferences.collapsed,
       filters: preferences.filters,
       activeChannelId,
       titleOf: titleFor,
@@ -508,6 +522,7 @@ export function ChannelList({
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
     return { arranged, hiddenDms, inputSections, sectionOrder };
   }, [
+    kind,
     channels,
     titleFor,
     categories,
@@ -1099,7 +1114,7 @@ export function ChannelList({
               total, red when anything inside addresses the member, so folding
               never hides a mention.
             */}
-            {sidebar ? (
+            {kind === "direct" && section.key === "direct" ? null : sidebar ? (
               <button
                 type="button"
                 id={headerId}
@@ -1162,9 +1177,12 @@ export function ChannelList({
                 {section.label}
               </p>
             )}
-            {rows.length > 0 ? (
+            {rows.length === 0 ? null : kind === "direct" &&
+              section.key === "direct" ? (
+              <ul aria-label="Direct messages">{rows}</ul>
+            ) : (
               <ul aria-labelledby={headerId}>{rows}</ul>
-            ) : null}
+            )}
           </div>
         );
       })}

@@ -15,6 +15,7 @@ import {
   BackworkGlyph,
   BillingGlyph,
   ChatGlyph,
+  DirectMessagesGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
   EventsGlyph,
@@ -37,6 +38,7 @@ import {
  */
 const SHAPES: ReadonlyArray<[string, DuotoneGlyphComponent, NavGlyphName]> = [
   ["Chat", ChatGlyph, "chat"],
+  ["Direct messages", DirectMessagesGlyph, "direct"],
   ["Activity", ActivityGlyph, "activity"],
   ["Events", EventsGlyph, "events"],
   ["Tasks", TasksGlyph, "tasks"],
