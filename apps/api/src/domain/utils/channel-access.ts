@@ -68,8 +68,13 @@ export interface ChannelAccessRecord {
  *   archive, the audit log and the Alumni rule apply as for `post`, but not
  *   who can post: any member who can read an announcement may thread under it
  *   (Winston, 2026-11-10; spec/behavior/chat/README.md § Message threads).
+ * - `close`: end something already readable (a poll, #4046). Archive and the
+ *   audit log apply, but not who can post nor the Alumni rule: the caller
+ *   decides who may close (the poll's creator, or `channels:manage`), and a
+ *   creator dropped from a read-only channel's posters must still be able to
+ *   end their own poll.
  */
-export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
+export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread' | 'close';
 
 /**
  * What a member holds that a list can name, resolved from a TRUSTED read of
@@ -210,6 +215,7 @@ export function needsAccessHolder(
   if (channel.who_can_see !== null) return true;
   switch (operation) {
     case 'read':
+    case 'close':
       return false;
     case 'vote':
       return channel.who_can_post !== null;
@@ -294,6 +300,9 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // A thread reply is open to every reader. The timeline of an announcement
   // stays with who can post; its threads do not.
   if (operation === 'thread') return true;
+
+  // Who may close is the caller's rule (`PollService.close`), not the list's.
+  if (operation === 'close') return true;
 
   // A DM or group DM has no who-can-post list. A private channel does only
   // when someone made it read-only before #3722 (migration 20261111233000).

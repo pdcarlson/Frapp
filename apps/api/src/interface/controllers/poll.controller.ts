@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PollService } from '../../application/services/poll.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -40,7 +41,10 @@ import { parseBooleanQueryParam } from '../utils/query-boolean';
 @RequireModule('polls')
 @Controller()
 export class PollController {
-  constructor(private readonly pollService: PollService) {}
+  constructor(
+    private readonly pollService: PollService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Post('channels/:channelId/polls')
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
@@ -105,10 +109,13 @@ export class PollController {
   }
 
   @Post('polls/:messageId/close')
-  @RequirePermissions(SystemPermissions.POLLS_CREATE)
+  // Any member reaches it, as with voting; the service decides. Its creator
+  // may close a poll without `polls:create` (posting a card never needed it,
+  // #3007), and a `channels:manage` holder may close anyone's (#4046).
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({
     summary:
-      'Manually close a poll early (creator only): a REST poll or a chat-card poll',
+      'Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll',
   })
   // The closed row, so a client can draw the close before its Realtime echo
   // (`closePoll` in `@repo/chat-core/chat-client`, #3794).
@@ -118,7 +125,14 @@ export class PollController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.pollService.close(messageId, userId, chapterId);
+    // Resolved here rather than by `@RequirePermissions`, as chat's
+    // `setChannelDisplayLock` does, since the creator needs no permission.
+    // Lazy: the service asks only when the caller isn't the poll's creator.
+    return this.pollService.close(messageId, userId, chapterId, () =>
+      this.rbacService.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.CHANNELS_MANAGE,
+      ]),
+    );
   }
 
   @Get('polls')

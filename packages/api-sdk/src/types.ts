@@ -3371,7 +3371,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
+        /** Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -6542,7 +6542,7 @@ export interface components {
             closes_at: string | null;
             /**
              * Format: date-time
-             * @description Set when its creator closed it early.
+             * @description Set when it was closed early, by its creator or a channels:manage holder.
              */
             closed_at: string | null;
             is_closed: boolean;

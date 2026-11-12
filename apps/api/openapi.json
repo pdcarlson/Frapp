@@ -11509,7 +11509,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
+        "summary": "Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]
@@ -20326,7 +20326,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Set when its creator closed it early."
+            "description": "Set when it was closed early, by its creator or a channels:manage holder."
           },
           "is_closed": {
             "type": "boolean"

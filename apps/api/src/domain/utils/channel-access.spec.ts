@@ -66,7 +66,7 @@ const channel = (
 const check = (
   record: ChannelAccessRecord,
   holder: ChannelAccessHolder,
-  operation?: 'read' | 'post' | 'vote' | 'thread',
+  operation?: 'read' | 'post' | 'vote' | 'thread' | 'close',
   extra: { userId?: string; isChapterMember?: boolean } = {},
 ) =>
   canAccessChannel({
@@ -247,6 +247,28 @@ describe('canAccessChannel', () => {
       expect(check(announcements, holding(roles.brother), 'thread')).toBe(true);
     });
 
+    // #4046: who may close is the poll's rule (its creator, or
+    // channels:manage), so a creator dropped from the posters, or an officer
+    // who was never on them, can still end a poll they can read.
+    it('lets any reader through to close a poll, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'close')).toBe(true);
+      const locked = channel({
+        type: 'PRIVATE',
+        member_ids: ['user-1'],
+        who_can_post: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(locked, holding(roles.brother), 'close')).toBe(true);
+      expect(needsAccessHolder(channel(), 'close')).toBe(false);
+    });
+
+    it('still refuses a close to someone who cannot see the channel', () => {
+      const hidden = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(hidden, holding(roles.brother), 'close')).toBe(false);
+    });
+
     it('defaults the operation to read', () => {
       expect(check(announcements, holding(roles.brother))).toBe(true);
     });
@@ -259,7 +281,7 @@ describe('canAccessChannel', () => {
       expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread'] as const)(
+    it.each(['post', 'vote', 'thread', 'close'] as const)(
       'refuses a %s even from the wildcard and with no post list',
       (operation) => {
         expect(
@@ -284,7 +306,7 @@ describe('canAccessChannel', () => {
       expect(check(archived, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread'] as const)(
+    it.each(['post', 'vote', 'thread', 'close'] as const)(
       'refuses a %s from anyone',
       (operation) => {
         expect(check(archived, holding(roles.president), operation)).toBe(

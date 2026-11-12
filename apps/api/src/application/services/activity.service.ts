@@ -134,7 +134,7 @@ export interface ActivityPoll {
   option_count: number;
   /** When voting stops; `null` for a card posted with no usable deadline, which stays open. */
   closes_at: string | null;
-  /** Set when its creator closed it early. */
+  /** Set when it was closed early, by its creator or a `channels:manage` holder. */
   closed_at: string | null;
   is_closed: boolean;
   has_voted: boolean;

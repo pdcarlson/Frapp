@@ -22,7 +22,7 @@ export interface PollPayload {
   /**
    * Wall-clock when the poll closes, an ISO-8601 string: the cards stop
    * offering a vote once it passes, and the API refuses one (#871). `null` is
-   * a poll with no deadline (#3896), open until its creator closes it
+   * a poll with no deadline (#3896), open until it is closed early
    * (`closed_at`).
    */
   closes_at: string | null;
@@ -33,12 +33,12 @@ export interface PollPayload {
    */
   choice_mode?: "multi";
   /**
-   * When the creator closed the poll early (#3794), or absent while it is
-   * open. Written only by the API (`POST /v1/polls/{messageId}/close`); a
+   * When the poll was closed early (#3794), by its creator or a
+   * `channels:manage` holder (#4046), or absent while it is open. Written only by the API (`POST /v1/polls/{messageId}/close`); a
    * client never sends it, and the API drops it from a card a client posts.
    */
   closed_at?: string | null;
-  /** `users.id` of the creator who closed it early; set with `closed_at`. */
+  /** `users.id` of whoever closed it early (the creator or a moderator); set with `closed_at`. */
   closed_by?: string | null;
 }
 

@@ -562,6 +562,25 @@ describe('PollService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
+    it("lets a member who manages channels close someone else's poll (#4046)", async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.update.mockResolvedValue(basePollMessage);
+
+      await service.close('msg-1', 'user-2', 'ch-1', async () => true);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            closed_at: expect.any(String),
+            // The moderator who closed it, not the creator.
+            closed_by: 'user-2',
+          }),
+        }),
+      );
+    });
+
     it('rejects closing an already-expired poll', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...basePollMessage,
@@ -694,13 +713,32 @@ describe('PollService', () => {
         });
       });
 
-      it('refuses anyone but the creator with 403', async () => {
+      it('refuses anyone but the creator or a moderator with 403', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
 
         await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
           ForbiddenException,
         );
         expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      });
+
+      it('lets a moderator close an open-ended card whose creator can no longer close it, keeping the tally (#4046)', async () => {
+        const openEnded = {
+          ...cardPoll,
+          payload: { ...(cardPoll.payload as object), closes_at: null },
+        };
+        mockMessageRepo.findById.mockResolvedValue(openEnded);
+        mockMessageRepo.update.mockResolvedValue(openEnded);
+
+        await service.close('msg-1', 'user-2', 'ch-1', async () => true);
+
+        expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-1', {
+          payload: {
+            ...(openEnded.payload as object),
+            closed_at: expect.any(String),
+            closed_by: 'user-2',
+          },
+        });
       });
 
       it('refuses a card already closed early', async () => {
@@ -1662,7 +1700,7 @@ describe('PollService', () => {
     });
 
     it('still lets an alumni member close their own open-ended poll', async () => {
-      // close() is gated as a `vote`, not a `post`, precisely so this never
+      // close() is gated as a `close`, not a `post`, precisely so this never
       // regresses: an open-ended (no expires_at) poll whose creator later
       // becomes Alumni must stay closeable by them, not get stuck open
       // forever the moment they lose post rights in the channel.
@@ -1674,6 +1712,41 @@ describe('PollService', () => {
       await service.close('msg-1', 'user-2', 'ch-1');
 
       expect(mockMessageRepo.update).toHaveBeenCalled();
+    });
+
+    // #4046: a `vote` checks who can post, so a creator dropped from a
+    // read-only channel's posters could vote nowhere there, and was refused
+    // the close too. `close` reads only who can see.
+    it('lets a creator dropped from the posters close their poll, though they can no longer vote there', async () => {
+      const readOnly = { ...baseChannel, who_can_post: ['tier:exec'] };
+      const ownPoll = { ...basePollMessage, sender_id: 'user-2' };
+      mockMessageRepo.findById.mockResolvedValue(ownPoll);
+      mockChannelRepo.findById.mockResolvedValue(readOnly);
+      mockMessageRepo.update.mockResolvedValue(ownPoll);
+
+      await expect(
+        service.vote('msg-1', 'user-2', 'ch-1', [1]),
+      ).rejects.toThrow(ForbiddenException);
+      const canModerate = jest.fn(async () => false);
+      await service.close('msg-1', 'user-2', 'ch-1', canModerate);
+
+      expect(mockMessageRepo.update).toHaveBeenCalled();
+      // The creator needs no permission, so none is looked up.
+      expect(canModerate).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a close in an archived channel', async () => {
+      const ownPoll = { ...basePollMessage, sender_id: 'user-2' };
+      mockMessageRepo.findById.mockResolvedValue(ownPoll);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        archived_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 });
