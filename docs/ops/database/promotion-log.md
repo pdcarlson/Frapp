@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Report this (#4315, on `ai-integration`)
+
+### 20261112220000_ai_reports.sql
+
+- **Purpose**: Adds `ai_reports`, one row per report of something the AI made ([`spec/behavior/ai.md` § Stored AI text](../../../spec/behavior/ai.md#stored-ai-text)). `sealed` is AES-256-GCM ciphertext written by the API (a check refuses anything not shaped like the envelope); `quoted_user_ids` names members whose words are inside it; a check holds `expires_at` to at most 30 days after `created_at`; one report per member per thing (unique). Cascading foreign keys to `chapters` and to the reporter's `users` row. Adds the trigger `users_drop_ai_reports` (`after update of deleted_at on users`), which deletes the reports a deleted account made and every report quoting it, instead of another redefinition of `anonymize_user`. RLS on, no policies (API only, service role). Writes no row.
+- **Checks**: After `db push`, `select count(*) from ai_reports;` returns `0`, `select relrowsecurity from pg_class where relname = 'ai_reports';` returns `true`, `select count(*) from pg_policies where tablename = 'ai_reports';` returns `0`, and `select tgname from pg_trigger where tgname = 'users_drop_ai_reports';` returns 1 row.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Nothing writes the table unless the server has `AI_ENABLED=true` and a member reports something; without `AI_STORED_TEXT_KEY` a report keeps no text. The sweep that deletes reports past 30 days runs hourly whether or not AI is on. The foreign keys and the trigger take brief `SHARE ROW EXCLUSIVE` locks on `chapters` and `users`. `if not exists` and `drop trigger if exists` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-reports.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-report-this-20261112220000) § Rollback Report this.
+
 ## 2026-11-12: Ask diagnostics window (#4315, on `ai-integration`)
 
 ### 20261112200000_ai_ask_diagnostics.sql

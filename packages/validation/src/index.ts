@@ -1061,6 +1061,10 @@ export * from "./meeting-draft";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
 
+// Report this (#4315): the reasons, the request, and the words about what a
+// report keeps.
+export * from "./ai-report";
+
 export {
   AI_CONSENT_COPY,
   AI_SETTINGS_COPY,

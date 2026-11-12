@@ -3963,3 +3963,23 @@ The exchanges go with the window (a cascade).
 drop table if exists public.ai_diagnostics_exchanges;
 drop table if exists public.ai_diagnostics_windows;
 ```
+
+## Rollback Report this (20261112220000)
+
+* **Migration**: `20261112220000_ai_reports.sql`
+
+One new table, `ai_reports`, and one trigger on `users`. No existing row or function changed. What the table holds is sealed text that exists only to be deleted within 30 days, so nothing in it needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides every Report this button and refuses the route; the hourly sweep still deletes reports at their date. To delete every report at once, run:
+
+```sql
+delete from public.ai_reports;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_reports` every hour):
+
+```sql
+drop trigger if exists users_drop_ai_reports on public.users;
+drop function if exists public.ai_reports_drop_for_deleted_user();
+drop table if exists public.ai_reports;
+```

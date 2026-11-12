@@ -350,6 +350,50 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     };
   }
 
+  /**
+   * What "Report this" keeps of a draft (#4315): the notes it was written
+   * from and what it wrote, for whoever may see that draft (an editor of the
+   * minutes). Once the draft is in the minutes the row keeps only the review,
+   * so the minutes as they are now stand in for what it wrote. Null when
+   * there is no draft. Never a Standards meeting: none is ever drafted, and
+   * a report must not hold Standards material either.
+   */
+  async forReport(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<{
+    /** One per request: a draft asked for again is a new thing to report. */
+    requestId: string;
+    notes: string;
+    meetingDate: string;
+    status: string;
+    result: Record<string, unknown> | null;
+    minutesNow: unknown;
+    /** The officer whose notes they are. */
+    requestedBy: string | null;
+  } | null> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
+      return null;
+    }
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (!draft || draft.status === 'drafting') return null;
+    return {
+      requestId: draft.request_id,
+      notes: draft.notes,
+      meetingDate: draft.meeting_date,
+      status: draft.status,
+      result: draft.result,
+      minutesNow: draft.status === 'applied' ? meeting.content : null,
+      requestedBy: draft.requested_by,
+    };
+  }
+
   /** The retention sweep: every request older than the limit, everywhere. */
   async deleteExpired(now: Date = new Date()): Promise<number> {
     const cutoff = new Date(
