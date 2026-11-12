@@ -19,6 +19,11 @@ export interface IEventRepository {
    * (`end_time >= endsAfter`), earliest start first, at most `limit` rows.
    * An event with no recorded creator is never returned.
    */
+  /**
+   * The events among `ids` that are in this chapter, in no order. An id from
+   * another chapter, or one that no longer exists, is left out.
+   */
+  findByIds(ids: readonly string[], chapterId: string): Promise<Event[]>;
   findCreatedBy(
     chapterId: string,
     createdBy: string,

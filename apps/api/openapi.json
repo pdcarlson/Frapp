@@ -6977,6 +6977,377 @@
         ]
       }
     },
+    "/v1/meetings": {
+      "get": {
+        "operationId": "MeetingController_list_v1",
+        "parameters": [
+          {
+            "name": "event_id",
+            "required": false,
+            "in": "query",
+            "description": "Only the minutes of this event.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingController_start_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/template": {
+      "get": {
+        "operationId": "MeetingController_getTemplate_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTemplateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The sections the chapter’s minutes show",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "put": {
+        "operationId": "MeetingController_setTemplate_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTemplateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Choose the sections the chapter’s minutes show",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}": {
+      "get": {
+        "operationId": "MeetingController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One meeting’s minutes",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "patch": {
+        "operationId": "MeetingController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save minutes: their author, or someone who can edit any minutes. 409 `meeting.stale` when someone saved since",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete minutes: someone who can delete minutes, or the author of an unposted draft",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/post": {
+      "post": {
+        "operationId": "MeetingController_post_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post minutes to the members their event invites, who are each told once",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
@@ -9786,6 +10157,532 @@
         "summary": "Remove a subtask (#4003)",
         "tags": [
           "Tasks"
+        ]
+      }
+    },
+    "/v1/ai/suggestions": {
+      "get": {
+        "operationId": "AiSuggestionController_list_v1",
+        "parameters": [
+          {
+            "name": "source_type",
+            "required": false,
+            "in": "query",
+            "description": "Only suggestions drawn from this source. Send with `source_id`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "meeting",
+                "event",
+                "channel",
+                "task",
+                "request"
+              ]
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The Suggested list: waiting suggestions the caller could accept, newest first",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/accept": {
+      "post": {
+        "operationId": "AiSuggestionController_accept_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptAiSuggestionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/dismiss": {
+      "post": {
+        "operationId": "AiSuggestionController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissAiSuggestionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss a suggestion",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/decide": {
+      "post": {
+        "operationId": "AiSuggestionController_decide_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideAiSuggestionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSuggestionDecideResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/consent": {
+      "get": {
+        "description": "The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.",
+        "operationId": "AiConsentController_getConsent_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConsentStateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the AI sheet and the caller’s answer",
+        "tags": [
+          "AI"
+        ]
+      },
+      "put": {
+        "description": "Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.",
+        "operationId": "AiConsentController_answerConsent_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerAiConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConsentStateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "409": {
+            "description": "The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Answer the AI sheet",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/settings": {
+      "get": {
+        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.",
+        "operationId": "AiChapterSettingsController_getSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChapterSettingsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the chapter’s AI switches",
+        "tags": [
+          "AI"
+        ]
+      },
+      "patch": {
+        "description": "President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.",
+        "operationId": "AiChapterSettingsController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiChapterSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChapterSettingsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.settings.president_only`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the chapter’s AI features on or off",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs": {
+      "get": {
+        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
+        "operationId": "AiRunController_list_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only runs of this kind (`minutes_draft`).",
+            "schema": {
+              "example": "minutes_draft",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiRunDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's AI runs",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}": {
+      "get": {
+        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
+        "operationId": "AiRunController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get one AI run",
+        "tags": [
+          "AI"
         ]
       }
     },
@@ -13750,6 +14647,890 @@
           "Integrations"
         ]
       }
+    },
+    "/v1/ai/ask": {
+      "get": {
+        "description": "Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.",
+        "operationId": "AskController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What Ask needs to know before the first question",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.",
+        "operationId": "AskController_ask_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask a question; the answer is streamed",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/ask/diagnostics": {
+      "post": {
+        "description": "The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.",
+        "operationId": "AskController_startDiagnostics_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`)."
+          },
+          "409": {
+            "description": "A window is already on (`ai.ask.diagnostics.already_on`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn on the beta diagnostics window (president only)",
+        "tags": [
+          "AI"
+        ]
+      },
+      "delete": {
+        "description": "Ends the window now and deletes everything it kept. Recorded in the audit log.",
+        "operationId": "AskController_stopDiagnostics_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn off the beta diagnostics window (president only)",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/act": {
+      "get": {
+        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.",
+        "operationId": "ActController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActStatusDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The actions the caller can ask for",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "Reads the request into one action and its details and answers with a proposal to confirm. Nothing is changed. Only the request text is shown to a model when the action is chosen. A new request replaces the caller’s earlier unconfirmed proposal.",
+        "operationId": "ActController_act_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask for something to be done; the answer is a proposal",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/act/event-audience": {
+      "post": {
+        "description": "The follow-up to a `needs_event` answer. No model is called. Answers with the proposal, or 404 when the event is not one the caller can see in this chapter.",
+        "operationId": "ActController_eventAudience_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActEventAudienceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the event was not found for this caller."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pick the event whose attendees a points proposal is for",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/catch-up": {
+      "post": {
+        "description": "Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.",
+        "operationId": "ChatCatchUpController_catchUp_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCatchUpRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCatchUpDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`)."
+          },
+          "403": {
+            "description": "The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Summarize a channel's new messages, or one thread",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/reports": {
+      "get": {
+        "operationId": "AiReportController_policy_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiReportPolicyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a report keeps, for the sheet to say before it is sent",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "Keeps that one exchange, encrypted, for 30 days, for the Frapp team; then it is deleted. Without a sealing key on the server, only the reason and note are kept. A second report of the same thing by the same member keeps nothing new (`already_reported`).",
+        "operationId": "AiReportController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAiReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiReportOutcomeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report something the AI made",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/draft": {
+      "get": {
+        "operationId": "MeetingDraftController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingDraftController_request_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestMeetingDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingDraftController_discard_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "keep_notes",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/draft/use": {
+      "post": {
+        "operationId": "MeetingDraftController_use_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UseMeetingDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/recording": {
+      "get": {
+        "operationId": "MeetingRecordingController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Where the recording stands: none, uploading, transcribing, ready (with the transcript) or failed, and what this server takes",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingRecordingController_start_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMeetingRecordingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingRecordingController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "upload_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/recording/uploaded": {
+      "post": {
+        "operationId": "MeetingRecordingController_uploaded_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMeetingRecordingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed",
+        "tags": [
+          "Meetings"
+        ]
+      }
     }
   },
   "info": {
@@ -14936,6 +16717,7 @@
               "announcements",
               "events",
               "tasks",
+              "meetings",
               "points",
               "hours",
               "polls",
@@ -18288,6 +20070,532 @@
           }
         }
       },
+      "MeetingSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "other_label",
+          "status",
+          "created_by",
+          "posted_at",
+          "updated_at"
+        ]
+      },
+      "MeetingTemplateDto": {
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "array",
+            "description": "The sections the chapter’s minutes show, in order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attendees",
+                "summary",
+                "announcements",
+                "decisions",
+                "action_items",
+                "officer_reports",
+                "old_business",
+                "new_business",
+                "discussion_log"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sections"
+        ]
+      },
+      "MeetingVoteDto": {
+        "type": "object",
+        "properties": {
+          "for": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "against": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "abstain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "for",
+          "against",
+          "abstain"
+        ]
+      },
+      "MeetingDecisionDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "vote": {
+            "nullable": true,
+            "description": "The count, when the meeting recorded one. Never a guess.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingVoteDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text",
+          "vote"
+        ]
+      },
+      "MeetingActionItemDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Only when someone was named for it."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "A calendar day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "text",
+          "owner_user_id",
+          "due_date"
+        ]
+      },
+      "MeetingContentDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "announcements": {
+            "type": "string"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDecisionDto"
+            }
+          },
+          "action_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "officer_reports": {
+            "type": "string"
+          },
+          "old_business": {
+            "type": "string"
+          },
+          "new_business": {
+            "type": "string"
+          },
+          "discussion_log": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "announcements",
+          "decisions",
+          "action_items",
+          "officer_reports",
+          "old_business",
+          "new_business",
+          "discussion_log"
+        ]
+      },
+      "MeetingAttendeesDto": {
+        "type": "object",
+        "properties": {
+          "present": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "late": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excused": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "present",
+          "late",
+          "excused"
+        ]
+      },
+      "MeetingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "content": {
+            "$ref": "#/components/schemas/MeetingContentDto"
+          },
+          "sections": {
+            "type": "array",
+            "description": "The chapter’s template, in order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attendees",
+                "summary",
+                "announcements",
+                "decisions",
+                "action_items",
+                "officer_reports",
+                "old_business",
+                "new_business",
+                "discussion_log"
+              ]
+            }
+          },
+          "attendees": {
+            "nullable": true,
+            "description": "The event’s check-ins; null when the event is gone.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingAttendeesDto"
+              }
+            ]
+          },
+          "updated_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "posted_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "can_delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "other_label",
+          "status",
+          "created_by",
+          "posted_at",
+          "updated_at",
+          "event_end_time",
+          "content",
+          "sections",
+          "attendees",
+          "updated_by",
+          "posted_by",
+          "created_at",
+          "can_edit",
+          "can_delete"
+        ]
+      },
+      "NewMeetingEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "role_ids": {
+            "maxItems": 200,
+            "description": "Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "StartMeetingDto": {
+        "type": "object",
+        "properties": {
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other",
+              "standards"
+            ],
+            "description": "The meeting type. `standards` is refused with a 400: a Standards meeting is never kept in Frapp."
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 60,
+            "description": "A name for an Other meeting."
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The meeting’s event. Send this or new_event."
+          },
+          "new_event": {
+            "description": "Make an event for a meeting that has none: nobody required, no points, and no new-event push.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewMeetingEventDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "meeting_type"
+        ]
+      },
+      "MeetingContentPatchDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "announcements": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "decisions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDecisionDto"
+            }
+          },
+          "action_items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "officer_reports": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "old_business": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "new_business": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "discussion_log": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        }
+      },
+      "UpdateMeetingDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The `updated_at` the editor loaded. A save over newer minutes answers 409 `meeting.stale`."
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other",
+              "standards"
+            ]
+          },
+          "other_label": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 60
+          },
+          "content": {
+            "$ref": "#/components/schemas/MeetingContentPatchDto"
+          }
+        },
+        "required": [
+          "expected_updated_at"
+        ]
+      },
+      "PostMeetingDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expected_updated_at"
+        ]
+      },
       "CheckInDto": {
         "type": "object",
         "properties": {
@@ -19459,6 +21767,869 @@
         },
         "required": [
           "done"
+        ]
+      },
+      "AiSuggestionSourceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "meeting",
+              "event",
+              "channel",
+              "task",
+              "request"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "TaskSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_year_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Present on a \"this time last year\" suggestion: the day last year's task, its source, was due."
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "assignee_id",
+          "due_date",
+          "due_at",
+          "subtasks"
+        ]
+      },
+      "EventSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "last_year_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the source event started, last year."
+          },
+          "times": {
+            "type": "number",
+            "description": "How many times it was held around then (a weekly series)."
+          }
+        },
+        "required": [
+          "name",
+          "last_year_at",
+          "times"
+        ]
+      },
+      "PointsSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Points for each member. Negative takes away."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "target_user_ids": {
+            "description": "The members it is for.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "event_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The event whose attendance the members were read from, when it was."
+          },
+          "event_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That event's name, for the card to say whose attendance it is."
+          },
+          "event_start_time": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When that event started."
+          }
+        },
+        "required": [
+          "amount",
+          "reason",
+          "target_user_ids",
+          "event_id",
+          "event_name",
+          "event_start_time"
+        ]
+      },
+      "NewEventSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number",
+            "nullable": true,
+            "description": "Null leaves the chapter’s usual amount."
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory"
+        ]
+      },
+      "AiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "event",
+              "points",
+              "new_event"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepting",
+              "accepted",
+              "dismissed",
+              "expired"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AiSuggestionSourceDto"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Suggestions made together (one push) share it."
+          },
+          "task": {
+            "nullable": true,
+            "description": "The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionDto"
+              }
+            ]
+          },
+          "event": {
+            "nullable": true,
+            "description": "The suggested event, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionDto"
+              }
+            ]
+          },
+          "points": {
+            "nullable": true,
+            "description": "The proposed points change, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionDto"
+              }
+            ]
+          },
+          "new_event": {
+            "nullable": true,
+            "description": "The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventSuggestionDto"
+              }
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The words it came from, exactly as they appear in the source. Null when there are none to show."
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "Accepted with changes."
+          },
+          "result_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "What accepting made (a task id), once accepted."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "source",
+          "batch_id",
+          "task",
+          "points",
+          "new_event",
+          "quote",
+          "edited",
+          "result_id",
+          "created_at",
+          "expires_at"
+        ]
+      },
+      "AiSuggestionListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDto"
+            }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "More waiting suggestions exist than one list returns."
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ]
+      },
+      "TaskSuggestionEditsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "assignee_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Who the task is for. Required to accept when none was suggested."
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD). Required to accept when none was suggested."
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment it is due, or null for no time. A new `due_date` sent without it clears the time."
+          },
+          "subtasks": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PointsSuggestionEditsDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000,
+            "description": "Points for each member. Negative takes points away. Not 0."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "target_user_ids": {
+            "maxItems": 300,
+            "description": "The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "EventSuggestionAcceptDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event the caller added from this suggestion. It must be in the chapter and made by the caller."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "AcceptAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "points": {
+            "description": "Changes to a proposed points change, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
+              }
+            ]
+          }
+        }
+      },
+      "AiSuggestionOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "adjusted": {
+            "type": "number",
+            "description": "A points change: how many members’ points were changed."
+          },
+          "skipped": {
+            "type": "number",
+            "description": "A points change: how many members were left out (no longer in the chapter)."
+          }
+        }
+      },
+      "AiSuggestionResultDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "event",
+              "points",
+              "new_event"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "What was made (the first one, when it made several)."
+          },
+          "outcome": {
+            "description": "Counts, when accepting made more than one change.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionOutcomeDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      },
+      "AiSuggestionDecisionDto": {
+        "type": "object",
+        "properties": {
+          "suggestion": {
+            "$ref": "#/components/schemas/AiSuggestionDto"
+          },
+          "result": {
+            "nullable": true,
+            "description": "What accepting made. Null for a dismissal.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionResultDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "suggestion",
+          "result"
+        ]
+      },
+      "DismissAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "already_doing"
+            ],
+            "description": "`already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal."
+          }
+        }
+      },
+      "AiSuggestionDecideItemDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "Changes to a suggested task, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "points": {
+            "description": "Changes to a proposed points change, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "dismiss"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      },
+      "DecideAiSuggestionsDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AiSuggestionDecideOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/AiSuggestionDecisionDto"
+          },
+          "status": {
+            "type": "number",
+            "description": "The HTTP status the single-item route would have answered."
+          },
+          "code": {
+            "type": "string",
+            "description": "Why it was refused, e.g. ai.suggestion.decided."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "AiSuggestionDecideResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSuggestionDecideOutcomeDto"
+            }
+          }
+        },
+        "required": [
+          "outcomes"
+        ]
+      },
+      "AiConsentSheetProviderDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google",
+              "assemblyai"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The company's own name, shown as is.",
+            "example": "Anthropic"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ]
+      },
+      "AiConsentSheetDataKindDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "questions",
+              "chapter_records",
+              "roster",
+              "channel_messages",
+              "meetings"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "What is sent, in words a client shows as is.",
+            "example": "Questions you ask"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "AiConsentSheetDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "description": "The sheet version. Send it back with the answer; a new version asks everyone again.",
+            "example": 1
+          },
+          "providers": {
+            "description": "Every provider member data is sent to.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiConsentSheetProviderDto"
+            }
+          },
+          "data": {
+            "description": "Every kind of data that is sent.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiConsentSheetDataKindDto"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "providers",
+          "data"
+        ]
+      },
+      "AiConsentStateDto": {
+        "type": "object",
+        "properties": {
+          "sheet": {
+            "$ref": "#/components/schemas/AiConsentSheetDto"
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "nullable": true,
+            "description": "The answer on the current version. Null when not answered, which counts as No."
+          },
+          "answered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sheet_changed": {
+            "type": "boolean",
+            "description": "True when the caller answered an earlier version but not this one, so the sheet changed since."
+          }
+        },
+        "required": [
+          "sheet",
+          "answer",
+          "answered_at",
+          "sheet_changed"
+        ]
+      },
+      "AnswerAiConsentDto": {
+        "type": "object",
+        "properties": {
+          "sheet_version": {
+            "type": "number",
+            "description": "The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.",
+            "example": 1
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          }
+        },
+        "required": [
+          "sheet_version",
+          "answer"
+        ]
+      },
+      "AiChapterSettingsDto": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": "boolean",
+            "description": "Ask Frapp is on for the chapter."
+          },
+          "meeting_notes": {
+            "type": "boolean",
+            "description": "Drafting minutes, and tasks suggested from them, is on."
+          },
+          "chat_source": {
+            "type": "boolean",
+            "description": "Messages in chapter channels, from members who said yes, are a source."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When a switch last changed. Null when none ever has."
+          },
+          "can_change": {
+            "type": "boolean",
+            "description": "Whether the caller may change the switches: they hold the chapter's President role. A hint for drawing the page; PATCH checks again."
+          }
+        },
+        "required": [
+          "ask",
+          "meeting_notes",
+          "chat_source",
+          "updated_at",
+          "can_change"
+        ]
+      },
+      "UpdateAiChapterSettingsDto": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": "boolean"
+          },
+          "meeting_notes": {
+            "type": "boolean"
+          },
+          "chat_source": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The run kind, `snake_case`.",
+            "example": "minutes_draft"
+          },
+          "label": {
+            "type": "string",
+            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
+            "example": "Drafting minutes"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempt_count": {
+            "type": "number",
+            "description": "Tries so far, the one in progress included.",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "unknown_kind",
+              "ai_unavailable",
+              "not_permitted",
+              "source_gone",
+              "spend_limit",
+              "invalid_result",
+              "handler_failed",
+              "attempts_exhausted"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
+          },
+          "result_ref": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "status",
+          "attempt_count",
+          "max_attempts",
+          "failure_reason",
+          "failure_message",
+          "result_ref",
+          "created_at",
+          "started_at",
+          "finished_at"
         ]
       },
       "PledgeClassDto": {
@@ -22023,6 +25194,867 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "AskDiagnosticsDto": {
+        "type": "object",
+        "properties": {
+          "offered": {
+            "type": "boolean",
+            "description": "Whether this chapter is the one the beta diagnostics window may be turned on for."
+          },
+          "can_change": {
+            "type": "boolean",
+            "description": "Whether the caller may turn it on or off: the chapter’s president."
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the open window ends, or null when nothing is being kept."
+          }
+        },
+        "required": [
+          "offered",
+          "can_change",
+          "ends_at"
+        ]
+      },
+      "AskStatusDto": {
+        "type": "object",
+        "properties": {
+          "saved_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept."
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/AskDiagnosticsDto"
+          }
+        },
+        "required": [
+          "saved_until",
+          "diagnostics"
+        ]
+      },
+      "AskRequestDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question, in the member’s own words.",
+            "example": "What do the bylaws say about quorum?",
+            "maxLength": 1000
+          },
+          "saved_notice_shown": {
+            "type": "boolean",
+            "description": "True when the client showed the \"answers are being saved\" line before sending. An exchange is kept by the beta diagnostics window only when this is true."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "ActStatusDto": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "description": "The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "ActRequestDto": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "What to do, in the member’s own words.",
+            "example": "Give 5 points to everyone who came to chapter tonight",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "ActNoteDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "What the card says beside the proposal: `matched_name`, `unmatched_name`, `ambiguous_name`, `role_members`, `self_left_out`. Open."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name as the member typed it."
+          },
+          "user_ids": {
+            "description": "The members a name was matched to, or could be.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ActEventChoiceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "start_time"
+        ]
+      },
+      "ActEventChoiceSetDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Empty when no reason was said."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActEventChoiceDto"
+            }
+          }
+        },
+        "required": [
+          "amount",
+          "reason",
+          "events"
+        ]
+      },
+      "ActResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`proposed` (a card waits in `suggestion`), `needs_event`, `unclear`, `no_action`, `refused` or `unavailable`. Open."
+          },
+          "action": {
+            "type": "string",
+            "nullable": true,
+            "description": "The action the request was read as, when one was."
+          },
+          "suggestion": {
+            "nullable": true,
+            "description": "The proposal, when `proposed`. Nothing has changed: confirm it with `POST /v1/ai/suggestions/{id}/accept`, or cancel it with `.../dismiss`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionDto"
+              }
+            ]
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActNoteDto"
+            }
+          },
+          "event_choice": {
+            "nullable": true,
+            "description": "When `needs_event`: the events to pick from. Send the pick to `POST /v1/ai/act/event-audience`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActEventChoiceSetDto"
+              }
+            ]
+          },
+          "missing": {
+            "type": "string",
+            "nullable": true,
+            "description": "When `unclear`: what was not said. Open."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "When `unavailable`: why. Open."
+          },
+          "available_actions": {
+            "description": "When `no_action`: what the caller could ask for instead.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "action",
+          "suggestion",
+          "notes",
+          "event_choice",
+          "missing",
+          "reason",
+          "available_actions"
+        ]
+      },
+      "ActEventAudienceDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event whose attendees the points are for."
+          },
+          "amount": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000,
+            "description": "As the `needs_event` answer carried it."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "As the `needs_event` answer carried it. Empty names the event instead."
+          }
+        },
+        "required": [
+          "event_id",
+          "amount"
+        ]
+      },
+      "ChatCatchUpUnreadDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "How many messages were new to the member when they opened the channel, as its unread badge counted them.",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the member opened the channel."
+          }
+        },
+        "required": [
+          "count",
+          "as_of"
+        ]
+      },
+      "ChatCatchUpRequestDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to summarize in."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Summarize one thread: its first message and every reply. Exactly one of `thread_root_id`, `since` and `unread` is given."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Summarize the channel's messages from this moment on. No further back than 30 days."
+          },
+          "unread": {
+            "description": "Summarize what was new when the member opened the channel. Opening a channel marks it read, so the client says how many messages were new and when it opened; the server finds where that stretch starts.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatCatchUpUnreadDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "ChatCatchUpPointDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "What the point is. One of for_you, decision, date, topic today; a client shows a kind it does not know with the last group.",
+            "example": "decision"
+          },
+          "text": {
+            "type": "string",
+            "description": "One sentence, plain text."
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The message the point rests on, which the point opens."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Set when that message is a thread reply: the thread to open."
+          },
+          "author_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who wrote the message."
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quote": {
+            "type": "string",
+            "description": "The words of that message the point rests on. The server found them in the message, word for word."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "message_id",
+          "thread_root_id",
+          "author_id",
+          "sent_at",
+          "quote"
+        ]
+      },
+      "ChatCatchUpDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "How the request ended: summarized, nothing_new, too_little, not_found, refused, unavailable. `summarized` carries points; every other status carries none.",
+            "example": "summarized"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why nothing was attempted, when `status` is `unavailable`: consent_required, chapter_off, chat_off, chapter_limit, member_limit, not_available."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatCatchUpPointDto"
+            }
+          },
+          "messages_read": {
+            "type": "number",
+            "description": "Messages the summary read."
+          },
+          "messages_total": {
+            "type": "number",
+            "description": "Messages in the stretch the summary could have read. More than `messages_read` when the stretch was longer than one summary reads; the newest were read."
+          },
+          "left_out_messages": {
+            "type": "number",
+            "description": "Messages left out because their author has not agreed to AI reading their messages. A count, never who."
+          },
+          "unverified_points": {
+            "type": "number",
+            "description": "Points dropped because their quote was not in the message they named."
+          },
+          "covers_from": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "covers_to": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "summary_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary."
+          },
+          "report_receipt": {
+            "type": "string",
+            "nullable": true,
+            "description": "The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text."
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "points",
+          "messages_read",
+          "messages_total",
+          "left_out_messages",
+          "unverified_points",
+          "covers_from",
+          "covers_to"
+        ]
+      },
+      "AiReportPolicyDto": {
+        "type": "object",
+        "properties": {
+          "keeps_text": {
+            "type": "boolean",
+            "description": "Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so."
+          },
+          "retention_days": {
+            "type": "number",
+            "description": "How many days a report is kept.",
+            "example": 30
+          }
+        },
+        "required": [
+          "keeps_text",
+          "retention_days"
+        ]
+      },
+      "CreateAiReportDto": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ask_answer",
+              "meeting_draft",
+              "ai_suggestion",
+              "chat_summary"
+            ],
+            "description": "What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary."
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "harmful",
+              "private",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "The member’s own words, if they add any."
+          },
+          "receipt": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients."
+          }
+        },
+        "required": [
+          "subject",
+          "subject_id",
+          "reason"
+        ]
+      },
+      "AiReportOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "already_reported": {
+            "type": "boolean",
+            "description": "This member had already reported this; nothing new was kept."
+          },
+          "kept_text": {
+            "type": "boolean",
+            "description": "Whether the text itself was kept, sealed, or only the reason and note."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When what was kept is deleted."
+          }
+        },
+        "required": [
+          "already_reported",
+          "kept_text",
+          "expires_at"
+        ]
+      },
+      "MeetingDraftSourceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "decision",
+              "action_item"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "The drafted text, as it went into the minutes."
+          },
+          "quote": {
+            "type": "string",
+            "description": "The line of the notes it came from, word for word."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "quote"
+        ]
+      },
+      "MeetingDraftReviewDto": {
+        "type": "object",
+        "properties": {
+          "gaps": {
+            "description": "What the notes leave unsaid, for the officer to fill in.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDraftSourceDto"
+            }
+          },
+          "left_out": {
+            "type": "number",
+            "description": "Drafted lines left out because the line they named is not in the notes."
+          }
+        },
+        "required": [
+          "gaps",
+          "sources",
+          "left_out"
+        ]
+      },
+      "MeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "drafting",
+              "ready",
+              "applied",
+              "failed"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "description": "The notes the draft was asked from, or \"\"."
+          },
+          "failure": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required",
+              "spend_limit",
+              "unavailable",
+              "refused",
+              "not_permitted",
+              "stopped",
+              "failed"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "nullable": true,
+            "description": "The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingContentPatchDto"
+              }
+            ]
+          },
+          "review": {
+            "$ref": "#/components/schemas/MeetingDraftReviewDto"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          }
+        },
+        "required": [
+          "status",
+          "notes",
+          "failure",
+          "failure_message",
+          "content",
+          "review",
+          "requested_at",
+          "blocked"
+        ]
+      },
+      "RequestMeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 160000,
+            "description": "The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft."
+          },
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version."
+          },
+          "meeting_date": {
+            "type": "string",
+            "example": "2026-11-09",
+            "description": "The meeting’s calendar day where the officer is, so \"by Friday\" in the notes becomes the right date."
+          }
+        },
+        "required": [
+          "notes",
+          "expected_updated_at"
+        ]
+      },
+      "UseMeetingDraftDto": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version."
+          }
+        },
+        "required": [
+          "expected_updated_at"
+        ]
+      },
+      "MeetingRecordingUploadDto": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bucket": {
+            "type": "string",
+            "description": "The private bucket the file goes to."
+          },
+          "path": {
+            "type": "string",
+            "description": "Where in the bucket the file goes."
+          },
+          "token": {
+            "type": "string",
+            "description": "Signs this one resumable upload (`x-signature`). Good for two hours."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "The type to store the file under."
+          }
+        },
+        "required": [
+          "upload_id",
+          "bucket",
+          "path",
+          "token",
+          "content_type"
+        ]
+      },
+      "MeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "uploading",
+              "transcribing",
+              "ready",
+              "failed"
+            ]
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "file_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "size_bytes": {
+            "type": "number",
+            "nullable": true
+          },
+          "duration_seconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`."
+          },
+          "failure": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required",
+              "spend_limit",
+              "unavailable",
+              "not_permitted",
+              "upload_incomplete",
+              "unreadable",
+              "too_long",
+              "no_speech",
+              "failed"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
+          },
+          "speaker_count": {
+            "type": "number",
+            "nullable": true
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when this server has no transcription provider set up: the upload step is not offered."
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          },
+          "max_bytes": {
+            "type": "number",
+            "description": "The largest file this server takes, in bytes."
+          },
+          "max_seconds": {
+            "type": "number",
+            "description": "The longest recording this server takes, in seconds."
+          },
+          "upload": {
+            "nullable": true,
+            "description": "Only in the answer to starting an upload.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingRecordingUploadDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "upload_id",
+          "file_name",
+          "size_bytes",
+          "duration_seconds",
+          "failure",
+          "failure_message",
+          "transcript",
+          "speaker_count",
+          "uploaded_at",
+          "available",
+          "blocked",
+          "max_bytes",
+          "max_seconds",
+          "upload"
+        ]
+      },
+      "StartMeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The file’s own name, shown back to the officer."
+          },
+          "mime_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "The browser’s name for the file’s type. May be empty; the file’s extension decides then."
+          },
+          "size_bytes": {
+            "type": "number",
+            "maximum": 209715200,
+            "description": "The file’s size in bytes."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "description": "The recording’s length in seconds, as the browser read it."
+          },
+          "notice_confirmed": {
+            "type": "boolean",
+            "description": "The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused."
+          }
+        },
+        "required": [
+          "file_name",
+          "size_bytes",
+          "duration_seconds",
+          "notice_confirmed"
+        ]
+      },
+      "ConfirmMeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The upload that finished."
+          }
+        },
+        "required": [
+          "upload_id"
         ]
       }
     }

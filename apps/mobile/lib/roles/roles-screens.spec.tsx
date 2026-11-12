@@ -45,6 +45,8 @@ const ok = (data: unknown) => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // A server without AI: the AI switches stay off the lists.
+  useAiConsent: () => ({ data: null }),
   usePermissionList: () => h.permissions,
   useMyPermissions: () => ok({ permissions: h.permissions }),
   useRoles: () => ok(h.roles),

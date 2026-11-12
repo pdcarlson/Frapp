@@ -26,8 +26,11 @@ const {
   permissionsFailed,
   chapterScopeRef,
   tasksPending,
+  suggestionsPending,
   updateTaskMutate,
 } = vi.hoisted(() => ({
+  // The suggested-tasks read still in flight (#4313).
+  suggestionsPending: { current: false },
   updateTaskMutate: vi.fn(),
   mockCurrentChapter: vi.fn(),
   createTaskMutate: vi.fn(),
@@ -122,6 +125,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useMembers: () => ({ data: MEMBERS }),
+  useAiSuggestions: (options?: { enabled?: boolean }) => ({
+    data: suggestionsPending.current ? undefined : { items: [] },
+    isPending: suggestionsPending.current && (options?.enabled ?? true),
+    fetchStatus:
+      suggestionsPending.current && (options?.enabled ?? true)
+        ? "fetching"
+        : "idle",
+  }),
   useMyPermissions: () => ({
     data:
       permissionsRef.current === undefined
@@ -168,6 +179,11 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 // real gate's offline chip when the read failed, so the board's own branching
 // is tested against the answer the gate would give. Every other gate on the
 // page (the notice's billing link) passes through, as before.
+// The list has its own spec; here only where the board puts it.
+vi.mock("@/components/ai/suggested-tasks", () => ({
+  SuggestedTasks: () => <div data-testid="suggested-tasks" />,
+}));
+
 vi.mock("@/components/shared/can", () => ({
   Can: ({
     children,
@@ -210,6 +226,52 @@ beforeEach(() => {
   eventsRef.current = [];
   eventsEnabled.length = 0;
   eventsModuleOn.current = true;
+});
+
+describe("TasksBoard suggested tasks (#4313)", () => {
+  it("puts the Suggested list above the columns for an officer, and nowhere for a member", () => {
+    chapter.active();
+    const { unmount } = render(<TasksBoard />);
+    expect(screen.getByTestId("suggested-tasks")).toBeInTheDocument();
+    unmount();
+
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = TASKS;
+    try {
+      render(<TasksBoard />);
+      expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+    } finally {
+      tasksRef.current = [];
+    }
+  });
+
+  it("waits for an officer's suggestions with the board, so the columns are drawn once", () => {
+    chapter.active();
+    suggestionsPending.current = true;
+    try {
+      render(<TasksBoard />);
+      expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /^add a task$/i }),
+      ).toBeNull();
+    } finally {
+      suggestionsPending.current = false;
+    }
+  });
+
+  it("never holds a member's board for a read it doesn't make", () => {
+    chapter.active();
+    permissionsRef.current = ["members:view"];
+    suggestionsPending.current = true;
+    tasksRef.current = TASKS;
+    try {
+      render(<TasksBoard />);
+      expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+    } finally {
+      suggestionsPending.current = false;
+      tasksRef.current = [];
+    }
+  });
 });
 
 describe("TasksBoard with no chapter the server can scope (#4094)", () => {

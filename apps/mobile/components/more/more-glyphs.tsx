@@ -155,6 +155,11 @@ export function DocumentsGlyph(props: HubGlyphProps) {
   return <HubGlyph name="documents" {...props} />;
 }
 
+/** Minutes: the nav set's meetings mark, as web's sidebar draws it. */
+export function MinutesGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="meetings" {...props} />;
+}
+
 export function DirectoryGlyph(props: HubGlyphProps) {
   return <HubGlyph name="directory" {...props} />;
 }

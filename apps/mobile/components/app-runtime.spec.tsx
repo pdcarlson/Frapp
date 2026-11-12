@@ -40,6 +40,10 @@ vi.mock("@/lib/presence/chapter-presence", () => ({
   useChapterPresenceRuntime: () => calls.push("presence"),
 }));
 
+vi.mock("@/lib/minutes/recorder/use-recorder-runtime", () => ({
+  useMeetingRecorderRuntime: () => calls.push("meeting-recorder"),
+}));
+
 const { AppRuntime } = await import("./app-runtime");
 
 describe("AppRuntime", () => {
@@ -64,6 +68,12 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("presence");
+  });
+
+  it("holds the meeting recorder above every screen, so a recording outlives the one it started on", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("meeting-recorder");
   });
 
   it("hands a member's invite link to the web app-wide (#4002)", () => {

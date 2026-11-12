@@ -7,7 +7,6 @@ import {
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
 } from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK_FLAG_ENV_KEY, isAskAvailable } from "./lib/ask/flag";
 
 /**
  * EAS production Android must not compile without Firebase client config.
@@ -75,12 +74,6 @@ function loadConfig() {
       easBuildProfile?: string;
       appUrl?: string;
     }) => void;
-    assertProductionAskDisabled: (opts?: {
-      easBuildProfile?: string;
-      askEnabled?: string;
-    }) => void;
-    isAskEnabledValue: (raw: unknown) => boolean;
-    PRODUCTION_ASK_ENABLED_ERROR: string;
     publicValueProfile: (env: NodeJS.Dict<string>) => string | undefined;
     PRODUCTION_UPDATE_SENTRY_DSN_ERROR: string;
   };
@@ -132,7 +125,6 @@ const restoredEnvKeys = [
   "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_ANON_KEY",
-  "EXPO_PUBLIC_ASK_ENABLED",
 ] as const;
 const initialEnv = Object.fromEntries(
   restoredEnvKeys.map((name) => [name, process.env[name]]),
@@ -430,35 +422,6 @@ describe("applyMobileConfig", () => {
         existsSync: missing,
       }),
     ).toThrow(PRODUCTION_APP_URL_ERROR);
-  });
-
-  it("refuses iOS production when EXPO_PUBLIC_ASK_ENABLED switches Ask on", () => {
-    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: {
-          ...productionPublicEnv,
-          EAS_BUILD_PROFILE: "production",
-          EAS_BUILD_PLATFORM: "ios",
-          EXPO_PUBLIC_ASK_ENABLED: "1",
-        },
-        existsSync: missing,
-      }),
-    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
-  });
-
-  it("lets a preview build with Ask on evaluate", () => {
-    const { applyMobileConfig } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: {
-          EAS_BUILD_PROFILE: "preview",
-          EAS_BUILD_PLATFORM: "ios",
-          EXPO_PUBLIC_ASK_ENABLED: "true",
-        },
-        existsSync: missing,
-      }),
-    ).not.toThrow();
   });
 
   it("refuses production Android with a google-services file when the API origin is wrong", () => {
@@ -1056,16 +1019,6 @@ describe("an OTA update through the guard (#3472)", () => {
     ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
   });
 
-  it("runs the Ask fence", () => {
-    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: { ...productionUpdateEnv, EXPO_PUBLIC_ASK_ENABLED: "1" },
-        existsSync: missing,
-      }),
-    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
-  });
-
   it("refuses a production update with no Sentry DSN, which a Secret EAS variable never supplies locally", () => {
     const { applyMobileConfig, PRODUCTION_UPDATE_SENTRY_DSN_ERROR } = loadConfig();
     expect(() =>
@@ -1182,90 +1135,6 @@ describe("PRODUCTION_APP_ORIGIN", () => {
   it("matches @repo/validation so the CommonJS duplicate cannot drift", () => {
     const { PRODUCTION_APP_ORIGIN } = loadConfig();
     expect(PRODUCTION_APP_ORIGIN).toBe(SHARED_PRODUCTION_APP_ORIGIN);
-  });
-});
-
-/**
- * The store binary has no Ask (#2259), and `eas.json` can only show the half
- * of that the repo owns: a value set in the EAS `production` environment
- * reaches the bundle with no repo change. This fence is the other half — a
- * production build with Ask on fails to evaluate its config.
- */
-describe("assertProductionAskDisabled", () => {
-  /** Every spelling the flag spec exercises, on and off. */
-  const spellings = [
-    "1",
-    "true",
-    " true ",
-    "",
-    "  ",
-    "0",
-    "false",
-    "TRUE",
-    "True",
-    "yes",
-    "on",
-  ];
-
-  it("allows CI and expo start with Ask on (profile unset)", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    expect(() =>
-      assertProductionAskDisabled({ askEnabled: "1" }),
-    ).not.toThrow();
-  });
-
-  it("allows preview and development builds with Ask on", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    for (const easBuildProfile of ["preview", "development"]) {
-      expect(() =>
-        assertProductionAskDisabled({ easBuildProfile, askEnabled: "true" }),
-      ).not.toThrow();
-    }
-  });
-
-  it("allows production with the flag unset", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    expect(() =>
-      assertProductionAskDisabled({ easBuildProfile: "production" }),
-    ).not.toThrow();
-  });
-
-  it("refuses production exactly when the app would switch Ask on", () => {
-    const { assertProductionAskDisabled, PRODUCTION_ASK_ENABLED_ERROR } =
-      loadConfig();
-    for (const askEnabled of spellings) {
-      process.env[ASK_FLAG_ENV_KEY] = askEnabled;
-      const check = () =>
-        assertProductionAskDisabled({
-          easBuildProfile: "production",
-          askEnabled,
-        });
-      if (isAskAvailable()) {
-        expect(check, JSON.stringify(askEnabled)).toThrow(
-          PRODUCTION_ASK_ENABLED_ERROR,
-        );
-      } else {
-        expect(check, JSON.stringify(askEnabled)).not.toThrow();
-      }
-    }
-  });
-
-  it("parses the value the way lib/ask/flag.ts does, so the duplicate cannot drift", () => {
-    const { isAskEnabledValue } = loadConfig();
-    for (const raw of spellings) {
-      process.env[ASK_FLAG_ENV_KEY] = raw;
-      expect(isAskEnabledValue(raw), JSON.stringify(raw)).toBe(
-        isAskAvailable(),
-      );
-    }
-    delete process.env[ASK_FLAG_ENV_KEY];
-    expect(isAskEnabledValue(undefined)).toBe(isAskAvailable());
-    // Both directions are exercised, or the loop above proves nothing.
-    expect(spellings.filter((raw) => isAskEnabledValue(raw))).toEqual([
-      "1",
-      "true",
-      " true ",
-    ]);
   });
 });
 

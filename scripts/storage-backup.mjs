@@ -89,6 +89,17 @@ export const STORAGE_BACKUP_PREFIXES = {
 
 export const DEFAULT_RETENTION_DAYS = 30;
 
+/**
+ * Buckets the backup never copies. `meeting-audio` holds a meeting's raw
+ * recording for the minutes it takes to transcribe it, and the product's
+ * promise is that the audio is deleted as soon as it is used and is already
+ * gone when its uploader deletes their account (`spec/behavior/meetings.md`
+ * § Recordings). A copy made mid-transcription would outlive that by the
+ * whole retention window. Losing the bucket loses nothing worth restoring:
+ * an upload in flight is simply sent again.
+ */
+export const NEVER_BACKED_UP_BUCKETS = new Set(["meeting-audio"]);
+
 // -- Throughput, and a run that can't finish ---------------------------------
 // Each transfer is a Storage download plus an `aws` process, and Python start-up
 // alone holds one at a time to a few objects a second. One import put 11,628

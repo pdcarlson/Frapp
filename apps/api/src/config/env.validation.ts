@@ -4,6 +4,9 @@ import {
 } from '@repo/validation';
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
 import { validateDevLogEnv } from '../application/services/dev-log.service';
+import { validateAiEnv } from './ai-config';
+import { validateAiSpendEnv } from './ai-spend-config';
+import { validateAiStoredTextEnv } from './ai-stored-text-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -81,6 +84,31 @@ const REQUIRED_ENV_VARS = [
 // "off" and hide the typo. Rules: validateDevLogEnv.
 //   - DEV_LOG_TOKEN_SHA256 / DEV_LOG_CHAPTER_ID / DEV_LOG_CHANNEL_ID
 //
+// Also optional (ADR-28): the AI features. Unset, every AI route answers 404
+// and the gateway makes no call. A value that IS set is checked here, because
+// a typo in a switch would read as "off", or as the live provider. Rules:
+// validateAiEnv (config/ai-config.ts).
+//   - AI_ENABLED         the server switch; on is exactly "true"
+//   - AI_PROVIDER        "live" (default) or "scripted" (canned, no network)
+//   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
+//   - GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON  enable the Google
+//                        adapter; both or neither, and the JSON must be a
+//                        service account's key file (checked at boot)
+//   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
+//   - ASSEMBLYAI_API_KEY  enables the AssemblyAI transcriber (meeting
+//                        recordings, #712); not checked at boot
+//   - AI_CHAPTER_MONTHLY_CAP_USD / AI_MEMBER_DAILY_CAP_USD /
+//     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD /
+//     AI_ASSEMBLYAI_MONTHLY_CAP_USD
+//                        the spend caps in dollars; unset is the default in
+//                        config/ai-spend-config.ts (validateAiSpendEnv)
+//   - AI_STORED_TEXT_KEY  seals the AI text Frapp keeps (a reported exchange,
+//                        the Ask diagnostics window); unset, none is kept.
+//                        "<key id>:<base64 of 32 bytes>", checked at boot
+//   - AI_DIAGNOSTICS_CHAPTER_ID  the one chapter offered the 14-day Ask
+//                        diagnostics window; needs the key above
+//                        (config/ai-stored-text-config.ts)
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -122,6 +150,15 @@ export function validateEnv(config: Record<string, unknown>) {
   const devLogProblems = validateDevLogEnv(config);
   if (devLogProblems.length > 0) {
     throw new Error(devLogProblems.join(' '));
+  }
+
+  const aiProblems = [
+    ...validateAiEnv(config),
+    ...validateAiSpendEnv(config),
+    ...validateAiStoredTextEnv(config),
+  ];
+  if (aiProblems.length > 0) {
+    throw new Error(aiProblems.join(' '));
   }
 
   // Production invite emails are built from APP_URL. https: alone still

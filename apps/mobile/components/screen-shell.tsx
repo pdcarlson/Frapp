@@ -66,8 +66,8 @@ type ScreenShellProps = {
    * Trailing control rendered on the title row, right-aligned and vertically
    * centred against the title.
    *
-   * The ✦ Ask pill on s04 and s06 (`spec/ui/mobile/navigation.md` § Global
-   * entries outside the tab bar). A create action is not one of these: it
+   * Chat home's Messages door and account avatar (`spec/ui/mobile/navigation.md`
+   * § Global entries outside the tab bar). A create action is not one of these: it
    * floats bottom right (`createAction`).
    * Optional, so every existing call site is unaffected.
    */

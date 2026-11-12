@@ -91,6 +91,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { value: "org", label: "Chapter", group: "chapter" },
   { value: "semester", label: "Semester", group: "chapter" },
   { value: "privacy", label: "Privacy", group: "chapter" },
+  /*
+    The president's AI switches (#4308). Only while the server has AI: the
+    page drops the row when `useAiConsent` answers `null` (`AI_ENABLED` off),
+    so with AI off the rail is what it was.
+  */
+  { value: "ai", label: "AI", group: "chapter" },
   { value: "billing", label: "Plan and billing", group: "chapter" },
   { value: "roles", label: "Roles", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },

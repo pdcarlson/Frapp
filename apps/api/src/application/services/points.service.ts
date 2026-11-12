@@ -346,6 +346,51 @@ export class PointsService {
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
+  /**
+   * How many more adjustments `adminUserId` may make in this chapter this
+   * hour, by the same count and the same chapter limit `adjustPoints`
+   * enforces. For a caller about to make several at once (a confirmed points
+   * proposal for many members, #718): it refuses the whole set up front
+   * rather than grant to some and hit the limit part-way.
+   */
+  async adjustmentBudget(
+    chapterId: string,
+    adminUserId: string,
+  ): Promise<{ limit: number; used: number; remaining: number }> {
+    const { adjustment_rate_limit_per_hour: limit } =
+      await this.chapterPointsConfig.getConfig(chapterId);
+    const used = await this.pointTxnRepo.countRecentAdjustments(
+      adminUserId,
+      chapterId,
+      new Date(Date.now() - PointsService.RATE_LIMIT_WINDOW_MS),
+    );
+    return { limit, used, remaining: Math.max(0, limit - used) };
+  }
+
+  /**
+   * Of `keys`, the idempotency keys this chapter's ledger already holds a row
+   * for. A retried bulk change (#718) asks so the members it already changed
+   * are not counted against the hourly budget a second time.
+   */
+  async landedKeys(
+    chapterId: string,
+    keys: readonly string[],
+  ): Promise<Set<string>> {
+    const landed = new Set<string>();
+    const queue = [...keys];
+    const work = async () => {
+      for (;;) {
+        const key = queue.shift();
+        if (key === undefined) return;
+        if (await this.pointTxnRepo.findByClientMessageId(chapterId, key)) {
+          landed.add(key);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, keys.length) }, work));
+    return landed;
+  }
+
   async adjustPoints(input: AdjustPointsInput): Promise<AdjustPointsResult> {
     if (!input.reason || input.reason.trim().length === 0) {
       throw new BadRequestException('Reason is required for point adjustments');

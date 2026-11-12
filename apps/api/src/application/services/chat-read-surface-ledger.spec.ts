@@ -565,6 +565,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
+  // One push per batch of AI suggestions (#4309): `notifyBatch` and its
+  // `notifyMembers`. Titled with the meeting or event name an officer wrote.
+  'application/services/ai-suggestion.service.ts': {
+    calls: 2,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/billing.service.ts': {
     calls: 4,
     entries: [
@@ -624,6 +630,25 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 3,
     entries: [MEMBER_TEXT],
   },
+  // "Minutes posted" names the meeting's event (#4312): the event's name an
+  // officer wrote. The minutes' own text is never in the notification.
+  // And "Meeting recording uploaded" (#712), which names the same event and
+  // nothing of the recording.
+  'application/services/meeting.service.ts': {
+    calls: 3,
+    entries: [MEMBER_TEXT],
+  },
+  // The week's one "this time last year" push to the president (#3930).
+  // Names last year's event or task as an officer titled it.
+  'application/services/last-year-suggestions.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // The hand-off to `MeetingService.notifyRecordingUploaded` (#712).
+  'application/services/meeting-recording.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/points.service.ts': {
     calls: 1,
     entries: [MEMBER_TEXT],
@@ -676,6 +701,8 @@ const BUCKET_WRITERS = new Set([
   '20261105230000_backwork_bucket_50mb.sql',
   // Same: only `backwork`'s `file_size_limit`, raised to 100 MB.
   '20261106153000_backwork_bucket_100mb.sql',
+  // Creates the private `meeting-audio` bucket (#712); never `chat`.
+  '20261112210000_meeting_recordings.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

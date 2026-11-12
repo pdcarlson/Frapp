@@ -325,11 +325,24 @@ describe("More hub anatomy (#1048)", () => {
         "Service hours",
         "Dues",
         "Documents",
+        "Minutes",
         "Directory",
       ],
       ["Settings", "Switch chapter"],
       ["Host check-in"],
     ]);
+  });
+
+  it("drops the Minutes row while meetings is beta-off, and for a chapter with it off", () => {
+    betaOff.keys = ["meetings"];
+    const labels = () =>
+      render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+    expect(labels()).not.toContain("Minutes");
+    betaOff.keys = [];
+    chapterModules = { meetings: false };
+    expect(labels()).not.toContain("Minutes");
   });
 
   it("drops the Dues row while dues is beta-off", () => {
@@ -472,6 +485,7 @@ describe("More hub anatomy (#1048)", () => {
       "Service hours",
       "Dues",
       "Documents",
+      "Minutes",
       "Directory",
       "Settings",
       "Switch chapter",
