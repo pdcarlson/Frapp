@@ -214,6 +214,29 @@ export function tombstoneMetadata(
 }
 
 /**
+ * What a soft-deleted message keeps of its `payload` (#1575).
+ *
+ * Nothing, for every card kind: the payload is the card's data (an event's
+ * name and place, a poll's question and options). An imported row's payload is
+ * not a card but the Discord archive sidecar, and keeps `source` and
+ * `author_username`: the Discord handle the operator backfills read back to
+ * name a member (`backfill-discord-mention-tokens.ts`,
+ * `backfill-discord-import-people.ts`), which the row's own `author_name`
+ * already shows. Its reactions, stickers and the rest go. The cleanup
+ * migration `20261112060000_clear_deleted_message_payloads.sql` writes the
+ * same shape, so the two must stay in step.
+ */
+export function tombstonePayload(
+  message: Pick<ChatMessage, 'kind' | 'payload'>,
+): Record<string, unknown> | null {
+  if (message.kind !== 'imported') return null;
+  const username: unknown = message.payload?.author_username;
+  return typeof username === 'string'
+    ? { source: 'discord', author_username: username }
+    : { source: 'discord' };
+}
+
+/**
  * A deleted message as any reader is served it: the tombstone and nothing of
  * what it said (#1575).
  *
@@ -235,7 +258,7 @@ export function redactDeletedMessage<T extends ChatMessage>(message: T): T {
   return {
     ...message,
     content: DELETED_MESSAGE_CONTENT,
-    payload: null,
+    payload: tombstonePayload(message),
     metadata: tombstoneMetadata(message),
   };
 }

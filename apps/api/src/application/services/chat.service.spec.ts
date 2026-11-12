@@ -3284,7 +3284,8 @@ describe('ChatService', () => {
         content: '[message deleted]',
         is_deleted: true,
         metadata: { discord_import_id: 'imp-1' },
-        payload: null,
+        // No `author_username` on this fixture's payload, so only the source.
+        payload: { source: 'discord' },
         flag: null,
         flagged_by: null,
         flagged_at: null,

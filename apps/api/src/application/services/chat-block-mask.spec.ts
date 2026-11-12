@@ -287,7 +287,7 @@ describe('maskBlockedMessages over a deleted message', () => {
 
   // Every kind, so a card kind added later is covered without anyone
   // remembering to add it here.
-  it.each(CHAT_MESSAGE_KINDS)(
+  it.each(CHAT_MESSAGE_KINDS.filter((kind) => kind !== 'imported'))(
     'serves a deleted %s message with no payload and no metadata',
     (kind) => {
       const [served] = maskBlockedMessages([deletedRow({ kind })], []);
@@ -318,6 +318,28 @@ describe('maskBlockedMessages over a deleted message', () => {
       [],
     );
     expect(served.metadata).toEqual({ discord_import_id: 'imp-1' });
+  });
+
+  it("keeps only an imported tombstone's Discord handle of its archive payload", () => {
+    const [served] = maskBlockedMessages(
+      [
+        deletedRow({
+          kind: 'imported',
+          payload: {
+            source: 'discord',
+            author_username: 'jkslayer',
+            author_is_bot: false,
+            reactions: [{ emoji: '🔥', count: 3 }],
+            sticker_names: ['Doe hearing'],
+          },
+        }),
+      ],
+      [],
+    );
+    expect(served.payload).toEqual({
+      source: 'discord',
+      author_username: 'jkslayer',
+    });
   });
 
   it('leaves a live card untouched', () => {

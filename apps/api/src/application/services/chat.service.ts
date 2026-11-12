@@ -65,6 +65,7 @@ import {
   maskBlockedMessages,
   redactDeletedMessage,
   tombstoneMetadata,
+  tombstonePayload,
   type MaskedChatMessage,
 } from './chat-block-mask';
 import { ActivationService } from './activation.service';
@@ -1530,7 +1531,7 @@ export class ChatService {
    * Callers authorize first; this does not.
    */
   private async softDeleteMessage(
-    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata'>,
+    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata' | 'payload'>,
     chapterId: string,
   ): Promise<ChatMessage> {
     const messageId = message.id;
@@ -1543,8 +1544,9 @@ export class ChatService {
       // would remove only the words around it (#1575). Cleared, not kept for
       // an undelete: there is none, and an officer's removal of a reported
       // card has to remove what was reported. `maskBlockedMessages` strips it
-      // on read too, for rows deleted before this cleared it.
-      payload: null,
+      // on read too, for rows deleted before this cleared it. An imported
+      // row keeps only its Discord handle (`tombstonePayload`).
+      payload: tombstonePayload(message),
       // A flag labels content that is now gone (#3921), and a deleted
       // message must not keep raising the Important strip.
       flag: null,
