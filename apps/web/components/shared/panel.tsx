@@ -85,6 +85,7 @@ export function Panel({
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
+  useOpenerTracking(docked);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
   const column = React.useSyncExternalStore<Element | null | undefined>(
@@ -122,6 +123,56 @@ export function Panel({
  * the form. Focus moves in on open and goes back where it was on close.
  * Escape goes back, unless a field or an open popover had it first.
  */
+/**
+ * The control last pressed with a pointer, and when. Safari doesn't focus a
+ * clicked button, so at the moment a docked panel opens `activeElement` is
+ * `<body>` (or wherever focus was before), not the button that opened it;
+ * this is how the panel still finds its opener to hand focus back to.
+ */
+let lastPressed: { control: HTMLElement; at: number } | null = null;
+let pressListeners = 0;
+function onPress(event: PointerEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const control = target.closest<HTMLElement>(
+    'button, a[href], [role="button"], [role="menuitem"]',
+  );
+  lastPressed = control ? { control, at: Date.now() } : null;
+}
+/** Records presses while a docked `Panel` is on the page. */
+function useOpenerTracking(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled) return;
+    if (pressListeners++ === 0) {
+      document.addEventListener("pointerdown", onPress, true);
+    }
+    return () => {
+      if (--pressListeners === 0) {
+        document.removeEventListener("pointerdown", onPress, true);
+        lastPressed = null;
+      }
+    };
+  }, [enabled]);
+}
+/** How recent a press must be to count as what opened the panel. */
+const OPENER_WINDOW_MS = 1000;
+
+function openerOf(box: HTMLElement): HTMLElement | null {
+  const pressed = lastPressed;
+  if (
+    pressed &&
+    Date.now() - pressed.at < OPENER_WINDOW_MS &&
+    pressed.control.isConnected &&
+    !box.contains(pressed.control)
+  ) {
+    return pressed.control;
+  }
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body
+    ? active
+    : null;
+}
+
 function DockedPanel({
   dock,
   className,
@@ -147,10 +198,9 @@ function DockedPanel({
     const box = ref.current;
     const column = box?.parentElement;
     if (!box || !column) return;
-    const returnTo =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    // What opened the panel gets focus back when it closes: the button
+    // pressed for it, or, from the keyboard, the element that had focus.
+    const returnTo = openerOf(box);
     const covered = Array.from(column.children).filter(
       (child): child is HTMLElement =>
         child !== box && child instanceof HTMLElement && !child.inert,
@@ -195,6 +245,9 @@ function DockedPanel({
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("pointerdown", onPointerDown, true);
       for (const child of covered) child.inert = false;
+      // Closed while the member was working elsewhere (an upload finishing
+      // while they type in chat): focus is theirs, so leave it there.
+      if (!ours) return;
       const event = new Event("focus.closeAutoFocus", { cancelable: true });
       closeFocus.current?.(event);
       if (event.defaultPrevented) return;

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Slot } from "@radix-ui/react-slot";
 import { ChevronRight, Loader2, Upload } from "lucide-react";
 import {
   putSignedUpload,
@@ -330,8 +329,6 @@ export function UploadDocumentPanel({
     handleUpload,
   } = upload;
 
-  const triggerRef = useRef<HTMLElement>(null);
-
   const folderIsNew =
     uploadDraft.folder !== "" && !folders.includes(uploadDraft.folder);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -369,14 +366,14 @@ export function UploadDocumentPanel({
 
   return (
     <>
-      {/* Not a Radix trigger: the panel opens docked, so nothing here is a
-          dialog to announce. Closing hands focus back to this button, which
-          a click doesn't focus in Safari, so the panel can't find it alone. */}
-      <Slot ref={triggerRef} onClick={() => openPanel()}>
-        <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-          <Upload className="h-4 w-4" /> Upload document
-        </Button>
-      </Slot>
+      <Button
+        size="toolbar"
+        className="gap-2"
+        onClick={() => openPanel()}
+        {...gate.controlProps()}
+      >
+        <Upload className="h-4 w-4" /> Upload document
+      </Button>
       <Panel
         open={uploadDialog.dialogProps.open}
         onOpenChange={(next) => {
@@ -390,12 +387,7 @@ export function UploadDocumentPanel({
         backLabel="Back to documents"
       >
         <PanelContent
-          onCloseAutoFocus={(event) => {
-            uploadDialog.contentProps.onCloseAutoFocus(event);
-            if (event.defaultPrevented) return;
-            event.preventDefault();
-            triggerRef.current?.focus({ preventScroll: true });
-          }}
+          {...uploadDialog.contentProps}
           aria-describedby={undefined}
         >
           <PanelHeader>Upload document</PanelHeader>
