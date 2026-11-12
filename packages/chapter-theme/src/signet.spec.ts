@@ -631,7 +631,7 @@ describe("deriveSignetPalette", () => {
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
   1: "7a88bfcb9c0c79372b194d0ea6136042f25e115990ffd41b7067f17a020d7f4e",
   2: "93b7e168eb5148ea62bf538a47ef22bb90dda9986347a90ae7967a59bb519d58",
-  3: "a862d973a48b7a02a1eb8e28e10c2c8fa82d59565475bb51f7ba61962994866d",
+  3: "89e1d6ea820edc21017c36d83fd2545ee22a1014426fc0f515d09766d7c05abb",
 };
 
 /**

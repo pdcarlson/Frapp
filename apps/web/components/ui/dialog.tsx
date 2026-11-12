@@ -72,7 +72,8 @@ const DialogContent = React.forwardRef<
         control ("Close"), so it takes the secondary reading tone. In `--muted`
         it measured 3.126:1 on the dialog's `--popover` against §6's 4.5:1
         (#1208); since the 2026-11-09 text ladder `--muted` clears the gate
-        (6.22:1), and the tone stays for legibility, not for the gate.
+        (5.47:1 on the 2026-11-12 ladder), and the tone stays for
+        legibility, not for the gate.
         `ui/sheet.tsx` carries the same control.
       */}
       <DialogPrimitive.Close

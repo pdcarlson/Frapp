@@ -125,23 +125,31 @@ const LIFT_COARSE = 10;
  *
  * Indices are zero-based into the 12-step scale, hence step N is `N - 1`.
  *
- * `accent-subtle-bg` is step 5, not Radix's step 3 (engine version 3, #3826).
+ * `accent-subtle-bg` is step 4, not Radix's step 3 (engine version 3, #3826).
  * The generator pitches its tint steps against its `background`, the ladder's
- * floor, and the tints sit higher up: the active nav row on `--surface-1`, a
- * selected card on `--card`. When the 2026-11-12 ladder spread its steps
- * apart, step 3 stayed near-black, 1.05–1.14:1 on `--surface-1` and
- * 1.01–1.10:1 on `--card` across the corpus. Step 5 is 1.34–1.68:1 and
- * 1.16–1.46:1 there, at or above the 2026-11-05 ladder's step-3 figures on
- * every seed, and `accent-text` on it stays over 5.3:1. Seating the generator
- * on `--card` instead was tried and rejected: it made the generator swap
- * dark seeds for its own saturated step 9, so maroon `#8B0000` painted
- * `#FF2A1F` and navy `#1F4E79` a sky `#90CFFF`.
+ * floor, and the tints sit higher up: the active nav row on `--surface-1`.
+ * When the 2026-11-12 ladder spread its steps apart, step 3 stayed near-black
+ * there, 1.05–1.14:1 across the corpus; step 4 is 1.17–1.38:1, at or above the
+ * 2026-11-05 ladder's 1.15–1.24.
+ *
+ * Step 4 and no lighter, because text sits on the tint: a row that @-mentions
+ * the viewer paints it behind the author's role-coloured name and the
+ * timestamp. Step 5 put a green chapter's hovered Violet name at 3.70:1 and
+ * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%,
+ * holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
+ * (`chat-contrast.spec.ts`). The cost is a weaker tint on `--card` (1.02–1.20,
+ * the selected fill 1.11–1.32, was 1.25–1.40), where a selected card also
+ * carries its accent border.
+ *
+ * Seating the generator on `--card` instead was tried and rejected: it made
+ * the generator swap dark seeds for its own saturated step 9, so maroon
+ * `#8B0000` painted `#FF2A1F` and navy `#1F4E79` a sky `#90CFFF`.
  */
 const ROLE_STEPS = {
   "accent-primary": 9,
   "accent-hover": 10,
   "accent-ring": 8,
-  "accent-subtle-bg": 5,
+  "accent-subtle-bg": 4,
   "accent-border": 7,
   "accent-text": 11,
 } as const;

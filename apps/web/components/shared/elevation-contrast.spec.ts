@@ -194,8 +194,17 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
     expect(ratio(CARD_HOVER, step)).toBeGreaterThan(INDISTINGUISHABLE);
   });
 
-  it("keeps the label over the text gate", () => {
-    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
+  it.each([
+    ["foreground", TEXT.foreground],
+    ["muted-foreground", TEXT.mutedForeground],
+    ["muted", TEXT.muted],
+  ] as const)("keeps %s text over the text gate on it", (_name, tone) => {
+    // A hovered row's title, its sub-line and its timestamp all sit on it,
+    // and since 2026-11-09 it is also the quiet fill under text. `--muted` is
+    // the one the 2026-11-12 ladder (#3826) had to lift for: at `#9E9E9E` it
+    // fell to 4.18:1 here. The 7:1 reading floor is the four ladder steps';
+    // on this state fill the gate is AA (`--muted-foreground` 6.42:1).
+    expect(ratio(tone, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("does not need a chapter: a white alpha would have, and failed on --background", () => {

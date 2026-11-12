@@ -35,15 +35,19 @@ function describeFailedContrastCheck(check: FailedContrastCheck): string {
   ) {
     return `Accent text on its own tinted background reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
-  // Only claim "app background" when `against` is the literal background hex
-  // this check is actually specified for — never inferred from `role` alone,
-  // so a future engine check on `--signet-accent-text` against some other
-  // surface falls to the raw fallback below instead of being mislabeled.
-  if (
-    check.role === "--signet-accent-text" &&
-    !check.against.startsWith("--signet-")
-  ) {
-    return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  // Name a surface only when `against` is that surface's literal hex — never
+  // inferred from `role` alone, so a future engine check on
+  // `--signet-accent-text` against some other surface falls to the raw
+  // fallback below instead of being mislabeled. Since the 2026-11-12 ladder
+  // (#3826) the engine measures this check on `--popover`, the lightest step.
+  if (check.role === "--signet-accent-text") {
+    const surface = check.against.toUpperCase();
+    if (surface === signetDarkTokens.color.surface.popover.toUpperCase()) {
+      return `Accent text on menus and dialogs reads at ${ratio}:1, under the 4.5:1 minimum.`;
+    }
+    if (surface === signetDarkTokens.color.surface.background.toUpperCase()) {
+      return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+    }
   }
   if (
     check.role === "--signet-accent-on-primary" &&

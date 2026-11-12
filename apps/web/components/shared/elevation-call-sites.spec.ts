@@ -356,9 +356,10 @@ describe("rows inside a popover hover up, never down a step (#2399, #3826)", () 
 
 describe("--muted is a text tone, never a fill under text (#3826)", () => {
   /*
-   * `--muted` is `#9E9E9E` since the 2026-11-09 text ladder (foundations.md
-   * §4). As a fill it puts foreground text at 2.46:1 and the accent text at
-   * 1.64:1, so a quiet fill takes a ladder step or `--card-hover`. Two
+   * `--muted` has been a light grey since the 2026-11-09 text ladder
+   * (foundations.md §4; `#A8A8A8` since 2026-11-12). As a fill it put
+   * foreground text at 2.46:1 and the accent text at 1.64:1 when this was
+   * written, so a quiet fill takes a ladder step or `--card-hover`. Two
    * non-text uses are allowed, named here so a third is a decision: the
    * switch's unchecked thumb and the chat-density preview bars. An alpha wash
    * (`bg-muted/40`) composites dark enough to keep text over AA.

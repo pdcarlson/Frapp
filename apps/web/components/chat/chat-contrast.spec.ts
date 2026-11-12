@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ROLE_COLOR_PALETTE } from "@repo/validation";
 import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
@@ -162,6 +163,21 @@ describe("a row that mentions the viewer", () => {
           ratio(MENTION_CHIP.text, bg),
           `${seed} ${state} mention chip`,
         ).toBeGreaterThanOrEqual(AA_TEXT);
+        // The timestamp, and the author's name in their role colour. Both sit
+        // on the tint too, and they are what a lighter tint costs first: the
+        // 2026-11-12 ladder (#3826) tried taking the tint from scale step 5,
+        // which put a green chapter's hovered Violet name at 3.70:1 and the
+        // timestamp at 3.94:1. Step 4 with a 15% hover mix is what holds both.
+        expect(
+          ratio(TEXT.muted, bg),
+          `${seed} ${state} timestamp`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+        for (const swatch of ROLE_COLOR_PALETTE) {
+          expect(
+            ratio(swatch.hex, bg),
+            `${seed} ${state} author in ${swatch.label}`,
+          ).toBeGreaterThanOrEqual(AA_TEXT);
+        }
       }
     }
   });

@@ -94,6 +94,14 @@ describe("StatusChip text tone (components.md §5)", () => {
     expect(chip.backgroundColor).toBe("rgba(255,102,92,0.13)");
   });
 
+  it("lifts info text too, which an in-progress task's chip draws on a card (#3826)", () => {
+    const { chip, label } = parts(
+      render(<StatusChip label="In progress" hue={tokens.color.semantic.info} />),
+    );
+    expect(label.color).toBe(tokens.color.semantic.infoText);
+    expect(chip.backgroundColor).toBe("rgba(47,129,247,0.13)");
+  });
+
   it("draws success and warning in the hue itself", () => {
     for (const hue of [
       tokens.color.semantic.success,

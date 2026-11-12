@@ -64,6 +64,13 @@ export type SignetTokens = {
        */
       destructiveText: string;
       info: string;
+      /**
+       * The AA-lifted tone for info TEXT, on an info tint or on `popover`
+       * (components.md §5), the same lift as `destructiveText`. In
+       * `signetDarkTokens` since 2026-11-12 (#3826), when mobile's StatusChip
+       * started drawing info text in it.
+       */
+      infoText: string;
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
       mentionForeground: string;
@@ -167,6 +174,7 @@ const SIGNET_DARK: SignetTokens = {
       destructive: "#FF665C",
       destructiveText: "#FF958A",
       info: "#2F81F7",
+      infoText: "#61A7FF",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
       mentionChip: "#2D2617",
@@ -268,6 +276,7 @@ export function getSignetCssVars(
     "--destructive": t.color.semantic.destructive,
     "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
+    "--info-text": t.color.semantic.infoText,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,
     "--mention-chip": t.color.semantic.mentionChip,

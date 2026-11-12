@@ -121,11 +121,14 @@
     --info-foreground: #0A0A0A;
     /* The same AA lift components.md §5 sanctions for danger, applied to info
      * for the same reason: solid `--info` is under the 4.5:1 gate as text on
-     * --card and --popover. #4C93F8 was the reference's own lifted info tone;
-     * the 2026-11-12 surface ladder (#3826) took it to 4.23:1 on --popover,
-     * so it is lifted once more, to #5198FE, 4.51:1 there. The solid stays
+     * --card and --popover. #4C93F8 was the reference's own lifted info tone.
+     * The 2026-11-12 surface ladder (#3826) took it to 4.23:1 on --popover and
+     * under the gate on its own tint, which mobile's StatusChip draws on a
+     * card (an in-progress task), so it is lifted to #61A7FF: 4.56:1 or more
+     * on the 13% info tint over every step, 5.25:1 on plain --popover. Also
+     * `signetDarkTokens.color.semantic.infoText` since then. The solid stays
      * the fill and border. */
-    --info-text: #5198FE;
+    --info-text: #61A7FF;
     /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
      * chapter accent, never any other status. White foreground is locked by
      * foundations §5. */
@@ -208,7 +211,7 @@
     --primary-hover: #D2AD37;
     --primary-foreground: #292109;
     --ring: #796938;
-    --accent-subtle: #3F3413;
+    --accent-subtle: #332A10;
     --accent-border: #5F522C;
     --accent-text: #E7C86B;
 
@@ -217,7 +220,7 @@
      * above, so a chapter that overrides the slot at runtime moves
      * these with it and nothing has to be re-derived or re-persisted.
      * They exist because §3's state table names two steps the engine
-     * does not emit — the engine's seven roles are accent 3/7/8/9/10/11
+     * does not emit — the engine's seven roles are accent 4/7/8/9/10/11
      * plus the contrast color (accent-engine.md §2).
      *
      * `--primary-pressed` is §3's "fill accent-10 + 8% black overlay".
@@ -225,13 +228,17 @@
      * on it can fall under 4.5:1 (#2604), so it is only ever the
      * momentary pointer-down shade, never a held state
      * (accent-engine.md §8).
-     * `--accent-subtle-hover` is the Tinted hover, which §3 calls
-     * accent-4: a fifth of the way from accent-3 toward accent-7,
-     * which lands between the two steps rather than on a named one.
+     * `--accent-subtle-hover` is the Tinted hover: 15% of the way from
+     * the subtle step toward accent-7, which lands between two steps
+     * rather than on a named one. (Until the 2026-11-12 surface ladder,
+     * #3826, the subtle step was accent-3 and this mix was 22%, which
+     * §3 called accent-4. The engine now takes the subtle step from
+     * accent-4 itself, and a lighter hover would put a hovered mention
+     * row's role-coloured names and timestamp under AA.)
      * Both are stated as approximations here rather than pretending
      * to a scale step the generator never produced. */
     --primary-pressed: color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover));
-    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 22%, var(--accent-subtle));
+    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 15%, var(--accent-subtle));
 
     /* ── House gold (brand-identity.md; never retints per chapter) ── */
     --gold-house: #EFB63B;

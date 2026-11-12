@@ -488,7 +488,7 @@ function NotificationPicture({
   names: MemberNames;
 }) {
   if (isTileKind(kind)) {
-    // The initials avatar's paint (the hue at 18% over `--popover`), so a
+    // The initials avatar's paint (the hue at 14% over `--card`), so a
     // tile and a person's picture sit at one strength.
     const paint = memberAvatarTint(NOTIFICATION_TILE_HUE[kind]);
     return (
