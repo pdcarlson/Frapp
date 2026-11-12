@@ -136,10 +136,10 @@ describe('GifService', () => {
     beforeAll(async () => {
       const [gif] = (await service.trending(1)).results;
       sent = {
-        ...gif!.full,
-        id: gif!.id,
+        ...gif.full,
+        id: gif.id,
         title: '  Happy dance ',
-        token: gif!.token,
+        token: gif.token,
       };
     });
 
