@@ -140,7 +140,7 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  * (`lib/directory/actives-filter.ts`). The Alumni tab keeps its own Filters
  * chip and fields, since `GET /v1/alumni` filters server-side by different
  * fields. Like the alumni filters, these stay set across a tab switch and
- * are left alone by a search, which looks across both lists by name.
+ * are left alone by a search, which looks across both lists.
  */
 type Tab = "actives" | "alumni";
 
@@ -275,7 +275,7 @@ export default function DirectoryScreen() {
   const orderOffered =
     pledgeClasses !== null && usesFraternalOrder(pledgeClasses, actives);
 
-  // The Actives list alone: search looks across both lists by name, and the
+  // The Actives list alone: search looks across both lists, and the
   // Alumni tab has no sort (see the header).
   const inFraternalOrder =
     sortByOrder && orderOffered && !isSearching && tab === "actives";
@@ -641,13 +641,23 @@ export function memberPressLabel(
     .join(", ");
 }
 
+// On the avatar's bottom-right corner, as web pins it and the member sheet
+// draws it. No token in it, so it is built once rather than with every row's
+// stylesheet.
+const presenceDotStyles = StyleSheet.create({
+  dot: {
+    position: "absolute",
+    bottom: -3,
+    right: -3,
+  },
+});
+
 /** The presence dot on an avatar's bottom-right corner, as web pins it. */
 function AvatarPresence({ status }: { status: PresenceStatus | null }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   if (!status) return null;
   return (
-    <View pointerEvents="none" style={styles.presenceDot}>
+    <View pointerEvents="none" style={presenceDotStyles.dot}>
       <StatusDot
         testID={`member-presence-${status}`}
         status={status}
@@ -752,7 +762,7 @@ export function MemberRow({
       <View style={styles.rowText}>
         <Text style={styles.rowName}>{row.displayName}</Text>
         {/* The custom status line under the name, one line, as web's
-            Directory row and `components.md` § Directory row draw it. */}
+            Directory row draws it (`components.md` § Chat member list). */}
         {presence.line ? (
           <Text numberOfLines={1} style={styles.rowStatusLine}>
             {presence.line}
@@ -796,7 +806,7 @@ export function MemberTile({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <View>
+      <View style={styles.tileAvatarWrap}>
         <MemberAvatar
           uri={row.avatarUrl}
           initials={row.initials}
@@ -963,13 +973,6 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       textAlign: "center",
     },
-    // On the avatar's bottom-right corner, as web pins it and the member
-    // sheet draws it; the ring is the screen's own fill.
-    presenceDot: {
-      position: "absolute",
-      bottom: -3,
-      right: -3,
-    },
     titleRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -997,6 +1000,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // The space under the face sits on the wrapper, not the avatar, so the
+    // wrapper is the face's size and the dot pins to the face's corner.
+    tileAvatarWrap: {
       marginBottom: tokens.spacing.xs,
     },
     tileAvatarText: {

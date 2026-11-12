@@ -203,11 +203,6 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
- * Add one (New channel, #3838): the + beside a Chat home section heading,
- * as Discord and Slack draw it beside a channel group.
- */
-
-/**
  * Search, leading a search field (#4137): web's toolbar search draws the same
  * lens and handle (`apps/web/components/layout/nav-glyphs.tsx` `SearchGlyph`),
  * as iOS's own search bar, Slack and Discord lead theirs.
@@ -221,6 +216,11 @@ export function SearchGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
     </Frame>
   );
 }
+
+/**
+ * Add one (New channel, #3838): the + beside a Chat home section heading,
+ * as Discord and Slack draw it beside a channel group.
+ */
 export function PlusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
