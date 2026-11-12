@@ -10,7 +10,13 @@ import {
 import { Alert, Keyboard } from "react-native";
 import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useCurrentChapter, useMyPermissions } from "@repo/hooks";
+import {
+  useCurrentChapter,
+  gifToSend,
+  useGifAvailability,
+  useMyPermissions,
+  type GifResult,
+} from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
 import {
   plusMenuForms,
@@ -24,6 +30,7 @@ import {
 } from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
+import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
 import { NewSignupSheet } from "@/components/chat/new-signup-sheet";
 import {
   NewEventSheet,
@@ -134,6 +141,7 @@ export function useComposerPlus({
     | "postHours"
     | "trackEventCard"
     | "photos"
+    | "sendGif"
   >;
   /** A reply is staged (the + isn't offered while editing at all). */
   replying: boolean;
@@ -185,6 +193,9 @@ export function useComposerPlus({
   );
 
   const plusRef = useRef<BottomSheetModal>(null);
+  const gifRef = useRef<BottomSheetModal>(null);
+  // GIFs (#4631): the row shows only once the server says search is set up.
+  const gifs = useGifAvailability();
   const pollRef = useRef<BottomSheetModal>(null);
   const signupRef = useRef<BottomSheetModal>(null);
   const eventRef = useRef<BottomSheetModal>(null);
@@ -261,6 +272,7 @@ export function useComposerPlus({
       return () => {
         for (const ref of [
           plusRef,
+          gifRef,
           pollRef,
           signupRef,
           eventRef,
@@ -273,7 +285,20 @@ export function useComposerPlus({
     }, [channelId]),
   );
 
-  const { sendPoll, sendSignup, postTask, postHours, trackEventCard } = channel;
+  const { sendPoll, sendSignup, postTask, postHours, trackEventCard, sendGif } =
+    channel;
+  const openGif = useCallback(() => {
+    Keyboard.dismiss();
+    gifRef.current?.present();
+  }, []);
+  const pickGif = useCallback(
+    (gif: GifResult) => {
+      void sendGif(gifToSend(gif, gifs.provider)).then((result) => {
+        if (!result.ok) Alert.alert("Couldn't send the GIF", result.error);
+      });
+    },
+    [sendGif, gifs.provider],
+  );
   const postSignupHere = useCallback(
     async (signup: Parameters<typeof sendSignup>[0]) => {
       const result = await sendSignup(signup);
@@ -316,8 +341,22 @@ export function useComposerPlus({
         // connection; the connection pill says so.
         photoDisabledReason={offline ? "Reconnect first" : null}
         onPhoto={onPhoto}
+        // Search needs the network; a reply goes with typed text, as the
+        // forms' rows say.
+        onGif={gifs.available ? openGif : undefined}
+        gifDisabledReason={
+          offline ? "Reconnect first" : replying ? "Not while replying" : null
+        }
         onOpenForm={openForm}
       />
+      {gifs.available ? (
+        <GifPickerSheet
+          key={`gif-${key}`}
+          ref={gifRef}
+          provider={gifs.provider}
+          onPick={pickGif}
+        />
+      ) : null}
       <NewPollSheet
         key={`poll-${key}`}
         ref={pollRef}

@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -524,11 +525,11 @@ export default function TasksScreen() {
     // leaves the board shimmering forever with no retry, a screen dead until a
     // force-quit. A pull refetches it too (#3385), but nothing on screen says
     // so, which is why `ErrorState` keeps its button (`state-block.tsx`).
-    if (viewerQuery.isError) {
+    if ((viewerQuery.isError && viewerQuery.data === undefined)) {
       return (
         <ErrorState
           title="Couldn't load your account"
-          body="Your tasks are filtered to you, so this has to load first."
+          body={describeLoadFailure(viewerQuery.error)}
           onRetry={() => void viewerQuery.refetch()}
           isRetrying={viewerQuery.isFetching}
         />
@@ -554,11 +555,11 @@ export default function TasksScreen() {
       );
     }
 
-    if (tasksQuery.isError) {
+    if ((tasksQuery.isError && tasksQuery.data === undefined)) {
       return (
         <ErrorState
           title="Couldn't load your tasks"
-          body="Your task board is still here — this was a problem fetching it."
+          body={describeLoadFailure(tasksQuery.error)}
           onRetry={() => void tasksQuery.refetch()}
           isRetrying={tasksQuery.isFetching}
         />

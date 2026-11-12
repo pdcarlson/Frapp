@@ -81,6 +81,7 @@ import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { chatPushPreview } from './chat-push-preview';
+import type { MessageGif } from './gif.service';
 import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -153,6 +154,12 @@ export interface SendMessageInput {
    */
   thread_root_id?: string | null;
   metadata?: Record<string, any>;
+  /**
+   * A GIF from the picker (#4631), already checked by `GifService.messageGif`.
+   * Stored as the server's own `metadata.gif`; the message has no text and no
+   * files.
+   */
+  gif?: MessageGif | null;
   /**
    * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
    * client send: it is what refuses a card kind whose module is off
@@ -1036,7 +1043,17 @@ export class ChatService {
       input.channel_id,
     );
 
-    if (!input.content.trim() && attachments.length === 0) {
+    const gif = input.gif ?? null;
+    if (gif) {
+      if (input.content.trim() || attachments.length > 0) {
+        throw new BadRequestException(
+          'A GIF message has no text and no attachments',
+        );
+      }
+      if ((input.kind ?? 'text') !== 'text') {
+        throw new BadRequestException('Only a plain message can be a GIF');
+      }
+    } else if (!input.content.trim() && attachments.length === 0) {
       throw new BadRequestException(
         'A message needs content or at least one attachment',
       );
@@ -1181,13 +1198,11 @@ export class ChatService {
         // before the attachments read returns (#3879).
         // Both keys are the server's: a client's own copies are dropped, so a
         // text message can't claim files, or photo boxes, it doesn't have.
-        metadata:
-          attachments.length > 0
-            ? {
-                ...clientMetadata(input.metadata),
-                ...attachmentMetadataOf(attachments),
-              }
-            : clientMetadata(input.metadata),
+        metadata: {
+          ...clientMetadata(input.metadata),
+          ...(attachments.length > 0 ? attachmentMetadataOf(attachments) : {}),
+          ...(gif ? { gif } : {}),
+        },
         mentions,
       });
     } catch (error) {
@@ -1449,6 +1464,12 @@ export class ChatService {
 
     if (message.is_deleted) {
       throw new BadRequestException('Cannot edit a deleted message');
+    }
+
+    // A GIF message is the GIF, with no text to change (#4631); the clients
+    // hide Edit on it (`canEditMessage`), and this is the rule.
+    if (message.metadata && 'gif' in message.metadata) {
+      throw new BadRequestException('A GIF cannot be edited');
     }
 
     // Cleaned as a send is (#4346). An edit has no attachments to stand in for
@@ -2085,5 +2106,8 @@ function clientMetadata(
   const own = { ...(metadata ?? {}) };
   delete own.attachment_count;
   delete own.attachment_photos;
+  // The server's own too (#4631): a GIF's URL is checked against the
+  // provider's media host on the way in, so a client can't write one here.
+  delete own.gif;
   return own;
 }

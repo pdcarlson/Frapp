@@ -179,7 +179,7 @@ export default function MessagesScreen() {
           them (or their failure) rather than reordering under a thumb. */}
       {channelsQuery.isPending || latestQuery.isPending ? (
         <ChannelListSkeleton />
-      ) : channelsQuery.isError ? (
+      ) : channelsQuery.isError && channelsQuery.data === undefined ? (
         <ErrorState
           title={error.title}
           body={error.body}

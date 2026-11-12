@@ -55,6 +55,13 @@ vi.mock("@repo/hooks", () => ({
   useCalendarFeedLink: () => ({ data: undefined, isError: false }),
   useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
   calendarAppLinks: () => null,
+  useGoogleCalendarStatus: () => ({ data: undefined }),
+  useStartGoogleCalendarConnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
+  useDisconnectGoogleCalendar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  readGoogleCalendarReturn: () => null,
+  GOOGLE_CALENDAR_RETURN_PARAMS: [],
+  useActiveChapterId: () => "chap-1",
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => ({

@@ -955,6 +955,56 @@ describe("actOnCard", () => {
   });
 });
 
+const GIF_TO_SEND = {
+  provider: "klipy",
+  id: "dance",
+  title: "Happy dance",
+  url: "https://static.klipy.com/ii/a/dance.webp",
+  width: 498,
+  height: 280,
+  token: "signed-token",
+};
+
+describe("sendMessage with a GIF (#4631)", () => {
+  it("posts the GIF with its token, and no text", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { message: { id: "msg-1", client_message_id: "c-1" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const outbox = stubOutbox();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "",
+      gif: GIF_TO_SEND,
+    });
+
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { content: string; gif?: unknown };
+    };
+    expect(init.body.content).toBe("");
+    expect(init.body.gif).toEqual({
+      id: "dance",
+      title: "Happy dance",
+      url: GIF_TO_SEND.url,
+      width: 498,
+      height: 280,
+      token: "signed-token",
+    });
+    // Queued with the GIF, so a flush or a retry resends it, not an empty text.
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ gif: GIF_TO_SEND }),
+    );
+  });
+});
+
 describe("outbox analytics", () => {
   it("emits queued then confirmed on a successful send, with an elapsed_ms property", async () => {
     const track = vi.fn();
@@ -1353,6 +1403,28 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
       chatMessagesKey("chan-1"),
     );
     expect(cache?.byId["c-poll"]?._error).toBe(POLLS_OFF_COPY);
+  });
+
+  it("redraws a queued GIF as its GIF after a reload, not an empty bubble (#4631)", async () => {
+    const queryClient = new QueryClient();
+    const outbox = stubOutbox({
+      listForChannel: vi.fn().mockResolvedValue([
+        {
+          clientId: "c-gif",
+          channelId: "chan-1",
+          body: "",
+          attempts: 0,
+          status: "queued",
+          queuedAt: Date.now(),
+          gif: GIF_TO_SEND,
+        } satisfies OutboxRow,
+      ]),
+    });
+    await hydrateOutboxIntoCache(buildCtx({ queryClient, outbox }), "chan-1");
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.byId["c-gif"]?.gif?.url).toBe(GIF_TO_SEND.url);
   });
 
   it("does not upsert a pending twin next to an already-confirmed server row (#1718)", async () => {

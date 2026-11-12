@@ -79,7 +79,7 @@ function deferred<T>() {
 let chapterId = "ch-tau-nu";
 let invoices: unknown[] = [];
 let invoicesPending = false;
-/** A failed read: TanStack keeps the last data beside `isError`. */
+/** A failed first read: nothing loaded. A failed refetch keeps its rows. */
 let invoicesError = false;
 let viewerError = false;
 /** `null` while `/v1/users/me` hasn't answered. */
@@ -116,7 +116,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   // `isEnabled` follows the screen's `enabled`, as a TanStack result's does.
   useInvoices: (_userId?: string, options?: { enabled?: boolean }) => ({
-    data: invoicesPending ? undefined : invoices,
+    data: invoicesPending || invoicesError ? undefined : invoices,
     isPending: invoicesPending,
     isError: invoicesError,
     isFetching: false,

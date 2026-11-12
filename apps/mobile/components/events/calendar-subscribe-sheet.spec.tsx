@@ -21,6 +21,15 @@ const state = vi.hoisted(() => ({
   enabledCalls: [] as boolean[],
   reset: vi.fn(),
   copy: vi.fn(),
+  google: { available: false, connected: false } as Record<string, unknown>,
+  start: vi.fn(),
+  confirm: vi.fn(),
+  disconnect: vi.fn(),
+  authSession: vi.fn(),
+}));
+
+vi.mock("expo-web-browser", () => ({
+  openAuthSessionAsync: state.authSession,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -31,6 +40,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useResetCalendarFeedLink: () => ({
     mutateAsync: state.reset,
+    isPending: false,
+  }),
+  useGoogleCalendarStatus: () => ({ data: state.google }),
+  useStartGoogleCalendarConnect: () => ({
+    mutateAsync: state.start,
+    isPending: false,
+  }),
+  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: state.confirm }),
+  useDisconnectGoogleCalendar: () => ({
+    mutateAsync: state.disconnect,
     isPending: false,
   }),
 }));
@@ -73,6 +92,11 @@ describe("CalendarSubscribeSheet", () => {
     state.reset.mockReset();
     state.copy.mockReset();
     state.copy.mockResolvedValue(true);
+    state.google = { available: false, connected: false };
+    state.start.mockReset();
+    state.confirm.mockReset();
+    state.disconnect.mockReset();
+    state.authSession.mockReset();
   });
 
   afterEach(() => {
@@ -162,5 +186,130 @@ describe("CalendarSubscribeSheet", () => {
     act(() => confirm?.onPress?.());
     expect(state.reset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
+  });
+
+  // #3322 step 2: where the server offers it, Google connects instead.
+  describe("Google Calendar", () => {
+    const OFFERED = {
+      available: true,
+      connected: false,
+      status: null,
+      google_email: null,
+      last_synced_at: null,
+    };
+    const CONNECTED = {
+      ...OFFERED,
+      connected: true,
+      status: "active",
+      google_email: "member@gmail.com",
+    };
+
+    it("signs in to Google in the system sheet and finishes the connection", async () => {
+      state.google = OFFERED;
+      state.data = undefined;
+      state.start.mockResolvedValue("https://accounts.google.com/auth");
+      state.authSession.mockResolvedValue({
+        type: "success",
+        url: "frapp://events?gcal=confirm&gcal_code=code-1&gcal_state=state-1",
+      });
+      state.confirm.mockResolvedValue(CONNECTED);
+      const alert = vi.mocked(Alert.alert);
+      alert.mockClear();
+      const tree = render();
+
+      // Usable before the subscription link arrives: it doesn't need it.
+      expect(row(tree, "Google Calendar").props.disabled).toBe(false);
+      await act(async () => {
+        row(tree, "Google Calendar").props.onPress();
+      });
+
+      expect(state.start).toHaveBeenCalledWith({
+        client: "mobile",
+        returnUrl: "frapp://events",
+      });
+      expect(state.authSession).toHaveBeenCalledWith(
+        "https://accounts.google.com/auth",
+        "frapp://events",
+      );
+      expect(state.confirm).toHaveBeenCalledWith({
+        code: "code-1",
+        state: "state-1",
+      });
+      expect(alert.mock.calls.at(-1)?.[0]).toBe("Google Calendar connected");
+      act(() => tree.unmount());
+    });
+
+    it("finishes a sign-in the app was opened with once, however often the sheet mounts", async () => {
+      // `useURL` hands every new mount the address that launched the app;
+      // the code in it is single use, so a second confirm would fail.
+      state.google = OFFERED;
+      state.confirm.mockResolvedValue(CONNECTED);
+      const useURL = vi.mocked(Linking.useURL);
+      useURL.mockReturnValue(
+        "frapp://events?gcal=confirm&gcal_code=code-9&gcal_state=state-9",
+      );
+      try {
+        for (let mount = 0; mount < 2; mount += 1) {
+          const tree = render();
+          await act(async () => {});
+          act(() => tree.unmount());
+        }
+        expect(state.confirm).toHaveBeenCalledTimes(1);
+        expect(state.confirm).toHaveBeenCalledWith({
+          code: "code-9",
+          state: "state-9",
+        });
+      } finally {
+        useURL.mockReturnValue(null);
+      }
+    });
+
+    it("says nothing when the member cancels on Google's page", async () => {
+      state.google = OFFERED;
+      state.start.mockResolvedValue("https://accounts.google.com/auth");
+      state.authSession.mockResolvedValue({ type: "cancel" });
+      const alert = vi.mocked(Alert.alert);
+      alert.mockClear();
+      const tree = render();
+      await act(async () => {
+        row(tree, "Google Calendar").props.onPress();
+      });
+
+      expect(state.confirm).not.toHaveBeenCalled();
+      expect(alert).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+
+    it("once connected, says so, opens Google Calendar, and offers Disconnect", () => {
+      state.google = CONNECTED;
+      const open = vi.mocked(Linking.openURL);
+      open.mockClear();
+      const alert = vi.mocked(Alert.alert);
+      alert.mockClear();
+      state.disconnect.mockResolvedValue(undefined);
+      const tree = render();
+
+      expect(screenText(tree)).toContain("connected as member@gmail.com");
+      act(() => row(tree, "Google Calendar, Connected").props.onPress());
+      expect(open).toHaveBeenCalledWith("https://calendar.google.com/calendar/r");
+
+      act(() => row(tree, "Disconnect Google Calendar").props.onPress());
+      expect(state.disconnect).not.toHaveBeenCalled();
+      const buttons = alert.mock.calls.at(-1)?.[2] as {
+        text: string;
+        onPress?: () => void;
+      }[];
+      act(() => buttons.find((b) => b.text === "Disconnect")?.onPress?.());
+      expect(state.disconnect).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
+
+    it("asks to reconnect once Google refused the sign-in", () => {
+      state.google = { ...CONNECTED, status: "needs_reconnect" };
+      const tree = render();
+
+      expect(row(tree, "Google Calendar, Reconnect")).toBeTruthy();
+      act(() => tree.unmount());
+    });
   });
 });

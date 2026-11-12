@@ -23,5 +23,7 @@ import { TaskModule } from '../task/task.module';
       useClass: SupabaseCalendarFeedRepository,
     },
   ],
+  // GoogleCalendarModule writes the same items into Google Calendar.
+  exports: [CalendarFeedService],
 })
 export class CalendarFeedModule {}

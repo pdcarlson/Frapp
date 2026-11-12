@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   can,
   checkInZoneLine,
@@ -184,12 +185,12 @@ export default function EventDetailsScreen() {
     );
   }
 
-  if (eventQuery.isError || !event) {
+  if (!event) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <ErrorState
           title="Couldn't load this event"
-          body="It may have been cancelled, or the server is unreachable."
+          body={describeLoadFailure(eventQuery.error)}
           onRetry={() => void eventQuery.refetch()}
           isRetrying={eventQuery.isFetching}
         />

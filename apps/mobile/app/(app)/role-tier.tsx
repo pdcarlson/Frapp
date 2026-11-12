@@ -70,7 +70,7 @@ export default function RoleTierScreen() {
     [roles, tierId],
   );
 
-  if (tiersQuery.isError || rolesQuery.isError) {
+  if ((tiersQuery.isError && tiersQuery.data === undefined) || (rolesQuery.isError && rolesQuery.data === undefined)) {
     return (
       <ScreenShell back={BACK_TO_ROLES} title={words.Singular}>
         <ErrorState

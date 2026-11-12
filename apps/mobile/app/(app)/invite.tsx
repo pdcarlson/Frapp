@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -136,7 +137,7 @@ function InviteBody({ focused }: { focused: boolean }) {
         {permissionsQuery.isError ? (
           <ErrorState
             title="Couldn't load your role"
-            body="Whether you can send invites depends on it, so it has to load first."
+            body={describeLoadFailure(permissionsQuery.error)}
             onRetry={() => {
               void permissionsQuery.refetch();
             }}

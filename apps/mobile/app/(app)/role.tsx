@@ -74,7 +74,7 @@ export default function RoleScreen() {
   const { rolesQuery, tiersQuery, roles, words } = data;
   const role = roles.find((candidate) => candidate.id === roleId) ?? null;
 
-  if (rolesQuery.isError || tiersQuery.isError) {
+  if ((rolesQuery.isError && rolesQuery.data === undefined) || (tiersQuery.isError && tiersQuery.data === undefined)) {
     return (
       <ScreenShell back={BACK_TO_ROLES} title="Role">
         <ErrorState

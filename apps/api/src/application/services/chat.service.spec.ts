@@ -2318,6 +2318,76 @@ describe('ChatService', () => {
       });
     });
 
+    describe('a GIF message (#4631)', () => {
+      const gif = {
+        provider: 'klipy',
+        id: 'dance',
+        title: 'Happy dance',
+        url: 'https://static.klipy.com/h.webp',
+        width: 498,
+        height: 280,
+      };
+
+      it('stores the GIF as the server-owned metadata.gif, with no text', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          gif,
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ content: '', metadata: { gif } }),
+        );
+      });
+
+      it("drops a client's own metadata.gif", async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'hi',
+          metadata: { gif: { ...gif, url: 'https://evil.test/x.webp' } },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: {} }),
+        );
+      });
+
+      it('refuses a GIF with text, or on a card', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'lol',
+            gif,
+          }),
+        ).rejects.toThrow('A GIF message has no text and no attachments');
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: '',
+            kind: 'poll',
+            gif,
+          }),
+        ).rejects.toThrow('Only a plain message can be a GIF');
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -3432,6 +3502,27 @@ describe('ChatService', () => {
   });
 
   describe('editMessage', () => {
+    it('refuses to edit a GIF message, even its own sender (#4631)', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        content: '',
+        metadata: {
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: '',
+            url: 'https://static.klipy.com/h.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      });
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'now with text'),
+      ).rejects.toThrow('A GIF cannot be edited');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
     it('saves an edit with U+FFFC turned into a space, and refuses one left blank (#4346)', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.update.mockResolvedValue(baseMessage);

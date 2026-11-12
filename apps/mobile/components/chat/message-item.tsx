@@ -58,6 +58,7 @@ import { ThreadChip, threadCardMiddle } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
+import { MessageGifImage } from "./message-gif";
 import {
   linkA11yActions,
   MessageMarkdown,
@@ -794,18 +795,20 @@ export function MessageItem({
   // `Pressable`, and an inner Pressable claims the touch, so without it a long
   // press on a photo — the whole of a photo-only message since #2464 — would
   // open the file instead of the actions the rest of the row opens.
-  const attachments =
-    !message.is_deleted && message.attachment_count > 0 ? (
-      <MessageAttachments
-        channelId={message.channel_id}
-        messageId={message.id}
-        count={message.attachment_count}
-        clientMessageId={message.client_message_id}
-        confirmed={isConfirmed}
-        photos={message.attachment_photos}
-        onLongPress={onOpenActions}
-      />
-    ) : null;
+  const attachments = message.is_deleted ? null : message.gif ? (
+    // A GIF message (#4631) is the GIF: no text, no files.
+    <MessageGifImage gif={message.gif} onLongPress={onOpenActions} />
+  ) : message.attachment_count > 0 ? (
+    <MessageAttachments
+      channelId={message.channel_id}
+      messageId={message.id}
+      count={message.attachment_count}
+      clientMessageId={message.client_message_id}
+      confirmed={isConfirmed}
+      photos={message.attachment_photos}
+      onLongPress={onOpenActions}
+    />
+  ) : null;
 
   // Parsed once per content, for the body and for its links' accessibility
   // actions, so the actions name exactly the links drawn.

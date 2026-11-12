@@ -6634,6 +6634,150 @@
         ]
       }
     },
+    "/v1/gifs/availability": {
+      "get": {
+        "operationId": "GifController_availability_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifAvailabilityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether GIF search is set up, and its provider",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/trending": {
+      "get": {
+        "operationId": "GifController_trending_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trending GIFs, for the picker before a search",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/search": {
+      "get": {
+        "operationId": "GifController_search_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search GIFs (rated PG-13 at most)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -16323,6 +16467,165 @@
         ]
       }
     },
+    "/v1/google-calendar": {
+      "get": {
+        "operationId": "GoogleCalendarController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether Google Calendar is offered here, and the caller's connection.",
+        "tags": [
+          "Google Calendar"
+        ]
+      },
+      "delete": {
+        "operationId": "GoogleCalendarController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disconnect Google Calendar: removes Frapp's calendar from the member's Google account and revokes Frapp's access.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
+    "/v1/google-calendar/connect": {
+      "post": {
+        "operationId": "GoogleCalendarController_connect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartGoogleCalendarConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarConnectDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start connecting Google Calendar: a single-use sign-in, and Google’s consent page to send the member to.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
+    "/v1/google-calendar/confirm": {
+      "post": {
+        "operationId": "GoogleCalendarController_confirm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmGoogleCalendarConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Finish connecting with the code Google returned. Only the member who started the sign-in, in the same chapter, can finish it.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
     "/v1/meetings/{id}/recording": {
       "get": {
         "operationId": "MeetingRecordingController_get_v1",
@@ -19573,6 +19876,45 @@
           "content_type"
         ]
       },
+      "MessageGifDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused."
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "width",
+          "height",
+          "token"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -19608,6 +19950,9 @@
               "announcement",
               "signup"
             ]
+          },
+          "gif": {
+            "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
             "type": "object"
@@ -20660,6 +21005,101 @@
         },
         "required": [
           "message_ids"
+        ]
+      },
+      "GifAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether GIF search is set up on this server. Clients hide the GIF button when it is not."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider's name, shown in the picker's search field as its attribution."
+          }
+        },
+        "required": [
+          "available",
+          "provider"
+        ]
+      },
+      "GifRenditionDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "GifResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The provider's id for this GIF."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short words for screen readers; may be empty."
+          },
+          "preview": {
+            "description": "Small, for a grid tile.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "full": {
+            "description": "What a message shows; send this one.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "preview",
+          "full",
+          "token"
+        ]
+      },
+      "GifPageDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GifResultDto"
+            }
+          },
+          "next_page": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "results",
+          "next_page"
         ]
       },
       "GeofenceCoordinateDto": {
@@ -27703,6 +28143,97 @@
         "required": [
           "url",
           "webcal_url"
+        ]
+      },
+      "GoogleCalendarStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether this server offers Google Calendar. False until its Google settings are set; clients then hide the option."
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Whether the caller has connected Google."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "needs_reconnect"
+            ],
+            "nullable": true,
+            "description": "`needs_reconnect` once Google refused the sign-in (access removed in Google, or a password change); nothing syncs until the member connects again. Null when not connected."
+          },
+          "google_email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Google account connected, when Google shared it.",
+            "example": "member@gmail.com"
+          },
+          "last_synced_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the calendar last finished syncing. Null before the first."
+          }
+        },
+        "required": [
+          "available",
+          "connected",
+          "status",
+          "google_email",
+          "last_synced_at"
+        ]
+      },
+      "StartGoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "string",
+            "enum": [
+              "web",
+              "mobile"
+            ],
+            "description": "Where the sign-in finishes: the web Events page, or the phone app at `return_url`."
+          },
+          "return_url": {
+            "type": "string",
+            "description": "For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.",
+            "example": "frapp://google-calendar"
+          }
+        },
+        "required": [
+          "client"
+        ]
+      },
+      "GoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Google’s consent page for this sign-in. Good for ten minutes."
+          }
+        },
+        "required": [
+          "authorize_url"
+        ]
+      },
+      "ConfirmGoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "The `gcal_state` the sign-in returned with."
+          },
+          "code": {
+            "type": "string",
+            "description": "The `gcal_code` the sign-in returned with."
+          }
+        },
+        "required": [
+          "state",
+          "code"
         ]
       },
       "MeetingRecordingUploadDto": {

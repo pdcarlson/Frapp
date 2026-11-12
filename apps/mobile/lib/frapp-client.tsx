@@ -77,31 +77,36 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   }, [chapterId]);
 
   /* eslint-disable react-hooks/refs -- getChapterId is invoked per request by SDK middleware, not while constructing the client; capturing chapterId would stale in-flight calls */
-  const client = useMemo(
-    () =>
-      createFrappClient({
+  const client = useMemo(() => {
+    const readFreshToken = createFreshAuthTokenReader({
+      readToken: readAuthToken,
+      getSupabase: getSupabaseClient,
+    });
+    const checkRejectedSession = createRejectedSessionHandler({
+      getSupabase: getSupabaseClient,
+      signOut: () => signOutRef.current(),
+    });
+    return createFrappClient({
         // Bare origin — the generated SDK paths already carry `/v1`.
         baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
         // The mirrored token, refreshed first when it is about to expire, so a
         // foreground refetch never goes out with the token the OS let lapse
         // in the background (#3907). `lib/fresh-auth-token.ts`.
-        getAuthToken: createFreshAuthTokenReader({
-          readToken: readAuthToken,
-          getSupabase: getSupabaseClient,
-        }),
+        getAuthToken: readFreshToken,
         getChapterId: () => chapterIdRef.current,
         // Read once: a running process never changes its native build.
         clientVersion: readClientVersion(),
         // A 401 means the API no longer accepts this session (an account
         // deleted on another device, most often): sign out once, for every
         // screen. `lib/rejected-session.ts`.
-        onUnauthorized: createRejectedSessionHandler({
-          getSupabase: getSupabaseClient,
-          signOut: () => signOutRef.current(),
-        }),
-      }),
-    [],
-  );
+        // The reader's learned clock offset is dropped first: a 401 means a
+        // token it called current wasn't (`lib/fresh-auth-token.ts`).
+        onUnauthorized: () => {
+          readFreshToken.forgetClockOffset();
+          checkRejectedSession();
+        },
+      });
+  }, []);
   /* eslint-enable react-hooks/refs */
 
   return (

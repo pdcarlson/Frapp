@@ -50,6 +50,17 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     expect(SENTRY_HTTP_INTEGRATION_OPTIONS.ignoreRequestBody()).toBe(true);
   });
 
+  it('records no fetch span or breadcrumb for a URL that carries a key (#4631)', () => {
+    const ignore = SENTRY_NODE_FETCH_INTEGRATION_OPTIONS.ignoreOutgoingRequests;
+    expect(ignore('https://api.klipy.com/api/v1/KEY/gifs/trending')).toBe(true);
+    expect(ignore('https://API.KLIPY.com/api/v1/KEY/gifs/search?q=a')).toBe(
+      true,
+    );
+    expect(ignore('https://static.klipy.com/ii/a.webp')).toBe(false);
+    expect(ignore('https://api.stripe.com/v1/customers')).toBe(false);
+    expect(ignore('not a url')).toBe(false);
+  });
+
   it('does not copy headers onto fetch span attributes', () => {
     expect(
       SENTRY_NODE_FETCH_INTEGRATION_OPTIONS.headersToSpanAttributes,

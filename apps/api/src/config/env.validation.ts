@@ -7,6 +7,7 @@ import { validateDevLogEnv } from '../application/services/dev-log.service';
 import { validateAiEnv } from './ai-config';
 import { validateAiSpendEnv } from './ai-spend-config';
 import { validateAiStoredTextEnv } from './ai-stored-text-config';
+import { validateGoogleCalendarEnv } from './google-calendar-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -109,6 +110,21 @@ const REQUIRED_ENV_VARS = [
 //                        diagnostics window; needs the key above
 //                        (config/ai-stored-text-config.ts)
 //
+// Optional, the Google Calendar sync (#3322; config/google-calendar-config.ts).
+// All three or none, checked at boot; unset, Google Calendar is not offered and
+// the subscription link still is:
+//   - GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET  a Web OAuth
+//                        client in Google Cloud project `signet-frapp`, one per
+//                        environment, whose redirect URI is the API's origin
+//                        (API_URL less any trailing /v1) +
+//                        /v1/google-calendar/callback
+//   - GOOGLE_CALENDAR_TOKEN_KEY  seals members' Google refresh tokens,
+//                        "<key id>:<base64 of 32 bytes>"
+//
+// Also optional (#4631): GIFs in chat. Unset, GET /v1/gifs/availability says
+// off and both clients hide the GIF picker. Not checked at boot.
+//   - KLIPY_API_KEY      the KLIPY app key (infrastructure/gifs/)
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -150,6 +166,11 @@ export function validateEnv(config: Record<string, unknown>) {
   const devLogProblems = validateDevLogEnv(config);
   if (devLogProblems.length > 0) {
     throw new Error(devLogProblems.join(' '));
+  }
+
+  const googleCalendarProblems = validateGoogleCalendarEnv(config);
+  if (googleCalendarProblems.length > 0) {
+    throw new Error(googleCalendarProblems.join(' '));
   }
 
   const aiProblems = [
