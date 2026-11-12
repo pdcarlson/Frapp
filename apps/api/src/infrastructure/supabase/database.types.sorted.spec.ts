@@ -6,28 +6,34 @@ import * as ts from 'typescript';
  * Keeps `database.types.ts` in alphabetical order (#4558 item 4).
  *
  * Every PR that adds a table or an RPC edits this file, and each one used to
- * append its entry at the end of `Tables` or `Functions` (and its entity at
- * the end of the `#domain/entities` import). Two such PRs then always
- * conflicted on the same line. Sorted, two new entries land in different
- * places and merge cleanly.
+ * append its entry at the end of `Tables` or `Functions` (its entity at the
+ * end of the `#domain/entities` import, and that entity's file at the end of
+ * the `domain/entities/index.ts` barrel). Two such PRs then always conflicted
+ * on the same lines. Sorted, two new entries conflict only when they sort into
+ * the same gap.
  *
  * Order is by plain code-unit comparison (`a < b`), so `_` sorts before
  * letters: `chat_message_actions` comes before `chat_messages`. The failure
  * names where the out-of-place entry belongs, so there is nothing to work out
  * by hand.
  *
- * What is judged: the named imports from `#domain/entities`, and the keys of
+ * What is judged: the named imports from `#domain/entities`, the keys of
  * every group under `Database['public']` written as a type literal (`Tables`,
  * `Views`, `Functions`, `Enums`, `CompositeTypes`; the ones that are
- * `Record<string, never>` today have no keys to order).
+ * `Record<string, never>` today have no keys to order), and the module paths
+ * the entity barrel re-exports.
  */
-const FILE = join(__dirname, 'database.types.ts');
-const source = ts.createSourceFile(
-  FILE,
-  readFileSync(FILE, 'utf8'),
-  ts.ScriptTarget.Latest,
-  true,
-);
+function parse(file: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+}
+
+const source = parse(join(__dirname, 'database.types.ts'));
+const ENTITY_BARREL = join(__dirname, '../../domain/entities/index.ts');
 
 function propertyName(member: ts.TypeElement): string {
   if (!member.name) throw new Error('database.types.ts: unnamed member');
@@ -133,5 +139,17 @@ describe('database.types.ts stays alphabetical', () => {
     const names = bindings.elements.map((e) => e.name.text);
     expect(names.length).toBeGreaterThan(0);
     expect(misplaced(names)).toEqual([]);
+  });
+
+  it('sorts the modules the entity barrel re-exports', () => {
+    const paths = parse(ENTITY_BARREL).statements.flatMap((s) =>
+      ts.isExportDeclaration(s) &&
+      s.moduleSpecifier &&
+      ts.isStringLiteral(s.moduleSpecifier)
+        ? [s.moduleSpecifier.text]
+        : [],
+    );
+    expect(paths.length).toBeGreaterThan(0);
+    expect(misplaced(paths)).toEqual([]);
   });
 });
