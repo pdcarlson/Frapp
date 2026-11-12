@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  AiRun,
   ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
@@ -195,9 +196,39 @@ export interface Database {
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
+      ai_runs: TableDefinition<AiRun>;
     };
     Views: Record<string, never>;
     Functions: {
+      /**
+       * `20261112020000` (#4310) — the run for (chapter, kind, dedupe key),
+       * new or existing; `returns setof ai_runs`.
+       */
+      enqueue_ai_run: {
+        Args: {
+          p_chapter_id: string;
+          p_kind: string;
+          p_dedupe_key: string;
+          p_requested_by: string | null;
+          p_acting_user_id: string | null;
+          p_input_ref: AiRun['input_ref'];
+          p_max_attempts: number;
+        };
+        Returns: AiRun[];
+      };
+      /**
+       * `20261112020000` (#4310) — leases the oldest claimable run, or returns
+       * no row; `returns setof ai_runs`.
+       */
+      claim_ai_run: {
+        Args: {
+          p_worker_id: string;
+          p_now: string;
+          p_lease_seconds: number;
+          p_kinds: string[];
+        };
+        Returns: AiRun[];
+      };
       /**
        * `20260816190000` (C1 of #937). Unread and mention tallies for every
        * channel in a chapter, for one viewer, in one round trip.

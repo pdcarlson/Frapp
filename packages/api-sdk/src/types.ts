@@ -3729,6 +3729,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's AI runs
+         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
+         */
+        get: operations["AiRunController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one AI run
+         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
+         */
+        get: operations["AiRunController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -6911,6 +6951,39 @@ export interface components {
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        AiRunDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The run kind, `snake_case`.
+             * @example minutes_draft
+             */
+            kind: string;
+            /**
+             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
+             * @example Drafting minutes
+             */
+            label: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Tries so far, the one in progress included. */
+            attempt_count: number;
+            max_attempts: number;
+            /** @enum {string|null} */
+            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
+            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
+            failure_message: string | null;
+            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
+            result_ref: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -15856,6 +15929,83 @@ export interface operations {
         requestBody?: never;
         responses: {
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only runs of this kind (`minutes_draft`). */
+                kind?: string;
+                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"][];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"];
+                };
+            };
+            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

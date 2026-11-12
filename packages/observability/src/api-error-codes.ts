@@ -59,6 +59,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
   "chat.since_not_found",
+  // An AI route while `AI_ENABLED` is off on the server (#4310). A client
+  // that still shows an AI entry point meets it in normal use.
+  "ai.not_available",
   "legal.acceptance_required",
   "service_entry.receipt_required",
   // Two officers started minutes for one event at once, or one saved over
