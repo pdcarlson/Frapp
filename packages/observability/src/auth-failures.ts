@@ -59,16 +59,20 @@ const MAX_REMEMBERED_FINGERPRINTS = 200;
 
 /** Every signed-out flow that can fail. */
 export type AuthFailureFlow =
+  /** Email and password. */
   | "password_sign_in"
+  /** Web's sign-up form. Mobile has none: its first sign-in creates the account. */
   | "sign_up"
+  /** Asking for a magic link or email code. */
   | "magic_link_send"
+  /** Resending the sign-up confirmation email. */
   | "confirmation_resend"
-  | "email_link"
-  | "oauth"
-  | "password_reset_request"
-  | "password_update"
-  | "invite_accept"
-  | "session_refresh";
+  /** Starting Google or Apple, in the browser or natively. */
+  | "oauth_start"
+  /** A link or provider return that didn't become a session: web's `/auth/callback`, mobile's deep link. */
+  | "auth_callback"
+  /** A session the API stopped accepting, read back from Auth before signing out. */
+  | "session_check";
 
 /**
  * Codes a member meets in normal use. Each is GoTrue's `error_code`
@@ -114,8 +118,8 @@ export const EXPECTED_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   "refresh_token_already_used",
   "session_not_found",
   "session_expired",
-  // The member cancelled the provider's sheet.
-  "oauth_cancelled",
+  // An account deleted on another device.
+  "user_not_found",
 ]);
 
 export type AuthFailureKind = "refusal" | "server" | "network" | "unknown";

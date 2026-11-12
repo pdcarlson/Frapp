@@ -92,18 +92,18 @@ describe("buildAuthFailureReport", () => {
 
   it("reports a code it does not know as an error, so a misconfigured provider surfaces", () => {
     const r = buildAuthFailureReport({
-      flow: "oauth",
+      flow: "auth_callback",
       screen: "/auth/callback",
       error: authApiError("provider_disabled", 400),
     });
     expect(r!.level).toBe("error");
     expect(r!.tags.auth_expected).toBe("false");
-    expect(r!.fingerprint).toEqual(["signed-out-auth", "oauth", "provider_disabled"]);
+    expect(r!.fingerprint).toEqual(["signed-out-auth", "auth_callback", "provider_disabled"]);
   });
 
   it("reports a callback's own code without an error object", () => {
     const r = buildAuthFailureReport({
-      flow: "email_link",
+      flow: "auth_callback",
       screen: "/auth/callback",
       code: "otp_expired",
     });
@@ -151,21 +151,21 @@ describe("buildAuthFailureReport", () => {
       "sign-in",
     ]) {
       const r = buildAuthFailureReport({
-        flow: "invite_accept",
+        flow: "auth_callback",
         screen,
         code: "access_denied",
       });
       expect(r!.tags.auth_screen, screen).toBe("unknown");
     }
     expect(
-      buildAuthFailureReport({ flow: "oauth", screen: "/(auth)/sign-in", code: "oauth_cancelled" })!
+      buildAuthFailureReport({ flow: "auth_callback", screen: "/(auth)/sign-in", code: "oauth_cancelled" })!
         .tags.auth_screen,
     ).toBe("/(auth)/sign-in");
   });
 
   it("drops a code that is not identifier-shaped", () => {
     const r = buildAuthFailureReport({
-      flow: "email_link",
+      flow: "auth_callback",
       screen: "/auth/callback",
       code: "Email link is invalid or has expired",
     });
@@ -238,7 +238,7 @@ describe("what a report never carries", () => {
 
   it("ignores a code argument that is itself a secret", () => {
     for (const code of [OTP, ACCESS_TOKEN, EMAIL, CALLBACK_URL]) {
-      const report = buildAuthFailureReport({ flow: "email_link", screen: "/auth/callback", code });
+      const report = buildAuthFailureReport({ flow: "auth_callback", screen: "/auth/callback", code });
       expect(serialized(report!)).not.toContain(code);
     }
   });
@@ -280,7 +280,7 @@ describe("createAuthFailureReporter", () => {
       },
     });
     expect(() =>
-      report({ flow: "oauth", screen: "/sign-in", code: "provider_disabled" }),
+      report({ flow: "auth_callback", screen: "/sign-in", code: "provider_disabled" }),
     ).not.toThrow();
   });
 });
