@@ -2,9 +2,9 @@ import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
- * A per-device preference kept in AsyncStorage: chat density
- * (`lib/chat/chat-density.ts`) and the Events tab's view
- * (`lib/events/events-view.ts`).
+ * A per-device preference kept in AsyncStorage, such as chat density or the
+ * Events tab's view. Its callers are whatever calls `createStoredPreference`;
+ * search for that rather than trust a list here, which went stale before.
  *
  * Read once per app process and held in memory after that, so a long list's
  * rows read a module variable rather than storage. Best-effort both ways: a

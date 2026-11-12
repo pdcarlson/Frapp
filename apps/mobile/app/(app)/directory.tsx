@@ -37,6 +37,8 @@ import {
 } from "@/components/floating-create-button";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { useListLayout } from "@/lib/list-layout";
 import { screenTitleStyle } from "@/components/screen-shell";
 import {
   ThemedRefreshControl,
@@ -152,6 +154,7 @@ export default function DirectoryScreen() {
     useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
   const [tab, setTab] = useState<Tab>("actives");
+  const layout = useListLayout("directory");
   const [query, setQuery] = useState("");
   // Keeps typing responsive without a debounce timer of our own: the query only
   // re-runs once React has caught up with the keystrokes.
@@ -270,6 +273,10 @@ export default function DirectoryScreen() {
       }),
     [listData, classNames, inFraternalOrder, pledgeClasses],
   );
+  const gridLines = useMemo(
+    () => (layout === "grid" ? toGridLines(rows) : []),
+    [layout, rows],
+  );
   // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
   // read a `.length` would run a full `localeCompare` sort over both lists on
   // every keystroke. `null` until the query succeeds, so a populated tab never
@@ -293,9 +300,14 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
-      <Text accessibilityRole="header" style={styles.title}>
-        Directory
-      </Text>
+      {/* List or Grid (#4175) at the title row's trailing end: one pick for
+          both tabs and for a search, kept on this phone. */}
+      <View style={styles.titleRow}>
+        <Text accessibilityRole="header" style={styles.title}>
+          Directory
+        </Text>
+        {chapterId ? <ListLayoutToggle screen="directory" /> : null}
+      </View>
 
       <SearchField
         value={query}
@@ -489,9 +501,15 @@ export default function DirectoryScreen() {
         <View style={styles.listFrame}>
           <PinnedBackRow back={BACK_TO_MORE} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
-          <FlatList
-            data={rows}
-            keyExtractor={(row) => row.userId}
+          <FlatList<DirectoryRow | GridLine>
+            // Grid hands the list lines of tiles rather than setting
+            // `numColumns`: a mounted list can't change its column count, and
+            // remounting it would tear down the header under the toggle the
+            // member just pressed (and the search field's focus with it).
+            data={layout === "grid" ? gridLines : rows}
+            keyExtractor={(item) =>
+              isGridLine(item) ? `line:${item.key}` : item.userId
+            }
             ListHeaderComponent={header}
             ListEmptyComponent={
               // The skeleton stands in for the rows themselves, so it takes no
@@ -512,16 +530,28 @@ export default function DirectoryScreen() {
                 <View style={styles.emptyWrap}>{renderBody()}</View>
               )
             }
-            renderItem={({ item }) => (
-              <MemberRow
-                row={item}
-                avatarTint={avatarTintFor(item.userId)}
-                onPress={() => {
-                  setSelected(item);
-                  detailSheetRef.current?.present();
-                }}
-              />
-            )}
+            renderItem={({ item }) => {
+              const open = (row: DirectoryRow) => {
+                setSelected(row);
+                detailSheetRef.current?.present();
+              };
+              if (isGridLine(item)) {
+                return (
+                  <GridLineView
+                    line={item}
+                    avatarTintFor={avatarTintFor}
+                    onOpen={open}
+                  />
+                );
+              }
+              return (
+                <MemberRow
+                  row={item}
+                  avatarTint={avatarTintFor(item.userId)}
+                  onPress={() => open(item)}
+                />
+              );
+            }}
             contentContainerStyle={[
               styles.content,
               // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
@@ -565,6 +595,62 @@ export default function DirectoryScreen() {
   );
 }
 
+/** A row's and a tile's accessible name, one wording for both layouts. */
+export function memberPressLabel(row: DirectoryRow): string {
+  return `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`;
+}
+
+/** One line of the Grid layout (#4175): up to {@link GRID_COLUMNS} members. */
+export interface GridLine {
+  key: string;
+  rows: DirectoryRow[];
+}
+
+export function isGridLine(item: DirectoryRow | GridLine): item is GridLine {
+  return "rows" in item;
+}
+
+export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
+  const lines: GridLine[] = [];
+  for (let i = 0; i < rows.length; i += GRID_COLUMNS) {
+    const chunk = rows.slice(i, i + GRID_COLUMNS);
+    lines.push({ key: chunk[0]!.userId, rows: chunk });
+  }
+  return lines;
+}
+
+/**
+ * A line of tiles. A short last line is padded with empty cells, so its tiles
+ * keep the width of every other tile instead of stretching across the row.
+ */
+export function GridLineView({
+  line,
+  avatarTintFor,
+  onOpen,
+}: {
+  line: GridLine;
+  avatarTintFor: (userId: string) => MemberAvatarTint | null;
+  onOpen: (row: DirectoryRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.gridLine}>
+      {line.rows.map((row) => (
+        <MemberTile
+          key={row.userId}
+          row={row}
+          avatarTint={avatarTintFor(row.userId)}
+          onPress={() => onOpen(row)}
+        />
+      ))}
+      {Array.from({ length: GRID_COLUMNS - line.rows.length }, (_, i) => (
+        <View key={`pad-${i}`} style={styles.gridPad} />
+      ))}
+    </View>
+  );
+}
+
 /**
  * Exported so a spec can assert on a row directly: `vitest.setup.ts` renders
  * `FlatList` as a string stand-in that never invokes `renderItem`.
@@ -591,11 +677,7 @@ export function MemberRow({
       // label has to carry it explicitly rather than relying on the nested
       // `Text` nodes.
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={
-        onPress
-          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
-          : undefined
-      }
+      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -615,6 +697,56 @@ export function MemberRow({
         <Text style={styles.rowName}>{row.displayName}</Text>
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       </View>
+    </Pressable>
+  );
+}
+
+/**
+ * One member in the Grid layout (#4175): the face larger, the name and the
+ * row's meta line under it, centered. It shows everything the row does, so
+ * the grid trades density for faces and loses no fact; the label carries the
+ * same words the row's does.
+ */
+export function MemberTile({
+  row,
+  avatarTint,
+  onPress,
+}: {
+  row: DirectoryRow;
+  avatarTint?: MemberAvatarTint | null;
+  onPress?: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
+
+  return (
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
+      onPress={onPress}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.tile,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
+    >
+      <MemberAvatar
+        uri={row.avatarUrl}
+        initials={row.initials}
+        size={TILE_AVATAR_SIZE}
+        tint={avatarTint}
+        style={styles.tileAvatar}
+        textStyle={styles.tileAvatarText}
+      />
+      <Text style={styles.tileName} numberOfLines={1}>
+        {row.displayName}
+      </Text>
+      {row.meta ? (
+        <Text style={styles.tileMeta} numberOfLines={2}>
+          {row.meta}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -680,6 +812,9 @@ function countMembers(data: unknown): number {
 
 /** The member row's avatar, which its skeleton draws at the same size. */
 const AVATAR_SIZE = 40;
+/** The Grid layout's columns and face size (#4175). */
+const GRID_COLUMNS = 2;
+const TILE_AVATAR_SIZE = 56;
 
 function createStyles(tokens: SignetTokens) {
   const avatarSize = AVATAR_SIZE;
@@ -708,7 +843,8 @@ function createStyles(tokens: SignetTokens) {
     },
     // ScreenShell's own title style: this screen draws its own header only
     // because its body is a FlatList.
-    title: screenTitleStyle(tokens),
+    // Shrinks before the List/Grid toggle beside it does (#4175).
+    title: { ...screenTitleStyle(tokens), flexShrink: 1 },
     row: {
       flexDirection: "row",
       alignItems: "center",
@@ -743,6 +879,56 @@ function createStyles(tokens: SignetTokens) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+    },
+    gridLine: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+    },
+    gridPad: {
+      flex: 1,
+    },
+    // A tile is the row's grid twin: hairline-bordered, on the page surface,
+    // not a card, so the grid reads as the same list laid out wider.
+    tile: {
+      flex: 1,
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.sm,
+      marginBottom: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      borderRadius: tokens.radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+    },
+    tileAvatar: {
+      width: TILE_AVATAR_SIZE,
+      height: TILE_AVATAR_SIZE,
+      borderRadius: avatarRadius(TILE_AVATAR_SIZE),
+      backgroundColor: tokens.color.surface.popover,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: tokens.spacing.xs,
+    },
+    tileAvatarText: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.mutedForeground,
+    },
+    tileName: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+      textAlign: "center",
+    },
+    tileMeta: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
     },
     emptyWrap: {
       paddingTop: tokens.spacing.md,
