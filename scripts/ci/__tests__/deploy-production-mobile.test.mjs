@@ -165,7 +165,7 @@ describe("the mobile_build input", () => {
     }
     const value = (key) => block.find((l) => new RegExp(`^ {8}${key}:`).test(l))?.replace(/^ {8}\w+:\s*/, "");
     assert.equal(value("type"), "choice");
-    assert.equal(value("default"), "none");
+    assert.equal(value("default"), "auto");
     assert.equal(value("required"), "false");
     assert.equal(value("options"), "[none, ios, android, all, auto]");
   });
