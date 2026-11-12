@@ -49,6 +49,8 @@ vi.mock("@/components/ask/ask-panel", () => ({
 }));
 
 const { AskPill } = await import("./ask-pill");
+const { useChapterStore } = await import("@/lib/stores/chapter-store");
+const { useRolePreviewStore } = await import("@/lib/stores/role-preview-store");
 
 async function openAsk() {
   render(<AskPill />);
@@ -130,6 +132,27 @@ describe("AskPill with AI on the server", () => {
       await user.click(pill);
       expect(screen.queryByRole("dialog", { name: "Ask Frapp" })).toBeNull();
     } finally {
+      reset();
+    }
+  });
+
+  // Asking is a POST, which "View as a role" refuses, so the pill (and Do,
+  // inside its panel) stays off for the preview rather than failing (#4504).
+  it("shows no pill while an officer views the chapter as a role", () => {
+    withAi({ ask: true });
+    useChapterStore.setState({ activeChapterId: "chap-1" });
+    useRolePreviewStore.getState().start({
+      chapterId: "chap-1",
+      roleId: "r-1",
+      roleName: "Brothers",
+      permissions: ["ai:use"],
+      returnTo: "/roles/r-1",
+    });
+    try {
+      render(<AskPill />);
+      expect(screen.queryByRole("button", { name: /ask a question/i })).toBeNull();
+    } finally {
+      useRolePreviewStore.getState().stop();
       reset();
     }
   });

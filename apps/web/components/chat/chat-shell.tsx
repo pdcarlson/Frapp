@@ -107,6 +107,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
@@ -2425,10 +2426,14 @@ export function ChatShell({
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
-  // summary may read: never a DM, a group DM or the audit log.
+  // summary may read: never a DM, a group DM or the audit log. Not while an
+  // officer views the chapter as a role: a summary is a POST, which the
+  // preview refuses (#4504).
   const catchUpAvailable = useChatCatchUpAvailable();
+  const previewingRole = useIsRolePreviewActive();
   const canCatchUpHere =
     catchUpAvailable &&
+    !previewingRole &&
     !!activeChannel &&
     activeChannel.type !== "DM" &&
     activeChannel.type !== "GROUP_DM" &&
