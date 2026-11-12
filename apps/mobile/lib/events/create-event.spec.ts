@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  editRepeatDraft,
+  pickRepeatPreset,
+  repeatDraftFromRule,
+} from "@repo/validation";
+import {
   CHECK_IN_OPENS_ERROR,
   defaultEventStart,
   applyEventType,
   emptyEventDraft,
   moreOptionsSummary,
-  repeatCaption,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -60,7 +64,7 @@ describe("validateNewEvent", () => {
         pointsInput: "25",
         attendance: { everyone: "required", roles: {} },
         description: " Bring dues forms. ",
-        recurrenceRule: "WEEKLY",
+        repeat: repeatDraftFromRule("WEEKLY", "America/New_York"),
       }),
       AFTERNOON,
     );
@@ -188,14 +192,15 @@ describe("the More options summary", () => {
           pointsInput: "10",
           checkInOpensInput: "10",
           attendance: { everyone: "required", roles: { a: "optional" } },
-          recurrenceRule: "BIWEEKLY",
+          repeat: repeatDraftFromRule("BIWEEKLY"),
         },
         (id) => (id === "a" ? "Alumni" : undefined),
+        local(10, 20),
       ),
     ).toBe("10 pts · Alumni optional, everyone else required · Every 2 weeks");
-    expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
-      "10 pts · Optional for everyone · Doesn't repeat",
-    );
+    expect(
+      moreOptionsSummary(emptyEventDraft(), () => undefined, local(10, 20)),
+    ).toBe("10 pts · Optional for everyone · Doesn't repeat");
   });
 
   it("says a check-in lead only when it isn't the default", () => {
@@ -203,6 +208,7 @@ describe("the More options summary", () => {
       moreOptionsSummary(
         { ...emptyEventDraft(), checkInOpensInput },
         () => undefined,
+        local(10, 20),
       );
     expect(summary("30")).toBe(
       "10 pts · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
@@ -212,11 +218,45 @@ describe("the More options summary", () => {
     expect(summary("500")).toContain("Check-in time needs a fix");
   });
 
-  it("says how long a series runs", () => {
-    expect(repeatCaption(local(10, 20), "WEEKLY")).toBe(
-      "13 meetings, the last on Feb 2, 2027.",
+  it("says a structured cadence", () => {
+    const weekly = pickRepeatPreset(emptyEventDraft().repeat, "WEEKLY");
+    expect(
+      moreOptionsSummary(
+        { ...emptyEventDraft(), repeat: weekly },
+        () => undefined,
+        new Date("2026-11-11T00:00:00Z"),
+      ),
+    ).toMatch(/· Every \w+day$/);
+  });
+});
+
+describe("Repeat on create", () => {
+  it("sends the structured rule the controls build", () => {
+    const repeat = editRepeatDraft(
+      pickRepeatPreset(repeatDraftFromRule(null, "America/New_York"), "WEEKLY"),
+      { byDay: ["MO", "TH"], countInput: "20" },
     );
-    expect(repeatCaption(local(10, 20), null)).toBeNull();
+    const result = validateNewEvent(
+      draft({ start: local(9, 19), repeat }),
+      AFTERNOON,
+    );
+    expect(result.ok && result.body.recurrence_rule).toBe(
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York",
+    );
+  });
+
+  it("refuses a series it can't make, under Repeat", () => {
+    const repeat = editRepeatDraft(
+      pickRepeatPreset(emptyEventDraft().repeat, "MONTHLY"),
+      { countInput: "500" },
+    );
+    const result = validateNewEvent(
+      draft({ start: local(9, 19), repeat }),
+      AFTERNOON,
+    );
+    expect(result.ok ? null : result.errors.repeat).toBe(
+      "A series holds 2 to 120 meetings.",
+    );
   });
 });
 
@@ -354,7 +394,7 @@ describe("a member who can't edit events", () => {
 
   it("sees no points in the More options summary", () => {
     expect(
-      moreOptionsSummary(emptyEventDraft(), () => undefined, false),
+      moreOptionsSummary(emptyEventDraft(), () => undefined, local(10, 20), false),
     ).not.toMatch(/pts/);
   });
 });

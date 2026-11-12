@@ -217,10 +217,14 @@ describe("New event", () => {
     expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
       "Who's coming: Alumni optional, everyone else required",
     );
-    act(() => chip(tree, "Every week").props.onPress());
-    // Read against the default start, Thursday the 5th at 7 PM.
+    act(() => chip(tree, "Weekly").props.onPress());
+    // Read against the default start, Thursday the 5th at 7 PM, whose
+    // weekday chip is on (#4488).
     expect(screenText(tree)).toContain(
       "13 meetings, the last on Jan 28, 2027.",
+    );
+    expect(byLabel(tree, "Thursday").props.accessibilityState.checked).toBe(
+      true,
     );
 
     // Saturday the 7th at 9:30 PM; the end follows, an hour on.
@@ -247,7 +251,10 @@ describe("New event", () => {
       point_value: 25,
       is_mandatory: true,
       optional_role_ids: ["role-alumni"],
-      recurrence_rule: "WEEKLY",
+      // The weekday follows the start, moved to Saturday.
+      recurrence_rule: expect.stringMatching(
+        /^FREQ=WEEKLY;INTERVAL=1;BYDAY=SA;COUNT=13;TZID=/,
+      ),
     });
     expect(successHaptic).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
@@ -255,6 +262,25 @@ describe("New event", () => {
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
       "More options: 10 pts · Optional for everyone · Doesn't repeat",
     );
+    act(() => tree.unmount());
+  });
+
+  it("makes a twice-a-week series that ends after N meetings (#4488)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    act(() => byLabel(tree, "More options").props.onPress());
+    act(() => chip(tree, "Weekly").props.onPress());
+    // Thursday is on, from the default start; Monday joins it.
+    act(() => byLabel(tree, "Monday").props.onPress());
+    type(tree, "Ends after how many meetings", "1");
+    expect(screenText(tree)).toContain("A series holds 2 to 120 meetings.");
+    type(tree, "Ends after how many meetings", "20");
+    expect(screenText(tree)).not.toContain("A series holds");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
+        .recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=/);
     act(() => tree.unmount());
   });
 

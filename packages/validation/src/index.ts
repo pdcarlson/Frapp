@@ -940,6 +940,32 @@ export type {
   RepeatRule,
   WeekdayCode,
 } from "./recurrence";
+// The Repeat control's state, read and written the same way by the web
+// editor and the phone's New event sheet (#4488).
+export {
+  REPEAT_DEFAULT_COUNT,
+  REPEAT_PRESETS,
+  REPEAT_PRESET_LABELS,
+  editRepeatDraft,
+  monthlyChoices,
+  noRepeatDraft,
+  pickRepeatEnd,
+  pickRepeatPreset,
+  repeatCaption,
+  repeatDays,
+  repeatDraftFromRule,
+  repeatRuleOf,
+  repeatSummary,
+  toggleRepeatDay,
+} from "./repeat-draft";
+export type {
+  MonthlyBy,
+  MonthlyChoice,
+  RepeatDraft,
+  RepeatField,
+  RepeatPreset,
+  RepeatRuleResult,
+} from "./repeat-draft";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export {

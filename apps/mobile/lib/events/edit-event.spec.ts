@@ -1,3 +1,4 @@
+import { editRepeatDraft, pickRepeatPreset } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
   draftFromEvent,
@@ -154,9 +155,39 @@ describe("validateEventEdit", () => {
   });
 
   it("ends a series with a null rule", () => {
-    expect(patchOf(occurrence, (d) => (d.recurrenceRule = null))).toEqual({
-      recurrence_rule: null,
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = pickRepeatPreset(d.repeat, "NONE")),
+      ),
+    ).toEqual({ recurrence_rule: null });
+  });
+
+  it("leaves a legacy rule alone until Repeat is changed", () => {
+    expect(patchOf(occurrence, (d) => (d.name = "Renamed"))).toEqual({
+      name: "Renamed",
     });
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = editRepeatDraft(d.repeat, { countInput: "4" })),
+      ).recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=\w\w;COUNT=4;TZID=/);
+  });
+
+  it("reads a structured series rule back without a change", () => {
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York";
+    const head = {
+      ...single,
+      event: { ...EVENT, recurrence_rule: rule },
+      seriesRule: rule,
+    };
+    expect(
+      isEmptyPatch(
+        patchOf(head, (d) => (d.repeat = editRepeatDraft(d.repeat, {}))),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -290,8 +321,8 @@ describe("isInSeries", () => {
         "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=8;TZID=America/New_York",
     };
     expect(isInSeries(structured)).toBe(true);
-    // The form shows legacy tokens only until the Repeat control reads more.
-    expect(seriesRuleOf(structured, null)).toBeNull();
+    // The Repeat control reads it (#4488).
+    expect(seriesRuleOf(structured, null)).toBe(structured.recurrence_rule);
     expect(isInSeries({ ...EVENT, recurrence_rule: null })).toBe(false);
   });
 });

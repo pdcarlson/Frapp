@@ -29,13 +29,10 @@ import {
   useUpdateEvent,
 } from "@repo/hooks";
 import {
-  RECURRENCE_REPEAT_LABELS,
-  RECURRENCE_RULES,
   canAll,
   EVENT_CREATE_PERMISSIONS,
   describeAttendance,
   eventLimitsAudience,
-  isRecurrenceRule,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -58,6 +55,7 @@ import { FilterChips } from "@/components/filter-chips";
 import { MoreOptionsRow } from "@/components/more-options-row";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
+import { RepeatOptions } from "@/components/events/repeat-options";
 import { roleOptionsFrom } from "@/lib/events/attendance-roles";
 import {
   EVENT_NAME_MAX_LENGTH,
@@ -65,7 +63,6 @@ import {
   emptyEventDraft,
   MINUTE_INTERVAL,
   moreOptionsSummary,
-  repeatCaption,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -80,6 +77,7 @@ import {
   isEmptyPatch,
   leavesAfterSave,
   offersSeriesChoice,
+  repeatAnchor,
   saveRequestFor,
   saveScopeFor,
   validateEventEdit,
@@ -364,7 +362,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
         if (
           result.errors.points ||
           result.errors.checkInOpens ||
-          result.errors.attendance
+          result.errors.attendance ||
+          result.errors.repeat
         ) {
           setDraft((previous) => ({ ...previous, showMore: true }));
         }
@@ -504,7 +503,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
         if (
           result.errors.points ||
           result.errors.checkInOpens ||
-          result.errors.attendance
+          result.errors.attendance ||
+          result.errors.repeat
         ) {
           setDraft((previous) => ({ ...previous, showMore: true }));
         }
@@ -573,10 +573,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
     // An existing series' length was set when it was made; the line comes
     // back only when the officer changes Repeat and the series is rebuilt.
-    const repeatNote =
-      editing && draft.recurrenceRule === editing.seriesRule
-        ? null
-        : repeatCaption(start, draft.recurrenceRule);
+    const repeatStart = editing ? repeatAnchor(editing, start) : start;
+    const showRepeatLength = !(editing && draft.repeat.pristine);
     const repeatUnknown =
       !!editing?.event.parent_event_id && editing.parent === null;
 
@@ -699,7 +697,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
             <MoreOptionsRow
               open={draft.showMore}
-              summary={moreOptionsSummary(draft, roleName, setsRequirements)}
+              summary={moreOptionsSummary(
+                draft,
+                roleName,
+                repeatStart,
+                setsRequirements,
+              )}
               onToggle={() => {
                 Keyboard.dismiss();
                 update({ showMore: !draft.showMore }, []);
@@ -801,27 +804,14 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 {/* A generated occurrence whose series couldn't be read
                     doesn't know its rule, so it doesn't offer to change it. */}
                 {repeatUnknown ? null : (
-                  <>
-                    <Text style={styles.sectionLabel}>Repeat</Text>
-                    <FilterChips
-                      chips={REPEAT_CHIPS}
-                      selected={draft.recurrenceRule ?? NEVER}
-                      onSelect={(value) =>
-                        update(
-                          {
-                            recurrenceRule: isRecurrenceRule(value)
-                              ? value
-                              : null,
-                          },
-                          [],
-                        )
-                      }
-                      accessibilityLabel="Repeat"
-                    />
-                    {repeatNote ? (
-                      <Text style={styles.caption}>{repeatNote}</Text>
-                    ) : null}
-                  </>
+                  <RepeatOptions
+                    draft={draft.repeat}
+                    start={repeatStart}
+                    onChange={(repeat) => update({ repeat }, ["repeat"])}
+                    disabled={pending}
+                    error={errors.repeat}
+                    showCaption={showRepeatLength}
+                  />
                 )}
 
                 <View
@@ -910,16 +900,6 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     );
   },
 );
-
-/** The Repeat chips: one-time first, then the rules the API generates. */
-const NEVER = "never";
-const REPEAT_CHIPS = [
-  { value: NEVER, label: "Never" },
-  ...RECURRENCE_RULES.map((rule) => ({
-    value: rule,
-    label: RECURRENCE_REPEAT_LABELS[rule],
-  })),
-];
 
 /**
  * One row of the When group: its label, then the day and the time. On iOS
@@ -1132,15 +1112,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       textAlign: "center",
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
-    },
-    sectionLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-      marginTop: tokens.spacing.xs,
-    },
-    caption: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
