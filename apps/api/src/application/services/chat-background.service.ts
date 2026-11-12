@@ -18,6 +18,10 @@ import {
 } from '@repo/validation';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
+  canAccessChannel,
+  EMPTY_ACCESS_HOLDER,
+} from '#domain/utils/channel-access';
+import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
@@ -212,7 +216,7 @@ export class ChatBackgroundService {
       const channel = await this.announcementChannel(chapterId);
       if (!channel) {
         throw new BadRequestException(
-          'The chapter needs a default or #general channel to announce a photo background in',
+          'A photo background is announced in a channel every member can post in. Mark one as the default channel first.',
         );
       }
       await this.channelAccess.assertChannelAccess(
@@ -377,7 +381,18 @@ export class ChatBackgroundService {
     }
   }
 
-  /** Where a chapter-default photo is announced: the default channel, else #general. */
+  /**
+   * Where a chapter-default photo is announced: the default channel, else
+   * #general, else the oldest channel any member may post in.
+   *
+   * The last step exists because a chapter brought over from Discord often has
+   * neither: its channels keep their Discord names and none is marked default,
+   * so Paul's own chapter refused every default photo (FRAPP-WEB-9,
+   * 2026-11-11). "Any member" is `canAccessChannel` for a member holding no
+   * role at all, so the channel is one every member reads, which is what the
+   * line needs: it is how members report the photo. `findByChapter` returns
+   * channels oldest first, so the pick is stable from one set to the next.
+   */
   private async announcementChannel(
     chapterId: string,
   ): Promise<ChatChannel | null> {
@@ -387,6 +402,15 @@ export class ChatBackgroundService {
     return (
       channels.find((c) => c.is_default) ??
       channels.find((c) => c.name === 'general') ??
+      channels.find((c) =>
+        canAccessChannel({
+          channel: c,
+          userId: '',
+          isChapterMember: true,
+          holder: EMPTY_ACCESS_HOLDER,
+          operation: 'post',
+        }),
+      ) ??
       null
     );
   }
