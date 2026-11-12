@@ -62,7 +62,7 @@ export class CreateEventDto {
   @ApiPropertyOptional({
     default: 10,
     description:
-      'Points for attending. On create, kept only when the caller holds `events:update`; anyone else\'s event is stored with 0, whatever is sent (#3709).',
+      "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709).",
   })
   @IsOptional()
   @IsInt()

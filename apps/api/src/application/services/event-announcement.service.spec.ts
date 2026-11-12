@@ -78,7 +78,6 @@ describe('EventAnnouncementService', () => {
       });
 
       await service.create({
-        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -109,7 +108,6 @@ describe('EventAnnouncementService', () => {
       mockRbacService.getAlumniRoleId.mockResolvedValue('role-alumni');
 
       await service.create({
-        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -168,7 +166,6 @@ describe('EventAnnouncementService', () => {
       mockNotificationService.timeZoneFor.mockResolvedValue('America/Chicago');
 
       await service.create({
-        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -191,7 +188,6 @@ describe('EventAnnouncementService', () => {
       });
 
       await service.create({
-        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -510,7 +506,6 @@ describe('EventAnnouncementService', () => {
         mockEventRepo.create.mockResolvedValue(baseEvent);
 
         const result = await service.create({
-          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -547,7 +542,6 @@ describe('EventAnnouncementService', () => {
       ])('refuses a role-targeted event with %s', async (_label, chatKeys) => {
         await expect(
           service.create({
-            created_by: OFFICER,
             chapter_id: 'ch-1',
             name: 'Exec Review',
             start_time: baseEvent.start_time,
@@ -572,7 +566,6 @@ describe('EventAnnouncementService', () => {
         ]);
 
         await service.create({
-          created_by: OFFICER,
           ...chatInput,
           required_role_ids: ['role-officer'],
           others_invited: true,

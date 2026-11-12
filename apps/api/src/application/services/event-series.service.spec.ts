@@ -245,7 +245,6 @@ describe('EventSeriesService', () => {
       mockEventRepo.create.mockResolvedValue(weekly);
 
       await service.create({
-        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
