@@ -1,4 +1,8 @@
-import { localIsoDate } from "@repo/formatting";
+import {
+  CURRENCY_AMOUNT,
+  localIsoDate,
+  neutralizeFormulaCell,
+} from "@repo/formatting";
 import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { type ClassValue, clsx } from "clsx";
@@ -138,30 +142,6 @@ export function quoteCsvCell(value: string): string {
   }
   return value;
 }
-
-/**
- * A cell that a spreadsheet would run as a formula, made inert.
- *
- * Excel, Google Sheets and LibreOffice evaluate a text cell that starts with
- * `=`, `+`, `-` or `@` (and Excel also one that starts with a tab or carriage
- * return, which it strips first), so a member-typed description of
- * `=HYPERLINK(...)` in an export would run on the officer's machine (CSV
- * injection, OWASP). A leading apostrophe makes the app read the cell as text.
- *
- * A plain number or a currency amount is left alone: `-5` and `-$12.00` are
- * values, not formulas, and prefixing them would turn every negative points
- * adjustment into text. Applies to CSV and to the tab-separated clipboard
- * copy; an `.xlsx` string cell is typed as text in the file and needs no
- * prefix.
- */
-export function neutralizeFormulaCell(value: string): string {
-  if (!/^[=+\-@\t\r]/.test(value)) return value;
-  if (PLAIN_NUMBER.test(value) || CURRENCY_AMOUNT.test(value)) return value;
-  return `'${value}`;
-}
-
-const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
-const CURRENCY_AMOUNT = /^-?\$\d{1,3}(,?\d{3})*(\.\d+)?$/;
 
 /** Column order for an export: every row's own keys, in first-seen order. */
 function exportHeaders(rows: Record<string, string>[]): string[] {

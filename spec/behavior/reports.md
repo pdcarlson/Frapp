@@ -87,6 +87,13 @@ writer loads only when Excel is picked. One menu component
 (`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
 exports.
 
+The API's own `format=csv` applies the same rule (#3976), from the same
+function: `neutralizeFormulaCell` lives in `@repo/formatting`
+(`packages/formatting/src/spreadsheet-cell.ts`), and both the dashboard's
+helpers and the API's `toCSV` (`apps/api/src/domain/utils/csv.ts`) call it. In
+the API a text cell (a name, a description, a role list) gets the apostrophe; a
+numeric field such as points or minutes is written as a number and never does.
+
 ### Retention
 
 **Generated PDFs are deleted about 24 hours after they are written.** The signed
@@ -174,7 +181,7 @@ When a report is cut short, every format says so:
 | Format | Signal                                                                                                                                                                                |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers, plus `X-Report-Truncation-Note` when the row count alone does not explain the cut. The body stays a bare array. |
-| `csv`  | The same headers. The CSV body is unchanged, so parsers are unaffected.                                                                                                               |
+| `csv`  | The same headers. Truncation leaves the CSV body unchanged, so parsers are unaffected. (A formula-shaped text cell does carry a leading apostrophe, truncated or not: [§ Export Flow](#export-flow).) |
 | `pdf`  | `truncated: true`, `row_limit`, and `truncation_note` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                       |
 
 The note header is flattened to plain ASCII — Node rejects a header value

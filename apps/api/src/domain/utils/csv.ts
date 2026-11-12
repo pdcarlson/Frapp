@@ -1,6 +1,11 @@
+import { neutralizeFormulaCell } from '@repo/formatting';
+
 /**
  * Converts an array of objects to a CSV string per RFC 4180.
- * Properly escapes values containing commas, quotes, or newlines.
+ * Properly escapes values containing commas, quotes, or newlines, and makes a
+ * text cell a spreadsheet would run as a formula inert with the same rule as
+ * the dashboard's export (`neutralizeFormulaCell`, CSV injection, #3976). A
+ * number, boolean or bigint is written as is: it is a value, never a formula.
  */
 export function toCSV<T extends Record<string, any>>(
   rows: T[],
@@ -34,11 +39,14 @@ export function toCSV<T extends Record<string, any>>(
     }
     let str: string;
     if (typeof value === 'object') {
-      str = Array.isArray(value)
-        ? value.map(stringifyArrayItem).join(', ')
-        : JSON.stringify(value);
+      str = neutralizeFormulaCell(
+        Array.isArray(value)
+          ? value.map(stringifyArrayItem).join(', ')
+          : JSON.stringify(value),
+      );
+    } else if (typeof value === 'string') {
+      str = neutralizeFormulaCell(value);
     } else if (
-      typeof value === 'string' ||
       typeof value === 'number' ||
       typeof value === 'boolean' ||
       typeof value === 'bigint'
