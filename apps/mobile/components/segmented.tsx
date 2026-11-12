@@ -10,7 +10,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * menu would hide the current answer behind a press.
  *
  * The held segment carries the chapter accent as a tint, so its state reads at
- * a glance and the control never changes size between states (P4).
+ * a glance and the control never changes size between states (P4). `quiet`
+ * holds it in neutral ink instead, for a row whose answer only follows a
+ * default set elsewhere (Who's coming's roles that follow "Everyone else"),
+ * so the rows that were set apart are the ones lit.
  */
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -23,12 +26,14 @@ export function Segmented<T extends string>({
   onChange,
   accessibilityLabel,
   disabled = false,
+  quiet = false,
 }: {
   options: readonly SegmentedOption<T>[];
   value: T;
   onChange: (next: T) => void;
   accessibilityLabel: string;
   disabled?: boolean;
+  quiet?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -55,13 +60,22 @@ export function Segmented<T extends string>({
             style={[
               styles.segment,
               held
-                ? { backgroundColor: tint(accent, 0.18), borderColor: accent }
+                ? quiet
+                  ? styles.quietHeld
+                  : { backgroundColor: tint(accent, 0.18), borderColor: accent }
                 : null,
             ]}
           >
             <Text
               numberOfLines={1}
-              style={[styles.label, held ? { color: accent } : null]}
+              style={[
+                styles.label,
+                held
+                  ? quiet
+                    ? styles.quietHeldLabel
+                    : { color: accent }
+                  : null,
+              ]}
             >
               {option.label}
             </Text>
@@ -96,6 +110,13 @@ function createStyles(tokens: SignetTokens) {
     label: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    quietHeld: {
+      backgroundColor: tokens.color.surface.card,
+      borderColor: tokens.color.border.input,
+    },
+    quietHeldLabel: {
+      color: tokens.color.text.foreground,
     },
   });
 }

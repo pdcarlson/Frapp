@@ -775,10 +775,7 @@ export {
   YEAR_MAX,
 } from "./field-limits";
 
-export {
-  ORDER_NUMBER_INVALID_MESSAGE,
-  parseOrderNumber,
-} from "./order-number";
+export { ORDER_NUMBER_INVALID_MESSAGE, parseOrderNumber } from "./order-number";
 
 export {
   PROFILE_ALUMNI_SECTION,
@@ -914,9 +911,8 @@ export {
   eventLimitsAudience,
   eventRequiresAnyone,
   eventSetsRolesApart,
-  roleChoicesFor,
-  rolesToAdd,
-  statusForAddedRole,
+  attendanceOfRole,
+  attendanceRows,
   withEveryone,
   withRole,
 } from "./event-attendance";

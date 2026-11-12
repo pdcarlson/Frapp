@@ -3,6 +3,8 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
+  attendanceOfRole,
+  attendanceRows,
   describeAttendance,
   eventAttendanceFor,
   eventLimitsAudience,
@@ -131,34 +133,89 @@ describe("describeAttendance", () => {
     );
   });
 
-  it("names up to two roles that differ", () => {
+  it("names the roles set apart, then the default", () => {
     expect(
       describeAttendance(
         { everyone: "required", roles: { new: "not_invited" } },
         name,
       ),
-    ).toBe("Required for everyone, not invited for New Members");
+    ).toBe("New Members not invited, everyone else required");
   });
 
-  it("counts more than two", () => {
+  it("groups by answer, required first, and shortens past two", () => {
     expect(
       describeAttendance(
         {
           everyone: "optional",
-          roles: { a: "required", b: "required", c: "required" },
+          roles: {
+            c: "required",
+            a: "required",
+            b: "required",
+            new: "not_invited",
+          },
         },
         name,
       ),
-    ).toBe("Optional for everyone, 3 roles differ");
+    ).toBe("A, B +1 required, New Members not invited, everyone else optional");
   });
 
-  it("names an invite-only audience", () => {
+  it("says nobody else is invited for an invite-only audience", () => {
     expect(
       describeAttendance(
-        { everyone: "not_invited", roles: { exec: "required" } },
+        {
+          everyone: "not_invited",
+          roles: { exec: "required", new: "optional" },
+        },
         name,
       ),
-    ).toBe("Executive Board only, required");
+    ).toBe(
+      "Executive Board required, New Members optional, nobody else invited",
+    );
+  });
+
+  it("says nobody is invited yet when nothing is", () => {
+    expect(
+      describeAttendance({ everyone: "not_invited", roles: {} }, name),
+    ).toBe("Nobody invited yet");
+  });
+});
+
+describe("attendanceRows", () => {
+  const roles = [
+    { id: "b", name: "Brothers" },
+    { id: "a", name: "Alumni" },
+    { id: "o", name: "Officers" },
+    { id: "n", name: "New Members" },
+  ];
+
+  it("puts the roles set apart first, then the rest, each by name", () => {
+    expect(
+      attendanceRows(roles, ["o", "a"], "", "Removed role").map((r) => r.id),
+    ).toEqual(["a", "o", "b", "n"]);
+  });
+
+  it("keeps a row for a role deleted since, so it can be reset", () => {
+    expect(attendanceRows(roles, ["gone"], "", "Removed role")[0]).toEqual({
+      id: "gone",
+      name: "Removed role",
+    });
+  });
+
+  it("matches every typed word", () => {
+    expect(
+      attendanceRows(roles, [], "new mem", "Removed role").map((r) => r.id),
+    ).toEqual(["n"]);
+  });
+});
+
+describe("attendanceOfRole", () => {
+  it("reads a role's own answer, else the default", () => {
+    const draft = {
+      everyone: "optional" as const,
+      roles: { o: "required" as const },
+    };
+    expect(attendanceOfRole(draft, "o")).toBe("required");
+    expect(attendanceOfRole(draft, "b")).toBe("optional");
   });
 });
 

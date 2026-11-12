@@ -272,10 +272,19 @@ export function TallSheetHeader({
   title,
   onClose,
   actions,
+  doneAccent,
 }: {
   title?: string;
   onClose: () => void;
   actions?: ReactNode;
+  /**
+   * When set, closes with a "Done" word in this accent instead of the X, for a tall
+   * sheet stacked over a form to set one of its fields (Who's coming over New
+   * event): closing it returns to the form with the field filled in, so it
+   * reads as finishing a step, not leaving (`components.md` § Surface size,
+   * owner 2026-11-07, #3706).
+   */
+  doneAccent?: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -288,7 +297,17 @@ export function TallSheetHeader({
       ) : null}
       <View style={styles.headerActions}>
         {actions}
-        <SheetCloseButton onPress={onClose} />
+        {doneAccent ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClose}
+            hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+          >
+            <Text style={[styles.done, { color: doneAccent }]}>Done</Text>
+          </Pressable>
+        ) : (
+          <SheetCloseButton onPress={onClose} />
+        )}
       </View>
     </View>
   );
@@ -541,6 +560,9 @@ function createStyles(tokens: SignetTokens) {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    done: {
+      ...typeRole(tokens.typography.role.label),
     },
     cancel: {
       ...typeRole(tokens.typography.role.label),

@@ -215,9 +215,12 @@ export function emptyAttendanceDraft(): EventAttendanceDraft {
 }
 
 /**
- * One line for a collapsed editor row or an event's detail: "Optional for
- * everyone", "Required for everyone, 2 roles differ", "Officers only".
- * `roleName` resolves an id; an unknown id reads as "a role".
+ * One line for the form's Who's coming row, the picker's summary and an
+ * event's detail, naming the roles set apart first and the default last:
+ * "Optional for everyone", "Officers required, everyone else optional",
+ * "Brothers required, New Members optional, nobody else invited". More than
+ * two roles in one answer read "A, B +3". `roleName` resolves an id; an
+ * unknown id reads as "a role".
  */
 export function describeAttendance(
   draft: EventAttendanceDraft,
@@ -230,70 +233,68 @@ export function describeAttendance(
     if (draft.everyone === "not_invited") return "Nobody invited yet";
     return `${EVENT_ATTENDANCE_LABELS[draft.everyone]} for everyone`;
   }
-  const names = (status: EventAttendanceStatus) =>
-    entries
-      .filter(([, s]) => s === status)
-      .map(([id]) => roleName(id) ?? "a role");
   const list = (items: string[]) =>
     items.length <= 2
       ? items.join(" and ")
       : `${items.slice(0, 2).join(", ")} +${items.length - 2}`;
-
-  if (draft.everyone === "not_invited") {
-    const required = names("required");
-    const optional = names("optional");
-    if (optional.length === 0) return `${list(required)} only, required`;
-    if (required.length === 0) return `${list(optional)} only, optional`;
-    return `Required for ${list(required)}, optional for ${list(optional)}`;
+  const parts: string[] = [];
+  for (const status of EVENT_ATTENDANCE_STATUSES) {
+    const names = entries
+      .filter(([, s]) => s === status)
+      .map(([id]) => roleName(id) ?? "a role")
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    if (names.length > 0) {
+      parts.push(
+        `${list(names)} ${EVENT_ATTENDANCE_LABELS[status].toLowerCase()}`,
+      );
+    }
   }
-  const differ =
-    entries.length === 1 ? "1 role differs" : `${entries.length} roles differ`;
-  if (entries.length <= 2) {
-    const parts = entries.map(
-      ([id, status]) =>
-        `${EVENT_ATTENDANCE_LABELS[status].toLowerCase()} for ${roleName(id) ?? "a role"}`,
-    );
-    return `${EVENT_ATTENDANCE_LABELS[draft.everyone]} for everyone, ${parts.join(", ")}`;
-  }
-  return `${EVENT_ATTENDANCE_LABELS[draft.everyone]} for everyone, ${differ}`;
+  parts.push(
+    draft.everyone === "not_invited"
+      ? "nobody else invited"
+      : `everyone else ${EVENT_ATTENDANCE_LABELS[draft.everyone].toLowerCase()}`,
+  );
+  return parts.join(", ");
 }
 
 // The editors' moves, shared so web and mobile set a rule the same way.
 
-/** Roles to offer for adding: not already set, matching every typed word. */
-export function rolesToAdd<T extends { id: string; name: string }>(
-  options: readonly T[],
+/** A role's answer under a draft: its own when set apart, else the default. */
+export function attendanceOfRole(
   draft: EventAttendanceDraft,
-  query: string,
-): T[] {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return options.filter(
-    (role) =>
-      !(role.id in draft.roles) &&
-      words.every((word) => role.name.toLowerCase().includes(word)),
-  );
+  roleId: string,
+): EventAttendanceStatus {
+  return draft.roles[roleId] ?? draft.everyone;
 }
 
 /**
- * What a role is set to when it is added: the first answer that differs from
- * the default, in the order an officer most often wants it. Optional for
- * everyone, so a role added is usually the one that must come; required for
- * everyone, so a role added is usually the one excused (alumni, new members);
- * nobody else invited, so a role added is one that must come.
+ * The picker's rows, one per role: the roles set apart when it opened
+ * (`pinned`) first, then the rest, each part by name, matching every typed
+ * word of `query`. The order is taken once per visit, so a row never jumps
+ * while the officer sets it. An id in `pinned` that no longer names a role (a
+ * role deleted since) keeps a row, named by `missingName`, so it can be reset.
  */
-export function statusForAddedRole(
-  everyone: EventAttendanceStatus,
-): EventAttendanceStatus {
-  return everyone === "required" ? "optional" : "required";
-}
-
-/** The two answers a role row offers: every status except the default. */
-export function roleChoicesFor(
-  everyone: EventAttendanceStatus,
-): EventAttendanceStatus[] {
-  return (["required", "optional", "not_invited"] as const).filter(
-    (status) => status !== everyone,
-  );
+export function attendanceRows<T extends { id: string; name: string }>(
+  options: readonly T[],
+  pinned: readonly string[],
+  query: string,
+  missingName: string,
+): { id: string; name: string }[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (name: string) =>
+    words.every((word) => name.toLowerCase().includes(word));
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const known = new Map(options.map((role) => [role.id, role]));
+  const pinnedSet = new Set(pinned);
+  const top = pinned
+    .map((id) => ({ id, name: known.get(id)?.name ?? missingName }))
+    .sort(byName);
+  const rest = options
+    .filter((role) => !pinnedSet.has(role.id))
+    .map((role) => ({ id: role.id, name: role.name }))
+    .sort(byName);
+  return [...top, ...rest].filter((row) => matches(row.name));
 }
 
 /**
