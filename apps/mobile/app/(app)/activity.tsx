@@ -9,6 +9,7 @@ import {
   activityGroups,
   activitySummary,
   useActivity,
+  useActivityStanding,
   useActivityUnread,
   useNowDate,
   useCurrentChapter,
@@ -40,6 +41,11 @@ import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
+import {
+  ActivityStanding,
+  ActivityStandingSkeleton,
+  type StandingDestination,
+} from "@/components/activity/activity-standing";
 import {
   ActivitySummary,
   ActivitySummarySkeleton,
@@ -101,7 +107,7 @@ export default function ActivityScreen() {
   const faceFor = useActivityFaces();
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
-  const reread = useActivityReread();
+  const reread = useActivityReread({ standing: true });
   // The chip picked on this visit wins; until then, the one the member
   // last left the screen on, on this phone (#4402).
   const stored = useStoredActivityFilter();
@@ -130,7 +136,20 @@ export default function ActivityScreen() {
     [moduleOn],
   );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  const refresh = useRefetchAll([activity]);
+  // How the member is doing this semester, above what needs them. Its own
+  // read: a failure leaves the rest of the page as it is. `useActivityReread`
+  // reads it again with the list, on each return and after an action here.
+  const standing = useActivityStanding();
+  const router = useRouter();
+  const openStanding = (destination: StandingDestination) => {
+    // Tasks and Events are tabs: go to them rather than stack a second copy.
+    if (destination === "/tasks" || destination === "/events") {
+      router.navigate(destination);
+    } else {
+      router.push(destination);
+    }
+  };
+  const refresh = useRefetchAll([activity, standing]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
@@ -199,6 +218,7 @@ export default function ActivityScreen() {
       return (
         <SkeletonRegion label="Loading activity">
           <View style={styles.body}>
+            <ActivityStandingSkeleton />
             <ActivitySummarySkeleton />
             <View>
               <SectionHeader>Needs you</SectionHeader>
@@ -228,6 +248,11 @@ export default function ActivityScreen() {
     }
     return (
       <View style={styles.body}>
+        {standing.isPending ? (
+          <ActivityStandingSkeleton />
+        ) : standing.data ? (
+          <ActivityStanding standing={standing.data} onOpen={openStanding} />
+        ) : null}
         {summary ? (
           <ActivitySummary
             summary={summary}

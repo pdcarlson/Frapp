@@ -37,13 +37,19 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
   async findByUserAndChapter(
     userId: string,
     chapterId: string,
+    options: { startedSince?: Date } = {},
   ): Promise<StudySession[]> {
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('study_sessions')
       .select('*')
       .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .order('start_time', { ascending: false });
+      .eq('chapter_id', chapterId);
+    if (options.startedSince) {
+      query = query.gte('start_time', options.startedSince.toISOString());
+    }
+    const { data, error } = await query.order('start_time', {
+      ascending: false,
+    });
     if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
