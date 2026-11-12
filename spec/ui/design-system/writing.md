@@ -211,6 +211,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
 | Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |
+| Member sheet: Remove from chapter (web and mobile s13, from the `⋯`) | `Remove <name> from the chapter?` | `They lose chat, events and the member list right away, and can come back only with a new invite.` Buttons `Cancel` and `Remove from chapter`. The `⋯` row reads `Remove from chapter`; the button is named `More for <name>`. A refusal says `Couldn't remove <name>` (mobile alert) or `Could not remove member` (web toast) with the API's reason. Held once in `@repo/hooks/member-removal-copy` for both apps |
 
 The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07). The split the paragraphs below argue for still holds; only the card went.
 
@@ -239,6 +240,15 @@ The composer is shared by the Members panel and the web setup wizard's last step
 | Link row | `Or share a link` over `Paste it in a group chat. Each link lets one person join, for 24 hours.`; the button reads `Copy link`, then `Copied` for two seconds |
 | List | Section `Invited`; a row is the address or `Invite link`, then `<role> · Sent today at 4:46 PM`, then `Pending`, `Joined` or `Expired`. Empty: `Nobody yet. People you invite show up here until they join.` |
 | Row menu | `Copy link`, `Send again`, `Revoke invite`; revoked toast `Invite revoked` / `<address> can't join with it now.` |
+
+### Get the app (dashboard, phones)
+
+The strip under the top bar on a phone ([`web-dashboard/README.md` § Get the app (phones)](../web-dashboard/README.md#get-the-app-phones), #4002). Store-facing wording: Paul approves it.
+
+| State | Title | Description |
+|---|---|---|
+| Shown | `Frapp works best in the app` | `Chat, events and check-in on your phone, with notifications. The app is in beta, so if the store says it isn't available yet, keep using Frapp here.` Then `Get the app` and `Open the app`. |
+| Close button | — | Labelled `Dismiss the Get the app suggestion` for a screen reader. |
 
 ### Events (dashboard)
 
@@ -578,7 +588,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
-| Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| Read-only channel | — | `This channel is read-only for your role.` (both clients; mobile quoted the permission key until #3722) |
 | Audit log channel (`#chapter-audit`, in place of the composer; both clients, #3909) | — | `Only Frapp posts here: it's the chapter's audit log.` In Chat settings (web) the read-only switch gives way to `Only Frapp posts here: it's the chapter's audit log. It stays read-only and keeps its name.` |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
@@ -904,7 +914,7 @@ names a control only one client has lives with that client, under `apps/mobile/`
 | Actions sheet rows | — | `Reply`, `Edit message`, `Copy text` (`Copied`), `Mention`, `Report message`, `Delete message`: bare labels, no line explaining a row (owner, 2026-11-07). The add-reaction cell is named `Add a reaction`; the picker's field reads `Search emoji` | mobile `components/chat/message-actions-sheet.tsx`, `emoji-picker-sheet.tsx` |
 | Action bar More menu (web) | — | `More actions` (the button's name) · `Report message`; `Block <name>` (destructive) | web `components/chat/message-item.tsx`; the Block label is `block-copy` (`blockActionLabel`) on every surface |
 | Report form | `Report message` | `Why are you reporting it?` · the reasons · `Details (optional)` · `Send report`. Mobile's field placeholder reads `Add details (optional)` | `report-copy` (`REPORT_FORM_TITLE`, `REPORT_FORM_PROMPT`, `REPORT_SEND_LABEL`, `REPORT_REASON_LABELS`); the details field's label is each client's own |
-| Block / Unblock rows (the report form, Report sent, and the directory's member sheet) | — | `Block <name>`; `Unblock <name>` (directory only). No line under either: what a block does is said in its confirmation (2026-11-07) | `block-copy` (`blockActionLabel`, `blockConfirmBody`) |
+| Block / Unblock rows (the report form, Report sent, and the member sheet's `⋯` menu) | — | `Block <name>`; `Unblock <name>` (member sheet only). No line under either: what a block does is said in its confirmation (2026-11-07) | `block-copy` (`blockActionLabel`, `blockConfirmBody`) |
 | Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` · then `Block <name>` where the sender can be blocked, and `Done` | `report-copy` (`REPORT_SENT_TITLE`, `REPORT_SENT_BODY`) |
 | Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `report-copy` (`REPORT_ALREADY_TITLE`, `REPORT_ALREADY_BODY`) |
 | Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | `report-copy` (`reportFailureBody`) |
@@ -1128,6 +1138,8 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Signed in (web) | — | `Signed in as <email>` · `Sign out` above the title (`Signed in` when the account has no email), on `/join` once the session is known and on every step of the web setup wizard (#3776): an account with no chapter otherwise has no way to sign out. Mobile says the same on its face (Signed in (mobile), below). |
 | Invite for this account (web, #3776) | `You've been invited to <chapter>` | The school, `from <inviter>` and the role, joined by ` · `, then a primary `Join`. One card per invite emailed to the account's verified address, above the field; the field's `Join chapter` turns secondary while any card shows. Not shown when the page was opened with an invite link. Mobile s02 offers the same invites on its question (below). |
 | Already a member (web, #3850) | `You're already in <chapter>` | `Have an invite to another chapter? Use it below.` beside `Open chat` (to `/chat`), above the field. Shown when the account has a chapter, except to a member `/no-access` would send back (no role in their only chapter, `isLockedOutOfChapter`), since `/chat` would return them there. `Open chat` is the primary unless an emailed-invite card shows; either way the field's `Join chapter` turns secondary. |
+| Invite link on a phone (web, #4002) | `Join in the Frapp app` | `Your invite opens in the app, so you sign in once and land in your chapter.` Then a primary `Open in the app`, a secondary `Get Frapp on the App Store` (iPhone) or `Get Frapp on Google Play` (Android), the hint below, and `Continue in the browser` in the footer, which goes on to the rows above. Shown on a phone when the page was opened with an invite, signed in or not, until the visitor continues in the browser. Store-facing wording: Paul approves it. |
+| Invite link on a phone, hint | — | `Just installed it? Come back to this page and tap Open in the app. The app is in beta, so if the store says Frapp isn't available yet, continue in the browser.` |
 | Create a chapter (secondary) | — | `Starting a chapter?` + `Create a chapter` (returns to `/chat`, which remounts the first-officer wizard). |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |

@@ -9,7 +9,7 @@ Slash commands turn chat into the dispatcher for the ops modules that have a mes
 | Command | Implemented | Required module | Server gate | Posted to |
 | --- | --- | --- | --- | --- |
 | `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member; `ChatService.sendMessage` refuses `kind: "poll"` with `403 chapter.module.disabled` while `polls` is off, and so does a card vote ([`../../product/modules.md` § Module disabling behavior](../../product/modules.md#module-disabling-behavior)) | current channel |
-| `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
+| `/announce <message>` | yes | always-on | an entry on `#announcements`' who-can-post list (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
 | `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust` and `members:view`, re-checked on `POST /v1/points/adjust` (no self-adjust, target must be a chapter member, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
 | `/task "<title>" @assignee <due date> [points]` | yes | `tasks` | `tasks:manage` and `members:view`, re-checked on `POST /v1/tasks` (assignee must be a chapter member) | current channel |
 | `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]` | yes | `events` | `events:create` and `members:view` (`EVENT_CREATE_PERMISSIONS`), re-checked on `POST /v1/events` | current channel |
@@ -52,7 +52,7 @@ A `points`, `task`, `event`, `hours`, `rush`, or `system_audit` card asserts tha
 
 ## Announcement gating
 
-`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*` (and denies everyone in the audit log, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)). Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send. The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it. The client hides the disallowed command for UX, but the server is the trust boundary.
+`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel has a who-can-post list and the caller holds no entry on it and not `*` (#3722) (and denies everyone in the audit log, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)). Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send. The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it. The client hides the disallowed command for UX, but the server is the trust boundary.
 
 ## Vote-change (UPSERT semantics)
 

@@ -1369,6 +1369,7 @@
         ]
       },
       "post": {
+        "description": "Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).",
         "operationId": "RbacController_create_v1",
         "parameters": [],
         "requestBody": {
@@ -1449,6 +1450,7 @@
     },
     "/v1/roles/{id}": {
       "patch": {
+        "description": "Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.",
         "operationId": "RbacController_update_v1",
         "parameters": [
           {
@@ -1496,6 +1498,7 @@
         ]
       },
       "delete": {
+        "description": "Only a role ranked below the caller's own (#4071).",
         "operationId": "RbacController_delete_v1",
         "parameters": [
           {
@@ -1635,6 +1638,238 @@
           }
         ],
         "summary": "Claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers": {
+      "get": {
+        "operationId": "RoleTierController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleTierDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's role tiers, highest first",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "post": {
+        "description": "Added at the bottom, below every other tier, with only permissions the caller holds.",
+        "operationId": "RoleTierController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleTierDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTierDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a role tier",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers/order": {
+      "put": {
+        "description": "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.",
+        "operationId": "RoleTierController_reorder_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderRoleTiersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleTierDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reorder the role tiers",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers/{id}": {
+      "patch": {
+        "description": "Only a tier ranked below the caller's own. A new permission list rewrites every role in the tier, each with its own overrides applied.",
+        "operationId": "RoleTierController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleTierDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTierDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a role tier or set its permissions",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "delete": {
+        "description": "Only a tier ranked below the caller's own; 409 while a role still sits in it.",
+        "operationId": "RoleTierController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an empty role tier",
         "tags": [
           "Roles & Permissions"
         ]
@@ -2937,6 +3172,46 @@
           }
         ],
         "summary": "The latest message in every channel the caller can read, for the channel list previews",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/access-options": {
+      "get": {
+        "operationId": "ChatController_getChannelAccessOptions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelAccessOptionDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a channel or category’s who-can-see and who-can-post lists can name: tiers, then roles, with who holds each",
         "tags": [
           "Chat"
         ]
@@ -6108,6 +6383,154 @@
         ]
       }
     },
+    "/v1/channels/{id}/important": {
+      "get": {
+        "operationId": "ChatImportantController_listUnseen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unseen Important messages in a channel, for the \"1 important message\" strip",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/important/seen": {
+      "post": {
+        "operationId": "ChatImportantController_markSeen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkImportantSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark Important messages seen (jumped to or scrolled past)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/important/dismiss": {
+      "post": {
+        "operationId": "ChatImportantController_dismissAll_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantMessagesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss a channel's Important strip: mark every one seen",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -8862,6 +9285,53 @@
           "Tasks"
         ]
       },
+      "patch": {
+        "operationId": "TaskController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed.",
+        "tags": [
+          "Tasks"
+        ]
+      },
       "delete": {
         "operationId": "TaskController_delete_v1",
         "parameters": [
@@ -9032,6 +9502,171 @@
           }
         ],
         "summary": "Reject task completion (revert to IN_PROGRESS)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/subtasks": {
+      "post": {
+        "operationId": "TaskController_addSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskSubtaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSubtaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a subtask to the end of a task (#4003)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/subtasks/{subtaskId}": {
+      "patch": {
+        "operationId": "TaskController_updateSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtaskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskSubtaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSubtaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check off or uncheck a subtask (assignee or admin, #4003)",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "delete": {
+        "operationId": "TaskController_deleteSubtask_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtaskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a subtask (#4003)",
         "tags": [
           "Tasks"
         ]
@@ -11455,7 +12090,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -14256,6 +14891,12 @@
           "mentionable": {
             "type": "boolean",
             "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied."
           }
         },
         "required": [
@@ -14300,6 +14941,24 @@
           "mentionable": {
             "type": "boolean",
             "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied."
+          },
+          "permission_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "description": "Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.",
+            "example": {
+              "service:approve": true,
+              "polls:create": null
+            }
           }
         }
       },
@@ -14337,6 +14996,100 @@
           "eligible",
           "next_role_name"
         ]
+      },
+      "RoleTierDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "number",
+            "description": "Order within the chapter; 1 is highest."
+          },
+          "name": {
+            "type": "string",
+            "description": "The chapter's own name for the tier."
+          },
+          "permissions": {
+            "description": "What every role in the tier gets before its own overrides.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "position",
+          "name",
+          "permissions",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateRoleTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "permissions": {
+            "description": "What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ReorderRoleTiersDto": {
+        "type": "object",
+        "properties": {
+          "tier_ids": {
+            "description": "Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "tier_ids"
+        ]
+      },
+      "UpdateRoleTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "permissions": {
+            "description": "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "MemberCustomFieldValueDto": {
         "type": "object",
@@ -14470,6 +15223,10 @@
             "items": {
               "$ref": "#/components/schemas/MemberCustomFieldValueDto"
             }
+          },
+          "viewer_can_remove": {
+            "type": "boolean",
+            "description": "Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads."
           }
         },
         "required": [
@@ -15099,6 +15856,57 @@
           "created_at"
         ]
       },
+      "ChannelAccessOptionDto": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "description": "The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tier",
+              "role"
+            ],
+            "description": "What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "A role's palette color; null for a tier or an uncolored role."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "A role's tier, or null; always null for a tier."
+          },
+          "user_ids": {
+            "description": "The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "entry",
+          "kind",
+          "id",
+          "name",
+          "color",
+          "tier_id",
+          "user_ids"
+        ]
+      },
       "MentionRoleDto": {
         "type": "object",
         "properties": {
@@ -15287,9 +16095,30 @@
               "PUBLIC",
               "PRIVATE",
               "ROLE_GATED"
-            ]
+            ],
+            "description": "PRIVATE for a channel its members decide (`member_ids`); PUBLIC otherwise. ROLE_GATED is still accepted and needs `who_can_see`; the API sets `type` from `who_can_see` either way."
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "required_permissions": {
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15300,7 +16129,8 @@
           },
           "is_read_only": {
             "type": "boolean",
-            "default": false
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message."
           },
           "display_locked": {
             "type": "boolean",
@@ -15321,7 +16151,31 @@
           "description": {
             "type": "string"
           },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "match_category_access": {
+            "type": "boolean",
+            "description": "Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category."
+          },
           "required_permissions": {
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15333,7 +16187,9 @@
             "nullable": true
           },
           "is_read_only": {
-            "type": "boolean"
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message."
           },
           "default_notification_level": {
             "type": "string",
@@ -15450,6 +16306,24 @@
             "type": "number",
             "default": 0,
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -15465,6 +16339,24 @@
           "display_order": {
             "type": "number",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -16687,6 +17579,84 @@
         },
         "required": [
           "category_ids"
+        ]
+      },
+      "ImportantMessageRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "flagged_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The sender, or null for an imported Discord row."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "An imported row's Discord name; null for a member's message."
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "The message's first words on one line, at most 140 characters, for the strip's preview."
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "flagged_at",
+          "sender_id",
+          "author_name",
+          "excerpt"
+        ]
+      },
+      "ImportantMessagesDto": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "description": "Unseen Important messages flagged in the last 14 days, oldest first, at most 50.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportantMessageRefDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "How many unseen Important messages there are, among at most 1000 flagged in the window."
+          }
+        },
+        "required": [
+          "messages",
+          "total"
+        ]
+      },
+      "MarkImportantSeenDto": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "message_ids"
         ]
       },
       "GeofenceCoordinateDto": {
@@ -17956,6 +18926,19 @@
             "type": "string",
             "description": "Due date (YYYY-MM-DD)"
           },
+          "due_at": {
+            "type": "string",
+            "description": "The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.",
+            "format": "date-time"
+          },
+          "subtasks": {
+            "description": "Subtasks, in order: a checklist of steps the assignee ticks off (#4003). Blank lines are dropped.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
@@ -18004,6 +18987,11 @@
           "due_date": {
             "type": "string",
             "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "status": {
             "type": "string",
@@ -18054,6 +19042,7 @@
           "assignee_id",
           "created_by",
           "due_date",
+          "due_at",
           "status",
           "point_reward",
           "points_awarded",
@@ -18062,6 +19051,37 @@
           "sent_back_at",
           "created_at"
         ]
+      },
+      "UpdateTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          }
+        }
       },
       "UpdateTaskStatusDto": {
         "type": "object",
@@ -18088,6 +19108,73 @@
             "description": "Optional comment for rejection"
           }
         }
+      },
+      "CreateTaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "TaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number",
+            "description": "Order under the task, 0 first."
+          },
+          "done_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When it was checked off; null while it is still to do."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "chapter_id",
+          "title",
+          "position",
+          "done_at",
+          "created_at"
+        ]
+      },
+      "UpdateTaskSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "boolean",
+            "description": "True to check it off, false to uncheck it."
+          }
+        },
+        "required": [
+          "done"
+        ]
       },
       "PledgeClassDto": {
         "type": "object",
@@ -19019,6 +20106,12 @@
             "format": "date",
             "example": "2026-11-20"
           },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The moment it is due, when it has a time of day."
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -19089,6 +20182,7 @@
           "id",
           "title",
           "due_date",
+          "due_at",
           "status",
           "stored_status",
           "assignee_id",
@@ -19369,6 +20463,12 @@
             "description": "The link’s host, lower-cased and without `www.`.",
             "example": "docs.google.com"
           },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.",
+            "example": "5K volunteer shifts"
+          },
           "message_id": {
             "type": "string",
             "format": "uuid",
@@ -19421,6 +20521,7 @@
           "id",
           "url",
           "host",
+          "title",
           "message_id",
           "thread_root_id",
           "channel_id",
@@ -19444,12 +20545,10 @@
             "enum": [
               "document",
               "backwork"
-            ],
-            "description": "Which module holds it: a chapter document or a backwork resource."
+            ]
           },
           "title": {
-            "type": "string",
-            "description": "Empty for a backwork resource with no title."
+            "type": "string"
           },
           "created_at": {
             "type": "string",
@@ -19467,7 +20566,7 @@
         "type": "object",
         "properties": {
           "polls": {
-            "description": "Poll cards the caller posted, newest first.",
+            "description": "Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
@@ -19481,7 +20580,8 @@
             }
           },
           "files": {
-            "description": "Documents and backwork the caller uploaded, newest first.",
+            "deprecated": true,
+            "description": "Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
@@ -19539,7 +20639,6 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files",
                 "made_events",
                 "links"
               ]

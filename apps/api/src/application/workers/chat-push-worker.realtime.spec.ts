@@ -19,6 +19,10 @@ import {
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { RbacService } from '../services/rbac.service';
+import {
+  EMPTY_ACCESS_HOLDER,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
 import { ChatBlockService } from '../services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
 import {
@@ -105,6 +109,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   let findByChapter: jest.Mock;
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
+  let getChapterMemberAccess: jest.Mock;
   let removeChannel: jest.Mock;
   /**
    * `supabase.channel`: every topic the worker opened, presence included. Each
@@ -129,7 +134,8 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
   } satisfies CachedChannelRow;
 
   /** Sender + one partner. `outsider` is in the chapter but not in the DM. */
@@ -163,12 +169,28 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     is_read_only: true,
   } satisfies CachedChannelRow;
 
+  const TREASURY_ROLE = '00000000-0000-4000-8000-00000000f1a5';
+
+  /** The chapter as `getChapterMemberAccess` resolves it: who holds what. */
+  function setAccess(holders: Record<string, ChannelAccessHolder>) {
+    getChapterMemberAccess.mockResolvedValue(
+      Object.entries(holders).map(([user_id, channel_access]) => ({
+        user_id,
+        channel_access,
+      })),
+    );
+  }
+  const TREASURER: ChannelAccessHolder = {
+    ...EMPTY_ACCESS_HOLDER,
+    entries: new Set([`role:${TREASURY_ROLE}`]),
+  };
+
   const ROLE_GATED_CHANNEL = {
     ...PUBLIC_CHANNEL,
     id: 'ch-gated',
     name: 'treasury',
     type: 'ROLE_GATED',
-    required_permissions: ['finances:read'],
+    who_can_see: [`role:${TREASURY_ROLE}`],
   } satisfies CachedChannelRow;
 
   function setMembers(userIds: string[]) {
@@ -212,6 +234,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     findByChapter = jest.fn().mockResolvedValue([]);
     findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
+    getChapterMemberAccess = jest.fn().mockResolvedValue([]);
 
     removeChannel = jest.fn().mockResolvedValue('ok');
 
@@ -289,7 +312,10 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
           provide: CHAT_PUSH_DISPATCH_REPOSITORY,
           useValue: { claim: jest.fn().mockResolvedValue('claimed') },
         },
-        { provide: RbacService, useValue: { getEffectivePermissions } },
+        {
+          provide: RbacService,
+          useValue: { getEffectivePermissions, getChapterMemberAccess },
+        },
         {
           // Nobody has blocked anybody in this file's fixtures: it is about the
           // Realtime subscription lifecycle, not the audience rules. Answering
@@ -470,13 +496,14 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
       expect(notifiedUsers()).toEqual(['insider']);
     });
 
-    it('confines a ROLE_GATED mention to permission holders', async () => {
+    it('confines a mention in a channel with a who-can-see list to who it names', async () => {
       service.__setChannelForTest(ROLE_GATED_CHANNEL);
       setMembers(['sender', 'holder', 'nonholder']);
-      getEffectivePermissions.mockImplementation(
-        async (_chapterId: string, userId: string) =>
-          userId === 'holder' ? ['finances:read'] : ['events:read'],
-      );
+      setAccess({
+        sender: TREASURER,
+        holder: TREASURER,
+        nonholder: EMPTY_ACCESS_HOLDER,
+      });
 
       await emitRow({
         id: 'm-gated',
@@ -490,10 +517,13 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
       expect(notifiedUsers()).toEqual(['holder']);
     });
 
-    it('admits a wildcard permission holder to a ROLE_GATED channel', async () => {
+    it('admits a wildcard holder to a channel with a who-can-see list', async () => {
       service.__setChannelForTest(ROLE_GATED_CHANNEL);
       setMembers(['sender', 'admin']);
-      getEffectivePermissions.mockResolvedValue(['*']);
+      setAccess({
+        sender: TREASURER,
+        admin: { ...EMPTY_ACCESS_HOLDER, wildcard: true },
+      });
 
       await emitRow({
         id: 'm-gated-2',
@@ -507,22 +537,10 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
       expect(notifiedUsers()).toEqual(['admin']);
     });
 
-    it('skips only the unresolvable recipient when a permission lookup throws', async () => {
-      // Two recipients, one whose lookup rejects. Asserting merely that nobody
-      // was pushed cannot tell fail-closed from crash-and-swallow: the outer
-      // try/catch in `handleMessage` turns any thrown error into "no push", so
-      // deleting the per-candidate try/catch entirely would still read green.
-      // The distinction is operational — the intended path drops one recipient
-      // and still delivers to the rest; the crash path silently drops the whole
-      // message for everyone.
+    it('skips a recipient the access lookup does not list', async () => {
       service.__setChannelForTest(ROLE_GATED_CHANNEL);
-      setMembers(['sender', 'holder', 'broken']);
-      getEffectivePermissions.mockImplementation(
-        async (_chapterId: string, userId: string) => {
-          if (userId === 'broken') throw new Error('rbac down');
-          return ['finances:read'];
-        },
-      );
+      setMembers(['sender', 'holder', 'gone']);
+      setAccess({ sender: TREASURER, holder: TREASURER });
 
       await emitRow({
         id: 'm-gated-3',
@@ -530,10 +548,27 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         sender_id: 'sender',
         content: 'the balance is',
         kind: 'text',
-        mentions: ['holder', 'broken'],
+        mentions: ['holder', 'gone'],
       });
 
       expect(notifiedUsers()).toEqual(['holder']);
+    });
+
+    it('fails closed when the access lookup throws', async () => {
+      service.__setChannelForTest(ROLE_GATED_CHANNEL);
+      setMembers(['sender', 'holder']);
+      getChapterMemberAccess.mockRejectedValue(new Error('rbac down'));
+
+      await emitRow({
+        id: 'm-gated-4',
+        channel_id: ROLE_GATED_CHANNEL.id,
+        sender_id: 'sender',
+        content: 'the balance is',
+        kind: 'text',
+        mentions: ['holder'],
+      });
+
+      expect(notifiedUsers()).toEqual([]);
     });
   });
 

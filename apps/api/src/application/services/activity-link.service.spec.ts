@@ -22,6 +22,9 @@ const link = (overrides: Partial<ChatMessageLink> = {}): ChatMessageLink => ({
   posted_at: '2026-11-10T12:00:00.000Z',
   removed_at: null,
   removed_by: null,
+  title: null,
+  title_attempts: 0,
+  title_checked_at: null,
   ...overrides,
 });
 
@@ -46,6 +49,9 @@ function build() {
     setState: jest.fn().mockResolvedValue(undefined),
     clearState: jest.fn().mockResolvedValue(undefined),
     setRemoved: jest.fn().mockResolvedValue(null),
+    findTitlePending: jest.fn().mockResolvedValue([]),
+    claimForTitle: jest.fn().mockResolvedValue(false),
+    finishTitle: jest.fn().mockResolvedValue(undefined),
   };
   const userRepo = {
     findDisplayIdentitiesByIds: jest
@@ -88,6 +94,7 @@ describe('ActivityLinkService', () => {
           id: 'link-1',
           url: 'https://forms.gle/abc',
           host: 'forms.gle',
+          title: null,
           message_id: 'msg-1',
           thread_root_id: null,
           channel_id: GENERAL,
@@ -100,6 +107,25 @@ describe('ActivityLinkService', () => {
           unread: false,
         },
       ]);
+    });
+
+    it('serves the stored page title, never fetching one on the read', async () => {
+      const { list, linkRepo } = build();
+      linkRepo.findShowing.mockResolvedValue([
+        link({
+          title: '5K volunteer shifts',
+          title_attempts: 3,
+          title_checked_at: '2026-11-10T12:01:00.000Z',
+        }),
+      ]);
+
+      const rows = await list();
+
+      expect(rows[0].title).toBe('5K volunteer shifts');
+      // The read's only link reads are the index and the member's states.
+      expect(linkRepo.findTitlePending).not.toHaveBeenCalled();
+      expect(linkRepo.claimForTitle).not.toHaveBeenCalled();
+      expect(linkRepo.finishTitle).not.toHaveBeenCalled();
     });
 
     it('never lists a link from a channel outside the caller’s list or left out of Activity', async () => {

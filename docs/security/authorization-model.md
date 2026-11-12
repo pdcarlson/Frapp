@@ -34,6 +34,16 @@ joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its an
 that. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
 [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
 
+*Within* one request those reads happen once (`infrastructure/supabase/request-reads.ts`, #3728). Every
+read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChapter`) and of roles by id
+(`SupabaseRoleRepository.findByIds`) in a request shares one answer, and so do `ChapterGuard`'s user and
+chapter rows: the guards read them first, and the handler's access checks (`ChannelAccessService`,
+`RbacService`) reuse them. The guards' reads start while `auth.getUser` is still in flight, on the `sub`
+that `CustomThrottlerGuard` already verified (`prefetchChapterContext`); they are used only once the
+session check passes for that same user. A `GET` or `HEAD` keeps the store to its end. Any other method
+keeps it only through its guards: `RequestReadsInterceptor` seals it before the handler, so a handler
+that writes a membership or a role and reads it back reads the database. The store is created per request and never outlives it.
+
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard
 `403 chapter.context.mismatch` (`readRequestedChapter`) — the header cannot override the claim. A user with no
@@ -88,7 +98,8 @@ composed with **B** or **C** for per-row reads.
 | `pledge-classes` | `GET`, `POST`, `PUT /order`, `PUT /assignments`, `PATCH /:id`, `DELETE /:id` | A+C+P `members:view`; every write adds `roles:manage` (#3939: the officers who set a member's roles set their class) | B — `findById(id, chapterId)`, and `rename` / `delete` filter on `(id, chapter_id)`. `PUT /order` is refused unless the ids are exactly the chapter's classes; `PUT /assignments` is decided by the `assign_member_pledge_classes` RPC itself, with no read before it: it updates only rows of `chapter_id`, raises (and so writes nothing) when a listed member is not among them, answered 404, and the composite foreign key refuses a class of another chapter, answered 400 |
 | `points` | `GET /me`, `GET /leaderboard`, `GET /transactions`, `GET /members/:userId`, `POST /adjust` | A+C+P `members:view`, `points:view_all`, `points:adjust` | B — `pointTxnRepo.findByUser(chapterId, userId)`; a foreign `:userId` yields an empty summary, not another chapter's rows |
 | `polls` | `POST /channels/:channelId/polls`, `POST/DELETE /polls/:messageId/vote`, `GET /polls`, `GET /polls/:messageId` | A+C+P `members:view`, `polls:create`, `polls:view_all` | **C** — `messageRepo.findById()` then `channelAccess.assertChannelAccess(channel_id, chapterId, …)` before any poll field is read (`poll.service.ts`, every `assertChannelAccess` call) |
-| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts`, every `role.chapter_id !== chapterId` check) |
+| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer. The writes add the rank rules in code (#4071): a caller without `*` may create, edit, move or delete only a role ranked strictly below their own, and may grant only permissions they hold ([`rbac.md` § Rank](../../spec/behavior/rbac.md#rank)); refusals are **403** | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts`, every `role.chapter_id !== chapterId` check); a `tier_id` that is not one of the chapter's tiers is **400** |
+| `role-tiers` | `GET`, `POST`, `PUT /order`, `PATCH /:id`, `DELETE /:id` | A+C+P `members:view`; every write adds `roles:manage`, then the same rank rules in `RoleTierService` (only tiers below the caller's own; a reorder keeps the top down to the caller's tier fixed) | A — `GET` reads `findByChapter(chapterId)`; every write first resolves the tier from `getRankContext(chapterId, …)`, which lists only the chapter's tiers, and `update` / `delete` filter on `(id, chapter_id)`; `PUT /order` is re-checked by the `reorder_role_tiers` RPC with the tiers locked, and a stale order is **409** |
 | `reports` | `POST /attendance`, `POST /points`, `POST /roster`, `POST /service` | A+C+P `reports:export` | A |
 | `search` | `GET /` | A+C+P `members:view` | A |
 | `semesters` / `chapters/current/rollover` | `POST /chapters/current/rollover`, `GET /semesters` | A+C+P `members:view`, `semester:rollover` | A |
@@ -178,11 +189,14 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **65** rows. The "API only" row of that table is those 65 plus the three `*`-marked
+That returns **67** rows. The "API only" row of that table is those 67 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **68**. Counted 2026-11-11 at migration
-`20261111220000`, which added `activity_item_reads` and `activity_unread_starts`
+their own — **70**. Re-derived 2026-11-11 against a local stack at migration
+`20261111235900`, which added `chat_message_important_seen` (#4186), after
+`20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
+which added no table. Before that,
+counted at `20261111220000`, which added `activity_item_reads` and `activity_unread_starts`
 (#4173), against a local stack, adding them to the count at
 `20261111200000`, which added `event_types` (#3730), by adding it to the count at
 `20261111180000`, which added `chapter_document_stars` (#3934); that count adds
@@ -214,7 +228,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `activity_item_reads`, `activity_unread_starts`, `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_document_stars`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `event_types`, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 68 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `activity_item_reads`, `activity_unread_starts`, `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_document_stars`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_important_seen`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `event_types`, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `task_subtasks`, `tasks`, `user_settings`, `users`\* | 70 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

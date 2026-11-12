@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  categoryLabelFor,
   selectNotificationGroups,
   selectUnreadIds,
   selectUnreadNonChatCount,
@@ -32,42 +31,16 @@ function row(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("categoryLabelFor", () => {
-  // The label is derived from the deep-link target because the notification row
-  // does not store its category — `notifyUser` persists `payload.data` only and
-  // forwards `category` to the push provider for telemetry.
-  it("maps a known target screen to its drawn label", () => {
-    expect(categoryLabelFor({ target: { screen: "chat" } })).toBe("Chat");
-    expect(categoryLabelFor({ target: { screen: "service" } })).toBe(
-      "Service hours",
+describe("a row's data", () => {
+  // What the row looks like is `@repo/hooks/notification-rows` (#4346), which
+  // reads `data`; the row carries it through as served.
+  it("is carried through for the shared look", () => {
+    const data = { target: { screen: "chat" }, senderId: "u1", chatKind: "dm" };
+    const [group] = selectNotificationGroups(
+      [row({ data, created_at: iso(at(2026, 8, 17, 18)) })],
+      at(2026, 8, 17, 20),
     );
-    expect(categoryLabelFor({ target: { screen: "event" } })).toBe("Events");
-  });
-
-  it("labels the officer report notification, though mobile routes it to the list", () => {
-    // `ChatReportService`'s new-report notification targets `chat_reports`.
-    // Mobile has no queue to open, but an officer reading the row here should
-    // still see what kind of notice it is.
-    expect(categoryLabelFor({ target: { screen: "chat_reports" } })).toBe(
-      "Reports",
-    );
-  });
-
-  it("labels the Discord import notice, though its page is web-only", () => {
-    expect(categoryLabelFor({ target: { screen: "discord_import" } })).toBe(
-      "Discord import",
-    );
-  });
-
-  // Better no label than a guessed one: nothing in the row says what category
-  // the server used, so an unmapped screen is genuinely unknown.
-  it("returns null rather than guessing for an unknown or absent target", () => {
-    expect(
-      categoryLabelFor({ target: { screen: "something-new" } }),
-    ).toBeNull();
-    expect(categoryLabelFor({})).toBeNull();
-    expect(categoryLabelFor(undefined)).toBeNull();
-    expect(categoryLabelFor({ target: "chat" })).toBeNull();
+    expect(group?.rows[0]?.data).toEqual(data);
   });
 });
 

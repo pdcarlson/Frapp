@@ -1,4 +1,4 @@
-import { Task } from '../entities/task.entity';
+import { Task, TaskSubtask } from '../entities/task.entity';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -29,5 +29,41 @@ export interface ITaskRepository {
     chapterId: string,
     sentBackAt?: string,
   ): Promise<Task | null>;
+  /**
+   * An officer's edit (#4296), only while the task is unconfirmed
+   * (compare-and-set on `points_awarded`). Returns the updated task, or `null`
+   * when nothing was updated: the task is gone, or a confirm landed first.
+   */
+  updateUnconfirmed(
+    id: string,
+    chapterId: string,
+    data: Partial<Task>,
+  ): Promise<Task | null>;
+  /**
+   * Forget which due-soon and overdue reminders this task has had, so the
+   * sweeps remind about its new due date, time or assignee (#4296). The
+   * claims are keyed on `due_date`, so a timed task moved within its day
+   * would otherwise never be reminded again.
+   */
+  releaseReminderClaims(chapterId: string, taskId: string): Promise<void>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** Subtasks of these tasks, ordered by task then position (#4003). */
+  findSubtasks(chapterId: string, taskIds: string[]): Promise<TaskSubtask[]>;
+  /** Adds subtasks at the given positions. */
+  createSubtasks(
+    rows: Pick<TaskSubtask, 'task_id' | 'chapter_id' | 'title' | 'position'>[],
+  ): Promise<TaskSubtask[]>;
+  /** Ticks or unticks one. `null` when it isn't under that task. */
+  setSubtaskDone(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+    doneAt: string | null,
+  ): Promise<TaskSubtask | null>;
+  /** Removes one. `false` when it isn't under that task. */
+  deleteSubtask(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+  ): Promise<boolean>;
 }

@@ -16,6 +16,7 @@ const link = (id: string) => ({
   id,
   url: `https://forms.gle/${id}`,
   host: "forms.gle",
+  title: null,
   message_id: `m-${id}`,
   thread_root_id: null,
   channel_id: "c1",
@@ -36,7 +37,7 @@ const read = (ids: string[]) =>
     },
     coming_up: [],
     links: ids.map(link),
-    made_by_you: { polls: [], tasks: [], files: [], events: [] },
+    made_by_you: { polls: [], tasks: [], events: [] },
     needs_you_count: 0,
     unavailable: [],
   }) as unknown as Activity;

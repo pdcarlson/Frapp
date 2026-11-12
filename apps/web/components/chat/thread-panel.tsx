@@ -10,6 +10,7 @@ import {
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorAvatar } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn } from "@/lib/utils";
+import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
 import {
@@ -101,6 +103,11 @@ export interface ThreadPanelProps extends Pick<
    */
   canPost: boolean;
   onClose: () => void;
+  /**
+   * Closes the whole chat panel (#4223): the channel header's X, which the
+   * thread covers, so the thread carries its own. Only beside a tool page.
+   */
+  onClosePanel?: () => void;
   className?: string;
 }
 
@@ -142,6 +149,7 @@ export function ThreadPanel({
   canReply,
   canPost,
   onClose,
+  onClosePanel,
   className,
 }: ThreadPanelProps) {
   const thread = useMessageThread(channelId, rootId, viewerId);
@@ -441,6 +449,13 @@ export function ThreadPanel({
             {following ? "Following" : "Follow"}
           </Button>
         ) : null}
+        {onClosePanel ? (
+          <PanelCloseButton
+            label="Close chat"
+            onClick={onClosePanel}
+            className="mr-2"
+          />
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 pb-2">
@@ -485,11 +500,7 @@ export function ThreadPanel({
       </div>
       <ImageViewer viewer={rootViewer} />
 
-      {typing ? (
-        <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-          {typing}
-        </p>
-      ) : null}
+      <TypingLine label={typing} />
       <div className="shrink-0 border-t border-border p-3">
         {canReply ? (
           <>
@@ -501,7 +512,8 @@ export function ThreadPanel({
               disabled={isOffline}
               onChange={(event) => {
                 setDraft(event.target.value);
-                if (event.target.value) thread.emitTyping();
+                // An emptied box is nobody typing, as in the channel's.
+                if (event.target.value.trim()) thread.emitTyping();
               }}
               onKeyDown={onComposerKey}
             />

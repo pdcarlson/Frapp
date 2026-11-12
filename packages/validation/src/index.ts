@@ -11,6 +11,16 @@ import { isBetaOffModule } from "./beta-off-modules";
 
 export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
 export {
+  CHANNEL_ACCESS_ENTRY_KINDS,
+  CHANNEL_ACCESS_ENTRY_PATTERN,
+  CHANNEL_ACCESS_LIST_MAX,
+  channelAccessEntry,
+  normalizeChannelAccessList,
+  parseChannelAccessEntry,
+  sameChannelAccessList,
+  type ChannelAccessEntryKind,
+} from "./channel-access-lists";
+export {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
@@ -533,19 +543,13 @@ export const SendChatMessageSchema = z.object({
   reply_to_id: z.string().uuid().optional(),
 });
 
-// ── Alumni channel permission ────────────────────────────────────────────────
-// The channel-access predicate that reads this lives in the API
-// (`apps/api/src/domain/utils/channel-access.ts`, #3268); mobile reads the
-// value too, so it stays shared.
+// ── Alumni permission ────────────────────────────────────────────────────────
 
 /**
- * The permission a ROLE_GATED channel must *require* to be alumni-writable.
- *
- * This is read off the channel's `required_permissions`, not off the caller's
- * permissions: it marks the channel as an alumni space. Checking a permission
- * alumni merely *hold* would not work — the Alumni role also holds
- * `members:view`, which is exactly the value a chapter would put on a private
- * `#exec-board`, so that check would re-open the hole it is meant to close.
+ * The permission the seeded Alumni role holds. Chat no longer reads it: since
+ * #3722 an alumnus posts where a channel's who-can-post list (or, when anyone
+ * who can see may post, its who-can-see list) names the Alumni role. Mobile
+ * still reads it to tell an alumnus apart (`lib/more/donation.ts`).
  */
 export const ALUMNI_CHANNEL_PERMISSION = "alumni:post";
 
@@ -759,6 +763,8 @@ export {
   POLL_OPTIONS_MIN,
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
+  TASK_SUBTASK_TITLE_MAX_LENGTH,
+  TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
   PLEDGE_CLASSES_MAX,
@@ -853,6 +859,23 @@ export {
   assertProductionApiOrigin,
   assertProductionSupabaseUrl,
 } from "./invite-token";
+
+// The native app's identifiers, store listings and invite hand-off (#4002),
+// shared so web's invite hand-off (`AppHandoff`), the API's update-screen
+// default and the app-link files name one app. See ./native-app.
+export {
+  APP_LINK_PATHS,
+  APP_STORE_APP_ID,
+  NATIVE_APP_ID,
+  NATIVE_APP_SCHEME,
+  OPENED_FROM_APP_KEY,
+  OPENED_FROM_APP_VALUE,
+  STORE_LISTING_URLS,
+  openAppUrl,
+  openInAppUrl,
+  phonePlatform,
+} from "./native-app";
+export type { NativePlatform } from "./native-app";
 
 // Event recurrence: the rule catalog the DTOs validate against and the child
 // counts the series generator materializes. One source so the generated series
@@ -990,3 +1013,4 @@ export {
   isChatMessageFlag,
 } from "./chat-message-flags";
 export type { ChatMessageFlag } from "./chat-message-flags";
+export { withoutObjectReplacement } from "./message-text";

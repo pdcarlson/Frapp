@@ -200,6 +200,33 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .eq('status', 'OPEN')
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
+          // A task with a time is reminded by the five-minute sweep instead.
+          .is('due_at', null)
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+  }
+
+  async findIncompleteTimedTasksDueBetween(
+    dueFrom: Date,
+    dueTo: Date,
+  ): Promise<SweepTaskRow[]> {
+    return this.fetchAllPages<SweepTaskRow>(
+      'task',
+      'timed task sweep: lookup failed',
+      (from, to) =>
+        this.supabase
+          .from('tasks')
+          .select(
+            'id, chapter_id, assignee_id, created_by, title, due_date, due_at',
+          )
+          .in('status', [
+            TaskStatus.TODO,
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.OVERDUE,
+          ])
+          .gte('due_at', dueFrom.toISOString())
+          .lte('due_at', dueTo.toISOString())
           .order('id', { ascending: true })
           .range(from, to),
     );

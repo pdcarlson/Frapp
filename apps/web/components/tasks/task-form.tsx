@@ -1,8 +1,9 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useMembers } from "@repo/hooks";
+import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
@@ -30,6 +31,7 @@ import {
   useReportDraft,
 } from "@/components/shared/short-form";
 import { DueDateField } from "@/components/tasks/due-date-field";
+import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { pointsLabel } from "@/components/events/event-labels";
 import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -48,6 +50,8 @@ export interface TaskDraft {
   dueDate: string;
   points: string;
   description: string;
+  /** The steps typed so far (#4003). */
+  subtasks: string[];
   showMore: boolean;
 }
 
@@ -62,6 +66,7 @@ export function taskDraftFrom(
     points:
       prefill.pointReward !== undefined ? String(prefill.pointReward) : "",
     description: "",
+    subtasks: [],
     // Open when the typed command set something that lives there.
     showMore: prefill.pointReward !== undefined,
   };
@@ -85,6 +90,16 @@ export interface TaskFormProps {
   onPost: (input: TaskInput) => Promise<DispatchResult>;
   onDone: () => void;
   onDiscard: () => void;
+  /**
+   * Editing a task that exists (#4296) rather than making one: Save and
+   * Cancel in place of Create and Discard draft, the task's live checklist in
+   * place of the steps typed for a new task, and a line under Assignee when
+   * the pick would start the task over.
+   */
+  editing?: {
+    steps: React.ReactNode;
+    assigneeNote: (assigneeId: string) => React.ReactNode;
+  };
 }
 
 /**
@@ -100,6 +115,7 @@ export function TaskForm({
   onPost,
   onDone,
   onDiscard,
+  editing,
 }: TaskFormProps) {
   const layout = "card";
   const field = fieldClass(layout);
@@ -118,6 +134,12 @@ export function TaskForm({
   const titleRef = useRef<HTMLInputElement>(null);
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
+  // An edit opens on the title, the way the + card's form does.
+  useEffect(() => {
+    if (editing) titleRef.current?.focus();
+    // Once, when the edit opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const edit = (patch: Partial<TaskDraft>) =>
     setDraft((previous) => ({ ...previous, ...patch }));
 
@@ -143,12 +165,14 @@ export function TaskForm({
         title: trimmed,
         description: draft.description.trim() || undefined,
         assignee_id: draft.assigneeId,
-        due_date: draft.dueDate,
+        // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
+        ...dueEntryFields(draft.dueDate),
+        subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
         point_reward: parseGuardedInt(draft.points),
       });
       if (!result.ok) {
         toast({
-          title: "Couldn't create task",
+          title: editing ? "Couldn't save the task" : "Couldn't create task",
           description:
             result.error ??
             "Retry in a moment or confirm the assignee is a chapter member.",
@@ -191,8 +215,7 @@ export function TaskForm({
               ...prev,
               title: prev.title && !next.trim(),
               titleTooLong:
-                prev.titleTooLong &&
-                next.trim().length > TASK_TITLE_MAX_LENGTH,
+                prev.titleTooLong && next.trim().length > TASK_TITLE_MAX_LENGTH,
             }));
           }}
           {...gate.controlProps()}
@@ -238,7 +261,11 @@ export function TaskForm({
                 ))}
             </SelectContent>
           </Select>
-          {missing.assignee ? <FieldError>Pick an assignee.</FieldError> : null}
+          {missing.assignee ? (
+            <FieldError>Pick an assignee.</FieldError>
+          ) : (
+            editing?.assigneeNote(draft.assigneeId)
+          )}
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-1">
           <Label htmlFor={`${ids}-due`}>Due date</Label>
@@ -247,7 +274,7 @@ export function TaskForm({
               ref={dueRef}
               id={`${ids}-due`}
               className={field}
-              placeholder="Friday"
+              placeholder="Friday 5pm"
               missing={missing.due}
               value={draft.dueDate}
               onChange={(value) => {
@@ -259,6 +286,15 @@ export function TaskForm({
           </div>
         </div>
       </div>
+      {editing ? (
+        editing.steps
+      ) : (
+        <SubtaskListEditor
+          items={draft.subtasks}
+          onChange={(subtasks) => edit({ subtasks })}
+          disabled={posting}
+        />
+      )}
       <MoreOptionsToggle
         open={draft.showMore}
         onToggle={() => edit({ showMore: !draft.showMore })}
@@ -296,16 +332,37 @@ export function TaskForm({
           </div>
         </div>
       ) : null}
-      <FormFooter layout={layout} onCancel={onDiscard} cancelDisabled={posting}>
-        <Button
-          type="submit"
-          size={primarySize(layout)}
-          {...gate.controlProps(posting)}
+      {editing ? (
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onDiscard}
+            disabled={posting}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" {...gate.controlProps(posting)}>
+            {posting ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      ) : (
+        <FormFooter
+          layout={layout}
+          onCancel={onDiscard}
+          cancelDisabled={posting}
         >
-          {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {posting ? "Creating…" : "Create task"}
-        </Button>
-      </FormFooter>
+          <Button
+            type="submit"
+            size={primarySize(layout)}
+            {...gate.controlProps(posting)}
+          >
+            {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {posting ? "Creating…" : "Create task"}
+          </Button>
+        </FormFooter>
+      )}
     </form>
   );
 }

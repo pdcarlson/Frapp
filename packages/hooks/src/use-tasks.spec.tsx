@@ -9,7 +9,10 @@ import {
   deriveDisplayStatus,
   taskKeys,
   useConfirmTask,
+  subtaskProgress,
+  useDeleteSubtask,
   useRejectTask,
+  useSetSubtaskDone,
   useUpdateTaskStatus,
 } from "./use-tasks";
 
@@ -591,5 +594,103 @@ describe("useRejectTask", () => {
     await act(async () => {
       await succeed();
     });
+  });
+});
+
+describe("subtaskProgress (#4003)", () => {
+  it("counts the done steps", () => {
+    expect(
+      subtaskProgress([
+        { done_at: "2026-11-11T12:00:00Z" },
+        { done_at: null },
+        { done_at: null },
+      ]),
+    ).toEqual({ done: 1, total: 3, label: "1 of 3" });
+  });
+
+  it("is null for a task with no steps", () => {
+    expect(subtaskProgress([])).toBeNull();
+    expect(subtaskProgress(undefined)).toBeNull();
+  });
+});
+
+describe("useSetSubtaskDone (#4003)", () => {
+  let queryClient: QueryClient;
+  const subtasks = [
+    { id: "s1", title: "Counters", position: 0, done_at: null },
+    { id: "s2", title: "Floor", position: 1, done_at: null },
+  ];
+
+  beforeEach(() => {
+    queryClient = makeQueryClient();
+  });
+
+  function stepDone(id: string) {
+    const steps = cachedDetail(queryClient).subtasks as {
+      id: string;
+      done_at: string | null;
+    }[];
+    return steps.find((step) => step.id === id)!.done_at !== null;
+  }
+
+  it("ticks the step in the cache before the server answers", async () => {
+    seedTask(queryClient, { subtasks });
+    const { fn, succeed } = deferredCalls();
+    const { result } = renderHook(() => useSetSubtaskDone(), {
+      wrapper: createWrapper({ PATCH: fn }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ taskId: TASK, subtaskId: "s1", done: true });
+    });
+
+    await waitFor(() => {
+      expect(stepDone("s1")).toBe(true);
+      expect(stepDone("s2")).toBe(false);
+    });
+
+    await act(async () => {
+      await succeed();
+    });
+  });
+
+  it("puts the box back when the server refuses", async () => {
+    seedTask(queryClient, { subtasks });
+    const { fn, fail } = deferredCalls();
+    const { result } = renderHook(() => useSetSubtaskDone(), {
+      wrapper: createWrapper({ PATCH: fn }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ taskId: TASK, subtaskId: "s1", done: true });
+    });
+    await waitFor(() => expect(stepDone("s1")).toBe(true));
+
+    await act(async () => {
+      await fail();
+    });
+    await waitFor(() => expect(stepDone("s1")).toBe(false));
+  });
+
+  it("brings a removed step back, in its place, when the server refuses", async () => {
+    seedTask(queryClient, { subtasks });
+    const { fn, fail } = deferredCalls();
+    const { result } = renderHook(() => useDeleteSubtask(), {
+      wrapper: createWrapper({ DELETE: fn }, queryClient),
+    });
+    const ids = () =>
+      (cachedListRow(queryClient).subtasks as { id: string }[]).map(
+        (step) => step.id,
+      );
+
+    act(() => {
+      result.current.mutate({ taskId: TASK, subtaskId: "s1" });
+    });
+    await waitFor(() => expect(ids()).toEqual(["s2"]));
+
+    await act(async () => {
+      await fail();
+    });
+    await waitFor(() => expect(ids()).toEqual(["s1", "s2"]));
   });
 });

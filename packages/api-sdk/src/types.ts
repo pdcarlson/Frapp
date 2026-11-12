@@ -425,7 +425,10 @@ export interface paths {
         /** List chapter roles */
         get: operations["RbacController_list_v1"];
         put?: never;
-        /** Create a custom role */
+        /**
+         * Create a custom role
+         * @description Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).
+         */
         post: operations["RbacController_create_v1"];
         delete?: never;
         options?: never;
@@ -460,11 +463,17 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a custom role */
+        /**
+         * Delete a custom role
+         * @description Only a role ranked below the caller's own (#4071).
+         */
         delete: operations["RbacController_delete_v1"];
         options?: never;
         head?: never;
-        /** Update a role */
+        /**
+         * Update a role
+         * @description Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.
+         */
         patch: operations["RbacController_update_v1"];
         trace?: never;
     };
@@ -517,6 +526,71 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's role tiers, highest first */
+        get: operations["RoleTierController_list_v1"];
+        put?: never;
+        /**
+         * Add a role tier
+         * @description Added at the bottom, below every other tier, with only permissions the caller holds.
+         */
+        post: operations["RoleTierController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the role tiers
+         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.
+         */
+        put: operations["RoleTierController_reorder_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an empty role tier
+         * @description Only a tier ranked below the caller's own; 409 while a role still sits in it.
+         */
+        delete: operations["RoleTierController_delete_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a role tier or set its permissions
+         * @description Only a tier ranked below the caller's own. A new permission list rewrites every role in the tier, each with its own overrides applied.
+         */
+        patch: operations["RoleTierController_update_v1"];
         trace?: never;
     };
     "/v1/members": {
@@ -958,6 +1032,23 @@ export interface paths {
         };
         /** The latest message in every channel the caller can read, for the channel list previews */
         get: operations["ChatController_getLatestMessages_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/access-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a channel or category’s who-can-see and who-can-post lists can name: tiers, then roles, with who holds each */
+        get: operations["ChatController_getChannelAccessOptions_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1818,6 +1909,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/important": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unseen Important messages in a channel, for the "1 important message" strip */
+        get: operations["ChatImportantController_listUnseen_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Important messages seen (jumped to or scrolled past) */
+        post: operations["ChatImportantController_markSeen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/important/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a channel's Important strip: mark every one seen */
+        post: operations["ChatImportantController_dismissAll_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -2631,7 +2773,8 @@ export interface paths {
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed. */
+        patch: operations["TaskController_update_v1"];
         trace?: never;
     };
     "/v1/tasks/{id}/status": {
@@ -2683,6 +2826,41 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/subtasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a subtask to the end of a task (#4003) */
+        post: operations["TaskController_addSubtask_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/subtasks/{subtaskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a subtask (#4003) */
+        delete: operations["TaskController_deleteSubtask_v1"];
+        options?: never;
+        head?: never;
+        /** Check off or uncheck a subtask (assignee or admin, #4003) */
+        patch: operations["TaskController_updateSubtask_v1"];
         trace?: never;
     };
     "/v1/pledge-classes": {
@@ -3383,7 +3561,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -4393,6 +4571,11 @@ export interface components {
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
         };
         UpdateRoleDto: {
             name?: string;
@@ -4405,6 +4588,21 @@ export interface components {
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
+            /**
+             * @description Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.
+             * @example {
+             *       "service:approve": true,
+             *       "polls:create": null
+             *     }
+             */
+            permission_overrides?: {
+                [key: string]: boolean | null;
+            };
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -4417,6 +4615,34 @@ export interface components {
             eligible: boolean;
             /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
             next_role_name: string | null;
+        };
+        RoleTierDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @description Order within the chapter; 1 is highest. */
+            position: number;
+            /** @description The chapter's own name for the tier. */
+            name: string;
+            /** @description What every role in the tier gets before its own overrides. */
+            permissions: string[];
+            created_at: string;
+            updated_at: string;
+        };
+        CreateRoleTierDto: {
+            name: string;
+            /** @description What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none. */
+            permissions?: string[];
+        };
+        ReorderRoleTiersDto: {
+            /** @description Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are. */
+            tier_ids: string[];
+        };
+        UpdateRoleTierDto: {
+            name?: string;
+            /** @description The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`. */
+            permissions?: string[];
         };
         MemberCustomFieldValueDto: {
             field_id: string;
@@ -4460,6 +4686,8 @@ export interface components {
             is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
+            /** @description Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads. */
+            viewer_can_remove?: boolean;
         };
         MemberRosterEntryDto: {
             /** @description users.id — the id chat carries as sender_id */
@@ -4700,6 +4928,27 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        ChannelAccessOptionDto: {
+            /** @description The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`. */
+            entry: string;
+            /**
+             * @description What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.
+             * @enum {string}
+             */
+            kind: "tier" | "role";
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description A role's palette color; null for a tier or an uncolored role. */
+            color: string | null;
+            /**
+             * Format: uuid
+             * @description A role's tier, or null; always null for a tier.
+             */
+            tier_id: string | null;
+            /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
+            user_ids: string[];
+        };
         MentionRoleDto: {
             /** Format: uuid */
             role_id: string;
@@ -4763,21 +5012,49 @@ export interface components {
         CreateChannelDto: {
             name: string;
             description?: string;
-            /** @enum {string} */
+            /**
+             * @description PRIVATE for a channel its members decide (`member_ids`); PUBLIC otherwise. ROLE_GATED is still accepted and needs `who_can_see`; the API sets `type` from `who_can_see` either way.
+             * @enum {string}
+             */
             type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            who_can_see?: string[] | null;
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            who_can_post?: string[] | null;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             required_permissions?: string[];
             category_id?: string;
-            /** @default false */
-            is_read_only: boolean;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
+            is_read_only?: boolean;
             /** @description Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock. */
             display_locked?: boolean;
         };
         UpdateChannelDto: {
             name?: string;
             description?: string;
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            who_can_see?: string[] | null;
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            who_can_post?: string[] | null;
+            /** @description Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category. */
+            match_category_access?: boolean;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             required_permissions?: string[];
             /** Format: uuid */
             category_id?: string | null;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             is_read_only?: boolean;
             /**
              * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
@@ -4825,10 +5102,18 @@ export interface components {
             name: string;
             /** @default 0 */
             display_order: number;
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it. */
+            who_can_see?: string[] | null;
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            who_can_post?: string[] | null;
         };
         UpdateCategoryDto: {
             name?: string;
             display_order?: number;
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
+            who_can_see?: string[] | null;
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            who_can_post?: string[] | null;
         };
         ChatMessageDto: {
             /** Format: uuid */
@@ -5242,6 +5527,33 @@ export interface components {
         ReorderCategoriesDto: {
             /** @description The chapter’s categories, top to bottom. A category not listed keeps its relative order after them. */
             category_ids: string[];
+        };
+        ImportantMessageRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            flagged_at: string;
+            /**
+             * Format: uuid
+             * @description The sender, or null for an imported Discord row.
+             */
+            sender_id: string | null;
+            /** @description An imported row's Discord name; null for a member's message. */
+            author_name: string | null;
+            /** @description The message's first words on one line, at most 140 characters, for the strip's preview. */
+            excerpt: string;
+        };
+        ImportantMessagesDto: {
+            /** @description Unseen Important messages flagged in the last 14 days, oldest first, at most 50. */
+            messages: components["schemas"]["ImportantMessageRefDto"][];
+            /** @description How many unseen Important messages there are, among at most 1000 flagged in the window. */
+            total: number;
+        };
+        MarkImportantSeenDto: {
+            /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
+            message_ids: string[];
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -5694,6 +6006,13 @@ export interface components {
             assignee_id: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.
+             */
+            due_at?: string;
+            /** @description Subtasks, in order: a checklist of steps the assignee ticks off (#4003). Blank lines are dropped. */
+            subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
@@ -5714,6 +6033,8 @@ export interface components {
             created_by: string;
             /** Format: date */
             due_date: string;
+            /** Format: date-time */
+            due_at: string | null;
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
             point_reward: number | null;
@@ -5732,6 +6053,20 @@ export interface components {
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
+        UpdateTaskDto: {
+            title?: string;
+            description?: string | null;
+            /** @description User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified. */
+            assignee_id?: string;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date?: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create.
+             */
+            due_at?: string | null;
+            point_reward?: number | null;
+        };
         UpdateTaskStatusDto: {
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
@@ -5739,6 +6074,31 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
+        };
+        CreateTaskSubtaskDto: {
+            title: string;
+        };
+        TaskSubtaskDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            title: string;
+            /** @description Order under the task, 0 first. */
+            position: number;
+            /**
+             * Format: date-time
+             * @description When it was checked off; null while it is still to do.
+             */
+            done_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        UpdateTaskSubtaskDto: {
+            /** @description True to check it off, false to uncheck it. */
+            done: boolean;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -6097,6 +6457,11 @@ export interface components {
              */
             due_date: string;
             /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day.
+             */
+            due_at: string | null;
+            /**
              * @description Display status: OVERDUE for an open task past its due date.
              * @enum {string}
              */
@@ -6237,6 +6602,11 @@ export interface components {
              */
             host: string;
             /**
+             * @description The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.
+             * @example 5K volunteer shifts
+             */
+            title: string | null;
+            /**
              * Format: uuid
              * @description The chat message it was posted in, for “Open in chat”.
              */
@@ -6267,22 +6637,21 @@ export interface components {
         ActivityFileDto: {
             /** Format: uuid */
             id: string;
-            /**
-             * @description Which module holds it: a chapter document or a backwork resource.
-             * @enum {string}
-             */
+            /** @enum {string} */
             source: "document" | "backwork";
-            /** @description Empty for a backwork resource with no title. */
             title: string;
             /** Format: date-time */
             created_at: string;
         };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, newest first. */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
             /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
-            /** @description Documents and backwork the caller uploaded, newest first. */
+            /**
+             * @deprecated
+             * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.
+             */
             files: components["schemas"]["ActivityFileDto"][];
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
@@ -6297,7 +6666,7 @@ export interface components {
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "made_events" | "links")[];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
@@ -7879,6 +8248,160 @@ export interface operations {
             };
         };
     };
+    RoleTierController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleTierDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_reorder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRoleTiersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleTierDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MemberController_list_v1: {
         parameters: {
             query?: never;
@@ -8784,6 +9307,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelLatestMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getChannelAccessOptions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelAccessOptionDto"][];
                 };
             };
             /** @description Error */
@@ -10878,6 +11429,100 @@ export interface operations {
             };
         };
     };
+    ChatImportantController_listUnseen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_markSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkImportantSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatImportantController_dismissAll_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -12737,6 +13382,38 @@ export interface operations {
             };
         };
     };
+    TaskController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     TaskController_updateStatus_v1: {
         parameters: {
             query?: never;
@@ -12817,6 +13494,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_addSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskSubtaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_deleteSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                subtaskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_updateSubtask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                subtaskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskSubtaskDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
             };
             /** @description Error */
             default: {

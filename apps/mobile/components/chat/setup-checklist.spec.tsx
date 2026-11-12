@@ -95,12 +95,12 @@ describe("SetupChecklistView (mobile)", () => {
     await act(async () => row.props.onPress());
     // No EXPO_PUBLIC_APP_URL in tests, so the production dashboard.
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-      "https://app.frapp.live/geofences",
+      "https://app.frapp.live/geofences?from=app",
     );
     // The step may have been done there, so the lists are read again.
     expect(onReturnFromWeb).toHaveBeenCalledTimes(1);
     expect(setupChecklistWebUrl("study-zone", "https://staging.example")).toBe(
-      "https://staging.example/geofences",
+      "https://staging.example/geofences?from=app",
     );
   });
 

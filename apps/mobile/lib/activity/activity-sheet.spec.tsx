@@ -81,10 +81,8 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason }),
 }));
 
-import {
-  ActivitySheet,
-  type ActivitySheetRow,
-} from "@/components/activity/activity-sheet";
+import type { ActivityRow } from "@repo/hooks";
+import { ActivitySheet } from "@/components/activity/activity-sheet";
 
 const READ = {
   needs_you: {
@@ -147,16 +145,16 @@ const READ = {
       checked_in: false,
     },
   ],
-  made_by_you: { polls: [], tasks: [], files: [], events: [] },
+  made_by_you: { polls: [], tasks: [], events: [] },
   needs_you_count: 3,
   unavailable: [],
 } as unknown as Activity;
 
 /** The real row the screen would hand the sheet for one kind. */
-function rowOf(kind: ActivitySheetRow["kind"]): ActivitySheetRow {
+function rowOf(kind: ActivityRow["kind"]): ActivityRow {
   return activityGroups(READ, "all")
     .flatMap((group) => group.rows)
-    .find((row) => row.kind === kind) as ActivitySheetRow;
+    .find((row) => row.kind === kind) as ActivityRow;
 }
 
 const mounted: ReactTestRenderer[] = [];
@@ -174,7 +172,7 @@ const linkActions = {
 const present = vi.fn();
 const dismiss = vi.fn();
 
-function sheetElement(row: ActivitySheetRow | null, viewerId: string | null) {
+function sheetElement(row: ActivityRow | null, viewerId: string | null) {
   return (
     <FrappThemeProvider>
       <ActivitySheet
@@ -189,7 +187,7 @@ function sheetElement(row: ActivitySheetRow | null, viewerId: string | null) {
 }
 
 function render(
-  row: ActivitySheetRow | null,
+  row: ActivityRow | null,
   viewerId: string | null = "me",
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -483,6 +481,7 @@ describe("Activity sheet (#3897)", () => {
         id: "l1",
         url: "https://forms.gle/abc",
         host: "forms.gle",
+        title: null,
         message_id: "m1",
         thread_root_id: null,
         channel_id: "chan-1",
@@ -492,7 +491,7 @@ describe("Activity sheet (#3897)", () => {
         posted_by_name: "Olive",
         posted_at: "2026-11-10T15:00:00.000Z",
       },
-    } as unknown as ActivitySheetRow;
+    } as unknown as ActivityRow;
 
     it("says what it is and where it goes, and opens it without closing the sheet", () => {
       const tree = render(linkRow);

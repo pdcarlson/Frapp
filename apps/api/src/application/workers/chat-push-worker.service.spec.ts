@@ -21,6 +21,7 @@ import {
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { RbacService } from '../services/rbac.service';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { ChatBlockService } from '../services/chat-block.service';
 import {
   ChannelCacheService,
@@ -41,6 +42,7 @@ describe('ChatPushWorkerService', () => {
   let findByChapter: jest.Mock;
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
+  let getChapterMemberAccess: jest.Mock;
   let filterOutBlockers: jest.Mock;
   let findDisplayIdentitiesByIds: jest.Mock;
   let claim: jest.Mock;
@@ -61,7 +63,8 @@ describe('ChatPushWorkerService', () => {
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
   } satisfies CachedChannelRow;
 
   const ANNOUNCEMENT_CHANNEL = {
@@ -88,6 +91,7 @@ describe('ChatPushWorkerService', () => {
     // `__setChannelForTest`, so the read never runs for them.
     findPushRouting = jest.fn().mockResolvedValue(null);
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
+    getChapterMemberAccess = jest.fn().mockResolvedValue([]);
     // Default: nobody has blocked the sender. Answered from the recipients
     // actually passed in rather than a fixed array, for the reason `setPrefs`
     // gives below — a static answer would stay green if the worker started
@@ -151,7 +155,7 @@ describe('ChatPushWorkerService', () => {
         { provide: CHAT_PUSH_DISPATCH_REPOSITORY, useValue: dispatches },
         {
           provide: RbacService,
-          useValue: { getEffectivePermissions },
+          useValue: { getEffectivePermissions, getChapterMemberAccess },
         },
         {
           provide: ChatBlockService,
@@ -679,6 +683,18 @@ describe('ChatPushWorkerService', () => {
   });
 
   describe('chatPushPreview', () => {
+    it('drops U+FFFC, which every surface drew as an "OBJ" box (#4346)', () => {
+      expect(chatPushPreview({ content: 'take a look \uFFFC' })).toBe(
+        'take a look',
+      );
+      expect(
+        chatPushPreview({
+          content: '\uFFFC',
+          metadata: { attachment_count: 1 },
+        }),
+      ).toBe('Sent an attachment');
+    });
+
     it('is the first 200 characters of the text', () => {
       expect(chatPushPreview({ content: 'x'.repeat(250) })).toBe(
         'x'.repeat(200),
@@ -771,7 +787,8 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     });
     setMembers(['alice', 'bob', 'carol']);
 
@@ -799,7 +816,8 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     });
     setMembers(['alice', 'bob', 'carol']);
 
@@ -816,7 +834,7 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['bob']);
   });
 
-  it('gates a ROLE_GATED channel on the recipient holding the permission', async () => {
+  it('gates a channel with a who-can-see list on the recipient holding an entry in it', async () => {
     service.__setChannelForTest({
       id: 'ch-exec',
       chapter_id: 'chap-1',
@@ -825,12 +843,19 @@ describe('ChatPushWorkerService', () => {
       is_read_only: false,
       type: 'ROLE_GATED',
       member_ids: null,
-      required_permissions: ['exec:view'],
+      who_can_see: ['tier:00000000-0000-4000-8000-0000000000e1'],
+      who_can_post: null,
     });
     setMembers(['sender', 'officer', 'pledge']);
-    getEffectivePermissions.mockImplementation(async (_chap, uid) =>
-      uid === 'officer' ? ['exec:view'] : [],
-    );
+    const exec = {
+      ...EMPTY_ACCESS_HOLDER,
+      entries: new Set(['tier:00000000-0000-4000-8000-0000000000e1']),
+    };
+    getChapterMemberAccess.mockResolvedValue([
+      { user_id: 'sender', channel_access: exec },
+      { user_id: 'officer', channel_access: exec },
+      { user_id: 'pledge', channel_access: EMPTY_ACCESS_HOLDER },
+    ]);
 
     await service.handleMessage({
       id: 'm1',
@@ -1470,6 +1495,116 @@ describe('ChatPushWorkerService', () => {
       service.__setChannelForTest(CHANNEL); // `mentions` default, no mention
       await send(CHANNEL.id, { id: 'm2' });
       expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+
+    describe('what the in-app list draws a row by (#4346)', () => {
+      const dataFor = (recipient: string) =>
+        notifyUser.mock.calls
+          .filter((c) => c[0] === recipient)
+          .map((c) => (c[2] as { data: Record<string, unknown> }).data);
+
+      it('marks a DM as one, with no channel name', async () => {
+        service.__setChannelForTest(DM);
+        setMembers(['sender', 'alice']);
+        await send(DM.id);
+        const [data] = dataFor('alice');
+        expect(data).toMatchObject({ chatKind: 'dm', senderId: 'sender' });
+        expect(data).not.toHaveProperty('channelName');
+        expect(data).not.toHaveProperty('mentioned');
+      });
+
+      it('names a channel, and flags the mention only for the member it mentioned', async () => {
+        service.__setChannelForTest({
+          ...CHANNEL,
+          id: 'ch-gen',
+          name: 'general',
+        });
+        setMembers(['sender', 'alice', 'bob']);
+        setPrefs({
+          bob: [
+            {
+              user_id: 'bob',
+              chapter_id: 'chap-1',
+              scope: 'channel',
+              scope_id: 'ch-gen',
+              scope_kind: null,
+              level: 'all',
+            },
+          ],
+        });
+        await send('ch-gen', { content: 'hey @alice', mentions: ['alice'] });
+        expect(dataFor('alice')).toEqual([
+          expect.objectContaining({
+            chatKind: 'channel',
+            channelName: 'general',
+            mentioned: true,
+          }),
+        ]);
+        const [bobs] = dataFor('bob');
+        expect(bobs).toMatchObject({
+          chatKind: 'channel',
+          channelName: 'general',
+        });
+        expect(bobs).not.toHaveProperty('mentioned');
+      });
+
+      it('marks an announcement as one', async () => {
+        service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+        setMembers(['sender', 'alice']);
+        await send(ANNOUNCEMENT_CHANNEL.id);
+        expect(dataFor('alice')[0]).toMatchObject({
+          chatKind: 'announcement',
+          channelName: 'announcements',
+        });
+      });
+
+      it('carries the same fields on a bundled burst', async () => {
+        service.__setChannelForTest(DM);
+        setMembers(['sender', 'alice']);
+        // The third message in a burst is the one pushed as the bundle.
+        for (let i = 0; i < 3; i++) {
+          await send(DM.id, {
+            id: `m${i}`,
+            content: i === 2 ? 'hey @alice' : 'hi',
+            mentions: i === 2 ? ['alice'] : [],
+          });
+        }
+        const bundled = dataFor('alice').filter((d) => d.bundled === true);
+        expect(bundled).toHaveLength(1);
+        expect(bundled[0]).toMatchObject({
+          chatKind: 'dm',
+          senderId: 'sender',
+          mentioned: true,
+        });
+      });
+
+      it('names a named group DM and leaves an unnamed one unnamed', async () => {
+        const group = {
+          ...DM,
+          id: 'gdm-1',
+          name: 'Rush chairs',
+          type: 'GROUP_DM',
+          member_ids: ['sender', 'alice', 'bob'],
+        } satisfies CachedChannelRow;
+        service.__setChannelForTest(group);
+        setMembers(['sender', 'alice', 'bob']);
+        await send(group.id);
+        expect(dataFor('alice')[0]).toMatchObject({
+          chatKind: 'group',
+          channelName: 'Rush chairs',
+        });
+
+        notifyUser.mockClear();
+        service.__setChannelForTest({
+          ...group,
+          id: 'gdm-2',
+          name: 'group-dm-1700000000',
+        });
+        await send('gdm-2', { id: 'm2' });
+        const [unnamed] = dataFor('alice');
+        expect(unnamed).toMatchObject({ chatKind: 'group' });
+        expect(unnamed).not.toHaveProperty('channelName');
+      });
     });
   });
 

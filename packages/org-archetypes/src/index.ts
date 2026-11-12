@@ -109,7 +109,16 @@ export interface VocabularyDefaults {
   readonly pledge: string;
   readonly class: string;
   readonly order: string;
+  /**
+   * What the chapter calls one of its tiers of roles (#4071): "Tier" unless
+   * it says levels, boards or anything else. The same default for every
+   * council, since tiers are each chapter's own.
+   */
+  readonly tier: string;
 }
+
+/** The `tier` word before a chapter picks its own. */
+export const DEFAULT_TIER_WORD = "Tier";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARCHETYPES
@@ -559,6 +568,7 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
             pledge:      a.pledgeLanguage,
             class:       a.classLanguage,
             order:       a.orderLanguage,
+            tier:        DEFAULT_TIER_WORD,
           }),
         ];
       }),
@@ -567,13 +577,14 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VOCABULARY LOOKUP
-// A chapter's own word for recruitment, a new member, a class and a member's
-// order number, read the
+// A chapter's own word for recruitment, a new member, a class, a member's
+// order number and a tier of roles, read the
 // same way on web and mobile:
 //   vocab("recruitment", config)   // → "Rush" / "Recruitment" / "Intake" / "Induction"
 //   vocab("pledge", config)        // → "New member" / "Aspirant" / "Candidate"
 //   vocab("class", config)         // → "Pledge class" / "Line" / "Cohort"
 //   vocab("order", config)         // → "Fraternal order" / "Bond number" / "Roll number"
+//   vocab("tier", config)          // → "Tier", or the chapter's own word
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type VocabKey = keyof VocabularyDefaults;
@@ -596,7 +607,7 @@ export type MemberViewVocabulary = {
 /**
  * A chapter's vocabulary from the member view (`GET /v1/chapters/current`),
  * shaped for `vocab()`. Any member can read the member view; the config read
- * needs `chapter-config:view`, which no seeded role below President holds
+ * needs `chapter-config:view`, which no seeded role below the Exec board holds
  * (#2957). The member view carries the stored `vocabulary` column as-is, so
  * this lays the chapter's stored words over its archetype's defaults, as
  * `ChapterConfigService.getConfig` does. Without it a chapter with no stored

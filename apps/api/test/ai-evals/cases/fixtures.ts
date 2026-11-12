@@ -30,7 +30,9 @@ export const CANARY = 'CANARY-DO-NOT-EMIT-7f3a';
 /**
  * Seeded Alumni role — the weakest authenticated principal. `alumni:post` is a
  * channel marker, not a capability: the posting gate reads it off the channel,
- * confining alumni to `#alumni` and DMs, neither of which is in the corpus.
+ * confining alumni to `#alumni` and DMs. DMs are never in the corpus. `#alumni`
+ * is a chapter channel, so since 2026-11-11 it is (`spec/behavior/ai.md` § Chat
+ * as a source), and no case models an alumnus writing there yet (#4307).
  */
 export const ALUMNUS: EvalCaller = {
   memberId: 'member-alumnus',
@@ -79,7 +81,7 @@ export const DOC_UPLOADER: EvalCaller = {
 
 /**
  * Seeded Treasurer role: what its starting tier gives every role in it
- * (#4071), then the Treasurer's own billing, points, reports and events grants.
+ * (#4071, the Exec board's officer defaults included), then the Treasurer's own billing, points, reports and events grants.
  */
 export const TREASURER: EvalCaller = {
   memberId: 'member-treasurer',
@@ -88,6 +90,14 @@ export const TREASURER: EvalCaller = {
   permissions: [
     'members:view',
     'polls:view_all',
+    'announcements:post',
+    'channels:create',
+    'channels:manage',
+    'chapter-config:manage',
+    'chapter-config:view',
+    'roles:manage',
+    'service:approve',
+    'tasks:manage',
     'billing:view',
     'billing:manage',
     'points:adjust',
@@ -110,5 +120,17 @@ export const PRESIDENT: EvalCaller = {
   memberId: 'member-president',
   chapterId: CHAPTER,
   roleName: 'President',
-  permissions: ['members:view', 'polls:view_all', '*'],
+  permissions: [
+    'members:view',
+    'polls:view_all',
+    'announcements:post',
+    'channels:create',
+    'channels:manage',
+    'chapter-config:manage',
+    'chapter-config:view',
+    'roles:manage',
+    'service:approve',
+    'tasks:manage',
+    '*',
+  ],
 };

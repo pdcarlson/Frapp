@@ -185,7 +185,7 @@ export function MessageThreadScreen({
   const onChangeText = useCallback(
     (next: string) => {
       setDraft(next);
-      if (next) emitTyping();
+      if (next.trim()) emitTyping();
     },
     [emitTyping],
   );

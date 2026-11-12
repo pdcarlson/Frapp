@@ -18,9 +18,9 @@ describe('RbacController', () => {
     rbacService = {
       findByChapter: jest.fn(),
       getPermissionsCatalog: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+      createAsMember: jest.fn(),
+      updateAsMember: jest.fn(),
+      deleteAsMember: jest.fn(),
       transferPresidency: jest.fn(),
       getPresidencyClaimStatus: jest.fn(),
       claimPresidency: jest.fn(),
@@ -71,11 +71,15 @@ describe('RbacController', () => {
         permissions: [SystemPermissions.EVENTS_CREATE],
       };
       const expectedRole = { id: 'role-1', ...dto } as any;
-      rbacService.create.mockResolvedValue(expectedRole);
+      rbacService.createAsMember.mockResolvedValue(expectedRole);
 
       const result = await controller.create(chapterId, 'user-1', dto);
 
-      expect(rbacService.create).toHaveBeenCalledWith(chapterId, 'user-1', dto);
+      expect(rbacService.createAsMember).toHaveBeenCalledWith(
+        chapterId,
+        'user-1',
+        dto,
+      );
       expect(result).toEqual(expectedRole);
     });
 
@@ -94,11 +98,11 @@ describe('RbacController', () => {
       const chapterId = 'chapter-1';
       const dto: UpdateRoleDto = { name: 'Updated Role' };
       const expectedRole = { id: roleId, ...dto } as any;
-      rbacService.update.mockResolvedValue(expectedRole);
+      rbacService.updateAsMember.mockResolvedValue(expectedRole);
 
       const result = await controller.update(roleId, chapterId, 'user-1', dto);
 
-      expect(rbacService.update).toHaveBeenCalledWith(
+      expect(rbacService.updateAsMember).toHaveBeenCalledWith(
         roleId,
         chapterId,
         'user-1',
@@ -120,11 +124,11 @@ describe('RbacController', () => {
     it('should delete a custom role', async () => {
       const roleId = 'role-1';
       const chapterId = 'chapter-1';
-      rbacService.delete.mockResolvedValue(undefined);
+      rbacService.deleteAsMember.mockResolvedValue(undefined);
 
       const result = await controller.delete(roleId, chapterId, 'user-1');
 
-      expect(rbacService.delete).toHaveBeenCalledWith(
+      expect(rbacService.deleteAsMember).toHaveBeenCalledWith(
         roleId,
         chapterId,
         'user-1',

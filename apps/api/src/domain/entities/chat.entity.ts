@@ -101,6 +101,15 @@ export interface ChatChannelCategory {
   name: string;
   display_order: number;
   created_at: string;
+  /**
+   * Who can see its channels (#3722): what a new channel in it copies, and
+   * what a channel that matches it follows when it changes
+   * (`set_chat_category_access`). `null` is everyone in the chapter; a list
+   * holds `tier:<id>` / `role:<id>` entries.
+   */
+  who_can_see: string[] | null;
+  /** Who can post in them: `null` is everyone who can see. As `who_can_see`. */
+  who_can_post: string[] | null;
 }
 
 export interface ChatChannel {
@@ -108,10 +117,33 @@ export interface ChatChannel {
   chapter_id: string;
   name: string;
   description: string | null;
+  /**
+   * PUBLIC and ROLE_GATED are one kind of channel now (#3722): `who_can_see`
+   * decides it, and `type` is kept equal to it (ROLE_GATED exactly when
+   * `who_can_see` is a list, a database check) for clients that draw a lock.
+   */
   type: ChannelType;
+  /**
+   * The gate before #3722. Read by nothing in the API for access; kept for one
+   * release because the Discord importer still writes it (a trigger turns it
+   * into lists) and shipped clients receive it. Dropped in #4286.
+   */
   required_permissions: string[] | null;
   member_ids: string[] | null;
   category_id: string | null;
+  /**
+   * Who can see a PUBLIC or ROLE_GATED channel: `null` is everyone in the
+   * chapter, a list holds `tier:<id>` / `role:<id>` entries
+   * (`canAccessChannel`). Always `null` on PRIVATE, DM and GROUP_DM.
+   */
+  who_can_see: string[] | null;
+  /** Who can post there: `null` is everyone who can see it. As `who_can_see`. */
+  who_can_post: string[] | null;
+  /**
+   * Kept equal to "has a who-can-post list" (a database check), which still
+   * makes a PUBLIC channel named announcements the announcements channel for
+   * push, and old clients' composer hint. Never written on its own.
+   */
   is_read_only: boolean;
   created_at: string;
   /**
@@ -201,7 +233,8 @@ export type ChatChannelPushRouting = Pick<
   | 'is_read_only'
   | 'type'
   | 'member_ids'
-  | 'required_permissions'
+  | 'who_can_see'
+  | 'who_can_post'
   | 'default_notification_level'
 >;
 
@@ -648,8 +681,9 @@ export type StoredChatMessageBookmark = Omit<
 /**
  * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
  * indexes it: one row per link per message. `spec/behavior/activity.md`
- * § Links. Which hosts count lives once, in the database's
- * `activity_action_links`.
+ * § Links. Which hosts are gathered is decided by the database's
+ * `activity_action_links`; the API's title read keeps its own copy of the
+ * list (`isSignUpHost`) for what it may open.
  */
 export interface ChatMessageLink {
   id: string;
@@ -668,6 +702,18 @@ export interface ChatMessageLink {
   /** Set when an officer removed it from everyone's Activity. */
   removed_at: string | null;
   removed_by: string | null;
+  /**
+   * The linked page's own name, read in the background (#4187); null when
+   * the page had none worth showing or has not been read yet.
+   */
+  title: string | null;
+  /**
+   * How many times the title sweep has tried the page. A definite answer
+   * sets it to `MAX_LINK_TITLE_ATTEMPTS`; a failed read leaves it below.
+   */
+  title_attempts: number;
+  /** When the last title read began; null: never tried. */
+  title_checked_at: string | null;
 }
 
 /** A member's own Done or Hide on a link. No row means it still shows. */

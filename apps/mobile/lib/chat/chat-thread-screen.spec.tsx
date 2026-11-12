@@ -60,6 +60,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
 /**
@@ -95,6 +96,14 @@ vi.mock("react-native", async () => {
 // The reaction tick. Mocked so a spec can count it: one per tap, never per
 // render.
 const selectionHaptic = vi.hoisted(() => vi.fn());
+// The Important strip (#4186): the hook is the server's answer, driven here.
+const importantState = vi.hoisted(() => ({
+  total: 0,
+  next: null as null | { id: string },
+  markSeen: vi.fn(),
+  reportVisible: vi.fn(),
+  dismiss: vi.fn(),
+}));
 /** The actions sheet's `dismiss`, as the screen calls it through its ref. */
 const dismissSheet = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({
@@ -389,7 +398,9 @@ const BLOCK_LIST = {
 
 const ROSTER = {
   byId: {},
-  nameFor: () => null,
+  // Only the typing specs read a name: the rest of this file draws rows by id.
+  nameFor: (id: string) =>
+    ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
   avatarFor: () => null,
   isPending: false,
   isError: false,
@@ -461,6 +472,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRequestChatUploadUrl: () => requestUploadUrl,
   useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
   useSetChannelNotificationLevel: () => setNotificationLevel,
+  useImportantMessages: () => importantState,
   useBlockedUserIds: () => BLOCK_LIST,
   // The viewer reads the message's images through the row's query.
   useMessageAttachments: () => ({ data: [IMAGE] }),
@@ -950,17 +962,18 @@ describe("chat thread image viewer (#2874)", () => {
 });
 
 describe("chat thread typing indicator after the block list (#2496)", () => {
-  // In a two-person DM "Someone is typing…" would tell the blocker that the
+  // In a two-person DM "Winston is typing…" would tell the blocker that the
   // member they blocked is writing to them. `visibleTypingUsers` is the rule;
   // this is the screen applying it to what it draws.
 
   it.each([
-    [[MEMBER], "Someone is typing…"],
+    // Named, as Discord does (2026-11-11).
+    [[MEMBER], "Winston Hewitt is typing…"],
     [[BLOCKED], null],
-    [[MEMBER, BLOCKED], "Someone is typing…"],
+    [[MEMBER, BLOCKED], "Winston Hewitt is typing…"],
     // The viewer's other device is not someone else typing.
     [[VIEWER], null],
-    [[MEMBER, "member-4"], "2 people are typing…"],
+    [[MEMBER, "member-4"], "Winston Hewitt and Shawn are typing…"],
   ])("with %j typing, shows %j", (typingUsers, shown) => {
     channel = channelState({ typingUsers });
     const tree = render();
@@ -971,6 +984,21 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
     } else {
       expect(text).not.toMatch(/typing…/);
     }
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread typing broadcasts", () => {
+  it("announces typing only while the box holds text, never for the clear after a send", () => {
+    const emitTyping = vi.fn();
+    channel = channelState({ emitTyping });
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText(""));
+    act(() => composer().props.onChangeText("   "));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer().props.onChangeText("on my way"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });
@@ -1019,7 +1047,7 @@ describe("chat thread typing line holds its place", () => {
       expect(slotStyle(typing)).not.toHaveProperty(key);
     }
     const line = caption(typing);
-    expect(line.props.children).toBe("Someone is typing…");
+    expect(line.props.children).toBe("Winston Hewitt is typing…");
     expect(line.props.numberOfLines).toBe(1);
     // Same type and line height as the blank, so the swap moves nothing.
     expect(flat(line.props.style)).toEqual(idleTextStyle);
@@ -1151,6 +1179,42 @@ describe("chat thread loading state (components.md §10)", () => {
     expect(screenText(tree)).not.toMatch(/Loading/);
     expect(lists(tree)).toHaveLength(0);
     act(() => tree.unmount());
+  });
+
+  it("marks the channel fully shown for Sentry when the shapes give way, to rows or to a failure (#4342)", () => {
+    const ready = (tree: ReactTestRenderer) =>
+      tree.root.findByType(ScreenReady).props.ready as boolean;
+
+    channel = channelState({ isLoading: true });
+    const loading = render();
+    expect(ready(loading)).toBe(false);
+    act(() => loading.unmount());
+
+    channel = channelState({});
+    const loaded = render();
+    expect(skeletons(loaded)).toHaveLength(0);
+    expect(ready(loaded)).toBe(true);
+    act(() => loaded.unmount());
+
+    channel = channelState({ viewerId: null, loadError: new Error("offline") });
+    const failed = render();
+    expect(ready(failed)).toBe(true);
+    act(() => failed.unmount());
+
+    // Messages from cache before `/users/me` answers: still the skeleton (#2250).
+    channel = channelState({ viewerId: null });
+    const noViewer = render();
+    expect(skeletons(noViewer)).toHaveLength(1);
+    expect(ready(noViewer)).toBe(false);
+    act(() => noViewer.unmount());
+
+    // `/users/me` failed: its error state is what the member is left with.
+    channel = channelState({ viewerId: null });
+    viewerQuery = { ...viewerQuery, isError: true };
+    const noAccount = render();
+    expect(screenText(noAccount)).toContain("Couldn't load your account");
+    expect(ready(noAccount)).toBe(true);
+    act(() => noAccount.unmount());
   });
 
   it("sits the shapes at the bottom, where an inverted thread's rows land", () => {
@@ -2470,6 +2534,64 @@ describe("chat thread flags from the actions sheet", () => {
       expect.any(String),
     );
     alert.mockRestore();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread Important strip (#4186)", () => {
+  afterEach(() => {
+    importantState.total = 0;
+    importantState.next = null;
+    importantState.markSeen.mockClear();
+    importantState.dismiss.mockClear();
+    importantState.reportVisible.mockClear();
+  });
+
+  it("draws no strip while nothing is unseen", () => {
+    const tree = render();
+    expect(
+      tree.root.findAll((node) => node.props.testID === "important-strip"),
+    ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("reports the rows on screen, never a tombstone, through one callback", () => {
+    const tree = render();
+    const [list] = lists(tree);
+    const report = list!.props.onViewableItemsChanged;
+    expect(list!.props.viewabilityConfig).toEqual({
+      itemVisiblePercentThreshold: 50,
+    });
+
+    act(() =>
+      report({
+        viewableItems: [
+          { item: { message: { id: "m1" }, visibility: "visible" } },
+          { item: { message: { id: "m2" }, visibility: "tombstone" } },
+          { item: null },
+        ],
+      }),
+    );
+    expect(importantState.reportVisible).toHaveBeenLastCalledWith(["m1"]);
+
+    // FlatList throws when this changes after mount.
+    rerender(tree);
+    expect(lists(tree)[0]!.props.onViewableItemsChanged).toBe(report);
+    act(() => tree.unmount());
+  });
+
+  it("shows the count, and Show marks the oldest seen", () => {
+    importantState.total = 2;
+    importantState.next = { id: "m1" };
+    const tree = render();
+
+    act(() =>
+      byLabel(tree, "2 important messages. Jump to the oldest").props.onPress(),
+    );
+    expect(importantState.markSeen).toHaveBeenCalledWith(["m1"]);
+
+    act(() => byLabel(tree, "Dismiss important messages").props.onPress());
+    expect(importantState.dismiss).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

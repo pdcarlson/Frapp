@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { Alert } from "react-native";
+import { ActionSheetIOS, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
@@ -38,6 +38,10 @@ const state = vi.hoisted(() => ({
   classes: [] as { id: string; name: string }[],
   vocabulary: undefined as Record<string, string> | undefined,
   classReads: [] as ({ enabled?: boolean } | undefined)[],
+  // Users whose profile read says `viewer_can_remove`.
+  removable: new Set<string>(),
+  removeMutate: vi.fn(),
+  block: vi.fn(),
 }));
 
 function profile(userId: string, name: string) {
@@ -72,7 +76,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (id: string) => ({
-    data: PROFILES[id],
+    data: PROFILES[id] && {
+      ...PROFILES[id],
+      viewer_can_remove: state.removable.has(id),
+    },
     isPending: false,
     isError: false,
     isSuccess: true,
@@ -91,6 +98,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       : { data: state.classes, isPending: false, isSuccess: true };
   },
   useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveMember: () => ({ mutate: state.removeMutate, isPending: false }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
     ids: state.blocked,
@@ -109,7 +117,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/chat/block-actions")>()),
   useBlockActions: () => ({
-    block: vi.fn(),
+    block: state.block,
     unblock: vi.fn(),
     reloadMaskedCopies: vi.fn(),
     isPending: false,
@@ -226,29 +234,8 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
-  it("draws Block with no chevron, since it acts in place", () => {
-    // components.md § Chrome weight: a chevron promises somewhere to go.
+  it("draws no title row or Done over the name", () => {
     const tree = render(ADA);
-    const block = tree.root.find(
-      (node) =>
-        typeof node.type === "function" &&
-        typeof node.props.label === "string" &&
-        node.props.label.startsWith("Block "),
-    );
-    expect(block.props.action).toBe(true);
-    act(() => tree.unmount());
-  });
-
-  it("draws Unblock with no chevron, and no title row or Done over the name", () => {
-    state.blocked = new Set([ADA]);
-    const tree = render(ADA);
-    const unblock = tree.root.find(
-      (node) =>
-        typeof node.type === "function" &&
-        typeof node.props.label === "string" &&
-        node.props.label.startsWith("Unblock "),
-    );
-    expect(unblock.props.action).toBe(true);
     // The member's name heads the sheet (components.md § Chrome weight).
     expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
     // The role editor's list header is a React element prop, which links
@@ -491,45 +478,142 @@ describe("MemberDetailSheet Message action (#2773)", () => {
   });
 });
 
-describe("MemberDetailSheet Block row (#2257)", () => {
+// Block and Remove from chapter sit behind the header's ⋯, never on the
+// profile's face (Paul, 2026-11-11), and neither is offered on your own.
+describe("MemberDetailSheet ⋯ menu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
     state.blockStatus = "ready";
     state.blocked = new Set();
     state.blockPaused = false;
+    state.removable = new Set();
   });
 
-  function blockRows(tree: ReactTestRenderer) {
+  function moreButton(tree: ReactTestRenderer) {
     return tree.root.findAll(
       (node) =>
         typeof node.props.label === "string" &&
-        /^(Block|Unblock) /.test(node.props.label) &&
+        node.props.label.startsWith("More for ") &&
         typeof node.type === "function",
     );
   }
 
-  it("offers Block on another member's profile", () => {
+  /** Opens the ⋯ and answers the action sheet's options, minus Cancel. */
+  function openMenu(tree: ReactTestRenderer) {
+    const [button] = moreButton(tree);
+    act(() => button!.props.onPress());
+    const show = vi.mocked(ActionSheetIOS.showActionSheetWithOptions);
+    const [options, pick] = show.mock.calls.at(-1)!;
+    return {
+      labels: options.options.slice(0, -1),
+      options,
+      pick: (label: string) =>
+        act(() => pick(options.options.indexOf(label))),
+    };
+  }
+
+  /** Presses the alert button labelled `text` on the last alert shown. */
+  function pressAlert(text: string) {
+    const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+    act(() => buttons.find((b) => b.text === text)!.onPress!());
+  }
+
+  it("draws no Block row or Remove button on the profile's face", () => {
+    state.removable = new Set([ADA]);
     const tree = render(ADA);
-    expect(blockRows(tree).map((row) => row.props.label)).toEqual([
-      "Block Ada",
-    ]);
+    const faceRows = tree.root.findAll(
+      (node) =>
+        typeof node.props.label === "string" &&
+        /^(Block|Unblock|Remove)/.test(node.props.label) &&
+        typeof node.type === "function",
+    );
+    expect(faceRows).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Block, and no removal, to a viewer who may not remove", () => {
+    const tree = render(ADA);
+    expect(openMenu(tree).labels).toEqual(["Block Ada"]);
+    act(() => tree.unmount());
+  });
+
+  it("offers Unblock for a member you blocked", () => {
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    expect(openMenu(tree).labels).toEqual(["Unblock Ada"]);
+    act(() => tree.unmount());
+  });
+
+  it("offers Remove from chapter where the API says this viewer may, marked destructive", () => {
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const menu = openMenu(tree);
+    expect(menu.labels).toEqual(["Block Ada", "Remove from chapter"]);
+    expect(menu.options.destructiveButtonIndex).toEqual([0, 1]);
+    act(() => tree.unmount());
+  });
+
+  it("blocks only after confirming", () => {
+    const tree = render(ADA);
+    openMenu(tree).pick("Block Ada");
+    expect(state.block).not.toHaveBeenCalled();
+    pressAlert("Block");
+    expect(state.block).toHaveBeenCalledWith(ADA);
+    act(() => tree.unmount());
+  });
+
+  it("removes only after confirming, then closes the sheet", () => {
+    state.removable = new Set([ADA]);
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onSuccess: () => void }) =>
+        handlers.onSuccess(),
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    expect(state.removeMutate).not.toHaveBeenCalled();
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+      "Remove Ada from the chapter?",
+    );
+    pressAlert("Remove from chapter");
+    expect(state.removeMutate).toHaveBeenCalledWith(
+      `m-${ADA}`,
+      expect.anything(),
+    );
+    expect(dismiss).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("says the removal failed when the API refuses it", () => {
+    state.removable = new Set([ADA]);
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onError: (e: unknown) => void }) =>
+        handlers.onError(new Error("403")),
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    pressAlert("Remove from chapter");
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+      "Couldn't remove Ada",
+    );
+    expect(dismiss).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 
   it.each([
     ["your own profile", VIEWER],
     ["the system actor's profile", SYSTEM_SENDER_ID],
-  ])("withholds Block and Unblock on %s", (_, userId) => {
+  ])("draws no ⋯ on %s, even if a read says you may remove", (_, userId) => {
+    state.removable = new Set([userId]);
     const tree = render(userId);
-    expect(blockRows(tree)).toHaveLength(0);
+    expect(moreButton(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
-  it("withholds them while the viewer is unknown", () => {
+  it("draws no ⋯ while the viewer is unknown", () => {
     state.viewer = null;
     const tree = render(ADA);
-    expect(blockRows(tree)).toHaveLength(0);
+    expect(moreButton(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

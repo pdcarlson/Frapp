@@ -16,13 +16,11 @@ import {
   useMemberByUserId,
   useMemberDisplayNames,
   usePermissionList,
+  useRemoveMember,
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import {
-  can,
-  resolveRoleChips,
-} from "@repo/validation";
+import { can, resolveRoleChips } from "@repo/validation";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
 import { StatusDot } from "@/components/account/status-dot";
@@ -54,6 +52,18 @@ import {
   MemberRolesSheet,
   type MemberRolesSession,
 } from "@/components/directory/member-roles-sheet";
+import {
+  confirmRemoveMember,
+  memberMenuActions,
+  showMemberMenu,
+} from "@/lib/directory/member-menu";
+import { errorCopy } from "@repo/hooks/error-copy";
+import {
+  memberMenuButtonLabel,
+  removeFailedTitle,
+} from "@repo/hooks/member-removal-copy";
+import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
+import { OverflowGlyph } from "@/components/chat/overflow-glyph";
 import {
   dmChannelIdOf,
   messageRowDescription,
@@ -95,9 +105,13 @@ import {
  * {@link MemberRolesSheet}: the one role editor on mobile (Paul, 2026-11-07),
  * now reachable from chat too; for everyone else the chips are read-only.
  *
- * **Block / Unblock** (#2257) sits at the foot of another member's profile,
- * because the directory is where a member you have blocked is still listed and
- * so where you would look for them.
+ * **The `⋯` menu** beside the header's X holds what a viewer reaches for only
+ * now and then (Paul, 2026-11-11: nobody opens a profile to remove someone).
+ * Block / Unblock (#2257) for another member, and Remove from chapter where
+ * the API says this viewer may (`viewer_can_remove`: `members:remove`, not
+ * their own profile, and the member ranks below them). Neither is offered on
+ * your own profile, so there the `⋯` isn't drawn. Block sat at the foot of the
+ * profile as a red row until then.
  *
  * ## A tall sheet
  *
@@ -200,6 +214,55 @@ export const MemberDetailSheet = forwardRef<
   // list that has not loaded offers Block, which the API treats idempotently.
   const isBlocked = blockTarget ? blockList.ids.has(blockTarget.userId) : false;
 
+  const removeMutation = useRemoveMember();
+  const menuActions = memberMenuActions({
+    canBlock: blockTarget !== null,
+    isBlocked,
+    // The server's answer already excludes the viewer's own profile; the
+    // `otherMemberId` check keeps it so if a cached read ever says otherwise.
+    canRemove:
+      !!detail?.canRemove && !!detail.memberId && otherMemberId !== null,
+  });
+
+  function openMenu() {
+    if (!detail) return;
+    const target = detail;
+    showMemberMenu(target.displayName, menuActions, (action) => {
+      if (action === "block") {
+        confirmBlockMember({
+          name: target.displayName,
+          // Listed in the directory: that is where this is.
+          inDirectory: true,
+          run: () => blockActions.block(target.userId),
+        });
+      } else if (action === "unblock") {
+        confirmUnblockMember({
+          name: target.displayName,
+          run: () => blockActions.unblock(target.userId),
+        });
+      } else if (action === "remove" && target.memberId) {
+        const memberId = target.memberId;
+        confirmRemoveMember({
+          name: target.displayName,
+          run: () => {
+            removeMutation.mutate(memberId, {
+              onSuccess: () => closeSheet(),
+              onError: (error) =>
+                Alert.alert(
+                  removeFailedTitle(target.displayName),
+                  errorCopy(error, "Try again in a moment.", {
+                    // The route's refusals are sentences for members ("You
+                    // can only remove members ranked below you.").
+                    serverWritesForMembers: true,
+                  }),
+                ),
+            });
+          },
+        });
+      }
+    });
+  }
+
   const router = useRouter();
   // Not waiting on the channel-list refetch: chat home observes it and picks
   // the DM up when it lands, and a refetch that fails offline would otherwise
@@ -268,7 +331,27 @@ export const MemberDetailSheet = forwardRef<
           stickyHeaderIndices={[0]}
         >
           <View style={styles.stickyHeader}>
-            <TallSheetHeader onClose={closeSheet} />
+            <TallSheetHeader
+              onClose={closeSheet}
+              actions={
+                detail && menuActions.length > 0 ? (
+                  <IconButton
+                    label={memberMenuButtonLabel(detail.displayName)}
+                    onPress={openMenu}
+                    // Held while a block or a removal is out, rather than
+                    // dropping a row from the menu, so the ⋯ never jumps.
+                    disabled={
+                      blockActions.isPending || removeMutation.isPending
+                    }
+                  >
+                    <OverflowGlyph
+                      color={tokens.color.text.mutedForeground}
+                      size={ICON_BUTTON_SIZE}
+                    />
+                  </IconButton>
+                ) : null
+              }
+            />
           </View>
 
           {memberQuery.isPending ? (
@@ -489,39 +572,6 @@ export const MemberDetailSheet = forwardRef<
                 <View style={styles.bioCard}>
                   <Text style={styles.bioText}>{detail.bio}</Text>
                 </View>
-              ) : null}
-
-              {blockTarget ? (
-                <ListSection>
-                  {isBlocked ? (
-                    <ListRow
-                      label={`Unblock ${blockTarget.displayName}`}
-                      action
-                      disabled={blockActions.isPending}
-                      onPress={() =>
-                        confirmUnblockMember({
-                          name: blockTarget.displayName,
-                          run: () => blockActions.unblock(blockTarget.userId),
-                        })
-                      }
-                    />
-                  ) : (
-                    <ListRow
-                      label={`Block ${blockTarget.displayName}`}
-                      action
-                      destructive
-                      disabled={blockActions.isPending}
-                      onPress={() =>
-                        confirmBlockMember({
-                          name: blockTarget.displayName,
-                          // Listed in the directory: that is where this is.
-                          inDirectory: true,
-                          run: () => blockActions.block(blockTarget.userId),
-                        })
-                      }
-                    />
-                  )}
-                </ListSection>
               ) : null}
             </>
           ) : null}

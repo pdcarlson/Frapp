@@ -2,7 +2,7 @@
 
 ## Primary channels
 
-- **Critical production alerts, today:** four production-scoped Sentry email rules, created 2026-11-05 ([#863](https://github.com/pdcarlson/Frapp/issues/863)) and named *Frapp prod alert: …*, email the owner: `6297121` (a new or regressed issue at level error or above in `frapp-api`, `frapp-web` or `frapp-mobile`, at most every 5 minutes), and the three rules in [§ Security events](#security-events), [§ Billing webhooks](#billing-webhooks) and [§ Chat worker subscriptions](#chat-worker-subscriptions). A test firing of `6297121` reached the owner's Gmail on 2026-11-05, about 4 minutes after the click; a Gmail filter on the subject carries these emails to the phone. Each project's default high-priority email rule, also scoped to production since 2026-11-05, still runs beside them (see the callout below). Render's paging rules are unread (the Render MCP was unauthorized on 2026-09-09). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, blocked by plan** (the rest of decision 2, #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on. Sentry offers the Discord integration only on its Team plan, and the org is on the free plan (seen in the Sentry dashboard, 2026-11-05), so email, decision 2's second path, carries every Sentry alert until the plan changes.
+- **Critical production alerts, today:** five production-scoped Sentry email rules named *Frapp prod alert: …* email the owner. Four were created 2026-11-05 ([#863](https://github.com/pdcarlson/Frapp/issues/863)): `6297121` (a new or regressed issue at level error or above in `frapp-api`, `frapp-web` or `frapp-mobile`, at most every 5 minutes), and the three rules in [§ Security events](#security-events), [§ Billing webhooks](#billing-webhooks) and [§ Chat worker subscriptions](#chat-worker-subscriptions). The fifth, `6330068` (2026-11-11), is in [§ API latency](#api-latency). A test firing of `6297121` reached the owner's Gmail on 2026-11-05, about 4 minutes after the click; a Gmail filter on the subject carries these emails to the phone. Each project's default high-priority email rule, also scoped to production since 2026-11-05, still runs beside them (see the callout below). Render's paging rules are unread (the Render MCP was unauthorized on 2026-09-09). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, blocked by plan** (the rest of decision 2, #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on. Sentry offers the Discord integration only on its Team plan, and the org is on the free plan (seen in the Sentry dashboard, 2026-11-05), so email, decision 2's second path, carries every Sentry alert until the plan changes.
 - **Staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `incident` issues, as above. Staging isn't automatically low priority: each alert's priority is on its roster row. The staging deploy alert is **P1** (owner decision on #2803): its one job ships the API, and a production deploy of that commit builds the same image. A failure anywhere in that job also stops web and landing. Migration drift watches staging and production together. The daily Sentry read #2505 planned is the Beta Watch routine ([`beta-watch`](../../.claude/skills/beta-watch/SKILL.md)), which files new production problems as issues; it pages no one.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
@@ -262,8 +262,20 @@ conformance run both leave an open alert open. Mechanics and rationale:
 - push notification delivery failure spikes
 - a chat worker's Realtime subscription down for a minute or more (no chat pushes, or no `#chapter-audit` mirror)
 - database latency saturation impacting request SLAs
+- API median or p95 latency regressing for an hour ([§ API latency](#api-latency))
 
 ## Thresholds
+
+### API latency
+
+Two Sentry metric monitors on `frapp-api` (created 2026-11-11), each over a 1-hour window of production `http.server` spans, feed the email rule *Frapp prod alert: API got slow* (`6330068`, at most every 6 hours, to the owner):
+
+| Monitor | Warning | Critical | Resolves at |
+| --- | --- | --- | --- |
+| *Frapp prod: API p50 latency* (`10926161`) | > 700 ms | > 1,000 ms | ≤ 600 ms |
+| *Frapp prod: API p95 latency* (`10926162`) | > 3,500 ms | > 5,000 ms | ≤ 3,000 ms |
+
+The lines were set at that week's regression level (p50 608 ms, p95 3.0 s), so they catch a step backwards today without firing all day. Lower them as speed work reaches production, but not to the [speed budget](../../spec/behavior/observability.md#speed-budget) itself: that budget (150 ms / 600 ms) is for reads, and these monitors watch every request, cold-path writes such as webhooks, exports and imports included, whose own budget is seconds ([`architecture` § Hot path vs cold path](../../spec/architecture/README.md#hot-path-vs-cold-path)). A monitor held to the read budget would need a filter to reads first. An hour with little traffic, such as overnight, makes p95 noisy; the 6-hour notification interval keeps that from repeating.
 
 ### Push notification delivery
 
@@ -336,9 +348,9 @@ Source: the events web and mobile send when a React Query query or mutation fail
 API downtime, 5xx rate, database pool exhaustion, Stripe webhook failures, and the
 authorization-denial / throttle-saturation rows. This file records **implemented or
 human-create** thresholds for push delivery, the in-process auth-failure spike, the
-billing unknown-chapter event, and a chat worker's Realtime subscription outage. The rest have **no recorded provider rule**. Observed
+billing unknown-chapter event, a chat worker's Realtime subscription outage, and API latency. The rest have **no recorded provider rule**. Observed
 2026-09-09: Sentry *issue* alerts are only the default high-priority notification per
-project; Sentry *metric* alerts were unread (`HTTP 410`); PostHog has none; Render was
+project; Sentry *metric* alerts were unread (`HTTP 410`), and are readable through the Sentry MCP since at least 2026-11-11, when the two latency monitors were made; PostHog has none; Render was
 unread. Treat a missing threshold as a gap, not as a pointer to follow in a dashboard.
 
 ## Escalation

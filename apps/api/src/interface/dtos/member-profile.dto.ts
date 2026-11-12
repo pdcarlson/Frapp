@@ -88,6 +88,15 @@ export class MemberProfileDto {
       'already filtered to the fields the requesting viewer may see.',
   })
   custom_fields?: MemberCustomFieldValueDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the requesting viewer may remove this member from the chapter ' +
+      '(DELETE /v1/members/{id}): they hold members:remove, it is not their ' +
+      'own profile, and the member ranks below them. Present only on ' +
+      'single-member reads.',
+  })
+  viewer_can_remove?: boolean;
 }
 
 /**

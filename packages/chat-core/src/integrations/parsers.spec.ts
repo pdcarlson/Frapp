@@ -193,7 +193,30 @@ describe("parseTaskArgs", () => {
       title: "Clean the house",
       assigneeToken: "alice",
       dueDate: "2026-06-15",
+      dueAt: null,
       pointReward: 10,
+    });
+  });
+
+  it("reads a time after the date, and points after the time (#4003)", () => {
+    const now = new Date(2026, 10, 11, 9, 0);
+    const r = parseTaskArgs('"Take out the trash" @alice fri 9pm 5', now);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.dueDate).toBe("2026-11-13");
+    expect(r.value.dueAt).toBe(new Date(2026, 10, 13, 21, 0).toISOString());
+    expect(r.value.pointReward).toBe(5);
+  });
+
+  it("never reads a bare number after the date as a time", () => {
+    const now = new Date(2026, 10, 11, 9, 0);
+    const r = parseTaskArgs('"Sweep" @alice fri 5', now);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toMatchObject({
+      dueDate: "2026-11-13",
+      dueAt: null,
+      pointReward: 5,
     });
   });
 

@@ -191,8 +191,8 @@ export class ChatAttachmentService {
   ) {
     // Authorized as a "post", for the same reason `editMessage` is: a signed
     // URL lets the caller put bytes under this channel's storage prefix, so it
-    // must clear the gates that decide who may write here — the read-only /
-    // `announcements:post` gate, the Alumni lifecycle rule, and the
+    // must clear the gates that decide who may write here — the channel's
+    // who-can-post list (#3722), the Alumni lifecycle rule, and the
     // archived-channel freeze. Issuing a *write* credential on a *read* check
     // is the general form of the bug (#2186); the rule is that every step of a
     // two-step write authorizes as the write, never as the read that precedes

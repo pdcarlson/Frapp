@@ -17,8 +17,19 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Member } from '#domain/entities/member.entity';
+import { Role } from '#domain/entities/role.entity';
+import { flattenPermissionSets } from '#domain/utils/permissions';
+import {
+  canReach,
+  holderRank,
+  permissionsNotHeld,
+  roleRank,
+} from '#domain/utils/role-rank';
 import { User } from '#domain/entities/user.entity';
-import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
@@ -76,6 +87,14 @@ export interface MemberProfile {
    * viewer may see. Omitted from list responses.
    */
   custom_fields?: MemberCustomFieldValue[];
+  /**
+   * Whether the requesting viewer may remove this member from the chapter
+   * (`DELETE /v1/members/{id}`): they hold `members:remove`, it is not their
+   * own profile, and the member ranks below them ({@link MemberService.remove}).
+   * Present only on single-member reads, so a client offers Remove from
+   * chapter only where the API would allow it.
+   */
+  viewer_can_remove?: boolean;
 }
 
 export type MemberSummary = MemberProfile;
@@ -279,10 +298,26 @@ export class MemberService {
     return this.buildProfile(member, chapterId, viewerUserId);
   }
 
+  /**
+   * Set a member's roles, behind the rank rules (#4071) for `actorUserId`
+   * unless they hold `*`:
+   *
+   * - every role added or taken away must rank below the caller's own;
+   * - the member must rank below the caller too, unless it is the caller
+   *   themselves, so a chair cannot strip an officer's roles;
+   * - on their own row, the caller may not end up holding a permission they
+   *   did not already hold, so nobody hands themselves a lower role that
+   *   carries more than they have.
+   *
+   * So a chair holding `roles:manage` can give members the roles below the
+   * chairs' tier, and cannot give anyone, least of all themselves, a chair's
+   * or officer's role.
+   */
   async updateRoles(
     memberId: string,
     roleIds: string[],
     chapterId: string,
+    actorUserId: string,
   ): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
@@ -334,7 +369,70 @@ export class MemberService {
       }
     }
 
+    await this.assertRolesWithinReach(member, roleIds, roles, actorUserId);
+
     return this.memberRepo.update(memberId, { role_ids: roleIds });
+  }
+
+  /** The rank rules of {@link updateRoles}; see there. */
+  private async assertRolesWithinReach(
+    member: Member,
+    roleIds: readonly string[],
+    roles: readonly Role[],
+    actorUserId: string,
+  ): Promise<void> {
+    const context = await this.rbacService.getRankContext(
+      member.chapter_id,
+      actorUserId,
+    );
+    const { reach, positions } = context;
+    if (reach.wildcard) return;
+
+    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+    const resolve = (ids: readonly string[]) =>
+      [...new Set(ids.map((id) => id.toLowerCase()))]
+        .map((id) => byId.get(id))
+        .filter((role): role is Role => role !== undefined);
+    const before = resolve(member.role_ids);
+    const after = resolve(roleIds);
+    const beforeIds = new Set(before.map((role) => role.id));
+    const afterIds = new Set(after.map((role) => role.id));
+    const changed = [
+      ...after.filter((role) => !beforeIds.has(role.id)),
+      ...before.filter((role) => !afterIds.has(role.id)),
+    ];
+    if (changed.length === 0) return;
+
+    const isSelf = reach.memberId === member.id;
+    if (
+      changed.some((role) => !canReach(reach, roleRank(role, positions))) ||
+      (!isSelf && !canReach(reach, holderRank(before, positions)))
+    ) {
+      throw new ForbiddenException(
+        'You can only give or take away roles ranked below your own, and only from members ranked below you.',
+      );
+    }
+    // Nobody hands out a permission they don't hold, to anyone: a lower role
+    // can still carry one (a role outside the tiers, an override), and a
+    // second account would otherwise collect it. What the Member role carries
+    // is exempt, since every member gets it.
+    const base = new Set(
+      roles.find((role) => role.system_key === SystemRoleKeys.MEMBER)
+        ?.permissions ?? [],
+    );
+    const missing = permissionsNotHeld(
+      reach,
+      flattenPermissionSets(
+        after
+          .filter((role) => !beforeIds.has(role.id))
+          .map((role) => role.permissions),
+      ),
+    ).filter((permission) => !base.has(permission));
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `You can only give roles whose permissions you hold: ${missing.join(', ')}.`,
+      );
+    }
   }
 
   async updateOnboarding(
@@ -395,6 +493,7 @@ export class MemberService {
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
     }
+    await this.assertRemovable(member, actorUserId);
     // #711: purge this chapter's profile-photo folder before the row goes.
     // No independent sweep reaps orphaned profile photos (unlike generated
     // report exports, which the 24h retention sweep covers regardless), so a
@@ -496,6 +595,49 @@ export class MemberService {
     );
   }
 
+  /**
+   * Why `actorUserId` may not remove `member`, or `null` when they may. The
+   * rank rules (#4071, `spec/behavior/rbac.md` § Rank) applied to removal:
+   *
+   * - nobody removes themselves. There is no leave-chapter flow, and a
+   *   President who removed their own membership would orphan the chapter;
+   * - a caller without `*` removes only members ranked below them, so a chair
+   *   with `members:remove` cannot remove an officer or another chair.
+   *
+   * `members:remove` itself is the route's guard; this only narrows it.
+   */
+  private async removalRefusal(
+    member: Member,
+    actorUserId: string,
+  ): Promise<string | null> {
+    if (member.user_id === actorUserId) {
+      return "You can't remove yourself from the chapter.";
+    }
+    const { reach, roles, positions } = await this.rbacService.getRankContext(
+      member.chapter_id,
+      actorUserId,
+    );
+    if (reach.memberId === member.id) {
+      return "You can't remove yourself from the chapter.";
+    }
+    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+    const held = member.role_ids
+      .map((id) => byId.get(id.toLowerCase()))
+      .filter((role): role is Role => role !== undefined);
+    if (!canReach(reach, holderRank(held, positions))) {
+      return 'You can only remove members ranked below you.';
+    }
+    return null;
+  }
+
+  private async assertRemovable(
+    member: Member,
+    actorUserId: string,
+  ): Promise<void> {
+    const refusal = await this.removalRefusal(member, actorUserId);
+    if (refusal) throw new ForbiddenException(refusal);
+  }
+
   async findProfileById(
     memberId: string,
     chapterId: string,
@@ -507,6 +649,36 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
     return this.buildProfile(member, chapterId, viewerUserId);
+  }
+
+  /**
+   * `viewer_can_remove` for a profile read: {@link removalRefusal}'s answer,
+   * without its reads where the permissions already settle it. A viewer
+   * without `members:remove` or `*` gets `false` with no rank read, a `*`
+   * holder reaches everyone but themselves, and only an officer holding
+   * `members:remove` alone pays for the rank context. A failed rank read
+   * answers `false` rather than failing the whole profile: the removal
+   * re-checks it anyway.
+   */
+  private async viewerCanRemove(
+    member: Member,
+    viewerUserId: string,
+    permissions: readonly string[],
+  ): Promise<boolean> {
+    if (member.user_id === viewerUserId) return false;
+    if (permissions.includes(SystemPermissions.WILDCARD)) return true;
+    if (!permissions.includes(SystemPermissions.MEMBERS_REMOVE)) return false;
+    try {
+      return (await this.removalRefusal(member, viewerUserId)) === null;
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Rank read for viewer_can_remove failed (chapter ${member.chapter_id}, member ${member.id})`,
+        error,
+      );
+      return false;
+    }
   }
 
   /** The profile of a membership row already known to be in `chapterId`. */
@@ -532,17 +704,20 @@ export class MemberService {
       permissions,
       member.user_id === viewerUserId,
     );
-    const customFields =
-      await this.customFieldService.findVisibleValuesForMember(
+    const [customFields, viewerCanRemove] = await Promise.all([
+      this.customFieldService.findVisibleValuesForMember(
         chapterId,
         member.id,
         allowed,
-      );
+      ),
+      this.viewerCanRemove(member, viewerUserId, permissions),
+    ]);
 
     return this.photoUrls.signRow(
       {
         ...this.mergeMemberWithUser(member, user, alumniRoleId),
         custom_fields: customFields,
+        viewer_can_remove: viewerCanRemove,
       },
       member.user_id,
     );

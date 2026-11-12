@@ -6,6 +6,7 @@ import {
 } from '@nestjs/throttler';
 import { createHmac } from 'node:crypto';
 import type { Response } from 'express';
+import type { JwtPayload } from '@supabase/supabase-js';
 import { getHeaderValue } from '../types/request-context.types';
 import { constantTimeEquals } from '#domain/utils/constant-time';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -23,7 +24,7 @@ const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set(['ES256', 'RS256']);
 
 /**
  * How often a token whose `kid` has never verified may reach the JWKS
- * verifier (see `jwksSubject`). Ten seconds bounds a random-`kid` flood to six
+ * verifier (see `jwksClaims`). Ten seconds bounds a random-`kid` flood to six
  * outbound JWKS fetches a minute for the whole process, and delays a genuine
  * key rotation's first per-user bucket by at most that long.
  */
@@ -99,8 +100,16 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * preserves the original denial-of-service protection.
    */
   protected async getTracker(req: Record<string, any>): Promise<string> {
-    const userId = await this.verifiedUserId(req);
-    if (userId) {
+    const claims = await this.verifiedClaims(req);
+    const userId = claims ? subjectOfUnexpired(claims) : null;
+    if (claims && userId) {
+      // Handed on so `SupabaseAuthGuard` can start the chapter lookups on
+      // this verified `sub` without verifying the token again (#3728). A
+      // second verifier there would sit outside this guard's unknown-`kid`
+      // bound below.
+      (
+        req as { throttlerVerifiedClaims?: JwtPayload }
+      ).throttlerVerifiedClaims = claims;
       return `user:${userId}`;
     }
     const ips = Array.isArray(req.ips) ? (req.ips as unknown[]) : [];
@@ -148,14 +157,14 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   }
 
   /**
-   * Return the `sub` of a cryptographically verified, unexpired Supabase access
-   * token on the request, or `null` (missing/malformed/invalid/expired token,
-   * or no verifier available for its `alg`) so callers fall back to per-IP
-   * keying.
+   * Return the claims of a cryptographically verified Supabase access token on
+   * the request, or `null` (missing/malformed/invalid token, or no verifier
+   * available for its `alg`) so callers fall back to per-IP keying. The
+   * caller still checks `exp` and `sub` (`subjectOfUnexpired`).
    */
-  private async verifiedUserId(
+  private async verifiedClaims(
     req: Record<string, any>,
-  ): Promise<string | null> {
+  ): Promise<JwtPayload | null> {
     const authHeader = getHeaderValue(
       (req.headers ?? {}) as Record<string, string | string[] | undefined>,
       'authorization',
@@ -181,10 +190,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
 
     if (header.alg === 'HS256') {
-      return this.hs256Subject(headerSeg, payloadSeg, signatureSeg);
+      return this.hs256Claims(headerSeg, payloadSeg, signatureSeg);
     }
     if (typeof header.alg === 'string' && JWKS_VERIFIED_ALGS.has(header.alg)) {
-      return this.jwksSubject(
+      return this.jwksClaims(
         token,
         typeof header.kid === 'string' ? header.kid : undefined,
       );
@@ -198,11 +207,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * `SUPABASE_JWT_SECRET`. Without the secret there is no way to check the
    * signature, so the token yields no subject rather than an unverified one.
    */
-  private hs256Subject(
+  private hs256Claims(
     headerSeg: string,
     payloadSeg: string,
     signatureSeg: string,
-  ): string | null {
+  ): JwtPayload | null {
     const secret = process.env.SUPABASE_JWT_SECRET;
     if (!secret) {
       return null;
@@ -216,10 +225,12 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
 
     try {
-      const payload = JSON.parse(
+      const payload: unknown = JSON.parse(
         Buffer.from(payloadSeg, 'base64url').toString('utf8'),
-      ) as { sub?: unknown; exp?: unknown };
-      return subjectOfUnexpired(payload);
+      );
+      return payload !== null && typeof payload === 'object'
+        ? (payload as JwtPayload)
+        : null;
     } catch {
       return null;
     }
@@ -248,10 +259,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * known set only on a successful verification, so an attacker cannot grow
    * it.
    */
-  private async jwksSubject(
+  private async jwksClaims(
     token: string,
     kid: string | undefined,
-  ): Promise<string | null> {
+  ): Promise<JwtPayload | null> {
     if (!this.supabase) {
       return null;
     }
@@ -271,7 +282,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       if (kid !== undefined) {
         this.verifiedKids.add(kid);
       }
-      return subjectOfUnexpired(data.claims);
+      return data.claims;
     } catch {
       return null;
     }

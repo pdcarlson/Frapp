@@ -173,7 +173,9 @@ layers are that job's steps named `inputs.environment == 'production'`:
 >
 > Three things stay fatal, and they are why the narrowing is safe to have:
 >
-> - a check whose job that commit **does** define and which never reported;
+> - a check whose job that commit **does** define and which never reported (usually a run
+>   GitHub dropped from its concurrency queue before it started: re-run it, see
+>   [the rollback playbook](../db-rollback-playbook.md#1-fast-forward-fix-preferred));
 > - a check defined in **neither** that commit nor `main` — that is a stale required-check
 >   roster naming a job nothing defines, not an old commit, so it is never excused;
 > - a run concluding `cancelled`, `timed_out` or `stale`. All three are refused, but reported

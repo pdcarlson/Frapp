@@ -10,6 +10,7 @@ import { useScreenBelow } from "@/lib/back-target";
 import { goBackTo } from "@/lib/href";
 import {
   Alert,
+  AppState,
   FlatList,
   Keyboard,
   Pressable,
@@ -35,6 +36,7 @@ import {
   messageCanStartThread,
 } from "@repo/chat-core/message-actions";
 import { setChannelLocked } from "@repo/chat-core/density";
+import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { canFlagMessage } from "@repo/chat-core/flags";
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,11 +59,13 @@ import {
   usePermissionList,
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
+  useImportantMessages,
 } from "@repo/hooks";
 import { can, draftWithMention, type ChatMessageFlag } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
+import { ImportantStrip } from "@/components/chat/important-strip";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
 import {
@@ -138,6 +142,7 @@ import {
   type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
+import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -145,6 +150,7 @@ import { selectionHaptic } from "@/lib/haptics";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
@@ -240,9 +246,8 @@ function ChannelThreadScreen() {
   // in `is_read_only` for posting; `postRefusalHint` picks which disabled hint
   // applies (an archived Group DM, read-only-without-permission, or the alumni
   // restriction — the cases `spec/ui/design-system/writing.md` § Chat
-  // documents). `isReadOnly` is also load-bearing for Reply: `can_post` is true in
-  // #announcements for an `announcements:post` holder, yet nobody replies
-  // there (`channelAllowsReplies`, #2775). `selectPostCapability` parses the payload defensively
+  // documents). Reply follows `can_post` alone (`channelAllowsReplies`): a
+  // quote reply is a post (#3722). `selectPostCapability` parses the payload defensively
   // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
   // `never` in the generated SDK.
   const channelQuery = useChannel(channelId ?? "");
@@ -575,8 +580,9 @@ function ChannelThreadScreen() {
     (next: string) => {
       setDraft(next);
       // The manager throttles to one broadcast per 3s, so this can ride every
-      // keystroke without flooding the channel.
-      emitTyping();
+      // keystroke without flooding the channel. An emptied box (the clear
+      // after a send, the last character erased) is nobody typing.
+      if (next.trim().length > 0) emitTyping();
     },
     [setDraft, emitTyping],
   );
@@ -598,6 +604,8 @@ function ChannelThreadScreen() {
     blockState,
     viewerId,
   );
+  // Who, by name, as Discord says it and the thread line already does.
+  const typingLine = typingLabel(shownTypingUsers, nameFor);
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
@@ -611,6 +619,58 @@ function ChannelThreadScreen() {
     jumpToMessage,
     onScrollToIndexFailed: handleScrollToIndexFailed,
   } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The "1 important message" strip (#4186): the server decides what counts
+  // and what was seen. Show jumps to the oldest unseen one, paging older
+  // history for it when it isn't loaded; rows scrolled onto the screen count
+  // as seen.
+  // Rows count only while this screen is in front: not under a pushed thread
+  // or another screen, and not with the app in the background, where
+  // Realtime can still deliver a flag.
+  const importantFocused = useIsFocused();
+  const importantFocusedRef = useRef(importantFocused);
+  useEffect(() => {
+    importantFocusedRef.current = importantFocused;
+  }, [importantFocused]);
+  const important = useImportantMessages(channelId, messages, {
+    isOnScreen: () =>
+      importantFocusedRef.current && AppState.currentState === "active",
+  });
+  const { next: nextImportant, markSeen: markImportantSeen } = important;
+  const { jumpToImportant } = useJumpToImportant({
+    rows: inverted,
+    resetKey: channelId,
+    hasOlder,
+    isLoadingOlder,
+    olderError,
+    loadOlder,
+    jumpToMessage,
+  });
+  const showImportant = useCallback(() => {
+    if (!nextImportant) return;
+    markImportantSeen([nextImportant.id]);
+    jumpToImportant(nextImportant.id);
+  }, [nextImportant, markImportantSeen, jumpToImportant]);
+  // FlatList refuses a new `onViewableItemsChanged` after mount, so the pair
+  // is made once and reads the latest report through a ref when it fires.
+  const reportVisibleRef = useRef(important.reportVisible);
+  useEffect(() => {
+    reportVisibleRef.current = important.reportVisible;
+  }, [important.reportVisible]);
+  const [viewability] = useState(() => ({
+    viewabilityConfig: { itemVisiblePercentThreshold: 50 },
+    onViewableItemsChanged: ({
+      viewableItems,
+    }: {
+      viewableItems: { item?: ThreadRow | null }[];
+    }) => {
+      reportVisibleRef.current(
+        viewableItems.flatMap(({ item }) =>
+          item && item.visibility !== "tombstone" ? [item.message.id] : [],
+        ),
+      );
+    },
+  }));
+
   // The way back to the newest message after reading back through history,
   // and the notice that something new landed there, judged on the rows in
   // the order the list draws them.
@@ -1232,6 +1292,23 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
+          {channelId && important.total > 0 && nextImportant ? (
+            <ImportantStrip
+              total={important.total}
+              onShow={showImportant}
+              onDismiss={important.dismiss}
+            />
+          ) : null}
+
+          {/* Ready once the skeleton below gives way, to rows or to a state. */}
+          <ScreenReady
+            ready={
+              !channelId ||
+              !!loadError ||
+              (!viewerId && viewerQuery.isError) ||
+              (!isLoading && !!viewerId)
+            }
+          />
           {!channelId ? (
             <View style={styles.stateBlock}>
               <Text style={styles.stateTitle}>No channel selected</Text>
@@ -1315,6 +1392,8 @@ function ChannelThreadScreen() {
                     key={channelId ?? undefined}
                     ref={listRef}
                     onScrollToIndexFailed={handleScrollToIndexFailed}
+                    viewabilityConfig={viewability.viewabilityConfig}
+                    onViewableItemsChanged={viewability.onViewableItemsChanged}
                     data={inverted}
                     renderItem={renderItem}
                     // `client_message_id` is always present and is stable across
@@ -1386,11 +1465,7 @@ function ChannelThreadScreen() {
             }
           >
             <Text style={styles.typing} numberOfLines={1}>
-              {shownTypingUsers.length === 0
-                ? TYPING_LINE_BLANK
-                : shownTypingUsers.length === 1
-                  ? "Someone is typing…"
-                  : `${shownTypingUsers.length} people are typing…`}
+              {typingLine ?? TYPING_LINE_BLANK}
             </Text>
           </View>
 

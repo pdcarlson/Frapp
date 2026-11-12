@@ -40,7 +40,6 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   poll: "Poll",
   event: "Event",
   hours: "Service hours",
-  file: "File",
   link: "Link",
 };
 
@@ -130,10 +129,8 @@ function PanelCard({
           onActed={onActed}
         />
       );
-    case "file":
     case "link":
-      // A file row is a link to where the file lives, and a sign-up link row
-      // opens the link; neither opens the panel.
+      // A sign-up link row opens the link, not the panel.
       return null;
   }
 }

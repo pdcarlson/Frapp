@@ -52,9 +52,10 @@ export type InjectionGoal =
 /**
  * A source the retrieval layer put in front of the model.
  *
- * `sourceType` mirrors the corpus table in spec §13. Note that `chat_message`
- * is only ever `#announcements` or an explicitly retrieved message — casual
- * chat and DMs are out of corpus per `spec/behavior/ai.md` non-goals.
+ * `sourceType` mirrors the corpus table in spec §13. `chat_message` covers
+ * `#announcements` and, since 2026-11-11, messages in chapter channels from
+ * members who agreed (`spec/behavior/ai.md` § Chat as a source). DMs stay out.
+ * The cases don't model a member-authored channel message yet (#4307).
  */
 export interface CorpusDocument {
   id: string;

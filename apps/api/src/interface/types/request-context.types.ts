@@ -30,6 +30,17 @@ export interface RequestContext extends Request {
    * refreshed their token yet.
    */
   jwtClaims?: JwtPayload;
+  /**
+   * The claims of this request's bearer token, set by `CustomThrottlerGuard`
+   * once it has verified the signature and `exp` (it runs first, as the
+   * global guard). **Not authentication**: the session may still be revoked,
+   * and only `SupabaseAuthGuard`'s `getUser` decides that. It lets that guard
+   * start the chapter lookups on a verified `sub` while `getUser` is in
+   * flight (#3728) without verifying the token a second time. Absent when the
+   * throttler skipped verification (an unknown `kid` within its retry
+   * interval, no verifier for the `alg`, a route that skips throttling).
+   */
+  throttlerVerifiedClaims?: JwtPayload;
   appUser?: AppUserContext;
   member?: MemberContext;
   chapterId?: string;

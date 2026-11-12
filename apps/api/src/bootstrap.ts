@@ -12,6 +12,8 @@ import {
 } from './interface/http/deployment-environment';
 import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
+import { requestReadsMiddleware } from './interface/middleware/request-reads.middleware';
+import { RequestReadsInterceptor } from './interface/interceptors/request-reads.interceptor';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 import { RequestContextLogger } from './infrastructure/observability/request-context-logger';
@@ -182,7 +184,15 @@ export function configureApp(
   // the middleware's own note on why this cannot be an interceptor.
   app.use(requestIdMiddleware);
 
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  // Also before the guards, which make the first membership and role reads
+  // the rest of the request shares (#3728). `RequestReadsInterceptor` below
+  // ends that sharing at a write's handler.
+  app.use(requestReadsMiddleware);
+
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(),
+    new RequestReadsInterceptor(),
+  );
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

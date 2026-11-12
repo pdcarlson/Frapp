@@ -16,6 +16,13 @@ describe("mobile observability wiring", () => {
     expect(layout).not.toMatch(/mobileReplayIntegration/);
   });
 
+  it("times each route's first frame, so screen-ready budgets have spans to sit on (#4342)", () => {
+    const layout = source("app/_layout.tsx");
+    expect(layout).toMatch(
+      /expoRouterIntegration\(\{\s*enableTimeToInitialDisplay:\s*true\s*\}\)/,
+    );
+  });
+
   it("uses Sentry Expo Metro with web replay off", () => {
     const metro = source("metro.config.js");
     expect(metro).toContain("getSentryExpoConfig");

@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { useEffect, useState, type ReactNode } from "react";
 
 /**
@@ -498,6 +498,8 @@ vi.mock("@repo/hooks", async () => ({
         canSetChannelBackground,
         claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
+        IMPORTANT_STRIP_DISMISS_LABEL,
+        importantStripLabel,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
@@ -515,6 +517,8 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
         HIDE_SETUP_CHECKLIST_LABEL,
+        IMPORTANT_STRIP_DISMISS_LABEL,
+        importantStripLabel,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
@@ -549,7 +553,7 @@ vi.mock("@repo/hooks", async () => ({
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
-    nameFor: () => null,
+    nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
     avatarFor: () => null,
   }),
   useChannelNotificationPreferences: () => ({
@@ -658,6 +662,7 @@ vi.mock("@repo/hooks", async () => ({
     mutate: displayLockState.mutate,
   }),
   useReorderChannels: () => ({ mutateAsync: railReorder.channels }),
+  useImportantMessages: () => importantState,
   useReorderCategories: () => ({ mutateAsync: railReorder.categories }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
@@ -727,6 +732,11 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
     userId: liveViewerState.userId,
     isLoading: liveViewerState.userId === null,
   }),
+}));
+
+// The thread cards' unread counts have their own spec (use-thread-unread).
+vi.mock("@/lib/chat/use-thread-unread", () => ({
+  useThreadUnread: () => ({}),
 }));
 
 vi.mock("@/lib/chat/use-chat-channel", () => ({
@@ -884,6 +894,22 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+// The Important strip (#4186): the hook is the server's answer, so the shell
+// test drives it directly.
+const importantState = vi.hoisted(() => ({
+  total: 0,
+  next: null as null | {
+    id: string;
+    created_at: string;
+    flagged_at: string;
+    sender_id: string | null;
+    author_name: string | null;
+    excerpt: string;
+  },
+  markSeen: vi.fn(),
+  reportVisible: vi.fn(),
+  dismiss: vi.fn(),
+}));
 const displayLockState = vi.hoisted(() => ({
   canSet: false,
   mutate: vi.fn(),
@@ -1716,6 +1742,36 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+
+  it("jumps to the oldest unseen Important message from the strip, and marks it seen (#4186)", () => {
+    importantState.total = 2;
+    importantState.next = {
+      id: "msg-1",
+      created_at: "2026-01-01T00:00:00Z",
+      flagged_at: "2026-01-01T00:00:00Z",
+      sender_id: null,
+      author_name: "Sam",
+      excerpt: "hello",
+    };
+    try {
+      render(<ChatShell initialChannelId="chan-general" />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /2 important messages/ }),
+      );
+
+      expect(importantState.markSeen).toHaveBeenCalledWith(["msg-1"]);
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss important messages" }),
+      );
+      expect(importantState.dismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      importantState.total = 0;
+      importantState.next = null;
+    }
   });
 
   it("consumes a search hit in another channel even when the URL named a different one", async () => {
@@ -3142,13 +3198,10 @@ describe("ChatShell reply-with-quote (#489)", () => {
     });
   });
 
-  it("offers no Reply control in a read-only channel (AC 4)", async () => {
-    // `spec/behavior/chat/README.md`: "Announcement messages cannot be replied
-    // to in-thread… it holds regardless of permissions." `ChatService` 400s
-    // such a send. Two ways this fails if the control is offered anyway: a
-    // member has no composer there at all (`can_post` false), so Reply visibly
-    // does nothing; a holder of `announcements:post` does get one, so Reply
-    // stages a strip that then fails on send.
+  it("offers Reply in a channel with a who-can-post list to a poster", async () => {
+    // #3722: a quote reply is a post, so whoever may post may quote, in
+    // #announcements too. The fixture leaves `can_post` unset, which reads as
+    // allowed; the alumni fixture below covers `can_post: false`.
     withMessages([ROOT]);
     render(<ChatShell initialChannelId="chan-announcements" />);
 
@@ -3157,7 +3210,7 @@ describe("ChatShell reply-with-quote (#489)", () => {
         "chan-announcements",
       );
     });
-    expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
+    expect(screen.getByTestId("reply-offered")).toHaveTextContent("true");
   });
 
   it("offers Reply in an ordinary channel", () => {
@@ -3908,6 +3961,30 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     // for when chat is alone again.
     expect(document.cookie).not.toContain("frapp_chat_members_hidden=1");
   });
+
+  it("draws a Close chat X at the end of the channel header only when handed a close (#4223)", () => {
+    stubWidth(1440);
+    const onClose = vi.fn();
+    const { rerender } = render(<ChatShell toolBeside onClose={onClose} />);
+    const header = screen.getByRole("button", { name: "Show members" })
+      .closest("header") as HTMLElement;
+    const close = within(header).getByRole("button", { name: "Close chat" });
+    // The tool page header's X, the same 36px control. No pull into the
+    // gutter: against this header's 16px it sits 16px from the panel's edge,
+    // where the page's sits against its 24px gutter.
+    expect(close).toHaveClass("h-9", "w-9");
+    expect(close).not.toHaveClass("-mr-2");
+    expect(header).toHaveClass("px-4");
+    expect(header.lastElementChild?.lastElementChild).toBe(close);
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Alone (no close from the shell), there is nothing to close chat into.
+    rerender(<ChatShell />);
+    expect(
+      screen.queryByRole("button", { name: "Close chat" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**
@@ -4457,7 +4534,32 @@ describe("ChatShell block list (#2313)", () => {
     );
     render(<ChatShell initialChannelId="chan-general" />);
 
+    // `nameFor` knows nobody here, so the one typist left reads as Someone.
     expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
+  });
+
+  it("names the typist and keeps the line's space when nobody types", () => {
+    sidebarState.memberNames = { "friend-1": "Winston Hewitt" };
+    onTestFinished(() => {
+      sidebarState.memberNames = {};
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ typingUsers: ["friend-1"] }),
+    );
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("typing-line")).toHaveTextContent(
+      "Winston Hewitt is typing…",
+    );
+    unmount();
+
+    // Nobody typing: the line is still there, one line tall and empty, so
+    // the next typist moves nothing.
+    mockUseChatChannel.mockReturnValue(chatChannelResult({ typingUsers: [] }));
+    render(<ChatShell initialChannelId="chan-general" />);
+    const line = screen.getByTestId("typing-line");
+    expect(line).toBeEmptyDOMElement();
+    expect(line.className).toContain("h-5");
+    expect(line).toHaveAttribute("aria-hidden", "true");
   });
 });
 

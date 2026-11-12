@@ -353,3 +353,16 @@ describe("useMessageThread reopened over a held cache (#4034)", () => {
     await waitFor(() => expect(mocks.fetchThread).toHaveBeenCalledTimes(2));
   });
 });
+
+describe("useMessageThread clears the thread card's new count (#4297)", () => {
+  it("re-reads the followed threads once the thread is marked read", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    open();
+    await waitFor(() => expect(mocks.markThreadRead).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["chat-followed-threads", "c1"],
+      }),
+    );
+  });
+});

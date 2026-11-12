@@ -257,6 +257,22 @@ Key metrics exported for monitoring dashboards:
 - Active study sessions.
 - Push notification delivery success/failure rate.
 
+### Speed budget
+
+What every change is held to (Paul, 2026-11-11: "I need a higher standard for speed"). The bar is how Discord and iMessage feel: the last state paints from the device at once and refreshes behind it, and a wait on the server is one or two calls, not a dozen. Measure on production over 7 days, from Sentry traces.
+
+| Surface | Measure | Budget |
+| --- | --- | --- |
+| API, reads | `http.server` span, p50 / p95 | 150 ms / 600 ms |
+| API, hot-path writes | p50 / p99 | the budget and list in [`architecture` § Hot path vs cold path](../architecture/README.md#hot-path-vs-cold-path) |
+| Mobile | cold start (`ui.load`), p50 / p95 | 1.5 s / 3 s |
+| Mobile | app open until chat home shows its channels (time to full display on the cold-start `ui.load` span), p50 | 2 s |
+| Mobile | a channel shows its messages (time to full display on its navigation span), p50 | 500 ms |
+| Web | first paint, cached channel, CLS above the composer | [`performance-budgets.md` § First paint](../ui/resilience/performance-budgets.md#first-paint), which the framework board owns |
+| Web | LCP / INP, p75 | 2.5 s / 200 ms |
+
+The API's p50 and p95 page the owner through Sentry when they regress ([`alert-routing.md` § API latency](../../docs/ops/alert-routing.md#api-latency)). Those alert lines sit above the budget and tighten toward it as speed work lands.
+
 ### Push delivery
 
 Push delivery success/failure rate is derived from a structured log record emitted once per push attempt by the Expo provider (`apps/api/src/infrastructure/notifications/expo-push.provider.ts`). It follows the Structured Logging convention above — one flat JSON object per record:
@@ -522,7 +538,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `task-created` | An officer creates a task | `assigned_to_self`, `has_point_reward`, `posted_to_chat` |
+| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_subtasks`, `posted_to_chat` |
 | `task-status-changed` | The assignee or an officer moves a task to a new status | `status` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back | — |

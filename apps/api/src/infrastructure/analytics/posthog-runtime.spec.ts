@@ -1,6 +1,8 @@
 import { SENTRY_ERROR_CORRELATED_EVENT } from '@repo/observability';
+import * as Sentry from '@sentry/nestjs';
 import { hashUserIdForAnalytics } from '#domain/utils/analytics-keying';
 import {
+  defaultFetch,
   enqueueSanitizedLog,
   PosthogRuntime,
   resetPosthogRuntimeForTests,
@@ -9,6 +11,23 @@ import {
 } from './posthog-runtime';
 import { RecordingPosthogTransport } from './posthog-transport';
 import { runWithRequestLogStore } from '../observability/request-als';
+
+// Only `suppressTracing` is replaced: it runs its callback and records that the
+// callback is in flight, so the defaultFetch spec can check the upload starts
+// inside it. That spec also stubs `fetch`; whether Sentry's own fetch
+// instrumentation honours suppression is Sentry's contract, not tested here.
+let mockInsideSuppressedCallback = false;
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  suppressTracing: jest.fn(<T>(callback: () => T): T => {
+    mockInsideSuppressedCallback = true;
+    try {
+      return callback();
+    } finally {
+      mockInsideSuppressedCallback = false;
+    }
+  }),
+}));
 
 const HEX = 'a'.repeat(64);
 const USER_UUID = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
@@ -281,5 +300,32 @@ describe('PosthogRuntime', () => {
       expect(kept).toBeGreaterThan(60);
       expect(kept).toBeLessThan(140);
     });
+  });
+});
+
+describe('defaultFetch', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('starts the PostHog upload inside suppressTracing, so a flush is never its own transaction', async () => {
+    const suppress = jest.mocked(Sentry.suppressTracing);
+    suppress.mockClear();
+    const startedInside: boolean[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      startedInside.push(mockInsideSuppressedCallback);
+      return Promise.resolve(new Response('{"status":1}', { status: 200 }));
+    });
+
+    const res = await defaultFetch('https://ph.example.test/i/v1/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(suppress).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(startedInside).toEqual([true]);
   });
 });

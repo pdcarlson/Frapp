@@ -6,8 +6,15 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { ITaskRepository } from '#domain/repositories/task.repository.interface';
-import { Task, TaskStatus } from '#domain/entities/task.entity';
+import {
+  Task,
+  TaskStatus,
+  type TaskSubtask,
+} from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+
+/** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
+const SUBTASK_READ_BATCH = 100;
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
@@ -115,6 +122,40 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return data;
   }
 
+  async updateUnconfirmed(
+    id: string,
+    chapterId: string,
+    data: TablesUpdate<'tasks'>,
+  ): Promise<Task | null> {
+    // `points_awarded = false` is the compare-and-set: a confirm that lands
+    // between the service's read and this write paid the points on the task
+    // as it stood, so the edit matches no row rather than changing it after.
+    const { data: updated, error } = await this.supabase
+      .from('tasks')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('points_awarded', false)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async releaseReminderClaims(
+    chapterId: string,
+    taskId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('scheduled_notification_dispatches')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('entity_type', 'TASK')
+      .eq('entity_id', taskId)
+      .in('threshold', ['DUE_SOON', 'OVERDUE']);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('tasks')
@@ -123,5 +164,73 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async findSubtasks(
+    chapterId: string,
+    taskIds: string[],
+  ): Promise<TaskSubtask[]> {
+    // In batches, so a chapter-wide list of hundreds of tasks never builds a
+    // request URL past what PostgREST accepts.
+    const rows: TaskSubtask[] = [];
+    for (let i = 0; i < taskIds.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_subtasks')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('task_id', taskIds.slice(i, i + SUBTASK_READ_BATCH))
+        .order('task_id', { ascending: true })
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data || []));
+    }
+    return rows;
+  }
+
+  async createSubtasks(
+    rows: Pick<TaskSubtask, 'task_id' | 'chapter_id' | 'title' | 'position'>[],
+  ): Promise<TaskSubtask[]> {
+    if (rows.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .insert(rows)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).sort((a, b) => a.position - b.position);
+  }
+
+  async setSubtaskDone(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+    doneAt: string | null,
+  ): Promise<TaskSubtask | null> {
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .update({ done_at: doneAt })
+      .eq('id', subtaskId)
+      .eq('task_id', taskId)
+      .eq('chapter_id', chapterId)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async deleteSubtask(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .delete()
+      .eq('id', subtaskId)
+      .eq('task_id', taskId)
+      .eq('chapter_id', chapterId)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }

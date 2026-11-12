@@ -169,6 +169,11 @@ describe("ChatComposer staged photos", () => {
     expect(byLabel(tree, "Send message").props.disabled).toBe(true);
   });
 
+  it("refuses a send of only the sticker placeholder U+FFFC (#4346)", () => {
+    const { tree } = renderComposer({ value: "\uFFFC ", photos: [] });
+    expect(byLabel(tree, "Send message").props.disabled).toBe(true);
+  });
+
   it("keeps send disabled while the runtime has no identity, photos or not", () => {
     const { tree } = renderComposer({
       value: "hello",
@@ -420,12 +425,50 @@ describe("ChatComposer @-mention picker", () => {
     const input = result.tree.root.findByType("TextInput" as never);
     act(() => {
       input.props.onFocus?.();
+      // From the keyboard: the list opens only on text the member typed.
+      input.props.onChangeText?.(value);
       input.props.onSelectionChange?.({
         nativeEvent: { selection: { start: caret, end: caret } },
       });
     });
     return result;
   }
+
+  it("stays shut on text put in the box for the member: an edit, a restored draft", () => {
+    // Tapping Edit on "@Paul Carlson @shawn" used to pop the list up over the
+    // message at once, the caret landing after `@shawn` (tester report
+    // 2026-11-11). Discord's edit box opens it only once you type.
+    const result = renderComposer({
+      value: "@Paul Carlson @pa",
+      mentionCandidates: ROSTER,
+    });
+    const input = result.tree.root.findByType("TextInput" as never);
+    act(() => {
+      input.props.onFocus?.();
+      input.props.onSelectionChange?.({
+        nativeEvent: { selection: { start: 17, end: 17 } },
+      });
+    });
+    expect(offered(result.tree)).toEqual([]);
+  });
+
+  it("stays shut when the message just sent opens for an edit", () => {
+    // Typed "thanks @pa", sent (the box clears), then Edit on that message
+    // loads the same text back: that is not the member typing it again.
+    const { tree, props } = typed("thanks @pa");
+    const rerender = (value: string) =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <ChatComposer {...props} value={value} />
+          </FrappThemeProvider>,
+        ),
+      );
+    expect(offered(tree)).toHaveLength(2);
+    rerender("");
+    rerender("thanks @pa");
+    expect(offered(tree)).toEqual([]);
+  });
 
   const offered = (tree: ReactTestRenderer) =>
     tree.root

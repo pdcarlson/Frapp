@@ -10,6 +10,7 @@ import {
   type SetupChecklistKey,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE } from "@repo/validation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { asRoute } from "@/lib/href";
@@ -76,7 +77,11 @@ export function setupChecklistWebUrl(
   key: SetupChecklistKey,
   origin: string = webAppOrigin(),
 ): string {
-  return `${origin}${SETUP_CHECKLIST_WEB_PATH[key]}`;
+  // Marked as opened from the app, so the phone dashboard doesn't suggest
+  // getting the app to someone already in it (#4002).
+  const url = new URL(`${origin}${SETUP_CHECKLIST_WEB_PATH[key]}`);
+  url.searchParams.set(OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE);
+  return url.toString();
 }
 
 /** The drawn list. Chat home owns the hook and passes its result in. */

@@ -113,8 +113,9 @@ export class ServiceEntryController {
 
   // Declared before `@Get(':id')` for the same reason as `leaderboard`.
   // Gated on `service:approve`, not `chapter-config:view`: the review queue's
-  // audience is approvers, and on stock roles no approver but the President
-  // can read the chapter config (#3862).
+  // audience is approvers, and on stock roles the chairs' tier approves
+  // without reading the chapter config (only the President could, in a
+  // chapter created before #4071) (#3862).
   @Get('points-rate')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_APPROVE)

@@ -35,8 +35,14 @@ import {
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
+  withoutObjectReplacement,
 } from '@repo/validation';
-import { canAccessChannel } from '#domain/utils/channel-access';
+import {
+  canAccessChannel,
+  EMPTY_ACCESS_HOLDER,
+  needsAccessHolder,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
 import { RbacService } from '../services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChatBlockService } from '../services/chat-block.service';
@@ -90,7 +96,9 @@ interface ChatMessageRow {
 export function chatPushPreview(
   row: Pick<ChatMessageRow, 'content' | 'metadata'>,
 ): string {
-  const text = row.content?.trim() ?? '';
+  // U+FFFC drawn as an "OBJ" box on the lock screen and in the list (#4346).
+  // `ChatService` cleans what it saves; this covers a row written any other way.
+  const text = withoutObjectReplacement(row.content ?? '').trim();
   if (text) return Array.from(text).slice(0, 200).join('');
   const raw = Number(row.metadata?.attachment_count);
   const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
@@ -127,6 +135,38 @@ export function chatPushThreadId(channelId: string): string {
 
 /** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
+
+/**
+ * The kind of conversation a chat notification came from, as `data.chatKind`
+ * carries it to the in-app list (#4346): a 1:1 DM, a group DM, an
+ * announcement, or any other channel. The announcement test is the push's own
+ * (`isAnnouncementPush`), so the badge and the URGENT priority can't disagree.
+ */
+export type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
+
+export function chatNotificationKind(
+  channel: Pick<CachedChannelRow, 'type'>,
+  isAnnouncement: boolean,
+): ChatNotificationKind {
+  if (channel.type === 'DM') return 'dm';
+  if (channel.type === 'GROUP_DM') return 'group';
+  return isAnnouncement ? 'announcement' : 'channel';
+}
+
+/**
+ * `{ channelName }` when the channel has a name a member would recognize, else
+ * nothing. A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
+ * `group-dm-<timestamp>`, both internal, so neither ever reaches a member.
+ */
+export function readableChannelName(
+  channel: Pick<CachedChannelRow, 'type' | 'name'>,
+): { channelName?: string } {
+  if (channel.type === 'DM') return {};
+  if (channel.type === 'GROUP_DM' && UNNAMED_GROUP_DM.test(channel.name)) {
+    return {};
+  }
+  return channel.name ? { channelName: channel.name } : {};
+}
 
 /**
  * Most presence channels one process keeps open (#2507).
@@ -260,9 +300,9 @@ export class ChatPushWorkerService
      * Channel rows, cached to keep a hot channel from re-querying per message.
      * Shared with `ChatService` (see `ChannelCacheModule`), which evicts an
      * entry when its `updateChannel` write can change `member_ids` or
-     * `required_permissions` — both are push-audience authorization inputs, not
+     * `who_can_see` — both are push-audience authorization inputs, not
      * display data, so a stale entry lets the worker decide from a permission
-     * set or membership list that no longer applies. `ChannelCacheService`'s
+     * list or membership list that no longer applies. `ChannelCacheService`'s
      * TTL is a backstop for entries nothing invalidates, not the primary
      * correctness mechanism.
      */
@@ -584,6 +624,7 @@ export class ChatPushWorkerService
         burst,
         await senderName,
         threadRootId,
+        mentions.includes(recipientId),
       );
       try {
         await this.notificationService.notifyUser(
@@ -606,13 +647,14 @@ export class ChatPushWorkerService
 
   /**
    * Reduce candidates to those allowed to `read` the channel, via the shared
-   * `canAccessChannel` predicate — the same one the chat and poll surfaces
+   * `canAccessChannel` predicate: the same one the chat and poll surfaces
    * authorize through, so the push audience cannot drift from the read
    * audience.
    *
-   * Permissions are fetched only for a ROLE_GATED channel, and only then per
-   * candidate; PUBLIC short-circuits and DM/GROUP_DM/PRIVATE are decided by
-   * `member_ids` alone.
+   * What members hold is read only for a channel with a who-can-see list, and
+   * then once for the whole chapter (`getChapterMemberAccess`, three reads)
+   * rather than once per candidate. A channel everyone sees short-circuits,
+   * and DM / GROUP_DM / PRIVATE are decided by `member_ids` alone.
    */
   private async filterCanReadChannel(
     channel: ChannelRow,
@@ -622,62 +664,51 @@ export class ChatPushWorkerService
       id: channel.id,
       type: channel.type,
       member_ids: channel.member_ids,
-      required_permissions: channel.required_permissions,
+      who_can_see: channel.who_can_see ?? null,
+      who_can_post: channel.who_can_post ?? null,
     };
 
-    if (shape.type === 'PUBLIC') return candidateIds;
-
-    // Only ROLE_GATED needs permissions, and then one lookup per candidate.
-    // Resolved concurrently: awaiting inside the loop made a single message
-    // into a role-gated channel cost one sequential round trip per member,
-    // on a realtime handler with no backpressure.
-    const permissionsByUser = new Map<string, string[] | null>();
-    if (shape.type === 'ROLE_GATED') {
-      const resolved = await Promise.all(
-        candidateIds.map(async (userId) => {
-          try {
-            return [
-              userId,
-              await this.rbac.getEffectivePermissions(
-                channel.chapter_id,
-                userId,
-              ),
-            ] as const;
-          } catch (err) {
-            // Fail closed: an unresolved permission set must not become a push.
-            reportCaughtFailure(this.logger, {
-              level: 'warning',
-              site: 'chat-push-permission-lookup',
-              message: `chat-push: permission lookup failed for ${userId}; skipping`,
-              error: err,
-            });
-            return [userId, null] as const;
-          }
-        }),
-      );
-      for (const [userId, permissions] of resolved) {
-        permissionsByUser.set(userId, permissions);
-      }
-    }
-
-    const allowed: string[] = [];
-    for (const userId of candidateIds) {
-      const permissions =
-        shape.type === 'ROLE_GATED' ? permissionsByUser.get(userId) : [];
-      if (permissions == null) continue;
-      if (
+    if (!needsAccessHolder(shape, 'read')) {
+      return candidateIds.filter((userId) =>
         canAccessChannel({
           channel: shape,
           userId,
           isChapterMember: true,
-          permissions,
+          holder: EMPTY_ACCESS_HOLDER,
           operation: 'read',
-        })
-      ) {
-        allowed.push(userId);
-      }
+        }),
+      );
     }
-    return allowed;
+
+    let holders: Map<string, ChannelAccessHolder>;
+    try {
+      const access = await this.rbac.getChapterMemberAccess(channel.chapter_id);
+      holders = new Map(
+        access.map((member) => [member.user_id, member.channel_access]),
+      );
+    } catch (err) {
+      // Fail closed: an unresolved list of holders must not become a push.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-push-permission-lookup',
+        message: `chat-push: member access lookup failed for channel ${channel.id}; skipping`,
+        error: err,
+      });
+      return [];
+    }
+
+    return candidateIds.filter((userId) => {
+      const holder = holders.get(userId);
+      // Not in the chapter's roster: not a reader.
+      if (!holder) return false;
+      return canAccessChannel({
+        channel: shape,
+        userId,
+        isChapterMember: true,
+        holder,
+        operation: 'read',
+      });
+    });
   }
 
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
@@ -955,6 +986,7 @@ export class ChatPushWorkerService
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
     threadRootId: string | null = null,
+    mentioned = false,
   ) {
     // One predicate for the title, the priority and the category, bundled or
     // not. A burst of announcements is still announcements: it used to go out
@@ -983,17 +1015,33 @@ export class ChatPushWorkerService
       ? { screen: 'chat', channelId: channel.id, threadRootId }
       : { screen: 'chat', channelId: channel.id };
     const sender = senderId ? { senderId } : {};
+    // What the in-app list draws a row by (#4346): the kind of conversation,
+    // the channel's name where it has a readable one, and whether this
+    // message mentioned the recipient. The title says the first two in words,
+    // and a client must not parse a title. Only this message's mention
+    // counts: a bundle's earlier messages were each decided on their own.
+    const shape = {
+      chatKind: chatNotificationKind(channel, isAnnouncement),
+      ...readableChannelName(channel),
+      ...(mentioned ? { mentioned: true } : {}),
+    };
     if (burst.action === 'bundle') {
       return {
         ...shared,
         body: `${burst.count} new messages`,
-        data: { target, ...sender, bundled: true, count: burst.count },
+        data: {
+          target,
+          ...sender,
+          ...shape,
+          bundled: true,
+          count: burst.count,
+        },
       };
     }
     return {
       ...shared,
       body: preview,
-      data: { target, ...sender },
+      data: { target, ...sender, ...shape },
     };
   }
 
@@ -1005,10 +1053,10 @@ export class ChatPushWorkerService
    * **The channel decides, never the message's `kind`.** `kind` comes from the
    * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
    * `announcement` from any member in any channel it may post in, so trusting
-   * it let a member without `announcements:post` send an URGENT push that skips
+   * it let a member who couldn't post in #announcements send an URGENT push that skips
    * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
    * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
-   * so only `announcements:post` holders write there) makes one.
+   * so only its who-can-post list writes there, #3722) makes one.
    *
    * The channel's name is still load-bearing here; narrowing it is #1323.
    */
@@ -1036,10 +1084,7 @@ export class ChatPushWorkerService
         : 'New Announcement';
     }
     if (isDirectChannel(channel)) {
-      const groupName =
-        channel.type === 'GROUP_DM' && !UNNAMED_GROUP_DM.test(channel.name)
-          ? channel.name
-          : null;
+      const groupName = readableChannelName(channel).channelName ?? null;
       if (senderName) {
         return groupName ? `${senderName} in ${groupName}` : senderName;
       }

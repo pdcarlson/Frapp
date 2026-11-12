@@ -27,6 +27,7 @@ const virtuosoProps = vi.hoisted(() => ({
     atTopStateChange?: (atTop: boolean) => void;
     scrollerRef?: (element: HTMLElement | Window | null) => void;
     totalListHeightChanged?: (height: number) => void;
+    rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
   },
   // The handle's one method the timeline calls, for the cases that assert
   // where it scrolls.
@@ -72,6 +73,7 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange,
         scrollerRef,
         totalListHeightChanged,
+        rangeChanged,
         components,
         context,
       }: {
@@ -82,6 +84,10 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange?: (atTop: boolean) => void;
         scrollerRef?: (element: HTMLElement | Window | null) => void;
         totalListHeightChanged?: (height: number) => void;
+        rangeChanged?: (range: {
+          startIndex: number;
+          endIndex: number;
+        }) => void;
         components?: {
           Header?: (props: { context?: unknown }) => React.ReactNode;
         };
@@ -107,13 +113,16 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange,
         scrollerRef,
         totalListHeightChanged,
+        rangeChanged,
       };
       const Header = components?.Header;
       return (
         <div>
           {Header ? <Header context={context} /> : null}
           {data.map((item, index) => (
-            <div key={index}>{itemContent(index, item)}</div>
+            <div key={index} data-index={(firstItemIndex ?? 0) + index}>
+              {itemContent(index, item)}
+            </div>
           ))}
         </div>
       );
@@ -1829,5 +1838,139 @@ describe("MessageTimeline Close poll wiring (#3794)", () => {
   it("gives the card no Close poll handler when the shell offers none", () => {
     renderTimeline([ownPoll()]);
     expect(screen.getByText("stub-poll-without-close")).toBeInTheDocument();
+  });
+});
+
+describe("MessageTimeline rows on screen (#4186)", () => {
+  const three = () => [
+    message({ id: "a", created_at: "2026-01-01T00:00:00Z" }),
+    message({ id: "b", created_at: "2026-01-01T00:01:00Z" }),
+    message({ id: "c", created_at: "2026-01-01T00:02:00Z" }),
+  ];
+
+  it("reports the ids in the visible range, in Virtuoso's own index space", () => {
+    const onVisibleMessagesChange = vi.fn();
+    renderTimeline(three(), { onVisibleMessagesChange });
+    const first = virtuosoProps.current.firstItemIndex ?? 0;
+
+    act(() =>
+      virtuosoProps.current.rangeChanged?.({
+        startIndex: first + 1,
+        endIndex: first + 2,
+      }),
+    );
+
+    expect(onVisibleMessagesChange).toHaveBeenLastCalledWith(["b", "c"]);
+  });
+
+  it("leaves out a row with only a sliver on screen", () => {
+    const onVisibleMessagesChange = vi.fn();
+    const { container } = renderTimeline(three(), { onVisibleMessagesChange });
+    const first = virtuosoProps.current.firstItemIndex ?? 0;
+    const box = (top: number, height: number) =>
+      ({ top, bottom: top + height, height }) as DOMRect;
+    const scrollerEl = container.firstElementChild as HTMLElement;
+    scrollerEl.getBoundingClientRect = () => box(100, 300);
+    const rows = scrollerEl.querySelectorAll<HTMLElement>("[data-index]");
+    // a: 2px showing at the top; b and c fully on screen.
+    rows[0]!.getBoundingClientRect = () => box(22, 80);
+    rows[1]!.getBoundingClientRect = () => box(102, 80);
+    rows[2]!.getBoundingClientRect = () => box(182, 80);
+    act(() => virtuosoProps.current.scrollerRef?.(scrollerEl));
+
+    act(() =>
+      virtuosoProps.current.rangeChanged?.({
+        startIndex: first,
+        endIndex: first + 2,
+      }),
+    );
+
+    expect(onVisibleMessagesChange).toHaveBeenLastCalledWith(["b", "c"]);
+  });
+
+  it("leaves out a blocked member's tombstone", () => {
+    const onVisibleMessagesChange = vi.fn();
+    const rows = [
+      message({
+        id: "a",
+        sender_id: VIEWER,
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+      message({ id: "b", created_at: "2026-01-01T00:01:00Z" }),
+    ];
+    renderTimeline(rows, {
+      onVisibleMessagesChange,
+      ...timelineBlockProps(
+        rows,
+        VIEWER,
+        blockState("ready", { ids: [ALICE] }),
+      ),
+    });
+    const first = virtuosoProps.current.firstItemIndex ?? 0;
+
+    act(() =>
+      virtuosoProps.current.rangeChanged?.({
+        startIndex: first,
+        endIndex: first + 1,
+      }),
+    );
+
+    expect(onVisibleMessagesChange).toHaveBeenLastCalledWith(["a"]);
+  });
+
+  it("forgets the last channel's range on a switch", () => {
+    const onVisibleMessagesChange = vi.fn();
+    const { rerender } = renderTimeline(three(), { onVisibleMessagesChange });
+    const first = virtuosoProps.current.firstItemIndex ?? 0;
+    act(() =>
+      virtuosoProps.current.rangeChanged?.({
+        startIndex: first,
+        endIndex: first + 2,
+      }),
+    );
+    onVisibleMessagesChange.mockClear();
+
+    const other = [message({ id: "x", channel_id: "chan-2" })];
+    rerender(
+      <MessageTimeline
+        channelId="chan-2"
+        messages={other}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(other, VIEWER)}
+        onVisibleMessagesChange={onVisibleMessagesChange}
+      />,
+    );
+
+    expect(onVisibleMessagesChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("MessageTimeline thread cards (#4297)", () => {
+  it("hands each card its own thread's new-reply count, by message id", () => {
+    renderTimeline(
+      [
+        message({
+          id: "parent-1",
+          client_message_id: "client-parent-1",
+          thread: {
+            reply_count: 3,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
+        } as Partial<ChatMessage>),
+      ],
+      {
+        onOpenThread: vi.fn(),
+        threadUnread: { "parent-1": 2, "someone-else": 9 },
+      },
+    );
+    expect(screen.getByText("2 new")).toBeInTheDocument();
+    expect(screen.queryByText("9 new")).not.toBeInTheDocument();
   });
 });

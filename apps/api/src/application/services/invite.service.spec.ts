@@ -45,6 +45,12 @@ import type { Member } from '#domain/entities/member.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import {
+  CHAPTER_ID,
+  USER,
+  tieredChapterRoles,
+  tieredRankContext,
+} from '#test/helpers/tiered-chapter.fixture';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -74,7 +80,9 @@ describe('InviteService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter' | 'notifyMembers'>
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
-  let mockRbac: jest.Mocked<Pick<RbacService, 'findUserIdsWithAnyPermissions'>>;
+  let mockRbac: jest.Mocked<
+    Pick<RbacService, 'findUserIdsWithAnyPermissions' | 'getRankContext'>
+  >;
   let mockEmailProvider: jest.Mocked<IEmailProvider>;
   let mockConfig: jest.Mocked<Pick<ConfigService, 'get'>>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
@@ -137,6 +145,19 @@ describe('InviteService', () => {
     // Nobody can act on a join unless a test says so (#3656).
     mockRbac = {
       findUserIdsWithAnyPermissions: jest.fn().mockResolvedValue([]),
+      // The inviter holds `*` unless a test says otherwise, so the rank rule
+      // (#4071) lets every role through.
+      getRankContext: jest.fn().mockResolvedValue({
+        reach: {
+          memberId: 'member-president',
+          rank: 0,
+          permissions: new Set(['*']),
+          wildcard: true,
+        },
+        roles: [],
+        tiers: [],
+        positions: new Map(),
+      }),
     };
 
     mockEmailProvider = { sendInviteEmail: jest.fn().mockResolvedValue(true) };
@@ -1764,7 +1785,7 @@ describe('InviteService', () => {
           title: 'Alex Smith joined',
           priority: 'NORMAL',
           category: 'members',
-          data: { target: { screen: 'members' } },
+          data: { target: { screen: 'members' }, memberUserId: 'user-2' },
         }),
       );
     });
@@ -2229,6 +2250,106 @@ describe('InviteService', () => {
    * service resolves the chapter's configured default, then the seeded Member
    * role.
    */
+  // #4071: an invite grants a role ranked at or below the inviter, and never
+  // the President's.
+  describe('invite role rank rule', () => {
+    beforeEach(() => {
+      mockRoleRepo.findByChapter.mockResolvedValue(tieredChapterRoles());
+      mockInviteRepo.create.mockImplementation((data) =>
+        Promise.resolve(data as Invite),
+      );
+    });
+
+    it("stops a chair minting an officer's invite to redeem on a second account", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Vice President'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('lets a chair invite a peer or a brother', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await service.create(CHAPTER_ID, USER.riskChair, 'Social chair');
+      await service.create(CHAPTER_ID, USER.riskChair, 'Brother');
+      expect(mockInviteRepo.create).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops an inviter bringing in a role whose permissions they don't hold, a peer's included", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Treasury assistant'),
+      ).rejects.toThrow(/billing:view/);
+      // The Vice President ranks with the Treasurer but lacks billing:manage.
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.vicePresident),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.vicePresident, 'Treasurer'),
+      ).rejects.toThrow(/billing:manage/);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('stops even the President inviting someone as President', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.president, 'President'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('grants the Member role, not the President, for an invite minted before the rule', async () => {
+      const memberRole = roleFixture({
+        id: 'role-member',
+        name: 'Member',
+        system_key: SystemRoleKeys.MEMBER,
+        is_system: true,
+      });
+      const presidentRole = roleFixture({
+        id: 'role-president',
+        name: 'President',
+        system_key: SystemRoleKeys.PRESIDENT,
+        is_system: true,
+        permissions: ['*'],
+      });
+      mockInviteRepo.findByToken.mockResolvedValue({
+        id: 'inv-old',
+        token: 'old-token',
+        chapter_id: 'ch-1',
+        role: 'President',
+        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
+      });
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+      mockMemberRepo.create.mockResolvedValue(
+        memberFixture({ user_id: 'user-2', role_ids: [memberRole.id] }),
+      );
+
+      await service.redeem('old-token', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith({
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [memberRole.id],
+      });
+    });
+  });
+
   describe('default invite role (#422)', () => {
     function role(over: Partial<Role> = {}): Role {
       return roleFixture({

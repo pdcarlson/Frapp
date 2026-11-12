@@ -14,6 +14,17 @@
  */
 export const JOIN_FROM_SIGN_IN = "sign-in";
 
+/**
+ * A phone visit to `/join` that chose Continue in the browser over the app
+ * (#4002), marked in the URL as `web=1` so the choice survives what it starts:
+ * the sign-in or sign-up round trip (whose `redirectTo` carries the query), an
+ * OAuth or email-confirm return, Sign in as someone else, and a refresh.
+ * Without it, the page would offer the app again right after the member
+ * signed in on the web.
+ */
+export const JOIN_IN_BROWSER_KEY = "web";
+export const JOIN_IN_BROWSER_VALUE = "1";
+
 /** The sign-in footer's destination: `/join`, marked as coming from sign-in. */
 export const JOIN_FROM_SIGN_IN_PATH = `/join?from=${JOIN_FROM_SIGN_IN}`;
 
