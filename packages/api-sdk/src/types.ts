@@ -2136,9 +2136,29 @@ export interface paths {
         put?: never;
         /**
          * Self check-in to an event
-         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.
+         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).
          */
         post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in-screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Report where the host check-in screen (s22) is
+         * @description Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.
+         */
+        put: operations["AttendanceController_reportCheckInScreen_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6424,10 +6444,27 @@ export interface components {
              * @example 4KQ-88
              */
             manualCode?: string;
-            /** @description Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner latitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lat?: number;
-            /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner longitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lng?: number;
+            /** @description The scanner's reported location accuracy in meters. Widens the distance allowed from the officer's screen, up to 50 m. Omit when the phone reports none. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenDto: {
+            /** @description The screen's latitude. */
+            lat?: number;
+            /** @description The screen's longitude. */
+            lng?: number;
+            /** @description The screen's reported accuracy in meters. A fix less precise than 100 m isn't stored, and distance isn't checked. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenResultDto: {
+            /**
+             * @description How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored).
+             * @enum {string}
+             */
+            check: "zone" | "screen" | "other_screen" | "no_location" | "not_open" | "closed";
         };
         EventAttendanceDto: {
             /** Format: uuid */
@@ -13534,6 +13571,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AttendanceController_reportCheckInScreen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInScreenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckInScreenResultDto"];
+                };
             };
             /** @description Error */
             default: {

@@ -26,6 +26,7 @@ export * from './corpus.entity';
 export * from './discord-connection.entity';
 export * from './discord-import.entity';
 export * from './event-attendance.entity';
+export * from './event-check-in-screen.entity';
 export * from './event-type.entity';
 export * from './event.entity';
 export * from './financial-invoice.entity';

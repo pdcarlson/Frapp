@@ -19,6 +19,7 @@ import {
   readForegroundPermission,
   requestForegroundPermission,
   requireForegroundFix,
+  tryForegroundFix,
 } from "./location";
 
 beforeEach(() => {
@@ -77,9 +78,10 @@ describe("accuracyMetersOf", () => {
 
 describe("latLngOf", () => {
   it("drops accuracy_meters so undeclared-key POSTs stay legal", () => {
-    expect(
-      latLngOf({ lat: 42.73, lng: -73.68, accuracy_meters: 12 }),
-    ).toEqual({ lat: 42.73, lng: -73.68 });
+    expect(latLngOf({ lat: 42.73, lng: -73.68, accuracy_meters: 12 })).toEqual({
+      lat: 42.73,
+      lng: -73.68,
+    });
   });
 });
 
@@ -150,5 +152,71 @@ describe("requireForegroundFix", () => {
       requireForegroundFix("This event checks you in by location."),
     ).rejects.toThrow("This event checks you in by location.");
     expect(getCurrentPositionAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("tryForegroundFix", () => {
+  it("asks for a GPS fix when told to be precise", async () => {
+    requestForegroundPermissionsAsync.mockResolvedValue({
+      granted: true,
+      canAskAgain: true,
+    });
+    getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 42.73, longitude: -73.68, accuracy: 8 },
+    });
+
+    await expect(tryForegroundFix("high")).resolves.toEqual({
+      fix: { lat: 42.73, lng: -73.68, accuracy_meters: 8 },
+      permission: { granted: true, canAskAgain: true },
+    });
+    expect(getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 4 });
+  });
+
+  it("resolves to no fix, without throwing, when location is refused", async () => {
+    requestForegroundPermissionsAsync.mockResolvedValue({
+      granted: false,
+      canAskAgain: false,
+    });
+
+    await expect(tryForegroundFix("high")).resolves.toEqual({
+      fix: null,
+      permission: { granted: false, canAskAgain: false },
+    });
+    expect(getCurrentPositionAsync).not.toHaveBeenCalled();
+  });
+
+  it("resolves to no fix when the phone can't find one", async () => {
+    requestForegroundPermissionsAsync.mockResolvedValue({
+      granted: true,
+      canAskAgain: true,
+    });
+    getCurrentPositionAsync.mockRejectedValue(new Error("timeout"));
+
+    await expect(tryForegroundFix()).resolves.toEqual({
+      fix: null,
+      permission: { granted: true, canAskAgain: true },
+    });
+  });
+
+  it("gives up on a fix that takes longer than the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      requestForegroundPermissionsAsync.mockResolvedValue({
+        granted: true,
+        canAskAgain: true,
+      });
+      // A GPS fix indoors that never arrives.
+      getCurrentPositionAsync.mockReturnValue(new Promise(() => {}));
+
+      const result = tryForegroundFix("high", 8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      await expect(result).resolves.toEqual({
+        fix: null,
+        permission: { granted: true, canAskAgain: true },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
