@@ -372,6 +372,7 @@ import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
 import { ChannelFormSheet } from "@/components/chat/channel-form-sheet";
+import { ChannelAccessSheet } from "@/components/chat/channel-access-sheet";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
 
@@ -1285,6 +1286,36 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(updateMutateAsync).toHaveBeenCalledWith({
       id: general.id,
       body: { who_can_post: null },
+    });
+  });
+
+  it("saves only the list the officer ticked, and refuses an empty choice (#3702)", async () => {
+    channelsData.value = [
+      { ...general, who_can_see: null, who_can_post: ["role:r1"] },
+    ];
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    longPress(officer, "general");
+    pressItem(officer, "Edit channel");
+    const form = officer.root.findByType(ChannelFormSheet);
+    const access = () => officer.root.findByType(ChannelAccessSheet);
+    const save = () => form.findAllByType(SheetPrimaryButton).at(-1)!;
+    expect(access().props.value).toBeNull();
+
+    // Chosen with nothing on it: Save says so and sends nothing.
+    act(() => access().props.onChange([]));
+    await act(async () => save().props.onPress());
+    expect(updateMutateAsync).not.toHaveBeenCalled();
+    expect(
+      form.findByProps({ accessibilityLiveRegion: "polite" }).props.children,
+    ).toBe("Add a tier or role to each chosen list, or pick Everyone.");
+
+    act(() => access().props.onChange(["tier:exec"]));
+    updateMutateAsync.mockResolvedValue(undefined);
+    await act(async () => save().props.onPress());
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: general.id,
+      body: { who_can_see: ["tier:exec"] },
     });
   });
 
