@@ -1,4 +1,5 @@
 import type { EvalCase } from '../harness/types';
+import { chatAsASourceCases } from './chat-as-a-source.cases';
 import { conflictingSourcesCases } from './conflicting-sources.cases';
 import { missingInformationCases } from './missing-information.cases';
 import { promptInjectionCases } from './prompt-injection.cases';
@@ -10,6 +11,7 @@ export const allEvalCases: EvalCase[] = [
   ...conflictingSourcesCases,
   ...missingInformationCases,
   ...promptInjectionCases,
+  ...chatAsASourceCases,
 ];
 
-export { promptInjectionCases };
+export { chatAsASourceCases, promptInjectionCases };

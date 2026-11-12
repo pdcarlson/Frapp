@@ -37,11 +37,13 @@
     "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/integration/jest-integration.json",
     "test:ai-evals": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/ai-evals/jest-ai-evals.json",
+    "ai:bake-off": "TS_NODE_TRANSPILE_ONLY=1 TS_NODE_COMPILER_OPTIONS='{\"rootDir\":\".\"}' node --conditions=source -r ts-node/register test/ai-evals/bake-off/cli.ts",
     "openapi:export": "node --conditions=source -r ts-node/register src/export-openapi.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
     "@discordjs/rest": "^2.6.3",
+    "@google/genai": "^2.32.0",
     "@nestjs/common": "^11.2.8",
     "@nestjs/config": "^12.1.0",
     "@nestjs/core": "^11.2.8",
