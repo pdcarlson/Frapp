@@ -186,6 +186,7 @@ describe('SupabaseAiUsageRepository — tenant scope', () => {
         inputTokens: 2_000,
         outputTokens: 4_000,
         cachedInputTokens: 0,
+        audioSeconds: 0,
         costMicroUsd: 44_000,
         estimatedCostMicroUsd: 0,
         unsettledCalls: 0,

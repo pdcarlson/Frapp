@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { corsOptionsFor } from './interface/http/cors.options';
@@ -140,6 +141,15 @@ const HELMET_OPTIONS = {
 } as const;
 
 /**
+ * The largest JSON body the API reads. Express's own default is 100 KB, which
+ * every body fitted under until a recording's transcript became an officer's
+ * notes (#712): `MEETING_NOTES_MAX_LENGTH` is 160,000 characters, and a
+ * character can take three bytes. Each DTO still caps its own fields; this is
+ * only the ceiling the parser enforces before any of them is read.
+ */
+export const JSON_BODY_LIMIT = '1mb';
+
+/**
  * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to
  * exercise another deployment's origins and hop count without mutating
  * `process.env`.
@@ -172,6 +182,11 @@ export function configureApp(
   }
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  // Here, not in `main.ts`, so the e2e suite parses bodies as production does.
+  (app as NestExpressApplication).useBodyParser('json', {
+    limit: JSON_BODY_LIMIT,
+  });
 
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 

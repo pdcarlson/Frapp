@@ -101,6 +101,10 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 7. **Recording rules** (Paul). Standards meetings are never recorded and never reach a model. Raw
    audio is deleted when the minutes post, and after 30 days if they never post. Frapp stores no
    voiceprint and never recognises a member by voice.
+   Overridden in #712 by pdcarlson's recording-upload session, 2026-11-12; pending Paul: the audio
+   is deleted sooner, as soon as the transcript is written or the transcription fails for good,
+   because nothing built reads it after that
+   ([`meetings.md` § Retention](../../behavior/meetings.md#retention)).
 8. **AI text is stored in two cases only.** A member can report an answer or a draft, which keeps
    that one exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one
    chapter can have a 14-day diagnostics window on Ask, with a visible notice. The research that
@@ -246,6 +250,12 @@ The catalog names the models. This table is a dated observation, not a pin.
 - **The transcription vendor.** A second bake-off, on one real recorded meeting, between Google's
   transcription model and AssemblyAI. [#712](https://github.com/pdcarlson/Frapp/issues/712) stays
   open for it.
+  - Added 2026-11-12 (#712, pending Paul): the upload and both adapters are built, and the bake-off
+    has not run. Until it does, the catalog routes `meetings.transcribe` to AssemblyAI, because a
+    two-hour recording is one request there and four or more under Google's 30-minute cap. That is
+    a default to be confirmed or replaced by the bake-off, not the decision. The audio is deleted
+    when the transcript is written, sooner than decision 7's wording; the reason is in
+    [`meetings.md` § Retention](../../behavior/meetings.md#retention).
 - **The monthly allowance.** [`billing.md`](../../behavior/billing.md#ai-usage-pricing) still reads
   it off real usage.
 - **When hosting moves.** ADR-24's triggers.

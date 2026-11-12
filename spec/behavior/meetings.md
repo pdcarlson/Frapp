@@ -51,7 +51,7 @@ There are three ways to start, and they end in the same review screen.
 | Way in | What the officer does | Needs |
 | --- | --- | --- |
 | Notes | Types, pastes or dictates rough notes after the meeting. | Nothing new, which is why it is built first. |
-| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. | A transcription provider. |
+| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider. |
 | In-app recorder | Records on the phone during the meeting. | A new store build, because the app ships without microphone access today. |
 
 1. An officer with the meeting permission starts minutes, selects the meeting type, and links the meeting's event. The event's check-ins fill the Attendees section without any AI. A meeting with no event gets one when minutes are started, with the audience the officer picks, because the event is what says who the minutes are for ([Who can read minutes](#who-can-read-minutes)).
@@ -108,6 +108,25 @@ The officer who takes the minutes pastes or types what they wrote down during th
 
 > **Added 2026-11-12 (#4312, the drafting session's, Paul's to change).** Keeping the notes and the check list while the minutes are a draft (which [ADR-28](../architecture/adr/adr-28.md) decision 8 did not foresee, and is noted there), the 30-day limit, and replacing the sections rather than merging into them were not stated before. The conservative choice in each case: the shortest keep that still lets the officer ask again, and a replace the page asks about first.
 
+## Uploading a recording
+
+The officer who recorded the meeting on their phone uploads the file on web and comes back to a transcript in "Your notes", ready for [Drafting from notes](#drafting-from-notes) ([ADR-28](../architecture/adr/adr-28.md) decisions 1 and 7). Built 2026-11-12 ([#712](https://github.com/pdcarlson/Frapp/issues/712)); web only, off unless the server has AI on, a transcription provider is set up and the president has turned meeting notes on.
+
+- **Where it is.** One row at the top of the "Your notes" box, for the same officers who see the box. It always says what the recording is doing and offers the one thing to do about it.
+- **Before anything is sent,** the upload step shows the [Recording notice](#recording-notice): the script that should have been read out, what happens to the file, and the Standards rule. The officer picks the file and ticks "Everyone in the room was told this meeting was being recorded, and nobody objected." The server refuses an upload without that tick, and keeps when it was given.
+- **What it takes.** M4A, MP3, WAV, AAC, OGG or FLAC, up to 200 MB and 2 hours, and at least 10 seconds: what a phone's recorder makes of a chapter meeting. A provider with tighter limits narrows them, and the step says the real ones. The file is checked the moment it is picked, so a wrong file never starts uploading.
+- **The upload is resumable** and goes straight from the browser to a private bucket (`meeting-audio`), signed for that one file. A dropped connection picks up where it left off. The row shows the percent sent and asks the officer to keep the page open; closing it loses the upload, and the row then says it was interrupted.
+- **Transcribing takes minutes and needs nobody watching.** It is an AI run (`meeting_transcription`), so the row survives a reload or a closed tab, and Stop removes the recording. The provider is given the roster's names so it spells them right, and nothing else about the chapter.
+- **The transcript lands in the notes.** One line per speaker turn, opened by "Speaker 1", "Speaker 2" in the order each voice is first heard ([Voices](#voices)). Empty notes are filled; notes the officer already typed are never written over, and the row offers "Add to your notes" to put the transcript below them. From there it is notes: the officer fixes names, and asks for a draft.
+- **The audio is deleted as soon as it has been used:** when the transcript is written, when the transcription fails for good, when the officer removes or replaces the recording, and by a sweep every half hour for anything those missed (an upload nobody finished within six hours, a meeting posted or deleted mid-transcription). A provider that keeps a copy is told to delete it once the transcript is read.
+- **The members who were at the meeting are told,** once per meeting, when transcription starts: a notification saying a recording was uploaded to write the minutes, that it is deleted once transcribed, and to tell the secretary if they object. "Who was there" is the event's check-ins; with no check-ins it is the members the event invites.
+- **When it can't be done,** the row says why in plain words and what to do next: the file couldn't be read as audio, no speech was heard, it is too long, the chapter's AI limit was reached, or the transcript didn't come through. In every case the audio is already deleted.
+- **Standards.** A recording can't be uploaded for a Standards meeting, by the same server check as a draft, made before the upload is signed and again before the audio is sent to the provider ([Standards meetings](#standards-meetings)).
+- **What it costs** is the recording's length at the provider's price per hour, held against the chapter's and the member's AI caps before the provider is called and settled at the length the provider measured ([`billing.md`](billing.md)).
+- **How long the transcript is kept.** By the notes' rule: only while the minutes are an unposted draft, removed when they are posted or deleted, when the officer clears their notes, when the uploader deletes their account, and after 30 days at most. Neither the audio, its link, the file's name nor the transcript is ever written to a log, an error report or an analytics event.
+
+> **Added 2026-11-12 (#712, the build session's, Paul's to change).** Four things here were not decided before and took the conservative choice. (1) The audio is deleted when the transcript is written, not when the minutes are posted as [Retention](#retention) used to say: nothing built plays it back, so keeping it would hold a recording of a room for no use. Linking each drafted line to its moment in the audio (Workflow step 4) is therefore not built, and would need the audio kept. (2) The transcript is treated as the officer's notes, kept only while the minutes are a draft, and is not indexed for AI Q&A (Workflow step 7 is not built for transcripts). (3) The provider is AssemblyAI in the model catalog, because it is the only candidate that takes a whole meeting with speaker labels in one request; Google's transcription model is built as the challenger and caps a request at 30 minutes. The vendor is still Paul's pick after a bake-off on a real meeting, and no key exists yet. (4) Whether the tick and the notification are enough in a state that requires everyone's agreement is counsel's question ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)); the wording is working copy. The notes box's limit rose from 40,000 to 160,000 characters so a two-hour transcript fits.
+
 ## Suggested tasks
 
 Minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal.
@@ -131,7 +150,7 @@ A Standards meeting (a standards board or member-conduct hearing) is never recor
 A meeting is recorded only after the room has been told.
 
 - **The officer reads a short script aloud before recording starts,** for example: "This meeting is being recorded and transcribed by Frapp. Tell the secretary if you object."
-- **Frapp posts a notice to the meeting's attendees.**
+- **Frapp posts a notice to the meeting's attendees.** For an uploaded recording that is a notification when the upload finishes, and the officer confirms in the upload step that the script was read ([Uploading a recording](#uploading-a-recording)).
 - **The recording phone shows a visible indicator for as long as it records.**
 - **Anyone present may object, and the officer then doesn't record, or pauses.**
 
@@ -150,7 +169,9 @@ Frapp stores no voiceprint and never recognises a member by voice. Speaker label
 
 ## Retention
 
-- **Raw audio is deleted when the minutes are posted.** A recording whose minutes are never posted is deleted after 30 days. Audio can't be anonymised when a member deletes their account, so it must already be gone.
+- **Raw audio is deleted as soon as its transcript is written,** or its transcription has failed for good ([Uploading a recording](#uploading-a-recording)). Audio can't be anonymised when a member deletes their account, so it must already be gone.
+  - Changed in #712 by the build session, 2026-11-12, pending Paul: this line used to read "deleted when the minutes are posted. A recording whose minutes are never posted is deleted after 30 days."
+- **A recording's transcript** is kept as the officer's notes are: only while the minutes are unposted, and never more than 30 days.
 - **Transcripts and posted minutes** follow the chapter's general [data retention](data-retention.md) policy. When a member deletes their account, their name on a speaker label becomes "Deleted User", as it does on their chat messages.
 - **An officer's notes for a draft** are kept only while the minutes are unposted, and never more than 30 days ([Drafting from notes](#drafting-from-notes)).
 - **Standards minutes** in the vault follow the vault retention rules.

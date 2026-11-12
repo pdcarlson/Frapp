@@ -47,6 +47,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // Minutes typed Standards (#4312). No minutes screen offers the type, so
   // only a client that skipped its own type list sends it.
   "meeting.standards_refused",
+  // A recording upload without the officer's "the room was told" (#712).
+  // The upload step can't be submitted without it.
+  "meeting.recording_notice_required",
 ] as const;
 
 export const MEMBER_CAUSED_ERROR_CODES = [
@@ -96,6 +99,19 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "meeting.draft_posted",
   // "Use the draft" on a draft that is no longer waiting.
   "meeting.draft_not_waiting",
+  // A recording Frapp doesn't take (#712): the wrong kind of file, too
+  // large, too short or too long. The upload step checks first, but the
+  // server's limits follow the provider it is set up with.
+  "meeting.recording_format",
+  "meeting.recording_too_large",
+  "meeting.recording_too_short",
+  "meeting.recording_too_long",
+  // No transcription provider is set up on this server.
+  "meeting.recording_unavailable",
+  // The upload was replaced or removed from another tab, or its file never
+  // reached storage.
+  "meeting.recording_replaced",
+  "meeting.recording_incomplete",
 ] as const;
 
 export type ClientContractErrorCode =

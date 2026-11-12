@@ -102,6 +102,11 @@ export class SupabaseAiUsageRepository implements IAiUsageRepository {
       p_bill_reservation: billReservation,
       p_latency_ms: Math.max(0, Math.round(usage.latencyMs)),
       p_now: now.toISOString(),
+      // Sent only by a transcription (#712), so every other call still
+      // matches the function as it was before `audio_seconds` existed.
+      ...(usage.audioSeconds === undefined
+        ? {}
+        : { p_audio_seconds: Math.max(0, Math.round(usage.audioSeconds)) }),
     });
     if (error) throw new SupabaseQueryError(error);
     if (typeof data !== 'string' || !SETTLE_RESULTS.has(data)) {
@@ -137,6 +142,7 @@ export class SupabaseAiUsageRepository implements IAiUsageRepository {
       inputTokens: Number(row.input_tokens),
       outputTokens: Number(row.output_tokens),
       cachedInputTokens: Number(row.cached_input_tokens),
+      audioSeconds: Number(row.audio_seconds ?? 0),
       costMicroUsd: Number(row.cost_micro_usd),
       estimatedCostMicroUsd: Number(row.estimated_cost_micro_usd),
       unsettledCalls: Number(row.unsettled_calls),

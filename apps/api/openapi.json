@@ -14719,6 +14719,199 @@
           "Meetings"
         ]
       }
+    },
+    "/v1/meetings/{id}/recording": {
+      "get": {
+        "operationId": "MeetingRecordingController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Where the recording stands: none, uploading, transcribing, ready (with the transcript) or failed, and what this server takes",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "post": {
+        "operationId": "MeetingRecordingController_start_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMeetingRecordingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingRecordingController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/recording/uploaded": {
+      "post": {
+        "operationId": "MeetingRecordingController_uploaded_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMeetingRecordingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecordingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed",
+        "tags": [
+          "Meetings"
+        ]
+      }
     }
   },
   "info": {
@@ -21136,7 +21329,8 @@
             "type": "string",
             "enum": [
               "anthropic",
-              "google"
+              "google",
+              "assemblyai"
             ]
           },
           "name": {
@@ -24091,7 +24285,7 @@
         "properties": {
           "notes": {
             "type": "string",
-            "maxLength": 40000,
+            "maxLength": 160000,
             "description": "The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft."
           },
           "expected_updated_at": {
@@ -24121,6 +24315,200 @@
         },
         "required": [
           "expected_updated_at"
+        ]
+      },
+      "MeetingRecordingUploadDto": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bucket": {
+            "type": "string",
+            "description": "The private bucket the file goes to."
+          },
+          "path": {
+            "type": "string",
+            "description": "Where in the bucket the file goes."
+          },
+          "token": {
+            "type": "string",
+            "description": "Signs this one resumable upload (`x-signature`). Good for two hours."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "The type to store the file under."
+          }
+        },
+        "required": [
+          "upload_id",
+          "bucket",
+          "path",
+          "token",
+          "content_type"
+        ]
+      },
+      "MeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "uploading",
+              "transcribing",
+              "ready",
+              "failed"
+            ]
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "file_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "size_bytes": {
+            "type": "number",
+            "nullable": true
+          },
+          "duration_seconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`."
+          },
+          "failure": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required",
+              "spend_limit",
+              "unavailable",
+              "not_permitted",
+              "upload_incomplete",
+              "unreadable",
+              "too_long",
+              "no_speech",
+              "failed"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
+          },
+          "speaker_count": {
+            "type": "number",
+            "nullable": true
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when this server has no transcription provider set up: the upload step is not offered."
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          },
+          "max_bytes": {
+            "type": "number",
+            "description": "The largest file this server takes, in bytes."
+          },
+          "max_seconds": {
+            "type": "number",
+            "description": "The longest recording this server takes, in seconds."
+          },
+          "upload": {
+            "nullable": true,
+            "description": "Only in the answer to starting an upload.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingRecordingUploadDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "upload_id",
+          "file_name",
+          "size_bytes",
+          "duration_seconds",
+          "failure",
+          "failure_message",
+          "transcript",
+          "speaker_count",
+          "uploaded_at",
+          "available",
+          "blocked",
+          "max_bytes",
+          "max_seconds",
+          "upload"
+        ]
+      },
+      "StartMeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The file’s own name, shown back to the officer."
+          },
+          "mime_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "The browser’s name for the file’s type. May be empty; the file’s extension decides then."
+          },
+          "size_bytes": {
+            "type": "number",
+            "maximum": 209715200,
+            "description": "The file’s size in bytes."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "description": "The recording’s length in seconds, as the browser read it."
+          },
+          "notice_confirmed": {
+            "type": "boolean",
+            "description": "The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused."
+          }
+        },
+        "required": [
+          "file_name",
+          "size_bytes",
+          "duration_seconds",
+          "notice_confirmed"
+        ]
+      },
+      "ConfirmMeetingRecordingDto": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The upload that finished."
+          }
+        },
+        "required": [
+          "upload_id"
         ]
       }
     }

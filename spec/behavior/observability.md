@@ -481,12 +481,13 @@ Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28]
 
 | Property | Meaning |
 | --- | --- |
-| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`), and what it returns (`structured`, `cited`, `embedding`) |
+| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`), and what it returns (`structured`, `cited`, `embedding`, or `transcription` for a recording sent through `AiTranscriptionService`) |
 | `provider`, `model` | From the model catalog (`domain/constants/ai-model-catalog.ts`) |
 | `prompt_version` | The calling feature's prompt version, such as `ask@v1` |
 | `outcome`, `error_kind` | `completed`, `refused` (the provider declined), `invalid_output` (the reply did not match the schema) or `error`; for an error, its kind, such as `rate_limited` |
 | `input_tokens`, `output_tokens`, `cached_input_tokens` | As the provider reported them |
-| `cost_micro_usd` | The catalog's price for those tokens, in millionths of a US dollar. An estimate, not the invoice |
+| `audio_seconds` | For a transcription, the recording's length as the provider measured it; 0 on every other call |
+| `cost_micro_usd` | The catalog's price for those tokens, or for that audio, in millionths of a US dollar. An estimate, not the invoice |
 | `latency_ms` | Wall time of the provider call |
 | `citations_kept`, `citations_dropped` | For a cited task, how many quotes passed the word-for-word check and how many were dropped |
 | `is_background_run` | Whether an AI run made the call |
@@ -584,6 +585,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `meeting-started` | An officer starts minutes ([`meetings.md`](meetings.md#writing-minutes-by-hand)). `meeting_type` is the type picked; `from_new_event` is `true` when the meeting wasn't on the calendar and got its event then | `meeting_type`, `from_new_event` |
 | `meeting-posted` | An officer posts minutes. Posting minutes that are already posted changes nothing, and still counts the request | `meeting_type`, `has_decisions`, `has_action_items` |
 | `meeting-draft-requested` | An officer asks for minutes drafted from their notes ([`meetings.md`](meetings.md#drafting-from-notes)). The model call itself is the gateway's `ai-call-finished` | — |
+| `meeting-recording-uploaded` | An officer's recording finished uploading and its transcription was queued ([`meetings.md`](meetings.md#uploading-a-recording)). Nothing about the file is sent; the transcription itself is the gateway's `ai-call-finished` | — |
 
 **Polls (`polls`)**
 

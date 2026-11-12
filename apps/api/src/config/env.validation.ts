@@ -94,8 +94,11 @@ const REQUIRED_ENV_VARS = [
 //                        adapter; both or neither, and the JSON must be a
 //                        service account's key file (checked at boot)
 //   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
+//   - ASSEMBLYAI_API_KEY  enables the AssemblyAI transcriber (meeting
+//                        recordings, #712); not checked at boot
 //   - AI_CHAPTER_MONTHLY_CAP_USD / AI_MEMBER_DAILY_CAP_USD /
-//     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD
+//     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD /
+//     AI_ASSEMBLYAI_MONTHLY_CAP_USD
 //                        the spend caps in dollars; unset is the default in
 //                        config/ai-spend-config.ts (validateAiSpendEnv)
 //

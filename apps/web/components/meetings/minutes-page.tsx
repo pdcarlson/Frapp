@@ -10,10 +10,12 @@ import {
   useDeleteMeeting,
   useMeeting,
   useMeetingDraft,
+  useMeetingRecording,
   useMemberDisplayNames,
   usePostMeeting,
   useUpdateMeeting,
   type MeetingDraftState,
+  type MeetingRecordingState,
   type MeetingMinutes,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -120,7 +122,12 @@ export function MinutesPage({ id }: { id: string }) {
   const drafts =
     !!query.data && query.data.status === "draft" && query.data.can_edit;
   const draftQuery = useMeetingDraft(id, { enabled: drafts });
-  if (query.isPending || (drafts && draftQuery.isPending)) {
+  // The same for the recording row inside that box.
+  const recordingQuery = useMeetingRecording(id, { enabled: drafts });
+  if (
+    query.isPending ||
+    (drafts && (draftQuery.isPending || recordingQuery.isPending))
+  ) {
     return <MinutesPageSkeleton />;
   }
   if (!query.data) {
@@ -151,6 +158,7 @@ export function MinutesPage({ id }: { id: string }) {
       key={query.data.id}
       meeting={query.data}
       draftState={drafts ? (draftQuery.data ?? null) : null}
+      recordingState={drafts ? (recordingQuery.data ?? null) : null}
       onReload={async () => (await query.refetch()).data}
     />
   );
@@ -159,11 +167,13 @@ export function MinutesPage({ id }: { id: string }) {
 function Minutes({
   meeting,
   draftState,
+  recordingState,
   onReload,
 }: {
   meeting: MeetingMinutes;
   /** Where drafting from notes stands; null when it isn't offered here. */
   draftState: MeetingDraftState | null;
+  recordingState: MeetingRecordingState | null;
   onReload: () => Promise<MeetingMinutes | undefined>;
 }) {
   const ids = useId();
@@ -454,6 +464,7 @@ function Minutes({
           meetingId={meeting.id}
           eventStart={meeting.event_start_time}
           state={draftState}
+          recording={recordingState}
           hasContent={!isMeetingContentEmpty(cleanContent(draft.content))}
           disabled={update.isPending || post.isPending || stale}
           prepare={async () => {

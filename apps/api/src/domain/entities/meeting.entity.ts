@@ -89,3 +89,57 @@ export interface MeetingDraft {
   requested_at: string;
   finished_at: string | null;
 }
+
+export const MEETING_RECORDING_ROW_STATUSES = [
+  'uploading',
+  'transcribing',
+  'ready',
+  'failed',
+] as const;
+export type MeetingRecordingRowStatus =
+  (typeof MEETING_RECORDING_ROW_STATUSES)[number];
+
+/**
+ * One meeting's uploaded recording (`meeting_recordings`, #712): where its
+ * upload and its transcription stand, and the transcript. At most one per
+ * meeting; uploading again replaces it.
+ *
+ * The audio is in the `meeting-audio` bucket only until the transcript is
+ * written or the transcription fails for good. The row, and the transcript
+ * in it, is kept only while the minutes are a draft, as the officer's notes
+ * are (`spec/behavior/meetings.md` § Uploading a recording).
+ */
+export interface MeetingRecording {
+  meeting_id: string;
+  chapter_id: string;
+  /**
+   * A fresh id per upload. The AI run carries it, so a run that finishes
+   * after the officer uploaded again writes nothing.
+   */
+  upload_id: string;
+  uploaded_by: string | null;
+  /** Where the audio is, while it may still be there; null once deleted. */
+  storage_path: string | null;
+  /** The file's own name. Shown to the officer; never logged. */
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  /** What the officer's browser read off the file, then what the provider measured. */
+  duration_seconds: number;
+  /** When the officer confirmed the room was told it was being recorded. */
+  notice_confirmed_at: string;
+  /** When the members who were at the meeting were told; once per meeting. */
+  attendees_notified_at: string | null;
+  status: MeetingRecordingRowStatus;
+  /** A `MeetingRecordingFailure` from `@repo/validation`; set when failed. */
+  failure_code: string | null;
+  /** The `ai_runs` row doing the work; null until it is queued. */
+  run_id: string | null;
+  /** The provider's id for the transcription while it is in progress. */
+  provider_job_id: string | null;
+  /** One line per speaker turn; set exactly when `ready`. Never logged. */
+  transcript: string | null;
+  speaker_count: number | null;
+  created_at: string;
+  finished_at: string | null;
+}

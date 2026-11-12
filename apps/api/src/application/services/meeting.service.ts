@@ -642,6 +642,47 @@ export class MeetingService {
     });
   }
 
+  /**
+   * Tells the members who were at a meeting that a recording of it was
+   * uploaded (`meetings.md` § Recording notice), leaving out the uploader.
+   * "Who was there" is the event's check-ins; a meeting nobody checked in to
+   * tells the members its event invites instead, so the notice is never
+   * silently skipped. Minutes with no event have nobody to tell.
+   */
+  async notifyRecordingUploaded(
+    chapterId: string,
+    meeting: Meeting,
+    uploaderId: string,
+    notice: { title: string; body: string },
+  ): Promise<number> {
+    if (!meeting.event_id) return 0;
+    const event = await this.liveEvent(chapterId, meeting);
+    if (!event) return 0;
+    const [attendees, members] = await Promise.all([
+      this.attendeesOf(event.id),
+      this.memberRepo.findByChapter(chapterId),
+    ]);
+    const there = new Set([...attendees.present, ...attendees.late]);
+    const audience = members
+      .filter((member) =>
+        there.size > 0
+          ? there.has(member.user_id)
+          : isInvited(event, member.role_ids),
+      )
+      .map((member) => member.user_id)
+      .filter((userId) => userId !== uploaderId);
+    if (audience.length === 0) return 0;
+    await this.notifications.notifyMembers(chapterId, audience, {
+      ...notice,
+      category: 'events',
+      priority: 'NORMAL',
+      data: {
+        target: { screen: 'events', eventId: event.id, meetingId: meeting.id },
+      },
+    });
+    return audience.length;
+  }
+
   /** An action item's owner is someone in this chapter, or nobody. */
   private async assertOwnersAreMembers(
     chapterId: string,

@@ -122,7 +122,7 @@ Built 2026-11-12 (#714). Every call is held against three caps **before** it is 
 | --- | --- | --- | --- | --- |
 | Chapter | calendar month, UTC | $25 | `AI_CHAPTER_MONTHLY_CAP_USD` | one chapter's AI until the month turns ("monthly cap reached — contact treasurer") |
 | Member | day, UTC, in one chapter | $2 | `AI_MEMBER_DAILY_CAP_USD` | one member, or a runaway script, from spending the chapter's month |
-| Platform, per provider | calendar month, UTC, every chapter | Anthropic $150, Google $50 | `AI_ANTHROPIC_MONTHLY_CAP_USD`, `AI_GOOGLE_MONTHLY_CAP_USD` | Frapp from overspending a provider account |
+| Platform, per provider | calendar month, UTC, every chapter | Anthropic $150, Google $50, AssemblyAI $25 | `AI_ANTHROPIC_MONTHLY_CAP_USD`, `AI_GOOGLE_MONTHLY_CAP_USD`, `AI_ASSEMBLYAI_MONTHLY_CAP_USD` | Frapp from overspending a provider account |
 
 - The defaults are guards for the beta, not prices (`apps/api/src/config/ai-spend-config.ts`). The chapter's is the research's 90th-percentile month on Sonnet (#714, 2026-10-08); the platform's leave room under the provider credits ADR-28 plans on, after the evals' share. Each is overridable per environment; a malformed value fails boot rather than falling back.
 - The chapter cap is the allowance plus the overage cap. With the overage cap at $0 (the default below), it is the allowance alone, and no chapter can run up a bill. A cap the treasurer sets per chapter (#1310) replaces the default for that chapter: it is an argument to `reserve_ai_spend`, not a new table.
@@ -164,7 +164,7 @@ Members **never see a meter or "this costs X" prompt at the point of using an AI
 
 ### Implementation invariants
 
-- Every AI provider call is metered: one `ai_usage_events` row per call ([`spec/architecture/README.md`](../architecture/README.md)), with the chapter, the acting member, the task (the "feature"), provider, model, prompt version, input, output and cached input tokens, and the cost in micro-USD (millionths of a dollar: a cached read costs less than a cent, so cents would round it to zero). The row is settled before the response is returned to the client, failed and refused calls included. Transcription seconds arrive with transcription (#712).
+- Every AI provider call is metered: one `ai_usage_events` row per call ([`spec/architecture/README.md`](../architecture/README.md)), with the chapter, the acting member, the task (the "feature"), provider, model, prompt version, input, output and cached input tokens, and the cost in micro-USD (millionths of a dollar: a cached read costs less than a cent, so cents would round it to zero). The row is settled before the response is returned to the client, failed and refused calls included. A transcription is one row too (#712, built 2026-11-12): no tokens, `audio_seconds` as the provider measured them, and the cost at the catalog's price per hour of audio. Its hold is the recording's stated length (at least a minute) at that price. A try that dies while the provider works is counted twice against the caps, once as its unsettled hold and once when the next try resumes the same provider job and settles: the safe side of the error.
 - Allowance and overage are computed from the meter, not from a separate balance. There is no mutable "balance" column.
 - The hard cap is enforced server-side; clients never compute "should this request go through" locally.
 - The ledger has no text column ([`ai.md`](ai.md) § Stored AI text).

@@ -16,6 +16,12 @@ const mocks = vi.hoisted(() => ({
   discardDraft: vi.fn(),
   useDraft: vi.fn(),
   ensureConsent: vi.fn(),
+  recording: { current: null as unknown },
+  startRecording: vi.fn(),
+  confirmRecording: vi.fn(),
+  removeRecording: vi.fn(),
+  uploadResumable: vi.fn(),
+  readAudioDuration: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -31,6 +37,22 @@ vi.mock("@repo/hooks", () => ({
   useUseMeetingDraft: () => ({ mutateAsync: mocks.useDraft, isPending: false }),
   useDiscardMeetingDraft: () => ({
     mutateAsync: mocks.discardDraft,
+    isPending: false,
+  }),
+  useMeetingRecording: () => ({
+    isPending: false,
+    data: mocks.recording.current,
+  }),
+  useStartMeetingRecording: () => ({
+    mutateAsync: mocks.startRecording,
+    isPending: false,
+  }),
+  useConfirmMeetingRecording: () => ({
+    mutateAsync: mocks.confirmRecording,
+    isPending: false,
+  }),
+  useRemoveMeetingRecording: () => ({
+    mutateAsync: mocks.removeRecording,
     isPending: false,
   }),
   useMemberDisplayNames: () => ({
@@ -59,6 +81,16 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
     ensureConsent: mocks.ensureConsent,
     consentDialog: null,
   }),
+}));
+
+vi.mock("@/lib/resumable-upload", () => ({
+  ResumableUploadError: class extends Error {
+    constructor(readonly failure: string) {
+      super(failure);
+    }
+  },
+  uploadResumable: mocks.uploadResumable,
+  readAudioDuration: mocks.readAudioDuration,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -162,11 +194,49 @@ beforeEach(() => {
     mocks.discardDraft,
     mocks.useDraft,
     mocks.ensureConsent,
+    mocks.startRecording,
+    mocks.confirmRecording,
+    mocks.removeRecording,
+    mocks.uploadResumable,
+    mocks.readAudioDuration,
   ]) {
     fn.mockReset();
   }
   mocks.draft.current = null;
+  mocks.recording.current = null;
 });
+
+const NO_RECORDING = {
+  status: "none",
+  upload_id: null,
+  file_name: null,
+  size_bytes: null,
+  duration_seconds: null,
+  failure: null,
+  failure_message: null,
+  transcript: null,
+  speaker_count: null,
+  uploaded_at: null,
+  available: true,
+  blocked: null,
+  max_bytes: 200 * 1024 * 1024,
+  max_seconds: 7200,
+  upload: null,
+};
+
+const TRANSCRIPT =
+  "Speaker 1: Call to order.\nSpeaker 2: Treasurer report.";
+
+const READY_RECORDING = {
+  ...NO_RECORDING,
+  status: "ready",
+  upload_id: "u-1",
+  file_name: "chapter.m4a",
+  size_bytes: 60_000_000,
+  duration_seconds: 4320,
+  transcript: TRANSCRIPT,
+  speaker_count: 2,
+};
 
 const NO_DRAFT = {
   status: "none",
@@ -660,6 +730,229 @@ describe("MinutesPage", () => {
       expect(
         screen.getByRole("textbox", { name: "Your notes" }),
       ).toHaveProperty("value", "notes");
+    });
+  });
+
+  describe("uploading a recording", () => {
+    const notesBox = () => screen.getByRole("textbox", { name: "Your notes" });
+    const recordingFile = () =>
+      new File(["audio"], "chapter.m4a", { type: "audio/x-m4a" });
+
+    function open() {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+    }
+
+    it("offers no upload where this server transcribes nothing", () => {
+      mocks.recording.current = null;
+      open();
+      expect(
+        screen.queryByRole("button", { name: "Upload a recording" }),
+      ).toBeNull();
+      expect(notesBox()).toBeTruthy();
+    });
+
+    it("offers none when no provider is set up", () => {
+      mocks.recording.current = { ...NO_RECORDING, available: false };
+      open();
+      expect(
+        screen.queryByRole("button", { name: "Upload a recording" }),
+      ).toBeNull();
+    });
+
+    it("won't upload until a file is chosen and the room is confirmed told, then sends it and asks for the transcript", async () => {
+      mocks.recording.current = NO_RECORDING;
+      mocks.readAudioDuration.mockResolvedValue(4320.4);
+      mocks.startRecording.mockResolvedValue({
+        ...NO_RECORDING,
+        status: "uploading",
+        upload: {
+          upload_id: "u-1",
+          bucket: "meeting-audio",
+          path: "c/m/u-1.m4a",
+          token: "signed",
+          content_type: "audio/x-m4a",
+        },
+      });
+      mocks.uploadResumable.mockResolvedValue(undefined);
+      mocks.confirmRecording.mockResolvedValue({});
+      open();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog.textContent).toContain(
+        "This meeting is being recorded and transcribed by Frapp.",
+      );
+      expect(dialog.textContent).toContain("Never upload a Standards hearing");
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      expect(screen.getByText("Choose the recording first.")).toBeTruthy();
+
+      const input = dialog.querySelector('input[type="file"]')!;
+      fireEvent.change(input, { target: { files: [recordingFile()] } });
+      expect(
+        await screen.findByText(/chapter\.m4a · 1 hour 12 minutes/),
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      expect(
+        screen.getByText(/Confirm that the room was told/),
+      ).toBeTruthy();
+      expect(mocks.startRecording).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      await waitFor(() =>
+        expect(mocks.confirmRecording).toHaveBeenCalledWith({
+          id: "m-1",
+          uploadId: "u-1",
+        }),
+      );
+      expect(mocks.startRecording.mock.calls[0]![0]).toEqual({
+        id: "m-1",
+        body: {
+          file_name: "chapter.m4a",
+          mime_type: "audio/x-m4a",
+          size_bytes: 5,
+          duration_seconds: 4320,
+          notice_confirmed: true,
+        },
+      });
+      expect(mocks.uploadResumable.mock.calls[0]![1]).toEqual({
+        bucket: "meeting-audio",
+        path: "c/m/u-1.m4a",
+        token: "signed",
+        contentType: "audio/x-m4a",
+      });
+    });
+
+    it.each([
+      [new File(["x"], "meeting.mov", { type: "video/quicktime" }), 60, /isn't a recording Frapp can read/],
+      [new File(["x"], "long.m4a", { type: "audio/mp4" }), 7300, /the most Frapp takes is 2 hours/],
+      [new File(["x"], "odd.ogg", { type: "audio/ogg" }), null, /couldn't read how long/],
+    ])("says what is wrong with a file the moment it is chosen", async (file, seconds, message) => {
+      mocks.recording.current = NO_RECORDING;
+      mocks.readAudioDuration.mockResolvedValue(seconds);
+      open();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.change(dialog.querySelector('input[type="file"]')!, {
+        target: { files: [file] },
+      });
+      expect(await screen.findByText(message)).toBeTruthy();
+    });
+
+    it("asks on the AI sheet first, and opens nothing on a No", async () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        blocked: "consent_required",
+      };
+      mocks.ensureConsent.mockResolvedValue(false);
+      open();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      );
+      await waitFor(() => expect(mocks.ensureConsent).toHaveBeenCalled());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("says an upload is transcribing after a reload, and that the page can be left", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "transcribing",
+        upload_id: "u-1",
+        duration_seconds: 4320,
+      };
+      open();
+      expect(
+        screen.getByText(
+          /Transcribing 1 hour 12 minutes of audio\. This takes a few minutes, and you can leave this page\./,
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+    });
+
+    it("says an upload cut off by a reload has to be sent again", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "uploading",
+        upload_id: "u-1",
+      };
+      open();
+      expect(screen.getByText(/upload was interrupted/)).toBeTruthy();
+    });
+
+    it("shows a failure in plain words with a way to try again", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "failed",
+        failure: "no_speech",
+        failure_message: "No speech could be heard in that recording.",
+      };
+      open();
+      expect(
+        screen.getByText("No speech could be heard in that recording."),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      ).toBeTruthy();
+    });
+
+    it("puts a transcript that arrives into empty notes by itself", async () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "transcribing",
+        upload_id: "u-1",
+        duration_seconds: 4320,
+      };
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      const view = render(<MinutesPage id="m-1" />);
+      mocks.recording.current = READY_RECORDING;
+      view.rerender(<MinutesPage id="m-1" />);
+      await waitFor(() =>
+        expect(notesBox()).toHaveProperty("value", TRANSCRIPT),
+      );
+      expect(
+        screen.getByText(
+          /The transcript is in your notes \(1 hour 12 minutes, 2 speakers\)/,
+        ),
+      ).toBeTruthy();
+    });
+
+    it("never writes over notes already typed: the transcript waits to be added below them", async () => {
+      mocks.recording.current = READY_RECORDING;
+      mocks.draft.current = { ...NO_DRAFT, notes: "my own notes" };
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(notesBox()).toHaveProperty("value", "my own notes");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add to your notes" }),
+      );
+      await waitFor(() =>
+        expect(notesBox()).toHaveProperty(
+          "value",
+          `my own notes\n\n${TRANSCRIPT}`,
+        ),
+      );
+    });
+
+    it("clearing the notes removes the recording and its transcript too", async () => {
+      mocks.recording.current = READY_RECORDING;
+      mocks.confirm.mockResolvedValue({});
+      mocks.removeRecording.mockResolvedValue("m-1");
+      open();
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() =>
+        expect(mocks.removeRecording).toHaveBeenCalledWith({ id: "m-1" }),
+      );
+      expect(mocks.confirm.mock.calls[0]![0].description).toContain(
+        "the recording and its transcript",
+      );
     });
   });
 });

@@ -4,11 +4,14 @@ export const AI_SPEND_RESERVATION = 'AI_SPEND_RESERVATION';
 
 /** The most this call can cost, worked out before it is made. */
 export interface AiSpendEstimate {
-  /** Input tokens, estimated from the request's size. */
+  /** Input tokens, estimated from the request's size. Zero for audio. */
   inputTokens: number;
-  /** The call's output ceiling, from the catalog. */
+  /** The call's output ceiling, from the catalog. Zero for audio. */
   maxOutputTokens: number;
-  /** Both, at the catalog's prices, in millionths of a US dollar. */
+  /**
+   * Both, at the catalog's prices, in millionths of a US dollar. For a
+   * transcription, the recording's stated length at the price per hour.
+   */
   maxCostMicroUsd: number;
 }
 
