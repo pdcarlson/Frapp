@@ -11,6 +11,7 @@ import {
   taskCardControls,
   TASK_ACTION_LABELS,
   taskStatusLabel,
+  useCurrentChapter,
   useMembers,
   useMyPermissions,
   subtaskProgress,
@@ -32,12 +33,13 @@ import { Badge } from "@/components/ui/badge";
 import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
-import { can } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { OWNS_ESCAPE } from "@/components/shared/panel";
 import { TaskEditForm } from "@/components/tasks/task-edit-form";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -68,7 +70,8 @@ export const TASK_CONFIRM_FAILURE = {
  * `kind:"task"` — see `ChatService.SERVER_ONLY_KINDS`).
  *
  * Interactive: the assignee can Start / Mark done and an admin
- * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
+ * (`tasks:manage`) can Confirm / Reject inline, and Edit an unconfirmed task
+ * in the board's form (#4512). Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
  * boundary, so the gating here is UX-only. Which controls show, and when the
  * live status can be read at all, are `taskCardControls` and `canReadCardTask`
@@ -113,6 +116,10 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // An officer's edit (#4512) puts the task form in the card's place until it
   // saves or is cancelled, as the board's tile does (#4296).
   const [editing, setEditing] = useState(false);
+  const chapterQuery = useCurrentChapter();
+  const tasksOff =
+    chapterQuery.data !== undefined &&
+    !isModuleEnabled(chapterQuery.data?.enabled_modules, "tasks");
 
   if (!payload) {
     return (
@@ -167,9 +174,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   }).filter((control) => control !== "start" && control !== "complete");
   // Edit, wherever the card is shown (chat and Activity, #4512): the board's
   // rule, a tasks:manage holder until the task is confirmed.
-  const editable = canEditCardTask({ live, canManage })
-    ? readEditableCardTask(liveRaw)
-    : null;
+  // Not while the chapter has Tasks turned off, as on mobile: every save
+  // would be refused.
+  const editable =
+    !tasksOff && canEditCardTask({ live, canManage })
+      ? readEditableCardTask(liveRaw)
+      : null;
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||
@@ -205,10 +215,16 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         className={cn(MESSAGE_CARD)}
         role="group"
         aria-label={`Editing ${editable.title}`}
-        // Escape puts the card back unsaved, like the board tile's Escape. A
-        // picker open inside handles its own Escape in its portal first.
+        // Escape puts the card back unsaved, like the board tile's Escape.
+        // The Activity panel would hear it first and close with the draft,
+        // so the card claims it there (`OWNS_ESCAPE`). An open picker is
+        // portaled out of the card, so its own Escape is not the card's.
+        {...{ [OWNS_ESCAPE]: "" }}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) {
+          if (
+            event.key === "Escape" &&
+            event.currentTarget.contains(event.target as Node)
+          ) {
             event.stopPropagation();
             setEditing(false);
           }

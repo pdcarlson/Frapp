@@ -61,7 +61,9 @@ import { useCardWrite } from "./use-card-write";
  * (`spec/behavior/tasks.md` § Chat Integration). In short: no control until
  * the live task is read (#2065), the assignee walks Start then Mark done
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
- * rejects a completion, never their own (#1056). The writes are the shared
+ * rejects a completion, never their own (#1056); a `tasks:manage` holder also
+ * gets Edit on an unconfirmed task (`canEditCardTask`, #4512), which opens the
+ * board's Edit task sheet. The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
  *
  * Mobile has no toast, so a refusal is a line on the card (`useCardWrite`,
@@ -254,8 +256,13 @@ export function TaskCard({
             // Last, after the lifecycle actions, which stay the card's own.
             <CardButton
               label="Edit"
-              accessibilityHint="Changes the task's title, assignee, due date or points."
-              disabled={!frame.isConfirmed}
+              // Held like the card's other writes: offline, mid-write, or
+              // after a gate refusal, a save would be lost or refused.
+              disabled={disabled}
+              accessibilityHint={
+                hint ??
+                "Changes the task's title, assignee, due date or points."
+              }
               onPress={() =>
                 setEditing({
                   id: editable.id,
@@ -275,6 +282,7 @@ export function TaskCard({
         <NewTaskSheet
           key={editing.id}
           ref={editRef}
+          now={now}
           editing={editing}
           onClosed={() => setEditing(null)}
         />

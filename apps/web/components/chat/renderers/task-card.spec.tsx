@@ -614,6 +614,33 @@ describe("TaskCard Edit (#4512)", () => {
     expect(edit()).toBeNull();
   });
 
+  it("puts the card back on Escape, and claims Escape from a panel around it", () => {
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    const form = screen.getByRole("group", { name: "Editing Clean the house" });
+    expect(form).toHaveAttribute("data-owns-escape");
+    fireEvent.keyDown(screen.getByLabelText("Title"), { key: "Escape" });
+    expect(screen.queryByRole("group", { name: /Editing/ })).toBeNull();
+    expect(edit()).toBeInTheDocument();
+  });
+
+  it("holds Edit until the card's message is acknowledged", () => {
+    render(
+      <TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed={false} />,
+    );
+    expect(edit()).toBeDisabled();
+  });
+
+  it("isn't offered while the chapter has Tasks turned off", () => {
+    mockCurrentChapter.mockReturnValue({
+      data: { subscription_status: "active", enabled_modules: { tasks: false } },
+      isPending: false,
+      isError: false,
+    });
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    expect(edit()).toBeNull();
+  });
+
   it("isn't offered on a confirmed task", () => {
     mockUseTask.mockReturnValue(
       editable({

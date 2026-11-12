@@ -69,14 +69,19 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 // The edit sheet is the board's (#4296), covered by its own spec; here only
 // what it was opened on matters.
-const editSheet = vi.hoisted(() => ({ editing: null as unknown }));
+const editSheet = vi.hoisted(() => ({
+  editing: null as unknown,
+  present: vi.fn(),
+}));
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const React = await import("react");
   return {
-    NewTaskSheet: React.forwardRef(function NewTaskSheet(props: {
-      editing: unknown;
-    }) {
+    NewTaskSheet: React.forwardRef(function NewTaskSheet(
+      props: { editing: unknown },
+      ref: React.Ref<{ present: () => void }>,
+    ) {
       editSheet.editing = props.editing;
+      React.useImperativeHandle(ref, () => ({ present: editSheet.present }));
       return null;
     }),
   };
@@ -460,6 +465,7 @@ describe("TaskCard — Edit (#4512)", () => {
 
   beforeEach(() => {
     editSheet.editing = null;
+    editSheet.present.mockClear();
     state.live = editable();
   });
 
@@ -476,6 +482,20 @@ describe("TaskCard — Edit (#4512)", () => {
       pointReward: 15,
       storedStatus: "TODO",
     });
+    // Mounted is not shown: the sheet has to be presented.
+    expect(editSheet.present).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds Edit like the card's other writes while a write would be lost", () => {
+    state.permissions = ["tasks:manage"];
+    state.writeBlockedReason = "You're offline.";
+    expect(button(render("admin-1"), "Edit").props.disabled).toBe(true);
+  });
+
+  it("isn't offered while the chapter has Tasks turned off", () => {
+    state.permissions = ["tasks:manage"];
+    state.enabledModules = { tasks: false };
+    expect(hasEdit(render("admin-1"))).toBe(false);
   });
 
   it("isn't offered to anyone else", () => {
