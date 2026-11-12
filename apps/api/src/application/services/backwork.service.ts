@@ -251,8 +251,10 @@ export class BackworkService {
   /**
    * The resource with a signed link to its file, good for an hour. The link
    * forces a download saved under the stored filename, like every backwork
-   * link: nothing on `/backwork` previews a file, and a member-uploaded file
-   * is never served inline as a page (#3867).
+   * link the app hands out (#3867): nothing on `/backwork` previews a file,
+   * so the app never opens one as a page. That is what the app does, not a
+   * boundary: the `download` parameter sits outside the signature, so anyone
+   * holding the link can drop it. The gate is the bucket's allowed types.
    */
   async findById(
     id: string,

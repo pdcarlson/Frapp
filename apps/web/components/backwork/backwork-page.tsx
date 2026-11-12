@@ -275,9 +275,10 @@ export function BackworkPage() {
     try {
       const url = selectDownloadUrl(await fetchResource(row.resource.id));
       if (!url) throw new Error("No download URL returned.");
-      // The link forces a download (#3867), so following it saves the file
-      // and leaves the page where it is; a new tab would be left blank.
-      window.location.assign(url);
+      // A new tab, not this one: the link forces a download (#3867), but a
+      // server from before it signs an inline link, and a storage error
+      // answers with a page of its own. Either would replace the library.
+      window.open(url, "_blank", "noopener");
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",

@@ -235,9 +235,10 @@ export class ChapterDocumentService {
    *   stored filename, so following it saves the file. The web Download
    *   control uses it; before it, Download opened a PDF in a tab.
    *
-   * The inline link is deliberate (#3867): every reader draws or parses the
-   * file and none runs it as a page, and the `document` kind admits no HTML
-   * or SVG. Backwork, which has no viewer, signs only a forced download.
+   * The web viewer reads the inline link without loading the file as a page
+   * (pdf.js parses it, an `<img>` draws it). Mobile's in-app browser does
+   * navigate to it; whether it should is the owner's call, #4409. Backwork,
+   * which has no viewer, signs only a forced download (#3867).
    */
   async findById(
     id: string,
