@@ -191,6 +191,7 @@ export function RoleOverrideList({
                               value: "tier",
                               label: sameAs,
                               disabled: tierRefused,
+                              quiet: true,
                             },
                             { value: "on", label: "On", disabled: onRefused },
                           ]}
