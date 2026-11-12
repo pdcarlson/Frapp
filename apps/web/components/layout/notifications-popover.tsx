@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, type ReactElement } from "react";
+import { useEffect, useId, useMemo, useRef, type ReactElement } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -250,7 +250,13 @@ export function NotificationsPopover({
 
   // One request (`POST /v1/notifications/read`), so it also reads rows past
   // the page this list shows. Until #3929 it sent one PATCH per row.
+  // Mark all read goes away once nothing is unread, taking focus with it,
+  // and a non-modal popover doesn't catch focus the way the sheet's trap
+  // did: it would fall to <body> with the list still open. So it moves to
+  // the list first.
+  const contentRef = useRef<HTMLDivElement>(null);
   function markAllRead() {
+    contentRef.current?.focus();
     markManyRead.mutate(undefined);
   }
 
@@ -269,6 +275,7 @@ export function NotificationsPopover({
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         align="end"
         sideOffset={8}
         collisionPadding={8}

@@ -190,6 +190,23 @@ describe("NotificationsPopover — a dropdown under the bell (#4593)", () => {
     expect(bell).toHaveFocus();
   });
 
+  it("keeps focus in the list when Mark all read goes away", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<WithBell />);
+    await user.click(
+      screen.getByRole("button", { name: "Notifications bell" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+    // The read lands and the button is no longer drawn.
+    notifications.value = notifications.value.map((n) => ({
+      ...(n as object),
+      read_at: "2026-09-22T10:05:00Z",
+    }));
+    rerender(<WithBell />);
+    expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Notifications" })).toHaveFocus();
+  });
+
   it("closes when the bell is pressed again", async () => {
     const user = userEvent.setup();
     render(<WithBell />);
