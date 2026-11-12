@@ -103,6 +103,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The Directory can now show members as a grid of faces as well as a list, and it remembers which one you picked.",
       "The Member role is now Everyone, which nobody has to assign, and officers can ping the whole chapter with @everyone.",
       "Repeating events can now meet on more than one day a week, every few weeks, or on a set weekday of the month, and end on a date or after a number of meetings.",
+      "Documents can now show your files as a grid of tiles as well as a list, and it remembers which one you picked.",
     ],
   },
   {
