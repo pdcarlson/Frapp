@@ -48,6 +48,7 @@ import {
   channelRowActions,
   errorCopy,
   MANAGE_CHANNELS_PERMISSION,
+  useChannelAccessOptions,
   useCreateChannel,
   useDeleteChannel,
   useUpdateChannel,
@@ -76,6 +77,7 @@ import {
 } from "@/components/chat/home-header";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
+import { selectChannelAccessOptions } from "@repo/hooks/channel-access";
 import {
   ChannelFormSheet,
   type ChannelFormMode,
@@ -279,6 +281,15 @@ export default function ChatHomeScreen() {
     mode: ChannelFormMode;
     key: number;
   } | null>(null);
+  // What who-can-see and who-can-post can name (#3702), read only while the
+  // form is open: the route needs `channels:manage` anyway.
+  const accessOptionsQuery = useChannelAccessOptions(
+    canManageChannels && channelForm !== null,
+  );
+  const accessOptions = useMemo(
+    () => selectChannelAccessOptions(accessOptionsQuery.data),
+    [accessOptionsQuery.data],
+  );
   const openChannelForm = useCallback((mode: ChannelFormMode) => {
     setChannelForm((current) => ({ mode, key: (current?.key ?? 0) + 1 }));
   }, []);
@@ -303,6 +314,7 @@ export default function ChatHomeScreen() {
             description: values.description || undefined,
             type: values.isPrivate ? "PRIVATE" : "PUBLIC",
             category_id: values.categoryId ?? undefined,
+            ...values.access,
           })) as { id?: unknown } | undefined;
           // Open it, as Discord does, so the first message is one tap away.
           if (typeof created?.id === "string") openChannel(created.id);
@@ -321,6 +333,7 @@ export default function ChatHomeScreen() {
             ...(values.categoryId !== channel.category_id
               ? { category_id: values.categoryId }
               : {}),
+            ...values.access,
           },
         });
       } catch (error) {
@@ -957,6 +970,14 @@ export default function ChatHomeScreen() {
           mode={channelForm.mode}
           categories={categories}
           onSubmit={submitChannelForm}
+          accessOptions={accessOptions}
+          accessOptionsState={
+            accessOptionsQuery.isSuccess
+              ? "ready"
+              : accessOptionsQuery.isError
+                ? "error"
+                : "loading"
+          }
           onDelete={
             channelForm.mode.kind === "edit"
               ? () => {

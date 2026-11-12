@@ -4,6 +4,7 @@ import { ALWAYS_FORMAL_LABEL_WITH_HINT } from "@repo/chat-core/density";
 import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import {
   useCategories,
   useChannelAccessOptions,
@@ -43,11 +44,6 @@ interface SheetCategory {
   name: string;
   who_can_see?: string[] | null;
   who_can_post?: string[] | null;
-}
-
-/** A chosen list with nothing on it: the API refuses it, so the form does. */
-function isEmptyChoice(list: readonly string[] | null): boolean {
-  return list !== null && list.length === 0;
 }
 
 /**
@@ -149,7 +145,8 @@ export function CreateChannelSheet({
   }
 
   const accessIncomplete =
-    !isPrivate && (isEmptyChoice(see) || isEmptyChoice(post));
+    !isPrivate &&
+    (isEmptyChannelAccessChoice(see) || isEmptyChannelAccessChoice(post));
 
   /** Every way the panel closes (X, Escape, scrim, Cancel) drops the draft. */
   function handleOpenChange(next: boolean) {

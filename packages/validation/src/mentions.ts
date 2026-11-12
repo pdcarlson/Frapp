@@ -184,9 +184,7 @@ export function findMentionSpans(
       names.length > 0 ? spacedNameAt(content, start + 1, names) : null;
     if (spaced !== null) readings.push(spaced);
     if (bare && bare.length <= MAX_TOKEN_LENGTH) readings.push(bare);
-    const token = options.accept
-      ? readings.find(options.accept)
-      : readings[0];
+    const token = options.accept ? readings.find(options.accept) : readings[0];
     if (token === undefined) continue;
     const end = start + 1 + token.length;
     spans.push({ start, end, token });
@@ -462,6 +460,10 @@ export interface MentionRole {
  * not a member's own exact name: when "Rush" is both a role and a member, the
  * token is ambiguous and, like every ambiguity here, reaches nobody.
  */
+/** `@everyone`, folded; `EVERYONE_MENTION_NAME` in `everyone-role.ts`, which
+ * imports this module, so it is spelled here rather than imported. */
+const EVERYONE_FOLDED = "everyone";
+
 function matchMentionRole(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
@@ -477,6 +479,10 @@ function matchMentionRole(
   );
   if (hits.length === 0) return undefined;
   if (hits.length > 1) return null;
+  // `@everyone` is the chapter's (#4191): only its Everyone role may carry
+  // the name, and a member whose display name reads the same must not be
+  // able to silence every announcement by making it ambiguous.
+  if (folded === EVERYONE_FOLDED) return hits[0]!;
   // Any exact member hit, one or several, makes the token ambiguous.
   // `matchTiers` reads several as "no match", which would hand the role a
   // token that should reach nobody.
@@ -767,7 +773,9 @@ export function mentionChipFilter(
       // `@Vice President` that pinged the member "Vice" stays `@Vice`.
       const space = token.indexOf(" ");
       const bare =
-        space === -1 ? null : matchMentionCandidate(members, token.slice(0, space));
+        space === -1
+          ? null
+          : matchMentionCandidate(members, token.slice(0, space));
       return bare === null || !mentioned.has(bare.user_id);
     }
     const member = matchMentionCandidate(members, token);

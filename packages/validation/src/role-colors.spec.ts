@@ -110,4 +110,20 @@ describe("resolveRoleChips", () => {
   it("draws a duplicated role id once", () => {
     expect(resolveRoleChips(roles, ["r-1", "r-1"])).toHaveLength(1);
   });
+
+  it("draws no chip for the Everyone role (#4191)", () => {
+    const withEveryone = [
+      ...roles,
+      {
+        id: "r-e",
+        name: "Everyone",
+        color: null,
+        display_order: 5,
+        system_key: "MEMBER",
+      },
+    ];
+    expect(
+      resolveRoleChips(withEveryone, ["r-e", "r-3"]).map((c) => c.id),
+    ).toEqual(["r-3"]);
+  });
 });

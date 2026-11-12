@@ -229,10 +229,12 @@ await import("./tiers/ai-ask-diagnostics.mjs");
 await import("./tiers/ai-reports.mjs");
 await import("./tiers/request-context.mjs");
 await import("./tiers/member-social-trust-defaults.mjs");
+await import("./tiers/everyone-role.mjs");
 await import("./tiers/clear-deleted-message-payloads.mjs");
 await import("./tiers/merge-backwork-department-case-variants.mjs");
 await import("./tiers/notifications-forget-deleted-message.mjs");
 await import("./tiers/service-awarded-points.mjs");
+await import("./tiers/signup-card-claims.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

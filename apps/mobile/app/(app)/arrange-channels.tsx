@@ -12,6 +12,7 @@ import {
   useCategories,
   useChannels,
   usePermissionList,
+  useReorderCategories,
   useReorderChannels,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -19,13 +20,16 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAT } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
-import { DragHandleGlyph } from "@/components/control-glyphs";
+import { DisclosureGlyph, DragHandleGlyph } from "@/components/control-glyphs";
+import { ICON_BUTTON_SIZE, IconButton } from "@/components/icon-button";
 import { pressHaptic, selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { selectCategories, selectChannels } from "@/lib/chat/channel-list";
 import {
   arrangeEntries,
+  categoryMovedAnnouncement,
   dropIndex,
+  moveCategory,
   moveChannelEntry,
   movedAnnouncement,
   type ArrangeEntry,
@@ -46,6 +50,12 @@ const SHIFT_MS = 150;
  * only, so the rest of the screen still scrolls, and a screen reader moves a
  * row with its Move up and Move down actions.
  *
+ * A category moves whole with the Move up and Move down arrows on its heading
+ * (#4478), saved at once through web's `PUT /v1/channels/categories/order`.
+ * Arrows rather than a second drag: a heading drag would have to carry every
+ * row under it, and a chapter's handful of categories moves in a tap or two,
+ * as iOS Mail's mailbox list and Slack's sidebar sections move theirs.
+ *
  * Its own screen rather than a mode of Chat home, because a long press there
  * already opens the row's menu. Discord's mobile app does the same: channels
  * are reordered from the server's channel settings, not the chat list.
@@ -58,6 +68,27 @@ export default function ArrangeChannelsScreen() {
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
   const reorder = useReorderChannels();
+  const reorderCategories = useReorderCategories();
+  const categoryIds = useMemo(
+    () => selectCategories(categoriesQuery.data).map((category) => category.id),
+    [categoriesQuery.data],
+  );
+  const [categoryFailed, setCategoryFailed] = useState(false);
+  const moveCategoryBy = useCallback(
+    (id: string, label: string, delta: -1 | 1) => {
+      const next = moveCategory(categoryIds, id, delta);
+      if (!next) return;
+      selectionHaptic();
+      setCategoryFailed(false);
+      AccessibilityInfo.announceForAccessibility(
+        categoryMovedAnnouncement(next, label, id),
+      );
+      // The hook writes the new order into the list at once and puts it back
+      // if the server refuses.
+      reorderCategories.mutateAsync(next).catch(() => setCategoryFailed(true));
+    },
+    [categoryIds, reorderCategories],
+  );
 
   const base = useMemo(
     () =>
@@ -164,6 +195,12 @@ export default function ArrangeChannelsScreen() {
               connection and try again.
             </Text>
           ) : null}
+          {categoryFailed ? (
+            <Text style={styles.failure} accessibilityLiveRegion="polite">
+              Couldn&apos;t move the category. Nothing changed. Check your
+              connection and try again.
+            </Text>
+          ) : null}
           <View>
             {entries.map((entry, index) => (
               <ArrangeRow
@@ -176,6 +213,19 @@ export default function ArrangeChannelsScreen() {
                 onDragStart={onDragStart}
                 onDrop={onDrop}
                 onMove={(to) => move(index, to)}
+                categoryPlace={
+                  entry.kind === "heading" && entry.categoryId !== null
+                    ? {
+                        first: categoryIds.indexOf(entry.categoryId) === 0,
+                        last:
+                          categoryIds.indexOf(entry.categoryId) ===
+                          categoryIds.length - 1,
+                        onMove: (delta) =>
+                          moveCategoryBy(entry.categoryId!, entry.label, delta),
+                      }
+                    : null
+                }
+                movesLocked={dragging}
               />
             ))}
           </View>
@@ -194,6 +244,8 @@ function ArrangeRow({
   onDragStart,
   onDrop,
   onMove,
+  categoryPlace,
+  movesLocked,
 }: {
   entry: ArrangeEntry;
   index: number;
@@ -203,6 +255,14 @@ function ArrangeRow({
   onDragStart: () => void;
   onDrop: (from: number, rows: number) => void;
   onMove: (to: number) => void;
+  /** A category heading's place, for its Move up and Move down arrows. */
+  categoryPlace: {
+    first: boolean;
+    last: boolean;
+    onMove: (delta: -1 | 1) => void;
+  } | null;
+  /** While a channel is held, the arrows wait. */
+  movesLocked: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -268,6 +328,38 @@ function ArrangeRow({
         >
           {entry.label}
         </Text>
+        {categoryPlace ? (
+          <View style={styles.headingMoves}>
+            <IconButton
+              label={`Move ${entry.label} up`}
+              disabled={categoryPlace.first || movesLocked}
+              onPress={() => categoryPlace.onMove(-1)}
+            >
+              <DisclosureGlyph
+                color={
+                  categoryPlace.first
+                    ? tokens.color.border.hairline
+                    : tokens.color.text.mutedForeground
+                }
+                direction="up"
+              />
+            </IconButton>
+            <IconButton
+              label={`Move ${entry.label} down`}
+              disabled={categoryPlace.last || movesLocked}
+              onPress={() => categoryPlace.onMove(1)}
+            >
+              <DisclosureGlyph
+                color={
+                  categoryPlace.last
+                    ? tokens.color.border.hairline
+                    : tokens.color.text.mutedForeground
+                }
+                direction="down"
+              />
+            </IconButton>
+          </View>
+        ) : null}
       </Animated.View>
     );
   }
@@ -307,12 +399,21 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     heading: {
       height: ROW_HEIGHT,
-      justifyContent: "flex-end",
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: tokens.spacing.sm,
       paddingBottom: tokens.spacing.xs,
     },
     headingText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
+      flex: 1,
+    },
+    // Two arrows at the handle's column, with the 44pt floor from slop.
+    headingMoves: {
+      flexDirection: "row",
+      gap: tokens.spacing.lg,
+      paddingRight: (tokens.touch.minimum - ICON_BUTTON_SIZE) / 2,
     },
     row: {
       height: ROW_HEIGHT,

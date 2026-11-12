@@ -61,6 +61,11 @@ export type AiTranscriptionAvailability =
 
 export interface AiTranscriptionInput {
   audio: TranscriptionAudio;
+  /**
+   * The feature's own limit on a recording's length, in seconds. The hold is
+   * sized for it and the vendor is asked to stop there.
+   */
+  maxSeconds: number;
   /** Names to spell right: the roster's. */
   vocabulary: readonly string[];
   /** `<feature>@vN`, stamped on the ledger row like a prompt's version. */
@@ -71,20 +76,17 @@ export interface AiTranscriptionInput {
 }
 
 /**
- * The shortest recording a hold is sized for. A stated length is the
- * uploader's word, so a hold is never made for less than this.
- */
-const MIN_HELD_SECONDS = 60;
-
-/**
  * The one way a feature has a recording transcribed (ADR-28 decision 1): the
  * gateway's steps, for the one kind of call `AiGatewayService` does not make.
  *
  * 1. the server switch (`AI_ENABLED`), then the task's transcriber, then the
  *    vendor's limits against the recording;
  * 2. the consent check (seam 1);
- * 3. the spend hold (seam 2), for the recording's stated length at the
- *    catalog's price per hour;
+ * 3. the spend hold (seam 2), for the longest recording the feature takes
+ *    (`maxSeconds`) at the catalog's price per hour. Never for the stated
+ *    length: that and the stated size are the uploader's word, and a file
+ *    that understates both would otherwise pass every cap and then settle
+ *    for hours of audio (#4504). The whole hold is released at settlement;
  * 4. the vendor call, in its own Sentry span;
  * 5. the usage record (seam 3), awaited before the result is returned, with
  *    the seconds the vendor measured, and a content-free PostHog event.
@@ -146,6 +148,12 @@ export class AiTranscriptionService {
       return { status: 'unsupported', reason: 'too_large', limits };
     }
 
+    // What the vendor is asked to stop at, and what the hold is sized for.
+    const maxSeconds = Math.max(
+      1,
+      Math.min(Math.floor(input.maxSeconds), limits.maxDurationSeconds),
+    );
+
     const call: AiCallDescriptor = {
       chapterId: context.chapterId,
       actingUserId: context.actingUserId,
@@ -171,10 +179,7 @@ export class AiTranscriptionService {
     const reservation = await this.spend.reserve(call, {
       inputTokens: 0,
       maxOutputTokens: 0,
-      maxCostMicroUsd: aiTranscriptionCostMicroUsd(
-        entry,
-        Math.max(MIN_HELD_SECONDS, input.audio.durationSeconds),
-      ),
+      maxCostMicroUsd: aiTranscriptionCostMicroUsd(entry, maxSeconds),
     });
     if (!reservation.granted) {
       return {
@@ -212,7 +217,7 @@ export class AiTranscriptionService {
 
       let result: TranscriptionResult;
       try {
-        result = await this.run(transcriber, entry, task, input);
+        result = await this.run(transcriber, entry, task, input, maxSeconds);
       } catch (error) {
         // An adapter only throws `LanguageModelError`; anything else is a
         // bug, and is replaced, because an arbitrary error's message could
@@ -256,11 +261,13 @@ export class AiTranscriptionService {
     entry: TranscriptionCatalogEntry,
     task: string,
     input: AiTranscriptionInput,
+    maxSeconds: number,
   ) {
     return transcriber.transcribe({
       task,
       model: entry.model,
       audio: input.audio,
+      maxSeconds,
       vocabulary: input.vocabulary,
       resumeJobId: input.resumeJobId,
       onJobStarted: (jobId) => input.onJobStarted(jobId),

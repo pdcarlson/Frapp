@@ -41,6 +41,7 @@ import {
 } from "@repo/hooks";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
+  EVERYONE_ROLE_NAME,
   acceptAttribute,
   resolveChapterMark,
 } from "@repo/validation";
@@ -95,7 +96,8 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  * gate". Plan and billing already offers checkout at this exact status.
  */
 const POST_CREATE_PATH = BILLING_SETTINGS_PATH;
-const INVITE_ROLE = "Member";
+/** The Everyone role: setup invites join as nobody in particular (#4191). */
+const INVITE_ROLE = EVERYONE_ROLE_NAME;
 
 /**
  * `display` is the founder's own chat display pick (#4056): founders never see
@@ -882,7 +884,7 @@ function InviteStep({ onInvited }: { onInvited: () => void }) {
         always invite more from Members.
       </p>
       {/* The Members panel's composer, so both say the same thing. New
-          members join as Member; the panel lets an officer pick. */}
+          members join with no role; the panel lets an officer pick. */}
       <InviteComposer role={INVITE_ROLE} onInvited={onInvited} />
       {/* Onboarding's analytics disclosure (spec/behavior/settings § Privacy). */}
       <p className="text-caption text-muted-foreground">

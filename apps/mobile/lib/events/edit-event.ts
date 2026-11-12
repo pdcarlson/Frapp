@@ -2,10 +2,11 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
-  isRecurrenceRule,
   isRepeatRule,
+  repeatDraftFromRule,
+  repeatRuleForEdit,
   type EventAttendanceWire,
-  type RecurrenceRule,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 import {
@@ -71,9 +72,10 @@ export interface EventEditTarget {
   /**
    * The series' rule: the event's own on a parent, the parent's on a
    * generated occurrence (whose own column is always empty). `null` for a
-   * one-time event.
+   * one-time event. A legacy token or a structured rule
+   * (`spec/behavior/events.md` § Recurring events).
    */
-  seriesRule: RecurrenceRule | null;
+  seriesRule: string | null;
   /**
    * The series parent, when the event is a generated occurrence and the
    * parent could be read. A series time change is sent to it.
@@ -91,18 +93,18 @@ export function isInSeries(event: EventDetail): boolean {
 }
 
 /**
- * The series rule an edit form should show for this event. Legacy tokens only
- * until the Repeat control reads structured rules (#4488's UI PR); a
- * structured rule shows as none and is left as it is.
+ * The series rule an edit form should show for this event: the parent's on a
+ * generated occurrence, the event's own otherwise. Any rule the API accepts,
+ * a legacy token or a structured one; anything else reads as none.
  */
 export function seriesRuleOf(
   event: EventDetail,
   parent: Pick<EventDetail, "recurrence_rule"> | null,
-): RecurrenceRule | null {
+): string | null {
   const rule = event.parent_event_id
     ? parent?.recurrence_rule
     : event.recurrence_rule;
-  return isRecurrenceRule(rule) ? rule : null;
+  return isRepeatRule(rule) ? rule : null;
 }
 
 /** The stored event as the form's draft. */
@@ -118,7 +120,7 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
     pointsInput: String(event.point_value ?? 0),
     checkInOpensInput: String(event.check_in_opens_minutes),
     attendance: attendanceFromEvent(event.attendance),
-    recurrenceRule: seriesRule,
+    repeat: repeatDraftFromRule(seriesRule),
     description: event.description ?? "",
     showMore: false,
   };
@@ -138,7 +140,7 @@ export interface EventEditPatch {
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
   /** `null` ends the series. */
-  recurrence_rule?: RecurrenceRule | null;
+  recurrence_rule?: string | null;
   check_in_opens_minutes?: number;
   /** `null` clears the type. */
   event_type_id?: string | null;
@@ -202,7 +204,15 @@ export function validateEventEdit(
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
-  if (Object.keys(errors).length > 0 || opens === null) {
+  // A changed rule steps from the meeting that is the series' first once
+  // this save lands (`repeatEditAnchor`).
+  const repeat = repeatRuleForEdit(
+    draft.repeat,
+    repeatEditSeriesOf(target, start, now),
+  );
+  if (!repeat.ok) errors.repeat = repeat.error;
+
+  if (Object.keys(errors).length > 0 || opens === null || !repeat.ok) {
     return { ok: false, errors };
   }
 
@@ -233,10 +243,31 @@ export function validateEventEdit(
   if (draft.eventTypeId !== event.event_type_id) {
     patch.event_type_id = draft.eventTypeId;
   }
-  if (draft.recurrenceRule !== seriesRule) {
-    patch.recurrence_rule = draft.recurrenceRule;
-  }
+  // By value: an unchanged rule is not sent, because a changed one rebuilds
+  // the series. An untouched draft gives back the stored string itself.
+  if (repeat.rule !== seriesRule) patch.recurrence_rule = repeat.rule;
   return { ok: true, patch };
+}
+
+/**
+ * The series a Repeat change applies to. Its head is the parent on a
+ * generated occurrence (when it could be read), else the event itself; a
+ * series save shifts the head by the same as the edited meeting's start
+ * (`saveRequestFor`).
+ */
+export function repeatEditSeriesOf(
+  target: EventEditTarget,
+  start: Date,
+  now: Date,
+): RepeatEditSeries {
+  const { event, parent, seriesRule } = target;
+  const head = event.parent_event_id && parent ? parent : event;
+  return {
+    headStart: new Date(head.start_time),
+    headRule: seriesRule,
+    shiftMs: start.getTime() - new Date(event.start_time).getTime(),
+    now,
+  };
 }
 
 /** Whether the patch writes nothing. */

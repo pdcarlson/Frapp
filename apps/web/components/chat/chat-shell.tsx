@@ -235,6 +235,8 @@ import {
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
 import { PollForm } from "./poll-form";
+import { SignupForm } from "./signup-form";
+import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import {
   EventQuickForm,
   eventQuickDraftFrom,
@@ -1557,6 +1559,28 @@ export function ChatShell({
                 // twice.
                 if (result.ok && result.warning) {
                   toast({ title: "Poll posted", description: result.warning });
+                }
+                return result;
+              }}
+            />
+          );
+        case "signup":
+          return (
+            <SignupForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<SignupDraft>(channelId, "signup") ??
+                emptySignupDraft()
+              }
+              onDiscard={discard}
+              onPost={async (signup) => {
+                const result = await channel.sendSignup(channelId, signup);
+                if (result.ok && result.warning) {
+                  toast({
+                    title: "Sign-up sheet posted",
+                    description: result.warning,
+                  });
                 }
                 return result;
               }}

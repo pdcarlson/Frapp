@@ -13,7 +13,7 @@ const frappRoles: FrappRole[] = [
   { id: "vp", name: "Vice President", system_key: "VICE_PRESIDENT" },
   { id: "treasurer", name: "Treasurer", system_key: "TREASURER" },
   { id: "secretary", name: "Secretary", system_key: "SECRETARY" },
-  { id: "member", name: "Member", system_key: "MEMBER" },
+  { id: "member", name: "Everyone", system_key: "MEMBER" },
   { id: "new-member", name: "New Member", system_key: "NEW_MEMBER" },
   { id: "alumni", name: "Alumni", system_key: "ALUMNI" },
   { id: "exec", name: "Exec Board", system_key: null },
@@ -157,6 +157,19 @@ describe("roleIssues (#2818)", () => {
     { roleId: "r2", roleName: "exec" },
     { roleId: "r3", roleName: "Long" },
   ];
+
+  it("asks for another name than one reading as @everyone (#4191)", () => {
+    expect(
+      roleIssues(
+        [{ roleId: "r4", roleName: "everyone" }],
+        { r4: { action: "new", name: "Every-one" } },
+        frappRoles,
+        50,
+      ).map((issue) => issue.message),
+    ).toEqual([
+      '"Every-one" is what @everyone reads as. Give the new role for everyone another name.',
+    ]);
+  });
 
   it("asks for a name no Frapp role has, within the limit", () => {
     expect(

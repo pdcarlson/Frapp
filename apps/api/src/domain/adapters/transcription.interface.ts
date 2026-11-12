@@ -31,7 +31,8 @@ export interface TranscriptionAudio {
   sizeBytes: number;
   /**
    * How long the uploader's browser said the recording is. A hint for the
-   * spend hold and the limits; the vendor's own count is what is recorded.
+   * limits only, never for the spend hold; the vendor's own count is what is
+   * recorded.
    */
   durationSeconds: number;
 }
@@ -42,6 +43,13 @@ export interface TranscriptionRequest {
   /** The vendor's model id, from the catalog. */
   model: string;
   audio: TranscriptionAudio;
+  /**
+   * The most audio to transcribe, in seconds from the start. The stated
+   * length is the uploader's word, so this is what bounds the cost of a file
+   * that is longer than it says: an adapter whose vendor can stop early asks
+   * it to stop here.
+   */
+  maxSeconds: number;
   /**
    * Names the vendor should spell right: the roster's display names. A hint,
    * never an instruction, and never used to recognise a voice.

@@ -35,7 +35,10 @@ import {
 } from "@repo/validation";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { PanelBody } from "@/components/shared/panel";
-import { DueDateField } from "@/components/tasks/due-date-field";
+import {
+  DueDateField,
+  dueEntryPassed,
+} from "@/components/tasks/due-date-field";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
@@ -493,11 +496,11 @@ function ActCard({
     points?.target_user_ids ?? [],
   );
   const [assigneeId, setAssigneeId] = useState(task?.assignee_id ?? "");
-  const [due, setDue] = useState(
-    task?.due_date
-      ? dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at })
-      : "",
-  );
+  // The suggestion's own due: kept even once its time has passed (#4512).
+  const suggestedDue = task?.due_date
+    ? dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at })
+    : "";
+  const [due, setDue] = useState(suggestedDue);
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with something still missing: say which, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -530,6 +533,9 @@ function ActCard({
     }
     if (task) {
       if (!assigneeId || !due) return setFlagged(true);
+      if (dueEntryPassed(due, new Date(), suggestedDue)) {
+        return setFlagged(true);
+      }
       const changes: TaskSuggestionEdits = {};
       if (assigneeId !== (task.assignee_id ?? "")) {
         changes.assignee_id = assigneeId;
@@ -737,6 +743,9 @@ function ActCard({
                 aria-label={ACT_COPY.field_due}
                 placeholder={ACT_COPY.pick_due}
                 missing={flagged && !due}
+                passed={
+                  flagged && dueEntryPassed(due, new Date(), suggestedDue)
+                }
                 value={due}
                 onChange={setDue}
                 disabled={busy}

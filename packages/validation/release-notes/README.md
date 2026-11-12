@@ -20,8 +20,9 @@ rebuilds one bot PR, `bot/whats-new`, that moves every waiting line into the
 notes under that day's date and deletes the files. It closes that PR if the
 lines are removed before it merges. Merging it before a production deploy puts
 the lines in that release; a line still waiting here at deploy time ships in
-the next one. Whether the bot PR merges itself is the workflow's `AUTO_MERGE`
-switch, off until Paul decides.
+the next one. The bot PR merges itself once its checks pass (squash
+auto-merge, the workflow's `AUTO_MERGE` switch, on since Paul asked on
+2026-11-12), so nobody merges it by hand.
 
 **Taking a line back.** Before the bot PR merges, delete the file. After, the
 line is in the notes: delete it there. A revert of the PR that added the line

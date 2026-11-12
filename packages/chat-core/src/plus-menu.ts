@@ -18,6 +18,7 @@ import { getSlashCommand } from "./integrations";
 /** Commands with a form the **+** can open, in the menu's order. */
 export const PLUS_MENU_COMMANDS = [
   "poll",
+  "signup",
   "event",
   "task",
   "hours",
@@ -31,6 +32,7 @@ export const PLUS_MENU_ROW_COPY: Record<
   { label: string; noun: string }
 > = {
   poll: { label: "Poll", noun: "polls" },
+  signup: { label: "Sign-up sheet", noun: "sign-up sheets" },
   event: { label: "Event", noun: "events" },
   task: { label: "Task", noun: "tasks" },
   hours: { label: "Service hours", noun: "service hours" },
@@ -48,20 +50,41 @@ export const PLUS_MENU_ROW_COPY: Record<
  * which doesn't check `polls:create` (web's `/poll` posts for anyone), so this
  * is a client-side offer, the phone's rule since #3701. Whether the server
  * should enforce it is #3007's open decision.
+ *
+ * A sign-up sheet (#3926) needs nothing: anyone who can post in the channel
+ * can post one, as they can a message.
  */
 export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
   {
     poll: ["polls:create"],
+    signup: [],
     event: EVENT_CREATE_PERMISSIONS,
     task: ["tasks:manage", "members:view"],
     hours: ["service:log"],
     points: ["points:adjust", "members:view"],
   };
 
-/** The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS` entry's. */
+/**
+ * The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS`
+ * entry's. A sign-up sheet has no slash command and no module.
+ */
 function rowModule(command: PlusMenuCommand): string | null {
   return getSlashCommand(command)?.requiredModule ?? null;
 }
+
+/**
+ * The typed shortcut a row shows beside its label, or `null` for a form with
+ * no slash command (a sign-up sheet).
+ */
+export function plusMenuShortcut(command: PlusMenuCommand): string | null {
+  return getSlashCommand(command) ? `/${command}` : null;
+}
+
+/** The forms that post through the outbox like a message, so work offline. */
+const QUEUED_COMMANDS: ReadonlySet<PlusMenuCommand> = new Set([
+  "poll",
+  "signup",
+]);
 
 /**
  * One form the host can open, and whether the member's role may use it:
@@ -87,11 +110,15 @@ export function plusMenuForms(
 ): PlusMenuForm[] {
   return commands.map((command) => ({
     command,
-    roleAllows: granted
-      ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
-      : failed
-        ? "unknown"
-        : "loading",
+    // A form that needs no grant (a sign-up sheet) waits on nothing.
+    roleAllows:
+      PLUS_MENU_PERMISSIONS[command].length === 0
+        ? true
+        : granted
+          ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
+          : failed
+            ? "unknown"
+            : "loading",
   }));
 }
 
@@ -223,11 +250,14 @@ function rowDisabledReason(
   command: PlusMenuCommand,
   ctx: PlusMenuContext,
 ): string | null {
-  // A poll goes through the outbox, so it is the one form that works offline.
-  if (ctx.offline && command !== "poll") return "Reconnect first";
-  if (ctx.moduleStatus === "offline") return "Reconnect first";
-  if (ctx.moduleStatus === "loading") return "Still loading";
-  if (ctx.moduleStatus === "error") return "Couldn't check Settings";
+  // A poll or a sign-up goes through the outbox, so it works offline.
+  if (ctx.offline && !QUEUED_COMMANDS.has(command)) return "Reconnect first";
+  // The module read only holds back a form that needs a module.
+  if (rowModule(command)) {
+    if (ctx.moduleStatus === "offline") return "Reconnect first";
+    if (ctx.moduleStatus === "loading") return "Still loading";
+    if (ctx.moduleStatus === "error") return "Couldn't check Settings";
+  }
   if (ctx.attachmentsStaged > 0) return `Send the ${ctx.attachmentNoun} first`;
   if (ctx.replying) return "Not while replying";
   return null;

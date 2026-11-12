@@ -144,3 +144,31 @@ export function movedAnnouncement(
     heading.kind === "heading" ? heading.label : DEFAULT_GROUP_LABEL;
   return `${entry.name} moved to ${index - headingAt} of ${total} in ${label}`;
 }
+
+/**
+ * The chapter's categories with one moved a place up (`-1`) or down (`1`),
+ * for `PUT /v1/channels/categories/order` (#4478). `null` when it can't move
+ * that way. The default group always heads the list and never moves.
+ */
+export function moveCategory(
+  categoryIds: readonly string[],
+  id: string,
+  delta: -1 | 1,
+): string[] | null {
+  const from = categoryIds.indexOf(id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= categoryIds.length) return null;
+  const next = categoryIds.slice();
+  next.splice(from, 1);
+  next.splice(to, 0, id);
+  return next;
+}
+
+/** The spoken position after a category moves, as web announces one. */
+export function categoryMovedAnnouncement(
+  categoryIds: readonly string[],
+  label: string,
+  id: string,
+): string {
+  return `${label} moved to ${categoryIds.indexOf(id) + 1} of ${categoryIds.length} categories`;
+}

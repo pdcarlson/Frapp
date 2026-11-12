@@ -16,6 +16,7 @@
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
     "./poll-draft": "./src/poll-draft.ts",
+    "./signups": "./src/signups.ts",
     "./plus-menu": "./src/plus-menu.ts",
     "./cards": "./src/cards.ts",
     "./activity-cards": "./src/activity-cards.ts",

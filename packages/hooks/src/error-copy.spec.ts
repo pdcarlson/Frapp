@@ -36,6 +36,15 @@ describe("errorCopy", () => {
     expect(errorCopy(nest(409, "Already checked in for this event"))).toBe(
       "You're already checked in.",
     );
+    // A sign-up sheet slot that filled first (#3926).
+    expect(
+      errorCopy(
+        nest(
+          409,
+          "That slot is full. Someone took the last spot just before you.",
+        ),
+      ),
+    ).toBe("That slot is full. Someone took the last spot just before you.");
     expect(
       errorCopy(nest(409, "Role name already exists in this chapter")),
     ).toBe("A role with that name already exists. Pick another name.");

@@ -27,7 +27,7 @@ export interface RolloverInput {
    */
   userId: string;
   /**
-   * Bulk-promote the chapter's New Members to Member as part of this rollover
+   * Bulk-promote the chapter's New Members to the Everyone role (once Member, #4191) as part of this rollover
    * (spec/behavior/semester-rollover.md step 3). Optional and off by default —
    * a rollover that does not ask for it behaves exactly as it did before.
    */
@@ -112,7 +112,7 @@ export class SemesterRolloverService {
     // the rollover is retryable with the box unticked.
     if (!newMemberRole || !memberRole) {
       throw new ConflictException(
-        "This chapter has no system 'New Member' or 'Member' role to promote between. " +
+        "This chapter has no system 'New Member' or 'Everyone' role to promote between. " +
           'Roll over without promotion, or restore the roles first.',
       );
     }

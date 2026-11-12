@@ -293,7 +293,8 @@ describe("InviteMemberDialog default role", () => {
 
   // `GET /v1/roles` carries `system_key`, so a chapter that renamed Member
   // still gets it pre-selected, not the Alumni role that sorts first (#2484).
-  it("finds a renamed Member role by its system key", async () => {
+  // It is the Everyone role now, which the picker calls "No role" (#4191).
+  it("finds the Everyone role by its system key, and calls it No role", async () => {
     mockRoles.mockReturnValue({
       data: [
         { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
@@ -305,7 +306,7 @@ describe("InviteMemberDialog default role", () => {
     mockOrgConfig.mockReturnValue({ data: {}, isError: false });
     await openDialog();
 
-    expect(rolePicker().value).toBe("Brother");
+    expect(rolePicker().value).toBe("No role");
   });
 
   it("falls back to the first role only when the catalog has no Member role", async () => {

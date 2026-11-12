@@ -46,7 +46,11 @@ import {
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
-import { localIsoDate } from "@repo/formatting";
+import {
+  dueTimePassed,
+  localIsoDate,
+  suggestedDueTime,
+} from "@repo/formatting";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
@@ -54,11 +58,9 @@ import {
   editDraftOf,
   taskEditBody,
   type TaskEditTarget,
-  dueTimePassed,
   duePresets,
   parsePointReward,
   resolveDue,
-  suggestedDueTime,
   validateNewTask,
   type DueChoice,
   type ValidatedNewTask,

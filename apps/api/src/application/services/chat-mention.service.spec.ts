@@ -34,7 +34,7 @@ const members = [
 ];
 
 const roles = [
-  role('member', 'Member', {
+  role('member', 'Everyone', {
     system_key: 'MEMBER',
     display_order: 5,
     mentionable: false,
@@ -51,9 +51,21 @@ describe('mentionRoleViews', () => {
       'Officers',
       'Rush Chair',
       'Brothers',
-      'Member',
+      'everyone',
     ]);
     expect(views[0].member_ids).toEqual(['u1']);
+  });
+
+  it('names the Everyone role @everyone and reaches every member with it (#4191)', () => {
+    const everyone = mentionRoleViews(roles, members).find(
+      (view) => view.role_id === 'member',
+    );
+    // Dee holds Brothers and Alumni, not the Everyone role, and is still in.
+    expect(everyone).toMatchObject({
+      name: 'everyone',
+      member_ids: ['u1', 'u2', 'u3', 'u4'],
+      open_to_all: false,
+    });
   });
 
   it('carries the switch of each role, on unless an officer turned it off', () => {
@@ -67,7 +79,7 @@ describe('mentionRoleViews', () => {
       Officers: true,
       'Rush Chair': true,
       Brothers: true,
-      Member: false,
+      everyone: false,
     });
   });
 
@@ -103,7 +115,7 @@ describe('ChatMentionService.listMentionRoles', () => {
     expect(list.map(({ name, mentionable }) => [name, mentionable])).toEqual([
       ['Officers', true],
       ['Brothers', true],
-      ['Member', false],
+      ['everyone', false],
     ]);
   });
 
@@ -180,6 +192,41 @@ describe('ChatMentionService.resolveForSend', () => {
       await expect(
         officer.mentions.resolveForSend('ch-1', 'u2', '@Vice President'),
       ).resolves.toEqual(['u5']);
+    });
+  });
+
+  describe('@everyone (#4191)', () => {
+    it('reaches every member when an officer sends it', async () => {
+      const officer = service(members, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', 'meeting at 8 @everyone'),
+      ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4']));
+    });
+
+    it('is not silenced by a member whose display name reads the same', async () => {
+      const named = [
+        ...members,
+        { user_id: 'u9', display_name: 'Every One', role_ids: [] },
+      ];
+      const officer = service(named, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@everyone hi'),
+      ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4', 'u9']));
+    });
+
+    it('reaches nobody from a member until the chapter opens it', async () => {
+      const member = service(members, roles, ['members:view']);
+      await expect(
+        member.mentions.resolveForSend('ch-1', 'u2', '@everyone hi'),
+      ).resolves.toEqual([]);
+
+      const opened = roles.map((r) =>
+        r.id === 'member' ? { ...r, mentionable: true } : r,
+      );
+      const open = service(members, opened, ['members:view']);
+      await expect(
+        open.mentions.resolveForSend('ch-1', 'u2', '@everyone hi'),
+      ).resolves.toEqual(expect.arrayContaining(['u1', 'u3', 'u4']));
     });
   });
 

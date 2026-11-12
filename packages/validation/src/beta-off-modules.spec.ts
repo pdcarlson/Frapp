@@ -11,9 +11,8 @@ import { selectOpsNudge } from "./ops-nudges";
 describe("BETA_OFF_MODULES", () => {
   // The decision itself (Paul, 2026-11-06). Removing `dues` here is how it
   // comes back, and that change should have to touch this line on purpose.
-  // Meetings waits for the AI build-out (#4312), the same way.
-  it("holds dues and meetings for the beta", () => {
-    expect(BETA_OFF_MODULES).toEqual(["dues", "meetings"]);
+  it("holds dues for the beta", () => {
+    expect(BETA_OFF_MODULES).toEqual(["dues"]);
   });
 
   it("names only what it holds", () => {
