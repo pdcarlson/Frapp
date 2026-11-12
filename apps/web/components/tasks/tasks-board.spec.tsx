@@ -119,6 +119,9 @@ const TASKS = [
 vi.mock("@repo/hooks", async (importOriginal) => ({
   // `actionStatus` stays real; only the data hooks are stubbed.
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
   useCurrentChapter: () => mockCurrentChapter(),
   useChapterScope: () => chapterScopeRef.current,
   useTasks: () => ({

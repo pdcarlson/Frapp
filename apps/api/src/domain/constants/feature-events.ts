@@ -76,11 +76,16 @@ export const FEATURE_EVENTS = {
       'assigned_to_self',
       'has_due_time',
       'has_point_reward',
+      'has_reference_photo',
       'has_subtasks',
+      'photo_required',
       'posted_to_chat',
     ],
   },
-  'task-status-changed': { feature: 'tasks', properties: ['status'] },
+  'task-status-changed': {
+    feature: 'tasks',
+    properties: ['status', 'has_proof_photo'],
+  },
   'task-completion-confirmed': { feature: 'tasks', properties: [] },
   'task-completion-rejected': { feature: 'tasks', properties: [] },
 

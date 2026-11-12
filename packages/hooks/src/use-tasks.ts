@@ -450,6 +450,10 @@ export function useCreateTask() {
       /** Subtask titles, in order (#4003). */
       subtasks?: string[];
       point_reward?: number;
+      /** A reference photo's `storage_path` (#4565). */
+      reference_photo_path?: string;
+      /** Mark done needs a proof photo (#4565). */
+      photo_required?: boolean;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
       if (error) throw error;
@@ -538,7 +542,11 @@ export function useUpdateTaskStatus() {
       body,
     }: {
       id: string;
-      body: { status: TaskStatus };
+      /**
+       * `proof_photo_path` rides with `COMPLETED` only: the `storage_path` of
+       * a proof photo already uploaded (#4565).
+       */
+      body: { status: TaskStatus; proof_photo_path?: string };
     }) => {
       const { data, error } = await client.PATCH("/v1/tasks/{id}/status", {
         params: { path: { id } },
@@ -585,6 +593,61 @@ export function useUpdateTaskStatus() {
     },
     onSettled: (_data, _error, { id }, context) => {
       invalidateTask(queryClient, context?.chapterId ?? chapterId, id);
+    },
+  });
+}
+
+/**
+ * A signed upload URL for a task photo (#4565): a reference photo on create or
+ * edit, or a proof photo with Mark done. The service-hours proof flow: PUT the
+ * bytes to `upload_url`, then send `storage_path` on the write.
+ */
+export function useRequestTaskPhotoUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["tasks", "request-task-photo-upload-url"],
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      /** Declared so the API's own size check answers with a readable 400. */
+      size_bytes?: number;
+    }) => {
+      const { data, error } = await client.POST("/v1/tasks/photo-upload-url", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/** Which of a task's two photos (#4565). */
+export type TaskPhotoKind = "reference" | "proof";
+
+/**
+ * A short-lived link to one of a task's photos (#4565), for its assignee or a
+ * `tasks:manage` holder. Keyed on the stored path, so a replaced photo is a
+ * new read, and kept well inside the link's lifetime so a cached link never
+ * outlives it. Pass `path: null` (no photo) to read nothing.
+ */
+export function useTaskPhotoUrl(
+  taskId: string,
+  photo: TaskPhotoKind,
+  path: string | null | undefined,
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [...taskKeys.detail(chapterId, taskId), "photo", photo, path],
+    enabled: Boolean(path && taskId),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/tasks/{id}/photo-url", {
+        params: { path: { id: taskId }, query: { photo } },
+      });
+      if (error) throw error;
+      return data.url;
     },
   });
 }

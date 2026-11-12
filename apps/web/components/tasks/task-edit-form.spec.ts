@@ -51,3 +51,35 @@ describe("taskEditFrom's due time (#4512)", () => {
     });
   });
 });
+
+describe("taskEditFrom's photo (#4565)", () => {
+  const withPhoto: EditableTask = {
+    ...task,
+    reference_photo_path: "chapters/c/tasks/p/mess.jpg",
+    photo_required: false,
+  };
+
+  it("keeps the photo and the switch when neither changed", () => {
+    expect(taskEditFrom(withPhoto, input({ photo_required: false }))).toEqual(
+      {},
+    );
+  });
+
+  it("sends a new photo's path, or null to remove it", () => {
+    expect(
+      taskEditFrom(
+        withPhoto,
+        input({ reference_photo_path: "chapters/c/tasks/q/new.jpg" }),
+      ),
+    ).toEqual({ reference_photo_path: "chapters/c/tasks/q/new.jpg" });
+    expect(
+      taskEditFrom(withPhoto, input({ reference_photo_path: null })),
+    ).toEqual({ reference_photo_path: null });
+  });
+
+  it("sends Photo required only when it changed", () => {
+    expect(taskEditFrom(withPhoto, input({ photo_required: true }))).toEqual({
+      photo_required: true,
+    });
+  });
+});

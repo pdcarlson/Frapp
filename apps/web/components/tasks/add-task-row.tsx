@@ -22,6 +22,13 @@ import {
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import {
+  EMPTY_TASK_PHOTO_DRAFT,
+  TaskPhotoFields,
+  taskPhotoProblem,
+  useUploadTaskPhoto,
+  type TaskPhotoDraft,
+} from "@/components/tasks/task-photo";
 
 /** What `POST /v1/tasks` takes from the board. */
 export type TaskDraft = {
@@ -34,6 +41,9 @@ export type TaskDraft = {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number;
+  /** A reference photo already uploaded (#4565). */
+  reference_photo_path?: string;
+  photo_required?: boolean;
 };
 
 type Member = { user_id?: string | null; display_name?: string | null };
@@ -45,9 +55,16 @@ const EMPTY = {
   due_date: "",
   point_reward: "",
   subtasks: [] as string[],
+  ...EMPTY_TASK_PHOTO_DRAFT,
 };
 
-type Missing = { assignee?: boolean; due?: boolean; passed?: boolean };
+type Missing = {
+  assignee?: boolean;
+  due?: boolean;
+  passed?: boolean;
+  /** Why the picked photo can't be sent, or why it didn't upload. */
+  photo?: string | null;
+};
 
 /**
  * The board's one way to create a task: a "+ Add a task" row at the top of
@@ -81,6 +98,9 @@ export function AddTaskRow({
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
+  const uploadPhoto = useUploadTaskPhoto();
+  const [uploading, setUploading] = useState(false);
+  const busy = pending || uploading;
 
   function close() {
     setOpen(false);
@@ -111,6 +131,29 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
+    let referencePhotoPath: string | undefined;
+    if (draft.photoFile) {
+      const problem = taskPhotoProblem(draft.photoFile);
+      if (problem) {
+        setMissing((prev) => ({ ...prev, photo: problem }));
+        return;
+      }
+      setUploading(true);
+      try {
+        referencePhotoPath = await uploadPhoto(draft.photoFile);
+      } catch (error) {
+        setMissing((prev) => ({
+          ...prev,
+          photo:
+            error instanceof Error && error.message
+              ? error.message
+              : "The photo didn't upload. Try again.",
+        }));
+        return;
+      } finally {
+        setUploading(false);
+      }
+    }
     const created = await onCreate({
       title,
       description: draft.description.trim() || undefined,
@@ -118,6 +161,8 @@ export function AddTaskRow({
       ...dueEntryFields(draft.due_date),
       point_reward: parseGuardedInt(draft.point_reward),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
+      reference_photo_path: referencePhotoPath,
+      photo_required: draft.photoRequired || undefined,
     });
     if (!created) return;
     setDraft(EMPTY);
@@ -155,7 +200,7 @@ export function AddTaskRow({
         // bubbles that key here from the portal. Closing the row too would
         // throw away the draft the officer only meant to close a list over.
         // Held while a create runs, like Cancel.
-        if (event.key === "Escape" && !event.defaultPrevented && !pending) {
+        if (event.key === "Escape" && !event.defaultPrevented && !busy) {
           event.preventDefault();
           close();
         }
@@ -258,9 +303,24 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, description: event.target.value }))
         }
       />
+      <TaskPhotoFields
+        id="add-task"
+        draft={draft}
+        disabled={busy}
+        problem={missing.photo}
+        onChange={(patch: Partial<TaskPhotoDraft>) => {
+          setDraft((prev) => ({ ...prev, ...patch }));
+          if ("photoFile" in patch) {
+            setMissing((prev) => ({
+              ...prev,
+              photo: patch.photoFile ? taskPhotoProblem(patch.photoFile) : null,
+            }));
+          }
+        }}
+      />
       <div className="flex items-center gap-2">
-        <Button size="toolbar" type="submit" {...gate.controlProps(pending)}>
-          Add task
+        <Button size="toolbar" type="submit" {...gate.controlProps(busy)}>
+          {uploading ? "Adding photo…" : "Add task"}
         </Button>
         {/*
           Not gated: it only closes the row, and a lapsed chapter still needs
@@ -272,7 +332,7 @@ export function AddTaskRow({
           size="toolbar"
           variant="ghost"
           type="button"
-          disabled={pending}
+          disabled={busy}
           onClick={close}
         >
           Cancel

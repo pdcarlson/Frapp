@@ -2,7 +2,7 @@
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
+import { Camera, CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
   isFirstAiReadInFlight,
   useAiSuggestions,
@@ -51,6 +51,7 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskEditForm } from "./task-edit-form";
+import { MarkDoneControl, TaskPhotos } from "./task-photo";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
@@ -69,6 +70,10 @@ type Task = {
   due_at?: string | null;
   /** Its checklist, in order (#4003). */
   subtasks?: TaskSubtask[];
+  /** Task photos (#4565). */
+  reference_photo_path?: string | null;
+  proof_photo_path?: string | null;
+  photo_required?: boolean;
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -269,12 +274,18 @@ export function TasksBoard() {
     }
   }
 
-  async function changeStatus(task: Task, next: TaskStatus) {
+  async function changeStatus(
+    task: Task,
+    next: TaskStatus,
+    proofPhotoPath?: string,
+  ) {
     const reopening = actionStatus(task) === "COMPLETED";
     try {
       await updateStatus.mutateAsync({
         id: task.id,
-        body: { status: next },
+        body: proofPhotoPath
+          ? { status: next, proof_photo_path: proofPhotoPath }
+          : { status: next },
       });
       if (next === "COMPLETED") {
         // The undo a stray click needs (owner audit 2026-11-06, P6.1). The
@@ -555,8 +566,8 @@ export function TasksBoard() {
                           canManage={canManage}
                           gate={gate}
                           lifecycleWritePending={lifecycleWritePending}
-                          onChangeStatus={(next) =>
-                            void changeStatus(task, next)
+                          onChangeStatus={(next, proof) =>
+                            void changeStatus(task, next, proof)
                           }
                           onConfirm={() => void confirmCompletion(task)}
                           onReject={() => void rejectCompletion(task)}
@@ -666,7 +677,7 @@ function TaskCard({
   canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
-  onChangeStatus: (next: TaskStatus) => void;
+  onChangeStatus: (next: TaskStatus, proofPhotoPath?: string) => void;
   onConfirm: () => void;
   onReject: () => void;
   onDelete: () => void;
@@ -682,6 +693,7 @@ function TaskCard({
   // officer may read it as a revoked grant. Hiding a control the server would
   // accept is the safer failure than offering one it will refuse, but the
   // missing explanation is tracked in #1346.
+  const { toast } = useToast();
   const viewerUnknown = myUserId === "";
   const isMine = !viewerUnknown && task.assignee_id === myUserId;
   const cannotConfirm = isMine || viewerUnknown;
@@ -770,7 +782,14 @@ function TaskCard({
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
+        {task.photo_required && status !== "COMPLETED" ? (
+          <Badge variant="outline" className="ml-1 gap-1">
+            <Camera className="h-3 w-3" aria-hidden="true" />
+            Photo required
+          </Badge>
+        ) : null}
       </div>
+      <TaskPhotos task={task} showProof={isMine || canManage} />
     </div>
   );
 
@@ -801,14 +820,20 @@ function TaskCard({
         </Button>
       ) : null}
       {isMine && status === "IN_PROGRESS" ? (
-        <Button
-          size="toolbar"
-          variant="secondary"
-          {...gate.controlProps(lifecycleWritePending)}
-          onClick={() => onChangeStatus("COMPLETED")}
-        >
-          {TASK_ACTION_LABELS.complete}
-        </Button>
+        <MarkDoneControl
+          title={task.title}
+          label={TASK_ACTION_LABELS.complete}
+          photoRequired={!!task.photo_required}
+          controlProps={gate.controlProps(lifecycleWritePending)}
+          onComplete={(proof) => onChangeStatus("COMPLETED", proof)}
+          onUploadError={(message) =>
+            toast({
+              title: "Couldn't add the photo",
+              description: message,
+              variant: "destructive",
+            })
+          }
+        />
       ) : null}
       {/*
           The assignee taking back their own "done" until an officer confirms

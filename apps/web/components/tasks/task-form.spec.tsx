@@ -16,6 +16,9 @@ const MEMBERS_QUERY = {
 };
 
 vi.mock("@repo/hooks", () => ({
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMembers: () => MEMBERS_QUERY,
 }));
@@ -117,6 +120,7 @@ describe("TaskForm (#3865, #3983)", () => {
       assignee_id: "u-1",
       due_date: "2026-11-12",
       point_reward: undefined,
+      photo_required: false,
     });
   });
 

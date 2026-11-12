@@ -252,6 +252,7 @@ describe('TaskController', () => {
         userId,
         false,
         dto.status,
+        undefined,
       );
       expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });

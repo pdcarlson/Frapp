@@ -466,6 +466,16 @@ export const SERVICE_RECEIPT_REQUIRED_CODE = "service_entry.receipt_required";
 export const SERVICE_RECEIPT_REQUIRED_MESSAGE =
   "This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit";
 
+/**
+ * The 400 `PATCH /v1/tasks/:id/status` answers when a task with "Photo
+ * required" on is marked done without a `proof_photo_path` (#4565). The code
+ * is the contract, as {@link SERVICE_RECEIPT_REQUIRED_CODE}'s is: an installed
+ * phone build matches it for as long as it lives, so it never changes.
+ */
+export const TASK_PROOF_REQUIRED_CODE = "task.proof_required";
+export const TASK_PROOF_REQUIRED_MESSAGE =
+  "This task needs a photo to show it's done. Add one, then mark it done.";
+
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
 // Originally shared with the Deno Edge Functions; kept dependency-light
 // (zod only) so any future Deno consumer can still import this file

@@ -18,9 +18,20 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import type { Task, TaskSubtask, TaskView } from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
 import {
+  TASK_PROOF_REQUIRED_CODE,
+  TASK_PROOF_REQUIRED_MESSAGE,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
 } from '@repo/validation';
+import {
+  STORAGE_PROVIDER,
+  type IStorageProvider,
+} from '#domain/adapters/storage.interface';
+import {
+  assertUploadedPathUnder,
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
@@ -28,6 +39,25 @@ import { formatTaskDue, joinFacts } from './push-copy';
 import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+
+/** Task photos' private bucket (#4565). */
+const TASKS_BUCKET = 'tasks';
+
+/**
+ * Folder holding one chapter's task photos, trailing slash included. Lowercased
+ * for the same reason as the service-proof prefix: storage prefix math is
+ * exact-case while the guard's uuid check is not.
+ */
+function taskPhotoPrefix(chapterId: string): string {
+  return `chapters/${chapterId.toLowerCase()}/tasks/`;
+}
+
+/** The two photos a task can carry, by column. */
+export type TaskPhotoKind = 'reference' | 'proof';
+const PHOTO_COLUMN = {
+  reference: 'reference_photo_path',
+  proof: 'proof_photo_path',
+} as const satisfies Record<TaskPhotoKind, keyof Task>;
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
@@ -106,6 +136,10 @@ export interface CreateTaskInput {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number | null;
+  /** A reference photo's storage path, from the upload URL (#4565). */
+  reference_photo_path?: string | null;
+  /** Mark done needs a proof photo (#4565). */
+  photo_required?: boolean;
   /**
    * When set together with `client_message_id`, an interactive task card is
    * posted to this chat channel after the row commits (the `/task` slash
@@ -123,6 +157,9 @@ export interface UpdateTaskInput {
   due_date?: string | null;
   due_at?: string | null;
   point_reward?: number | null;
+  /** A new reference photo, or null to remove it (#4565). */
+  reference_photo_path?: string | null;
+  photo_required?: boolean;
 }
 
 /**
@@ -150,7 +187,110 @@ export class TaskService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storageProvider: IStorageProvider,
   ) {}
+
+  /**
+   * A signed upload URL for a task photo (#4565), under the chapter's
+   * `tasks/` prefix: the service-hours proof flow, photos only. The same URL
+   * serves a reference photo and a proof photo; the write that attaches it
+   * decides which, and checks the path again there.
+   */
+  async requestPhotoUploadUrl(input: {
+    chapterId: string;
+    filename: string;
+    contentType: string;
+    sizeBytes?: number;
+  }): Promise<{ signedUrl: string; storagePath: string }> {
+    assertUploadRequestAllowed('task_photo', input);
+    const ticket = await mintChapterUpload(
+      this.storageProvider,
+      TASKS_BUCKET,
+      taskPhotoPrefix(input.chapterId),
+      input,
+    );
+    return { signedUrl: ticket.signedUrl, storagePath: ticket.storagePath };
+  }
+
+  /** A client-sent photo path, checked like service proof before it is kept. */
+  private async assertPhotoPath(
+    chapterId: string,
+    path: string,
+    field: string,
+  ): Promise<void> {
+    await assertUploadedPathUnder(
+      this.storageProvider,
+      TASKS_BUCKET,
+      taskPhotoPrefix(chapterId),
+      path,
+      {
+        field,
+        outsidePrefix: `${field} must be a storage path within the chapter's task photos`,
+        missing: `${field} does not reference an uploaded photo`,
+      },
+    );
+    if (await this.taskRepo.isPhotoPathInUse(chapterId, path)) {
+      throw new BadRequestException(
+        `${field} is already attached to a task; upload the photo again`,
+      );
+    }
+  }
+
+  /**
+   * A short-lived link to one of a task's photos, for whoever may read the
+   * task (its assignee or a `tasks:manage` holder; the controller checks).
+   */
+  async getPhotoDownloadUrl(
+    task: Task,
+    chapterId: string,
+    photo: TaskPhotoKind,
+  ): Promise<{ url: string }> {
+    const path = task[PHOTO_COLUMN[photo]];
+    // Only paths this API minted and checked are ever stored, but sign
+    // nothing outside the chapter's prefix regardless.
+    if (!path || !path.startsWith(taskPhotoPrefix(chapterId))) {
+      throw new NotFoundException('This task has no such photo');
+    }
+    try {
+      const url = await this.storageProvider.getSignedDownloadUrl(
+        TASKS_BUCKET,
+        path,
+      );
+      return { url };
+    } catch (error) {
+      if (/not.?found/i.test(String((error as Error)?.message))) {
+        throw new NotFoundException('This photo is no longer available');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete photos a write has just let go of. Best effort: the write already
+   * stands, so a failed delete leaves an orphan for the sweep (#2197) and is
+   * reported, never thrown.
+   */
+  private async releasePhotos(
+    chapterId: string,
+    paths: (string | null | undefined)[],
+  ): Promise<void> {
+    const prefix = taskPhotoPrefix(chapterId);
+    const owned = paths.filter(
+      (path): path is string => !!path && path.startsWith(prefix),
+    );
+    if (owned.length === 0) return;
+    try {
+      await this.storageProvider.deleteFiles(TASKS_BUCKET, owned);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-photo-delete',
+        message: `task photo delete failed (${owned.length} object(s))`,
+        error,
+      });
+    }
+  }
 
   async findById(id: string, chapterId: string): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
@@ -343,6 +483,14 @@ export class TaskService {
     }
     const dueAt = this.checkedDueAt(input.due_date, input.due_at);
     const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
+    const referencePhoto = input.reference_photo_path?.trim() || null;
+    if (referencePhoto) {
+      await this.assertPhotoPath(
+        input.chapter_id,
+        referencePhoto,
+        'reference_photo_path',
+      );
+    }
 
     const assignee = await this.memberRepo.findByUserAndChapter(
       input.assignee_id,
@@ -365,6 +513,8 @@ export class TaskService {
       points_awarded: false,
       completed_at: null,
       confirmed_at: null,
+      reference_photo_path: referencePhoto,
+      photo_required: input.photo_required ?? false,
     });
 
     // The checklist goes in after its task. A failed insert is reported and
@@ -523,6 +673,23 @@ export class TaskService {
       if (dueAt !== storedAt) patch.due_at = dueAt;
     }
 
+    if (input.reference_photo_path !== undefined) {
+      const photo = input.reference_photo_path?.trim() || null;
+      if (photo !== task.reference_photo_path) {
+        if (photo) {
+          await this.assertPhotoPath(chapterId, photo, 'reference_photo_path');
+        }
+        patch.reference_photo_path = photo;
+      }
+    }
+
+    if (
+      input.photo_required !== undefined &&
+      input.photo_required !== task.photo_required
+    ) {
+      patch.photo_required = input.photo_required;
+    }
+
     const reassigned =
       input.assignee_id !== undefined && input.assignee_id !== task.assignee_id;
     if (reassigned) {
@@ -542,6 +709,8 @@ export class TaskService {
       patch.status = TaskStatus.TODO;
       patch.completed_at = null;
       patch.sent_back_at = null;
+      // The old assignee's proof isn't the new one's.
+      patch.proof_photo_path = null;
     }
 
     if (Object.keys(patch).length === 0) return this.findById(id, chapterId);
@@ -566,6 +735,12 @@ export class TaskService {
         });
       }
     }
+
+    // The replaced reference photo, and on a hand-over the old proof.
+    await this.releasePhotos(chapterId, [
+      'reference_photo_path' in patch ? task.reference_photo_path : null,
+      'proof_photo_path' in patch ? task.proof_photo_path : null,
+    ]);
 
     if (reassigned) await this.notifyAssigned(updated, actorId);
 
@@ -678,6 +853,7 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     newStatus: TaskStatus,
+    proofPhotoPath?: string | null,
   ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
@@ -724,6 +900,19 @@ export class TaskService {
     const updateData: Partial<Task> = { status: newStatus };
     if (newStatus === TaskStatus.COMPLETED) {
       updateData.completed_at = new Date().toISOString();
+      // Proof rides with Mark done (#4565). A task with "Photo required"
+      // refuses a completion without it, with a code a phone build can match
+      // for as long as it stays installed, like service hours' receipt rule.
+      const proof = proofPhotoPath?.trim() || null;
+      if (proof) {
+        await this.assertPhotoPath(chapterId, proof, 'proof_photo_path');
+        updateData.proof_photo_path = proof;
+      } else if (task.photo_required) {
+        throw new BadRequestException({
+          code: TASK_PROOF_REQUIRED_CODE,
+          message: TASK_PROOF_REQUIRED_MESSAGE,
+        });
+      }
     }
 
     const updated = await this.taskRepo.update(id, chapterId, updateData);
@@ -752,6 +941,8 @@ export class TaskService {
         'This task is no longer waiting on confirmation',
       );
     }
+    // The reopen cleared the proof; the next Mark done sends its own.
+    await this.releasePhotos(chapterId, [task.proof_photo_path]);
     return toDisplayStatus(updated);
   }
 
@@ -916,6 +1107,7 @@ export class TaskService {
         'Task is no longer waiting on confirmation — it was confirmed or moved back already',
       );
     }
+    await this.releasePhotos(chapterId, [task.proof_photo_path]);
 
     await this.safeNotifyUser(
       task.assignee_id,
@@ -963,5 +1155,9 @@ export class TaskService {
       throw new NotFoundException('Task not found');
     }
     await this.taskRepo.delete(id, chapterId);
+    await this.releasePhotos(chapterId, [
+      task.reference_photo_path,
+      task.proof_photo_path,
+    ]);
   }
 }

@@ -75,7 +75,8 @@ export interface ITaskRepository {
    */
   confirmCompletionAtomic(id: string, chapterId: string): Promise<Task | null>;
   /**
-   * Move a COMPLETED task back to IN_PROGRESS and clear `completed_at`, only
+   * Move a COMPLETED task back to IN_PROGRESS and clear `completed_at` and
+   * `proof_photo_path`, only
    * while it is still COMPLETED and unconfirmed (compare-and-set on `status`
    * and `points_awarded`). Returns the updated task, or `null` when nothing
    * was updated: an officer confirmed it, or another write moved it first.
@@ -106,6 +107,12 @@ export interface ITaskRepository {
    */
   releaseReminderClaims(chapterId: string, taskId: string): Promise<void>;
   delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * Whether any of the chapter's tasks holds this storage path as either of
+   * its photos (#4565): one object belongs to one task, so releasing it can
+   * never delete a photo another task still shows.
+   */
+  isPhotoPathInUse(chapterId: string, path: string): Promise<boolean>;
   /** Subtasks of these tasks, ordered by task then position (#4003). */
   findSubtasks(chapterId: string, taskIds: string[]): Promise<TaskSubtask[]>;
   /** Adds subtasks at the given positions. */

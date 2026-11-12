@@ -9858,6 +9858,113 @@
         ]
       }
     },
+    "/v1/tasks/photo-upload-url": {
+      "post": {
+        "description": "PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
+        "operationId": "TaskController_requestPhotoUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestTaskPhotoUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUploadUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/photo-url": {
+      "get": {
+        "operationId": "TaskController_getPhotoUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "photo",
+            "required": true,
+            "in": "query",
+            "description": "Which photo: the reference photo or the proof photo.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reference",
+                "proof"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/status": {
       "patch": {
         "operationId": "TaskController_updateStatus_v1",
@@ -21617,6 +21724,56 @@
           "status"
         ]
       },
+      "RequestTaskPhotoUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (a JPEG, PNG, GIF or WebP)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/jpeg)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected against the upload size ceiling when present."
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "TaskPhotoUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
+      "TaskPhotoUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Short-lived signed URL to view the photo."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "CreateTaskDto": {
         "type": "object",
         "properties": {
@@ -21650,6 +21807,14 @@
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "description": "A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, the task can only be marked done with a proof photo (#4565). Default false."
           },
           "channel_id": {
             "type": "string",
@@ -21733,6 +21898,20 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
           },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`."
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, Mark done is refused without a proof photo."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -21757,6 +21936,9 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
+          "reference_photo_path",
+          "proof_photo_path",
+          "photo_required",
           "created_at"
         ]
       },
@@ -21788,6 +21970,15 @@
           "point_reward": {
             "type": "number",
             "nullable": true
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "Turn \"Photo required\" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer."
           }
         }
       },
@@ -21802,6 +21993,10 @@
               "COMPLETED",
               "OVERDUE"
             ]
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "description": "With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`."
           }
         },
         "required": [

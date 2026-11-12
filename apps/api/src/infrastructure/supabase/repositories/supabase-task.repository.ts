@@ -194,6 +194,8 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .update({
         status: TaskStatus.IN_PROGRESS,
         completed_at: null,
+        // A completion's proof goes with it (#4565).
+        proof_photo_path: null,
         ...(sentBackAt ? { sent_back_at: sentBackAt } : {}),
       })
       .eq('id', id)
@@ -249,6 +251,17 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async isPhotoPathInUse(chapterId: string, path: string): Promise<boolean> {
+    const value = escapeFilterValue(path);
+    const { count, error } = await this.supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .or(`reference_photo_path.eq.${value},proof_photo_path.eq.${value}`);
+    if (error) throw new SupabaseQueryError(error);
+    return (count ?? 0) > 0;
   }
 
   async findSubtasks(

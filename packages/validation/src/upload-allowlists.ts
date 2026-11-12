@@ -10,6 +10,9 @@
  * Kinds:
  * - `image` — avatars and chapter logos (jpeg / png / gif / webp)
  * - `proof` — service-hour receipts (images + PDF)
+ * - `task_photo` — a task's reference photo and its proof of completion
+ *   (#4565): photos only, the same four types as `image`, kept as its own kind
+ *   because the `tasks` bucket mirrors it and must not move when avatars do
  * - `document` — chapter files, backwork, and chat attachments (images + PDF +
  *   Office + text/csv)
  *
@@ -129,7 +132,8 @@ export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
  * client checks an archive's size.
  */
 
-export type UploadKind = "image" | "proof" | "document" | "archive";
+export type UploadKind =
+  "image" | "proof" | "task_photo" | "document" | "archive";
 
 /**
  * Surfaces that must share the `document` kind. Adding a fourth member-upload
@@ -246,6 +250,8 @@ function freezeKind(bindings: readonly MimeBinding[]): KindTable {
 const KINDS: Record<UploadKind, KindTable> = {
   image: freezeKind(IMAGE_BINDINGS),
   proof: freezeKind([...IMAGE_BINDINGS, PDF_BINDING]),
+  // Mirrored by the `tasks` bucket (20261113040002_task_photos.sql).
+  task_photo: freezeKind(IMAGE_BINDINGS),
   document: freezeKind([
     ...IMAGE_BINDINGS,
     PDF_BINDING,
