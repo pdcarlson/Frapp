@@ -14,6 +14,8 @@
  * Pure functions over plain rows: no React, no query.
  */
 
+import { describeRepeatPattern } from "@repo/validation";
+
 /** The fields this module reads off an event row. */
 export type SeriesEventLike = {
   id?: unknown;
@@ -234,7 +236,9 @@ function majorityWeekday(starts: readonly unknown[]): Date | null {
 
 /**
  * How a series row says when it repeats, from its rule and a meeting's start:
- * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`, and
+ * for a structured rule `"Every Mon and Thu"` or `"Every month on the second
+ * Tuesday"` (`describeRepeatPattern` in `@repo/validation`).
  *
  * The day it names is read from `seriesStarts` (every meeting of the series
  * the caller holds), so one meeting moved on its own doesn't rename the
@@ -252,9 +256,10 @@ export function seriesCadenceLabel(
   if (typeof start !== "string") return null;
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return null;
-  const weekday = (
-    majorityWeekday(seriesStarts) ?? at
-  ).toLocaleDateString("en-US", { weekday: "long" });
+  const weekday = (majorityWeekday(seriesStarts) ?? at).toLocaleDateString(
+    "en-US",
+    { weekday: "long" },
+  );
   switch (rule) {
     case "WEEKLY":
       return `Every ${weekday}`;
@@ -265,6 +270,8 @@ export function seriesCadenceLabel(
       return `Every month on the ${ordinal(day)}`;
     }
     default:
-      return ruleTokenLabel(rule);
+      // A structured rule names its own days (#4488), so it reads straight
+      // from the rule, the words push copy and both editors use.
+      return describeRepeatPattern(rule, at) ?? ruleTokenLabel(rule);
   }
 }

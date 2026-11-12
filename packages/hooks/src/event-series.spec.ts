@@ -135,6 +135,21 @@ describe("splitByHorizon", () => {
 });
 
 describe("seriesCadenceLabel", () => {
+  it("reads a structured rule from its own days (#4488)", () => {
+    expect(
+      seriesCadenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/New_York",
+        "2027-01-05T00:00:00Z",
+      ),
+    ).toBe("Every Mon and Thu");
+    expect(
+      seriesCadenceLabel(
+        "FREQ=MONTHLY;INTERVAL=1;BYDAY=-1FR;COUNT=4;TZID=America/New_York",
+        "2027-01-30T00:00:00Z",
+      ),
+    ).toBe("Every month on the last Friday");
+  });
+
   // Built from local parts so the weekday holds in any test zone.
   const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
   it("names the weekday most meetings fall on, not one moved meeting's", () => {

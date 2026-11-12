@@ -8,9 +8,10 @@ import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interfac
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
 import {
-  RECURRENCE_RULES,
-  isRecurrenceRule,
-  recurrenceChildCount,
+  advanceRepeatRule,
+  checkSeriesLength,
+  isRepeatRule,
+  seriesChildStarts,
 } from '@repo/validation';
 import {
   EventAnnouncementService,
@@ -150,21 +151,14 @@ export class EventSeriesService {
   }
 
   /**
-   * How many occurrences a rule generates, or `null` when it is not a rule this
-   * service can generate from.
-   *
-   * Separated out so a caller can discover that a rule is ungeneratable
-   * *before* deleting anything.
-   */
-  private occurrenceCountFor(rule: string): number | null {
-    // Sourced from @repo/validation so the series this materializes and the
-    // meeting count the Repeat pickers promise are derived from one number.
-    return recurrenceChildCount(rule);
-  }
-
-  /**
    * Build the rows for a recurring parent's generated occurrences. Pure — no
    * writes — so a regenerate can be judged before anything is destroyed.
+   *
+   * When they fall is `seriesChildStarts` in `@repo/validation`, the same
+   * stepper the Repeat controls caption a series from, so what an officer is
+   * told and what gets written cannot drift apart. A structured rule steps in
+   * its own zone, keeping the wall-clock time across DST (#3662); a legacy
+   * token steps in UTC as it always did.
    *
    * Skipping rather than filtering is load-bearing. Filtering a fixed window
    * anchored on the parent's original `start_time` meant that once a series
@@ -176,97 +170,51 @@ export class EventSeriesService {
     parent: Event,
     skipBefore?: number,
   ): Partial<Event>[] {
-    const rule = parent.recurrence_rule;
-    // Narrowing through the shared type guard (rather than a truthiness check
-    // plus a count lookup) is what lets the step switch below be exhaustive:
-    // adding a rule to RECURRENCE_RULES without giving it a date step becomes a
-    // compile error instead of a series of duplicate events at the parent's
-    // own start instant.
-    if (!isRecurrenceRule(rule)) return [];
-    const count = this.occurrenceCountFor(rule);
-    if (count === null) return [];
+    const starts = seriesChildStarts(
+      parent.recurrence_rule,
+      parent.start_time,
+      skipBefore,
+    );
+    if (!starts) return [];
 
-    const start = new Date(parent.start_time);
-    const end = new Date(parent.end_time);
     // Derive each occurrence's end from its own start plus the parent's
     // duration. Clamping start and end independently against their own months
     // could invert the interval: a MONTHLY event running 2027-01-29T20:00Z to
     // 2027-01-30T08:00Z generated a February occurrence ending twelve hours
     // before it began, slipping past the `end <= start` guard that `create` and
     // `update` both enforce.
-    const durationMs = end.getTime() - start.getTime();
+    const durationMs =
+      new Date(parent.end_time).getTime() -
+      new Date(parent.start_time).getTime();
 
-    // Bounds the catch-up scan for a long-dormant series: ~11 years of weeks or
-    // 50 years of months, while still guaranteeing termination.
-    const MAX_OCCURRENCE_SCAN = 600;
-
-    const payloads: Partial<Event>[] = [];
-    for (let i = 1; i <= MAX_OCCURRENCE_SCAN && payloads.length < count; i++) {
-      const instanceStart = new Date(start);
-
-      switch (rule) {
-        case 'WEEKLY':
-          instanceStart.setDate(instanceStart.getDate() + i * 7);
-          break;
-        case 'BIWEEKLY':
-          instanceStart.setDate(instanceStart.getDate() + i * 14);
-          break;
-        case 'MONTHLY': {
-          instanceStart.setDate(1);
-          instanceStart.setMonth(start.getMonth() + i);
-          const maxStartDay = new Date(
-            instanceStart.getFullYear(),
-            instanceStart.getMonth() + 1,
-            0,
-          ).getDate();
-          instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
-          break;
-        }
-        default: {
-          // Unreachable today. It exists so that a rule added to
-          // RECURRENCE_RULES without a step here fails to compile: the old
-          // if/else chain silently fell through, leaving every occurrence at
-          // the parent's start instant and creating N duplicate events.
-          const unhandled: never = rule;
-          throw new Error(`Unhandled recurrence rule: ${String(unhandled)}`);
-        }
-      }
-
-      if (skipBefore !== undefined && instanceStart.getTime() <= skipBefore) {
-        continue;
-      }
-
-      payloads.push({
-        chapter_id: parent.chapter_id,
-        name: parent.name,
-        description: parent.description,
-        location: parent.location,
-        start_time: instanceStart.toISOString(),
-        end_time: new Date(instanceStart.getTime() + durationMs).toISOString(),
-        point_value: parent.point_value,
-        is_mandatory: parent.is_mandatory,
-        recurrence_rule: null,
-        parent_event_id: parent.id,
-        required_role_ids: parent.required_role_ids,
-        optional_role_ids: parent.optional_role_ids,
-        excluded_role_ids: parent.excluded_role_ids,
-        others_invited: parent.others_invited,
-        notes: parent.notes,
-        // The zone is part of "where this event is", so every occurrence needs
-        // it — without this a weekly meeting's check-in geofence applied only to
-        // the first date, and a series edit that patches future instances would
-        // set a zone that a later regenerate silently dropped again.
-        check_in_zone: parent.check_in_zone,
-        check_in_zone_name: parent.check_in_zone_name,
-        check_in_opens_minutes: parent.check_in_opens_minutes,
-        // A weekly chapter meeting is a chapter meeting every week.
-        event_type_id: parent.event_type_id,
-        // Whoever made the series made each of its meetings.
-        created_by: parent.created_by,
-      });
-    }
-
-    return payloads;
+    return starts.map((instanceStart) => ({
+      chapter_id: parent.chapter_id,
+      name: parent.name,
+      description: parent.description,
+      location: parent.location,
+      start_time: instanceStart.toISOString(),
+      end_time: new Date(instanceStart.getTime() + durationMs).toISOString(),
+      point_value: parent.point_value,
+      is_mandatory: parent.is_mandatory,
+      recurrence_rule: null,
+      parent_event_id: parent.id,
+      required_role_ids: parent.required_role_ids,
+      optional_role_ids: parent.optional_role_ids,
+      excluded_role_ids: parent.excluded_role_ids,
+      others_invited: parent.others_invited,
+      notes: parent.notes,
+      // The zone is part of "where this event is", so every occurrence needs
+      // it — without this a weekly meeting's check-in geofence applied only to
+      // the first date, and a series edit that patches future instances would
+      // set a zone that a later regenerate silently dropped again.
+      check_in_zone: parent.check_in_zone,
+      check_in_zone_name: parent.check_in_zone_name,
+      check_in_opens_minutes: parent.check_in_opens_minutes,
+      // A weekly chapter meeting is a chapter meeting every week.
+      event_type_id: parent.event_type_id,
+      // Whoever made the series made each of its meetings.
+      created_by: parent.created_by,
+    }));
   }
 
   /**
@@ -396,13 +344,19 @@ export class EventSeriesService {
         : parent.recurrence_rule;
 
     // Refuse a rule this service cannot generate from *before* touching
-    // anything. `recurrence_rule` arrives as a free string, and the old order
-    // deleted the whole future half of the series and only then discovered it
-    // had nothing to rebuild with.
-    if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
-      throw new BadRequestException(
-        `recurrence_rule must be one of ${RECURRENCE_RULES.join(', ')}`,
+    // anything. The old order deleted the whole future half of the series and
+    // only then discovered it had nothing to rebuild with. The DTO already
+    // checks the rule's shape; this also catches one that doesn't fit the
+    // series' first meeting (an UNTIL before its second, or past the cap).
+    if (regenerates && nextRule) {
+      if (!isRepeatRule(nextRule)) {
+        throw new BadRequestException('recurrence_rule is not a repeat rule');
+      }
+      const problem = checkSeriesLength(
+        nextRule,
+        normalized.start_time ?? parent.start_time,
       );
+      if (problem) throw new BadRequestException(problem);
     }
 
     // What members are told moved, judged against the series as it stood.
@@ -590,6 +544,16 @@ export class EventSeriesService {
 
     const carried = propagatableFields(normalized);
 
+    // The rule the new head carries. A COUNT counts from the head, so when the
+    // caller kept the rule it drops by the meetings that left the series (the
+    // retired head and the past ones), or the next regenerate would add that
+    // many at the end. A rule the caller changed is theirs as sent.
+    const consumed = 1 + past.length;
+    const seriesRule =
+      nextRule === parent.recurrence_rule
+        ? advanceRepeatRule(nextRule, consumed)
+        : nextRule;
+
     // Retire the head. `recurrence_rule` and nothing else: every one of its own
     // fields keeps the value it had while the meeting was happening, so the
     // `event_attendance` rows hanging off it still describe it accurately.
@@ -628,7 +592,9 @@ export class EventSeriesService {
     let newHead = await this.eventRepo.update(successor.id, chapterId, {
       ...carried,
       ...retimed,
-      recurrence_rule: regenerates ? parent.recurrence_rule : nextRule,
+      recurrence_rule: regenerates
+        ? advanceRepeatRule(parent.recurrence_rule, consumed)
+        : seriesRule,
       parent_event_id: null,
     });
 
@@ -658,13 +624,13 @@ export class EventSeriesService {
         existingIds: rest.map((child) => child.id),
         oldIds: rest.map((child) => child.id),
         replacements: this.buildOccurrencePayloads(
-          { ...newHead, recurrence_rule: nextRule },
+          { ...newHead, recurrence_rule: seriesRule },
           now,
         ),
       });
-      if (newHead.recurrence_rule !== nextRule) {
+      if (newHead.recurrence_rule !== seriesRule) {
         newHead = await this.eventRepo.update(newHead.id, chapterId, {
-          recurrence_rule: nextRule,
+          recurrence_rule: seriesRule,
         });
       }
     }
@@ -724,8 +690,14 @@ export class EventSeriesService {
 
     const [successor, ...rest] = future;
 
+    // A COUNT drops by the canceled head and the past meetings detached
+    // above (`advanceRepeatRule`), so a later regenerate keeps the series'
+    // length rather than growing it.
     await this.eventRepo.update(successor.id, chapterId, {
-      recurrence_rule: parent.recurrence_rule,
+      recurrence_rule: advanceRepeatRule(
+        parent.recurrence_rule,
+        1 + past.length,
+      ),
       parent_event_id: null,
     });
 

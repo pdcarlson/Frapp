@@ -5621,7 +5621,7 @@ export interface components {
             point_value: number;
             /** @default false */
             is_mandatory: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
             recurrence_rule?: string;
             /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
@@ -5699,7 +5699,7 @@ export interface components {
             end_time?: string;
             point_value?: number;
             is_mandatory?: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
             recurrence_rule?: string;
             /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];

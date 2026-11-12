@@ -376,6 +376,83 @@ describe('EventSeriesService', () => {
       reportedAt('event-create-series-rollback', 'error');
     });
 
+    // #4488 / #3662: a structured rule, stepped in its own zone.
+    it('meets on each chosen weekday at the same New York wall clock across DST', async () => {
+      const rule =
+        'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=5;TZID=America/New_York';
+      // Thu 2027-03-11, 7 PM EST; DST starts Sun 2027-03-14.
+      const head: Event = {
+        ...baseEvent,
+        recurrence_rule: rule,
+        start_time: '2027-03-12T00:00:00.000Z',
+        end_time: '2027-03-12T01:00:00.000Z',
+      };
+      mockEventRepo.create.mockResolvedValue(head);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: head.start_time,
+        end_time: head.end_time,
+        recurrence_rule: rule,
+      });
+
+      // 7 PM EDT is 23:00Z: each meeting kept 7 PM, and kept its hour.
+      expect(
+        occurrenceRows(mockEventRepo).map((row) => [
+          row.start_time,
+          row.end_time,
+        ]),
+      ).toEqual([
+        ['2027-03-15T23:00:00.000Z', '2027-03-16T00:00:00.000Z'],
+        ['2027-03-18T23:00:00.000Z', '2027-03-19T00:00:00.000Z'],
+        ['2027-03-22T23:00:00.000Z', '2027-03-23T00:00:00.000Z'],
+        ['2027-03-25T23:00:00.000Z', '2027-03-26T00:00:00.000Z'],
+      ]);
+    });
+
+    it('stops a series on its end date', async () => {
+      const rule =
+        'FREQ=MONTHLY;INTERVAL=1;BYDAY=2TU;UNTIL=20270413;TZID=America/New_York';
+      const head: Event = {
+        ...baseEvent,
+        recurrence_rule: rule,
+        start_time: '2027-01-12T23:00:00.000Z',
+        end_time: '2027-01-13T00:00:00.000Z',
+      };
+      mockEventRepo.create.mockResolvedValue(head);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: head.start_time,
+        end_time: head.end_time,
+        recurrence_rule: rule,
+      });
+
+      expect(
+        occurrenceRows(mockEventRepo).map((row) => row.start_time),
+      ).toEqual([
+        '2027-02-09T23:00:00.000Z',
+        '2027-03-09T23:00:00.000Z',
+        '2027-04-13T22:00:00.000Z',
+      ]);
+    });
+
+    it('refuses an end date that leaves no second meeting, before writing', async () => {
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: '2027-01-12T23:00:00.000Z',
+          end_time: '2027-01-13T00:00:00.000Z',
+          recurrence_rule:
+            'FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;UNTIL=20270115;TZID=America/New_York',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockEventRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should not generate instances when no recurrence_rule is set', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
@@ -724,6 +801,27 @@ describe('EventSeriesService', () => {
         );
       });
 
+      it('carries a kept COUNT onto the new head less the meetings that left', async () => {
+        const counted: Event = {
+          ...parent,
+          recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=8;TZID=UTC',
+        };
+        mockEventRepo.findById.mockResolvedValue(counted);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([counted, ...wholeSeries]);
+
+        await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
+
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
+          'ch-1',
+          expect.objectContaining({
+            name: 'Renamed',
+            recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=6;TZID=UTC',
+          }),
+        );
+      });
+
       it('detaches past occurrences from the series that just ended', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
         mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
@@ -975,6 +1073,27 @@ describe('EventSeriesService', () => {
           { parent_event_id: null },
         );
         expect(mockEventRepo.delete).toHaveBeenCalledWith('parent-1', 'ch-1');
+      });
+
+      it('drops a COUNT by the meetings that left, so the series keeps its length', async () => {
+        const counted: Event = {
+          ...parent,
+          recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=8;TZID=UTC',
+        };
+        mockEventRepo.findById.mockResolvedValue(counted);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await service.delete('parent-1', 'ch-1');
+
+        // The canceled head and the one past meeting leave: 8 - 2.
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
+          'ch-1',
+          {
+            recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=6;TZID=UTC',
+            parent_event_id: null,
+          },
+        );
       });
 
       it('leaves a non-recurring event as a plain single-row delete', async () => {

@@ -1,4 +1,4 @@
-import type { RecurrenceRule } from '@repo/validation';
+import { describeRepeatPattern } from '@repo/validation';
 
 /**
  * How a push names a time: what a member glancing at a lock screen needs, in
@@ -117,8 +117,11 @@ export interface EventWhenOptions {
    * fallback rather than the recipient's own, so a guess is never silent.
    */
   labelZone?: boolean;
-  /** A series renders as its pattern ("Every Mon, 8–9 PM, from Nov 9"). */
-  recurrence?: RecurrenceRule | null;
+  /**
+   * A series renders as its pattern ("Every Mon, 8–9 PM, from Nov 9"): a
+   * legacy token or a structured rule (`packages/validation/src/recurrence.ts`).
+   */
+  recurrence?: string | null;
   /** Injected for tests; decides only whether the year is shown. */
   now?: Date;
 }
@@ -158,6 +161,10 @@ export function formatEventWhen(
         return `Every other ${start.weekday}, ${hours}${zone}, from ${from}`;
       case 'MONTHLY':
         return `Monthly on the ${ordinal(start.day)}, ${hours}${zone}, from ${from}`;
+      default: {
+        const pattern = describeRepeatPattern(options.recurrence, startAt);
+        if (pattern) return `${pattern}, ${hours}${zone}, from ${from}`;
+      }
     }
   }
 

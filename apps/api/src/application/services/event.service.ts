@@ -21,6 +21,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  checkSeriesLength,
   eventLimitsAudience,
 } from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
@@ -163,6 +164,14 @@ export class EventService {
     }
     if (end <= start) {
       throw new BadRequestException('end_time must be after start_time');
+    }
+
+    // The DTO checks the rule's shape; whether it fits this first meeting (an
+    // UNTIL that leaves no second meeting, or one past the series cap) needs
+    // the start, so it is checked here, before anything is written.
+    if (input.recurrence_rule) {
+      const problem = checkSeriesLength(input.recurrence_rule, start);
+      if (problem) throw new BadRequestException(problem);
     }
 
     // An event that leaves anyone out must not be broadcast as a chat card. #1463 made

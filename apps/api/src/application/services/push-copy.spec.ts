@@ -72,6 +72,25 @@ describe('formatEventWhen', () => {
     );
   });
 
+  it('writes a structured repeat rule as its pattern (#4488)', () => {
+    const start = '2026-11-10T01:00:00Z';
+    const end = '2026-11-10T02:00:00Z';
+    expect(
+      formatEventWhen(start, end, {
+        ...NY,
+        recurrence:
+          'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/New_York',
+      }),
+    ).toBe('Every Mon and Thu, 8–9 PM, from Nov 9');
+    expect(
+      formatEventWhen(start, end, {
+        ...NY,
+        recurrence:
+          'FREQ=MONTHLY;INTERVAL=1;BYDAY=2MO;COUNT=4;TZID=America/New_York',
+      }),
+    ).toBe('Every month on the second Monday, 8–9 PM, from Nov 9');
+  });
+
   it('keeps the pattern for a weekly event that runs past midnight', () => {
     expect(
       formatEventWhen('2026-11-14T03:00:00Z', '2026-11-14T07:00:00Z', {

@@ -4,7 +4,7 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { Event } from '#domain/entities/event.entity';
-import { isRecurrenceRule } from '@repo/validation';
+import { isRepeatRule } from '@repo/validation';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload, NotifyRecipient } from './notification.service';
 import { ChatService } from './chat.service';
@@ -317,7 +317,7 @@ export class EventAnnouncementService {
     }
     if (attendanceByUser.size === 0) return;
 
-    const recurrence = isRecurrenceRule(event.recurrence_rule)
+    const recurrence = isRepeatRule(event.recurrence_rule)
       ? event.recurrence_rule
       : null;
     // A recipient with no zone of their own reads the event in its

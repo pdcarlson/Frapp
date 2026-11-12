@@ -902,20 +902,44 @@ export {
 } from "./native-app";
 export type { NativePlatform } from "./native-app";
 
-// Event recurrence: the rule catalog the DTOs validate against and the child
-// counts the series generator materializes. One source so the generated series
-// and what the Repeat pickers promise cannot describe different meetings.
+// Event recurrence: the repeat-rule format the DTOs validate against, the
+// stepper the series generator materializes from, and the words both apps
+// describe a series with. One source so the generated series and what the
+// Repeat controls promise cannot describe different meetings (#4488, #3662).
 export {
+  MAX_REPEAT_INTERVAL,
+  MAX_REPEAT_RULE_LENGTH,
+  MAX_SERIES_MEETINGS,
+  NTH_WEEKS,
   RECURRENCE_RULES,
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULE_LABELS,
+  REPEAT_FREQUENCIES,
+  WEEKDAY_CODES,
+  advanceRepeatRule,
+  checkSeriesLength,
+  describeRepeatPattern,
   describeSeriesLength,
+  formatRepeatRule,
   isRecurrenceRule,
+  isRepeatRule,
+  nthWeekdayOf,
+  nthWeekdayPhrase,
+  parseRepeatRule,
   recurrenceChildCount,
-  recurrenceLastStart,
-  recurrenceMeetingCount,
+  seriesChildStarts,
+  seriesExtent,
+  weekdayCodeOf,
 } from "./recurrence";
-export type { RecurrenceRule } from "./recurrence";
+export type {
+  NthWeek,
+  ParsedRepeatRule,
+  RecurrenceRule,
+  RepeatEnd,
+  RepeatFrequency,
+  RepeatRule,
+  WeekdayCode,
+} from "./recurrence";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export {
