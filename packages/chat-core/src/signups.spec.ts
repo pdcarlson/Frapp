@@ -12,8 +12,11 @@ import {
   signupCardEyebrow,
   signupCardFooter,
   signupClaimPayload,
+  signupHoldersLine,
   signupSlotAction,
   signupSlotCount,
+  signupSlotPercent,
+  signupSlotStatus,
   tallySignups,
   type SignupPayload,
 } from "./signups";
@@ -145,6 +148,51 @@ describe("tallySignups", () => {
     expect(signupSlotAction(card.slots[1]!, tally).label).toBe("Sign up");
     expect(signupCardEyebrow(card, tally)).toBe("Sign-up · 3 of 4 spots taken");
     expect(signupCardFooter(card, tally)).toBe("2 people signed up");
+  });
+
+  it("ends a row with Full only for a slot the viewer can't take, and fills its meter", () => {
+    const open: SignupPayload = {
+      title: "Setup",
+      slots: [...card.slots, { id: "any", label: "Teardown", capacity: null }],
+    };
+    const tally = tallySignups(
+      message(open, [
+        { user: "u1", slots: ["fri"] },
+        { user: "me", slots: ["fri", "any"] },
+        { user: "u2", slots: ["sat"] },
+      ]),
+      open,
+      "me",
+    );
+    // Full, but the viewer holds it: the count, since a tap gives it up.
+    expect(signupSlotStatus(open.slots[0]!, tally)).toBe("2/2");
+    expect(signupSlotStatus(open.slots[1]!, tally)).toBe("1/2");
+    expect(signupSlotStatus(open.slots[2]!, tally)).toBe("1");
+    expect(signupSlotPercent(open.slots[1]!, tally)).toBe(50);
+    expect(signupSlotPercent(open.slots[2]!, tally)).toBeNull();
+
+    const theirs = tallySignups(
+      message(card, [
+        { user: "u1", slots: ["fri"] },
+        { user: "u2", slots: ["fri"] },
+      ]),
+      card,
+      "me",
+    );
+    expect(signupSlotStatus(card.slots[0]!, theirs)).toBe("Full");
+  });
+
+  it("names holders with You first, then counts past the first few", () => {
+    const name = (id: string) => id.toUpperCase();
+    expect(signupHoldersLine([], "me", name)).toBe("");
+    expect(signupHoldersLine(["u1"], "me", name)).toBe("U1");
+    expect(signupHoldersLine(["u1", "me"], "me", name)).toBe("You and U1");
+    expect(signupHoldersLine(["u1", "u2", "me"], "me", name)).toBe(
+      "You, U1 and U2",
+    );
+    expect(signupHoldersLine(["u1", "u2", "u3", "u4", "u5"], null, name)).toBe(
+      "U1, U2, U3 and 2 more",
+    );
   });
 
   it("is Full only when every slot is, and plain when a slot has no limit", () => {

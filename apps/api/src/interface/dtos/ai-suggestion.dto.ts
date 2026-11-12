@@ -184,7 +184,7 @@ export class EventSuggestionAcceptDto {
 }
 
 /** Why a suggestion was dismissed, for the analytics event only. Never stored. */
-export const AI_SUGGESTION_DISMISS_REASONS = ['already_doing'] as const;
+const AI_SUGGESTION_DISMISS_REASONS = ['already_doing'] as const;
 export type AiSuggestionDismissReason =
   (typeof AI_SUGGESTION_DISMISS_REASONS)[number];
 

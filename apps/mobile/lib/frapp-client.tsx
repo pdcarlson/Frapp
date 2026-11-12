@@ -11,8 +11,6 @@ import { createRejectedSessionHandler } from "./rejected-session";
 import { createFreshAuthTokenReader } from "./fresh-auth-token";
 import { getSupabaseClient } from "./supabase";
 
-export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
-export { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
   const { chapterId, signOut } = useAuthSession();

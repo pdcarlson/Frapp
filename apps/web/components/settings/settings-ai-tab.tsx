@@ -135,7 +135,7 @@ export function SettingsAiTab() {
  * their full height, so nothing moves when it does; a read can't be in
  * flight long, since this page only shows once the server answered.
  */
-export function AiSwitchList({
+function AiSwitchList({
   settings,
   disabled,
   onToggle,

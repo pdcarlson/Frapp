@@ -11,6 +11,7 @@ import type {
   BackworkDepartment,
   BackworkProfessor,
   BackworkResource,
+  CalendarFeed,
   ChannelReadReceipt,
   Chapter,
   ChapterActivationMilestone,
@@ -143,6 +144,7 @@ export interface Database {
       backwork_departments: TableDefinition<BackworkDepartment>;
       backwork_professors: TableDefinition<BackworkProfessor>;
       backwork_resources: TableDefinition<BackworkResource>;
+      calendar_feeds: TableDefinition<CalendarFeed>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
       chapter_ai_settings: TableDefinition<ChapterAiSettings>;
@@ -502,6 +504,26 @@ export interface Database {
           p_left_out_author_ids?: string[] | null;
         };
         Returns: boolean;
+      };
+      /**
+       * `20261113040001` — finish a study session behind a compare-and-set on
+       * status, watermark and pause, and write its STUDY award in the same
+       * transaction. Empty when the compare-and-set lost.
+       */
+      finish_study_session: {
+        Args: {
+          p_session_id: string;
+          p_chapter_id: string;
+          p_expected_last_heartbeat_at: string;
+          p_expected_paused_at: string | null;
+          p_status: 'COMPLETED' | 'PAUSED_EXPIRED';
+          p_end_time: string;
+          p_last_heartbeat_at: string;
+          p_total_foreground_minutes: number;
+          p_points: number;
+          p_description: string;
+        };
+        Returns: StudySession[];
       };
       /**
        * `20261106210000`. Each channel's latest message that is not deleted

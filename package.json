@@ -29,6 +29,7 @@
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "migration:new": "node scripts/migration.mjs new",
     "migration:renumber": "node scripts/migration.mjs renumber",
+    "merge:main": "node scripts/merge-main.mjs",
     "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",
     "check:links": "node scripts/check-links.mjs",
     "install:lychee": "bash scripts/install-lychee.sh",

@@ -103,13 +103,13 @@ interface FanOutOutcome {
  * of the same INSERT to every other instance, which is seconds; a day leaves
  * room for an instance whose socket reconnected late.
  */
-export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
+const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The iOS stack a chat push joins (`PushPayload.threadId`): one per channel,
  * which for a DM is one per person.
  */
-export function chatPushThreadId(channelId: string): string {
+function chatPushThreadId(channelId: string): string {
   return `chat:${channelId}`;
 }
 
@@ -124,7 +124,7 @@ const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
  */
 export type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
 
-export function chatNotificationKind(
+function chatNotificationKind(
   channel: Pick<CachedChannelRow, 'type'>,
   isAnnouncement: boolean,
 ): ChatNotificationKind {
@@ -138,7 +138,7 @@ export function chatNotificationKind(
  * nothing. A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
  * `group-dm-<timestamp>`, both internal, so neither ever reaches a member.
  */
-export function readableChannelName(
+function readableChannelName(
   channel: Pick<CachedChannelRow, 'type' | 'name'>,
 ): { channelName?: string } {
   if (channel.type === 'DM') return {};
@@ -1041,10 +1041,14 @@ export class ChatPushWorkerService
    * mismatch once let URGENT pushes escape the member's Chat switch, #1041).
    *
    * **The channel decides, never the message's `kind`.** `kind` comes from the
-   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
-   * `announcement` from any member in any channel it may post in, so trusting
-   * it let a member who couldn't post in #announcements send an URGENT push that skips
-   * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
+   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` used to
+   * accept `announcement` from any member in any channel it may post in, so
+   * trusting it let a member who couldn't post in #announcements send an
+   * URGENT push that skips quiet hours to everyone at `all` in #general, or in
+   * any DM (#2771 review). The send now refuses that kind outside this same
+   * predicate (#3414), but the push still decides by the channel: a row
+   * written before that, or by a writer that skips `sendMessage`, keeps its
+   * kind.
    * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
    * so only its who-can-post list writes there, #3722) makes one.
    *

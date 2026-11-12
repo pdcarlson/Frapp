@@ -10,6 +10,7 @@ import {
 import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
+  isAnnouncementChannel,
   isDirectChannel,
   isModuleEnabled,
   withoutObjectReplacement,
@@ -242,6 +243,27 @@ function cardPayloadForSend(
   return withoutServerPollFields(kind, payload);
 }
 
+/**
+ * An announcement card is drawn with the chapter's official chrome (the
+ * megaphone and the "Announcement" label), so only the place that makes a
+ * message an announcement may carry one: a timeline post in the announcements
+ * channel (`isAnnouncementChannel`), whose who-can-post list `assertChannelAccess`
+ * has already checked (#3722). That is the predicate the push worker decides
+ * an announcement push by, so the card and the push can't disagree. Anywhere
+ * else (`#general`, a DM, a thread under an announcement) the send is refused
+ * rather than stored as plain text: `/announce` only ever posts to that
+ * channel, so a refusal here is a hand-built request, and quietly changing
+ * its kind would hide that from the sender (#3414).
+ */
+function misplacedAnnouncement(
+  kind: ChatMessageKind,
+  channel: Pick<ChatChannel, 'name' | 'type' | 'is_read_only'>,
+  threadRootId: string | null,
+): boolean {
+  if (kind !== 'announcement') return false;
+  return threadRootId !== null || !isAnnouncementChannel(channel);
+}
+
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
 export interface ReportedMessageRemoval {
   /** True when the message was already soft-deleted and nothing was written. */
@@ -448,6 +470,11 @@ export class ChatService {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
 
+    await this.accessLists.assertCategoryInChapter(
+      input.chapter_id,
+      input.category_id,
+    );
+
     // Who can see and post (#3722): the lists sent, else the category's.
     // Writes `type` and `is_read_only` to match, which the database checks.
     const access = await this.accessLists.forNewChannel(
@@ -549,6 +576,8 @@ export class ChatService {
     ) {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
+
+    await this.accessLists.assertCategoryInChapter(chapterId, data.category_id);
 
     // Who can see and post (#3722). Moving a channel to another category
     // keeps its lists; `match_category_access` copies the category's.
@@ -1053,6 +1082,32 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+    // A refusal below that only exists because something changed after the
+    // card committed (the module switched off, the announcements channel
+    // renamed or opened up) must not refuse that card's replay: answer it as
+    // the duplicate below would, or the client's outbox marks a card that
+    // exists on the server as failed. Nothing is written on this path, not
+    // even the attachment repair.
+    const committedReplay = async () => {
+      const existing = input.client_message_id
+        ? await this.messageRepo.findByClientMessageId(
+            input.channel_id,
+            input.sender_id,
+            input.client_message_id,
+          )
+        : null;
+      return existing && existing.kind === kind
+        ? { message: redactDeletedMessage(existing), deduplicated: true }
+        : null;
+    };
+
+    if (misplacedAnnouncement(kind, channel, threadRootId)) {
+      const replay = await committedReplay();
+      if (replay) return replay;
+      throw new ForbiddenException(
+        'Announcements can only be posted in the announcements channel',
+      );
+    }
     // Before anything is written (thread follows, the attachment repair), so
     // a card that can't be stored costs nothing.
     const payload = cardPayloadForSend(kind, input.payload);
@@ -1062,20 +1117,8 @@ export class ChatService {
       gatedModule &&
       !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
     ) {
-      // A replay of a card that committed before the module was switched off
-      // is not a new write: answer it as the duplicate below would, or the
-      // client's outbox marks a card that exists on the server as failed.
-      // Nothing is written on this path, not even the attachment repair.
-      const existing = input.client_message_id
-        ? await this.messageRepo.findByClientMessageId(
-            input.channel_id,
-            input.sender_id,
-            input.client_message_id,
-          )
-        : null;
-      if (existing && existing.kind === kind) {
-        return { message: redactDeletedMessage(existing), deduplicated: true };
-      }
+      const replay = await committedReplay();
+      if (replay) return replay;
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
 

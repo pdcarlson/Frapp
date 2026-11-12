@@ -92,11 +92,15 @@ export interface IAiRunRepository {
 
   findById(chapterId: string, id: string): Promise<AiRun | null>;
 
-  /** Runs a member started or that act for them, newest first. */
+  /**
+   * Runs a member started or that act for them, newest first. A run of one
+   * of `upkeepKinds` is listed only for the member who started it, never for
+   * the one it merely acts for (#4504).
+   */
   listForMember(
     chapterId: string,
     userId: string,
-    options: { kind?: string; limit: number },
+    options: { kind?: string; limit: number; upkeepKinds?: readonly string[] },
   ): Promise<AiRun[]>;
 
   /** Deletes finished runs that finished before `cutoff`. Returns how many. */

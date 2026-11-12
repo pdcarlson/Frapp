@@ -83,9 +83,16 @@ export type ConfirmRequest = {
    * channel should be harder"). GitHub and Discord ask the same way.
    */
   typeToConfirm?: { label: string; text: string };
+  /**
+   * A second way to go ahead, beside the confirm button: a repeating event's
+   * "This event only" next to "All upcoming events" (#3667), the question
+   * Google Calendar, Apple Calendar and Outlook ask. Picking it resolves with
+   * `alternative: true`.
+   */
+  alternativeLabel?: string;
 };
 
-export type ConfirmResult = { comment: string };
+export type ConfirmResult = { comment: string; alternative?: true };
 
 type PendingRequest = ConfirmRequest & {
   resolve: (result: ConfirmResult | null) => void;
@@ -155,14 +162,19 @@ export function useConfirmDialog(): {
       opener.focus({ preventScroll: true });
       return;
     }
-    // A dialog still open under this one (the Terms prompt, a detail sheet):
+    // A dialog still open under this one (the Terms prompt, a detail sheet,
+    // a docked panel):
     // focus goes back into it, because the page's landmark sits behind it,
     // hidden from assistive tech. Found by what is open, not by the opener's
     // ancestors, since the opener may be gone. The closing confirmation has
     // already left the document (FocusScope calls this after unmount), so it
     // can't match; the last open one is the topmost.
+    //
+    // A docked panel (`panel.tsx`) counts: it is no dialog, but it is where
+    // the confirmation came from, and it sits in the page, before every
+    // portalled dialog in document order, so one stacked over it still wins.
     const stillOpen = document.querySelectorAll<HTMLElement>(
-      '[role="dialog"][data-state="open"]',
+      '[data-docked-panel], [role="dialog"][data-state="open"]',
     );
     const under = stillOpen[stillOpen.length - 1];
     if (under) {
@@ -230,6 +242,15 @@ export function useConfirmDialog(): {
           <Button variant="secondary" onClick={() => settle(null)}>
             {shown?.cancelLabel ?? "Cancel"}
           </Button>
+          {shown?.alternativeLabel ? (
+            <Button
+              variant="secondary"
+              disabled={!typedMatches}
+              onClick={() => settle({ comment, alternative: true })}
+            >
+              {shown.alternativeLabel}
+            </Button>
+          ) : null}
           <Button
             variant={shown?.tone === "default" ? "default" : "destructive"}
             disabled={!typedMatches}

@@ -51,6 +51,10 @@ vi.mock("@/components/ai/suggested-events", () => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
+  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
+  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  calendarAppLinks: () => null,
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => ({
@@ -59,6 +63,7 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
   }),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   useEvents: () => ({

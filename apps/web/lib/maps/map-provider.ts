@@ -48,7 +48,7 @@ type PhotonFeature = {
 };
 
 /** One Photon feature as a result row, or nothing when it has no point. */
-export function toPlaceResult(feature: PhotonFeature): PlaceResult | null {
+function toPlaceResult(feature: PhotonFeature): PlaceResult | null {
   const [lng, lat] = feature.geometry?.coordinates ?? [];
   if (typeof lat !== "number" || typeof lng !== "number") return null;
   const p = feature.properties ?? {};

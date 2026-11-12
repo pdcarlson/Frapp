@@ -18,6 +18,7 @@ import type { IBillingProvider } from '#domain/adapters/billing.interface';
 import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -27,6 +28,7 @@ const captureException = jest.mocked(Sentry.captureException);
 
 describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
+  let mockMemberRepo: { findByUserAndChapter: jest.Mock };
   let mockInvoiceRepo: jest.Mocked<IFinancialInvoiceRepository>;
   let mockTransactionRepo: jest.Mocked<IFinancialTransactionRepository>;
   let mockBillingProvider: jest.Mocked<IBillingProvider>;
@@ -87,6 +89,12 @@ describe('FinancialInvoiceService', () => {
       getDuesGraceDays: jest.fn().mockResolvedValue(0),
     };
 
+    mockMemberRepo = {
+      findByUserAndChapter: jest
+        .fn()
+        .mockResolvedValue({ id: 'member-1', user_id: 'user-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancialInvoiceService,
@@ -101,6 +109,7 @@ describe('FinancialInvoiceService', () => {
         { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChapterWorkflowsService, useValue: mockChapterWorkflows },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       ],
     }).compile();
 
@@ -183,6 +192,26 @@ describe('FinancialInvoiceService', () => {
           due_date: '2026-09-15',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses a user who is not a member of the chapter, writing nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-other-chapter',
+          title: 'Fall 2026 Dues',
+          amount: 15000,
+          due_date: '2026-09-15',
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-other-chapter',
+        'ch-1',
+      );
+      expect(mockInvoiceRepo.create).not.toHaveBeenCalled();
     });
 
     it('should reject invalid dates', async () => {

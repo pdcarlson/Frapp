@@ -12,7 +12,7 @@
  * role here. Sending that member to `/chat` would return them to
  * `/no-access`.
  */
-export const JOIN_FROM_SIGN_IN = "sign-in";
+const JOIN_FROM_SIGN_IN = "sign-in";
 
 /**
  * A phone visit to `/join` that chose Continue in the browser over the app

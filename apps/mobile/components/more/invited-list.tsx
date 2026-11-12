@@ -29,9 +29,9 @@ import {
 import { webJoinUrl } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-export const SHARE_LINK = "Share link";
-export const SEND_AGAIN = "Send again";
-export const REVOKE_INVITE = "Revoke invite";
+const SHARE_LINK = "Share link";
+const SEND_AGAIN = "Send again";
+const REVOKE_INVITE = "Revoke invite";
 
 const ACTION_LABEL: Record<InviteMenuAction, string> = {
   link: SHARE_LINK,

@@ -111,6 +111,7 @@ composed with **B** or **C** for per-row reads.
 | `service-entries` | `GET`, `GET /leaderboard`, `GET /:id`, `POST /proof-upload-url`, `GET /:id/proof-url`, `POST`, `PATCH /:id/review`, `DELETE /:id` | A+C, +P per route: `members:view`, `service:log`, `service:approve` | B — `serviceEntryRepo.findById(id, chapterId)` (`service-entry.service.ts`, every `findById` call) |
 | `geofences` / `study-sessions` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id`; `POST /start|heartbeat|pause|resume|stop`, `GET /` | A+C+P `members:view`, `geofences:manage` | B — `geofenceRepo.findById(id, chapterId)` at every call site |
 | `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` additionally narrows to **assignee or `tasks:manage`** (`TaskController.getOne`) — a per-row ACL on top of chapter scoping |
+| `calendar-feed` | `POST`, `POST /reset` | A+C+P `members:view`, `@FreeTier()`; `POST /reset` `@SubscriptionExempt` | A, and self — the caller's own link in the request chapter (`calendar_feeds` filtered on `chapter_id` and `user_id`). The calendar app's fetch is `GET /v1/calendar-feed/feed.ics`, below |
 
 ### Controllers without `ChapterGuard`
 
@@ -122,6 +123,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
 | `GET /v1/client-policy` | none (the read throttle bucket: per IP for an anonymous call, per user when the app sends a signed-in member's token) | Mobile minimum-version check (#2526). The app asks before anyone signs in, so it can't require a token. It reads only the `X-Client-Version` header and the `MOBILE_*` env, and returns whether that build is still served plus a store link: no user, chapter or row data. `Cache-Control: no-store`, because the answer varies by header. [`spec/ui/mobile/patterns.md`](../../spec/ui/mobile/patterns.md) § Minimum version |
 | `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes, which binds the chapter. `code` and `state` never reach a log — `LoggingInterceptor` strips the query string via `pathOnly` — though `error` / `error_description` are logged through `logSafe`, which caps and strips control characters rather than redacting |
+| `GET /v1/calendar-feed/feed.ics` | none (throttler skipped) | A member's calendar subscription link (#3322), fetched by Apple's, Google's or Microsoft's calendar servers, which send no sign-in. Its capability is the 256-bit `token` query parameter (shape-checked, then one indexed lookup), the same model as an invite token; the chapter and member come from the link's row, never the request. It serves only what that member could read through `GET /v1/events` and `GET /v1/tasks`, through the same services (`CalendarFeedService`), and an empty calendar once the link is reset, the member has left or lacks `members:view`. The token never reaches a log: `LoggingInterceptor` strips the query string via `pathOnly`, and Sentry drops it. Throttler skipped because Google fetches from a shared address pool, as Stripe delivers. [`events.md` § Calendar subscription](../../spec/behavior/events.md#calendar-subscription) |
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts`, the `UnauthorizedException` on an invalid signature). Not user-authenticated by design |
 | `POST /v1/integrations/dev-log` | `DevLogTokenGuard` (the write throttle bucket at 10/min, per IP: the token is not a member's) | The team's Dev log channel (#4145). The caller is a GitHub Actions workflow, so there is no user and no JWT. Its bearer token is compared, in constant time, with the SHA-256 this deployment was configured with (`DEV_LOG_TOKEN_SHA256`); the API never holds the token. The chapter and channel come from `DEV_LOG_CHAPTER_ID` / `DEV_LOG_CHANNEL_ID`, never from the request, and the channel is looked up inside that chapter. The body carries facts only (an unknown key is `400`); the API writes the words, builds every link itself, and strips what could become a link from the titles and names it is given (`plainText`), since the message is parsed as markdown. The route returns only `posted` or `duplicate`. So the token can do one thing: add a Frapp-authored text post, with no link but to this repository, to that one channel. `404` when the hash is unset, which is every deployment but production; `409` when the configured channel is gone |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
@@ -229,33 +231,34 @@ does, so publishing these three would have opened them to direct browser reads a
 enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
 `realtime.messages` (§ "The policies that do exist").
 
-### The policies that do exist (12 statements)
+### The policies that do exist (11 statements)
 
-**Counting convention.** `12` counts individual policy *statements* — rows in `pg_policies` — not
+**Counting convention.** `11` counts individual policy *statements* — rows in `pg_policies` — not
 rows in the table below, several of which name two policies each. That ambiguity is what let the
 number drift unnoticed before, so it is now stated rather than derived.
 
 Reconciled against hosted `frapp-staging` on 2026-08-27
 (`select schemaname, count(*) from pg_policies group by schemaname`):
 **10 in `public` + 1 in `realtime` = 11** at that read. Migration `20260906203000` (#1552)
-adds a second `realtime` policy, so the expected hosted figure is **10 + 2 = 12** — the
-count the heading and the PGlite check now carry. The promotion log records that migration as
+adds a second `realtime` policy, so the expected hosted figure was **10 + 2 = 12**. Migration
+`20261112280000` (#724, #4513) drops `chat_message_actions_insert`, so it is now **9 + 2 = 11**, the
+count the heading and the PGlite check carry. The promotion log records that migration as
 applied; the hosted catalog has not been re-read since 2026-08-27 (unverified).
 
-The PGlite CI substrate sees **10**, every `public` one. The two absences are schema-gated rather
+The PGlite CI substrate sees **9**, every `public` one. The two absences are schema-gated rather
 than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
 `auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
 role before applying migrations (#1557). `scripts/pglite/tiers/policy-inventory.mjs` pins the `public`
-set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 10,
+set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 9,
 flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
 `to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
 that set still cannot see a policy *rewritten in place*, the check also rejects any permissive
 policy a client can reach whose qualifier is a bare tautology, checking **both `qual` and
 `with_check`**. The two `auth_admin_can_read_*` policies are `using (true)` by design. They are
 exempt because they bind `supabase_auth_admin` alone, which no client request can assume. Reading only `qual` would
-miss the write path entirely: a `FOR INSERT` policy such as `chat_message_actions_insert` has a NULL
+miss the write path entirely: a `FOR INSERT` policy has a NULL
 `qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
 that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
 qualifier all unchanged — would otherwise have passed clean while letting any client insert arbitrary
@@ -267,7 +270,7 @@ This is a tripwire for the obvious rewrite, not a proof: it catches the literal 
 
 Note the limit of the guard: this inventory does **not** cover the two policies it cannot see.
 Dropping `realtime_messages_scoped_select` or `realtime_messages_scoped_insert` would leave it
-printing its clean `(10 here, 12 hosted)`. The `12` is derived from the pinned list plus those
+printing its clean `(9 here, 11 hosted)`. The `11` is derived from the pinned list plus those
 two, so it would then be reporting a hosted figure that is itself wrong. Both are exercised
 instead by `apps/web/lib/realtime/change-topics.spec.ts`, which replays the migrations on its own
 PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-never-connected--resolved-2026-08-16-867)).
@@ -277,7 +280,7 @@ PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id) AND NOT (starts_with(action_type, 'reaction:') AND chat_viewer_has_blocked(user_id, message_id))`. The first two conjuncts are a per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. The third, since `20260924170000` (#2494), withholds a blocked member's reactions from the member who blocked them. `chat_viewer_has_blocked` is `SECURITY DEFINER` too and takes no blocker parameter: it resolves the viewer from `auth.uid()`, so it only answers about the caller's own block list, and the blocked member's reads don't change. It answers false for a message the caller can't read (`can_read_chat_channel`), so over RPC it can't be used to test whether a message exists. Votes and other action types are unaffected. RLS is the only gate here: both clients hydrate reactions with a direct select (each `use-chat-channel.ts`), and live ones come over the Realtime subscription in `packages/chat-core/src/realtime-manager.ts` |
 | `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
 | `realtime.messages` | `realtime_messages_scoped_select`, `realtime_messages_scoped_insert` | **SELECT** authorises five private topics by prefix — the three change-ping topics (`notif:` / `events:` / `attendance:`) and, since 2026-09-06 (#1552, migration `20260906203000`), the two presence topics: the Directory's `presence:chapter:<chapterId>` behind chapter membership (`realtime_can_read_chapter_scope`, as `events:` already was) and chat's `chat:channel:<channelId>` behind **`can_read_chat_channel`** — the channel half of `can_read_chat_message`, extracted so the message RLS and the realtime authorisation share one definition of "may read this channel" (PUBLIC to the chapter, PRIVATE/DM/GROUP_DM to `member_ids`, ROLE_GATED by permission, a ROLE_GATED channel with no requirement to nobody). Chapter membership alone would have exposed DM presence chapter-wide. **INSERT** authorises `extension = 'presence'` on `presence:chapter:` and `presence` **or** `broadcast` on `chat:channel:` (typing is a client broadcast), each behind the same predicate as its SELECT arm; the change-ping topics are receive-only. Both `case`s end in `else false`: any other topic is denied on a private channel and must ship a branch here before it can go private. **Presence stays advisory even now:** the policies see the topic and the message extension, not the presence payload, so a member who may read a channel can still publish an entry naming another member of it. Since #3845 a chapter entry also carries a picked status and a custom line, so such a forged entry can put a status and words under another member's name, not only mark them online (accepted for now; [`chat/README.md`](../../spec/behavior/chat/README.md) § Online/offline presence). What is closed is the anon-key outsider, in both directions, on both topics |
-| `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
+| `chat_message_actions` | `_delete` | `to authenticated`, `starts_with(action_type, 'reaction:') AND chat_action_is_callers(user_id)`: a member takes back their own reaction, the one direct write both apps make (ADR-05). Since `20261112280000` (#724, #4513). Before it, this policy and an `_insert` policy found the caller through a plain `users` subselect, which sees no rows under `users`' default-deny, so neither ever matched and removing a reaction silently did nothing. `chat_action_is_callers` is `SECURITY DEFINER` and answers only whether the id is the caller's own. There is no `_insert` or `_update` policy, and INSERT and UPDATE are revoked from `anon` and `authenticated`: reactions, votes and sign-up claims are written by the API as `service_role` after its channel, poll and slot checks. Proven by execution in the client-writes tier of `chat-black-box.mjs` |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
 | `member_custom_field_values` | `_service_role` | `auth.role() = 'service_role'` — explicit rather than implicit; no non-service access |
@@ -318,12 +321,13 @@ the accepted functions below.
 
 - **`anon` may call none of them.** The Supabase advisor's lint 0028
   (`anon_security_definer_function_executable`) stays at zero.
-- **`authenticated` may call exactly these six.** The advisor's lint 0029
+- **`authenticated` may call exactly these seven.** The advisor's lint 0029
   (`authenticated_security_definer_function_executable`) still reports each of them as a WARN, since
   it has no accepted state; the acceptance is this repo's decision, recorded here and in the tier
   below. Each one backs a check that runs as the signed-in caller, so revoking it breaks that
   check: `can_read_chat_message` and `chat_viewer_has_blocked` (the `chat_message_actions` and
-  `chat_messages` policies above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
+  `chat_messages` policies above), `chat_action_is_callers` (the `chat_message_actions_delete`
+  policy above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
   `chat:channel:` topic), and `realtime_can_read_user_scope`, `realtime_can_read_chapter_scope` and
   `realtime_can_read_event_scope` (the other Realtime topics). Each resolves the caller from
   `auth.uid()`, so over RPC it only answers about what the caller may already read.
@@ -535,7 +539,7 @@ would be the regression:
 
 | Table | Coverage |
 | --- | --- |
-| `chat_message_actions` | membership/tenancy matrix (read path) + the block clause: a blocker reads none of a blocked member's reactions in that chapter, and keeps their votes, their reactions in another chapter, and other members' reactions; the blocked member's reads are unchanged (#2494) |
+| `chat_message_actions` | membership/tenancy matrix (read path) + client writes (no insert, no update, only one's own reaction deleted; 20261112280000) + the block clause: a blocker reads none of a blocked member's reactions in that chapter, and keeps their votes, their reactions in another chapter, and other members' reactions; the blocked member's reads are unchanged (#2494) |
 | `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
 | `members` | default-deny: every probe identity reads 0 rows (#423) |
 | `financial_invoices` | default-deny: every probe identity reads 0 rows (#423) |
@@ -595,10 +599,12 @@ per-migration `has_function_privilege` checks in `docs/ops/database/promotion-lo
 hosted-side confirmation. Until then this paragraph said the defaults were not replayed.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
-own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
-`polqual` / `polwithcheck`, not by attempting a write as a non-owner — a policy whose `with check`
-still mentions `user_id` and `auth.uid()` without restricting them would pass. That gap is real and
-is not claimed to be closed here.
+write path has its own tier in the same file ("client writes", since `20261112280000`): it grants
+the probe `INSERT`, `UPDATE` and `DELETE` and tries each write a member could send through PostgREST on a message they can read: inserting a
+reaction, a vote or a sign-up claim, changing their vote, deleting their vote or sign-up claim or
+someone else's reaction (all refused), and deleting their own reaction (allowed). The inserts send
+no `RETURNING`, as PostgREST's `return=minimal` doesn't, so the SELECT policy can't refuse them in
+the policy's place. The rls-smoke tier pins the INSERT and UPDATE revokes.
 
 Each reader's **exact visible set** is asserted, not a row count — a total is satisfied by the right
 *number* of wrong rows, so a policy swapping one PRIVATE row for one cross-chapter row would keep a

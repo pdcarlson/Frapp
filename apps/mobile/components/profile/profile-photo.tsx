@@ -32,10 +32,10 @@ const AVATAR_SIZE = PROFILE_PHOTO_SIZE;
 const BADGE_SIZE = 28;
 const BADGE_GLYPH_SIZE = 16;
 
-export const CHOOSE_PHOTO = "Choose photo";
-export const REMOVE_PHOTO = "Remove photo";
-export const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
-export const NO_CHAPTER_PHOTO_NOTE =
+const CHOOSE_PHOTO = "Choose photo";
+const REMOVE_PHOTO = "Remove photo";
+const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
+const NO_CHAPTER_PHOTO_NOTE =
   "Choose a chapter from More → Switch chapter to add a photo.";
 
 /**

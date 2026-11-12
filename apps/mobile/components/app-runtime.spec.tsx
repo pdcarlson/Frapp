@@ -44,6 +44,10 @@ vi.mock("@/lib/minutes/recorder/use-recorder-runtime", () => ({
   useMeetingRecorderRuntime: () => calls.push("meeting-recorder"),
 }));
 
+vi.mock("@/lib/updates/use-resume-updates", () => ({
+  useResumeUpdates: () => calls.push("resume-updates"),
+}));
+
 const { AppRuntime } = await import("./app-runtime");
 
 describe("AppRuntime", () => {
@@ -80,5 +84,11 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("member-invite");
+  });
+
+  it("checks for app updates on every return to the foreground", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("resume-updates");
   });
 });

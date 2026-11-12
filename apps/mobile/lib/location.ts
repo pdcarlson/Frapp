@@ -148,7 +148,7 @@ export async function readForegroundFix(
  * why, and what to do next, and "why" is check-in for one and the zone check for
  * the other.
  */
-export const LOCATION_UNAVAILABLE =
+const LOCATION_UNAVAILABLE =
   "Couldn't find your location. Turn on location services and try again.";
 
 export async function requireForegroundFix(

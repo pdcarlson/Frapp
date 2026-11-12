@@ -4423,7 +4423,7 @@ export interface paths {
          * Turn off the beta diagnostics window (president only)
          * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
          */
-        delete: operations["AskController_stopDiagnostics_v1"];
+        delete: operations["AskDiagnosticsStopController_stopDiagnostics_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4544,6 +4544,57 @@ export interface paths {
         put?: never;
         /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
         post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The caller's calendar subscription link, made on first ask. Asking again returns the same link. */
+        post: operations["CalendarFeedController_ensure_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace the caller's calendar link. Calendars subscribed to the old link show nothing from their next check. */
+        post: operations["CalendarFeedController_reset_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/feed.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The iCalendar feed behind a calendar subscription link. Called by calendar apps, not by Frapp clients. */
+        get: operations["CalendarFeedFetchController_fetch_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5584,7 +5635,7 @@ export interface components {
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description That role's name, the group's heading, or null when they hold no role. */
+            /** @description The group's heading: that role's name, "Members" for the chapter's Everyone role, or null when they hold no role. */
             role_name: string | null;
         };
         AddChannelMemberDto: {
@@ -8338,6 +8389,18 @@ export interface components {
              * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
              */
             expected_updated_at: string;
+        };
+        CalendarFeedLinkDto: {
+            /**
+             * @description The private link, as https. Google Calendar and Outlook subscribe to it by URL; anyone holding it can read the calendar it serves, so it is shown only to its member.
+             * @example https://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            url: string;
+            /**
+             * @description The same link as webcal://, which Apple Calendar (and most desktop calendar apps) open as a new subscription.
+             * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            webcal_url: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -18458,7 +18521,7 @@ export interface operations {
             };
         };
     };
-    AskController_stopDiagnostics_v1: {
+    AskDiagnosticsStopController_stopDiagnostics_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -18482,7 +18545,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            /** @description No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18884,6 +18947,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDraftDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_ensure_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedFetchController_fetch_v1: {
+        parameters: {
+            query: {
+                token: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No link has this token. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

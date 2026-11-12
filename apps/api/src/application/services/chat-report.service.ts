@@ -74,7 +74,7 @@ export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
  * delays a release that did not finish, and a quarter of an hour late costs
  * nothing.
  */
-export const EVIDENCE_CLAIM_WINDOW_MS = 15 * 60 * 1000;
+const EVIDENCE_CLAIM_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Reports one sweep tick releases at most: one page of the sweep's read. The
@@ -82,7 +82,7 @@ export const EVIDENCE_CLAIM_WINDOW_MS = 15 * 60 * 1000;
  * normally empty; the cap keeps a tick bounded after a long outage, and the
  * next tick carries on from where this one stopped.
  */
-export const EVIDENCE_SWEEP_BATCH = 100;
+const EVIDENCE_SWEEP_BATCH = 100;
 
 /**
  * What `POST /v1/chat/reports/{id}/remove-message` answers with: the report as

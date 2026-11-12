@@ -31,10 +31,15 @@ vi.mock("@/components/ai/suggested-events", () => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
+  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
+  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  calendarAppLinks: () => null,
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEventTypes: () => ({
     data: [
@@ -279,7 +284,9 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 
     expect(autoAbsentButton()).toBeDisabled();
     // Said in visible text, since a disabled button shows no tooltip.
-    const notice = screen.getByText(/auto-absent can run once check-in closes/i);
+    const notice = screen.getByText(
+      /auto-absent can run once check-in closes/i,
+    );
     expect(notice).toHaveTextContent(/\(Today · /);
     expect(autoAbsentButton()).toHaveAttribute("aria-describedby", notice.id);
     // The row write is not held: officers correct statuses during check-in.

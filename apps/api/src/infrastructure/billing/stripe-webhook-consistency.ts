@@ -29,7 +29,7 @@
  * real `sk_test_` must still boot.
  */
 
-export const STRIPE_WEBHOOK_ENDPOINT_MISSING_MESSAGE =
+const STRIPE_WEBHOOK_ENDPOINT_MISSING_MESSAGE =
   "STRIPE_SECRET_KEY's Stripe account has no enabled webhook endpoint for this deployment — see ENV_REFERENCE.md § Core App Secrets";
 
 /** Mirrors the path built by `webhook.controller.ts` under global URI versioning. */

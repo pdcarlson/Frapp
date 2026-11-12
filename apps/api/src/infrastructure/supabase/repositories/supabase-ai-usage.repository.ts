@@ -25,6 +25,17 @@ const SETTLE_RESULTS: ReadonlySet<string> = new Set<AiSpendSettleResult>([
 ]);
 
 /**
+ * The member a row is charged to: the acting member, or none for the
+ * chapter's own upkeep (`chapterUpkeep`, #4504). `reserve_ai_spend` skips the
+ * member's daily cap for a row with no member and leaves it out of every
+ * member's day, so indexing counts against the chapter's month and the
+ * provider's month only.
+ */
+function ledgerUserId(call: AiCallDescriptor): string | null {
+  return call.chapterUpkeep ? null : call.actingUserId;
+}
+
+/**
  * `ai_usage_events` through the service role (#714). Every call is a
  * database function (`20261112165020_ai_usage_ledger.sql`): the hold is
  * checked against the caps and inserted under the same locks, so two calls at
@@ -47,7 +58,7 @@ export class SupabaseAiUsageRepository implements IAiUsageRepository {
   ): Promise<AiSpendHoldResult> {
     const { data, error } = await this.supabase.rpc('reserve_ai_spend', {
       p_chapter_id: call.chapterId,
-      p_user_id: call.actingUserId,
+      p_user_id: ledgerUserId(call),
       p_run_id: call.runId ?? null,
       p_task: call.task,
       p_family: call.family,
@@ -86,7 +97,7 @@ export class SupabaseAiUsageRepository implements IAiUsageRepository {
     const { data, error } = await this.supabase.rpc('settle_ai_spend', {
       p_reservation_id: usage.reservationId,
       p_chapter_id: usage.chapterId,
-      p_user_id: usage.actingUserId,
+      p_user_id: ledgerUserId(usage),
       p_run_id: usage.runId ?? null,
       p_task: usage.task,
       p_family: usage.family,

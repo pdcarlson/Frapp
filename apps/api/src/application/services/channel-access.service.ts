@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EVERYONE_MEMBER_LIST_HEADING } from '@repo/validation';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -53,7 +54,10 @@ export interface ChannelMemberEntry {
   role_rank: number | null;
   /** That role's id, the key the list groups readers under; `null` with `role_rank`. */
   role_id: string | null;
-  /** That role's name, the group's heading; `null` with `role_rank`. */
+  /**
+   * The group's heading: that role's name, or "Members" for the Everyone
+   * role (#4191); `null` with `role_rank`.
+   */
   role_name: string | null;
 }
 
@@ -264,7 +268,13 @@ export class ChannelAccessService {
         user_id: member.user_id,
         role_rank: member.top_role_order,
         role_id: member.top_role?.id ?? null,
-        role_name: member.top_role?.name ?? null,
+        // Everyone (#4191) is offered by no list, so its holders read as the
+        // rest of the chapter rather than as a role called Everyone.
+        role_name: member.top_role
+          ? member.top_role.everyone
+            ? EVERYONE_MEMBER_LIST_HEADING
+            : member.top_role.name
+          : null,
       }));
   }
 

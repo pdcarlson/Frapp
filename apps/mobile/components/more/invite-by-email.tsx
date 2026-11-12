@@ -31,7 +31,7 @@ export type EmailDraft =
   | { kind: "too-many" }
   | { kind: "send"; emails: string[] };
 
-export function readEmailDraft(text: string): EmailDraft {
+function readEmailDraft(text: string): EmailDraft {
   const addresses = dedupeEmails(splitAddresses(text));
   if (addresses.length === 0) return { kind: "empty" };
   const invalid = addresses.filter((value) => !isInviteEmail(value));
@@ -41,7 +41,7 @@ export function readEmailDraft(text: string): EmailDraft {
 }
 
 /** The line under the field for a draft that can't go out as typed. */
-export function emailDraftProblem(draft: EmailDraft): string | null {
+function emailDraftProblem(draft: EmailDraft): string | null {
   if (draft.kind === "too-many") {
     return `Up to ${MAX_INVITE_EMAILS} addresses at a time. Remove some, then send.`;
   }
@@ -52,7 +52,7 @@ export function emailDraftProblem(draft: EmailDraft): string | null {
 }
 
 /** The line under the field for addresses the server couldn't email. */
-export function undeliveredProblem(count: number): string {
+function undeliveredProblem(count: number): string {
   return count === 1
     ? "Couldn't email this address. Send again, or share a link for them."
     : `Couldn't email these ${count} addresses. Send again, or share links for them.`;

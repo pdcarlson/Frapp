@@ -92,6 +92,20 @@ describe('ChatService', () => {
     ...holderOf(`role:${ALUMNI_ROLE}`),
     alumniEntries: new Set([`role:${ALUMNI_ROLE}`]),
   };
+  // The chapter's announcements channel (`isAnnouncementChannel`), postable by
+  // the officers on its who-can-post list: the only place an announcement
+  // card may be posted (#3414). `asAnnouncer` makes the sender one of them.
+  const announcementsChannel: ChatChannel = {
+    ...baseChannel,
+    name: 'announcements',
+    is_read_only: true,
+    who_can_post: [OFFICERS],
+  };
+  const asAnnouncer = () => {
+    mockChannelRepo.findById.mockResolvedValue(announcementsChannel);
+    mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
+  };
+
   const withChapterRolesAndTiers = () => {
     mockRoleRepo.findByChapter.mockResolvedValue([
       { id: EXEC_ROLE, chapter_id: 'ch-1', tier_id: EXEC_TIER },
@@ -565,13 +579,58 @@ describe('ChatService', () => {
       it('keeps its lists when it moves to another category', async () => {
         mockChannelRepo.findById.mockResolvedValue(roleGated);
         mockChannelRepo.update.mockResolvedValue(roleGated);
+        mockCategoryRepo.findById.mockResolvedValue({
+          id: 'cat-2',
+          chapter_id: 'ch-1',
+          name: 'Chapter',
+          display_order: 0,
+          created_at: '',
+          who_can_see: [`tier:${EXEC_TIER}`],
+          who_can_post: null,
+        });
 
         await service.updateChannel('chan-1', 'ch-1', { category_id: 'cat-2' });
 
+        // Looked up only to check it is this chapter's; its lists aren't copied.
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith('cat-2', 'ch-1');
         expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
           category_id: 'cat-2',
         });
-        expect(mockCategoryRepo.findById).not.toHaveBeenCalled();
+      });
+
+      it("refuses a move into another chapter's category, writing nothing", async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+        // Scoped to this chapter, so another chapter's category isn't found.
+        mockCategoryRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            category_id: 'cat-other-chapter',
+          }),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith(
+          'cat-other-chapter',
+          'ch-1',
+        );
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it("refuses a new channel in another chapter's category, writing nothing", async () => {
+        mockCategoryRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'budget',
+              type: 'PUBLIC',
+              category_id: 'cat-other-chapter',
+            },
+            'u-creator',
+          ),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
       });
 
       it('refuses matching with no category, or with lists sent too', async () => {
@@ -2310,6 +2369,7 @@ describe('ChatService', () => {
     });
 
     it('passes client_message_id, kind, and payload into the insert', async () => {
+      asAnnouncer();
       mockMessageRepo.create.mockResolvedValue(baseMessage);
 
       await service.sendMessage({
@@ -2703,6 +2763,120 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
+    // The announcement card draws with the chapter's official chrome, so only
+    // the announcements channel's posters may produce one (#3414).
+    describe('an announcement card is only posted in the announcements channel (#3414)', () => {
+      const send = (
+        extra: Partial<Parameters<ChatService['sendMessage']>[0]> = {},
+      ) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Chapter meeting is cancelled',
+          kind: 'announcement',
+          payload: { body: 'Chapter meeting is cancelled' },
+          ...extra,
+        });
+
+      const PLACEMENT =
+        'Announcements can only be posted in the announcements channel';
+
+      beforeEach(() => {
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      it('refuses one a member sends in #general', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(send()).rejects.toThrow(PLACEMENT);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses one sent in a DM', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          name: 'dm-user-1-user-2',
+          type: 'DM' as const,
+          member_ids: ['user-1', 'user-2'],
+        });
+
+        await expect(send()).rejects.toThrow(PLACEMENT);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      // Named like the real channel, but anyone can post in it, so it is not
+      // the channel an announcement push or card is decided by.
+      it('refuses one in a channel named announcements that anyone can post in', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          name: 'announcements',
+        });
+
+        await expect(send()).rejects.toThrow(PLACEMENT);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a member who is not on the announcements channel\u2019s who-can-post list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcementsChannel);
+
+        await expect(send()).rejects.toThrow(
+          'You do not have access to this channel',
+        );
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses one as a thread reply under an announcement', async () => {
+        asAnnouncer();
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          channel_id: 'ch-chan-1',
+          kind: 'announcement',
+        });
+
+        await expect(send({ thread_root_id: baseMessage.id })).rejects.toThrow(
+          PLACEMENT,
+        );
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      // A card that committed while the channel was still the announcements
+      // channel, whose response was lost: its outbox replay must not be
+      // marked failed because the channel was opened up or renamed since.
+      it('answers a replay of an announcement that already committed as a duplicate', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        const committed = { ...baseMessage, kind: 'announcement' as const };
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        const result = await send({
+          client_message_id: '22222222-2222-2222-2222-222222222222',
+        });
+
+        expect(result).toEqual({ message: committed, deduplicated: true });
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still refuses when the replayed id belongs to a message of another kind', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+        await expect(
+          send({ client_message_id: '22222222-2222-2222-2222-222222222222' }),
+        ).rejects.toThrow(PLACEMENT);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('posts one from a member on the announcements channel\u2019s who-can-post list', async () => {
+        asAnnouncer();
+
+        await send();
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: 'announcement' }),
+        );
+      });
+    });
+
     // `payload.closed_at` / `closed_by` are written only by `PollService.close`
     // (#3794), which checks the caller is the poll's creator.
     describe('a poll card cannot arrive closed (#3794)', () => {
@@ -2740,6 +2914,7 @@ describe('ChatService', () => {
       });
 
       it('leaves another kind payload exactly as sent', async () => {
+        asAnnouncer();
         const payload = { body: 'Hi', closed_at: 'kept' };
         await service.sendMessage({
           chapter_id: 'ch-1',

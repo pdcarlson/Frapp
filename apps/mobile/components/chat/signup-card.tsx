@@ -7,17 +7,17 @@ import {
   readSignupPayload,
   signupCardEyebrow,
   signupCardFooter,
+  signupHoldersLine,
   signupSlotAction,
-  signupSlotCount,
+  signupSlotPercent,
+  signupSlotSpoken,
+  signupSlotStatus,
   tallySignups,
 } from "@repo/chat-core/signups";
 import { actorLabel, type NameResolver } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  useChapterBranding,
-  type ChapterBranding,
-} from "@/lib/chapter-branding";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   CardEyebrow,
   CardTitle,
@@ -27,8 +27,11 @@ import {
 
 /**
  * A sign-up sheet card (`kind: "signup"`, #3926), the phone's twin of web's
- * `apps/web/components/chat/renderers/signup-card.tsx`: each slot's name, how
- * full it is, who holds it, and a Sign up / Signed up button. Reading,
+ * `apps/web/components/chat/renderers/signup-card.tsx`. Each slot is a row a
+ * tap takes or gives up, drawn as the poll card draws an option (the
+ * accent fill marks the viewer's own; a full one dims and says Full), with
+ * a meter for a slot with a limit and who holds it named on one line under
+ * it, as iMessage and Discord polls name voters. Reading,
  * counting, the words and the claim a tap sends are
  * `@repo/chat-core/signups`, so the two cards can't disagree. A tap goes
  * through the same `actOnCard` path a poll vote does; the API refuses one
@@ -51,7 +54,7 @@ export function SignupCard(props: SignupCardProps) {
     props;
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const payload = useMemo(() => readSignupPayload(message), [message]);
   const tally = useMemo(
     () => (payload ? tallySignups(message, payload, viewerId) : null),
@@ -100,86 +103,67 @@ export function SignupCard(props: SignupCardProps) {
           const action = signupSlotAction(slot, tally);
           const holders = tally.bySlot[slot.id] ?? [];
           const disabled = !canClaim || action.full;
+          const percent = signupSlotPercent(slot, tally);
+          const names = signupHoldersLine(
+            holders,
+            viewerId ?? null,
+            (userId) => actorLabel(userId, nameFor) ?? "A member",
+          );
           return (
-            <View
-              key={slot.id}
-              style={[styles.slot, action.held ? styles.slotHeld : null]}
-            >
-              <View style={styles.slotRow}>
-                <Text style={styles.slotLabel}>{slot.label}</Text>
+            <View key={slot.id}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${action.label}: ${slot.label}`}
+                accessibilityValue={{ text: signupSlotSpoken(slot, tally) }}
+                accessibilityState={{ selected: action.held, disabled }}
+                disabled={disabled}
+                onPress={() => claim(slot.id)}
+                // A slot is most of the card, as a poll option is: a long
+                // press opens the card's actions, never a claim.
+                onLongPress={onOpenActions}
+                style={[
+                  styles.slotRow,
+                  action.held
+                    ? { backgroundColor: brand.accentPrimary }
+                    : styles.slotRowDefault,
+                  action.full && !action.held ? styles.slotRowFull : null,
+                ]}
+              >
                 <Text
-                  style={styles.count}
-                  accessibilityLabel={
-                    slot.capacity === null
-                      ? `${holders.length} signed up`
-                      : `${holders.length} of ${slot.capacity} spots taken`
-                  }
-                >
-                  {signupSlotCount(slot, tally)}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${action.label}: ${slot.label}`}
-                  accessibilityState={{ selected: action.held, disabled }}
-                  disabled={disabled}
-                  hitSlop={6}
-                  onPress={() => claim(slot.id)}
-                  onLongPress={onOpenActions}
                   style={[
-                    styles.button,
-                    action.held
-                      ? {
-                          backgroundColor: brand.accentPrimary,
-                          borderColor: brand.accentPrimary,
-                        }
-                      : null,
-                    disabled && !action.held ? styles.buttonDisabled : null,
+                    styles.slotLabel,
+                    action.held ? { color: brand.accentOnPrimary } : null,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      action.held ? { color: brand.accentOnPrimary } : null,
-                      disabled && !action.held
-                        ? styles.buttonTextDisabled
-                        : null,
-                    ]}
-                  >
-                    {action.held ? `${action.label} ✓` : action.label}
-                  </Text>
-                </Pressable>
-              </View>
-              {holders.length > 0 ? (
-                <View style={styles.people}>
-                  {holders.map((userId) => {
-                    const mine = userId === viewerId;
-                    return (
-                      <View
-                        key={userId}
-                        style={[styles.chip, mine ? styles.chipMine : null]}
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            mine ? styles.chipTextMine : null,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {mine
-                            ? "You"
-                            : (actorLabel(userId, nameFor) ?? "A member")}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <Text style={styles.empty}>
-                  {slot.capacity === null
-                    ? "No limit · no one yet"
-                    : "No one yet"}
+                  {slot.label}
                 </Text>
-              )}
+                <Text
+                  style={[
+                    styles.count,
+                    action.held ? { color: brand.accentOnPrimary } : null,
+                  ]}
+                >
+                  {signupSlotStatus(slot, tally)}
+                </Text>
+              </Pressable>
+              {percent !== null ? (
+                <View style={styles.meterTrack}>
+                  <View
+                    style={[
+                      styles.meterFill,
+                      {
+                        width: `${percent}%`,
+                        backgroundColor: brand.accentPrimary,
+                      },
+                    ]}
+                  />
+                </View>
+              ) : null}
+              {names ? (
+                <Text style={styles.names} numberOfLines={2}>
+                  {names}
+                </Text>
+              ) : null}
             </View>
           );
         })}
@@ -189,7 +173,7 @@ export function SignupCard(props: SignupCardProps) {
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     muted: {
       ...typeRole(tokens.typography.role.body),
@@ -204,77 +188,50 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       marginTop: tokens.spacing.sm + 1,
       gap: tokens.spacing.sm - 2,
     },
-    slot: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.color.border.hairline,
-      borderRadius: tokens.radius.control,
-      paddingVertical: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing.md - 2,
-      gap: tokens.spacing.xs,
-    },
-    slotHeld: {
-      borderColor: brand.accentPrimary,
-      backgroundColor: tint(brand.accentPrimary),
-    },
+    // The poll card's option row (`poll-card.tsx`): a sign-up is the same
+    // family of card, a list of choices a tap takes.
     slotRow: {
       flexDirection: "row",
       alignItems: "center",
+      justifyContent: "space-between",
       gap: tokens.spacing.sm,
-      minHeight: 36,
+      paddingVertical: tokens.spacing.sm,
+      paddingHorizontal: tokens.spacing.md - 2,
+      borderRadius: tokens.radius.control,
+      minHeight: 44,
+    },
+    slotRowDefault: {
+      backgroundColor: tokens.color.surface.popover,
+    },
+    slotRowFull: {
+      opacity: 0.55,
     },
     slotLabel: {
-      ...typeRole(tokens.typography.role.label),
+      ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
-      flex: 1,
+      flexShrink: 1,
     },
     count: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       fontVariant: ["tabular-nums"],
     },
-    button: {
-      minHeight: 36,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md - 2,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.control,
+    meterTrack: {
+      marginTop: tokens.spacing.xs - 2,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: tokens.color.surface.background,
+      overflow: "hidden",
     },
-    buttonDisabled: {
-      opacity: 0.5,
+    meterFill: {
+      height: "100%",
+      borderRadius: 2,
     },
-    buttonText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
-    },
-    buttonTextDisabled: {
-      color: tokens.color.text.mutedForeground,
-    },
-    people: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: tokens.spacing.xs,
-    },
-    chip: {
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 2,
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
-      maxWidth: "100%",
-    },
-    chipMine: {
-      backgroundColor: tint(brand.accentPrimary),
-    },
-    chipText: {
+    names: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    chipTextMine: {
-      color: brand.accent,
-    },
-    empty: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs - 2,
+      paddingHorizontal: tokens.spacing.xs,
     },
     footer: {
       ...typeRole(tokens.typography.role.caption),

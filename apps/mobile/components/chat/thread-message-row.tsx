@@ -411,7 +411,7 @@ function cardFor(
  * caption, 12.5 / 600. The only place a date appears in the thread; the label
  * is `dayDividerLabel`, the one web uses.
  */
-export function DayDivider({ createdAt }: { createdAt: string }) {
+function DayDivider({ createdAt }: { createdAt: string }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (

@@ -25,7 +25,7 @@ import type { OwnStatus } from "@repo/hooks/member-status";
  * another device shows here within a minute, as web does. Only while the app
  * is in the foreground.
  */
-export const STATUS_RESYNC_MS = 60 * 1000;
+const STATUS_RESYNC_MS = 60 * 1000;
 
 /**
  * The member's status now, or `null` while the first settings read is in
@@ -84,7 +84,7 @@ type StatusBody = Pick<
   "status" | "status_expires_at" | "custom_status" | "custom_status_expires_at"
 >;
 
-export const STATUS_SAVE_FAILED = "Couldn't save your status";
+const STATUS_SAVE_FAILED = "Couldn't save your status";
 
 /**
  * Save a status or custom line. Optimistic through the shared settings
