@@ -384,8 +384,17 @@ export class EventService {
     // An instance edit writes the rule onto this row as it stands, with no
     // regenerate, so a rule that doesn't fit its start (an UNTIL before the
     // second meeting, or past the series cap) is refused here as on create.
-    if (input.recurrence_rule) {
-      const row = before ?? (await this.findById(id, chapterId));
+    // Only when the rule or the start actually changes: the web editor sends
+    // the stored rule back on every save, and a rename must not be judged on
+    // a rule nobody touched.
+    const row = before;
+    const ruleOrStartChanged =
+      !!row &&
+      (input.recurrence_rule !== row.recurrence_rule ||
+        (input.start_time !== undefined &&
+          new Date(input.start_time).getTime() !==
+            new Date(row.start_time).getTime()));
+    if (input.recurrence_rule && row && ruleOrStartChanged) {
       const problem = checkSeriesLength(
         input.recurrence_rule,
         input.start_time ?? row.start_time,

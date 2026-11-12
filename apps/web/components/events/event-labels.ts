@@ -23,9 +23,9 @@ import {
  * cadence at all for a one-time event rather than a "One-time" badge, because
  * an absent value is absent (`spec/ui/web-dashboard/README.md` § Page grammar).
  *
- * A structured rule (#4488) reads as its pattern ("Every Mon and Thu");
- * `start`, the series' first meeting, names a by-date monthly rule's day
- * when the rule doesn't. A token outside the catalog (the API rejects one,
+ * A structured rule (#4488) reads as its pattern ("Every Mon and Thu"), its
+ * days as this browser's calendar has them; `start`, a meeting of the series,
+ * names a by-date monthly rule's day when the rule doesn't. A token outside the catalog (the API rejects one,
  * but a row written before a rule was retired could still carry it) reads in
  * sentence case rather than as the raw enum.
  */
@@ -33,7 +33,8 @@ export function recurrenceLabel(rule: unknown, start?: unknown): string | null {
   if (typeof rule !== "string" || rule.trim() === "") return null;
   if (isRecurrenceRule(rule)) return RECURRENCE_RULE_LABELS[rule];
   const at = typeof start === "string" ? start : "";
-  return describeRepeatPattern(rule, at) ?? ruleTokenLabel(rule);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return describeRepeatPattern(rule, at, { timeZone }) ?? ruleTokenLabel(rule);
 }
 
 /** `"1 point"`, `"5 points"`; `null` when the event awards none. */

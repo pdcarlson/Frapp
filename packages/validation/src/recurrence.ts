@@ -67,7 +67,7 @@ export const RECURRENCE_REPEAT_LABELS: Record<RecurrenceRule, string> = {
  * How many meetings after the first a legacy token makes. The series is
  * re-made this long from "now" whenever a series edit regenerates it.
  */
-const LEGACY_CHILD_COUNT: Record<RecurrenceRule, number> = {
+export const LEGACY_CHILD_COUNT: Record<RecurrenceRule, number> = {
   WEEKLY: 12,
   BIWEEKLY: 6,
   MONTHLY: 6,
@@ -231,11 +231,12 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   const interval = Number(intervalText);
   if (interval > MAX_REPEAT_INTERVAL) return null;
 
-  const timeZone = fields.get("TZID");
+  const zoneText = fields.get("TZID");
   // Untrimmed is refused rather than trimmed: the zone check trims, Intl
   // doesn't, so " America/New_York" would pass here and throw when stepped.
-  if (!timeZone || timeZone !== timeZone.trim()) return null;
-  if (!isSupportedTimeZone(timeZone)) return null;
+  if (!zoneText || zoneText !== zoneText.trim()) return null;
+  if (!isSupportedTimeZone(zoneText)) return null;
+  const timeZone = canonicalZone(zoneText);
 
   const countText = fields.get("COUNT");
   const untilText = fields.get("UNTIL");
@@ -296,6 +297,22 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   };
 }
 
+/**
+ * The runtime's own spelling of a zone (`america/new_york` and `US/Eastern`
+ * both read `America/New_York`), so every spelling of one zone steps through
+ * one cached formatter rather than one each (`formatterFor`).
+ */
+function canonicalZone(timeZone: string): string {
+  try {
+    return (
+      new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions()
+        .timeZone ?? timeZone
+    );
+  } catch {
+    return timeZone;
+  }
+}
+
 /** Whether the API accepts `value` as a `recurrence_rule`. */
 export function isRepeatRule(value: unknown): value is string {
   return parseRepeatRule(value) !== null;
@@ -334,9 +351,17 @@ interface WallClock {
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
+/**
+ * Far more than the zones in use. Rules carry canonical names, but a reader's
+ * zone (push copy) arrives as stored, so the cache is bounded rather than
+ * trusted to stay small.
+ */
+const MAX_CACHED_FORMATTERS = 512;
+
 function formatterFor(timeZone: string): Intl.DateTimeFormat {
   let formatter = formatters.get(timeZone);
   if (!formatter) {
+    if (formatters.size >= MAX_CACHED_FORMATTERS) formatters.clear();
     formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
       hourCycle: "h23",
@@ -712,6 +737,23 @@ export function nthWeekdayPhrase(nth: {
   return `the ${NTH_WORDS[nth.n]} ${WEEKDAY_LONG[WEEKDAY_CODES.indexOf(nth.day)]}`;
 }
 
+/**
+ * The nth weekday a calendar day is in its month: what "the second Tuesday"
+ * names. A day in the month's last week answers `-1` when `preferLast`, and
+ * always when it is the fifth of its weekday.
+ */
+function nthWeekdayAt(
+  clock: Pick<WallClock, "year" | "month" | "day">,
+  preferLast: boolean,
+): { n: NthWeek; day: WeekdayCode } {
+  const weekday = weekdayOf(dayNumber(clock.year, clock.month, clock.day));
+  const week = Math.ceil(clock.day / 7);
+  const inLastWeek = clock.day + 7 > daysInMonth(clock.year, clock.month);
+  const n: NthWeek =
+    week >= 5 || (preferLast && inLastWeek) ? -1 : (week as NthWeek);
+  return { n, day: WEEKDAY_CODES[weekday]! };
+}
+
 /** The day number of `instant` on the wall clock of `timeZone`. */
 function zonedDayNumber(instant: number, timeZone: string): number {
   const clock = wallClockAt(instant, timeZone);
@@ -762,63 +804,121 @@ export function describeRepeatPattern(
     }
     case "MONTHLY": {
       const every = n === 1 ? "Every month" : `Every ${n} months`;
+      // The first meeting as the reader sees it. In a zone where it falls on
+      // another day, a monthly rule can't be restated exactly (the day after
+      // the second Tuesday is sometimes the third Wednesday, and the day
+      // after the 31st is the 1st or the 31st), so it names that meeting's
+      // own day there, as the legacy MONTHLY copy always has.
+      const seen = Number.isNaN(startMs)
+        ? null
+        : wallClockAt(startMs, options.timeZone ?? parsed.timeZone);
       if (parsed.nthWeekday) {
-        const weekday = shiftWeekday(
-          WEEKDAY_CODES.indexOf(parsed.nthWeekday.day),
-        );
-        return `${every} on ${nthWeekdayPhrase({
-          n: parsed.nthWeekday.n,
-          day: WEEKDAY_CODES[weekday]!,
-        })}`;
+        if (shift === 0 || !seen) {
+          return `${every} on ${nthWeekdayPhrase(parsed.nthWeekday)}`;
+        }
+        return `${every} on ${nthWeekdayPhrase(nthWeekdayAt(seen, parsed.nthWeekday.n === -1))}`;
       }
-      const ruleDay =
-        parsed.monthDay ??
-        options.monthDay ??
-        (Number.isNaN(startMs)
-          ? null
-          : wallClockAt(startMs, parsed.timeZone).day);
-      if (ruleDay === null) return every;
-      return `${every} on the ${ordinal(Math.min(31, Math.max(1, ruleDay + shift)))}`;
+      const day =
+        parsed.monthDay !== null
+          ? shift === 0 || !seen
+            ? parsed.monthDay
+            : seen.day
+          : (options.monthDay ?? seen?.day ?? null);
+      if (day === null) return every;
+      return `${every} on the ${ordinal(day)}`;
     }
   }
 }
 
 /**
- * The rule a series carries once its first `consumed` meetings have left it,
- * for when the API hands a series to a later meeting (a started head split
- * off by a series edit, or a head canceled on its own), whose start was
- * `headStart`.
+ * The rule a series carries once it is handed from its head, which started
+ * at `headStart`, to the later meeting that started at `nextStart` (a started
+ * head split off by a series edit, or a head canceled on its own).
  *
- * - A `COUNT` counts from the head, so it drops by what left, or the series
- *   would grow by that many the next time it is regenerated; `null` when
- *   fewer than two meetings would remain, so the new head stands alone.
+ * - The meetings that left are counted by their place in the pattern, not by
+ *   the rows still standing, so a meeting canceled on its own still counts
+ *   as used. A `COUNT` drops by them, or the next regeneration would add
+ *   that many at the end.
+ * - `null` when fewer than two meetings of the pattern would remain, whether
+ *   it ends by `COUNT` or `UNTIL`, so the new head stands alone rather than
+ *   carrying a rule it can't satisfy.
  * - A by-date monthly rule without `BYMONTHDAY` gains the old head's day, so
  *   a new head clamped to a short month (Feb 28 for the 31st) doesn't move
  *   the series to its own day.
- * - Otherwise an `UNTIL` is unchanged, and so is a legacy token. A rule this
- *   module can't read is returned as it was.
+ * - A legacy token, or a rule this module can't read, is returned as it was.
  */
 export function advanceRepeatRule(
   rule: string | null,
-  consumed: number,
   headStart: Date | string,
+  nextStart: Date | string,
 ): string | null {
   const parsed = parseRepeatRule(rule);
   if (!parsed || parsed.legacy) return rule;
+  const headMs = new Date(headStart).getTime();
+  const nextMs = new Date(nextStart).getTime();
+  if (Number.isNaN(headMs) || Number.isNaN(nextMs)) return rule;
+  const children = seriesChildStarts(rule, headStart) ?? [];
+  const used = 1 + children.filter((at) => at.getTime() < nextMs).length;
+  const remaining = children.length + 1 - used;
+  if (remaining < 2) return null;
   let next: RepeatRule = parsed;
   if (parsed.end.kind === "count") {
-    const count = parsed.end.count - consumed;
-    if (count < 2) return null;
-    next = { ...next, end: { kind: "count", count } };
+    next = { ...next, end: { kind: "count", count: remaining } };
   }
-  const headMs = new Date(headStart).getTime();
   if (
     parsed.freq === "MONTHLY" &&
     !parsed.nthWeekday &&
-    parsed.monthDay === null &&
-    !Number.isNaN(headMs)
+    parsed.monthDay === null
   ) {
     next = { ...next, monthDay: wallClockAt(headMs, parsed.timeZone).day };
   }
-  return next === parsed ? rule : formatRepeatRule(next);
+  return formatRepeatRule(next);
+}
+
+/**
+ * The rule a series carries when its head moves from `fromStart` to
+ * `toStart` and the caller kept the rule: the days a structured rule names
+ * move with the head, as rescheduling a recurring meeting means. A weekly
+ * rule's days move by the days the head moved; a monthly rule's day of the
+ * month, or nth weekday, becomes the new head's. A legacy token, a daily
+ * rule, a move within the same day, or a rule this module can't read, is
+ * returned as it was.
+ */
+export function shiftRepeatRule(
+  rule: string | null,
+  fromStart: Date | string,
+  toStart: Date | string,
+): string | null {
+  const parsed = parseRepeatRule(rule);
+  if (!parsed || parsed.legacy) return rule;
+  const fromMs = new Date(fromStart).getTime();
+  const toMs = new Date(toStart).getTime();
+  if (Number.isNaN(fromMs) || Number.isNaN(toMs)) return rule;
+  const to = wallClockAt(toMs, parsed.timeZone);
+  const days =
+    dayNumber(to.year, to.month, to.day) -
+    zonedDayNumber(fromMs, parsed.timeZone);
+  if (days === 0) return rule;
+  let next: RepeatRule = parsed;
+  if (parsed.freq === "WEEKLY") {
+    const moved = new Set(
+      parsed.byDay.map(
+        (code) =>
+          WEEKDAY_CODES[(((WEEKDAY_CODES.indexOf(code) + days) % 7) + 7) % 7]!,
+      ),
+    );
+    next = { ...next, byDay: WEEKDAY_CODES.filter((code) => moved.has(code)) };
+  } else if (parsed.freq === "MONTHLY") {
+    if (parsed.nthWeekday) {
+      next = {
+        ...next,
+        nthWeekday: nthWeekdayAt(to, parsed.nthWeekday.n === -1),
+      };
+    } else if (parsed.monthDay !== null) {
+      next = { ...next, monthDay: to.day };
+    }
+  } else {
+    return rule;
+  }
+  return formatRepeatRule(next);
 }

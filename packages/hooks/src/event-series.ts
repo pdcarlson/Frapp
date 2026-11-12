@@ -260,7 +260,8 @@ export function seriesCadenceLabel(
     }
     default: {
       // A structured rule names its own days (#4488), so it reads straight
-      // from the rule, the words push copy uses. A by-date monthly rule
+      // from the rule, in the words push copy uses and, like the rows and the
+      // tokens above, on this device's calendar. A by-date monthly rule
       // without BYMONTHDAY takes the series' usual day, as MONTHLY does
       // above, not the shown meeting's, which a short month clamps.
       const parsed = parseRepeatRule(rule);
@@ -269,7 +270,10 @@ export function seriesCadenceLabel(
           ? monthlyAnchorDay(seriesStarts)
           : null;
       return (
-        describeRepeatPattern(rule, at, { monthDay }) ?? ruleTokenLabel(rule)
+        describeRepeatPattern(rule, at, {
+          monthDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }) ?? ruleTokenLabel(rule)
       );
     }
   }

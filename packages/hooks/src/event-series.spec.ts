@@ -139,13 +139,14 @@ describe("seriesCadenceLabel", () => {
     expect(
       seriesCadenceLabel(
         "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/New_York",
-        "2027-01-05T00:00:00Z",
+        // Noon in New York: the same day on the test device's calendar.
+        "2027-01-04T17:00:00Z",
       ),
     ).toBe("Every Mon and Thu");
     expect(
       seriesCadenceLabel(
         "FREQ=MONTHLY;INTERVAL=1;BYDAY=-1FR;COUNT=4;TZID=America/New_York",
-        "2027-01-30T00:00:00Z",
+        "2027-01-29T17:00:00Z",
       ),
     ).toBe("Every month on the last Friday");
   });

@@ -9,6 +9,7 @@ import type { IEventRepository } from '#domain/repositories/event.repository.int
 import { Event } from '#domain/entities/event.entity';
 import {
   advanceRepeatRule,
+  shiftRepeatRule,
   checkSeriesLength,
   isRepeatRule,
   seriesChildStarts,
@@ -341,10 +342,24 @@ export class EventSeriesService {
     // That was harmless while this value only gated the check below, but the
     // split path also *writes* it to the new head, where it would resurrect a
     // series the caller just cleared.
-    const nextRule =
+    const callerRule =
       normalized.recurrence_rule !== undefined
         ? normalized.recurrence_rule
         : parent.recurrence_rule;
+    const keptRule = callerRule === parent.recurrence_rule;
+
+    // Moving the head moves the series: a structured rule names its days, so
+    // a kept rule's days move with the head (`shiftRepeatRule`), or a series
+    // moved from Monday to Tuesday would rebuild on Mondays behind its new
+    // Tuesday head. A legacy token steps from the head and needs nothing.
+    const nextRule =
+      keptRule && hasChanged('start_time')
+        ? shiftRepeatRule(
+            callerRule,
+            parent.start_time,
+            normalized.start_time as string,
+          )
+        : callerRule;
 
     // Refuse a rule this service cannot generate from *before* touching
     // anything. The old order deleted the whole future half of the series and
@@ -403,6 +418,7 @@ export class EventSeriesService {
         normalized,
         regenerates,
         nextRule,
+        keptRule,
         startShiftMs,
         nextDurationMs,
         now,
@@ -422,7 +438,11 @@ export class EventSeriesService {
       // In this order a failure anywhere before the parent write leaves a
       // retry that still regenerates, and replacing the occurrences again is
       // safe because it rebuilds whatever upcoming rows the parent has.
-      const template: Event = { ...parent, ...normalized };
+      const written: UpdateEventInput = {
+        ...normalized,
+        recurrence_rule: nextRule,
+      };
+      const template: Event = { ...parent, ...written };
       await this.replaceOccurrences({
         headId: parent.id,
         chapterId,
@@ -433,7 +453,7 @@ export class EventSeriesService {
       updatedParent = await this.eventRepo.update(
         parent.id,
         chapterId,
-        normalized,
+        written,
       );
     } else {
       updatedParent = await this.eventRepo.update(
@@ -495,6 +515,7 @@ export class EventSeriesService {
     normalized: UpdateEventInput;
     regenerates: boolean;
     nextRule: string | null;
+    keptRule: boolean;
     startShiftMs: number;
     nextDurationMs: number | null;
     now: number;
@@ -508,6 +529,7 @@ export class EventSeriesService {
       normalized,
       regenerates,
       nextRule,
+      keptRule,
       startShiftMs,
       nextDurationMs,
       now,
@@ -552,25 +574,28 @@ export class EventSeriesService {
 
     const carried = propagatableFields(normalized);
 
-    // The rule the new head carries. A COUNT counts from the head, so when the
-    // caller kept the rule it drops by the meetings that left the series (the
-    // retired head and the past ones), or the next regenerate would add that
-    // many at the end. A rule the caller changed is theirs as sent.
-    const consumed = 1 + past.length;
-    const seriesRule =
-      nextRule === parent.recurrence_rule
-        ? advanceRepeatRule(nextRule, consumed, parent.start_time)
-        : nextRule;
+    // The rule the new head carries. When the caller kept the rule it is
+    // handed on from the retired head (`advanceRepeatRule`): a COUNT drops by
+    // the meetings of the pattern before the new head, canceled ones
+    // included, or the next regenerate would add that many at the end, and a
+    // rule with fewer than two meetings left ends. Both starts move by the
+    // caller's shift, as `nextRule`'s days already have. A rule the caller
+    // changed is theirs as sent.
+    const newHeadStart = retimed.start_time ?? successor.start_time;
+    const seriesRule = keptRule
+      ? advanceRepeatRule(
+          nextRule,
+          new Date(new Date(parent.start_time).getTime() + startShiftMs),
+          newHeadStart,
+        )
+      : nextRule;
 
     // The successor is the series' first meeting from here, so a regenerated
     // rule must fit it, not the retired head: an UNTIL that leaves it no
     // second meeting would otherwise make a lone head that still carries a
     // rule. Checked before the first write.
     if (regenerates && seriesRule) {
-      const problem = checkSeriesLength(
-        seriesRule,
-        retimed.start_time ?? successor.start_time,
-      );
+      const problem = checkSeriesLength(seriesRule, newHeadStart);
       if (problem) throw new BadRequestException(problem);
     }
 
@@ -613,7 +638,11 @@ export class EventSeriesService {
       ...carried,
       ...retimed,
       recurrence_rule: regenerates
-        ? advanceRepeatRule(parent.recurrence_rule, consumed, parent.start_time)
+        ? advanceRepeatRule(
+            parent.recurrence_rule,
+            parent.start_time,
+            successor.start_time,
+          )
         : seriesRule,
       parent_event_id: null,
     });
@@ -710,14 +739,15 @@ export class EventSeriesService {
 
     const [successor, ...rest] = future;
 
-    // A COUNT drops by the canceled head and the past meetings detached
-    // above (`advanceRepeatRule`), so a later regenerate keeps the series'
-    // length rather than growing it.
+    // A COUNT drops by the meetings of the pattern before the successor
+    // (`advanceRepeatRule`), so a later regenerate keeps the series' length
+    // rather than growing it; a rule with fewer than two meetings left ends,
+    // and the successor stands alone.
     await this.eventRepo.update(successor.id, chapterId, {
       recurrence_rule: advanceRepeatRule(
         parent.recurrence_rule,
-        1 + past.length,
         parent.start_time,
+        successor.start_time,
       ),
       parent_event_id: null,
     });

@@ -907,6 +907,7 @@ export type { NativePlatform } from "./native-app";
 // describe a series with. One source so the generated series and what the
 // Repeat controls promise cannot describe different meetings (#4488, #3662).
 export {
+  LEGACY_CHILD_COUNT,
   MAX_REPEAT_INTERVAL,
   MAX_REPEAT_RULE_LENGTH,
   MAX_SERIES_MEETINGS,
@@ -928,6 +929,7 @@ export {
   parseRepeatRule,
   seriesChildStarts,
   seriesExtent,
+  shiftRepeatRule,
 } from "./recurrence";
 export type {
   NthWeek,

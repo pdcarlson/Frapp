@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SERIES_MEETINGS,
   advanceRepeatRule,
+  shiftRepeatRule,
   ordinal,
   RECURRENCE_RULES,
   checkSeriesLength,
@@ -404,6 +405,26 @@ describe("describeRepeatPattern", () => {
     ).toBe("Every Mon and Thu");
   });
 
+  it("names a monthly rule's first meeting as a reader in another zone sees it", () => {
+    // Jan 31, 11 PM in New York is Feb 1 in Berlin.
+    expect(
+      describeRepeatPattern(
+        rule({ freq: "MONTHLY", byDay: [], monthDay: 31 }),
+        "2027-02-01T04:00:00Z",
+        { timeZone: BERLIN },
+      ),
+    ).toBe("Every month on the 1st");
+    // The second Tuesday of Sep 2027 (the 14th), 11 PM in New York, is
+    // Wednesday the 15th in Berlin: the third Wednesday, as Sep starts on one.
+    expect(
+      describeRepeatPattern(
+        rule({ freq: "MONTHLY", nthWeekday: { n: 2, day: "TU" } }),
+        "2027-09-15T03:00:00Z",
+        { timeZone: BERLIN },
+      ),
+    ).toBe("Every month on the third Wednesday");
+  });
+
   it("leaves legacy tokens to their callers", () => {
     expect(describeRepeatPattern("WEEKLY", start)).toBeNull();
   });
@@ -483,27 +504,43 @@ describe("stepping across a DST change", () => {
 });
 
 describe("advanceRepeatRule", () => {
-  const head = "2027-01-04T00:00:00Z";
+  // Mondays at 7 PM in New York: Jan 4, 11, 18, 25, ...
+  const head = "2027-01-05T00:00:00Z";
+  const jan11 = "2027-01-12T00:00:00Z";
+  const jan18 = "2027-01-19T00:00:00Z";
 
-  it("drops a COUNT by the meetings that left", () => {
+  it("drops a COUNT by the pattern's meetings before the new head", () => {
+    // Jan 4 and Jan 11 are used, whether or not Jan 11's row still exists
+    // (a meeting canceled on its own still counts).
     expect(
-      advanceRepeatRule(rule({ end: { kind: "count", count: 8 } }), 2, head),
+      advanceRepeatRule(
+        rule({ end: { kind: "count", count: 8 } }),
+        head,
+        jan18,
+      ),
     ).toBe(rule({ end: { kind: "count", count: 6 } }));
   });
 
   it("is null when fewer than two meetings would remain", () => {
+    const three = rule({ end: { kind: "count", count: 3 } });
+    expect(advanceRepeatRule(three, head, jan18)).toBeNull();
+    expect(advanceRepeatRule(three, head, jan11)).toBe(
+      rule({ end: { kind: "count", count: 2 } }),
+    );
+    // An UNTIL too: a lone meeting must not keep a rule it can't satisfy.
     expect(
-      advanceRepeatRule(rule({ end: { kind: "count", count: 3 } }), 2, head),
+      advanceRepeatRule(
+        rule({ end: { kind: "until", until: "2027-01-11" } }),
+        head,
+        jan11,
+      ),
     ).toBeNull();
-    expect(
-      advanceRepeatRule(rule({ end: { kind: "count", count: 3 } }), 1, head),
-    ).toBe(rule({ end: { kind: "count", count: 2 } }));
   });
 
   it("leaves an UNTIL and a legacy token as they were", () => {
     const until = rule({ end: { kind: "until", until: "2027-03-01" } });
-    expect(advanceRepeatRule(until, 3, head)).toBe(until);
-    expect(advanceRepeatRule("WEEKLY", 3, head)).toBe("WEEKLY");
+    expect(advanceRepeatRule(until, head, jan11)).toBe(until);
+    expect(advanceRepeatRule("WEEKLY", head, jan11)).toBe("WEEKLY");
   });
 
   it("pins a by-date monthly rule to the old head's day", () => {
@@ -514,7 +551,13 @@ describe("advanceRepeatRule", () => {
       byDay: [],
       end: { kind: "until", until: "2027-06-30" },
     });
-    expect(advanceRepeatRule(monthly, 1, "2027-01-31T23:00:00Z")).toBe(
+    expect(
+      advanceRepeatRule(
+        monthly,
+        "2027-01-31T23:00:00Z",
+        "2027-02-28T23:00:00Z",
+      ),
+    ).toBe(
       rule({
         freq: "MONTHLY",
         byDay: [],
@@ -522,6 +565,82 @@ describe("advanceRepeatRule", () => {
         end: { kind: "until", until: "2027-06-30" },
       }),
     );
+  });
+});
+
+describe("shiftRepeatRule", () => {
+  const mon = "2027-01-05T00:00:00Z"; // Mon Jan 4, 7 PM New York
+  const tue = "2027-01-06T00:00:00Z";
+
+  it("moves a weekly rule's days by the days the head moved", () => {
+    expect(shiftRepeatRule(rule({ byDay: ["MO", "TH"] }), mon, tue)).toBe(
+      rule({ byDay: ["TU", "FR"] }),
+    );
+    // Saturday wraps to Sunday.
+    expect(shiftRepeatRule(rule({ byDay: ["SA"] }), mon, tue)).toBe(
+      rule({ byDay: ["SU"] }),
+    );
+  });
+
+  it("moves a monthly rule to the new head's day or nth weekday", () => {
+    expect(
+      shiftRepeatRule(
+        rule({ freq: "MONTHLY", byDay: [], monthDay: 4 }),
+        mon,
+        tue,
+      ),
+    ).toBe(rule({ freq: "MONTHLY", byDay: [], monthDay: 5 }));
+    expect(
+      shiftRepeatRule(
+        rule({ freq: "MONTHLY", nthWeekday: { n: 1, day: "MO" } }),
+        mon,
+        tue,
+      ),
+    ).toBe(rule({ freq: "MONTHLY", nthWeekday: { n: 1, day: "TU" } }));
+  });
+
+  it("leaves a move within the day, a daily rule and a token alone", () => {
+    const weekly = rule({ byDay: ["MO"] });
+    expect(shiftRepeatRule(weekly, mon, "2027-01-05T01:00:00Z")).toBe(weekly);
+    const daily = rule({ freq: "DAILY", byDay: [] });
+    expect(shiftRepeatRule(daily, mon, tue)).toBe(daily);
+    expect(shiftRepeatRule("WEEKLY", mon, tue)).toBe("WEEKLY");
+  });
+});
+
+describe("every N days and months", () => {
+  it("steps a daily rule by its interval", () => {
+    const starts = seriesChildStarts(
+      rule({
+        freq: "DAILY",
+        byDay: [],
+        interval: 3,
+        end: { kind: "count", count: 3 },
+      }),
+      "2027-01-05T00:00:00Z",
+    );
+    expect(starts?.map(ny)).toEqual(["2027-01-07 19:00", "2027-01-10 19:00"]);
+  });
+
+  it("steps a monthly rule by its interval", () => {
+    const starts = seriesChildStarts(
+      rule({
+        freq: "MONTHLY",
+        byDay: [],
+        interval: 2,
+        end: { kind: "count", count: 3 },
+      }),
+      "2027-01-05T00:00:00Z",
+    );
+    expect(starts?.map(ny)).toEqual(["2027-03-04 19:00", "2027-05-04 19:00"]);
+  });
+});
+
+describe("zone spelling", () => {
+  it("reads any spelling of a zone as the runtime's one", () => {
+    expect(
+      parseRepeatRule("FREQ=DAILY;COUNT=3;TZID=aMeRiCa/nEw_YoRk")?.timeZone,
+    ).toBe(NY);
   });
 });
 

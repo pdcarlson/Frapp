@@ -21,6 +21,7 @@ import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
   POINTS_ADJUSTMENT_MAX,
+  LEGACY_CHILD_COUNT,
   MAX_REPEAT_INTERVAL,
   MAX_REPEAT_RULE_LENGTH,
   MAX_SERIES_MEETINGS,
@@ -43,7 +44,8 @@ const CHECK_IN_ZONE_DESCRIPTION =
  * is owned by `packages/validation/src/recurrence.ts`.
  */
 const RECURRENCE_RULE_DESCRIPTION =
-  'Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: ' +
+  `Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of ${LEGACY_CHILD_COUNT.WEEKLY}, ${LEGACY_CHILD_COUNT.BIWEEKLY} or ${LEGACY_CHILD_COUNT.MONTHLY} meetings after the first, still accepted from older phone builds) ` +
+  'or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: ' +
   `FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-${MAX_REPEAT_INTERVAL}, ` +
   'BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), ' +
   `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
