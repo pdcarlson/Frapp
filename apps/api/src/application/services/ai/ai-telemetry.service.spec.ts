@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import { assertContentFreeProperties } from '@repo/validation';
 import type { AiUsageRecord } from '#domain/adapters/ai-usage-recorder.interface';
 import type { AnalyticsService } from '../analytics.service';
@@ -21,6 +22,11 @@ const record: AiUsageRecord = {
   latencyMs: 812,
 };
 
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof Sentry>('@sentry/nestjs'),
+  getActiveSpan: jest.fn(),
+}));
+
 describe('AiTelemetryService', () => {
   const track = jest.fn().mockResolvedValue(undefined);
   const service = new AiTelemetryService({
@@ -32,6 +38,7 @@ describe('AiTelemetryService', () => {
   it('sends one content-free event per call, attributed to the chapter', async () => {
     await service.callFinished(record, {
       kind: 'cited',
+      streamed: false,
       citationsKept: 2,
       citationsDropped: 1,
     });
@@ -77,7 +84,12 @@ describe('AiTelemetryService', () => {
   it('marks a call made by a background run, without the run id', async () => {
     await service.callFinished(
       { ...record, runId: 'run-9' },
-      { kind: 'structured', citationsKept: 0, citationsDropped: 0 },
+      {
+        kind: 'structured',
+        streamed: false,
+        citationsKept: 0,
+        citationsDropped: 0,
+      },
     );
     const [, , options] = track.mock.calls[0] as [
       string,
@@ -86,6 +98,25 @@ describe('AiTelemetryService', () => {
     ];
     expect(options.properties.is_background_run).toBe(true);
     expect(JSON.stringify(options)).not.toContain('run-9');
+  });
+
+  it('puts a call’s counts on its span, and a streamed call’s on none', async () => {
+    const setAttributes = jest.fn();
+    const active = jest
+      .mocked(Sentry.getActiveSpan)
+      .mockReturnValue({ setAttributes } as unknown as Sentry.Span);
+    const shape = { kind: 'cited', citationsKept: 0, citationsDropped: 0 };
+
+    await service.callFinished(record, { ...shape, streamed: true } as never);
+    expect(setAttributes).not.toHaveBeenCalled();
+
+    await service.callFinished(record, { ...shape, streamed: false } as never);
+    expect(setAttributes).toHaveBeenCalledWith({
+      'ai.outcome': 'completed',
+      'ai.input_tokens': 1200,
+      'ai.output_tokens': 300,
+    });
+    active.mockReset();
   });
 
   it('runs the call and returns what it returned', async () => {

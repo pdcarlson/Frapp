@@ -79,7 +79,11 @@ describe('AnthropicLanguageModel', () => {
         messages: [{ role: 'user', content: SECRET }],
         output_config: {
           effort: 'medium',
-          format: { type: 'json_schema', schema: structured.schema },
+          format: {
+            type: 'json_schema',
+            // The SDK's transform closes every object, as the provider requires.
+            schema: { ...structured.schema, additionalProperties: false },
+          },
         },
       });
       // Current Claude models reject each of these.
@@ -105,10 +109,52 @@ describe('AnthropicLanguageModel', () => {
       );
       const error = await model.generate(structured).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(LanguageModelError);
-      expect(error).toMatchObject({ kind: 'invalid_output' });
+      expect(error).toMatchObject({
+        kind: 'invalid_output',
+        // The reply was generated and billed, so the ledger gets its counts.
+        details: {
+          usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 0 },
+        },
+      });
       expect(JSON.stringify(error) + (error as Error).message).not.toContain(
         SECRET,
       );
+    });
+
+    it('moves the schema keywords structured outputs rejects into descriptions', async () => {
+      const { create, model } = clientReturning(
+        message({ content: [{ type: 'text', text: '{"title":"Chapter"}' }] }),
+      );
+      await model.generate({
+        ...structured,
+        schema: {
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+          type: 'object',
+          properties: {
+            title: { type: 'string', minLength: 1, maxLength: 80 },
+            items: { type: 'array', items: { type: 'string' }, maxItems: 5 },
+          },
+          required: ['title', 'items'],
+          additionalProperties: false,
+        },
+      });
+
+      const [params] = create.mock.calls[0] as [
+        { output_config: { format: { schema: Record<string, unknown> } } },
+      ];
+      const sent = params.output_config.format.schema;
+      const wire = JSON.stringify(sent);
+      for (const keyword of ['$schema', '"minLength"', '"maxItems"']) {
+        expect(wire).not.toContain(keyword);
+      }
+      expect(sent).toMatchObject({
+        type: 'object',
+        required: ['title', 'items'],
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string', description: expect.any(String) as string },
+        },
+      });
     });
   });
 
@@ -150,6 +196,17 @@ describe('AnthropicLanguageModel', () => {
       ]);
       // Citations and structured outputs cannot share a request.
       expect(params.output_config).toEqual({ effort: 'low' });
+    });
+
+    it('sends no document message when there are no sources', async () => {
+      const { create, model } = clientReturning(
+        message({ content: [{ type: 'text', text: 'I do not know.' }] }),
+      );
+      await model.generate({ ...cited, sources: [] });
+      const [params] = create.mock.calls[0] as [{ messages: unknown[] }];
+      expect(params.messages).toEqual([
+        { role: 'user', content: 'When is formal?' },
+      ]);
     });
 
     it('maps each citation back to the source it indexes', async () => {
@@ -349,6 +406,30 @@ describe('AnthropicLanguageModel', () => {
         clientThrowing(new Anthropic.APIUserAbortError()).generate(cited),
       ).rejects.toMatchObject({ kind: 'aborted', retryable: false });
     });
+
+    it.each([
+      ['overloaded_error', 'overloaded', true],
+      ['rate_limit_error', 'rate_limited', true],
+      ['api_error', 'overloaded', true],
+      ['invalid_request_error', 'invalid_request', false],
+    ])(
+      'maps a %s that arrives inside a stream, where there is no status',
+      async (type, kind, retryable) => {
+        // What the SDK throws for an `error` event after a 200 has begun.
+        const sdkError = new Anthropic.APIError(
+          undefined,
+          { type: 'error', error: { type, message: `bad: ${SECRET}` } },
+          undefined,
+          undefined,
+          type as InstanceType<typeof Anthropic.APIError>['type'],
+        );
+        const error = await clientThrowing(sdkError)
+          .generate(cited)
+          .catch((e: unknown) => e);
+        expect(error).toMatchObject({ kind, retryable });
+        expect((error as Error).message).not.toContain(SECRET);
+      },
+    );
 
     it('replaces anything else with an unknown failure', async () => {
       const error = await clientThrowing(new TypeError(`cannot read ${SECRET}`))

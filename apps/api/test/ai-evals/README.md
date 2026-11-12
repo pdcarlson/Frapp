@@ -24,15 +24,20 @@ scripted adapter as the model (`harness/scripted-model.ts`). The suite's jest co
 agent fails instead of skipping.
 
 **What a green run proves.** There is no model here, so it proves nothing about a model's judgment.
-It grades Frapp's own enforcement, which is the code the product runs. The scripted model
+It grades three rules, and only one of them is product code today. The scripted model
 misbehaves on purpose so that each rule has something to stop:
 
-| The scripted model does this | What has to stop it |
-| --- | --- |
-| Cites a quote that is not in the document, on every answer | The gateway's word-for-word check (`isQuoteGrounded`) drops the citation |
-| Cites another chapter's roster, on every answer | The same check: a source the model was not given is never kept |
-| Repeats any text of another chapter that reaches it | The agent hands the gateway only the caller's chapter's documents and tool results |
-| Answers from a neighbouring topic with a made-up quote | An answer left with no kept citation becomes "I don't know" |
+| The scripted model does this | What has to stop it | Where that rule lives |
+| --- | --- | --- |
+| Cites a quote that is not in the document, on every answer | The word-for-word check (`isQuoteGrounded`) drops the citation | The gateway (product code) |
+| Cites another chapter's roster, on every answer | The same check: a source the model was not given is never kept | The gateway (product code) |
+| Repeats any text of another chapter that reaches it | Only the caller's chapter's documents and tool results are handed to the gateway | `harness/gateway-agent.ts` (test code) |
+| Answers from a neighbouring topic with a made-up quote | An answer left with no kept citation becomes "I don't know" | `harness/gateway-agent.ts` (test code) |
+
+The two rules in the test agent are the ones the product's Ask (#450) has to carry itself: the
+gateway is handed sources and does not choose them. Until Ask is built on the gateway and put
+under test here, a green run says the quote check works and says nothing about chapter scoping in
+the product. The cases about tools pass because this agent has no tools, so they say nothing yet.
 
 Removing the chapter filter or the quote check turns this run red. Whether a real model ignores an
 injected instruction, prefers the newer source or shows both sides of a conflict is not decided
@@ -57,8 +62,8 @@ registerAgentUnderTest(myAgent);
 AI_EVALS_AGENT_MODULE=/abs/path/to/agent npm run test:ai-evals -w apps/api
 ```
 
-A registered agent wins over `AI_EVALS_AGENT_MODULE`, so option 2 also needs the setup file's
-registration removed. The resolver runs at module load and cannot await, so an
+A registered agent wins over `AI_EVALS_AGENT_MODULE`, so the suite's own setup file registers
+nothing when that variable is set. The resolver runs at module load and cannot await, so an
 `async createAgentUnderTest()` is rejected with an explicit error rather than yielding a Promise
 that later fails as `agent.ask is not a function`. A module path that does not resolve throws during
 import, which surfaces as "Test suite failed to run" — a non-zero exit, but note the 14 behavioural

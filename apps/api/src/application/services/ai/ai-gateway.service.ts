@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type {
   AiCallContext,
@@ -164,6 +164,8 @@ const NO_USAGE: LanguageModelUsage = {
  */
 @Injectable()
 export class AiGatewayService {
+  private readonly logger = new Logger(AiGatewayService.name);
+
   constructor(
     @Inject(LANGUAGE_MODEL_REGISTRY)
     private readonly models: ILanguageModelRegistry,
@@ -187,13 +189,17 @@ export class AiGatewayService {
     prompt: AiPrompt & { schema: z.ZodType<T> },
     context: AiCallContext,
   ): Promise<AiObjectResult<T>> {
+    // Before anything is reserved: a schema JSON Schema cannot express (a
+    // date, a transform) throws here, as the caller's bug, with nothing held.
+    const schema = z.toJSONSchema(prompt.schema);
+
     const admitted = await this.admit(task, 'structured', prompt, context, []);
     if ('status' in admitted) return admitted;
 
     const request: LanguageModelRequest = {
       ...this.baseRequest(admitted, prompt),
       kind: 'structured',
-      schema: z.toJSONSchema(prompt.schema),
+      schema,
     };
 
     type Result = Finished<AiObjectResult<T>>;
@@ -209,7 +215,7 @@ export class AiGatewayService {
           return {
             value: { status: 'invalid_output' },
             outcome: 'invalid_output',
-            usage: NO_USAGE,
+            usage: error.details.usage ?? NO_USAGE,
           };
         }
         throw error;
@@ -299,18 +305,33 @@ export class AiGatewayService {
       }
     } catch (error) {
       settled = true;
-      await this.settle(admitted, startedAt, failure(error, 'cited'));
+      await this.settle(admitted, startedAt, failure(error, 'cited', true));
       throw sanitized(error, admitted.entry);
     } finally {
       // The consumer stopped reading (a closed connection) before the end.
       // The provider was still called, so the reservation is still settled.
+      // What the provider charged for the part it wrote is not known here:
+      // the counts arrive with the end of the stream, which never came.
       if (final === null && !settled) {
         await this.settle(admitted, startedAt, {
           outcome: 'error',
           errorKind: 'aborted',
           usage: NO_USAGE,
-          shape: { kind: 'cited', citationsKept: 0, citationsDropped: 0 },
-        }).catch(() => undefined);
+          shape: {
+            kind: 'cited',
+            streamed: true,
+            citationsKept: 0,
+            citationsDropped: 0,
+          },
+        }).catch((error: unknown) => {
+          // Nobody is left to throw to. Say so, without the error's message:
+          // a reservation that was not settled is the ledger's to release.
+          this.logger.warn(
+            `AI usage record failed for an abandoned stream (task ${admitted.call.task}, ${
+              error instanceof Error ? error.name : 'unknown error'
+            })`,
+          );
+        });
       }
     }
 
@@ -318,7 +339,7 @@ export class AiGatewayService {
     await this.settle(admitted, startedAt, {
       ...summary,
       errorKind: null,
-      shape: shapeOf('cited', value),
+      shape: shapeOf('cited', value, true),
     });
     yield { type: 'end', result: value };
   }
@@ -388,7 +409,9 @@ export class AiGatewayService {
       ...(context.runId === undefined ? {} : { runId: context.runId }),
       task,
       family: entry.family,
-      provider: entry.provider,
+      // The adapter that will answer, which in scripted mode is not the
+      // catalog's provider: a canned reply is never recorded as Anthropic's.
+      provider: model.provider,
       model: entry.model,
       promptVersion: prompt.promptVersion,
     };
@@ -542,21 +565,32 @@ function citedOutcome(
   };
 }
 
-function shapeOf(kind: AiCallShape['kind'], value: unknown): AiCallShape {
+function shapeOf(
+  kind: AiCallShape['kind'],
+  value: unknown,
+  streamed = false,
+): AiCallShape {
   const cited = value as Partial<Extract<AiCitedResult, { status: 'ok' }>>;
   return {
     kind,
+    streamed,
     citationsKept: kind === 'cited' ? (cited.citations?.length ?? 0) : 0,
     citationsDropped: kind === 'cited' ? (cited.droppedCitations ?? 0) : 0,
   };
 }
 
-function failure(error: unknown, kind: AiCallShape['kind']): CallSummary {
+function failure(
+  error: unknown,
+  kind: AiCallShape['kind'],
+  streamed = false,
+): CallSummary {
   return {
     outcome: 'error',
     errorKind: error instanceof LanguageModelError ? error.kind : 'unknown',
-    usage: NO_USAGE,
-    shape: { kind, citationsKept: 0, citationsDropped: 0 },
+    usage:
+      (error instanceof LanguageModelError ? error.details.usage : undefined) ??
+      NO_USAGE,
+    shape: { kind, streamed, citationsKept: 0, citationsDropped: 0 },
   };
 }
 

@@ -151,7 +151,8 @@ const RETRYABLE_KINDS: ReadonlySet<LanguageModelErrorKind> = new Set([
  * It carries no text from the provider. A provider's error message can quote
  * the request back ("messages.0.content: ..."), and an error is logged and
  * sent to Sentry with its message and its `cause`, so the adapter keeps the
- * kind, the HTTP status and the provider's request id, and drops the rest.
+ * kind, the HTTP status, the provider's request id and token counts, and
+ * drops the rest.
  * `message` is built from those alone.
  */
 export class LanguageModelError extends Error {
@@ -160,7 +161,15 @@ export class LanguageModelError extends Error {
   constructor(
     readonly kind: LanguageModelErrorKind,
     readonly provider: AiProvider,
-    readonly details: { status?: number; requestId?: string } = {},
+    readonly details: {
+      status?: number;
+      requestId?: string;
+      /**
+       * What the provider charged before the call failed, when it said: a
+       * reply that could not be read as JSON was still generated and billed.
+       */
+      usage?: LanguageModelUsage;
+    } = {},
   ) {
     super(
       `AI provider call failed: ${kind}` +

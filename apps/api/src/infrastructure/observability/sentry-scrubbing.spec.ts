@@ -712,8 +712,8 @@ describe('scrubSentryTransaction', () => {
 
   it('drops what an AI SDK span says was sent to and returned by a model (#3280)', () => {
     // The shape `Anthropic_AI` and `Google_GenAI` emit when recording is on.
-    // `sentry-options.ts` turns recording off twice over; this is the layer
-    // that holds if both of those are ever lost.
+    // `sentry-options.ts` leaves both integrations out and sets `genAI` off;
+    // this is the layer that holds if both of those are ever lost.
     const prompt = 'Minutes notes: Jordan owes the house $40 for the formal.';
     const answer = 'Drafted minutes: Jordan to repay $40.';
     const scrubbed = scrubSentryTransaction(

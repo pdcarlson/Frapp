@@ -4,25 +4,34 @@
  *
  * **What a green run of this means, and what it does not.** There is no
  * network here and no model, so nothing in this file measures a model's
- * judgment. What it grades is Frapp's own enforcement, which is the same code
- * the product runs:
+ * judgment. It grades three rules. Only the first is product code today;
+ * the other two are written in this file, as the rules the product's Ask
+ * (#450) has to carry, and prove nothing about the product until it does:
  *
- * - **Chapter scoping.** Only the caller's chapter's documents and tool
- *   results are handed to the gateway. The scripted model repeats anything
- *   from another chapter that reaches it (`scripted-model.ts`), so a leak
- *   into the request fails `mustNotMention`.
- * - **Citation grounding.** The scripted model cites sloppily on purpose: a
- *   quote that is not in the document, and a document it was never given.
- *   The gateway's word-for-word check (`#domain/utils/quote-grounding`) has
- *   to drop them, or the grader's universal invariants fail.
- * - **No answer without a source.** An answer left with no kept citation and
- *   no tool result behind it is replaced by a fixed "don't know".
- * - **No tools.** This pipeline has none, so no injected instruction can act.
+ * - **Citation grounding (product code).** The scripted model cites sloppily
+ *   on purpose: a quote that is not in the document, and a document it was
+ *   never given. The gateway's word-for-word check
+ *   (`#domain/utils/quote-grounding`) has to drop them, or the grader's
+ *   universal invariants fail.
+ * - **Chapter scoping (this file).** Only the caller's chapter's documents
+ *   and tool results are handed to the gateway. The scripted model repeats
+ *   anything from another chapter that reaches it (`scripted-model.ts`), so
+ *   a leak into the request fails `mustNotMention`. The filter is below, not
+ *   in the gateway, which is handed sources and does not choose them.
+ * - **No answer without a source (this file).** An answer left with no kept
+ *   citation and no tool result behind it is replaced by a fixed "don't
+ *   know".
+ *
+ * The cases about tools (a forbidden mutation, an allowed-tools ceiling)
+ * pass because this pipeline has no tools at all, so they say nothing yet.
  *
  * Whether a real model resists an injection, prefers the newer source or
  * surfaces a conflict is graded by running these same cases against a
  * provider, which is the bake-off (#4311). For those behaviours the scripted
  * model simply plays a compliant answer, and this run proves the plumbing.
+ *
+ * `AI_EVALS_AGENT_MODULE` puts another agent under test instead of this one
+ * (`register-gateway-agent.ts` steps aside when it is set).
  *
  * The ask pipeline here is test code, not the product's Ask (#450): no
  * retrieval, no ranking, no prompt worth keeping.

@@ -16,10 +16,15 @@ import type {
  * gateway refuses a call that asks a task for another kind.
  *
  * Prices are US dollars per million tokens, which is also millionths of a
- * dollar per token, the unit the ledger keeps. They were read from
- * Anthropic's published model table on 2026-11-11 (ADR-28, "Prices the
- * estimates used"). They are for the caps and the ledger's estimate, not an
- * invoice: the provider's bill is the bill.
+ * dollar per token, the unit the ledger keeps. The Claude prices were read
+ * from Anthropic's published model table on 2026-11-11 (ADR-28, "Prices the
+ * estimates used"). The embedding entry's model id and price are ADR-28's
+ * planning figures and were not checked against Google's table: #4311, which
+ * adds the Google adapter, confirms both. All of them are for the caps and
+ * the ledger's estimate, not an invoice: the provider's bill is the bill.
+ *
+ * In scripted mode a call is recorded with provider `scripted` and still
+ * costed at these prices, so a local run exercises the caps.
  */
 interface CatalogEntryBase {
   family: AiFeatureFamily;
@@ -76,7 +81,7 @@ export const AI_MODEL_CATALOG = {
   },
   /**
    * Corpus embeddings (#720). Gemini Embedding at 1,536 dimensions, decision
-   * 3. The Google adapter arrives with #4311; until then no adapter serves
+   * 3. Model id and price unverified (see above). The Google adapter arrives with #4311; until then no adapter serves
    * this outside scripted mode, and the gateway answers "not available".
    */
   'corpus.embed': {

@@ -475,7 +475,7 @@ Neither property is content. The allow rate is a Trends insight: events with `an
 
 Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28](../architecture/adr/adr-28.md) decisions 1 and 12), and each call that reaches a provider leaves two records. Neither holds any text of the prompt, the sources or the answer.
 
-- **A Sentry span**, `ai.gateway.call` (op `ai.gateway`), with `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`. A streamed call has no span of its own yet. Sentry's own Anthropic and Google AI integrations are built with input and output recording off, and `dataCollection.genAI` is off too (`sentry-options.ts`, [#3280](https://github.com/pdcarlson/Frapp/issues/3280)).
+- **A Sentry span**, `ai.gateway.call` (op `ai.gateway`), with `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`. A streamed call has no span of its own yet, and its counts are put on no span. Sentry's own Anthropic and Google AI integrations are left out of the SDK's integration list (their stream wrapper reports the provider's raw error, which can quote the request), and `dataCollection.genAI` is off too (`sentry-options.ts`, [#3280](https://github.com/pdcarlson/Frapp/issues/3280)).
 - **A PostHog event**, `ai-call-finished`, sent by `AiTelemetryService` and attributed to the acting member and chapter like any server event:
 
 | Property | Meaning |

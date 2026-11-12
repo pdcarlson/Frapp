@@ -1389,7 +1389,11 @@ describe('RbacService', () => {
   });
 
   it('should return permissions catalog', () => {
+    // The catalog depends on the AI switch; pin it off whatever the shell has.
+    const aiEnabled = process.env.AI_ENABLED;
+    delete process.env.AI_ENABLED;
     const result = service.getPermissionsCatalog();
+    if (aiEnabled !== undefined) process.env.AI_ENABLED = aiEnabled;
 
     expect(result.map(({ key, permission }) => [key, permission])).toEqual(
       Object.entries(SystemPermissions).filter(

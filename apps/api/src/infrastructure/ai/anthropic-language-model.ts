@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema';
 import {
   LanguageModelError,
   type EmbeddingResult,
@@ -85,8 +86,9 @@ export class AnthropicLanguageModel implements ILanguageModel {
       (message) => ({ role: message.role, content: message.content }),
     );
 
-    if (request.kind === 'cited') {
-      // Sources go in as documents with citations on, ahead of the
+    if (request.kind === 'cited' && request.sources.length > 0) {
+      // With no sources this is a plain prose call: an empty document message
+      // would be rejected by the API. Sources go in as documents with citations on, ahead of the
       // conversation, so the model quotes them through the provider's own
       // citation mechanism. `document_index` in a returned citation is the
       // position in this array, which is how a quote is mapped back to
@@ -118,7 +120,12 @@ export class AnthropicLanguageModel implements ILanguageModel {
         // Structured outputs and citations cannot be combined in one request,
         // which the port's two kinds already keep apart.
         ...(request.kind === 'structured'
-          ? { format: { type: 'json_schema', schema: request.schema } }
+          ? {
+              format: {
+                type: 'json_schema',
+                schema: toProviderSchema(request.schema),
+              },
+            }
           : {}),
       },
     };
@@ -163,12 +170,51 @@ export class AnthropicLanguageModel implements ILanguageModel {
       object = JSON.parse(text);
     } catch {
       // Cut off at the output ceiling, most likely. The gateway reports it as
-      // invalid output; the text is not attached to the error.
-      throw new LanguageModelError('invalid_output', 'anthropic');
+      // invalid output; the text is not attached to the error. The reply was
+      // still generated and billed, so its token counts go with the error.
+      throw new LanguageModelError('invalid_output', 'anthropic', { usage });
     }
     return { outcome: 'completed', text, object, citations, truncated, usage };
   }
 }
+
+/**
+ * The schema as structured outputs accepts it. The gateway hands over plain
+ * JSON Schema, which can carry keywords the provider rejects (`minLength`,
+ * `maximum`, `maxItems`, `$schema`). The SDK's own transform moves those into
+ * each field's description, where the model still reads them. Nothing is
+ * lost: the gateway parses the reply with the caller's schema again, so a
+ * reply that breaks a moved constraint comes back as invalid output.
+ */
+function toProviderSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const rest = { ...schema };
+  delete rest.$schema;
+  return transformJSONSchema(rest);
+}
+
+/**
+ * An error that arrives inside a stream has no HTTP status (the response
+ * began as a 200), only the provider's error type.
+ */
+type AnthropicErrorType = NonNullable<
+  InstanceType<typeof Anthropic.APIError>['type']
+>;
+
+const KIND_BY_ERROR_TYPE: Partial<
+  Record<AnthropicErrorType, LanguageModelErrorKind>
+> = {
+  overloaded_error: 'overloaded',
+  api_error: 'overloaded',
+  rate_limit_error: 'rate_limited',
+  timeout_error: 'timeout',
+  authentication_error: 'auth',
+  permission_error: 'auth',
+  billing_error: 'auth',
+  invalid_request_error: 'invalid_request',
+  not_found_error: 'invalid_request',
+};
 
 function toUsage(usage: Anthropic.Usage): LanguageModelUsage {
   const cached = usage.cache_read_input_tokens ?? 0;
@@ -219,5 +265,8 @@ function toLanguageModelError(error: unknown): LanguageModelError {
     return fail('invalid_request');
   }
   if (error instanceof Anthropic.InternalServerError) return fail('overloaded');
+  if (error instanceof Anthropic.APIError && error.type) {
+    return fail(KIND_BY_ERROR_TYPE[error.type] ?? 'unknown');
+  }
   return fail('unknown');
 }

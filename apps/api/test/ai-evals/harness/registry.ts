@@ -4,7 +4,8 @@
  * The suite's own jest setup (`register-gateway-agent.ts`) registers an agent
  * built on the real AI gateway with a scripted model, so the behavioural
  * cases run on every CI build (#4306). `gateway-agent.ts` says what that run
- * does and does not prove. Two ways to put a different agent under test:
+ * does and does not prove. Two ways to put a different agent under test
+ * (the setup file registers nothing when `AI_EVALS_AGENT_MODULE` is set):
  *
  *   1. `registerAgentUnderTest(agent)` from a setup file — for in-repo wiring.
  *      This is the path to use when construction is async: await the setup in

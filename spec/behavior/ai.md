@@ -45,8 +45,9 @@ should query canon rather than keep a stale copy of it.
 
 > **The mobile s17 mock flattens this split, deliberately and mock-only.**
 > `apps/mobile/lib/ask/corpus.ts` answers from a single keyword table that mixes events
-> and dues amounts in with the indexed prose, because there is no `ai` module in
-> the API to route a tool call through. It exists so the *screen* — citation chips, the
+> and dues amounts in with the indexed prose, because there is no tool registry in
+> the API to route a tool call through (corrected 2026-11-12: an `ai` module now exists, the
+> gateway of #4306, with no tools). It exists so the *screen* — citation chips, the
 > refusal path, the in-flight state — is real and reviewable against the drawing, and it
 > is off unless a build sets `EXPO_PUBLIC_ASK_ENABLED`: nothing in the repo sets it, and an
 > EAS `production` build refuses to evaluate its config when it is on

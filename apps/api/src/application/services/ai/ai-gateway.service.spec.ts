@@ -283,7 +283,9 @@ describe('AiGatewayService', () => {
         runId: 'run-9',
         task: 'ask.answer',
         family: 'ask',
-        provider: 'anthropic',
+        // The adapter that answered, which here is the scripted one: a canned
+        // reply is not recorded as Anthropic's.
+        provider: 'scripted',
         model: 'claude-sonnet-5-5',
         promptVersion: 'ask@v1',
       };
@@ -310,6 +312,7 @@ describe('AiGatewayService', () => {
       ]);
       expect(h.telemetry.callFinished).toHaveBeenCalledWith(h.records[0], {
         kind: 'cited',
+        streamed: false,
         citationsKept: 0,
         citationsDropped: 0,
       });
@@ -391,6 +394,51 @@ describe('AiGatewayService', () => {
       ).resolves.toEqual({ status: 'invalid_output' });
       expect(h.records[0]).toMatchObject({ outcome: 'invalid_output' });
     });
+
+    it('records what an unreadable reply cost when the adapter says', async () => {
+      const billed: ILanguageModel = {
+        provider: 'anthropic',
+        generate: () =>
+          Promise.reject(
+            new LanguageModelError('invalid_output', 'anthropic', {
+              usage: {
+                inputTokens: 900,
+                outputTokens: 16_000,
+                cachedInputTokens: 0,
+              },
+            }),
+          ),
+        // eslint-disable-next-line require-yield
+        stream: async function* () {
+          await Promise.resolve();
+        },
+        embed: () => Promise.reject(new Error('unused')),
+      };
+      const h = harness({}, { model: billed });
+      await expect(
+        h.gateway.generateObject('minutes.draft', DRAFT, CONTEXT),
+      ).resolves.toEqual({ status: 'invalid_output' });
+      expect(h.records[0]).toMatchObject({
+        outcome: 'invalid_output',
+        inputTokens: 900,
+        outputTokens: 16_000,
+        costMicroUsd: 161_800,
+      });
+    });
+
+    it('reserves nothing for a schema JSON Schema cannot express', async () => {
+      const h = harness({
+        'minutes.draft': () => ({ text: '{}', object: {} }),
+      });
+      await expect(
+        h.gateway.generateObject(
+          'minutes.draft',
+          { ...DRAFT, schema: z.object({ heldOn: z.date() }) },
+          CONTEXT,
+        ),
+      ).rejects.toThrow();
+      expect(h.steps).toEqual([]);
+    });
   });
 
   describe('generateCited', () => {
@@ -425,6 +473,7 @@ describe('AiGatewayService', () => {
       });
       expect(h.telemetry.callFinished).toHaveBeenCalledWith(expect.anything(), {
         kind: 'cited',
+        streamed: false,
         citationsKept: 1,
         citationsDropped: 3,
       });
@@ -553,6 +602,41 @@ describe('AiGatewayService', () => {
       ]);
     });
 
+    it('says so, without the error text, when an abandoned stream cannot be recorded', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const h = harness({
+        'ask.answer': () => ({ text: 'one two three four' }),
+      });
+      h.recorder.record.mockRejectedValue(new Error('row for user-1 failed'));
+
+      for await (const event of h.gateway.streamCited(
+        'ask.answer',
+        ASK,
+        CONTEXT,
+      )) {
+        expect(event.type).toBe('text');
+        break;
+      }
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toBe(
+        'AI usage record failed for an abandoned stream (task ask.answer, Error)',
+      );
+      warn.mockRestore();
+    });
+
+    it('marks its event as streamed, so its counts stay off the request span', async () => {
+      const h = harness({ 'ask.answer': () => ({ text: 'April 12.' }) });
+      await collect(h.gateway.streamCited('ask.answer', ASK, CONTEXT));
+      expect(h.telemetry.inSpan).not.toHaveBeenCalled();
+      expect(h.telemetry.callFinished).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'cited', streamed: true }),
+      );
+    });
+
     it('throws a failure mid-stream, recorded once', async () => {
       const h = harness({ 'ask.answer': () => ({ fail: 'overloaded' }) });
       await expect(
@@ -560,6 +644,29 @@ describe('AiGatewayService', () => {
       ).rejects.toMatchObject({ kind: 'overloaded' });
       expect(h.records).toEqual([
         expect.objectContaining({ outcome: 'error', errorKind: 'overloaded' }),
+      ]);
+    });
+
+    it('replaces an error that is not the port’s own, mid-stream too', async () => {
+      const leaky: ILanguageModel = {
+        provider: 'anthropic',
+        generate: () => Promise.reject(new Error('unused')),
+        // eslint-disable-next-line require-yield
+        stream: async function* () {
+          await Promise.resolve();
+          throw new TypeError('cannot read "When is formal?"');
+        },
+        embed: () => Promise.reject(new Error('unused')),
+      };
+      const h = harness({}, { model: leaky });
+      const error = await collect(
+        h.gateway.streamCited('ask.answer', ASK, CONTEXT),
+      ).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(LanguageModelError);
+      expect(error).toMatchObject({ kind: 'unknown' });
+      expect((error as Error).message).not.toContain('formal');
+      expect(h.records).toEqual([
+        expect.objectContaining({ outcome: 'error', errorKind: 'unknown' }),
       ]);
     });
 
@@ -609,6 +716,7 @@ describe('AiGatewayService', () => {
       });
       expect(h.telemetry.callFinished).toHaveBeenCalledWith(expect.anything(), {
         kind: 'embedding',
+        streamed: false,
         citationsKept: 0,
         citationsDropped: 0,
       });

@@ -25,6 +25,12 @@ class FakeAnalyticsModule {}
 
 async function compile(env: Record<string, string>) {
   const saved = { ...process.env };
+  // Only what the test passes: a key or a switch exported in the shell (or
+  // injected by Infisical once a real key exists) must not build the live
+  // adapter here and send a unit test's prompt to the provider.
+  delete process.env.AI_ENABLED;
+  delete process.env.AI_PROVIDER;
+  delete process.env.ANTHROPIC_API_KEY;
   Object.assign(process.env, env);
   try {
     return await Test.createTestingModule({ imports: [AiModule] })

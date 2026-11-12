@@ -7,6 +7,12 @@ import { AnalyticsService } from '../analytics.service';
 /** What the gateway knows about a finished call beyond its usage record. */
 export interface AiCallShape {
   kind: 'structured' | 'cited' | 'embedding';
+  /**
+   * A streamed call has no span of its own (a span cannot stay open across
+   * the reader's pauses), so its counts are not put on whatever span is
+   * active, which would be the request's.
+   */
+  streamed: boolean;
   /** Citations that passed the word-for-word check; 0 for other kinds. */
   citationsKept: number;
   /** Citations the check dropped; 0 for other kinds. */
@@ -28,8 +34,9 @@ export const AI_CALL_EVENT = 'ai-call-finished';
  *
  * Both are built by hand from the usage record, which has no text field, so
  * there is nothing here that could attach a prompt or an answer. No vendor
- * wrapper around the provider client is involved: the SDK's own AI
- * integrations have recording switched off (`sentry-options.ts`, #3280).
+ * wrapper around the provider client is involved: Sentry's own AI
+ * integrations are left out of the SDK altogether (`sentry-options.ts`,
+ * #3280).
  */
 @Injectable()
 export class AiTelemetryService implements IAiTelemetry {
@@ -56,11 +63,13 @@ export class AiTelemetryService implements IAiTelemetry {
   }
 
   async callFinished(record: AiUsageRecord, shape: AiCallShape): Promise<void> {
-    Sentry.getActiveSpan()?.setAttributes({
-      'ai.outcome': record.outcome,
-      'ai.input_tokens': record.inputTokens,
-      'ai.output_tokens': record.outputTokens,
-    });
+    if (!shape.streamed) {
+      Sentry.getActiveSpan()?.setAttributes({
+        'ai.outcome': record.outcome,
+        'ai.input_tokens': record.inputTokens,
+        'ai.output_tokens': record.outputTokens,
+      });
+    }
 
     // Every string below is from a closed set: the catalog, the prompt's
     // version, or an outcome enum. `track` checks the keys again.
