@@ -65,6 +65,7 @@ import {
 } from "@/lib/directory/pledge-class";
 import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /**
  * s13 — Directory (`canvas-screens.dc.html:451`).
@@ -486,6 +487,7 @@ export default function DirectoryScreen() {
           unpadded View so it sits where the content starts. */}
         <View style={styles.listFrame}>
           <PinnedBackRow back={BACK_TO_MORE} />
+          <ScreenReady ready={!chapterId || !activeQuery.isPending} />
           <FlatList
             data={rows}
             keyExtractor={(row) => row.userId}
