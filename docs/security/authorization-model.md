@@ -190,11 +190,12 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **69** rows. The "API only" row of that table is those 68 plus the three `*`-marked
+That returns **70** rows. The "API only" row of that table is those 70 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **72**. Counted 2026-11-12 by adding `ai_runs` (#4310, migration
-`20261112020000`) and `ai_suggestions` (#4309, migration `20261112120401`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
+their own — **73**. Counted 2026-11-12 by adding `ai_runs` (#4310, migration
+`20261112020000`), `ai_suggestions` (#4309, migration `20261112130001`) and `ai_usage_events` (#714, migration
+`20261112130000`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
 `20261111235900`, which added `chat_message_important_seen` (#4186), after
 `20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
 which added no table. Before that,
@@ -230,7 +231,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `activity_item_reads`, `activity_unread_starts`, `ai_runs`, `ai_suggestions`, `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_document_stars`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_important_seen`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `event_types`, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `task_subtasks`, `tasks`, `user_settings`, `users`\* | 72 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `activity_item_reads`, `activity_unread_starts`, `ai_runs`, `ai_suggestions`, `ai_usage_events`, `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_document_stars`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_important_seen`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `event_types`, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `task_subtasks`, `tasks`, `user_settings`, `users`\* | 73 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

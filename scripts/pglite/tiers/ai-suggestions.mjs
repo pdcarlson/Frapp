@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: ai_suggestions (20261112120401, #4309) ─────────────────────
+// ─── Functional: ai_suggestions (20261112130001, #4309) ─────────────────────
 //
 // The table the API writes AI proposals to. It checks:
 //
@@ -15,7 +15,7 @@ import { db, miss } from "../harness.mjs";
 //   - a client role can't execute the trigger function.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: ai_suggestions (20261112120401) ===");
+console.log("\n=== Functional: ai_suggestions (20261112130001) ===");
 {
   const CH = "a4309000-0000-4000-8000-00000000000a";
   const EV = "a4309000-0000-4000-8000-0000000000e1";

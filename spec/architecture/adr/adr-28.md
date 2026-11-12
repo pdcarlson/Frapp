@@ -15,6 +15,12 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 > and scripted adapters, the quote check and the content-free telemetry. It is off unless the
 > server sets `AI_ENABLED=true`, and no feature calls it yet. Consent, the caps and the ledger are
 > still to come; the gateway asks for each through an interface that allows everything today.
+>
+> **Updated 2026-11-12 ([#714](https://github.com/pdcarlson/Frapp/issues/714)).** The ledger and
+> the caps of decision 1 are built: `ai_usage_events`, one row per provider call, held before the
+> call against the chapter's month, the member's day and the provider's month, and settled before
+> the gateway returns ([`billing.md` § Caps](../../behavior/billing.md#caps)).
+> Consent is still to come.
 
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
