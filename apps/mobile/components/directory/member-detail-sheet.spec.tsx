@@ -805,6 +805,45 @@ describe("MemberDetailSheet pledge class editing (#3991)", () => {
     state.permissions = [];
   });
 
+  // As the roles Edit is (#3790): the editor stacks over the profile, so a DM
+  // landing under it would leave the editor drawn over the thread.
+  it("holds the class rows while a DM with this member opens", async () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      false,
+      false,
+    ]);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      true,
+      true,
+    ]);
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(classRows(tree)[0]!.props.disabled).toBe(false);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  it("offers no editor for a profile read without a membership id", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    PROFILES[ADA] = { ...profile(ADA, "Ada"), id: undefined } as never;
+    const tree = render(ADA);
+
+    expect(classRows(tree)).toEqual([]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+    state.permissions = [];
+  });
+
   it("leaves the rows read-only, and unset ones hidden, without roles:manage", () => {
     state.permissions = ["members:view"];
     PROFILES[ADA] = {

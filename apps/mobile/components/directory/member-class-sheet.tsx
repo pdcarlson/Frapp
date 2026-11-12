@@ -26,6 +26,7 @@ import {
 import {
   classEditorDraft,
   classEditorResult,
+  shownClassId,
   usePledgeClassTerms,
   type ClassEditorDraft,
 } from "@/lib/directory/pledge-class";
@@ -52,7 +53,7 @@ export interface MemberClassSession {
 /** A fixed detent with a scroll body, for a class list of any length. */
 const SNAP_POINTS = ["88%"];
 
-/** The order number field's width: seven digits at the body size, plus padding. */
+/** The order number field's width: seven digits at the body size, plus padding. No `maxLength`: a cap would cut a pasted number short and save a different one, so a long one is refused instead. */
 const NUMBER_FIELD_WIDTH = 128;
 
 export const MemberClassSheet = forwardRef<
@@ -68,6 +69,11 @@ export const MemberClassSheet = forwardRef<
   const assign = useAssignPledgeClasses();
   const classesQuery = usePledgeClasses({ enabled: session !== null });
   const classes = classesQuery.data ?? [];
+  // The ids the list holds once it has answered, so a class deleted since the
+  // member was read shows and sends as None (`shownClassId`).
+  const knownIds = classesQuery.data
+    ? new Set(classesQuery.data.map((entry) => entry.id))
+    : null;
 
   const [draft, setDraft] = useState<ClassEditorDraft>({
     pledgeClassId: null,
@@ -92,7 +98,8 @@ export const MemberClassSheet = forwardRef<
   // Set the moment Save sends, so two taps in one batch send once.
   const sending = useRef(false);
 
-  const result = session ? classEditorResult(session, draft) : null;
+  const result = session ? classEditorResult(session, draft, knownIds) : null;
+  const pickedClassId = shownClassId(draft.pledgeClassId, knownIds);
   const refusal = result && !result.ok && revealRefusal ? result.message : null;
   const canSave =
     !!session &&
@@ -184,7 +191,6 @@ export const MemberClassSheet = forwardRef<
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel={orderTerm}
             keyboardType="number-pad"
-            maxLength={7}
             style={[
               styles.field,
               numberFocused ? styles.fieldFocused : null,
@@ -204,14 +210,14 @@ export const MemberClassSheet = forwardRef<
           </Text>
           <View accessibilityRole="radiogroup" style={styles.list}>
             {options.map((option) => {
-              const selected = draft.pledgeClassId === option.id;
+              const checked = pickedClassId === option.id;
               return (
                 <Pressable
                   key={option.id ?? "none"}
                   accessibilityRole="radio"
                   accessibilityLabel={option.name}
                   accessibilityState={{
-                    selected,
+                    checked,
                     disabled: assign.isPending,
                   }}
                   disabled={assign.isPending}
@@ -235,7 +241,7 @@ export const MemberClassSheet = forwardRef<
                     accessibilityElementsHidden
                     importantForAccessibility="no-hide-descendants"
                   >
-                    {selected ? <CheckGlyph color={accent} size={16} /> : null}
+                    {checked ? <CheckGlyph color={accent} size={16} /> : null}
                   </View>
                 </Pressable>
               );
@@ -249,8 +255,8 @@ export const MemberClassSheet = forwardRef<
             </Text>
           ) : classes.length === 0 ? (
             <Text style={styles.note}>
-              This chapter&apos;s list is empty. Add to it in Settings on the
-              web.
+              This chapter&apos;s list is empty. Add to it in Chapter settings
+              on the web.
             </Text>
           ) : null}
         </View>

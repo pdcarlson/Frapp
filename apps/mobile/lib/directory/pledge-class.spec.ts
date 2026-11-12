@@ -6,6 +6,7 @@ import {
   classNamesById,
   NOT_SET,
   pledgeClassRows,
+  shownClassId,
 } from "./pledge-class";
 
 const TERMS = { classTerm: "Line", orderTerm: "Line number" };
@@ -144,5 +145,31 @@ describe("classEditorResult (#3991)", () => {
     expect(
       classEditorDraft({ pledgeClassId: null, orderNumber: null }),
     ).toEqual({ pledgeClassId: null, numberText: "" });
+  });
+});
+
+describe("a class deleted since the member was read (#3991)", () => {
+  const known = new Set(["pc-1", "pc-2"]);
+
+  it("shows as None once the list has answered, and as is before", () => {
+    expect(shownClassId("pc-gone", known)).toBeNull();
+    expect(shownClassId("pc-gone", null)).toBe("pc-gone");
+    expect(shownClassId("pc-1", known)).toBe("pc-1");
+    expect(shownClassId(null, known)).toBeNull();
+  });
+
+  it("sends None rather than an id the API refuses", () => {
+    expect(
+      classEditorResult(
+        { pledgeClassId: "pc-gone", orderNumber: 4 },
+        { pledgeClassId: "pc-gone", numberText: "5" },
+        known,
+      ),
+    ).toEqual({
+      ok: true,
+      changed: true,
+      pledge_class_id: null,
+      order_number: 5,
+    });
   });
 });

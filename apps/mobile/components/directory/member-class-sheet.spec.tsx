@@ -16,16 +16,17 @@ import { FrappThemeProvider } from "@/lib/theme";
 const state = vi.hoisted(() => ({
   mutate: vi.fn(),
   isPending: false,
+  classes: [
+    { id: "pc-1", name: "Alpha" },
+    { id: "pc-2", name: "Beta" },
+  ] as { id: string; name: string }[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: undefined }),
   usePledgeClasses: () => ({
-    data: [
-      { id: "pc-1", name: "Alpha" },
-      { id: "pc-2", name: "Beta" },
-    ],
+    data: state.classes,
     isPending: false,
     isError: false,
   }),
@@ -48,15 +49,30 @@ const SESSION: MemberClassSession = {
   orderNumber: 4,
 };
 
+const dismiss = vi.fn();
+
 function render(session: MemberClassSession = SESSION): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <MemberClassSheet session={session} />
+        <MemberClassSheet
+          ref={React.createRef<React.ComponentRef<typeof MemberClassSheet>>()}
+          session={session}
+        />
       </FrappThemeProvider>,
+      {
+        // The sheet dismisses itself through its ref; the stand-in modal is a
+        // host string, so hand it an instance that records the call.
+        createNodeMock: (element) =>
+          element.type === "BottomSheetModal" ? { dismiss } : null,
+      },
     );
   });
+  // The sheet counts as up once it starts animating open (`useSheetVisit`).
+  act(() =>
+    tree.root.findByType("BottomSheetModal" as never).props.onAnimate(-1, 0),
+  );
   return tree;
 }
 
@@ -91,13 +107,17 @@ describe("MemberClassSheet (#3991)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.isPending = false;
+    state.classes = [
+      { id: "pc-1", name: "Alpha" },
+      { id: "pc-2", name: "Beta" },
+    ];
   });
 
   it("opens on the member's saved class and number, with Save off", () => {
     const tree = render();
     expect(numberField(tree).props.value).toBe("4");
-    expect(option(tree, "Alpha").props.accessibilityState.selected).toBe(true);
-    expect(option(tree, "None").props.accessibilityState.selected).toBe(false);
+    expect(option(tree, "Alpha").props.accessibilityState.checked).toBe(true);
+    expect(option(tree, "None").props.accessibilityState.checked).toBe(false);
     expect(saveButton(tree).props.disabled).toBe(true);
     act(() => tree.unmount());
   });
@@ -161,6 +181,59 @@ describe("MemberClassSheet (#3991)", () => {
           node.props.accessibilityRole === "alert",
       ),
     ).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes once the save lands", () => {
+    const tree = render();
+    act(() => numberField(tree).props.onChangeText("7"));
+    act(() => saveButton(tree).props.onPress());
+    const callbacks = state.mutate.mock.calls[0]![1] as {
+      onSuccess: () => void;
+      onSettled: () => void;
+    };
+    act(() => {
+      callbacks.onSuccess();
+      callbacks.onSettled();
+    });
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("sends once for two Save taps in one batch", () => {
+    const tree = render();
+    act(() => numberField(tree).props.onChangeText("7"));
+    act(() => {
+      saveButton(tree).props.onPress();
+      saveButton(tree).props.onPress();
+    });
+
+    expect(state.mutate).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("holds Save while a save is in flight", () => {
+    state.isPending = true;
+    const tree = render();
+    act(() => numberField(tree).props.onChangeText("7"));
+    expect(saveButton(tree).props.disabled).toBe(true);
+    act(() => saveButton(tree).props.onPress());
+
+    expect(state.mutate).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("shows a class deleted since the member was read as None, and sends None", () => {
+    state.classes = [{ id: "pc-2", name: "Beta" }];
+    const tree = render();
+    expect(option(tree, "None").props.accessibilityState.checked).toBe(true);
+    act(() => numberField(tree).props.onChangeText("5"));
+    act(() => saveButton(tree).props.onPress());
+
+    expect(state.mutate.mock.calls[0]![0]).toEqual([
+      { member_id: "m-ada", pledge_class_id: null, order_number: 5 },
+    ]);
     act(() => tree.unmount());
   });
 });

@@ -99,7 +99,8 @@ export const NOT_SET = "Not set";
 
 /**
  * The rows for one member, for the sheet and for Profile: the chapter's words,
- * and the class list read only for a member who has a class to name.
+ * and the class list read for a member who has a class to name, or for an
+ * officer who can set one (the editor's picker needs it).
  *
  * The last list read is kept when a refetch fails, as web's profile sheet
  * keeps it: a weak signal shouldn't turn a name already on screen into "Not
@@ -147,25 +148,43 @@ export type ClassEditorResult =
   | { ok: false; message: string };
 
 /**
+ * The class the editor shows as picked. A class id the chapter's list doesn't
+ * hold (deleted since the member was read, which nulls it on the server) reads
+ * as None once the list has answered, so the picker always shows a choice and
+ * Save never sends an id the API refuses with "Class not found". `null` for
+ * `knownIds` is a list not yet read, which leaves the id as it is.
+ */
+export function shownClassId(
+  pledgeClassId: string | null,
+  knownIds: ReadonlySet<string> | null,
+): string | null {
+  if (pledgeClassId === null || knownIds === null) return pledgeClassId;
+  return knownIds.has(pledgeClassId) ? pledgeClassId : null;
+}
+
+/**
  * What the editor would send for a draft: `PUT /v1/pledge-classes/assignments`
  * takes both values for the member, so both always go together, as web's
  * profile sheet sends them. A number the API would refuse is refused here
- * with web's words, before anything is sent.
+ * with the shared words, before anything is sent. The class sent is the one
+ * {@link shownClassId} shows.
  */
 export function classEditorResult(
   saved: { pledgeClassId: string | null; orderNumber: number | null },
   draft: ClassEditorDraft,
+  knownIds: ReadonlySet<string> | null = null,
 ): ClassEditorResult {
   const orderNumber = parseOrderNumber(draft.numberText);
   if (orderNumber === undefined) {
     return { ok: false, message: ORDER_NUMBER_INVALID_MESSAGE };
   }
+  const pledgeClassId = shownClassId(draft.pledgeClassId, knownIds);
   return {
     ok: true,
     changed:
-      draft.pledgeClassId !== saved.pledgeClassId ||
+      pledgeClassId !== saved.pledgeClassId ||
       orderNumber !== saved.orderNumber,
-    pledge_class_id: draft.pledgeClassId,
+    pledge_class_id: pledgeClassId,
     order_number: orderNumber,
   };
 }

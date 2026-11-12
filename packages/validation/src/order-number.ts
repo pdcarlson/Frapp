@@ -16,5 +16,4 @@ export function parseOrderNumber(text: string): number | null | undefined {
 }
 
 /** What a form says under an order number {@link parseOrderNumber} refuses. */
-export const ORDER_NUMBER_INVALID_MESSAGE =
-  "A whole number from 1 up, or blank for none.";
+export const ORDER_NUMBER_INVALID_MESSAGE = `A whole number from 1 to ${MEMBER_ORDER_NUMBER_MAX.toLocaleString("en-US")}, or blank for none.`;
