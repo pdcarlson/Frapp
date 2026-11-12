@@ -876,7 +876,13 @@ export default function ChatHomeScreen() {
     </ScreenShell>
   );
   // Swipe left to Messages (#3774), beside the top-right door.
-  return <MessagesSwipeArea>{screen}</MessagesSwipeArea>;
+  return (
+    <MessagesSwipeArea
+      enabled={!filterMenu.visible && !accountMenu.visible && !menuTarget}
+    >
+      {screen}
+    </MessagesSwipeArea>
+  );
 }
 
 function createStyles(tokens: SignetTokens) {

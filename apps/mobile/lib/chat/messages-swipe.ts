@@ -6,9 +6,11 @@
  * or uses VoiceOver or TalkBack, still has one tap to it. Going back is the
  * stack's own swipe from the left edge, or the back row.
  *
- * Only a leftward slide starts it, so the left edge stays free for the system
- * back gesture on Android and for the side menu idea in #4047. A mostly
- * vertical move fails it, so the channel list still scrolls.
+ * Only a leftward slide starts it, so a rightward one from the left edge stays
+ * free for the side menu idea in #4047. On Android with gesture navigation a
+ * slide that starts at the right edge is the system's back gesture, which no
+ * app sees, so there the swipe works from inside the screen. A mostly vertical
+ * move fails it, so the channel list still scrolls.
  */
 
 /** Points left before the pan takes over; rightward never does. */
