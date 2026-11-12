@@ -1,84 +1,76 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestionPayload } from '#domain/entities/ai-suggestion.entity';
-import type {
-  AiSuggestionCommitResult,
-  AiSuggestionKindHandler,
-} from './ai-suggestion-kinds';
+import type { AiSuggestionKindHandler } from './ai-suggestion-kinds';
 import { EventService } from './event.service';
 
-export const EVENT_SUGGESTION_NAME_MAX_LENGTH = 255;
-export const EVENT_SUGGESTION_TEXT_MAX_LENGTH = 2000;
-/** An event proposal is stale by the next day (the acting agent, #718). */
-export const EVENT_SUGGESTION_EXPIRY_DAYS = 1;
-/** Longer than any ISO 8601 instant, so a model's essay is not one. */
-const INSTANT_MAX_LENGTH = 40;
+/** An event name longer than this is cut, not refused. */
+export const EVENT_SUGGESTION_NAME_MAX_LENGTH = 200;
+
+/** How long a suggested event waits for an officer (spec: ai.md § Suggestions). */
+export const EVENT_SUGGESTION_EXPIRY_DAYS = 14;
 
 /**
- * A proposed event, as stored and as listed. One event, never a series, and
- * open to the whole chapter: who is invited by role, a check-in zone and a
- * repeat are set on the event form afterwards.
+ * A suggested event, as stored and as listed (#3930, "this time last year").
+ * It names the event and says when it was last held; everything else the
+ * officer's form is filled from is read from the source event itself, by the
+ * officer, under the event read rule.
  */
 export interface EventSuggestionPayload {
   name: string;
-  description: string | null;
-  location: string | null;
-  start_time: string;
-  end_time: string;
-  /** Null leaves the event service's own default. */
-  point_value: number | null;
-  is_mandatory: boolean;
+  /** When the source event started, last year. */
+  last_year_at: string | null;
+  /** How many times it was held around then (a weekly series: six). */
+  times: number;
+  /**
+   * The event the officer made from it, set by their accept and never by a
+   * proposal: accepting records it, it does not make one.
+   */
+  event_id: string | null;
 }
 
-function text(value: unknown, max: number): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed.length > max ? trimmed.slice(0, max).trimEnd() : trimmed;
-}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Longer than any ISO 8601 instant. */
+const INSTANT_MAX_LENGTH = 40;
 
 function instantOrNull(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > INSTANT_MAX_LENGTH) {
     return null;
   }
-  const at = Date.parse(value);
-  return Number.isNaN(at) ? null : new Date(at).toISOString();
-}
-
-function pointsOrNull(value: unknown): number | null {
-  return typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value >= 0 &&
-    value <= POINTS_ADJUSTMENT_MAX
-    ? value
-    : null;
+  return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
 /** Reads a stored payload back; the shape `normalizeProposal` wrote. */
 export function readEventPayload(
   payload: AiSuggestionPayload,
 ): EventSuggestionPayload {
+  const times = payload.times;
   return {
-    name: text(payload.name, EVENT_SUGGESTION_NAME_MAX_LENGTH) ?? '',
-    description: text(payload.description, EVENT_SUGGESTION_TEXT_MAX_LENGTH),
-    location: text(payload.location, EVENT_SUGGESTION_TEXT_MAX_LENGTH),
-    start_time: instantOrNull(payload.start_time) ?? '',
-    end_time: instantOrNull(payload.end_time) ?? '',
-    point_value: pointsOrNull(payload.point_value),
-    is_mandatory: payload.is_mandatory === true,
+    name: typeof payload.name === 'string' ? payload.name : '',
+    last_year_at: instantOrNull(payload.last_year_at),
+    times:
+      typeof times === 'number' && Number.isInteger(times) && times > 0
+        ? times
+        : 1,
+    event_id:
+      typeof payload.event_id === 'string' && UUID.test(payload.event_id)
+        ? payload.event_id
+        : null,
   };
 }
 
-function incomplete(message: string): BadRequestException {
-  return new BadRequestException({ code: 'ai.suggestion.incomplete', message });
-}
-
 /**
- * A proposed event (#718: "put formal on the calendar for December 5 at
- * 8"). Accepting it creates the event through {@link EventService.create} as
- * the officer who accepted: the members it invites get the usual new-event
- * push, and no chat card is posted.
+ * Suggested events (#3930 is the first producer). An event has too many
+ * choices to make from a row (who is invited, by role; whether it is
+ * required; points; where), so accepting one does not make it: the officer
+ * adds the event through the ordinary event form, filled in from the source,
+ * and through the ordinary route with its own permission check. The accept
+ * then records which event that was, after checking that it exists in the
+ * chapter and that this officer made it. Nothing here writes an event.
  */
 @Injectable()
 export class EventSuggestionKind implements AiSuggestionKindHandler {
@@ -99,57 +91,45 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
   normalizeProposal(raw: unknown): AiSuggestionPayload | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const input = raw as Record<string, unknown>;
-    const name = text(input.name, EVENT_SUGGESTION_NAME_MAX_LENGTH);
-    const start = instantOrNull(input.start_time);
-    const end = instantOrNull(input.end_time);
-    if (!name || !start || !end || end <= start) return null;
-    const event: EventSuggestionPayload = {
-      name,
-      description: text(input.description, EVENT_SUGGESTION_TEXT_MAX_LENGTH),
-      location: text(input.location, EVENT_SUGGESTION_TEXT_MAX_LENGTH),
-      start_time: start,
-      end_time: end,
-      point_value: pointsOrNull(input.point_value),
-      is_mandatory: input.is_mandatory === true,
-    };
-    return { ...event };
+    const name =
+      typeof input.name === 'string'
+        ? input.name.trim().slice(0, EVENT_SUGGESTION_NAME_MAX_LENGTH).trimEnd()
+        : '';
+    if (!name) return null;
+    const read = readEventPayload(input);
+    // Never from a proposal: only an officer's accept names the event made.
+    return { name, last_year_at: read.last_year_at, times: read.times };
   }
 
   applyEdits(
     payload: AiSuggestionPayload,
     edits: Record<string, unknown>,
   ): AiSuggestionPayload {
-    const next = readEventPayload(payload);
-    const has = (key: string) => edits[key] !== undefined;
-    if (has('name')) {
-      const name = text(edits.name, EVENT_SUGGESTION_NAME_MAX_LENGTH);
-      if (!name) throw new BadRequestException('An event needs a name.');
-      next.name = name;
+    const eventId = edits.event_id;
+    if (typeof eventId !== 'string' || !UUID.test(eventId)) {
+      throw new BadRequestException({
+        code: 'ai.suggestion.incomplete',
+        message: 'Add the event from its form first.',
+      });
     }
-    if (has('location')) {
-      next.location = text(edits.location, EVENT_SUGGESTION_TEXT_MAX_LENGTH);
-    }
-    if (has('start_time')) {
-      const start = instantOrNull(edits.start_time);
-      if (!start) throw new BadRequestException('Pick when it starts.');
-      next.start_time = start;
-    }
-    if (has('end_time')) {
-      const end = instantOrNull(edits.end_time);
-      if (!end) throw new BadRequestException('Pick when it ends.');
-      next.end_time = end;
-    }
-    if (next.end_time <= next.start_time) {
-      throw new BadRequestException('An event ends after it starts.');
-    }
-    return { ...next };
+    return { ...payload, event_id: eventId };
+  }
+
+  /**
+   * Never: the event is made in its own form, so what the officer changed
+   * there is not this suggestion's to know, and the id every accept carries
+   * is not a change.
+   */
+  countsAsEdited(): boolean {
+    return false;
   }
 
   assertAcceptable(payload: AiSuggestionPayload): void {
-    const event = readEventPayload(payload);
-    if (!event.name) throw incomplete('An event needs a name.');
-    if (!event.start_time || !event.end_time) {
-      throw incomplete('Pick when it starts and ends.');
+    if (!readEventPayload(payload).event_id) {
+      throw new BadRequestException({
+        code: 'ai.suggestion.incomplete',
+        message: 'Add the event from its form first.',
+      });
     }
   }
 
@@ -157,20 +137,22 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
     chapterId: string;
     userId: string;
     payload: AiSuggestionPayload;
-  }): Promise<AiSuggestionCommitResult> {
-    const event = readEventPayload(input.payload);
-    const created = await this.events.create({
-      chapter_id: input.chapterId,
-      created_by: input.userId,
-      name: event.name,
-      description: event.description,
-      location: event.location,
-      start_time: event.start_time,
-      end_time: event.end_time,
-      is_mandatory: event.is_mandatory,
-      ...(event.point_value === null ? {} : { point_value: event.point_value }),
-      // Never a chat card (no `channel_id`).
-    });
-    return { resultId: created.id };
+  }): Promise<{ resultId: string }> {
+    const { event_id: eventId } = readEventPayload(input.payload);
+    // `assertAcceptable` ran before the claim; this narrows the type.
+    if (!eventId) {
+      throw new BadRequestException({
+        code: 'ai.suggestion.incomplete',
+        message: 'Add the event from its form first.',
+      });
+    }
+    // Missing, another chapter's, or not this member's own: all answer 404,
+    // as the event route does for an event the member can't see. Saying
+    // "someone else's" would confirm a role-targeted event exists.
+    const event = await this.events.findById(eventId, input.chapterId);
+    if (event.created_by !== input.userId) {
+      throw new NotFoundException('Event not found');
+    }
+    return { resultId: event.id };
   }
 }

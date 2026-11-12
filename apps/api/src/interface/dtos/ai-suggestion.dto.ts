@@ -37,6 +37,7 @@ import type {
   AiSuggestionDecideOutcome,
   AiSuggestionDecisionResult,
 } from '../../application/services/ai-suggestion.service';
+import { readEventPayload } from '../../application/services/ai-suggestion-event-kind';
 import {
   readTaskPayload,
   TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH,
@@ -45,7 +46,12 @@ import {
   POINTS_SUGGESTION_MAX_MEMBERS,
   readPointsPayload,
 } from '../../application/services/ai-suggestion-points-kind';
-import { readEventPayload } from '../../application/services/ai-suggestion-event-kind';
+import { readNewEventPayload } from '../../application/services/ai-suggestion-new-event-kind';
+
+function eventOf(row: AiSuggestion): EventSuggestionDto {
+  const { name, last_year_at, times } = readEventPayload(row.payload);
+  return { name, last_year_at, times };
+}
 
 export class ListAiSuggestionsQueryDto {
   @ApiPropertyOptional({
@@ -162,6 +168,37 @@ export class PointsSuggestionEditsDto {
   target_user_ids?: string[];
 }
 
+/**
+ * How a suggested event is accepted (#3930): the officer adds the event
+ * through the ordinary event form and route, then names it here. The accept
+ * records it; it never makes an event.
+ */
+export class EventSuggestionAcceptDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The event the caller added from this suggestion. It must be in the chapter and made by the caller.',
+  })
+  @IsUUID()
+  event_id: string;
+}
+
+/** Why a suggestion was dismissed, for the analytics event only. Never stored. */
+export const AI_SUGGESTION_DISMISS_REASONS = ['already_doing'] as const;
+export type AiSuggestionDismissReason =
+  (typeof AI_SUGGESTION_DISMISS_REASONS)[number];
+
+export class DismissAiSuggestionDto {
+  @ApiPropertyOptional({
+    enum: AI_SUGGESTION_DISMISS_REASONS,
+    description:
+      '`already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.',
+  })
+  @IsOptional()
+  @IsIn(AI_SUGGESTION_DISMISS_REASONS)
+  reason?: AiSuggestionDismissReason;
+}
+
 export class AcceptAiSuggestionDto {
   @ApiPropertyOptional({
     type: TaskSuggestionEditsDto,
@@ -180,6 +217,15 @@ export class AcceptAiSuggestionDto {
   @ValidateNested()
   @Type(() => PointsSuggestionEditsDto)
   points?: PointsSuggestionEditsDto;
+
+  @ApiPropertyOptional({
+    type: EventSuggestionAcceptDto,
+    description: 'Required to accept a suggested event.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventSuggestionAcceptDto)
+  event?: EventSuggestionAcceptDto;
 }
 
 export class AiSuggestionDecideItemDto extends AcceptAiSuggestionDto {
@@ -229,6 +275,32 @@ export class TaskSuggestionDto {
 
   @ApiProperty({ type: [String] })
   subtasks: string[];
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    description:
+      'Present on a "this time last year" suggestion: the day last year\'s task, its source, was due.',
+  })
+  last_year_on?: string;
+}
+
+export class EventSuggestionDto {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description: 'When the source event started, last year.',
+  })
+  last_year_at: string | null;
+
+  @ApiProperty({
+    description: 'How many times it was held around then (a weekly series).',
+  })
+  times: number;
 }
 
 export class PointsSuggestionDto {
@@ -267,7 +339,8 @@ export class PointsSuggestionDto {
   event_start_time: string | null;
 }
 
-export class EventSuggestionDto {
+/** An event the acting agent proposes to create (#718). */
+export class NewEventSuggestionDto {
   @ApiProperty()
   name: string;
 
@@ -329,6 +402,14 @@ export class AiSuggestionDto {
   })
   task: TaskSuggestionDto | null;
 
+  @ApiPropertyOptional({
+    type: EventSuggestionDto,
+    nullable: true,
+    description:
+      'The suggested event, while it waits. Null for another kind, and once decided or expired.',
+  })
+  event?: EventSuggestionDto | null;
+
   @ApiProperty({
     type: PointsSuggestionDto,
     nullable: true,
@@ -338,12 +419,12 @@ export class AiSuggestionDto {
   points: PointsSuggestionDto | null;
 
   @ApiProperty({
-    type: EventSuggestionDto,
+    type: NewEventSuggestionDto,
     nullable: true,
     description:
-      'The proposed event, while it waits. Null for another kind, and once decided or expired.',
+      'The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired.',
   })
-  event: EventSuggestionDto | null;
+  new_event: NewEventSuggestionDto | null;
 
   @ApiProperty({
     type: String,
@@ -384,8 +465,11 @@ export class AiSuggestionDto {
         waiting && row.kind === 'points'
           ? readPointsPayload(row.payload)
           : null,
-      event:
-        waiting && row.kind === 'event' ? readEventPayload(row.payload) : null,
+      event: waiting && row.kind === 'event' ? eventOf(row) : null,
+      new_event:
+        waiting && row.kind === 'new_event'
+          ? readNewEventPayload(row.payload)
+          : null,
       quote: waiting ? row.quote : null,
       edited: row.edited,
       result_id: row.result_id,

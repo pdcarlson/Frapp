@@ -1,8 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AiSuggestionSourceType } from '#domain/entities/ai-suggestion.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { ChannelAccessService } from './channel-access.service';
 import { EventService } from './event.service';
 import { MeetingService } from './meeting.service';
+import { RbacService } from './rbac.service';
+import { TaskService } from './task.service';
 
 /**
  * Who may see a suggestion, by what it was drawn from (#4309,
@@ -115,5 +118,46 @@ export class RequestSuggestionSource implements AiSuggestionSourceAccess {
     sourceIds: readonly string[],
   ): Promise<Set<string>> {
     return Promise.resolve(new Set(sourceIds.filter((id) => id === userId)));
+  }
+}
+
+/**
+ * An earlier task (last year's, #3930), by the task list's own rule
+ * (`TaskController.list`): a member who manages tasks reads every task in
+ * the chapter, and anyone else only the ones assigned to them.
+ */
+@Injectable()
+export class TaskSuggestionSource implements AiSuggestionSourceAccess {
+  readonly sourceType = 'task' as const;
+
+  constructor(
+    private readonly tasks: TaskService,
+    private readonly rbac: RbacService,
+  ) {}
+
+  async filterOpenable(
+    chapterId: string,
+    userId: string,
+    sourceIds: readonly string[],
+  ): Promise<Set<string>> {
+    const ids = [...new Set(sourceIds)];
+    if (ids.length === 0) return new Set();
+    const managesAll = await this.rbac.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.TASKS_MANAGE],
+    );
+    const openable = new Set<string>();
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const task = await this.tasks.findById(id, chapterId);
+          if (managesAll || task.assignee_id === userId) openable.add(id);
+        } catch (error) {
+          if (!(error instanceof NotFoundException)) throw error;
+        }
+      }),
+    );
+    return openable;
   }
 }

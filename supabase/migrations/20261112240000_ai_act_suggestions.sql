@@ -7,7 +7,8 @@
 -- other suggestion and no second proposal table exists (ADR-28 decision 11).
 --
 -- 1. Two more kinds: `points` (accepting it adjusts each named member's
---    points) and `event` (accepting it creates one event).
+--    points) and `new_event` (accepting it creates one event; the `event`
+--    kind of 20261112230000 records an event the officer already made).
 -- 2. One more source type: `request`, a member's own typed request. Its
 --    `source_id` is that member's user id, and only they can open it.
 --
@@ -23,10 +24,10 @@ alter table public.ai_suggestions
   drop constraint if exists ai_suggestions_kind_check;
 alter table public.ai_suggestions
   add constraint ai_suggestions_kind_check
-    check (kind in ('task', 'points', 'event'));
+    check (kind in ('task', 'event', 'points', 'new_event'));
 
 alter table public.ai_suggestions
   drop constraint if exists ai_suggestions_source_type_check;
 alter table public.ai_suggestions
   add constraint ai_suggestions_source_type_check
-    check (source_type in ('meeting', 'event', 'channel', 'request'));
+    check (source_type in ('meeting', 'event', 'channel', 'task', 'request'));

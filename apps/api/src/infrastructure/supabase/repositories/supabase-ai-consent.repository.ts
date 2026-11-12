@@ -42,6 +42,18 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
     return data ?? null;
   }
 
+  async listChapterIdsWithSwitchOn(
+    column: keyof ChapterAiSettingsPatch,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from('chapter_ai_settings')
+      .select('chapter_id')
+      .eq(column, true)
+      .order('chapter_id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.chapter_id);
+  }
+
   async saveChapterSettings(
     chapterId: string,
     patch: ChapterAiSettingsPatch,

@@ -62,7 +62,10 @@ const base = {
   available_actions: [],
 };
 
-function suggestion(kind: "points" | "task" | "event", payload: unknown) {
+function suggestion(
+  kind: "points" | "task" | "new_event",
+  payload: unknown,
+) {
   return {
     id: "suggestion-1",
     kind,
@@ -72,6 +75,7 @@ function suggestion(kind: "points" | "task" | "event", payload: unknown) {
     task: null,
     points: null,
     event: null,
+    new_event: null,
     quote: null,
     edited: false,
     result_id: null,
@@ -322,7 +326,7 @@ describe("ActPane", () => {
     state.request.mockResolvedValue({
       ...base,
       action: "create_event",
-      suggestion: suggestion("event", {
+      suggestion: suggestion("new_event", {
         name: "Study night",
         description: null,
         location: "Library",
@@ -332,7 +336,7 @@ describe("ActPane", () => {
         is_mandatory: false,
       }),
     });
-    state.accept.mockResolvedValue({ result: { kind: "event", id: "e" } });
+    state.accept.mockResolvedValue({ result: { kind: "new_event", id: "e" } });
     open();
     await say("put a study night on the calendar for Tuesday at 7");
     expect(

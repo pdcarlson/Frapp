@@ -7,16 +7,24 @@
  */
 
 /**
- * What accepting a suggestion makes. One value per kind handler. `points`
- * (a points change for one or many members) and `event` are proposed by the
- * acting agent (#718).
+ * What accepting a suggestion makes. One value per kind handler. `event` is
+ * an event added to the calendar by its own form, which the accept records
+ * (#3930). `points` (a points change for one or many members) and
+ * `new_event` (an event the accept creates) are proposed by the acting
+ * agent (#718).
  */
-export const AI_SUGGESTION_KINDS = ['task', 'points', 'event'] as const;
+export const AI_SUGGESTION_KINDS = [
+  'task',
+  'event',
+  'points',
+  'new_event',
+] as const;
 export type AiSuggestionKind = (typeof AI_SUGGESTION_KINDS)[number];
 
 /**
  * What a suggestion was drawn from. A source type with no access checker
- * registered is shown to nobody (fail closed).
+ * registered is shown to nobody (fail closed). `task` is an earlier task
+ * (last year's, #3930).
  *
  * `request` is a member's own request to the acting agent (#718): its
  * `source_id` is that member's user id, and only they can open it.
@@ -25,6 +33,7 @@ export const AI_SUGGESTION_SOURCE_TYPES = [
   'meeting',
   'event',
   'channel',
+  'task',
   'request',
 ] as const;
 export type AiSuggestionSourceType =

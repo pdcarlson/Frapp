@@ -105,7 +105,7 @@ console.log("\n=== Functional: ai_suggestions (20261112130001) ===");
       {},
     );
     // #718: a member's own request is a source, and a card can propose a
-    // points change or an event (20261112230000_ai_act_suggestions.sql).
+    // points change or a new event (20261112240000_ai_act_suggestions.sql).
     const asked = (ordinal, kind) =>
       db.query(
         `insert into ai_suggestions
@@ -116,9 +116,9 @@ console.log("\n=== Functional: ai_suggestions (20261112130001) ===");
         [CH, BATCH, ordinal, kind, EV],
       );
     check(
-      "a member's request can hold a points change and an event",
+      "a member's request can hold a points change and a new event",
       !(await refused(() => asked(20, "points"))) &&
-        !(await refused(() => asked(21, "event"))),
+        !(await refused(() => asked(21, "new_event"))),
       {},
     );
     check(

@@ -488,7 +488,7 @@ function ActCard({
         : "";
   };
 
-  const { points, task, event } = suggestion;
+  const { points, task, new_event: event } = suggestion;
   const [targets, setTargets] = useState<string[]>(
     points?.target_user_ids ?? [],
   );

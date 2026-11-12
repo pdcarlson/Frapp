@@ -357,6 +357,30 @@ describe("DashboardNotificationDrawer: suggested tasks to review (#4313)", () =>
       screen.getByRole("link", { name: /1 suggested task to review/ }),
     ).toHaveAttribute("href", "/tasks");
   });
+
+  it("opens the calendar for an event from this time last year (#3930)", () => {
+    notifications.value = [
+      {
+        ...notification(
+          "n-last-year",
+          "ai_suggestions",
+          "2026-11-12T10:00:00Z",
+          "This time last year",
+        ),
+        data: {
+          target: {
+            screen: "ai_suggestions",
+            sourceType: "event",
+            sourceId: "evt-old",
+          },
+        },
+      },
+    ];
+    renderDrawer();
+    expect(
+      screen.getByRole("link", { name: /This time last year/ }),
+    ).toHaveAttribute("href", "/events");
+  });
 });
 
 /**
@@ -410,9 +434,11 @@ describe("DashboardNotificationDrawer: reading notifications (#3929)", () => {
     pathname.value = "/events";
     renderDrawer();
 
-    expect(mockScreensSeen).toHaveBeenLastCalledWith(["events"], {
-      enabled: true,
-    });
+    // Events also shows what was suggested from this time last year (#3930).
+    expect(mockScreensSeen).toHaveBeenLastCalledWith(
+      ["events", "ai_suggestions"],
+      { enabled: true },
+    );
   });
 
   it("reads nothing by page on a chat page: the channel read clears those", () => {

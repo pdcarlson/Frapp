@@ -27,6 +27,10 @@ export type TaskSuggestionEdits =
 /** An officer's changes to a proposed points change, sent with Confirm. */
 export type PointsSuggestionEdits =
   components["schemas"]["PointsSuggestionEditsDto"];
+/** Why a suggestion is dismissed, when the member says: `already_doing`. */
+export type AiSuggestionDismissReason = NonNullable<
+  components["schemas"]["DismissAiSuggestionDto"]["reason"]
+>;
 export type AiSuggestionDecision =
   components["schemas"]["AiSuggestionDecisionDto"];
 export type AiSuggestionDecideItem =
@@ -101,7 +105,7 @@ export function useAiSuggestions(options?: {
 function useDropFromLists() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
-  return (ids: readonly string[], madeTasks: boolean) => {
+  return (ids: readonly string[], made: boolean) => {
     const gone = new Set(ids);
     queryClient.setQueriesData<AiSuggestionList>(
       { queryKey: aiSuggestionKeys.all(chapterId) },
@@ -113,7 +117,7 @@ function useDropFromLists() {
     void queryClient.invalidateQueries({
       queryKey: aiSuggestionKeys.all(chapterId),
     });
-    if (madeTasks) {
+    if (made) {
       void queryClient.invalidateQueries({ queryKey: taskKeys.all });
       // An accepted points change or event (#718) lands on those pages.
       void queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
@@ -139,14 +143,22 @@ export function useAcceptAiSuggestion() {
       id,
       task,
       points,
+      eventId,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
       points?: PointsSuggestionEdits;
+      /**
+       * For a suggested event (#3930): the event the officer just added
+       * through the event form. The accept records it and makes nothing.
+       */
+      eventId?: string;
     }): Promise<AiSuggestionDecision> => {
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },
-        body: { ...(task ? { task } : {}), ...(points ? { points } : {}) },
+        body: eventId
+          ? { event: { event_id: eventId } }
+          : { ...(task ? { task } : {}), ...(points ? { points } : {}) },
       });
       throwUnlessOk(result);
       return bodyOf(result.data);
@@ -167,14 +179,20 @@ export function useDismissAiSuggestion() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["ai-suggestions", "dismiss"],
-    mutationFn: async (id: string): Promise<AiSuggestionDecision> => {
+    mutationFn: async (
+      target: string | { id: string; reason?: AiSuggestionDismissReason },
+    ): Promise<AiSuggestionDecision> => {
+      const { id, reason } =
+        typeof target === "string" ? { id: target, reason: undefined } : target;
       const result = await client.POST("/v1/ai/suggestions/{id}/dismiss", {
         params: { path: { id } },
+        body: reason ? { reason } : {},
       });
       throwUnlessOk(result);
       return bodyOf(result.data);
     },
-    onSuccess: (_decision, id) => drop([id], false),
+    onSuccess: (_decision, target) =>
+      drop([typeof target === "string" ? target : target.id], false),
     onError: () =>
       void queryClient.invalidateQueries({
         queryKey: aiSuggestionKeys.all(chapterId),

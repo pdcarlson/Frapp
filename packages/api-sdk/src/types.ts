@@ -3051,6 +3051,46 @@ export interface paths {
         patch: operations["AiChapterSettingsController_updateSettings_v1"];
         trace?: never;
     };
+    "/v1/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's AI runs
+         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
+         */
+        get: operations["AiRunController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one AI run
+         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
+         */
+        get: operations["AiRunController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pledge-classes": {
         parameters: {
             query?: never;
@@ -3840,46 +3880,6 @@ export interface paths {
         post?: never;
         /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
         delete: operations["ActivityController_restoreLink_v1"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ai/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the caller's AI runs
-         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
-         */
-        get: operations["AiRunController_list_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ai/runs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get one AI run
-         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
-         */
-        get: operations["AiRunController_get_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6662,7 +6662,7 @@ export interface components {
         };
         AiSuggestionSourceDto: {
             /** @enum {string} */
-            type: "meeting" | "event" | "channel" | "request";
+            type: "meeting" | "event" | "channel" | "task" | "request";
             /** Format: uuid */
             id: string;
         };
@@ -6679,6 +6679,21 @@ export interface components {
             /** Format: date-time */
             due_at: string | null;
             subtasks: string[];
+            /**
+             * Format: date
+             * @description Present on a "this time last year" suggestion: the day last year's task, its source, was due.
+             */
+            last_year_on?: string;
+        };
+        EventSuggestionDto: {
+            name: string;
+            /**
+             * Format: date-time
+             * @description When the source event started, last year.
+             */
+            last_year_at: string | null;
+            /** @description How many times it was held around then (a weekly series). */
+            times: number;
         };
         PointsSuggestionDto: {
             /** @description Points for each member. Negative takes away. */
@@ -6699,7 +6714,7 @@ export interface components {
              */
             event_start_time: string | null;
         };
-        EventSuggestionDto: {
+        NewEventSuggestionDto: {
             name: string;
             description: string | null;
             location: string | null;
@@ -6715,7 +6730,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "task" | "points" | "event";
+            kind: "task" | "event" | "points" | "new_event";
             /** @enum {string} */
             status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
             source: components["schemas"]["AiSuggestionSourceDto"];
@@ -6726,10 +6741,12 @@ export interface components {
             batch_id: string;
             /** @description The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text). */
             task: components["schemas"]["TaskSuggestionDto"] | null;
+            /** @description The suggested event, while it waits. Null for another kind, and once decided or expired. */
+            event?: components["schemas"]["EventSuggestionDto"] | null;
             /** @description The proposed points change, while it waits. Null for another kind, and once decided or expired. */
             points: components["schemas"]["PointsSuggestionDto"] | null;
-            /** @description The proposed event, while it waits. Null for another kind, and once decided or expired. */
-            event: components["schemas"]["EventSuggestionDto"] | null;
+            /** @description The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired. */
+            new_event: components["schemas"]["NewEventSuggestionDto"] | null;
             /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
             quote: string | null;
             /** @description Accepted with changes. */
@@ -6773,11 +6790,20 @@ export interface components {
             /** @description The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted. */
             target_user_ids?: string[];
         };
+        EventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this suggestion. It must be in the chapter and made by the caller.
+             */
+            event_id: string;
+        };
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
             /** @description Changes to a proposed points change, for edit-then-accept. */
             points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
         };
         AiSuggestionOutcomeDto: {
             /** @description A points change: how many members’ points were changed. */
@@ -6787,7 +6813,7 @@ export interface components {
         };
         AiSuggestionResultDto: {
             /** @enum {string} */
-            kind: "task" | "points" | "event";
+            kind: "task" | "event" | "points" | "new_event";
             /**
              * Format: uuid
              * @description What was made (the first one, when it made several).
@@ -6801,11 +6827,20 @@ export interface components {
             /** @description What accepting made. Null for a dismissal. */
             result: components["schemas"]["AiSuggestionResultDto"] | null;
         };
+        DismissAiSuggestionDto: {
+            /**
+             * @description `already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.
+             * @enum {string}
+             */
+            reason?: "already_doing";
+        };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
             /** @description Changes to a proposed points change, for edit-then-accept. */
             points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
             /** Format: uuid */
             id: string;
             /** @enum {string} */
@@ -6897,6 +6932,39 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+        };
+        AiRunDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The run kind, `snake_case`.
+             * @example minutes_draft
+             */
+            kind: string;
+            /**
+             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
+             * @example Drafting minutes
+             */
+            label: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Tries so far, the one in progress included. */
+            attempt_count: number;
+            max_attempts: number;
+            /** @enum {string|null} */
+            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
+            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
+            failure_message: string | null;
+            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
+            result_ref: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -7490,39 +7558,6 @@ export interface components {
              * @enum {string}
              */
             state: "done" | "hidden";
-        };
-        AiRunDto: {
-            /** Format: uuid */
-            id: string;
-            /**
-             * @description The run kind, `snake_case`.
-             * @example minutes_draft
-             */
-            kind: string;
-            /**
-             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
-             * @example Drafting minutes
-             */
-            label: string;
-            /** @enum {string} */
-            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-            /** @description Tries so far, the one in progress included. */
-            attempt_count: number;
-            max_attempts: number;
-            /** @enum {string|null} */
-            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
-            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
-            failure_message: string | null;
-            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
-            result_ref: {
-                [key: string]: unknown;
-            } | null;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            started_at: string | null;
-            /** Format: date-time */
-            finished_at: string | null;
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -14932,7 +14967,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Only suggestions drawn from this source. Send with `source_id`. */
-                source_type?: "meeting" | "event" | "channel" | "request";
+                source_type?: "meeting" | "event" | "channel" | "task" | "request";
                 source_id?: string;
             };
             header?: never;
@@ -15003,7 +15038,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissAiSuggestionDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -15201,6 +15240,83 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only runs of this kind (`minutes_draft`). */
+                kind?: string;
+                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"][];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"];
+                };
+            };
+            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17002,83 +17118,6 @@ export interface operations {
         requestBody?: never;
         responses: {
             204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    AiRunController_list_v1: {
-        parameters: {
-            query?: {
-                /** @description Only runs of this kind (`minutes_draft`). */
-                kind?: string;
-                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiRunDto"][];
-                };
-            };
-            /** @description AI is off on this server (`ai.not_available`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    AiRunController_get_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiRunDto"];
-                };
-            };
-            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

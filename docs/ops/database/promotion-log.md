@@ -31,13 +31,14 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-12: Asking Frapp to do something (#718, on `ai-integration`)
 
-### 20261112230000_ai_act_suggestions.sql
+### 20261112240000_ai_act_suggestions.sql
 
-- **Purpose**: Widens two checks on `ai_suggestions` so the card an officer confirms after asking Frapp to do something is a row of that table. `ai_suggestions_kind_check` now allows `points` and `event` beside `task`, and `ai_suggestions_source_type_check` allows `request` (a member's own typed request, whose `source_id` is that member's user id) beside `meeting`, `event` and `channel`. No column, table, function or row is added. The rule is [`spec/behavior/ai.md` § Asking Frapp to do something](../../../spec/behavior/ai.md#asking-frapp-to-do-something).
-- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_kind_check';` names `task`, `points` and `event`, and `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_source_type_check';` names `meeting`, `event`, `channel` and `request`.
-- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112130001_ai_suggestions.sql`, whose table it changes. Each check is dropped and re-added in the migration's transaction; both new checks allow everything the old ones did, so no row can fail, and the table is empty when this ships. The lock is ACCESS EXCLUSIVE on `ai_suggestions` for a catalog change and one scan. An API process from before this migration never writes the new values. With `AI_ENABLED` unset nothing writes the table at all.
+- **Purpose**: Widens two checks on `ai_suggestions` so the card an officer confirms after asking Frapp to do something is a row of that table. `ai_suggestions_kind_check` now allows `points` and `new_event` beside `task` and `event`, and `ai_suggestions_source_type_check` allows `request` (a member's own typed request, whose `source_id` is that member's user id) beside `meeting`, `event`, `channel` and `task`. No column, table, function or row is added. The rule is [`spec/behavior/ai.md` § Asking Frapp to do something](../../../spec/behavior/ai.md#asking-frapp-to-do-something).
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_kind_check';` names `task`, `event`, `points` and `new_event`, and `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_suggestions_source_type_check';` names `meeting`, `event`, `channel`, `task` and `request`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112130001_ai_suggestions.sql`, whose table it changes, and after `20261112230000_last_year_suggestions.sql`, whose two lists it starts from. Each check is dropped and re-added in the migration's transaction; both new checks allow everything the old ones did, so no row can fail, and the table is empty when this ships. The lock is ACCESS EXCLUSIVE on `ai_suggestions` for a catalog change and one scan. An API process from before this migration never writes the new values. With `AI_ENABLED` unset nothing writes the table at all.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-act-suggestions-20261112230000) § Rollback AI act suggestions.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-act-suggestions-20261112240000) § Rollback AI act suggestions.
+
 ## 2026-11-12: Report this (#4315, on `ai-integration`)
 
 ### 20261112220000_ai_reports.sql
@@ -67,6 +68,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Nothing writes either table unless the server has `AI_ENABLED=true`, `AI_DIAGNOSTICS_CHAPTER_ID` naming a chapter, `AI_STORED_TEXT_KEY` set, and that chapter's president has turned saving on in Chapter settings. The sweep that deletes a window at its end date runs every 10 minutes whether or not AI is on, and deletes nothing while the table is empty. The foreign keys take brief `SHARE ROW EXCLUSIVE` locks on `chapters`, `users` and `members` while the tables are created. `if not exists` makes re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-ask-diagnostics.mjs`). Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ask-diagnostics-window-20261112200000) § Rollback Ask diagnostics window.
+
+## 2026-11-12: This time last year (#3930, on `ai-integration`)
+
+### 20261112230000_last_year_suggestions.sql
+
+- **Purpose**: Widens two checks on `ai_suggestions`: `kind` gains `event` (a suggested event; accepting one records the event an officer added through the ordinary route) and `source_type` gains `task` (a suggestion drawn from an earlier task). Adds the trigger `tasks_drop_ai_suggestions` (`after delete on tasks`, running the existing `ai_suggestions_drop_for_source('task')`), so a waiting suggestion goes with the task it was drawn from, and the index `idx_ai_suggestions_chapter_dedupe` on `(chapter_id, dedupe_key) where dedupe_key is not null`, which the weekly check reads so a thing it raised is not raised again for 150 days. Writes no row on apply. The rule is [`ai.md` § This time last year](../../../spec/behavior/ai.md#this-time-last-year).
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname in ('ai_suggestions_kind_check', 'ai_suggestions_source_type_check');` returns 2 rows naming `event` and `task`, `select tgname from pg_trigger where tgname = 'tasks_drop_ai_suggestions';` returns 1 row, and `select count(*) from pg_indexes where indexname = 'idx_ai_suggestions_chapter_dedupe';` returns `1`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Must sort after `20261112130001_ai_suggestions.sql` and `20261112190000_meeting_task_suggestions.sql`. The older API writes neither new value; the newer API with `AI_ENABLED` unset queues no weekly check and proposes nothing. `ai_suggestions` arrives empty in the same release, so re-validating the two checks and building the index are milliseconds; the trigger takes a SHARE ROW EXCLUSIVE lock on `tasks` for a catalog change only. `drop constraint if exists`, `drop trigger if exists` and `if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-this-time-last-year-20261112230000) § Rollback this time last year.
 
 ## 2026-11-12: Suggested tasks from minutes (#4313, on `ai-integration`)
 

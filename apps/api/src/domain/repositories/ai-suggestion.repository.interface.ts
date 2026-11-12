@@ -77,6 +77,18 @@ export interface IAiSuggestionRepository {
   ): Promise<AiSuggestion[]>;
 
   /**
+   * Of `keys`, the ones some suggestion in the chapter made at or after
+   * `since` carries, whatever its source and whatever became of it. For a
+   * feature that raises a thing once across the chapter, not once per
+   * source (#3930).
+   */
+  findTakenDedupeKeys(
+    chapterId: string,
+    keys: readonly string[],
+    since: string,
+  ): Promise<Set<string>>;
+
+  /**
    * Withdraws waiting suggestions: the thing each was made from is gone from
    * its source, or changed. Only rows still `pending` go; one being accepted
    * or already decided stays. Returns how many went.

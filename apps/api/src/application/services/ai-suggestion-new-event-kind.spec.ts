@@ -1,4 +1,4 @@
-import { EventSuggestionKind } from './ai-suggestion-event-kind';
+import { NewEventSuggestionKind } from './ai-suggestion-new-event-kind';
 import type { EventService } from './event.service';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
@@ -7,7 +7,7 @@ const OFFICER = '22222222-2222-4222-8222-222222222222';
 function build() {
   const events = { create: jest.fn(async () => ({ id: 'event-1' })) };
   return {
-    kind: new EventSuggestionKind(events as unknown as EventService),
+    kind: new NewEventSuggestionKind(events as unknown as EventService),
     events,
   };
 }
@@ -23,7 +23,7 @@ const proposal = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-describe('EventSuggestionKind', () => {
+describe('NewEventSuggestionKind', () => {
   it('needs the permission and module of the create-event route', () => {
     const { kind } = build();
     expect(kind.requiredPermission).toBe('events:create');

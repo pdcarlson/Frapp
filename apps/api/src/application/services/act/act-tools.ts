@@ -18,9 +18,9 @@ import { AttendanceService } from '../attendance.service';
 import { EventService } from '../event.service';
 import { ActPeopleResolver } from './act-people';
 import {
-  EVENT_SUGGESTION_NAME_MAX_LENGTH,
-  EVENT_SUGGESTION_TEXT_MAX_LENGTH,
-} from '../ai-suggestion-event-kind';
+  NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH,
+  NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
+} from '../ai-suggestion-new-event-kind';
 import type { ActPlan } from './act-prompt';
 import type {
   ActDraft,
@@ -41,8 +41,8 @@ const HOUR_MS = 60 * 60 * 1000;
 const ATTENDED_EVENT_BACK_DAYS = 14;
 /** Events offered when which one is not clear. */
 const EVENT_CHOICES_MAX = 8;
-const EVENT_NAME_MAX_LENGTH = EVENT_SUGGESTION_NAME_MAX_LENGTH;
-const TEXT_MAX_LENGTH = EVENT_SUGGESTION_TEXT_MAX_LENGTH;
+const EVENT_NAME_MAX_LENGTH = NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH;
+const TEXT_MAX_LENGTH = NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH;
 
 function clean(value: string | null | undefined, max: number): string | null {
   const flat = (value ?? '').replace(/\s+/g, ' ').trim();
@@ -373,7 +373,7 @@ export class CreateEventActTool implements ActTool {
   readonly permission = SystemPermissions.EVENTS_CREATE;
   readonly module = 'events';
   readonly effect = 'propose' as const;
-  readonly kind = 'event' as const;
+  readonly kind = 'new_event' as const;
 
   draft(plan: ActPlan, context: ActToolContext): Promise<ActDraft> {
     return Promise.resolve(this.draftSync(plan, context));

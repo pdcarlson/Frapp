@@ -41,7 +41,7 @@ const REFUSALS: Record<string, string> = {
   "ai.suggestion.expired": "This suggestion expired.",
   "ai.suggestion.accepting": "Another officer is accepting this one right now.",
   "ai.suggestion.not_found":
-    "This suggestion is gone. The minutes it came from changed.",
+    "This suggestion is gone. What it came from changed.",
 };
 
 /** The line for a refusal code, or null for one this build has no words for. */
