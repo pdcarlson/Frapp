@@ -3764,3 +3764,22 @@ drop function if exists public.enqueue_ai_run(uuid, text, text, uuid, uuid, json
 drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
+
+## Rollback the AI usage ledger (20261112030000)
+
+* **Migration**: `20261112030000_ai_usage_ledger.sql`
+
+One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops every AI call, and with it every hold. Reverting the API code alone is not enough while `AI_ENABLED` is on: the gateway's seams would fall back to no caps at all, so turn AI off before reverting.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses the spend record every allowance, overage and reconciliation is computed from, so export it first if any chapter has used AI:
+
+```sql
+drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
+drop function if exists public.expire_ai_spend_holds(timestamptz);
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
+drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
+drop table if exists public.ai_usage_events;
+drop function if exists public.ai_usage_charge(text, bigint, bigint);
+```

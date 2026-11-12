@@ -62,7 +62,12 @@ import {
 export interface AiUnavailable {
   status: 'unavailable';
   reason: 'disabled' | 'not_configured' | 'consent' | 'spend_cap';
-  detail?: 'chapter_off' | 'member_declined' | 'chapter_cap' | 'platform_cap';
+  detail?:
+    | 'chapter_off'
+    | 'member_declined'
+    | 'chapter_cap'
+    | 'member_cap'
+    | 'platform_cap';
 }
 
 /** The provider declined under its own policy. */

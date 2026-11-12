@@ -23,8 +23,11 @@ export type AiSpendReservationResult =
     }
   | {
       granted: false;
-      /** Which cap the estimate would cross. */
-      reason: 'chapter_cap' | 'platform_cap';
+      /**
+       * Which cap the estimate would cross: the chapter's month, the acting
+       * member's day, or the platform's month for the provider.
+       */
+      reason: 'chapter_cap' | 'member_cap' | 'platform_cap';
     };
 
 /**
