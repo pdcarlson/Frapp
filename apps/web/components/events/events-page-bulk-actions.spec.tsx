@@ -59,6 +59,7 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
   }),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   useEvents: () => ({

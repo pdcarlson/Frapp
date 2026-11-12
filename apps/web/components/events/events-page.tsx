@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  useRef,
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
 import { ChevronDown, ListFilter, Plus } from "lucide-react";
@@ -229,6 +230,8 @@ export function EventsPage() {
   // What starts past the two-week horizon waits behind "Later" (#3707).
   const [laterOpen, setLaterOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  // Set by the editor when a series save rebuilt the event it was opened on.
+  const leftEditedEvent = useRef(false);
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
   // entry points mirror the gate (#841). Routing the dialog through
   // `useGatedDialog` covers all three of them at once — the New event button,
@@ -1214,9 +1217,17 @@ export function EventsPage() {
           editorDialog.setOpen(open);
           // Edit opened from the event's own view, so leaving it (Back,
           // Cancel or Save) goes back there, as Google Calendar does.
-          if (!open && editorMode === "edit" && activeEvent) {
+          // Unless a series save rebuilt or moved it: its id may be gone,
+          // and the list is where the change shows.
+          if (
+            !open &&
+            editorMode === "edit" &&
+            activeEvent &&
+            !leftEditedEvent.current
+          ) {
             setDetailSheetOpen(true);
           }
+          leftEditedEvent.current = false;
         }}
         onCloseAutoFocus={editorDialog.contentProps.onCloseAutoFocus}
         mode={editorMode}
@@ -1234,6 +1245,9 @@ export function EventsPage() {
         }}
         onSaved={async () => {
           await eventsQuery.refetch();
+        }}
+        onLeftEvent={() => {
+          leftEditedEvent.current = true;
         }}
       />
       {confirmDialog}

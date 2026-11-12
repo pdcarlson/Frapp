@@ -31,10 +31,18 @@ import {
 import {
   canAll,
   EVENT_CREATE_PERMISSIONS,
+  deleteOffersSeriesChoice,
   describeAttendance,
   eventLimitsAudience,
+  isEmptyEventPatch,
+  leavesAfterSave,
   repeatEditAnchor,
   repeatEditDraft,
+  repeatEditSeriesOf,
+  saveRequestFor,
+  saveScopeFor,
+  SERIES_SCOPE_COPY,
+  type EventEditScope,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -76,14 +84,7 @@ import {
   DELETE_EVENT_PERMISSIONS,
   EDIT_EVENT_PERMISSIONS,
   draftFromEvent,
-  isEmptyPatch,
-  leavesAfterSave,
-  offersSeriesChoice,
-  repeatEditSeriesOf,
-  saveRequestFor,
-  saveScopeFor,
   validateEventEdit,
-  type EventEditScope,
   type EventEditTarget,
 } from "@/lib/events/edit-event";
 import { formatEventClock } from "@/lib/events/format";
@@ -222,9 +223,12 @@ function askSeriesScope(copy: {
       copy.title,
       copy.message,
       [
-        { text: "This event only", onPress: () => resolve("instance") },
         {
-          text: "All upcoming events",
+          text: SERIES_SCOPE_COPY.thisEvent,
+          onPress: () => resolve("instance"),
+        },
+        {
+          text: SERIES_SCOPE_COPY.allUpcoming,
           style: copy.seriesDestructive ? "destructive" : "default",
           onPress: () => resolve("series"),
         },
@@ -386,7 +390,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       }
       setErrors({});
       // Nothing changed: there is nothing to send, and nobody to notify.
-      if (isEmptyPatch(result.patch)) {
+      if (isEmptyEventPatch(result.patch)) {
         reset();
         dismiss();
         return;
@@ -396,9 +400,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (scope === "ask") {
         sending.current = true;
         const picked = await askSeriesScope({
-          title: "This is a repeating event",
-          message:
-            "Save your changes to this event only, or to every upcoming event in the series?",
+          title: SERIES_SCOPE_COPY.saveTitle,
+          message: SERIES_SCOPE_COPY.saveMessage,
         });
         sending.current = false;
         if (!picked) return;
@@ -433,7 +436,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               // Sending it again can't win, so say what to do instead.
               setRejected(
                 request.scope === "series"
-                  ? "That change can't be made to the whole series. Save it to this event only, or open the next event and change that."
+                  ? SERIES_SCOPE_COPY.seriesRefused
                   : "That change can't be saved. Check the times and try something else.",
               );
             } else setSubmitFailed(true);
@@ -447,11 +450,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       Keyboard.dismiss();
       let scope: EventEditScope | null;
       sending.current = true;
-      if (offersSeriesChoice(target, new Date())) {
+      if (deleteOffersSeriesChoice(target.event, new Date())) {
         scope = await askSeriesScope({
-          title: "Delete a repeating event",
-          message:
-            "Delete this event only, or every upcoming event in the series? Events that already happened stay.",
+          title: SERIES_SCOPE_COPY.deleteTitle,
+          message: SERIES_SCOPE_COPY.deleteMessage,
           seriesDestructive: true,
         });
       } else {

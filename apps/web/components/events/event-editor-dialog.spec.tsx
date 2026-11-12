@@ -17,6 +17,7 @@ const {
   mockCurrentChapter,
   mockToast,
   mockPermissions,
+  useEventMock,
 } = vi.hoisted(() => ({
   createMutate: vi.fn(),
   updateMutate: vi.fn(),
@@ -25,11 +26,16 @@ const {
   // An officer who edits events unless a case says otherwise (#3709: points
   // and required attendance are theirs).
   mockPermissions: { list: ["events:update"] as string[] },
+  // The series parent a generated meeting reads; none unless a case sets it.
+  useEventMock: vi.fn<
+    (id: unknown) => { data: unknown; isPending: boolean; isError: boolean }
+  >(() => ({ data: undefined, isPending: false, isError: false })),
 }));
 
 vi.mock("@repo/hooks", () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
+  useEvent: (id: unknown) => useEventMock(id),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
   useEventTypes: () => ({
     data: [
@@ -250,6 +256,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       name: "Chapter",
       start_time: "2027-07-05T23:00:00.000Z",
       end_time: "2027-07-06T00:00:00.000Z",
+      point_value: 10,
       recurrence_rule: RULE,
     };
     const renderEdit = (event: Record<string, unknown>) =>
@@ -269,17 +276,57 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       return updateMutate.mock.calls[0]![0].body as Record<string, unknown>;
     };
 
-    it("leaves an untouched series alone, with no length line", async () => {
+    it("asks which events a rename is for, and sends only the name", async () => {
       renderEdit(head);
       expect(screen.queryByText(/meetings, the last on/)).toBeNull();
       fireEvent.change(screen.getByLabelText("Event name"), {
         target: { value: "Chapter meeting" },
       });
-      const body = await saved();
-      // Sent back as stored, for the API's check of a moved head, with no
-      // series scope: nothing is rebuilt.
-      expect(body.recurrence_rule).toBe(RULE);
-      expect(body).not.toHaveProperty("scope");
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      // The question Google Calendar, Apple Calendar and Outlook ask (#3667).
+      expect(await screen.findByText("This is a repeating event")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "This event only" }));
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      // No time or location, so the chapter isn't paged for a rename, and the
+      // unchanged rule isn't sent: a sent rule rebuilds the series.
+      expect(updateMutate.mock.calls[0]![0]).toEqual({
+        id: "h1",
+        body: { name: "Chapter meeting", scope: "instance" },
+      });
+    });
+
+    it("sends a rename to every upcoming event when asked", async () => {
+      renderEdit(head);
+      fireEvent.change(screen.getByLabelText("Event name"), {
+        target: { value: "Chapter meeting" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "All upcoming events" }),
+      );
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      expect(updateMutate.mock.calls[0]![0].body).toEqual({
+        name: "Chapter meeting",
+        scope: "series",
+      });
+    });
+
+    it("sends nothing when nothing changed", async () => {
+      const onOpenChange = vi.fn();
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={head}
+          usingPreviewData={false}
+          onOpenChange={onOpenChange}
+          onSaved={async () => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+      expect(updateMutate).not.toHaveBeenCalled();
+      expect(screen.queryByText("This is a repeating event")).toBeNull();
     });
 
     it("moves stored weekdays with a start moved in the same save", async () => {
@@ -327,20 +374,81 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       expect(body).toMatchObject({ recurrence_rule: null, scope: "series" });
     });
 
-    it("doesn't offer Repeat on a generated occurrence", async () => {
-      renderEdit({
+    describe("from a generated meeting", () => {
+      // The second Monday, a week after the head.
+      const occurrence = {
         ...head,
         id: "o1",
+        start_time: "2027-07-12T23:00:00.000Z",
+        end_time: "2027-07-13T00:00:00.000Z",
         recurrence_rule: null,
         parent_event_id: "h1",
+      };
+      afterEach(() => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: false,
+          isError: false,
+        }));
       });
-      expect(screen.getByText(/Part of a repeating series/)).toBeTruthy();
-      expect(
-        screen.queryByRole("radio", { name: "Doesn't repeat" }),
-      ).toBeNull();
-      const body = await saved();
-      expect(body).not.toHaveProperty("recurrence_rule");
-      expect(body).not.toHaveProperty("scope");
+      const withParent = () =>
+        useEventMock.mockImplementation((id: unknown) => ({
+          data: id === "h1" ? head : undefined,
+          isPending: false,
+          isError: false,
+        }));
+
+      it("reads the series' rule off its first meeting", () => {
+        withParent();
+        renderEdit(occurrence);
+        expect(useEventMock).toHaveBeenCalledWith("h1");
+        expect(
+          screen.getByRole("radio", { name: "Doesn't repeat" }),
+        ).toHaveAttribute("aria-checked", "false");
+      });
+
+      it("moves every upcoming meeting through the first, as a shift", async () => {
+        withParent();
+        renderEdit(occurrence);
+        // A day later on this meeting is a day later on the first (the end
+        // moves with the start).
+        fireEvent.change(screen.getByLabelText("Starts, day"), {
+          target: { value: "2027-07-13" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+        const { id, body } = updateMutate.mock.calls[0]![0];
+        const DAY = 24 * 60 * 60 * 1000;
+        expect(id).toBe("h1");
+        expect(body).toEqual({
+          scope: "series",
+          start_time: new Date(Date.parse(head.start_time) + DAY).toISOString(),
+          end_time: new Date(Date.parse(head.end_time) + DAY).toISOString(),
+        });
+      });
+
+      it("locks Repeat when the first meeting can't be read", async () => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: false,
+          isError: true,
+        }));
+        renderEdit(occurrence);
+        expect(screen.getByText(/Part of a repeating series/)).toBeTruthy();
+        expect(
+          screen.queryByRole("radio", { name: "Doesn't repeat" }),
+        ).toBeNull();
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        // Without the first meeting a series time change can't be sent, so
+        // the question isn't asked.
+        const body = await saved();
+        expect(body).toEqual({ name: "Chapter meeting", scope: "instance" });
+      });
     });
   });
 
@@ -1217,6 +1325,7 @@ describe("EventEditorDialog event types (#3730)", () => {
           name: "Weekly chapter",
           start_time: "2026-07-01T18:00:00.000Z",
           end_time: "2026-07-01T19:00:00.000Z",
+          point_value: 10,
           event_type_id: "type-meeting",
         }}
         usingPreviewData={false}
@@ -1229,9 +1338,9 @@ describe("EventEditorDialog event types (#3730)", () => {
     fireEvent.click(held);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
-    expect(updateMutate.mock.calls[0]![0].body).toMatchObject({
+    expect(updateMutate.mock.calls[0]![0].body).toEqual({
       event_type_id: null,
-      name: "Weekly chapter",
+      scope: "instance",
     });
   });
 });

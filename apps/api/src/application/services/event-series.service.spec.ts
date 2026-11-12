@@ -1833,6 +1833,39 @@ describe('EventSeriesService', () => {
         ).resolves.toBeDefined();
       });
 
+      describe('a start moved without the rule in the request (#4515)', () => {
+        // Sundays from Mar 1 to Mar 22: four meetings.
+        const dated: Event = {
+          ...parent,
+          recurrence_rule:
+            'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;UNTIL=20260322;TZID=UTC',
+        };
+
+        it('refuses a head moved past its own end date', async () => {
+          mockEventRepo.findById.mockResolvedValue(dated);
+
+          await expect(
+            service.update('parent-1', 'ch-1', {
+              start_time: '2026-03-22T18:00:00.000Z',
+              end_time: '2026-03-22T19:00:00.000Z',
+            }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+          expect(mockEventRepo.update).not.toHaveBeenCalled();
+        });
+
+        it('lets a move that leaves room for the series through', async () => {
+          mockEventRepo.findById.mockResolvedValue(dated);
+          mockEventRepo.update.mockResolvedValue(dated);
+
+          await expect(
+            service.update('parent-1', 'ch-1', {
+              start_time: '2026-03-08T18:00:00.000Z',
+              end_time: '2026-03-08T19:00:00.000Z',
+            }),
+          ).resolves.toBeDefined();
+        });
+      });
+
       it('refuses an instance edit whose end date leaves no second meeting', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
 

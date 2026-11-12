@@ -1,6 +1,11 @@
 "use client";
 
-import { can, checkInZoneLine } from "@repo/validation";
+import {
+  can,
+  checkInZoneLine,
+  deleteOffersSeriesChoice,
+  SERIES_SCOPE_COPY,
+} from "@repo/validation";
 import { useMemo } from "react";
 import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
@@ -262,17 +267,49 @@ export function EventDetailSheet({
 
   async function handleDelete() {
     if (!eventId) return;
-    const confirmed = await confirm({
-      title: `Delete ${eventName}?`,
-      description:
-        "This cannot be undone, and attendance records for the event may be affected.",
-      confirmLabel: "Delete event",
-      tone: "destructive",
-    });
+    // A repeating event asks which it means, as the editor and the phone do
+    // (`deleteOffersSeriesChoice`); a series delete never removes a meeting
+    // that already happened.
+    const seriesEvent = {
+      parent_event_id:
+        typeof resolvedEvent?.parent_event_id === "string" &&
+        resolvedEvent.parent_event_id
+          ? resolvedEvent.parent_event_id
+          : null,
+      recurrence_rule:
+        typeof resolvedEvent?.recurrence_rule === "string"
+          ? resolvedEvent.recurrence_rule
+          : null,
+      start_time:
+        typeof resolvedEvent?.start_time === "string"
+          ? resolvedEvent.start_time
+          : "",
+    };
+    const asksScope =
+      seriesEvent.start_time !== "" &&
+      deleteOffersSeriesChoice(seriesEvent, new Date());
+    const confirmed = await confirm(
+      asksScope
+        ? {
+            title: SERIES_SCOPE_COPY.deleteTitle,
+            description: SERIES_SCOPE_COPY.deleteMessage,
+            confirmLabel: SERIES_SCOPE_COPY.allUpcoming,
+            alternativeLabel: SERIES_SCOPE_COPY.thisEvent,
+            tone: "destructive",
+          }
+        : {
+            title: `Delete ${eventName}?`,
+            description:
+              "This cannot be undone, and attendance records for the event may be affected.",
+            confirmLabel: "Delete event",
+            tone: "destructive",
+          },
+    );
     if (!confirmed) return;
+    const scope = asksScope && !confirmed.alternative ? "series" : "instance";
 
     try {
-      await deleteEventMutation.mutateAsync(eventId);
+      await deleteEventMutation.mutateAsync({ id: eventId, scope });
     } catch (error) {
       toast({
         title: "Could not delete event",
@@ -287,7 +324,10 @@ export function EventDetailSheet({
 
     toast({
       title: "Event deleted",
-      description: `${eventName} was removed from the calendar.`,
+      description:
+        scope === "series"
+          ? `Every upcoming ${eventName} was removed from the calendar.`
+          : `${eventName} was removed from the calendar.`,
     });
     onOpenChange(false);
 

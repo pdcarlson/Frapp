@@ -402,19 +402,28 @@ export class EventService {
     // An instance edit writes the rule onto this row as it stands, with no
     // regenerate, so a rule that doesn't fit its start (an UNTIL before the
     // second meeting, or past the series cap) is refused here as on create.
-    // Only when the rule or the start actually changes: the web editor sends
-    // the stored rule back on every save, and a rename must not be judged on
-    // a rule nobody touched.
+    // Only when the rule or the start actually changes: a client that sends
+    // the stored rule back must not have a rename judged on a rule nobody
+    // touched. A start moved without the rule in the request is checked
+    // against the stored rule, so a series head can't be moved past its own
+    // end by a client that sends only what changed (#4515).
     const row = before;
-    const ruleOrStartChanged =
+    const ruleChanged =
       !!row &&
-      (input.recurrence_rule !== row.recurrence_rule ||
-        (input.start_time !== undefined &&
-          new Date(input.start_time).getTime() !==
-            new Date(row.start_time).getTime()));
-    if (input.recurrence_rule && row && ruleOrStartChanged) {
+      input.recurrence_rule !== undefined &&
+      input.recurrence_rule !== row.recurrence_rule;
+    const startMoved =
+      !!row &&
+      input.start_time !== undefined &&
+      new Date(input.start_time).getTime() !==
+        new Date(row.start_time).getTime();
+    const rule =
+      input.recurrence_rule !== undefined
+        ? input.recurrence_rule
+        : (row?.recurrence_rule ?? null);
+    if (rule && row && (ruleChanged || startMoved)) {
       const problem = checkSeriesLength(
-        input.recurrence_rule,
+        rule,
         input.start_time ?? row.start_time,
       );
       if (problem) throw new BadRequestException(problem);

@@ -1026,6 +1026,32 @@ export type {
   EventAttendanceStatus,
   EventAttendanceWire,
 } from "./event-attendance";
+// Editing or deleting an existing event: what a save sends, and whether to
+// ask "this event or all upcoming" first. Web and the phone share it (#3667).
+export {
+  SERIES_SCOPE_COPY,
+  deleteOffersSeriesChoice,
+  eventEditPatch,
+  eventHasStarted,
+  isEmptyEventPatch,
+  isInSeries,
+  leavesAfterSave,
+  offersSeriesChoice,
+  repeatEditSeriesOf,
+  saveRequestFor,
+  saveScopeFor,
+  seriesRuleOf,
+} from "./event-edit";
+export type {
+  EventEditPatch,
+  EventEditScope,
+  EventEditStored,
+  EventEditTarget,
+  EventEditValues,
+  EventSaveRequest,
+  GeofencePoint,
+  SeriesEventFields,
+} from "./event-edit";
 export {
   MISSING_SIGNED_UPLOAD,
   readPreviewUpload,
