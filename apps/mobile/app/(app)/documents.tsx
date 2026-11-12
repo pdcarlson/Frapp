@@ -55,6 +55,9 @@ import {
 } from "@/components/documents/document-actions-sheet";
 import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
 import { MarkedCards } from "@/components/documents/marked-cards";
+import { DocumentTiles } from "@/components/documents/document-tiles";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { useListLayout } from "@/lib/list-layout";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   ListRow,
@@ -162,6 +165,8 @@ export default function DocumentsScreen() {
   const [folder, setFolder] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
+  // List or Grid (#4175), kept on this phone, its switch on the title row.
+  const layout = useListLayout("documents");
   const [openFailed, setOpenFailed] = useState(false);
   // The upload the sheet closed on, drawn as the list's first row until the
   // filed document arrives in the list's order (`UploadDocumentSheet` §
@@ -620,6 +625,31 @@ export default function DocumentsScreen() {
         </InlineNote>
       );
     }
+    if (layout === "grid") {
+      return (
+        <>
+          {/* The upload in flight stays a row, heading the tiles. */}
+          {pendingRow ? <ListSection>{pendingRow}</ListSection> : null}
+          <DocumentTiles
+            rows={rows}
+            isStarred={(id) => starredDocuments.has(id)}
+            busyIds={
+              new Set(
+                [...deletingIds, openingId].filter(
+                  (id): id is string => id !== null,
+                ),
+              )
+            }
+            deletingIds={deletingIds}
+            actionsLabel={
+              canManage ? "Star, pin or delete" : "Star or unstar"
+            }
+            onOpen={(doc) => void open(doc.id)}
+            onActions={(doc) => openActions(documentTarget(doc))}
+          />
+        </>
+      );
+    }
     return (
       <ListSection>
         {pendingRow}
@@ -697,6 +727,7 @@ export default function DocumentsScreen() {
           : undefined
       }
       title="Documents"
+      headerAction={<ListLayoutToggle screen="documents" />}
     >
       <SearchField
         value={search}
