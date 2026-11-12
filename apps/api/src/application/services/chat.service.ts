@@ -74,6 +74,7 @@ import { ChannelAccessListService } from './channel-access-list.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { chatPushPreview } from './chat-push-preview';
 import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -1410,11 +1411,18 @@ export class ChatService {
       await this.quotedAuthorId(message.reply_to_id ?? null),
     );
 
-    return this.messageRepo.update(messageId, {
+    const edited = await this.messageRepo.update(messageId, {
       content,
       mentions,
       edited_at: new Date().toISOString(),
     });
+    // The in-app rows this message produced quote its old text (#4418).
+    await this.notifications.rewriteChatMessagePreview(
+      chapterId,
+      messageId,
+      chatPushPreview(edited),
+    );
+    return edited;
   }
 
   async deleteMessage(
@@ -1553,6 +1561,9 @@ export class ChatService {
       flagged_by: null,
       flagged_at: null,
     });
+    // The in-app notifications that quote the message go in the same
+    // statement: `chat_messages_forget_notifications` deletes every row whose
+    // `chat_message_id` is this message as `is_deleted` turns true (#4418).
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
     // rows in place (they cascade only with the message itself), so nothing is

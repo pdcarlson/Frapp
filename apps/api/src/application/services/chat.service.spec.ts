@@ -3231,6 +3231,32 @@ describe('ChatService', () => {
       expect(result.edited_at).toBeTruthy();
     });
 
+    it('rewrites the in-app notifications that quote the edited message (#4418)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        content: '  Updated  ',
+        edited_at: '2026-01-01T13:00:00.000Z',
+      });
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', '  Updated  ');
+
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).toHaveBeenCalledWith('ch-1', 'msg-1', 'Updated');
+    });
+
+    it('rewrites no notification when the edit is refused', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-2', 'Hacked'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        mockNotificationService.rewriteChatMessagePreview,
+      ).not.toHaveBeenCalled();
+    });
+
     it("should reject editing another user's message", async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 

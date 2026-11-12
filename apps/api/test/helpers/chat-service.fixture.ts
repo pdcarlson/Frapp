@@ -191,12 +191,16 @@ export async function createChatServiceFixture() {
   const mockNotificationService: jest.Mocked<
     Pick<
       NotificationService,
-      'notifyUser' | 'notifyChapter' | 'markChatChannelNotificationsRead'
+      | 'notifyUser'
+      | 'notifyChapter'
+      | 'markChatChannelNotificationsRead'
+      | 'rewriteChatMessagePreview'
     >
   > = {
     notifyUser: jest.fn().mockResolvedValue(undefined),
     notifyChapter: jest.fn().mockResolvedValue(undefined),
     markChatChannelNotificationsRead: jest.fn().mockResolvedValue(undefined),
+    rewriteChatMessagePreview: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockMemberRepo = {

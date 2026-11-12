@@ -286,6 +286,53 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('rewriteChatMessageBody (#4418)', () => {
+    beforeEach(() => {
+      const chatRow = (id: string, chatMessageId: string | null) => ({
+        id,
+        user_id: USER_SHARED,
+        title: 'Alex in #general',
+        body: 'old words',
+        data: { target: { screen: 'chat', channelId: 'c-1' } },
+        chat_message_id: chatMessageId,
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            inA(chatRow('a-m1', 'm-1')),
+            inA(chatRow('a-m2', 'm-2')),
+            inA(chatRow('a-bundle', null)),
+            inB(chatRow('b-m1', 'm-1')),
+            inB(chatRow('b-m2', 'm-2')),
+            inB(chatRow('b-bundle', null)),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+
+    it("rewrites only the caller chapter's rows that quote the message", async () => {
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.rewriteChatMessageBody(CHAPTER_B, 'm-1', 'new words'),
+      );
+
+      expect(
+        Object.fromEntries(
+          harness.rows('notifications').map((n) => [n.id, n.body]),
+        ),
+      ).toEqual({
+        'a-m1': 'old words',
+        'a-m2': 'old words',
+        'a-bundle': 'old words',
+        'b-m1': 'new words',
+        'b-m2': 'old words',
+        'b-bundle': 'old words',
+      });
+    });
+  });
+
   it('create issues the row under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({
@@ -297,7 +344,7 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       }),
     );
 
-    expect(created.chapter_id).toBe(CHAPTER_B);
+    expect(created?.chapter_id).toBe(CHAPTER_B);
     expect(
       harness.rows('notifications').filter((n) => n.chapter_id === CHAPTER_A),
     ).toHaveLength(1);

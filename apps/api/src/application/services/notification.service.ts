@@ -156,6 +156,12 @@ export type NotifyPayload = {
   /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
   threadId?: string;
   /**
+   * The one chat message this notification quotes (#4418): stored as the
+   * row's `chat_message_id`, so deleting the message deletes the row and an
+   * edit rewrites its body, and sent in the push's data as `messageId`.
+   */
+  chatMessageId?: string;
+  /**
    * Per-recipient wording. When set, it replaces `title` and `body` for each
    * recipient, in both the in-app row and the push, so a push can name a time
    * in the recipient's own zone or say whether an event is required for *them*
@@ -240,13 +246,19 @@ function inAppRow(
   userId: string,
   chapterId: string,
   payload: NotifyPayload,
-): Pick<Notification, 'chapter_id' | 'user_id' | 'title' | 'body' | 'data'> {
+): Pick<
+  Notification,
+  'chapter_id' | 'user_id' | 'title' | 'body' | 'data' | 'chat_message_id'
+> {
   return {
     chapter_id: chapterId,
     user_id: userId,
     title: payload.title,
     body: payload.body,
     data: payload.data ?? {},
+    ...(payload.chatMessageId
+      ? { chat_message_id: payload.chatMessageId }
+      : {}),
   };
 }
 
@@ -333,6 +345,9 @@ export class NotificationService {
     const notification = await this.notificationRepo.create(
       inAppRow(userId, chapterId, payload),
     );
+    // The message this row quotes was deleted while it was being sent (#4418):
+    // the database dropped the row, and the push would carry the same words.
+    if (!notification) return;
 
     // Push is best-effort, and the token lookup is part of it. Once the
     // notification row above is committed the user *has* been notified in
@@ -359,6 +374,34 @@ export class NotificationService {
         level: 'error',
         site: 'notify-user-push-tokens-read',
         message: `Push delivery failed for user ${userId}`,
+        error: err,
+      });
+    }
+  }
+
+  /**
+   * After an edit, give every in-app row that quotes the message its new text
+   * (#4418), so the list never shows words the sender has since changed.
+   * Best-effort: the edit is the source of truth and has already landed, so a
+   * failure here is reported, never thrown. A delete needs no call: a trigger
+   * removes the rows with the message.
+   */
+  async rewriteChatMessagePreview(
+    chapterId: string,
+    messageId: string,
+    preview: string,
+  ): Promise<void> {
+    try {
+      await this.notificationRepo.rewriteChatMessageBody(
+        chapterId,
+        messageId,
+        preview,
+      );
+    } catch (err) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'notification-rewrite-edited-chat-message',
+        message: `Could not rewrite the notifications for edited message ${messageId}`,
         error: err,
       });
     }
@@ -591,7 +634,13 @@ export class NotificationService {
       {
         title: payload.title,
         body: payload.body,
-        data: { ...payload.data, notificationId },
+        data: {
+          ...payload.data,
+          notificationId,
+          ...(payload.chatMessageId
+            ? { messageId: payload.chatMessageId }
+            : {}),
+        },
         priority,
         // Forwarded for delivery telemetry only — lets `push_delivery`
         // records be sliced by category (see the Expo provider).
