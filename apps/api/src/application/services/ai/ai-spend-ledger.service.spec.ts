@@ -149,48 +149,75 @@ describe('AiSpendLedgerService', () => {
       );
     });
 
-    it('reports each pool line once, from the hold that crosses it', async () => {
+    it('reports each pool line once a month, however often spend re-crosses it', async () => {
       const { ledger, service } = harness();
-      // $150 pool: from $70 to $115.5 crosses 50% ($75) and 75% ($112.50).
-      ledger.reserve.mockResolvedValue({
-        granted: true,
-        reservationId: 'hold-1',
-        platformSpentBeforeMicroUsd: 70_000_000,
-        platformSpentAfterMicroUsd: 115_500_000,
-      });
-      await service.reserve(CALL, ESTIMATE);
-      expect(
-        report.mock.calls.map(([, f]) => (f as { site: string }).site),
-      ).toEqual(['ai-spend-platform-pool-50', 'ai-spend-platform-pool-75']);
+      const hold = (before: number, after: number) =>
+        ledger.reserve.mockResolvedValueOnce({
+          granted: true,
+          reservationId: 'hold',
+          platformSpentBeforeMicroUsd: before,
+          platformSpentAfterMicroUsd: after,
+        });
+      const sites = () =>
+        report.mock.calls.map(([, f]) => (f as { site: string }).site);
 
-      // Already past 75%, not yet at 90%: nothing new.
+      // $150 pool: from $70 to $115.5 crosses 50% ($75) and 75% ($112.50).
+      hold(70_000_000, 115_500_000);
+      await service.reserve(CALL, ESTIMATE);
+      expect(sites()).toEqual([
+        'ai-spend-platform-pool-50',
+        'ai-spend-platform-pool-75',
+      ]);
+
+      // The call settles low, spend falls back under 75%, and the next hold
+      // crosses it again: no second report.
       report.mockClear();
-      ledger.reserve.mockResolvedValue({
-        granted: true,
-        reservationId: 'hold-2',
-        platformSpentBeforeMicroUsd: 115_500_000,
-        platformSpentAfterMicroUsd: 120_000_000,
-      });
+      hold(112_400_000, 112_650_000);
       await service.reserve(CALL, ESTIMATE);
       expect(report).not.toHaveBeenCalled();
+
+      // Another provider has lines of its own.
+      hold(0, 30_000_000);
+      await service.reserve({ ...CALL, provider: 'google' }, ESTIMATE);
+      expect(sites()).toEqual(['ai-spend-platform-pool-50']);
     });
 
-    it('reports the full pool at error level', async () => {
+    it('reports 90% at error level, so it reaches Paul', async () => {
       const { ledger, service } = harness();
       ledger.reserve.mockResolvedValue({
         granted: true,
         reservationId: 'hold-1',
-        platformSpentBeforeMicroUsd: 149_900_000,
-        platformSpentAfterMicroUsd: 150_000_000,
+        platformSpentBeforeMicroUsd: 134_900_000,
+        platformSpentAfterMicroUsd: 135_000_000,
       });
       await service.reserve(CALL, ESTIMATE);
       expect(report).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
           level: 'error',
-          site: 'ai-spend-platform-pool-100',
+          site: 'ai-spend-platform-pool-90',
         }),
       );
+    });
+
+    it('a new month reports its lines again', async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-30T23:00:00Z') });
+      try {
+        const { ledger, service } = harness();
+        ledger.reserve.mockResolvedValue({
+          granted: true,
+          reservationId: 'hold-1',
+          platformSpentBeforeMicroUsd: 0,
+          platformSpentAfterMicroUsd: 80_000_000,
+        });
+        await service.reserve(CALL, ESTIMATE);
+        jest.setSystemTime(new Date('2026-12-01T01:00:00Z'));
+        await service.reserve(CALL, ESTIMATE);
+        // 80 of 150 is past 50% only: once in November, once in December.
+        expect(report).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
@@ -206,8 +233,14 @@ describe('AiSpendLedgerService', () => {
       );
     });
 
-    it.each(['aborted', 'timeout'] as const)(
-      'charges the whole hold for an %s call the provider never reported',
+    it.each([
+      'aborted',
+      'timeout',
+      'connection',
+      'overloaded',
+      'unknown',
+    ] as const)(
+      'charges the whole hold for an %s failure the provider never reported',
       async (errorKind) => {
         const { ledger, service } = harness();
         await service.record(
@@ -231,7 +264,12 @@ describe('AiSpendLedgerService', () => {
       expect(ledger.settle.mock.calls[0]?.[1]).toBe(false);
     });
 
-    it.each(['rate_limited', 'auth', 'invalid_request', 'overloaded'] as const)(
+    it.each([
+      'rate_limited',
+      'auth',
+      'invalid_request',
+      'unsupported',
+    ] as const)(
       'charges nothing for a call refused at the door (%s)',
       async (errorKind) => {
         const { ledger, service } = harness();

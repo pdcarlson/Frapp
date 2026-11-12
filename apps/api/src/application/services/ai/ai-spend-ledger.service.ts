@@ -18,22 +18,35 @@ import { aiSpendCaps } from '../../../config/ai-spend-config';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 
 /**
- * How full a provider's monthly pool is when Paul hears about it, in percent.
- * Each is reported once, by the hold that crosses it (the holds on a provider
- * are serialized, so exactly one does), at warning level until the last.
+ * How full a provider's monthly pool is when Sentry hears about it, in percent.
+ * A hold that would cross 100% is refused, and that refusal is reported on
+ * its own (`ai-spend-platform-cap-reached`).
+ *
+ * Each line is reported once per provider and month by each API process.
+ * Holds count at their worst case and settle lower, so the spend can cross a
+ * line, fall back under it and cross it again many times before the settled
+ * spend gets there; only the first crossing is news.
  */
-export const AI_PLATFORM_POOL_ALERTS = [50, 75, 90, 100] as const;
+export const AI_PLATFORM_POOL_ALERTS = [50, 75, 90] as const;
 
 /**
- * Error kinds after which the provider may have done, and billed, work it
- * never reported: the member stopped reading a stream (the gateway records it
- * as `aborted` with no counts), or the call ran out of time while the
- * provider was still answering. Every other failure is a refusal at the door
- * (`rate_limited`, `auth`, `invalid_request`...), which costs nothing.
+ * Error kinds that prove the provider turned the request away before doing
+ * any work: nothing was generated, so nothing was billed.
+ *
+ * Every other failure with no counts is charged its whole hold, marked as an
+ * estimate: a stream the member stopped reading (`aborted`), a time-out, a
+ * dropped connection, an overload or an unknown error can each come after
+ * the provider had already written part of an answer, and the usage record
+ * cannot tell a stream that had produced text from one that had not.
+ * Charging the hold over-counts a call that failed early, which costs a cap
+ * some room for an hour of the month; charging nothing would let spend
+ * escape the caps.
  */
-const UNREPORTED_WORK_KINDS: ReadonlySet<string> = new Set([
-  'aborted',
-  'timeout',
+const DOOR_REFUSAL_KINDS: ReadonlySet<string> = new Set([
+  'rate_limited',
+  'auth',
+  'invalid_request',
+  'unsupported',
 ]);
 
 /** A chapter's usage in one period, summed from the ledger. */
@@ -57,10 +70,11 @@ export interface AiChapterUsage {
  *   platform's month for the provider (`config/ai-spend-config.ts`). A call
  *   that would cross one is not made.
  * - **After it** (`record`): the hold is replaced with the call's real counts
- *   and cost, before the gateway returns. A call whose provider never said
- *   what it used (an abandoned stream, a timeout) is charged its whole hold,
- *   marked as an estimate (`spec/behavior/billing.md` § Abandoned and
- *   unanswered calls).
+ *   and cost, before the gateway returns. A call that failed without the
+ *   provider saying what it used (an abandoned stream, a time-out, a dropped
+ *   connection) is charged its whole hold, marked as an estimate, unless the
+ *   failure proves it was turned away at the door
+ *   (`spec/behavior/billing.md` § Abandoned and unanswered calls).
  *
  * Nothing here sees a prompt or an answer: the gateway hands the seams who,
  * which task and how much, and the ledger has no text column.
@@ -70,6 +84,8 @@ export class AiSpendLedgerService
   implements IAiSpendReservation, IAiUsageRecorder
 {
   private readonly logger = new Logger(AiSpendLedgerService.name);
+  /** `provider:YYYY-MM:percent` lines already reported by this process. */
+  private readonly poolLinesReported = new Set<string>();
 
   constructor(
     @Inject(AI_USAGE_REPOSITORY) private readonly ledger: IAiUsageRepository,
@@ -80,11 +96,12 @@ export class AiSpendLedgerService
     estimate: AiSpendEstimate,
   ): Promise<AiSpendReservationResult> {
     const caps = aiSpendCaps(call.provider);
+    const now = new Date();
     const hold = await this.ledger.reserve(
       call,
       Math.max(0, Math.ceil(estimate.maxCostMicroUsd)),
       caps,
-      new Date(),
+      now,
     );
 
     if (!hold.granted) {
@@ -102,14 +119,20 @@ export class AiSpendLedgerService
 
     const cap = caps.platformMonthlyMicroUsd;
     if (cap !== null && cap > 0) {
+      const month = now.toISOString().slice(0, 7);
       for (const percent of AI_PLATFORM_POOL_ALERTS) {
         const line = (cap * percent) / 100;
+        const key = `${call.provider}:${month}:${percent}`;
         if (
-          hold.platformSpentBeforeMicroUsd < line &&
-          hold.platformSpentAfterMicroUsd >= line
+          hold.platformSpentAfterMicroUsd >= line &&
+          !this.poolLinesReported.has(key)
         ) {
+          this.poolLinesReported.add(key);
           reportCaughtFailure(this.logger, {
-            level: percent === 100 ? 'error' : 'warning',
+            // 90% is an error so it reaches Paul's inbox (alert-routing.md:
+            // only a new or regressed error-level production issue emails);
+            // 50% and 75% are warnings to see in Sentry.
+            level: percent >= 90 ? 'error' : 'warning',
             site: `ai-spend-platform-pool-${percent}`,
             message: `AI spend on ${call.provider} has reached ${percent}% of this month's platform cap`,
             tags: { provider: call.provider, percent: String(percent) },
@@ -125,8 +148,7 @@ export class AiSpendLedgerService
     const billReservation =
       usage.reservationId !== null &&
       usage.outcome === 'error' &&
-      usage.errorKind !== null &&
-      UNREPORTED_WORK_KINDS.has(usage.errorKind) &&
+      !(usage.errorKind !== null && DOOR_REFUSAL_KINDS.has(usage.errorKind)) &&
       usage.inputTokens === 0 &&
       usage.outputTokens === 0;
 

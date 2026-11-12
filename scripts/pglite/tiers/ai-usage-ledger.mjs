@@ -205,7 +205,12 @@ try {
     cost: 50_000_000,
     cap: { chapter: null, member: null, platform: null },
   });
-  checks.push([k.reservation_id !== null, "a null cap is no cap"]);
+  checks.push([
+    k.reservation_id !== null &&
+      Number(k.platform_spent_before) === 0 &&
+      Number(k.platform_spent_after) === 0,
+    "a null cap is no cap, and with no platform cap the provider is not summed",
+  ]);
 
   // A call the provider never reported is charged its whole hold.
   const abandoned = await settle({
@@ -291,7 +296,9 @@ try {
     "a negative hold is refused",
   ]);
 
-  // Deleting the member keeps the chapter's spend.
+  // A hard delete of the member keeps the chapter's spend. (Account deletion
+  // in the product tombstones the users row instead, `anonymize_user`, so the
+  // row keeps its user id; this is the foreign key's own behaviour.)
   await db.query(`delete from users where id = $1`, [U2]);
   checks.push([
     (
@@ -301,7 +308,7 @@ try {
         [CH],
       )
     ).rows[0].n >= 1,
-    "a deleted account's spend stays with the chapter, unattributed",
+    "a hard-deleted user's spend stays with the chapter, unattributed",
   ]);
 
   // Client roles, in a rolled-back transaction as `ai-runs.mjs` does, with a

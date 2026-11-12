@@ -34,7 +34,9 @@ create table if not exists public.ai_usage_events (
   id uuid primary key default gen_random_uuid(),
   chapter_id uuid not null references public.chapters(id) on delete cascade,
   -- The acting member (spec/behavior/ai.md § Whose access an AI run uses).
-  -- Nulled when the account is deleted; the spend stays with the chapter.
+  -- Deleting an account tombstones the users row in place (`anonymize_user`),
+  -- so the row keeps pointing at a user with no name or email left; set null
+  -- only covers a hard delete. The spend stays with the chapter either way.
   user_id uuid references public.users(id) on delete set null,
   -- The background run the call belongs to, if any. Runs are pruned after 90
   -- days; the spend is kept.
@@ -78,17 +80,23 @@ alter table public.ai_usage_events enable row level security;
 comment on table public.ai_usage_events is
   'One row per AI provider call (#714, ADR-28 decision 1): who, which task and model, the prompt version, token counts and cost in micro-USD. No text. Reserved against the chapter, member and platform caps by reserve_ai_spend before the call, settled by settle_ai_spend after it. RLS on, no policies: the API reads and writes with the service role.';
 
+-- The cap sums read only these three columns besides the key, so each index
+-- carries them and a sum can be answered from the index alone.
+
 -- The chapter's month, and the per-period usage query.
 create index if not exists idx_ai_usage_events_chapter
-  on public.ai_usage_events (chapter_id, created_at);
+  on public.ai_usage_events (chapter_id, created_at)
+  include (status, reserved_cost_micro_usd, cost_micro_usd);
 
 -- A member's day in a chapter.
 create index if not exists idx_ai_usage_events_member
-  on public.ai_usage_events (chapter_id, user_id, created_at);
+  on public.ai_usage_events (chapter_id, user_id, created_at)
+  include (status, reserved_cost_micro_usd, cost_micro_usd);
 
 -- A provider's month across every chapter.
 create index if not exists idx_ai_usage_events_provider
-  on public.ai_usage_events (provider, created_at);
+  on public.ai_usage_events (provider, created_at)
+  include (status, reserved_cost_micro_usd, cost_micro_usd);
 
 -- The sweep that expires holds nobody settled.
 create index if not exists idx_ai_usage_events_reserved
@@ -124,7 +132,14 @@ $$;
 -- Concurrent holds are serialized per chapter, then per provider, with
 -- transaction advisory locks, always taken in that order so two holds never
 -- wait on each other in a cycle. Two holds for the same chapter, or for the
--- same provider, can't both see room that only one of them fits in.
+-- same provider, can't both see room that only one of them fits in. With no
+-- platform cap (scripted calls) the provider is neither locked nor summed,
+-- and both spent figures come back 0.
+--
+-- Scale: every hold on a provider waits for the one before it, and each sums
+-- the provider's month from `idx_ai_usage_events_provider`. That is a few
+-- milliseconds at the beta's volume. When it is not, a per-provider, per-day
+-- rollup kept in the same transaction replaces the month's scan.
 create or replace function public.reserve_ai_spend(
   p_chapter_id uuid,
   p_user_id uuid,
@@ -166,19 +181,22 @@ begin
   end if;
 
   perform pg_advisory_xact_lock(hashtextextended('ai_spend:chapter:' || p_chapter_id::text, 0));
-  perform pg_advisory_xact_lock(hashtextextended('ai_spend:provider:' || p_provider, 0));
 
-  select coalesce(sum(public.ai_usage_charge(e.status, e.reserved_cost_micro_usd, e.cost_micro_usd)), 0)
-    into v_platform
-    from public.ai_usage_events e
-   where e.provider = p_provider
-     and e.created_at >= v_month_start
-     and e.created_at < v_month_end;
+  v_platform := 0;
+  if p_platform_cap_micro_usd is not null then
+    perform pg_advisory_xact_lock(hashtextextended('ai_spend:provider:' || p_provider, 0));
 
-  if p_platform_cap_micro_usd is not null
-     and v_platform + p_reserved_cost_micro_usd > p_platform_cap_micro_usd then
-    return query select null::uuid, 'platform_cap'::text, v_platform, v_platform;
-    return;
+    select coalesce(sum(public.ai_usage_charge(e.status, e.reserved_cost_micro_usd, e.cost_micro_usd)), 0)
+      into v_platform
+      from public.ai_usage_events e
+     where e.provider = p_provider
+       and e.created_at >= v_month_start
+       and e.created_at < v_month_end;
+
+    if v_platform + p_reserved_cost_micro_usd > p_platform_cap_micro_usd then
+      return query select null::uuid, 'platform_cap'::text, v_platform, v_platform;
+      return;
+    end if;
   end if;
 
   select coalesce(sum(public.ai_usage_charge(e.status, e.reserved_cost_micro_usd, e.cost_micro_usd)), 0)
@@ -219,7 +237,8 @@ begin
   )
   returning id into v_id;
 
-  return query select v_id, null::text, v_platform, v_platform + p_reserved_cost_micro_usd;
+  return query select v_id, null::text, v_platform,
+    case when p_platform_cap_micro_usd is null then 0 else v_platform + p_reserved_cost_micro_usd end;
 end;
 $$;
 
@@ -231,9 +250,10 @@ comment on function public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, 
 -- seam held nothing).
 --
 -- `p_bill_reservation` charges the hold itself instead of `p_cost_micro_usd`,
--- and marks the row `cost_estimated`. The API sets it when the provider was
--- called and never said what it used: a stream the member stopped reading, or
--- a call that timed out (billing.md § Abandoned and unanswered calls).
+-- and marks the row `cost_estimated`. The API sets it when the call failed
+-- without the provider saying what it used, unless the failure proves the
+-- provider turned it away at the door (billing.md § Abandoned and unanswered
+-- calls).
 --
 -- A hold that expired is still settled: the call outlived the sweep, and its
 -- real cost replaces the hold. Returns `settled` (a hold was settled),

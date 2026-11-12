@@ -129,16 +129,17 @@ Built 2026-11-12 (#714). Every call is held against three caps **before** it is 
 - Scripted calls (local runs, tests) are held against the chapter and member caps at catalog prices, and against no platform cap, since they cost nothing.
 - A hold that lands exactly on a cap is granted. A member's cap is per chapter.
 - Holds count at their full amount until settled. After the call, `settle_ai_spend` replaces the hold with the call's real cost, before the gateway returns, which frees what the call did not use.
-- A hold nobody settled (the process died mid-call) expires after an hour and keeps counting at its full amount, because the call may have run and been billed. The sweep reports each to Sentry.
-- Paul hears from Sentry when a provider's month crosses 50, 75 and 90% of its platform cap (warning) and 100% (error), once per line, from the hold that crosses it, and on every refusal at the platform cap.
+- A hold nobody settled (the process died mid-call) expires after an hour and keeps counting at its full amount, because the call may have run and been billed. A sweep tick that expires any reports a warning to Sentry.
+- Sentry hears when a provider's month reaches 50% and 75% of its platform cap (warning) and 90% (error), once per line per month from each API process, and when a call is refused at the platform cap (error). Only error-level production issues email Paul ([`alert-routing.md`](../../docs/ops/alert-routing.md)), so 90% and the refusal reach his inbox, the first time each happens or when its issue regresses; 50% and 75% are for looking up in Sentry.
 
 ### Abandoned and unanswered calls
 
-Decided 2026-11-12 (#714): **a call the provider never reported is charged its whole hold, marked as an estimate** (`cost_estimated`).
+Decided 2026-11-12 (#714): **a call that failed without the provider saying what it used is charged its whole hold, marked as an estimate** (`cost_estimated`), unless the failure proves the provider turned it away at the door.
 
-- Which calls: a stream the member stopped reading before its end (the gateway records `error` / `aborted` with no counts, because counts arrive only with the stream's end), and a call that timed out (`timeout`) with no counts. The provider may have written, and billed, any part of the answer by then.
-- Why the hold and not zero: zero lets a client spend without limit by closing every stream early, and the caps exist to make that impossible. The hold is the most the call could have cost, so the caps are never under-counted.
-- Every other failure (`rate_limited`, `overloaded`, `auth`, `invalid_request`, `connection`, `unsupported`, `unknown`) is charged what the provider reported, usually nothing: the request was refused at the door. A failure that reported counts is charged those counts.
+- Charged the hold: a stream the member stopped reading before its end (the gateway records `error` / `aborted` with no counts, because counts arrive only with the stream's end), a time-out, a dropped connection, an overload and an unknown error, each with no counts. Any of them can come after the provider had already written, and billed, part of an answer, and the usage record can't tell a stream that had produced text from one that had not.
+- Why the hold and not zero: zero lets a client spend without limit by closing every stream early, and the caps exist to make that impossible. The hold is the most the call could have cost, so the caps are never under-counted. The price is that a call that failed before any work also uses a cap's room for its hold.
+- Charged what the provider reported, which is nothing: `rate_limited`, `auth`, `invalid_request` and `unsupported`, which the provider answers before doing any work. A failure that reported counts is charged those counts.
+- One known gap: the Anthropic SDK retries a time-out or a dropped connection itself (twice, by default), so one hold can cover up to three attempts. Reconciliation against the provider's bill ([#3284](https://github.com/pdcarlson/Frapp/issues/3284)) is where that shows.
 - The usage query reports estimated cost on its own (`estimated_cost_micro_usd`), so reconciliation against the provider's bill ([#3284](https://github.com/pdcarlson/Frapp/issues/3284)) can replace it, and an overage invoice can leave it out if Paul prefers.
 
 ### At-cost overage
