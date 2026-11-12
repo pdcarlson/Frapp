@@ -3051,6 +3051,46 @@ export interface paths {
         patch: operations["AiChapterSettingsController_updateSettings_v1"];
         trace?: never;
     };
+    "/v1/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's AI runs
+         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
+         */
+        get: operations["AiRunController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one AI run
+         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
+         */
+        get: operations["AiRunController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pledge-classes": {
         parameters: {
             query?: never;
@@ -3845,46 +3885,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ai/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the caller's AI runs
-         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
-         */
-        get: operations["AiRunController_list_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ai/runs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get one AI run
-         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
-         */
-        get: operations["AiRunController_get_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -4381,6 +4381,26 @@ export interface paths {
          * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
          */
         delete: operations["AskController_stopDiagnostics_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/catch-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Summarize a channel's new messages, or one thread
+         * @description Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.
+         */
+        post: operations["ChatCatchUpController_catchUp_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6618,7 +6638,7 @@ export interface components {
         };
         AiSuggestionSourceDto: {
             /** @enum {string} */
-            type: "meeting" | "event" | "channel";
+            type: "meeting" | "event" | "channel" | "task";
             /** Format: uuid */
             id: string;
         };
@@ -6635,12 +6655,27 @@ export interface components {
             /** Format: date-time */
             due_at: string | null;
             subtasks: string[];
+            /**
+             * Format: date
+             * @description Present on a "this time last year" suggestion: the day last year's task, its source, was due.
+             */
+            last_year_on?: string;
+        };
+        EventSuggestionDto: {
+            name: string;
+            /**
+             * Format: date-time
+             * @description When the source event started, last year.
+             */
+            last_year_at: string | null;
+            /** @description How many times it was held around then (a weekly series). */
+            times: number;
         };
         AiSuggestionDto: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "task";
+            kind: "task" | "event";
             /** @enum {string} */
             status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
             source: components["schemas"]["AiSuggestionSourceDto"];
@@ -6651,6 +6686,8 @@ export interface components {
             batch_id: string;
             /** @description The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text). */
             task: components["schemas"]["TaskSuggestionDto"] | null;
+            /** @description The suggested event, while it waits. Null for another kind, and once decided or expired. */
+            event?: components["schemas"]["EventSuggestionDto"] | null;
             /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
             quote: string | null;
             /** @description Accepted with changes. */
@@ -6687,13 +6724,22 @@ export interface components {
             due_at?: string | null;
             subtasks?: string[];
         };
+        EventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this suggestion. It must be in the chapter and made by the caller.
+             */
+            event_id: string;
+        };
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
         };
         AiSuggestionResultDto: {
             /** @enum {string} */
-            kind: "task";
+            kind: "task" | "event";
             /** Format: uuid */
             id: string;
         };
@@ -6702,9 +6748,18 @@ export interface components {
             /** @description What accepting made. Null for a dismissal. */
             result: components["schemas"]["AiSuggestionResultDto"] | null;
         };
+        DismissAiSuggestionDto: {
+            /**
+             * @description `already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.
+             * @enum {string}
+             */
+            reason?: "already_doing";
+        };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
             /** Format: uuid */
             id: string;
             /** @enum {string} */
@@ -6796,6 +6851,39 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+        };
+        AiRunDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The run kind, `snake_case`.
+             * @example minutes_draft
+             */
+            kind: string;
+            /**
+             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
+             * @example Drafting minutes
+             */
+            label: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Tries so far, the one in progress included. */
+            attempt_count: number;
+            max_attempts: number;
+            /** @enum {string|null} */
+            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
+            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
+            failure_message: string | null;
+            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
+            result_ref: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -7390,39 +7478,6 @@ export interface components {
              */
             state: "done" | "hidden";
         };
-        AiRunDto: {
-            /** Format: uuid */
-            id: string;
-            /**
-             * @description The run kind, `snake_case`.
-             * @example minutes_draft
-             */
-            kind: string;
-            /**
-             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
-             * @example Drafting minutes
-             */
-            label: string;
-            /** @enum {string} */
-            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-            /** @description Tries so far, the one in progress included. */
-            attempt_count: number;
-            max_attempts: number;
-            /** @enum {string|null} */
-            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
-            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
-            failure_message: string | null;
-            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
-            result_ref: {
-                [key: string]: unknown;
-            } | null;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            started_at: string | null;
-            /** Format: date-time */
-            finished_at: string | null;
-        };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
             consent_acknowledged: boolean;
@@ -7808,6 +7863,91 @@ export interface components {
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
         };
+        ChatCatchUpUnreadDto: {
+            /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
+            count: number;
+            /**
+             * Format: date-time
+             * @description When the member opened the channel.
+             */
+            as_of: string;
+        };
+        ChatCatchUpRequestDto: {
+            /**
+             * Format: uuid
+             * @description The channel to summarize in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Summarize one thread: its first message and every reply. Exactly one of `thread_root_id`, `since` and `unread` is given.
+             */
+            thread_root_id?: string;
+            /**
+             * Format: date-time
+             * @description Summarize the channel's messages from this moment on. No further back than 30 days.
+             */
+            since?: string;
+            /** @description Summarize what was new when the member opened the channel. Opening a channel marks it read, so the client says how many messages were new and when it opened; the server finds where that stretch starts. */
+            unread?: components["schemas"]["ChatCatchUpUnreadDto"];
+        };
+        ChatCatchUpPointDto: {
+            /**
+             * @description What the point is. One of for_you, decision, date, topic today; a client shows a kind it does not know with the last group.
+             * @example decision
+             */
+            kind: string;
+            /** @description One sentence, plain text. */
+            text: string;
+            /**
+             * Format: uuid
+             * @description The message the point rests on, which the point opens.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when that message is a thread reply: the thread to open.
+             */
+            thread_root_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who wrote the message.
+             */
+            author_id: string | null;
+            /** Format: date-time */
+            sent_at: string;
+            /** @description The words of that message the point rests on. The server found them in the message, word for word. */
+            quote: string;
+        };
+        ChatCatchUpDto: {
+            /**
+             * @description How the request ended: summarized, nothing_new, too_little, not_found, refused, unavailable. `summarized` carries points; every other status carries none.
+             * @example summarized
+             */
+            status: string;
+            /** @description Why nothing was attempted, when `status` is `unavailable`: consent_required, chapter_off, chat_off, chapter_limit, member_limit, not_available. */
+            reason: string | null;
+            points: components["schemas"]["ChatCatchUpPointDto"][];
+            /** @description Messages the summary read. */
+            messages_read: number;
+            /** @description Messages in the stretch the summary could have read. More than `messages_read` when the stretch was longer than one summary reads; the newest were read. */
+            messages_total: number;
+            /** @description Messages left out because their author has not agreed to AI reading their messages. A count, never who. */
+            left_out_messages: number;
+            /** @description Points dropped because their quote was not in the message they named. */
+            unverified_points: number;
+            /** Format: date-time */
+            covers_from: string | null;
+            /** Format: date-time */
+            covers_to: string | null;
+            /**
+             * Format: uuid
+             * @description This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary.
+             */
+            summary_id?: string | null;
+            /** @description The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text. */
+            report_receipt?: string | null;
+        };
         AiReportPolicyDto: {
             /** @description Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so. */
             keeps_text: boolean;
@@ -7819,20 +7959,20 @@ export interface components {
         };
         CreateAiReportDto: {
             /**
-             * @description What is reported: an Ask answer, the draft of a meeting’s minutes, or a suggestion.
+             * @description What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary.
              * @enum {string}
              */
-            subject: "ask_answer" | "meeting_draft" | "ai_suggestion";
+            subject: "ask_answer" | "meeting_draft" | "ai_suggestion" | "chat_summary";
             /**
              * Format: uuid
-             * @description The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), or the suggestion’s id.
+             * @description The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`.
              */
             subject_id: string;
             /** @enum {string} */
             reason: "wrong" | "harmful" | "private" | "other";
             /** @description The member’s own words, if they add any. */
             note?: string;
-            /** @description Ask only: the answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. */
+            /** @description An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients. */
             receipt?: string;
         };
         AiReportOutcomeDto: {
@@ -14770,7 +14910,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Only suggestions drawn from this source. Send with `source_id`. */
-                source_type?: "meeting" | "event" | "channel";
+                source_type?: "meeting" | "event" | "channel" | "task";
                 source_id?: string;
             };
             header?: never;
@@ -14841,7 +14981,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissAiSuggestionDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -15039,6 +15183,83 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only runs of this kind (`minutes_draft`). */
+                kind?: string;
+                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"][];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"];
+                };
+            };
+            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16856,83 +17077,6 @@ export interface operations {
             };
         };
     };
-    AiRunController_list_v1: {
-        parameters: {
-            query?: {
-                /** @description Only runs of this kind (`minutes_draft`). */
-                kind?: string;
-                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiRunDto"][];
-                };
-            };
-            /** @description AI is off on this server (`ai.not_available`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    AiRunController_get_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiRunDto"];
-                };
-            };
-            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
     ChapterDirectoryController_search_v1: {
         parameters: {
             query?: {
@@ -17977,6 +18121,59 @@ export interface operations {
             };
         };
     };
+    ChatCatchUpController_catchUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCatchUpRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatCatchUpDto"];
+                };
+            };
+            /** @description Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AiReportController_policy_v1: {
         parameters: {
             query?: never;
@@ -18033,7 +18230,7 @@ export interface operations {
                     "application/json": components["schemas"]["AiReportOutcomeDto"];
                 };
             };
-            /** @description An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`). */
+            /** @description A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`). */
             400: {
                 headers: {
                     [name: string]: unknown;

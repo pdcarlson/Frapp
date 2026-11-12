@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Report this on a channel summary (#3946, on `ai-integration`)
+
+### 20261112233000_ai_reports_chat_summary.sql
+
+- **Purpose**: Widens `ai_reports_subject_type_allowed` so a report may name a channel summary (`chat_summary`) beside the three subjects it already allowed ([`spec/behavior/ai.md` § Catch me up](../../../spec/behavior/ai.md#catch-me-up)). Adds no column and no table, and writes no row.
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_reports_subject_type_allowed';` names four subjects, `chat_summary` among them, and `select convalidated from pg_constraint where conname = 'ai_reports_subject_type_allowed';` returns `t`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Applies after `20261112220000_ai_reports.sql`, whose constraint it replaces. The check is dropped and re-added NOT VALID, then validated, in the migration's transaction; every existing row already satisfies it, since the old list is a subset of the new. `drop constraint if exists` makes re-applying idempotent. Nothing writes a `chat_summary` report unless the server has `AI_ENABLED=true`. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-report-this-on-a-channel-summary-20261112233000) § Rollback Report this on a channel summary.
+
 ## 2026-11-12: Report this (#4315, on `ai-integration`)
 
 ### 20261112220000_ai_reports.sql
@@ -58,6 +68,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Nothing writes either table unless the server has `AI_ENABLED=true`, `AI_DIAGNOSTICS_CHAPTER_ID` naming a chapter, `AI_STORED_TEXT_KEY` set, and that chapter's president has turned saving on in Chapter settings. The sweep that deletes a window at its end date runs every 10 minutes whether or not AI is on, and deletes nothing while the table is empty. The foreign keys take brief `SHARE ROW EXCLUSIVE` locks on `chapters`, `users` and `members` while the tables are created. `if not exists` makes re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-ask-diagnostics.mjs`). Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ask-diagnostics-window-20261112200000) § Rollback Ask diagnostics window.
+
+## 2026-11-12: This time last year (#3930, on `ai-integration`)
+
+### 20261112230000_last_year_suggestions.sql
+
+- **Purpose**: Widens two checks on `ai_suggestions`: `kind` gains `event` (a suggested event; accepting one records the event an officer added through the ordinary route) and `source_type` gains `task` (a suggestion drawn from an earlier task). Adds the trigger `tasks_drop_ai_suggestions` (`after delete on tasks`, running the existing `ai_suggestions_drop_for_source('task')`), so a waiting suggestion goes with the task it was drawn from, and the index `idx_ai_suggestions_chapter_dedupe` on `(chapter_id, dedupe_key) where dedupe_key is not null`, which the weekly check reads so a thing it raised is not raised again for 150 days. Writes no row on apply. The rule is [`ai.md` § This time last year](../../../spec/behavior/ai.md#this-time-last-year).
+- **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname in ('ai_suggestions_kind_check', 'ai_suggestions_source_type_check');` returns 2 rows naming `event` and `task`, `select tgname from pg_trigger where tgname = 'tasks_drop_ai_suggestions';` returns 1 row, and `select count(*) from pg_indexes where indexname = 'idx_ai_suggestions_chapter_dedupe';` returns `1`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Must sort after `20261112130001_ai_suggestions.sql` and `20261112190000_meeting_task_suggestions.sql`. The older API writes neither new value; the newer API with `AI_ENABLED` unset queues no weekly check and proposes nothing. `ai_suggestions` arrives empty in the same release, so re-validating the two checks and building the index are milliseconds; the trigger takes a SHARE ROW EXCLUSIVE lock on `tasks` for a catalog change only. `drop constraint if exists`, `drop trigger if exists` and `if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-this-time-last-year-20261112230000) § Rollback this time last year.
 
 ## 2026-11-12: Suggested tasks from minutes (#4313, on `ai-integration`)
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   applyBlockList,
@@ -29,7 +36,15 @@ import {
   useImageViewer,
 } from "./image-viewer";
 import { MessageItem } from "./message-item";
-import { MessageTimeline, type MessageTimelineProps } from "./message-timeline";
+import {
+  MessageTimeline,
+  type MessageTimelineHandle,
+  type MessageTimelineProps,
+} from "./message-timeline";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_MIN_MESSAGES,
+} from "@repo/validation";
 
 /**
  * The row writes the shell's channel hook makes (`useChatChannel`), each
@@ -108,6 +123,17 @@ export interface ThreadPanelProps extends Pick<
    * thread covers, so the thread carries its own. Only beside a tool page.
    */
   onClosePanel?: () => void;
+  /**
+   * Summarize this thread (#3946). Passed only where summaries are on and the
+   * channel is one a summary may read; shown once the thread is long enough
+   * to be worth shortening.
+   */
+  onCatchUp?: () => void;
+  /**
+   * A reply to bring on screen, from a summary line. A new `nonce` asks
+   * again for the same reply. A reply not loaded yet is left where it is.
+   */
+  jumpTo?: { messageId: string; nonce: number } | null;
   className?: string;
 }
 
@@ -150,9 +176,21 @@ export function ThreadPanel({
   canPost,
   onClose,
   onClosePanel,
+  onCatchUp,
+  jumpTo,
   className,
 }: ThreadPanelProps) {
   const thread = useMessageThread(channelId, rootId, viewerId);
+  const timeline = useRef<MessageTimelineHandle | null>(null);
+  const jumped = useRef<number | null>(null);
+  const loadedReplies = thread.messages.length;
+  useEffect(() => {
+    if (!jumpTo || jumped.current === jumpTo.nonce) return;
+    // Asked again once the replies land, when the thread was only just opened.
+    if (timeline.current?.scrollToMessage(jumpTo.messageId)) {
+      jumped.current = jumpTo.nonce;
+    }
+  }, [jumpTo, loadedReplies]);
   const { toast } = useToast();
   const { isOffline } = useNetwork();
   const [draft, setDraft] = useState("");
@@ -438,6 +476,11 @@ export function ThreadPanel({
             </p>
           ) : null}
         </div>
+        {onCatchUp && root && shownReplies + 1 >= CHAT_CATCH_UP_MIN_MESSAGES ? (
+          <Button variant="ghost" size="sm" onClick={onCatchUp}>
+            {CHAT_CATCH_UP_COPY.thread_action}
+          </Button>
+        ) : null}
         {root ? (
           <Button
             variant="ghost"
@@ -460,6 +503,7 @@ export function ThreadPanel({
 
       <div className="min-h-0 flex-1 pb-2">
         <MessageTimeline
+          ref={timeline}
           channelId={channelId}
           messages={lookup}
           blockList={{ blockState, thread: blockedReplies }}

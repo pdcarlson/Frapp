@@ -80,7 +80,7 @@ export const SystemPermissions = {
   // created today lets every active member use the AI features the president
   // turns on, once that member says yes on the AI sheet; Alumni, outside the
   // tiers, do not hold it. `AI_ACT` is held by no seeded role. `AI_USE` gates
-  // Ask and Report this; `AI_ACT` gates nothing until the acting agent
+  // Ask, channel summaries and Report this; `AI_ACT` gates nothing until the acting agent
   // (#718). Left out of the permissions catalog while
   // the server switch is off (`RbacService.getPermissionsCatalog`).
   AI_USE: 'ai:use',

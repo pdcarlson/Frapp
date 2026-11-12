@@ -10057,7 +10057,8 @@
               "enum": [
                 "meeting",
                 "event",
-                "channel"
+                "channel",
+                "task"
               ]
             }
           },
@@ -10173,6 +10174,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissAiSuggestionDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -10434,6 +10445,124 @@
           }
         ],
         "summary": "Turn the chapter’s AI features on or off",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs": {
+      "get": {
+        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
+        "operationId": "AiRunController_list_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only runs of this kind (`minutes_draft`).",
+            "schema": {
+              "example": "minutes_draft",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiRunDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's AI runs",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}": {
+      "get": {
+        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
+        "operationId": "AiRunController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRunDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get one AI run",
         "tags": [
           "AI"
         ]
@@ -13130,124 +13259,6 @@
         ]
       }
     },
-    "/v1/ai/runs": {
-      "get": {
-        "description": "Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.",
-        "operationId": "AiRunController_list_v1",
-        "parameters": [
-          {
-            "name": "kind",
-            "required": false,
-            "in": "query",
-            "description": "Only runs of this kind (`minutes_draft`).",
-            "schema": {
-              "example": "minutes_draft",
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "How many runs to return, newest first. 1 to 50; 20 when omitted.",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 20,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AiRunDto"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List the caller's AI runs",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/ai/runs/{id}": {
-      "get": {
-        "description": "A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.",
-        "operationId": "AiRunController_get_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiRunDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get one AI run",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -14701,6 +14712,63 @@
         ]
       }
     },
+    "/v1/ai/catch-up": {
+      "post": {
+        "description": "Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.",
+        "operationId": "ChatCatchUpController_catchUp_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCatchUpRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCatchUpDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`)."
+          },
+          "403": {
+            "description": "The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Summarize a channel's new messages, or one thread",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/reports": {
       "get": {
         "operationId": "AiReportController_policy_v1",
@@ -14766,7 +14834,7 @@
             }
           },
           "400": {
-            "description": "An Ask receipt that is too old (`ai.report.too_old`) or was not issued to the caller for this answer (`ai.report.receipt_invalid`)."
+            "description": "A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`)."
           },
           "404": {
             "description": "AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`)."
@@ -21273,7 +21341,8 @@
             "enum": [
               "meeting",
               "event",
-              "channel"
+              "channel",
+              "task"
             ]
           },
           "id": {
@@ -21317,6 +21386,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "last_year_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Present on a \"this time last year\" suggestion: the day last year's task, its source, was due."
           }
         },
         "required": [
@@ -21326,6 +21400,29 @@
           "due_date",
           "due_at",
           "subtasks"
+        ]
+      },
+      "EventSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "last_year_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the source event started, last year."
+          },
+          "times": {
+            "type": "number",
+            "description": "How many times it was held around then (a weekly series)."
+          }
+        },
+        "required": [
+          "name",
+          "last_year_at",
+          "times"
         ]
       },
       "AiSuggestionDto": {
@@ -21338,7 +21435,8 @@
           "kind": {
             "type": "string",
             "enum": [
-              "task"
+              "task",
+              "event"
             ]
           },
           "status": {
@@ -21366,6 +21464,16 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionDto"
+              }
+            ]
+          },
+          "event": {
+            "nullable": true,
+            "description": "The suggested event, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionDto"
               }
             ]
           },
@@ -21464,6 +21572,19 @@
           }
         }
       },
+      "EventSuggestionAcceptDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event the caller added from this suggestion. It must be in the chapter and made by the caller."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
       "AcceptAiSuggestionDto": {
         "type": "object",
         "properties": {
@@ -21472,6 +21593,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
               }
             ]
           }
@@ -21483,7 +21612,8 @@
           "kind": {
             "type": "string",
             "enum": [
-              "task"
+              "task",
+              "event"
             ]
           },
           "id": {
@@ -21518,6 +21648,18 @@
           "result"
         ]
       },
+      "DismissAiSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "already_doing"
+            ],
+            "description": "`already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal."
+          }
+        }
+      },
       "AiSuggestionDecideItemDto": {
         "type": "object",
         "properties": {
@@ -21526,6 +21668,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "event": {
+            "description": "Required to accept a suggested event.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventSuggestionAcceptDto"
               }
             ]
           },
@@ -21780,6 +21930,98 @@
             "type": "boolean"
           }
         }
+      },
+      "AiRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The run kind, `snake_case`.",
+            "example": "minutes_draft"
+          },
+          "label": {
+            "type": "string",
+            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
+            "example": "Drafting minutes"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempt_count": {
+            "type": "number",
+            "description": "Tries so far, the one in progress included.",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "unknown_kind",
+              "ai_unavailable",
+              "not_permitted",
+              "source_gone",
+              "spend_limit",
+              "invalid_result",
+              "handler_failed",
+              "attempts_exhausted"
+            ],
+            "nullable": true
+          },
+          "failure_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
+          },
+          "result_ref": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "status",
+          "attempt_count",
+          "max_attempts",
+          "failure_reason",
+          "failure_message",
+          "result_ref",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ]
       },
       "PledgeClassDto": {
         "type": "object",
@@ -23323,98 +23565,6 @@
           "state"
         ]
       },
-      "AiRunDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "description": "The run kind, `snake_case`.",
-            "example": "minutes_draft"
-          },
-          "label": {
-            "type": "string",
-            "description": "What the run does, to show beside its status (\"Drafting minutes\"). The kind itself when this server has no handler for it.",
-            "example": "Drafting minutes"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "succeeded",
-              "failed",
-              "cancelled"
-            ]
-          },
-          "attempt_count": {
-            "type": "number",
-            "description": "Tries so far, the one in progress included.",
-            "minimum": 0
-          },
-          "max_attempts": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 10
-          },
-          "failure_reason": {
-            "type": "string",
-            "enum": [
-              "unknown_kind",
-              "ai_unavailable",
-              "not_permitted",
-              "source_gone",
-              "spend_limit",
-              "invalid_result",
-              "handler_failed",
-              "attempts_exhausted"
-            ],
-            "nullable": true
-          },
-          "failure_message": {
-            "type": "string",
-            "nullable": true,
-            "description": "The failure in plain words, for the screen. Null unless `status` is `failed`."
-          },
-          "result_ref": {
-            "type": "object",
-            "additionalProperties": true,
-            "nullable": true,
-            "description": "What the run produced, by reference: ids and counts (`{ \"draft_id\": \"…\" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "finished_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "label",
-          "status",
-          "attempt_count",
-          "max_attempts",
-          "failure_reason",
-          "failure_message",
-          "result_ref",
-          "created_at",
-          "started_at",
-          "finished_at"
-        ]
-      },
       "CreateDiscordImportDto": {
         "type": "object",
         "properties": {
@@ -24497,6 +24647,174 @@
           "question"
         ]
       },
+      "ChatCatchUpUnreadDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "How many messages were new to the member when they opened the channel, as its unread badge counted them.",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the member opened the channel."
+          }
+        },
+        "required": [
+          "count",
+          "as_of"
+        ]
+      },
+      "ChatCatchUpRequestDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to summarize in."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Summarize one thread: its first message and every reply. Exactly one of `thread_root_id`, `since` and `unread` is given."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Summarize the channel's messages from this moment on. No further back than 30 days."
+          },
+          "unread": {
+            "description": "Summarize what was new when the member opened the channel. Opening a channel marks it read, so the client says how many messages were new and when it opened; the server finds where that stretch starts.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatCatchUpUnreadDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "ChatCatchUpPointDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "What the point is. One of for_you, decision, date, topic today; a client shows a kind it does not know with the last group.",
+            "example": "decision"
+          },
+          "text": {
+            "type": "string",
+            "description": "One sentence, plain text."
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The message the point rests on, which the point opens."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Set when that message is a thread reply: the thread to open."
+          },
+          "author_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who wrote the message."
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quote": {
+            "type": "string",
+            "description": "The words of that message the point rests on. The server found them in the message, word for word."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "message_id",
+          "thread_root_id",
+          "author_id",
+          "sent_at",
+          "quote"
+        ]
+      },
+      "ChatCatchUpDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "How the request ended: summarized, nothing_new, too_little, not_found, refused, unavailable. `summarized` carries points; every other status carries none.",
+            "example": "summarized"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why nothing was attempted, when `status` is `unavailable`: consent_required, chapter_off, chat_off, chapter_limit, member_limit, not_available."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatCatchUpPointDto"
+            }
+          },
+          "messages_read": {
+            "type": "number",
+            "description": "Messages the summary read."
+          },
+          "messages_total": {
+            "type": "number",
+            "description": "Messages in the stretch the summary could have read. More than `messages_read` when the stretch was longer than one summary reads; the newest were read."
+          },
+          "left_out_messages": {
+            "type": "number",
+            "description": "Messages left out because their author has not agreed to AI reading their messages. A count, never who."
+          },
+          "unverified_points": {
+            "type": "number",
+            "description": "Points dropped because their quote was not in the message they named."
+          },
+          "covers_from": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "covers_to": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "summary_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary."
+          },
+          "report_receipt": {
+            "type": "string",
+            "nullable": true,
+            "description": "The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text."
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "points",
+          "messages_read",
+          "messages_total",
+          "left_out_messages",
+          "unverified_points",
+          "covers_from",
+          "covers_to"
+        ]
+      },
       "AiReportPolicyDto": {
         "type": "object",
         "properties": {
@@ -24523,14 +24841,15 @@
             "enum": [
               "ask_answer",
               "meeting_draft",
-              "ai_suggestion"
+              "ai_suggestion",
+              "chat_summary"
             ],
-            "description": "What is reported: an Ask answer, the draft of a meeting’s minutes, or a suggestion."
+            "description": "What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary."
           },
           "subject_id": {
             "type": "string",
             "format": "uuid",
-            "description": "The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), or the suggestion’s id."
+            "description": "The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`."
           },
           "reason": {
             "type": "string",
@@ -24549,7 +24868,7 @@
           "receipt": {
             "type": "string",
             "maxLength": 200000,
-            "description": "Ask only: the answer’s `report_receipt`, exactly as the server sent it. Opaque to clients."
+            "description": "An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients."
           }
         },
         "required": [

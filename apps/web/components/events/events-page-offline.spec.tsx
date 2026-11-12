@@ -38,6 +38,12 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
 
+// "This time last year" (#3930) has its own spec.
+vi.mock("@/components/ai/suggested-events", () => ({
+  SuggestedEvents: () => null,
+  useRecordPlannedEvent: () => async () => undefined,
+}));
+
 vi.mock("@repo/hooks", () => ({
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
   useChapterRoster: () => ({ data: [] }),

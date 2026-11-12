@@ -79,6 +79,26 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     return data ?? [];
   }
 
+  async findTakenDedupeKeys(
+    chapterId: string,
+    keys: readonly string[],
+    since: string,
+  ): Promise<Set<string>> {
+    if (keys.length === 0) return new Set();
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .select('dedupe_key')
+      .eq('chapter_id', chapterId)
+      .in('dedupe_key', [...keys])
+      .gte('created_at', since);
+    if (error) throw new SupabaseQueryError(error);
+    return new Set(
+      (data ?? [])
+        .map((row) => row.dedupe_key)
+        .filter((key): key is string => key !== null),
+    );
+  }
+
   async deletePending(
     chapterId: string,
     ids: readonly string[],

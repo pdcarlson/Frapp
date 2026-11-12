@@ -13,7 +13,8 @@
  * billing row is read when it is opened.
  */
 const SCREENS_BY_ROUTE: readonly (readonly [string, readonly string[]])[] = [
-  ["/events", ["events"]],
+  // Events suggested from this time last year are reviewed here (#3930).
+  ["/events", ["events", "ai_suggestions"]],
   // The board's Suggested list is where suggested tasks are reviewed (#4313).
   ["/tasks", ["tasks", "ai_suggestions"]],
   // And under the minutes they came from, where the push for them opens.
