@@ -2747,7 +2747,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List tasks (own or all for admins) */
+        /**
+         * List tasks (own or all for admins)
+         * @description Newest first, by `created_at` then `id`. Send `limit` (and, for the next page, `before` and `before_id` from the last task received) to page; a page shorter than `limit` is the last. With neither, every task is returned, as before paging existed.
+         */
         get: operations["TaskController_list_v1"];
         put?: never;
         /** Create a task */
@@ -13270,7 +13273,14 @@ export interface operations {
     };
     TaskController_list_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task. */
+                limit?: number;
+                /** @description Cursor: the `created_at` of the last task of the previous page, fed back exactly as received. Tasks come newest first, by `created_at` then `id`. Requires `before_id`. */
+                before?: string;
+                /** @description Cursor: the `id` of the last task of the previous page. Requires `before`. */
+                before_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
