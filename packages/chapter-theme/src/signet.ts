@@ -49,10 +49,10 @@ export type { SignetPalette };
  * ship. `--background` is also the generator's `background` parameter.
  */
 export const SIGNET_FILL_SURFACES = {
-  "--background": "#0A0A0A",
-  "--surface-1": "#111111",
-  "--card": "#171717",
-  "--popover": "#1E1E1E",
+  "--background": "#050505",
+  "--surface-1": "#1A1A1A",
+  "--card": "#262626",
+  "--popover": "#313131",
 } as const;
 
 /**
@@ -90,7 +90,7 @@ export const HOUSE_SEED = "#DDB844";
  * only a seed outside the corpus is not caught, so widen the corpus when you
  * touch hue-specific or input-handling code.
  */
-export const SIGNET_ENGINE_VERSION = 2;
+export const SIGNET_ENGINE_VERSION = 3;
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = AA_NORMAL;
@@ -124,12 +124,32 @@ const LIFT_COARSE = 10;
  * these names — not scale indices — are what gets persisted and painted.
  *
  * Indices are zero-based into the 12-step scale, hence step N is `N - 1`.
+ *
+ * `accent-subtle-bg` is step 4, not Radix's step 3 (engine version 3, #3826).
+ * The generator pitches its tint steps against its `background`, the ladder's
+ * floor, and the tints sit higher up: the active nav row on `--surface-1`.
+ * When the 2026-11-12 ladder spread its steps apart, step 3 stayed near-black
+ * there, 1.05–1.14:1 across the corpus; step 4 is 1.17–1.38:1, at or above the
+ * 2026-11-05 ladder's 1.15–1.24.
+ *
+ * Step 4 and no lighter, because text sits on the tint: a row that @-mentions
+ * the viewer paints it behind the author's role-coloured name and the
+ * timestamp. Step 5 put a green chapter's hovered Violet name at 3.70:1 and
+ * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%,
+ * holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
+ * (`chat-contrast.spec.ts`). The cost is a weaker tint on `--card` (1.02–1.20,
+ * the selected fill 1.11–1.32, was 1.25–1.40), where a selected card also
+ * carries its accent border.
+ *
+ * Seating the generator on `--card` instead was tried and rejected: it made
+ * the generator swap dark seeds for its own saturated step 9, so maroon
+ * `#8B0000` painted `#FF2A1F` and navy `#1F4E79` a sky `#90CFFF`.
  */
 const ROLE_STEPS = {
   "accent-primary": 9,
   "accent-hover": 10,
   "accent-ring": 8,
-  "accent-subtle-bg": 3,
+  "accent-subtle-bg": 4,
   "accent-border": 7,
   "accent-text": 11,
 } as const;
@@ -455,14 +475,17 @@ export function deriveSignetPalette(
   // §8: accent-derived TEXT roles must clear AA on the surfaces they are
   // specified for. Only text is held to 4.5:1 here; the 3:1 floor on the fill
   // and its hover is `fillChecks` below, and the tinted-background and border
-  // roles are held to no ratio.
+  // roles are held to no ratio. Accent text is light in the dark appearance,
+  // so the ladder's lightest step, `--popover`, is its worst case: measured
+  // there, it clears every step below too. Until #3826 this measured against
+  // `--background`, the darkest step, which said nothing about the others.
   const contrastChecks: SignetContrastCheck[] = [
     {
       role: "--signet-accent-text",
-      against: GENERATOR_PARAMS.background,
+      against: SIGNET_FILL_SURFACES["--popover"],
       ratio: ratio(
         palette["--signet-accent-text"],
-        GENERATOR_PARAMS.background,
+        SIGNET_FILL_SURFACES["--popover"],
       ),
       passes: false,
     },

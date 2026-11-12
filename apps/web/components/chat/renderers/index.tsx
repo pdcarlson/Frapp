@@ -57,7 +57,7 @@ export interface MessageRendererProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  /** A poll card's Close poll: the creator's, or a `channels:manage` holder's (#3794, #4046). */
   onClosePoll?: (messageId: string) => void;
 }
 

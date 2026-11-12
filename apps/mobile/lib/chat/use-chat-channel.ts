@@ -123,7 +123,7 @@ import {
   matchLocalPhotos,
   rememberLocalPhotos,
 } from "./local-photos";
-import { taskKeys, useFrappClient } from "@repo/hooks";
+import { useFrappClient, withChatRecordRefresh } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
@@ -989,24 +989,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const postTaskHere = useCallback(
     async (input: TaskInput): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postTask(ctx, channelId, input);
       // `postTask` writes the chat's cache, not the task board's. A lost
       // answer refreshes it too: the task may exist.
-      if (result.ok)
-        void queryClient.invalidateQueries({ queryKey: taskKeys.all });
-      return result;
+      return withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, channelId, input),
+      );
     },
     [channelId, ctx, queryClient],
   );
   const postHoursHere = useCallback(
     async (input: HoursInput): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postHours(ctx, channelId, input);
       // As above, for the Service page's entries.
-      if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["service-entries"] });
-      }
-      return result;
+      return withChatRecordRefresh(queryClient, "hours", () =>
+        postHours(ctx, channelId, input),
+      );
     },
     [channelId, ctx, queryClient],
   );

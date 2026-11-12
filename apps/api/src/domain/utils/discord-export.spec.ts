@@ -214,8 +214,8 @@ describe('toImportedMessage', () => {
         mentionContext: context,
       });
       expect(row?.content).toBe('@Brothers we need numbers now');
-      // A delete clears `content` and leaves `payload`, so a copy there would
-      // outlive a moderator's removal.
+      // The original mention text is kept nowhere (discord-mentions.ts: a
+      // copy on `payload` was dropped when a delete still left `payload`).
       expect(JSON.stringify(row?.payload)).not.toContain('750151182395244584');
       // Named in prose, never resolved to anyone: an archive never notifies.
       expect(row?.mentions).toEqual([]);

@@ -48,8 +48,10 @@ export function selectDownloadUrl(data: unknown): string | null {
 /**
  * The link that saves a document rather than showing it: `forcedDownloadUrl`
  * on `GET /v1/documents/{id}` (#3849), signed with `Content-Disposition:
- * attachment`. Only documents carry it; backwork and older servers don't, so
- * a caller falls back to `selectDownloadUrl`, which opens the file instead.
+ * attachment`. Only documents carry it. Backwork has no inline link, so its
+ * `downloadUrl` is itself a forced download (#3867); an older documents server
+ * lacks it, and a caller falls back to `selectDownloadUrl`, which opens the
+ * file instead.
  */
 export function selectForcedDownloadUrl(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;

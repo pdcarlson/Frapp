@@ -346,6 +346,17 @@ export interface IChatMessageRepository {
     },
     data: Pick<ChatMessage, 'flag' | 'flagged_by' | 'flagged_at'>,
   ): Promise<ChatMessage | null>;
+
+  /**
+   * `update`, but only while the message is not deleted: `null` when it is
+   * (or is gone). For a write built from a row read earlier, so a delete that
+   * lands in between is not undone — a poll close would otherwise write a
+   * removed card's question and options back onto its tombstone (#1575).
+   */
+  updateIfLive(
+    id: string,
+    data: Partial<ChatMessage>,
+  ): Promise<ChatMessage | null>;
 }
 
 export interface IChatMessageActionRepository {

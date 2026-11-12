@@ -326,11 +326,12 @@ describe("a poll card closed early (#3794)", () => {
     expect(isPollCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
   });
 
-  const ON = { pollsGate: "on" as const, canCreatePolls: true };
+  const ON = { pollsGate: "on" as const, canManageChannels: false };
+  const MOD = { pollsGate: "on" as const, canManageChannels: true };
 
-  it("offers Close poll to the creator of an open, confirmed card only", () => {
+  it("offers Close poll to the creator of an open, confirmed card", () => {
     expect(canClosePoll(asMessage(open), open, "creator", NOW, ON)).toBe(true);
-    // Anyone else, or an unresolved viewer.
+    // Anyone else without channels:manage, or an unresolved viewer.
     expect(canClosePoll(asMessage(open), open, "member", NOW, ON)).toBe(false);
     expect(canClosePoll(asMessage(open), open, null, NOW, ON)).toBe(false);
     // Already closed, early or by its deadline.
@@ -348,14 +349,21 @@ describe("a poll card closed early (#3794)", () => {
     expect(canClosePoll(deleted, open, "creator", NOW, ON)).toBe(false);
   });
 
-  it("withholds it where the close route would refuse the creator", () => {
-    // No polls:create: a New Member can post a card (#3007) but not close it.
+  it("offers it to a member who manages channels on anyone's open card (#4046)", () => {
+    const noDeadline = { ...open, closes_at: null };
     expect(
-      canClosePoll(asMessage(open), open, "creator", NOW, {
-        ...ON,
-        canCreatePolls: false,
-      }),
-    ).toBe(false);
+      canClosePoll(asMessage(noDeadline), noDeadline, "officer", NOW, MOD),
+    ).toBe(true);
+    // Still not on a closed or deleted card, nor to an unresolved viewer.
+    expect(canClosePoll(asMessage(closed), closed, "officer", NOW, MOD)).toBe(
+      false,
+    );
+    const deleted = asMessage(open, { is_deleted: true });
+    expect(canClosePoll(deleted, open, "officer", NOW, MOD)).toBe(false);
+    expect(canClosePoll(asMessage(open), open, null, NOW, MOD)).toBe(false);
+  });
+
+  it("withholds it where the close route would refuse", () => {
     // Polls off, or not yet known to be on.
     for (const pollsGate of ["off", "loading", "error"] as const) {
       expect(

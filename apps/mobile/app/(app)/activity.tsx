@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
+  activityFilterAvailable,
   activityGroups,
   activitySummary,
   useActivity,
@@ -47,6 +48,10 @@ import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
+import {
+  storeActivityFilter,
+  useStoredActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -87,7 +92,33 @@ export default function ActivityScreen() {
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one the member
+  // last left the screen on, on this phone (#4402).
+  const stored = useStoredActivityFilter();
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const chapterModules = useCurrentChapter().data?.enabled_modules;
+  const moduleOn = useCallback(
+    (key: string) => isModuleEnabled(chapterModules, key),
+    [chapterModules],
+  );
+  // A stored chip whose module the chapter has since turned off opens on All.
+  const filter: ActivityFilter =
+    picked ?? (activityFilterAvailable(stored, moduleOn) ? stored : "all");
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    // Clearing the To confirm tile isn't a pick: the stored chip stays.
+    if (!(filter === "confirm" && next === "all")) storeActivityFilter(next);
+  };
+  const chips = useMemo(
+    () =>
+      CHIPS.filter((chip) =>
+        activityFilterAvailable(
+          (chip.value ?? "all") as ActivityFilter,
+          moduleOn,
+        ),
+      ),
+    [moduleOn],
+  );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
@@ -182,7 +213,7 @@ export default function ActivityScreen() {
           />
         ) : null}
         <FilterChips
-          chips={CHIPS}
+          chips={chips}
           // The To confirm tile narrows within Tasks, so the Tasks chip stays
           // lit under it, as on web.
           selected={
@@ -204,7 +235,7 @@ export default function ActivityScreen() {
             <GroupSection
               key={group.id}
               group={group}
-              filtered={filter !== "all"}
+              filtered={filter !== "all" && filter !== "waiting"}
               onOpen={open}
             />
           ),

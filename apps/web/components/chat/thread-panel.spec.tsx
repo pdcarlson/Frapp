@@ -1,4 +1,12 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -88,7 +96,13 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
+import {
+  ThreadPanel,
+  resetThreadDraftsForTests,
+  type ThreadRowWrites,
+} from "./thread-panel";
+
+beforeEach(() => resetThreadDraftsForTests());
 
 function row(id: string, senderId: string, content: string): ChatMessage {
   return normalizeRow({
@@ -132,6 +146,7 @@ function renderPanel(
     heldRoot: ChatMessage | null;
     avatarFor: (id: string) => string | null;
     onClosePanel: () => void;
+    beside: boolean;
   }> = {},
 ) {
   const onClose = vi.fn();
@@ -155,6 +170,7 @@ function renderPanel(
       canPost={overrides.canPost ?? true}
       onClose={onClose}
       onClosePanel={overrides.onClosePanel}
+      beside={overrides.beside}
     />,
   );
   return { onClose, writes, onUnblock };
@@ -189,6 +205,43 @@ describe("ThreadPanel (#3785)", () => {
       "Me too{Enter}",
     );
     expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  it("keeps an unsent reply when the panel remounts, and clears it once sent (#4297)", async () => {
+    renderPanel();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+      "on my way",
+    );
+    // Moving between beside the chat and over it remounts the panel.
+    cleanup();
+    renderPanel({ beside: true });
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    expect(box).toHaveValue("on my way");
+    await user.type(box, "{Enter}");
+    expect(thread.send).toHaveBeenCalledWith("on my way");
+    cleanup();
+    renderPanel();
+    expect(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+    ).toHaveValue("");
+  });
+
+  it("refuses a file dropped on it beside the chat, so the browser can't open it (#4297)", () => {
+    renderPanel({ beside: true });
+    const panel = screen.getByRole("region", { name: "Thread" });
+    const files = { types: ["Files"], dropEffect: "copy" };
+    const over = createEvent.dragOver(panel, { dataTransfer: files });
+    fireEvent(panel, over);
+    expect(over.defaultPrevented).toBe(true);
+    expect(files.dropEffect).toBe("none");
+    // Text dragged into the reply box is the browser's to handle.
+    const text = createEvent.dragOver(panel, {
+      dataTransfer: { types: ["text/plain"], dropEffect: "copy" },
+    });
+    fireEvent(panel, text);
+    expect(text.defaultPrevented).toBe(false);
   });
 
   it("follows and unfollows", async () => {
@@ -288,6 +341,17 @@ describe("ThreadPanel (#3785)", () => {
     await userEvent.setup().click(close);
     expect(onClosePanel).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes with an X, and has no Back, beside the chat (#4297)", async () => {
+    const { onClose } = renderPanel({ beside: true });
+    expect(
+      screen.queryByRole("button", { name: "Back to channel" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Close thread" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("draws no Close chat X with chat alone", () => {

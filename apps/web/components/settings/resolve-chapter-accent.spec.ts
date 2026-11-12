@@ -58,14 +58,16 @@ describe("resolveChapterAccentColor — the Settings preview's surface", () => {
   });
 
   it("passes an accent that clears AA only after 2dp rounding", () => {
-    // #FF0400 scores 4.4985 on the dark card: below 4.5 exactly, 4.50 rounded.
+    // #EB6100 scores 4.4985 on the dark card: below 4.5 exactly, 4.50 rounded.
     // Chapters already use colours in that band (see `ratioOn`), so exact
     // comparison would quietly flip the preview's verdict on them.
     // (neutral ladder, 2026-11-05: the darker card lifted the old example,
-    // `#FF3100`, to 4.86, out of the band, so this is the band's red now.)
-    expect(ratio("#FF0400", DARK.background)).toBeLessThan(4.5);
-    expect(resolveChapterAccentColor("#FF0400", DARK)).toMatchObject({
-      resolvedAccent: "#FF0400",
+    // `#FF3100`, to 4.86, out of the band, and `#FF0400` took its place; the
+    // 2026-11-12 ladder's lighter card drops `#FF0400` under it, #3826, so
+    // the band's example is this orange-red now.)
+    expect(ratio("#EB6100", DARK.background)).toBeLessThan(4.5);
+    expect(resolveChapterAccentColor("#EB6100", DARK)).toMatchObject({
+      resolvedAccent: "#EB6100",
       fallbackApplied: false,
       contrastOnBackground: 4.5,
       reason: "ok",

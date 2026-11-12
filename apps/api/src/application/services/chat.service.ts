@@ -60,7 +60,14 @@ import {
   attachmentMetadataOf,
   type SendMessageAttachmentInput,
 } from './chat-attachment.service';
-import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
+import {
+  DELETED_MESSAGE_CONTENT,
+  maskBlockedMessages,
+  redactDeletedMessage,
+  tombstoneMetadata,
+  tombstonePayload,
+  type MaskedChatMessage,
+} from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChannelAccessListService } from './channel-access-list.service';
@@ -1043,7 +1050,7 @@ export class ChatService {
           )
         : null;
       if (existing && existing.kind === kind) {
-        return { message: existing, deduplicated: true };
+        return { message: redactDeletedMessage(existing), deduplicated: true };
       }
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
@@ -1124,6 +1131,15 @@ export class ChatService {
         );
         if (!existing) {
           throw error;
+        }
+        // Deleted since it committed: answer the tombstone, and repair nothing.
+        // Its attachments were purged with it, and re-writing their rows or
+        // count would draw dead files on a message that is gone.
+        if (existing.is_deleted) {
+          return {
+            message: redactDeletedMessage(existing),
+            deduplicated: true,
+          };
         }
         // A retry reaches here when the FIRST attempt committed the message and
         // then failed — which is exactly the case where the attachments were
@@ -1515,14 +1531,22 @@ export class ChatService {
    * Callers authorize first; this does not.
    */
   private async softDeleteMessage(
-    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata'>,
+    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata' | 'payload'>,
     chapterId: string,
   ): Promise<ChatMessage> {
     const messageId = message.id;
     const deleted = await this.messageRepo.update(messageId, {
-      content: '[message deleted]',
+      content: DELETED_MESSAGE_CONTENT,
       is_deleted: true,
       metadata: tombstoneMetadata(message),
+      // A card's data lives here (an event's name and place, a poll's
+      // question and options, a task's fields), so a delete that left it
+      // would remove only the words around it (#1575). Cleared, not kept for
+      // an undelete: there is none, and an officer's removal of a reported
+      // card has to remove what was reported. `maskBlockedMessages` strips it
+      // on read too, for rows deleted before this cleared it. An imported
+      // row keeps only its Discord handle (`tombstonePayload`).
+      payload: tombstonePayload(message),
       // A flag labels content that is now gone (#3921), and a deleted
       // message must not keep raising the Important strip.
       flag: null,
@@ -1544,7 +1568,7 @@ export class ChatService {
     // member asked for, or turn it into a 500.
     await this.attachments.purgeRemovedMessageAttachments(messageId, chapterId);
 
-    return deleted;
+    return redactDeletedMessage(deleted);
   }
 
   // ── Flags (#3921) ────────────────────────────────────────────────────
@@ -1685,6 +1709,12 @@ export class ChatService {
       userId,
     );
 
+    // Nothing to elevate, and pinning a tombstone would make it the
+    // channel's durable, prominent row (#1575).
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot pin a deleted message');
+    }
+
     if (message.is_pinned) {
       throw new BadRequestException('Message is already pinned');
     }
@@ -1719,10 +1749,12 @@ export class ChatService {
       throw new BadRequestException('Message is not pinned');
     }
 
-    return this.messageRepo.update(messageId, {
-      is_pinned: false,
-      pinned_at: null,
-    });
+    return redactDeletedMessage(
+      await this.messageRepo.update(messageId, {
+        is_pinned: false,
+        pinned_at: null,
+      }),
+    );
   }
 
   /**
@@ -1882,22 +1914,4 @@ function clientMetadata(
   delete own.attachment_count;
   delete own.attachment_photos;
   return own;
-}
-
-/**
- * What a soft-deleted message keeps of its `metadata`.
- *
- * Nothing, except an imported row's `discord_import_id`: it is the only key the
- * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
- * so wiping it would leave the tombstone behind when its import is deleted,
- * still carrying the Discord author and an avatar path into purged storage. A
- * linked member can delete their own imported messages (#2878), so this is
- * reachable by any member, not only a moderator.
- */
-export function tombstoneMetadata(
-  message: Pick<ChatMessage, 'kind' | 'metadata'>,
-): Record<string, unknown> {
-  if (message.kind !== 'imported') return {};
-  const importId: unknown = message.metadata?.discord_import_id;
-  return typeof importId === 'string' ? { discord_import_id: importId } : {};
 }

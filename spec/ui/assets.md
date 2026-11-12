@@ -53,7 +53,7 @@ Requirements:
 
 - App icon MUST stay legible at 16px favicon scale.
 - Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The crest stays `#DDB844`.
-- **Page headers draw the crest alone, with no tile** (owner, 2026-09-28, [#2580](https://github.com/pdcarlson/Frapp/issues/2580)). On `--background` (`#0A0A0A` since 2026-11-05, `#131211` when this was ruled) a charcoal or `surface-1` tile reads as a second, slightly different dark square, so the lockup and the landing header put the gold crest straight on the page. The `#1A1A1A` tile (`signet-emblem-B-1024.png`, `-rounded`) stays wherever the mark is a square icon on its own: app icon, favicon, Apple touch icon, and the Stripe and Google OAuth icons.
+- **Page headers draw the crest alone, with no tile** (owner, 2026-09-28, [#2580](https://github.com/pdcarlson/Frapp/issues/2580)). On `--background` (`#050505` since 2026-11-12, `#0A0A0A` from 2026-11-05, `#131211` when this was ruled) a charcoal or `surface-1` tile reads as a second, slightly different dark square, so the lockup and the landing header put the gold crest straight on the page. The `#1A1A1A` tile (`signet-emblem-B-1024.png`, `-rounded`) stays wherever the mark is a square icon on its own: app icon, favicon, Apple touch icon, and the Stripe and Google OAuth icons.
 - Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) or any raster in this package — every one of them is generated. Edit the SVG master and re-run rasterize + sync.
 - Use the `-glyph` pair wherever the mark sits on a surface that is not the charcoal field: it is rendered against transparency rather than keyed out of the tile, so it carries no dark fringe.
 

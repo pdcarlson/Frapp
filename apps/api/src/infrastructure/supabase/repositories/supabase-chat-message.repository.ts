@@ -433,6 +433,21 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return updated;
   }
 
+  async updateIfLive(
+    id: string,
+    data: TablesUpdate<'chat_messages'>,
+  ): Promise<ChatMessage | null> {
+    const { data: updated, error } = await this.supabase
+      .from('chat_messages')
+      .update(data)
+      .eq('id', id)
+      .eq('is_deleted', false)
+      .select(CHAT_MESSAGE_COLUMNS)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
   async update(
     id: string,
     data: TablesUpdate<'chat_messages'>,

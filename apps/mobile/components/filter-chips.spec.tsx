@@ -104,6 +104,68 @@ describe("FilterChips", () => {
     ).toBe(signetDarkTokens.spacing.lg);
   });
 
+  describe("opening with the lit chip in view (#4402)", () => {
+    const layout = (x: number, width: number) => ({
+      nativeEvent: { layout: { x, y: 0, width, height: 32 } },
+    });
+
+    function drawScrolled(selected: string | null) {
+      const scrollTo = vi.fn();
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <FilterChips
+              chips={FOLDERS}
+              selected={selected}
+              onSelect={vi.fn()}
+              scroll
+            />
+          </FrappThemeProvider>,
+          {
+            createNodeMock: (element) =>
+              (element.type as unknown) === "ScrollView" ? { scrollTo } : null,
+          },
+        );
+      });
+      const scroller = tree.root.find(
+        (node) => (node.type as unknown) === "ScrollView",
+      );
+      const lit = tree.root.find(
+        (node) =>
+          typeof node.props.onLayout === "function" &&
+          node.props.accessibilityState?.selected === true,
+      );
+      return { scrollTo, scroller, lit };
+    }
+
+    it("scrolls to a lit chip past the row's edge, once", () => {
+      const last = FOLDERS[FOLDERS.length - 1]!.value;
+      const { scrollTo, scroller, lit } = drawScrolled(last);
+      act(() => {
+        lit.props.onLayout(layout(400, 80));
+        scroller.props.onLayout(layout(0, 360));
+      });
+      expect(scrollTo).toHaveBeenCalledWith({
+        x: 400 - signetDarkTokens.spacing.lg,
+        animated: false,
+      });
+      act(() => {
+        scroller.props.onLayout(layout(0, 360));
+      });
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the row alone when the lit chip is already in view", () => {
+      const { scrollTo, scroller, lit } = drawScrolled(FOLDERS[1]!.value);
+      act(() => {
+        scroller.props.onLayout(layout(0, 360));
+        lit.props.onLayout(layout(60, 80));
+      });
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+  });
+
   // The sheets (s21's folder, the new-task sheet's due date) pass nothing
   // and keep the wrapping row, where a sideways scroll would fight the
   // sheet's own pan.
@@ -250,7 +312,9 @@ describe("SearchField", () => {
         accessibilityLabel="Search"
       />,
     );
-    const field = tree.root.find((node) => (node.type as unknown) === "TextInput");
+    const field = tree.root.find(
+      (node) => (node.type as unknown) === "TextInput",
+    );
     expect(flatten(field.props.style)).not.toHaveProperty("lineHeight");
     expect(flatten(field.props.style).fontSize).toBe(
       signetDarkTokens.typography.role.body.size,

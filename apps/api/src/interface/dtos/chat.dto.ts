@@ -1060,7 +1060,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text.',
+      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575).',
   })
   payload?: Record<string, any> | null;
 
