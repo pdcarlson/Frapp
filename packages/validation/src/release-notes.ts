@@ -91,6 +91,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, a role inside a tier can now follow its tier or be switched on or off on its own, and officers can view Frapp as any role before handing it out.",
       "On your phone, tap any line of your profile to change it.",
       "On the web, a Backwork department code typed in any case, like math for MATH, now files the upload under the department you already have.",
+      "When you make an event, Who's coming now lists every role with Required, Optional or Not invited beside it and says the whole plan in one line, and on your phone it closes with Done back to your event.",
+      "On the web, Settings now lets you set chat to Mentions and DMs only for the whole chapter, and a channel's notification menu shows which level is your default.",
     ],
   },
   {
