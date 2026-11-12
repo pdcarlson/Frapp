@@ -5,6 +5,7 @@ import {
   DirectoryGlyph,
   DocumentsGlyph,
   EventsGlyph,
+  MeetingsGlyph,
   PointsGlyph,
   ServiceGlyph,
   SettingsGlyph,
@@ -211,6 +212,17 @@ export const DASHBOARD_NAV: NavSection[] = [
     id: "resources",
     label: "Resources",
     items: [
+      {
+        // A meeting's minutes, read by the members its event invites
+        // (`spec/behavior/meetings.md`). Every member sees the row while the
+        // module is on: the page lists only what the viewer may read.
+        id: "meetings",
+        label: "Meetings",
+        icon: MeetingsGlyph,
+        href: "/meetings",
+        description: "Minutes from chapter, exec and committee meetings.",
+        module: "meetings",
+      },
       {
         id: "documents",
         label: "Documents",

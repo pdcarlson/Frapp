@@ -3747,3 +3747,21 @@ The new index is harmless to keep, and nothing needs the dropped one back. To re
 drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
+
+## Rollback meeting minutes (20261112120400)
+
+* **Migration**: `20261112120400_meetings.sql`
+
+Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping the tables loses every set of minutes, so do it only before any chapter has written some, and export them first otherwise. In a later migration:
+
+```sql
+drop table if exists public.meeting_templates;
+drop table if exists public.meetings;
+update public.role_tiers
+   set permissions = array_remove(permissions, 'meetings:record')
+ where 'meetings:record' = any(permissions);
+```
+
+Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
