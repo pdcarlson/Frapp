@@ -18,7 +18,10 @@ appId: live.frapp.mobile
       # The email field's return key moves to the password field in Password
       # mode, the mode the form opens in.
       - pressKey: Enter
-      - inputText: ${MAESTRO_SMOKE_PASSWORD}
+      - inputText:
+          text: ${MAESTRO_SMOKE_PASSWORD}
+          # Keeps the password out of Maestro's command log.
+          label: "Enter the smoke account's password"
       - hideKeyboard
       - tapOn: "Sign in"
 - runFlow: dismiss-interstitials.yaml

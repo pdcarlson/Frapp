@@ -1,7 +1,7 @@
 # Device pass: every tab opens, and each More row every member sees opens its
 # screen and comes back (the smoke checklist's dead-end rule, §§ 2-3). Rows
-# drawn only for some chapters or roles (Study hours, Dues, Minutes, Invite
-# members, Host check-in, Chapter settings) are left to the hand pass.
+# drawn only for some chapters or roles (Documents, Study hours, Dues, Minutes,
+# Invite members, Host check-in, Chapter settings) are left to the hand pass.
 appId: live.frapp.mobile
 name: "Every tab and More row opens and comes back"
 tags:
@@ -26,10 +26,6 @@ tags:
     file: ../subflows/open-more-row.yaml
     env:
       ROW: "Service hours"
-- runFlow:
-    file: ../subflows/open-more-row.yaml
-    env:
-      ROW: "Documents"
 - runFlow:
     file: ../subflows/open-more-row.yaml
     env:

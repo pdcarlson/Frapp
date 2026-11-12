@@ -290,6 +290,9 @@ export function GlassTabBar({
       >
         <Pressable
           ref={plusAnchor}
+          // The Maestro flows tap the + by this id: open, its label is shared
+          // with the scrim, whose center sits under the panel.
+          testID="tab-plus"
           accessibilityRole="button"
           accessibilityLabel={open ? "Close quick actions" : "Quick actions"}
           accessibilityHint={

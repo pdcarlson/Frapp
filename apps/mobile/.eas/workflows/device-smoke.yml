@@ -31,7 +31,7 @@ jobs:
     params:
       build_id: ${{ needs.build_android.outputs.build_id }}
       flow_path: ./.maestro
-      record_screen: true
+      record_screen: false
 
   test_ios:
     name: Flows on iOS
@@ -41,4 +41,4 @@ jobs:
     params:
       build_id: ${{ needs.build_ios.outputs.build_id }}
       flow_path: ./.maestro
-      record_screen: true
+      record_screen: false

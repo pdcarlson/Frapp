@@ -13,14 +13,7 @@ tags:
     commands:
       - launchApp
       - runFlow: ../subflows/sign-in.yaml
-      - tapOn:
-          id: "tab-index"
-      - scrollUntilVisible:
-          element:
-            text: "#?general"
-          direction: DOWN
-          timeout: 10000
-      - tapOn: "#?general"
+      - runFlow: ../subflows/open-general.yaml
       - setAirplaneMode: enabled
       - extendedWaitUntil:
           visible: "Offline"
@@ -36,4 +29,7 @@ tags:
           notVisible: "Offline"
           timeout: 60000
       - assertVisible: ${output.queued}
+      - extendedWaitUntil:
+          notVisible: "Retry sending this message"
+          timeout: 30000
       - takeScreenshot: back-online
