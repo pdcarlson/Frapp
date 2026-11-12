@@ -45,6 +45,12 @@ export const SCREEN_TITLES = {
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
   "arrange-channels": "Arrange channels",
+  "chapter-settings": "Chapter settings",
+  "chapter-roles": "Roles",
+  // A tier's and a role's pages are titled by their own name, which a
+  // capsule has no room for, so both read as the list they belong to.
+  "role-tier": "Roles",
+  role: "Roles",
 } as const satisfies Record<string, string>;
 
 /** The group in `app/(app)/` that holds the tab navigator. */

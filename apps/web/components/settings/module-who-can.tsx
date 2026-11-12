@@ -37,7 +37,7 @@ import {
   reachesTier,
   type TierRow,
   type TieredRole,
-} from "@/lib/role-tiers";
+} from "@repo/hooks/role-tiers";
 
 /** A tier or a role, as a chip and as a choice under "Add". */
 type Holder = {

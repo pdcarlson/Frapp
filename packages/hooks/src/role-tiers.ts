@@ -1,4 +1,18 @@
-import { asArray } from "@/lib/utils";
+import {
+  PERMISSION_REGISTRY,
+  permissionLabel,
+} from "@repo/validation";
+
+/*
+ * Role tiers as web and the phone both read them (#3990, #4072, #4074): the
+ * shapes, the rank rules, the chapter's word for a tier, and the rows a
+ * permission page lists. Pure, with no React and no request, so both apps and
+ * their specs share one copy (`@repo/hooks/role-tiers`).
+ */
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
 
 /**
  * A role as the Roles pages read it from `GET /v1/roles`, which declares no
@@ -205,4 +219,37 @@ export function tierWords(word: string) {
     singular: lower(singular),
     plural: lower(plural),
   };
+}
+
+/** One switch on a permission page: what it is called and what it opens. */
+export type PermissionRow = {
+  permission: string;
+  label: string;
+  description: string | null;
+};
+
+/**
+ * Every permission in the registry, plus any other string the holder carries
+ * (a Discord import's per-channel read gate, say), so a page never hides
+ * something a role actually holds. The wildcard is never a row: nobody
+ * switches it, it moves only through Transfer presidency.
+ */
+export function permissionRows(extra: readonly string[]): PermissionRow[] {
+  const known = new Set(PERMISSION_REGISTRY.map((entry) => entry.permission));
+  const rows: PermissionRow[] = PERMISSION_REGISTRY.filter(
+    (entry) => entry.permission !== "*",
+  ).map((entry) => ({
+    permission: entry.permission,
+    label: entry.label,
+    description: entry.description,
+  }));
+  for (const permission of new Set(extra)) {
+    if (permission === "*" || known.has(permission)) continue;
+    rows.push({
+      permission,
+      label: permissionLabel(permission),
+      description: null,
+    });
+  }
+  return rows;
 }

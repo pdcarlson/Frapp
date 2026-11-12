@@ -68,6 +68,7 @@ The board's Notifications row is not in the app's More: the inbox opens from the
 | | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
 | **Admin** (role-gated, captioned "Admin") | Invite members | `invite.tsx` ([§ Inviting members](#inviting-members)) | — |
 | | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
+| | Chapter settings | `chapter-settings.tsx` ([§ Chapter settings](#chapter-settings)) | — |
 | | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 
 Activity leads the chapter tools, as it leads web's Chapter group ([#3897](https://github.com/pdcarlson/Frapp/issues/3897), added 2026-11-11; the board drew no such row).
@@ -88,7 +89,20 @@ Two things about that section are worth knowing before reading a device:
 - **It renders for nobody until a token carries a chapter claim.** `useMyPermissions` is `enabled: !!chapterId`. The hook is on in both hosted projects; production still has no memberships, so issued tokens have no `active_chapter_id` and the permission set stays empty — Presidents included — until the first onboard. It fails closed, which is the right direction. Local (`supabase/config.toml`) and staging (seeded members) already show the section.
 - **Host check-in resolves an event.** s22 reads an `eventId` param, so the row cannot be a bare link: it picks the next upcoming-or-still-checkable-in event and passes its id, and renders inert when there is none. **There is no Adjust points row.** The s23 sheet needs a member picker plus amount/category/reason and is unbuilt, and a row that renders disabled with nothing behind it is the "coming soon" shape App Review Guideline 2.1 rejects, so it was removed rather than drawn (#2300). It returns with the sheet; until then awarding and fining points is web-only. The section is not gated on `points:adjust` for the same reason: that would draw an empty Admin header for an officer who holds only that.
 
-The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter-config:view` and read-only except for its accent row (see [`screens.md`](screens.md) s16); its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
+The drawn s16 also carries an inline `CHAPTER · ADMIN` group. It moved whole to Chapter settings on 2026-11-12 (#4074), so Settings is the member's own, as web keeps the two apart; its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
+
+## Chapter settings
+
+Paul, 2026-11-10 (#4074): mobile had personal settings but almost no chapter side, and "the roles matrix never fit a phone; a toggle list does". Web's Chapter settings in the iOS Settings shape: grouped lists, a chevron per row, a pushed screen per page, swipe back on each. Discord mobile's Server Settings → Roles is the comparison an officer arrives with.
+
+- **The door is More → Admin → Chapter settings**, drawn for `chapter-config:view` or `roles:manage` (`lib/more/chapter-settings.ts`). Web's nav row also opens for a treasurer who holds only `billing:view`; the phone has no Plan and billing, so it draws no row that would open onto nothing. While the role loads the permission list is empty, so the row fails closed.
+- **`chapter-settings.tsx`** holds **Chapter** (Chapter accent and Chat background, each a sheet for `CHAPTER_PROFILE_PERMISSIONS` and read-only, saying who sets it, for anyone else; Study zones, read-only, "Managed on the web dashboard.") for `chapter-config:view`, and **People** (Roles, with the count) for either permission.
+- **`chapter-roles.tsx`, Roles**: a section per tier in rank order, headed by the tier's name and its role count, holding a Permissions row (how many are on) and then each role (its color dot and how many hold it), then Outside the tiers. A search field finds a role by name once there are more than eight, so a chapter with a hundred roles stays one search away. Tier names and the word for a tier are the chapter's (`tierWords(vocab("tier"))`).
+- **`role-tier.tsx`**: the tier's switches, one grouped list per module, saved on tap, then the roles in it.
+- **`role.tsx`**: the role's tier (a tap opens it) and member count, then its permissions. In a tier each row shows its answer, a row set apart from the tier says so under it, and a tap opens Same as tier, On and Off ([`components.md` § Segmented control](../design-system/components.md#segmented-control)). Outside the tiers each is a plain switch. The President's role shows every switch on and still.
+- **Rows carry labels only.** The registry's one-line descriptions are web's; a screen reader hears each as the row's hint. A row's second line says only what its control can't: why it can't change, or that its save failed (the phone has no toast, so a failed save leaves its line on its own row, and the switch snaps back).
+- **The rank rules are web's, from one copy** (`@repo/hooks/role-tiers`, with the optimistic save in `@repo/hooks/permission-overlay`): a tier or role at or above the officer's rank is read-only and says so once at the top, and a permission their role lacks can't be switched on and says why on its row. The API stays the authority.
+- **Web only, for now**: adding, renaming, reordering and deleting tiers and roles; a role's name, color, position and @mention switch; View as a role; presidency transfer; Plan and billing, the module pages, vocabulary and member fields. Roles says so in a line under the list. Giving a member a role stays the Directory's member sheet (#3676).
 
 ## Global entries outside the tab bar
 

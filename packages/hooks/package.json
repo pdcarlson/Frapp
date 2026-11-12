@@ -23,7 +23,9 @@
     "./document-library": "./src/document-library.ts",
     "./presence-status": "./src/presence-status.ts",
     "./presence-topics": "./src/presence-topics.ts",
-    "./use-chapter-presence": "./src/use-chapter-presence.ts"
+    "./use-chapter-presence": "./src/use-chapter-presence.ts",
+    "./role-tiers": "./src/role-tiers.ts",
+    "./permission-overlay": "./src/permission-overlay.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
