@@ -4169,11 +4169,17 @@ drop function if exists public.claim_signup_slots(uuid, uuid, text[]);
 
 * **Migration**: `20261112260000_ai_deleted_account_gaps.sql`
 
-Two function bodies replaced, no table change (#4504). `meeting_recordings_drop_for_deleted_user` also deletes the drafts of meetings whose recording the deleted account uploaded; `ai_reports_refuse_deleted_users` locks the users it reads `for share`.
+One nullable column on `meeting_drafts` (`recording_uploaded_by`), a trigger that stamps it, and two function bodies replaced (#4504). `meeting_recordings_drop_for_deleted_user` also deletes the drafts stamped with the deleted account; `ai_reports_refuse_deleted_users` locks the users it reads `for share`.
 
-**There is rarely a reason to revert it, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). No API code depends on either body. Reverting reopens both gaps: a transcript can stay in another officer's draft after its uploader deletes their account, and a report can outlive a quoted member who deletes theirs in the same instant.
+**There is rarely a reason to revert it, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). No API code reads the column or depends on either body. Reverting reopens both gaps: a transcript can stay in another officer's draft after its uploader deletes their account, and a report can outlive a quoted member who deletes theirs in the same instant.
 
-If the `for share` lock is ever the cause of a stuck account deletion (it should not be: a report insert holds it for milliseconds), restore the earlier bodies in a later forward migration by copying them from `20261112210000_meeting_recordings.sql` and `20261112220000_ai_reports.sql`.
+To remove the schema, in a later forward migration, restore the earlier bodies first by copying them from `20261112210000_meeting_recordings.sql` and `20261112220000_ai_reports.sql` (the current `meeting_recordings_drop_for_deleted_user` names the column), then:
+
+```sql
+drop trigger if exists meeting_drafts_stamp_recording_uploader on public.meeting_drafts;
+drop function if exists public.meeting_drafts_stamp_recording_uploader();
+alter table public.meeting_drafts drop column if exists recording_uploaded_by;
+```
 
 ## Rollback merge Backwork department case variants (20261112154000)
 

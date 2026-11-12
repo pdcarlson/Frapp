@@ -171,7 +171,7 @@ describe('AiTranscriptionService', () => {
     expect(h.recorder.record).not.toHaveBeenCalled();
   });
 
-  it('holds the stated length at the catalog price, then settles what the vendor measured', async () => {
+  it('holds the feature limit at the catalog price, then settles what the vendor measured', async () => {
     const h = harness();
     const result = await h.transcribe();
     expect(result).toMatchObject({ status: 'ok', durationSeconds: 3541.2 });
@@ -227,6 +227,23 @@ describe('AiTranscriptionService', () => {
       audio: audio({ durationSeconds: 10, sizeBytes: 1 }),
     });
     expect(h.spend.reserve.mock.calls[0][1].maxCostMicroUsd).toBe(460_000);
+  });
+
+  it('records what the vendor measured even past the limit it was asked to stop at', async () => {
+    const h = harness({
+      transcribe: jest
+        .fn()
+        .mockResolvedValue({ utterances: [], durationSeconds: 36_000 }),
+    });
+    await h.transcribe({ audio: audio({ durationSeconds: 10 }) });
+    // Ten hours at $0.23: the ledger says what the vendor says, so the caps
+    // see it, even though the hold was for two.
+    expect(h.recorder.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioSeconds: 36_000,
+        costMicroUsd: 2_300_000,
+      }),
+    );
   });
 
   it('never asks the vendor for more than the vendor takes', async () => {
