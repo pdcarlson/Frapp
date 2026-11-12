@@ -73,6 +73,25 @@ export function aiAvailableFrom(
 }
 
 /**
+ * True only while an AI read's first attempt is in flight (#4504 item 7).
+ * A page that has its own data and holds its skeleton so an AI part does not
+ * arrive late and push it down waits on this, never on the retries after a
+ * failure: the default retries run about seven seconds, and a failed AI read
+ * should leave the page to draw without its AI part, as with AI off.
+ */
+export function isFirstAiReadInFlight(query: {
+  isPending: boolean;
+  fetchStatus: "fetching" | "paused" | "idle";
+  failureCount: number;
+}): boolean {
+  return (
+    query.isPending &&
+    query.fetchStatus === "fetching" &&
+    query.failureCount === 0
+  );
+}
+
+/**
  * Answers the sheet for the version the member was shown. A 409
  * `ai.consent.stale_sheet` means the sheet changed since: the cached sheet is
  * refetched so the member reads the new one before answering again.

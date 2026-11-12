@@ -208,13 +208,15 @@ export class FakeAiRunRepository implements IAiRunRepository {
   async listForMember(
     chapterId: string,
     userId: string,
-    options: { kind?: string; limit: number },
+    options: { kind?: string; limit: number; upkeepKinds?: readonly string[] },
   ): Promise<AiRun[]> {
+    const upkeep = options.upkeepKinds ?? [];
     return this.rows
       .filter(
         (r) =>
           r.chapter_id === chapterId &&
-          (r.requested_by === userId || r.acting_user_id === userId) &&
+          (r.requested_by === userId ||
+            (r.acting_user_id === userId && !upkeep.includes(r.kind))) &&
           (!options.kind || r.kind === options.kind),
       )
       .slice()

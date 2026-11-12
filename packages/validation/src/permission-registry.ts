@@ -99,8 +99,8 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
   ),
   // AI (ADR-28). The API leaves these two out of the catalog it serves while
   // its AI switch is off, and the web role and tier pages, which draw from
-  // this registry, leave them out the same way
-  // (`apps/web/components/roles/hidden-permissions.ts`).
+  // this registry, leave them out the same way (`isPermissionHidden` in
+  // `@repo/hooks`, which web and the phone share).
   chapterPermission(
     "ai:use",
     "chapter",

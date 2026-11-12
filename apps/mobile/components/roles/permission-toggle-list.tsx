@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
 import { groupPermissionsByModule } from "@repo/validation";
 import { permissionRows } from "@repo/hooks/role-tiers";
-import { useIsPermissionHidden } from "@/lib/roles/hidden-permissions";
+import { useIsPermissionHidden } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { Toggle } from "@/components/toggle";

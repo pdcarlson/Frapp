@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { ForbiddenException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import {
   ASK_STREAM_VERSION,
   createAskStreamReader,
@@ -7,7 +8,10 @@ import {
 } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
-import { AskController } from './ask.controller';
+import { AiEnabledGuard } from '../guards/ai-enabled.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { AskController, AskDiagnosticsStopController } from './ask.controller';
 
 jest.mock('../../infrastructure/observability/report-swallowed', () => ({
   reportSwallowed: jest.fn(),
@@ -96,7 +100,8 @@ function build(
       { question: 'What is quorum?', ...body },
       response as never,
     );
-  return { controller, askService, diagnostics, response, ask };
+  const stopController = new AskDiagnosticsStopController(diagnostics as never);
+  return { controller, stopController, askService, diagnostics, response, ask };
 }
 
 describe('AskController', () => {
@@ -213,9 +218,11 @@ describe('AskController', () => {
   });
 
   it('passes the caller’s roles to the window’s start and stop, which decide who may', async () => {
-    const { controller, diagnostics } = build(async function* () {
-      yield done;
-    });
+    const { controller, stopController, diagnostics } = build(
+      async function* () {
+        yield done;
+      },
+    );
     const member = { role_ids: ['role-president'] } as never;
     await controller.startDiagnostics('chapter-a', 'user-1', member);
     expect(diagnostics.start).toHaveBeenCalledWith(
@@ -223,10 +230,24 @@ describe('AskController', () => {
       { userId: 'user-1', roleIds: ['role-president'] },
       expect.any(Date),
     );
-    await controller.stopDiagnostics('chapter-a', 'user-1', member);
+    await stopController.stopDiagnostics('chapter-a', 'user-1', member);
     expect(diagnostics.stop).toHaveBeenCalledWith('chapter-a', {
       userId: 'user-1',
       roleIds: ['role-president'],
     });
+  });
+});
+
+describe('AskDiagnosticsStopController (#4504)', () => {
+  const guardsOf = (target: object): unknown[] =>
+    (Reflect.getMetadata(GUARDS_METADATA, target) as unknown[]) ?? [];
+
+  it('lets a president end a window while AI is off: no server switch, no ai:use', () => {
+    expect(guardsOf(AskDiagnosticsStopController)).toEqual([
+      SupabaseAuthGuard,
+      ChapterGuard,
+    ]);
+    // Every other Ask route still answers 404 while AI is off.
+    expect(guardsOf(AskController)[0]).toBe(AiEnabledGuard);
   });
 });
