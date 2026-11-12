@@ -30,6 +30,11 @@ import {
   ActivityRowSkeleton,
 } from "@/components/activity/activity-row";
 import {
+  ActivityRowItem,
+  useActivityRowActions,
+  type ActivityRowActions,
+} from "@/components/activity/activity-row-action";
+import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
@@ -45,6 +50,7 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
+import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
@@ -124,7 +130,8 @@ export default function ActivityScreen() {
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
-  const chapter = useCurrentChapter().data;
+  const chapterRead = useCurrentChapter();
+  const chapter = chapterRead.data;
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),
     [activity.data, filter, now],
@@ -170,6 +177,18 @@ export default function ActivityScreen() {
     setOpened(row);
     setOpenedKey(row.key);
   };
+  // Confirm and Approve on the row (#4437), while the chapter's plan allows
+  // them; acting there reads the item, as opening it does, and re-reads so
+  // the row leaves Needs you.
+  const { actions: rowActions, stateOf: rowActionStateOf } =
+    useActivityRowActions({
+      allowed: activityRowActionsAllowed(chapter),
+      chapterPending: chapterRead.isPending === true,
+      onActed: (row) => {
+        if (row.unread) markRead([row.readRef]);
+        reread();
+      },
+    });
 
   function renderBody() {
     if (activity.isPending) {
@@ -236,6 +255,7 @@ export default function ActivityScreen() {
               key={group.id}
               group={group}
               filtered={filter !== "all" && filter !== "waiting"}
+              rowActions={rowActions}
               onOpen={open}
             />
           ),
@@ -251,6 +271,7 @@ export default function ActivityScreen() {
         <ActivitySheet
           row={sheetRow}
           viewerId={viewerId}
+          rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
           onActed={reread}
           onClosed={() => {
             setOpenedKey(null);
@@ -355,10 +376,12 @@ function useLinkActions() {
 function GroupSection({
   group,
   filtered,
+  rowActions,
   onOpen,
 }: {
   group: ActivityGroup;
   filtered: boolean;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -385,7 +408,12 @@ function GroupSection({
         ) : null
       ) : (
         group.parts.map((part) => (
-          <GroupPart key={part.id} part={part} onOpen={onOpen} />
+          <GroupPart
+            key={part.id}
+            part={part}
+            rowActions={rowActions}
+            onOpen={onOpen}
+          />
         ))
       )}
       {group.archive ? (
@@ -449,9 +477,11 @@ function ArchivePart({
  */
 function GroupPart({
   part,
+  rowActions,
   onOpen,
 }: {
   part: ActivityPart;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -477,10 +507,11 @@ function GroupPart({
         </View>
       ) : null}
       {rows.map((row, index) => (
-        <ActivityListRow
+        <ActivityRowItem
           key={row.key}
           row={row}
           isFirst={index === 0}
+          actions={rowActions}
           onPress={() => onOpen(row)}
         />
       ))}

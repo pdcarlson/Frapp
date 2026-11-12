@@ -8,6 +8,18 @@ import {
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { reportServerAuthFailure } from "@/lib/sentry/auth-failures";
+
+/**
+ * Report a link or provider return that didn't become a session (#3832), with
+ * GoTrue's own error where there is one, so an Auth 5xx arrives at `error`
+ * rather than as the fixed `authError` the member is shown. Reported here, not
+ * from `/sign-in`, which only sees that fixed code and would count a reload or
+ * a hand-typed `?authError=` as another failure.
+ */
+function reportCallbackFailure(failure: { error?: unknown; code?: string }): void {
+  reportServerAuthFailure({ flow: "auth_callback", screen: "/auth/callback", ...failure });
+}
 
 /**
  * Where every Supabase email link *and* OAuth return lands: sign-up
@@ -59,6 +71,8 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (!linkError && tokenHash) {
     if (!otpType || !isEmailOtpType(otpType)) {
+      // The link's `type` is one GoTrue never sends: a template fault.
+      reportCallbackFailure({ code: "otp_type_invalid" });
       const signIn = new URL("/sign-in", url.origin);
       signIn.searchParams.set("redirectTo", next);
       signIn.searchParams.set("authError", "verify_failed");
@@ -72,6 +86,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (!error) {
       return NextResponse.redirect(new URL(next, url.origin));
     }
+    reportCallbackFailure({ error });
     const signIn = new URL("/sign-in", url.origin);
     signIn.searchParams.set("redirectTo", next);
     signIn.searchParams.set("authError", "verify_failed");
@@ -92,6 +107,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       }
       return NextResponse.redirect(new URL(next, url.origin));
     }
+    reportCallbackFailure({ error });
     // An email link that reached here with a code already confirmed the
     // address (GoTrue verifies before it hands out a code), so the only thing
     // that failed is signing *this* browser in. Say so, and let a sign-in do
@@ -104,6 +120,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
   }
 
+  // A failed exchange was reported above; what is left arrived failed.
+  if (!code || linkError) reportCallbackFailure({ code: linkError ?? "missing_code" });
   const signIn = new URL("/sign-in", url.origin);
   signIn.searchParams.set("redirectTo", next);
   signIn.searchParams.set("authError", linkError ?? (code ? "exchange_failed" : "missing_code"));

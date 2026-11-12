@@ -163,6 +163,7 @@ export default function SignIn() {
     try {
       await signInWithOAuthProvider(provider);
     } catch (error) {
+      // Already reported by `signInWithOAuthProvider` (#3832).
       setAuthError(describeOAuthKickoffError(error));
     } finally {
       setSubmitting(false);

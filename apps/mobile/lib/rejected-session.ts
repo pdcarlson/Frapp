@@ -1,5 +1,6 @@
 import { Alert } from "react-native";
 import { isAuthApiError, type SupabaseClient } from "@supabase/supabase-js";
+import { reportAuthFailure } from "./sentry/auth-failures";
 
 /**
  * Whether Supabase Auth's answer to `getUser()` means this session is over.
@@ -59,7 +60,15 @@ export function createRejectedSessionHandler(deps: {
       try {
         const { data: local } = await supabase.auth.getSession();
         if (!local.session) return;
-        if (!isSessionOver(await supabase.auth.getUser())) return;
+        const verdict = await supabase.auth.getUser();
+        if (!isSessionOver(verdict)) return;
+        // Auth's reason is the count (#3832). This runs from the SDK's
+        // response hook, which knows no route, so the screen is unnamed.
+        reportAuthFailure({
+          flow: "session_check",
+          screen: "unknown",
+          error: verdict.error,
+        });
         await deps.signOut();
         (deps.notify ?? defaultNotify)();
       } catch {
