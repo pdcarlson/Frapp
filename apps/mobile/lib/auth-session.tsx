@@ -26,7 +26,10 @@ import {
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
 import { reportAuthFailure } from "./sentry/auth-failures";
-import { clearProductQueryCache } from "./query-client";
+import {
+  clearProductQueryCache,
+  refetchQueriesRefusedForAuth,
+} from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -308,6 +311,7 @@ export function AuthSessionProvider({
    * clear. A first uid (`null` → A) is a sign-in, not a swap.
    */
   const previousAuthUserIdRef = useRef<string | null>(null);
+  const previousAccessTokenRef = useRef<string | null>(null);
   /**
    * Last deep-link URL we already exchanged. OAuth `openAuthSessionAsync`
    * returns the same URL that `Linking.useURL` then delivers; exchanging a
@@ -366,6 +370,20 @@ export function AuthSessionProvider({
         clearProductQueryCache();
       }
       previousAuthUserIdRef.current = nextUserId;
+      // A refreshed token for the same member: retry whatever the API refused
+      // while the old one was lapsing, so no screen keeps a sign-in error the
+      // member can only clear by restarting the app.
+      const nextToken = nextSession?.access_token ?? null;
+      const previousToken = previousAccessTokenRef.current;
+      previousAccessTokenRef.current = nextToken;
+      if (
+        nextToken &&
+        previousToken &&
+        nextToken !== previousToken &&
+        previousUserId === nextUserId
+      ) {
+        refetchQueriesRefusedForAuth();
+      }
       setSession(nextSession ?? null);
       setStatus(nextSession ? "authenticated" : "unauthenticated");
       if (opts.clearCallbackError && nextSession) setCallbackError(null);

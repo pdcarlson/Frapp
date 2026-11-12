@@ -89,13 +89,22 @@ export function createFreshAuthTokenReader(deps: {
       // No error and no session is a signed-out client. Send no token rather
       // than one Auth has already let go of.
       const fresh = data.session?.access_token ?? null;
-      // Learn the offset only when the token Auth just handed back still looks
+      // Learn the offset only when Auth just issued a token and it still looks
       // stale: with a right clock a refreshed token has its full lifetime
-      // left, so only skew explains it. An older token returned unrefreshed
-      // never moves the offset.
+      // left, so only skew explains it.
+      //
+      // "Just issued" is load-bearing. When a refresh fails while the stored
+      // token is inside the margin but not yet past `exp`, supabase-js hands
+      // back that same token unrefreshed and reports no error. It looks stale
+      // too, and its `iat` is about an hour old, so learning from it set the
+      // offset to minus an hour: every token after that looked an hour
+      // younger than it was, and expired ones went out unrefreshed. That is
+      // the 401 burst FRAPP-API-E caught again on ios/0.11.0+20, 2026-11-12.
       const freshTimes = fresh ? accessTokenTimes(fresh) : null;
       if (
+        fresh !== token &&
         freshTimes?.issuedAt != null &&
+        freshTimes.issuedAt > (times.issuedAt ?? Number.NEGATIVE_INFINITY) &&
         freshTimes.expiresAt - (now() + offsetMs) <= TOKEN_EXPIRY_MARGIN_MS
       ) {
         offsetMs = freshTimes.issuedAt - now();

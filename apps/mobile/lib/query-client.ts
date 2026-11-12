@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { isRetryableFailure } from "@repo/api-sdk";
+import { isRetryableFailure, statusOf } from "@repo/api-sdk";
 import {
   markChannelReadMutationKey,
   markNotificationReadOnOpenMutationKey,
@@ -120,6 +120,40 @@ for (const mutationKey of [
   markNotificationReadOnOpenMutationKey,
 ]) {
   queryClient.setMutationDefaults(mutationKey, { retry: retryOnceIfRetryable });
+}
+
+/**
+ * Whether a failed query was refused because its sign-in token was no longer
+ * accepted (a 401). The SDK puts the status on the error; chat-core wraps it
+ * on `response` or `context` instead.
+ */
+export function isUnauthorizedFailure(error: unknown): boolean {
+  const wrapped = error as {
+    response?: { status?: unknown };
+    context?: { status?: unknown };
+  } | null;
+  const status =
+    statusOf(error) ?? wrapped?.response?.status ?? wrapped?.context?.status;
+  return status === 401;
+}
+
+/**
+ * Re-run every query that failed with a 401, once a new token for the same
+ * member has arrived.
+ *
+ * A member back from the background can have their first round of requests
+ * go out with a token that lapsed while the app was suspended, before the
+ * refresh lands. Those queries fail, and nothing refetches them: focus has
+ * already fired, so each screen sat on its error state until the app was
+ * restarted (FRAPP-API-E, ios/0.11.0+20, 2026-11-12). Retrying them when the
+ * refreshed token arrives turns that into a moment of loading instead.
+ */
+export function refetchQueriesRefusedForAuth(): void {
+  void queryClient.refetchQueries({
+    predicate: (query) =>
+      query.state.status === "error" &&
+      isUnauthorizedFailure(query.state.error),
+  });
 }
 
 /**

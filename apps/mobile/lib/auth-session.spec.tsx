@@ -764,6 +764,55 @@ describe("AuthSessionProvider — chapter context", () => {
     expect(result.current.userId).toBe("user-1");
     expect(result.current.chapterId).toBe("chapter-uuid-1");
   });
+
+  it("retries what the API refused for the lapsed token once a refreshed one arrives", async () => {
+    // FRAPP-API-E, 2026-11-12: back from the background, every query went
+    // out with a lapsed token and each screen stayed on its error state.
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    let calls = 0;
+    const refused = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const notFound = Object.assign(new Error("Not found"), { status: 404 });
+    const refusedFn = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) throw refused;
+      return ["channels"];
+    });
+    const missingFn = vi.fn(async () => {
+      throw notFound;
+    });
+    await queryClient
+      .fetchQuery({ queryKey: ["channels", "refused"], queryFn: refusedFn, retry: false })
+      .catch(() => undefined);
+    await queryClient
+      .fetchQuery({ queryKey: ["channels", "missing"], queryFn: missingFn, retry: false })
+      .catch(() => undefined);
+    expect(queryClient.getQueryState(["channels", "refused"])?.status).toBe("error");
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["channels", "refused"])).toEqual([
+        "channels",
+      ]),
+    );
+    // A failure that wasn't about the token is left alone.
+    expect(missingFn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("AuthSessionProvider — sign-in", () => {
