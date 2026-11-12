@@ -17,6 +17,12 @@ const preference = createStoredPreference<ActivityFilter>({
   fallback: "all",
 });
 
+// Read at launch, not when the screen first subscribes: the More hub
+// usually has the Activity read cached already, so the screen draws at once,
+// and it should draw on the stored chip rather than jump to it.
+void preference.hydrate();
+
+export const hydrateActivityFilter = preference.hydrate;
 export const useStoredActivityFilter = preference.use;
 export const resetActivityFilterForTests = preference.resetForTests;
 

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
+  activityFilterAvailable,
   activityGroups,
   activitySummary,
   useActivity,
@@ -95,11 +96,29 @@ export default function ActivityScreen() {
   // last left the screen on, on this phone (#4402).
   const stored = useStoredActivityFilter();
   const [picked, setPicked] = useState<ActivityFilter | null>(null);
-  const filter: ActivityFilter = picked ?? stored;
+  const chapterModules = useCurrentChapter().data?.enabled_modules;
+  const moduleOn = useCallback(
+    (key: string) => isModuleEnabled(chapterModules, key),
+    [chapterModules],
+  );
+  // A stored chip whose module the chapter has since turned off opens on All.
+  const filter: ActivityFilter =
+    picked ?? (activityFilterAvailable(stored, moduleOn) ? stored : "all");
   const setFilter = (next: ActivityFilter) => {
     setPicked(next);
-    storeActivityFilter(next);
+    // Clearing the To confirm tile isn't a pick: the stored chip stays.
+    if (!(filter === "confirm" && next === "all")) storeActivityFilter(next);
   };
+  const chips = useMemo(
+    () =>
+      CHIPS.filter((chip) =>
+        activityFilterAvailable(
+          (chip.value ?? "all") as ActivityFilter,
+          moduleOn,
+        ),
+      ),
+    [moduleOn],
+  );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
@@ -194,7 +213,7 @@ export default function ActivityScreen() {
           />
         ) : null}
         <FilterChips
-          chips={CHIPS}
+          chips={chips}
           // The To confirm tile narrows within Tasks, so the Tasks chip stays
           // lit under it, as on web.
           selected={

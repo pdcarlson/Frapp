@@ -737,6 +737,67 @@ describe("Activity screen (#3897)", () => {
       expect(litChip(second)).toBe("poll");
     });
 
+    it("opens on a chip stored by an earlier launch, read from the phone's storage", async () => {
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("poll");
+      const tree = render();
+      await act(async () => {});
+      expect(litChip(tree)).toBe("poll");
+    });
+
+    it("opens on All for a stored value that isn't a chip", async () => {
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("confirm");
+      const tree = render();
+      await act(async () => {});
+      expect(litChip(tree)).toBeNull();
+    });
+
+    it("says nothing is waiting, in Needs you's own words, under its chip", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            tasks: [],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [],
+          },
+        }),
+      };
+      const tree = render();
+      act(() => {
+        tree.root.findByType(FilterChips).props.onSelect("waiting");
+      });
+      const text = screenText(tree);
+      expect(text).toContain("Nothing is waiting on you.");
+      expect(text).not.toContain("Nothing of this kind here.");
+    });
+
+    it("leaves out the chip of a module the chapter has off, and a stored chip for it opens on All", async () => {
+      chapter.data = { enabled_modules: { hours: false } };
+      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("hours");
+      const tree = render();
+      await act(async () => {});
+      const chips = tree.root.findByType(FilterChips).props.chips as {
+        value: string | null;
+      }[];
+      expect(chips.map((chip) => chip.value)).not.toContain("hours");
+      expect(litChip(tree)).toBeNull();
+    });
+
+    it("keeps the stored chip when the To confirm tile is cleared", () => {
+      links.permissions = ["tasks:manage"];
+      const tree = render();
+      vi.mocked(AsyncStorage.setItem).mockClear();
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      act(() => {
+        tile(tree, "confirm").props.onPress();
+      });
+      expect(litChip(tree)).toBeNull();
+      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalled();
+    });
+
     it("doesn't remember the To confirm tile's narrowing", () => {
       links.permissions = ["tasks:manage"];
       vi.mocked(AsyncStorage.setItem).mockClear();

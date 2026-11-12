@@ -44,6 +44,29 @@ export type ActivityKind = Exclude<
  */
 export type ActivityFilter = "all" | "waiting" | ActivityKind | "confirm";
 
+/** The chapter module each kind belongs to; Links and Needs you belong to none. */
+const FILTER_MODULE: Partial<Record<ActivityFilter, string>> = {
+  task: "tasks",
+  confirm: "tasks",
+  poll: "polls",
+  event: "events",
+  hours: "hours",
+};
+
+/**
+ * Whether a filter can show anything in this chapter: not a kind whose
+ * module the chapter has off (#4402). A client leaves that chip out, as the
+ * summary leaves out its tile, and opens on All rather than on a stored
+ * chip for it. With the module switch unknown, everything is available.
+ */
+export function activityFilterAvailable(
+  filter: ActivityFilter,
+  isModuleEnabled?: (module: string) => boolean,
+): boolean {
+  const module = FILTER_MODULE[filter];
+  return !module || (isModuleEnabled?.(module) ?? true);
+}
+
 /**
  * The chip a member last picked, as stored on their device (#4402), or
  * `null` for anything that isn't one. The To confirm tile's narrowing is a

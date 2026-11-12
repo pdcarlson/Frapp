@@ -10,6 +10,7 @@ import {
   activityPollIsOpen,
   activityRowAction,
   parseActivityFilter,
+  activityFilterAvailable,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -1097,5 +1098,17 @@ describe("parseActivityFilter", () => {
     expect(parseActivityFilter("confirm")).toBeNull();
     expect(parseActivityFilter("bogus")).toBeNull();
     expect(parseActivityFilter(null)).toBeNull();
+  });
+});
+
+describe("activityFilterAvailable", () => {
+  it("drops a kind whose module the chapter has off, and nothing else", () => {
+    const off = (module: string) => module !== "hours" && module !== "polls";
+    expect(activityFilterAvailable("hours", off)).toBe(false);
+    expect(activityFilterAvailable("poll", off)).toBe(false);
+    expect(activityFilterAvailable("task", off)).toBe(true);
+    expect(activityFilterAvailable("link", off)).toBe(true);
+    expect(activityFilterAvailable("waiting", off)).toBe(true);
+    expect(activityFilterAvailable("hours")).toBe(true);
   });
 });
