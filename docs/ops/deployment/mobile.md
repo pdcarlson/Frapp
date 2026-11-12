@@ -303,9 +303,11 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
-`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
-the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+Dispatch **Deploy production** as usual. **`mobile_build`** defaults to `auto` (Paul, 2026-11-12;
+it was `none` from 2026-10-01), so every ship reaches phones: an OTA update where it can, a store
+build where it can't. `ios`, `android` and `all` force a store build. `none` does nothing for the
+app, and the run is exactly what it was without the input; pick it for a ship that must not
+publish, such as the next one after a rollback. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
 the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
 the input says.
 
@@ -372,7 +374,7 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
-   is the point. **Merge it before any tester installs the build.** A build EAS reports from any
+   is the point. It merges itself (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so the next `auto` ship sees the build: once `confirm` (step 3) sees every upload finish, the **`merge-record`** job turns on its squash auto-merge with the same App token, and its required checks still hold it. Not before, because a record PR that merged ahead of a failed upload would tag and plan around a build no store has. If an upload failed or never finished, or GitHub refuses auto-merge, that job comments on the PR instead: **drop any failed build's entry and merge it by hand before any tester installs the build.** A build EAS reports from any
    other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
    version, upload result, and whether it was recorded.
    If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new
@@ -585,7 +587,7 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 ### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-Deploy production publishes one when asked (`mobile_build: auto`, below), and a person can still
+Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
 publish from a laptop. Both go through the same guard. #2511 still owns a staging app variant,
 promotion and staged rollout.
 
@@ -744,7 +746,8 @@ Run **Roll back the app update** in GitHub Actions
 It publishes no new bundle, so it skips the guard, and it needs no laptop. It runs eas-cli from
 the release production serves (the newest `vX.Y.Z` tag), and refuses a tag whose commit isn't on
 `main`. Phones pick it up the way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
-before shipping again, or ship with `mobile_build: none`.
+before shipping again, or ship with `mobile_build: none`. `auto` is the default, so pick `none`
+on purpose.
 
 From a laptop, the same two commands are `npm run eas -- update:roll-back-to-embedded --channel
 production --runtime-version <version>` and `npm run eas -- update:republish --group <id>` (eas-cli

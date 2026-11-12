@@ -303,6 +303,38 @@ describe("recordShippedBuilds", () => {
     assert.match(text, /\| iOS \| `ios-build-1` \| `FINISHED` \| 0\.9\.0 \(12\) \| `success` \| in the PR \|/);
   });
 
+  // Paul, 2026-11-12: the record PR merges itself, but `merge-record` turns
+  // that on only once `confirm` saw every upload finish, so this job only
+  // hands over the PR.
+  it("hands the opened PR's number on, and says when it merges itself", async () => {
+    const outputs = [];
+    const { fetchImpl, calls } = makeFetchMock(routes());
+    let text = "";
+    const code = await recordShippedBuilds({
+      env: env({ AUTO_MERGE: "true" }),
+      fetchImpl,
+      now: new Date(`${DAY}T15:00:00Z`),
+      writeSummary: (t) => {
+        text += t;
+      },
+      writeOutput: (t) => outputs.push(t),
+      log: () => {},
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(outputs, ["pr=9000\n"]);
+    assert.ok(!calls.some((c) => c.url.includes("/graphql")), "this job never turns auto-merge on itself");
+    const body = JSON.parse(calls[4].body).body;
+    assert.match(body, /It merges itself once the run's `confirm` job sees every upload finish and its required checks pass/);
+    assert.match(body, /If one failed, that job leaves auto-merge off and comments here: drop the failed build's entry and merge this by hand/);
+    assert.match(text, /It merges itself once the `confirm` job sees every upload finish\./);
+  });
+
+  it("says to merge by hand without AUTO_MERGE", async () => {
+    const { calls, text } = await run();
+    assert.match(JSON.parse(calls[4].body).body, /Merge it before any tester installs/);
+    assert.match(text, /Merge it before any tester installs these builds\./);
+  });
+
   it("opens no PR when every build is already listed", async () => {
     const listed = JSON.stringify({
       builds: [

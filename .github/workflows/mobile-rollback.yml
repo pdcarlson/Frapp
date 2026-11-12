@@ -19,7 +19,7 @@ name: Roll back the app update
 # downloads it, and the next launch, or the next return after ten minutes
 # away, runs it (`apps/mobile/lib/updates`). The next Deploy production
 # publish replaces the rollback, so fix forward before shipping again, or ship
-# with `mobile_build: none`.
+# with `mobile_build: none` (the input defaults to `auto`, so pick it).
 #
 # ── Why it skips the publish guard ─────────────────────────────────────────
 # `scripts/eas-update.mjs` guards `eas update`, which bundles JavaScript.
@@ -261,7 +261,7 @@ jobs:
                 fi
                 echo "A launch, or a return to the app, downloads it; the next launch, or the next return after ten minutes away, runs it."
                 echo ""
-                echo "The next Deploy production publish replaces this rollback: fix forward first, or ship with \`mobile_build: none\`. Sentry's \`expo.updates.update_id\` tag shows phones moving off the bad update."
+                echo "The next Deploy production publish replaces this rollback: fix forward first, or ship with \`mobile_build: none\` (it defaults to \`auto\`). Sentry's \`expo.updates.update_id\` tag shows phones moving off the bad update."
                 ;;
               skipped)
                 echo "Not rolled back: a step before it failed (the log says which). No phone was affected."
