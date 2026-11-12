@@ -64,6 +64,13 @@ export type SignetTokens = {
        */
       destructiveText: string;
       info: string;
+      /**
+       * The AA-lifted tone for info TEXT, on an info tint or on `popover`
+       * (components.md §5), the same lift as `destructiveText`. In
+       * `signetDarkTokens` since 2026-11-12 (#3826), when mobile's StatusChip
+       * started drawing info text in it.
+       */
+      infoText: string;
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
       mentionForeground: string;
@@ -146,10 +153,10 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#0A0A0A",
-      surface1: "#111111",
-      card: "#171717",
-      popover: "#1E1E1E",
+      background: "#050505",
+      surface1: "#1A1A1A",
+      card: "#262626",
+      popover: "#313131",
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
@@ -158,15 +165,16 @@ const SIGNET_DARK: SignetTokens = {
     text: {
       foreground: "#F5F5F5",
       mutedForeground: "#C4C4C4",
-      muted: "#9E9E9E",
+      muted: "#A8A8A8",
       disabled: "#6B6B6B",
     },
     semantic: {
-      success: "#3FB950",
+      success: "#4BC262",
       warning: "#E5A000",
-      destructive: "#F85149",
-      destructiveText: "#FF7B72",
+      destructive: "#FF665C",
+      destructiveText: "#FF958A",
       info: "#2F81F7",
+      infoText: "#61A7FF",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
       mentionChip: "#2D2617",
@@ -176,7 +184,7 @@ const SIGNET_DARK: SignetTokens = {
       house: "#EFB63B",
       seed: "#DDB844",
       onHouse: "#2C2000",
-      askFill: "#251E0E",
+      askFill: "#2C2515",
       askBorder: "#6B5619",
       askText: "#F4CB63",
     },
@@ -268,6 +276,7 @@ export function getSignetCssVars(
     "--destructive": t.color.semantic.destructive,
     "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
+    "--info-text": t.color.semantic.infoText,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,
     "--mention-chip": t.color.semantic.mentionChip,

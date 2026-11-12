@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useRef, type RefObject } from "react";
 import {
   type AccessibilityRole,
   type AccessibilityState,
+  type LayoutChangeEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -88,6 +89,7 @@ export function Chip({
   mark,
   onLongPress,
   longPressLabel,
+  onLayout,
 }: {
   label: string;
   on: boolean;
@@ -99,6 +101,8 @@ export function Chip({
   mark?: ReactNode;
   onLongPress?: () => void;
   longPressLabel?: string;
+  /** Where the chip landed, for a row that scrolls to its lit chip. */
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
@@ -115,6 +119,7 @@ export function Chip({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: slop, bottom: slop }}
+      onLayout={onLayout}
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityActions={
@@ -152,9 +157,13 @@ export function Chip({
  */
 function ChipRow({
   scroll,
+  scrollRef,
+  onScrollerLayout,
   children,
 }: {
   scroll: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
+  onScrollerLayout?: (event: LayoutChangeEvent) => void;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -169,6 +178,8 @@ function ChipRow({
   }
   return (
     <ScrollView
+      ref={scrollRef}
+      onLayout={onScrollerLayout}
       horizontal
       showsHorizontalScrollIndicator={false}
       // Lets a chip take a tap while a search field holds the keyboard, as
@@ -184,6 +195,49 @@ function ChipRow({
       {children}
     </ScrollView>
   );
+}
+
+/**
+ * A scrolling row opens with its lit chip in view (#4402): a screen that
+ * remembers its chip (Activity) can open on the sixth or seventh, which
+ * starts off the edge of a narrow phone, and then nothing on screen says a
+ * filter is on. Once, when the row and that chip have both been laid out, it
+ * scrolls just far enough to show the chip with a little of the one before
+ * it; a chip already in view moves nothing. Later picks are the member's own
+ * scrolling, so it never moves the row again.
+ */
+function useRevealSelectedChip(scroll: boolean, lead: number) {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const width = useRef<number | null>(null);
+  const chip = useRef<{ x: number; width: number } | null>(null);
+  const done = useRef(false);
+
+  const tryReveal = () => {
+    if (!scroll || done.current || width.current === null || !chip.current) {
+      return;
+    }
+    done.current = true;
+    const { x, width: chipWidth } = chip.current;
+    if (x + chipWidth > width.current) {
+      scrollRef.current?.scrollTo({
+        x: Math.max(0, x - lead),
+        animated: false,
+      });
+    }
+  };
+
+  return {
+    scrollRef,
+    onScrollerLayout: (event: LayoutChangeEvent) => {
+      width.current = event.nativeEvent.layout.width;
+      tryReveal();
+    },
+    onSelectedLayout: (event: LayoutChangeEvent) => {
+      const { x, width: chipWidth } = event.nativeEvent.layout;
+      chip.current = { x, width: chipWidth };
+      tryReveal();
+    },
+  };
 }
 
 export function FilterChips({
@@ -212,9 +266,14 @@ export function FilterChips({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const reveal = useRevealSelectedChip(scroll, tokens.spacing.lg);
 
   return (
-    <ChipRow scroll={scroll}>
+    <ChipRow
+      scroll={scroll}
+      scrollRef={reveal.scrollRef}
+      onScrollerLayout={reveal.onScrollerLayout}
+    >
       <View
         accessibilityRole="tablist"
         accessibilityLabel={accessibilityLabel}
@@ -223,6 +282,9 @@ export function FilterChips({
         {chips.map((chip) => (
           <Chip
             key={chip.value ?? "__all"}
+            onLayout={
+              selected === chip.value ? reveal.onSelectedLayout : undefined
+            }
             accessibilityRole="tab"
             accessibilityState={{ selected: selected === chip.value }}
             on={selected === chip.value}

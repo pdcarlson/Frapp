@@ -156,7 +156,7 @@ the same rule search and the poll list follow
   access rule and the same live updates apply, and the card counts the votes.
 - A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
   a question and two options with an id and a label (a card without them draws as "Malformed
-  poll" and is not listed), and it is open until its creator closes it or its closing time
+  poll" and is not listed), and it is open until it is closed early (by its creator or a `channels:manage` holder) or its closing time
   passes. A card with no closing time, or one that doesn't parse, stays open, since a vote on it
   is still accepted; it sorts last.
 - "Hasn't voted" is checked over the chapter's 100 newest poll cards. An open poll older than

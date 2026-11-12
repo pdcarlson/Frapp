@@ -20,6 +20,10 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  readActivityFilter,
+  writeActivityFilter,
+} from "@/lib/activity/activity-filter";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
@@ -43,6 +47,7 @@ import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityBadgeIsAsk,
+  activityFilterAvailable,
   activityGroups,
   activityRowAction,
   activityKeys,
@@ -378,10 +383,27 @@ export function ActivityPage() {
   // Later and Next up stay current while the page is open.
   const now = useNowDate();
   const { isOffline } = useNetwork();
-  const { userId } = useFrappUser();
+  const { userId, isLoading: userLoading } = useFrappUser();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // The chip picked on this visit wins; until then, the one this person
+  // last left the page on in this browser (#4402), else All.
+  const [picked, setPicked] = useState<ActivityFilter | null>(null);
+  const stored = useMemo(() => readActivityFilter(userId), [userId]);
+  const isModuleEnabled = useChapterModuleGate();
+  // A stored chip whose module the chapter has since turned off opens on All.
+  const filter: ActivityFilter =
+    picked ??
+    (stored && activityFilterAvailable(stored, isModuleEnabled)
+      ? stored
+      : "all");
+  const setFilter = (next: ActivityFilter) => {
+    setPicked(next);
+    // Clearing the To confirm tile isn't a pick: the stored chip stays.
+    if (!(filter === "confirm" && next === "all")) {
+      writeActivityFilter(userId, next);
+    }
+  };
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
@@ -396,7 +418,6 @@ export function ActivityPage() {
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
-  const isModuleEnabled = useChapterModuleGate();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter, now) : []),
@@ -442,7 +463,12 @@ export function ActivityPage() {
       />
     );
   }
-  if (activity.isPending) return <ActivityPageSkeleton />;
+  // Held until the viewer is known (as the Events page holds its view), so
+  // the page opens on the member's stored chip rather than jumping to it,
+  // and a chip picked straight away is stored under them.
+  if (activity.isPending || (userLoading && !isOffline)) {
+    return <ActivityPageSkeleton />;
+  }
   // Only with nothing to show: a refetch that fails (this page refetches after
   // every action) keeps the list it already has rather than replacing it, and
   // the open panel with it, by an error page. The same guard as the task board.
@@ -484,7 +510,9 @@ export function ActivityPage() {
         aria-label="Show"
         className="flex flex-wrap items-center gap-2"
       >
-        {ACTIVITY_FILTERS.map((option) => {
+        {ACTIVITY_FILTERS.filter((option) =>
+          activityFilterAvailable(option.value, isModuleEnabled),
+        ).map((option) => {
           // The To confirm tile narrows within Tasks, so the Tasks chip
           // stays lit under it.
           const on =
@@ -517,7 +545,7 @@ export function ActivityPage() {
           <GroupSection
             key={group.id}
             group={group}
-            filtered={filter !== "all"}
+            filtered={filter !== "all" && filter !== "waiting"}
             canRemoveLinks={canRemoveLinks}
             linkActions={linkActions}
             rowActions={{ gate: actionGate, onActed: actedOnRow }}

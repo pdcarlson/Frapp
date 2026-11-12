@@ -30,7 +30,7 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * geometry), both at rest in the inactive tab's muted paint: the shape says
  * at a glance whether a row is an event or a task (a dot said neither). The
  * event's trailing time is the foreground text; an imminent task due date is
- * `semantic.destructive`, which is the drawn `#F85149` — **not** the mention red
+ * `semantic.destructive`, which is the drawn danger red — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
  * The two rows render independently: a chapter with events but no open tasks
@@ -123,8 +123,8 @@ export function selectNextEvent(
  */
 /**
  * `viewerUserId` is required, not optional, because `GET /v1/tasks` widens for
- * an admin — `task.service.ts` returns `isAdmin ? findByChapter(chapterId) :
- * findByAssignee(chapterId, userId)` — and this strip is drawn as the viewer's
+ * an admin — `TaskService.list` reads the whole chapter for `tasks:manage` and
+ * pins everyone else to `assigneeId: userId` — and this strip is drawn as the viewer's
  * one glanceable "what's next". Unfiltered, a `tasks:manage` officer saw
  * whichever member's task fell due soonest, in destructive red, occupying the
  * single slot their own task should hold; tapping it landed on a board that is

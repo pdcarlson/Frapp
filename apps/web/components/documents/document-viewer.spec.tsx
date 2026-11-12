@@ -44,6 +44,7 @@ afterAll(() => {
   Object.defineProperty(window, "location", { value: realLocation, configurable: true });
 });
 
+const { fileKind } = await import("@repo/hooks/document-library");
 const { DocumentViewer, previewKind, MAX_PREVIEW_PAGES, OPEN_DOCUMENT_ATTRIBUTE } =
   await import("./document-viewer");
 const { VIEWER_BACKDROP_ATTRIBUTE } = await import("@/components/shared/media-viewer");
@@ -119,9 +120,28 @@ describe("previewKind", () => {
     expect(previewKind(doc("x", "x", "image/svg+xml"))).toBe("none");
   });
 
-  it("falls back to the stored extension only when no type was recorded", () => {
+  it("falls back to the stored extension only when no useful type was recorded", () => {
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.pdf"))).toBe("pdf");
     expect(previewKind(doc("x", "x", null, "c/documents/x/minutes.docx"))).toBe("none");
+    // The declared type wins over the name, even an unrecognised one the
+    // filter groups by its extension.
+    expect(previewKind(doc("x", "x", "text/plain", "c/documents/x/minutes.pdf"))).toBe("none");
+    const legacy = doc("x", "x", "application/x-pdf", "c/documents/x/minutes.pdf");
+    expect(fileKind(legacy)).toBe("pdf");
+    expect(previewKind(legacy)).toBe("none");
+  });
+
+  // #3959: the File type filter called this an Image while the viewer showed
+  // a bare "File" card. Both now read `classifyFile`.
+  it("previews an older row's photo the File type filter calls an Image", () => {
+    const old = doc("x", "x", null, "c/documents/x/rush.JPG");
+    expect(fileKind(old)).toBe("image");
+    expect(previewKind(old)).toBe("image");
+    const generic = doc("x", "x", "application/octet-stream", "c/documents/x/rush.png");
+    expect(fileKind(generic)).toBe("image");
+    expect(previewKind(generic)).toBe("image");
+    // Grouped as an image, but not one a browser draws.
+    expect(previewKind(doc("x", "x", null, "c/documents/x/logo.svg"))).toBe("none");
   });
 });
 
@@ -193,6 +213,27 @@ describe("DocumentViewer", () => {
     expect(mockSignedLinks).toHaveBeenCalledWith("d-3");
     // Nothing to draw, so no links were fetched until Download asked.
     expect(useDocumentSpy).toHaveBeenCalledWith("d-3", { enabled: false });
+  });
+
+  // #3959: the label comes from the classifier the filter uses, so an older
+  // row the filter calls a Spreadsheet isn't a bare "File" here.
+  it("names an untyped file by its stored extension, as the File type filter does", () => {
+    const old = doc("d-9", "Spring budget", null, "c/documents/d-9/budget.xlsx");
+    render(<Harness initial="d-9" documents={[old] as never[]} />);
+
+    const viewer = screen.getByRole("dialog", { name: "Spring budget" });
+    expect(
+      within(viewer).getByText("Excel spreadsheets can't be previewed yet."),
+    ).toBeInTheDocument();
+    expect(within(viewer).getAllByText(/^Excel spreadsheet · Uploaded/).length).toBeGreaterThan(0);
+  });
+
+  it("calls an image it can't draw by its type, not a Photo", () => {
+    const heic = doc("d-8", "Rush flyer", "image/heic");
+    render(<Harness initial="d-8" documents={[heic] as never[]} />);
+
+    const viewer = screen.getByRole("dialog", { name: "Rush flyer" });
+    expect(within(viewer).getByText("HEIC photos can't be previewed yet.")).toBeInTheDocument();
   });
 
   it("steps through the list in order with the arrow keys, wrapping at the ends", async () => {

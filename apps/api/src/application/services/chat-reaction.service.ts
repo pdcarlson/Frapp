@@ -160,6 +160,14 @@ export class ChatReactionService {
       userId,
     );
 
+    // A deleted message takes no reaction, vote or card response, as it takes
+    // no edit or flag. A delete clears a card's `payload` (#1575), so a vote on
+    // a deleted poll would otherwise skip every rule below: with no options to
+    // check against, `assertCardPollVoteAllowed` has nothing to refuse.
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot act on a deleted message');
+    }
+
     const payload = input.payload ?? {};
     const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
 

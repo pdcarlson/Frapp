@@ -399,11 +399,10 @@ describe("getSignetCssVars", () => {
    * `apps/mobile` reads — 63 files import it — and shipping one there would
    * claim a mobile treatment that no mobile screen implements.
    *
-   * `--info-text` is an AA text lift of a semantic hue (§5), not a semantic
-   * of its own: the solid token stays the fill and the border, and only the
-   * *text* tone moves. `--destructive-text` sat here too until 2026-11-05, when
-   * mobile's StatusChip started drawing danger text in it, so it now ships in
-   * `signetDarkTokens` and is emitted like any other semantic.
+   * `--destructive-text` sat here until 2026-11-05 and `--info-text` until
+   * 2026-11-12 (#3826), each until mobile's StatusChip started drawing that
+   * hue's text in it, so both now ship in `signetDarkTokens` and are emitted
+   * like any other semantic.
    *
    * The mention-chip pair sat here until 2026-11-06, when mobile started
    * drawing the in-body mention chip, so it now ships in `signetDarkTokens`
@@ -413,7 +412,6 @@ describe("getSignetCssVars", () => {
    * list for tokens that were forgotten.
    */
   const CSS_ONLY = [
-    "--info-text",
     // The §5 status tints (#2376). A web answer to a web problem: the alpha
     // utility's `color-mix` fallback they avoid does not exist in React Native.
     "--success-tint",

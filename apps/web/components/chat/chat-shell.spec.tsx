@@ -925,6 +925,7 @@ const displayLockState = vi.hoisted(() => ({
 const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
 const mockChapterRoster = vi.hoisted(() => vi.fn());
 
+const mockDropAttach = vi.fn();
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
@@ -943,8 +944,10 @@ vi.mock("./composer", () => ({
     renderPlusForm,
     plusDrafts,
     isAuditLog,
+    dropAttachRef,
   }: {
     channelId: string;
+    dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
       card: { close: () => void; back: () => void },
@@ -974,6 +977,8 @@ vi.mock("./composer", () => ({
     onCancelReply?: () => void;
     onRestoreReply?: (messageId: string) => void;
   }) => {
+    // The live composer is what a file dropped on the column attaches to.
+    if (dropAttachRef) dropAttachRef.current = mockDropAttach;
     // The + card the real composer opens when the shell answers "opened":
     // its form is whatever the shell renders for that command.
     const [plusView, setPlusView] = useState<string | null>(null);
@@ -1334,8 +1339,13 @@ vi.mock("./thread-panel", () => ({
     canReply,
     canPost,
     onClose,
+    beside,
   }: import("./thread-panel").ThreadPanelProps) => (
-    <section aria-label="Thread" data-testid="thread-panel">
+    <section
+      aria-label="Thread"
+      data-testid="thread-panel"
+      data-beside={String(!!beside)}
+    >
       <span data-testid="thread-root">{rootId}</span>
       <span data-testid="thread-held-root">{heldRoot?.content ?? "none"}</span>
       <span data-testid="thread-can-reply">{String(canReply)}</span>
@@ -4681,6 +4691,107 @@ describe("ChatShell opens on the last channel", () => {
     } finally {
       chapterStoreState.value = "chapter-1";
     }
+  });
+});
+
+/** The open thread beside the chat on a wide window (#4297). */
+describe("ChatShell thread beside the chat", () => {
+  const realMatchMedia = window.matchMedia;
+
+  function stubWide(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  /** The chat column: the section that holds the channel's timeline. */
+  const chatColumn = () =>
+    screen.getByTestId("message-timeline").closest("section")!;
+
+  it("opens beside the timeline from 1280px, in the members column's place", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "true");
+    // Its own column, outside the chat column, which stays as it was.
+    expect(chatColumn().contains(panel)).toBe(false);
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show members" }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    // Closing it brings the members back.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channel" }));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives way to the members when the member asks for them", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" defaultMembersHidden />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=0");
+  });
+
+  it("covers the chat column below 1280px, as before", () => {
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "false");
+    expect(chatColumn().contains(panel)).toBe(true);
+  });
+
+  it("keeps the members list (and its search) mounted under it", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    const list = screen.getByTestId("channel-member-list");
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    // Hidden, the same element: its local state survives the thread.
+    expect(list).toBeInTheDocument();
+    expect(list.closest("aside")).toHaveAttribute("hidden");
+  });
+
+  it("still takes files dropped on the channel beside it, and refuses them under one covering it", () => {
+    const dragOver = () => {
+      const transfer = { types: ["Files"], dropEffect: "" };
+      fireEvent.dragOver(chatColumn(), { dataTransfer: transfer });
+      return transfer.dropEffect;
+    };
+    stubWide(true);
+    const wide = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("copy");
+    wide.unmount();
+
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("none");
   });
 });
 

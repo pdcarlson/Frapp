@@ -126,7 +126,7 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "channels:manage",
     "chat",
     "Manage channels and pins",
-    "Edit and delete channels, pin messages, and set who can use a channel.",
+    "Edit and delete channels, pin messages, close anyone's poll, and set who can use a channel.",
   ),
   chapterPermission(
     "alumni:post",

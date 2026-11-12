@@ -35,15 +35,19 @@ function describeFailedContrastCheck(check: FailedContrastCheck): string {
   ) {
     return `Accent text on its own tinted background reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
-  // Only claim "app background" when `against` is the literal background hex
-  // this check is actually specified for — never inferred from `role` alone,
-  // so a future engine check on `--signet-accent-text` against some other
-  // surface falls to the raw fallback below instead of being mislabeled.
-  if (
-    check.role === "--signet-accent-text" &&
-    !check.against.startsWith("--signet-")
-  ) {
-    return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  // Name a surface only when `against` is that surface's literal hex — never
+  // inferred from `role` alone, so a future engine check on
+  // `--signet-accent-text` against some other surface falls to the raw
+  // fallback below instead of being mislabeled. Since the 2026-11-12 ladder
+  // (#3826) the engine measures this check on `--popover`, the lightest step.
+  if (check.role === "--signet-accent-text") {
+    const surface = check.against.toUpperCase();
+    if (surface === signetDarkTokens.color.surface.popover.toUpperCase()) {
+      return `Accent text on menus and dialogs reads at ${ratio}:1, under the 4.5:1 minimum.`;
+    }
+    if (surface === signetDarkTokens.color.surface.background.toUpperCase()) {
+      return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+    }
   }
   if (
     check.role === "--signet-accent-on-primary" &&
@@ -160,11 +164,10 @@ export function SettingsAccentTab({
     `gold.onHouse` reasserted a tone it had just rejected. The review typed an
     ordinary blue — nothing exotic — and got "Preview" at a sub-AA ratio with
     no warning, which is the same defect one layer down from the one this
-    swatch was being fixed for. (`#0086FE` on the current ladder: kept by the
-    resolver on `--card`, ink under AA; the figures are pinned in
-    `settings-contrast.spec.ts`. The original `#0080FD` stopped reaching this
-    branch when the greenfield ladder lightened `--card` and the resolver
-    began substituting it, and reaches it again on the darker neutral ladder.)
+    swatch was being fixed for. (`#0086FE` on the 2026-11-05 ladder: kept by
+    the resolver on `--card`, ink under AA. Since the 2026-11-12 ladder's
+    lighter `--card` (#3826) no kept colour's ink misses AA, so this branch
+    is a guard no real input reaches; `settings-contrast.spec.ts` sweeps it.)
 
     The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
     reject that accent. It asks whether the accent is legible **as text on the
@@ -347,8 +350,9 @@ export function SettingsAccentTab({
             card*; this one when text is illegible *on the accent* —
             which is what a primary button actually is, and what this
             card's own description promises the accent will be used
-            for. `#0086FE` passes the first and fails this one (pinned
-            in `settings-contrast.spec.ts`). Both check the draft
+            for. `#0086FE` passed the first and failed this one on the
+            2026-11-05 ladder; on the 2026-11-12 ladder nothing does
+            (`settings-contrast.spec.ts`). Both check the draft
             preview only, and each says
             what a save does instead, because saving differs from the
             preview: the entered colour is stored, not the substitute,

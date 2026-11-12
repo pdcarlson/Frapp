@@ -52,11 +52,19 @@ export function ActivitySummary({
                 className={cn(
                   "flex min-h-16 flex-col items-start justify-between gap-1 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-card-hover",
                   pressed ? "border-accent-border" : "border-border",
-                  tile.zero && !pressed && "opacity-60",
                   FOCUS_RING,
                 )}
               >
-                <span className="text-headline tabular-nums text-foreground">
+                {/* A zero tile steps down the text ladder rather than fading
+                    the whole button (#3826): `opacity-60` took the count to
+                    about 6:1 and the label under 5:1 on a still-working
+                    control, off any token. */}
+                <span
+                  className={cn(
+                    "text-headline tabular-nums",
+                    tile.zero && !pressed ? "text-muted" : "text-foreground",
+                  )}
+                >
                   {tile.count ?? (
                     // A section that could not be read is unknown, never 0.
                     <>

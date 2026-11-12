@@ -97,9 +97,9 @@ describe("memberAvatarHue", () => {
 
 describe("memberAvatarTint contrast", () => {
   // Every role color can reach an avatar (officers), so all ten are checked,
-  // Sand (6.07) and Slate (5.51) included, not only the eight hashed hues.
+  // Sand (6.01) and Slate (5.44) included, not only the eight hashed hues.
   it.each(ROLE_COLOR_PALETTE.map((s) => [s.label, s.hex] as const))(
-    "%s initials read at AA on their 18%% tint",
+    "%s initials read at AA on their 14%% tint",
     (_label, hex) => {
       const tint = memberAvatarTint(hex);
       expect(tint.text).toBe(hex);
@@ -107,9 +107,11 @@ describe("memberAvatarTint contrast", () => {
     },
   );
 
-  it("reproduces the #3860 measurements", () => {
-    expect(memberAvatarTint("#F2994A").fill).toBe("#443426");
-    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(5.34, 1);
-    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(4.79, 1);
+  it("reproduces the #3860 measurements, re-seated for the #3826 ladder", () => {
+    // #3860 measured 18% over the old `--popover`: Orange `#443426` at 5.34:1,
+    // Violet 4.79:1. 14% over the new `--card` paints nearly the same fill.
+    expect(memberAvatarTint("#F2994A").fill).toBe("#43362B");
+    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(5.24, 1);
+    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(4.69, 1);
   });
 });
