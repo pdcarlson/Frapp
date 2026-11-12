@@ -22,9 +22,11 @@ export interface IStudySessionRepository {
     userId: string,
     chapterId: string,
   ): Promise<StudySession | null>;
+  /** Newest first; `startedSince` keeps only sessions started at or after it. */
   findByUserAndChapter(
     userId: string,
     chapterId: string,
+    options?: { startedSince?: Date },
   ): Promise<StudySession[]>;
   create(data: Partial<StudySession>): Promise<StudySession>;
   /**

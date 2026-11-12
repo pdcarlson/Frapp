@@ -7350,7 +7350,7 @@
     },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
-        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
+        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).",
         "operationId": "AttendanceController_checkIn_v1",
         "parameters": [
           {
@@ -7393,6 +7393,63 @@
           }
         ],
         "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in-screen": {
+      "put": {
+        "description": "Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.",
+        "operationId": "AttendanceController_reportCheckInScreen_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInScreenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInScreenResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report where the host check-in screen (s22) is",
         "tags": [
           "Attendance"
         ]
@@ -13135,6 +13192,58 @@
           }
         ],
         "summary": "Get what needs the caller and what they made",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/standing": {
+      "get": {
+        "description": "The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.",
+        "operationId": "ActivityController_getStanding_v1",
+        "parameters": [
+          {
+            "name": "week_start",
+            "required": false,
+            "in": "query",
+            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityStandingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`week_start` is more than eight days back or a day ahead."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get how the caller is doing this semester",
         "tags": [
           "Activity"
         ]
@@ -20725,13 +20834,54 @@
           },
           "lat": {
             "type": "number",
-            "description": "Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+            "description": "Scanner latitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise."
           },
           "lng": {
             "type": "number",
-            "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+            "description": "Scanner longitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise."
+          },
+          "accuracy_meters": {
+            "type": "number",
+            "description": "The scanner's reported location accuracy in meters. Widens the distance allowed from the officer's screen, up to 50 m. Omit when the phone reports none."
           }
         }
+      },
+      "CheckInScreenDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "The screen's latitude."
+          },
+          "lng": {
+            "type": "number",
+            "description": "The screen's longitude."
+          },
+          "accuracy_meters": {
+            "type": "number",
+            "description": "The screen's reported accuracy in meters. A fix less precise than 100 m isn't stored, and distance isn't checked."
+          }
+        }
+      },
+      "CheckInScreenResultDto": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "string",
+            "enum": [
+              "zone",
+              "screen",
+              "other_screen",
+              "no_location",
+              "not_open",
+              "closed"
+            ],
+            "description": "How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored)."
+          }
+        },
+        "required": [
+          "check"
+        ]
       },
       "EventAttendanceDto": {
         "type": "object",
@@ -24273,6 +24423,150 @@
           "needs_you_count",
           "unavailable",
           "unread_since"
+        ]
+      },
+      "StandingPointsDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Points earned this semester."
+          },
+          "rank": {
+            "type": "number",
+            "nullable": true,
+            "description": "Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board."
+          },
+          "ranked": {
+            "type": "number",
+            "description": "How many members the board ranks."
+          }
+        },
+        "required": [
+          "total",
+          "rank",
+          "ranked"
+        ]
+      },
+      "StandingRequiredEventsDto": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "number",
+            "description": "Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in."
+          },
+          "attended": {
+            "type": "number",
+            "description": "Of `required`, those marked present or late."
+          },
+          "excused": {
+            "type": "number",
+            "description": "Required events the caller was excused from."
+          }
+        },
+        "required": [
+          "required",
+          "attended",
+          "excused"
+        ]
+      },
+      "StandingServiceDto": {
+        "type": "object",
+        "properties": {
+          "approved_minutes": {
+            "type": "number",
+            "description": "Approved service minutes this semester."
+          },
+          "pending_minutes": {
+            "type": "number",
+            "description": "Service minutes waiting for approval."
+          }
+        },
+        "required": [
+          "approved_minutes",
+          "pending_minutes"
+        ]
+      },
+      "StandingStudyDto": {
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "type": "number",
+            "description": "Minutes from study sessions that started this week and have ended."
+          },
+          "week_start": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "minutes",
+          "week_start"
+        ]
+      },
+      "ActivityStandingDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "nullable": true,
+            "description": "Null when Points is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingPointsDto"
+              }
+            ]
+          },
+          "required_events": {
+            "nullable": true,
+            "description": "Null when Events is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingRequiredEventsDto"
+              }
+            ]
+          },
+          "service": {
+            "nullable": true,
+            "description": "Null when Hours is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingServiceDto"
+              }
+            ]
+          },
+          "study": {
+            "nullable": true,
+            "description": "Null when Hours is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingStudyDto"
+              }
+            ]
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Parts that could not be read this time. Each is served null; the others are unaffected.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "points",
+                "required_events",
+                "service",
+                "study"
+              ]
+            }
+          }
+        },
+        "required": [
+          "points",
+          "required_events",
+          "service",
+          "study",
+          "unavailable"
         ]
       },
       "ActivityItemRefDto": {

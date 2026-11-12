@@ -203,7 +203,8 @@ describe("openNotificationTarget", () => {
       "/chat-thread",
     );
     expect(calls).toEqual([
-      "dismissTo /tasks",
+      // The task board is a pushed screen since it left the tab bar (#4610).
+      "push /tasks",
       "replace /chat-thread?channelId=c2",
     ]);
   });

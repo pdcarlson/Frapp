@@ -124,6 +124,31 @@ describe('SupabaseAttendanceRepository — tenant scope', () => {
     expect(row?.id).toBe(ATTEND_B);
   });
 
+  it("findByUserForEvents reads only that member's rows", async () => {
+    // Activity's standing keys these rows by event alone, so another member's
+    // row on the same event would count as the caller's.
+    const rows = await repo.findByUserForEvents(
+      '0b000000-0000-4000-8000-0000000001ff',
+      [EVENT_B],
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it('findByUserForEvents reads past the first chunk of 100 ids', async () => {
+    const filler = Array.from(
+      { length: 150 },
+      (_, i) => `0b000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    const rows = await repo.findByUserForEvents(USER_SHARED, [
+      ...filler,
+      EVENT_B,
+    ]);
+
+    expect(rows.map((r) => r.id)).toEqual([ATTEND_B]);
+    expect(harness.ops).toHaveLength(2);
+  });
+
   it('update stays inside the caller chapter and filters on the row id alone', async () => {
     // Two things at once. The guard proves the write stayed in chapter B —
     // `parentTenant` resolves the row's chapter through its event, so a filter

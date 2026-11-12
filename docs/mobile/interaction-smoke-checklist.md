@@ -67,12 +67,12 @@ in the S2 nav restructure (#957) — see
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Event details | `‹ Events` above the title, opened from Events | Slides back to the Events tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
+| Event details | `‹ Calendar` above the title, opened from Calendar | Slides back to the Calendar tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
 | Study hours, Service hours, Dues, Documents, Directory, Profile, Settings | `‹ More` above the title | Slides back to the More tab |
 | Every screen past the four tabs (a channel, event details, each More page, Notifications, Check in, Host check-in) | iOS: swipe right from the left edge. Android: back button, or the back gesture | Goes back to the screen that opened it (a channel to the channel list), the same place its drawn `‹`, back capsule or ✕ goes. No screen ignores the swipe |
 | Chat thread | Open a photo, zoom in, drag it from near the left edge; then close the viewer and swipe from the edge | The drag pans the photo and the thread stays; once the viewer is closed the swipe goes back to the channel list. Android back with the viewer open closes the viewer only |
 | Dues | Pay, finish the Stripe sheet, swipe back at once, open Dues again | The invoice still reads Pending with "Payment received, confirmation pending", and Pay doesn't offer to pay it as new |
-| Notifications | Tap a task notification | Lands on the Tasks tab with one tab bar, and back from there doesn't return to a second copy of the tabs |
+| Notifications | Tap a task notification | Opens the task board over the screen you were on (a pushed screen since #4610), and back returns to that screen |
 | Profile (`/(app)/profile`) | Edit, change a field, Save | The sheet opens on your current details; Save stays off until something changes; saving closes the sheet onto the new value; a changed name also shows in Directory and on your chat messages, and a changed city or company in Directory, without a restart |
 | Profile (`/(app)/profile`) | Edit, clear the name, or enter a graduation year like 1850 | Refused inline under the field, Save stays off, nothing is sent |
 | Profile (`/(app)/profile`) | Edit, Save with no connection | "That didn't save" under the fields; what you typed is still there |

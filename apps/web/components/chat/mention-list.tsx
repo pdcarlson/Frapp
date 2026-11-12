@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { MemberAvatarTint } from "@repo/hooks";
+import { mentionRoleHint } from "@repo/validation";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, initials } from "@/lib/utils";
@@ -208,7 +209,11 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             )}
             <span className="min-w-0 flex-1 truncate">{item.displayName}</span>
             {item.kind === "role" ? (
-              <span className="shrink-0 text-muted-foreground">Role</span>
+              // "Role", or who `@everyone` and `@here` reach, as Slack's and
+              // Discord's pickers say (`mentionRoleHint`, shared with mobile).
+              <span className="shrink-0 text-muted-foreground">
+                {mentionRoleHint(item.displayName)}
+              </span>
             ) : null}
           </button>
         ))}

@@ -347,7 +347,7 @@ export default function EventsScreen() {
 
   return (
     <ScreenShell
-      title="Events"
+      title="Calendar"
       refresh={refresh}
       headerAction={
         chapterId ? (

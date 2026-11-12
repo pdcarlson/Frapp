@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
-  useActivity,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
@@ -23,7 +22,6 @@ import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
-  ActivityGlyph,
   ChapterGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
@@ -37,9 +35,7 @@ import {
 } from "@/components/more/more-glyphs";
 import { ProfileCard } from "@/components/more/profile-card";
 import { StatusChip } from "@/components/status-chip";
-import { activityCountChip } from "@/lib/activity/count-chip";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
-import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { formatPointsLabel } from "@/lib/more/hub";
@@ -101,9 +97,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Activity
  *
- * **Activity** leads the chapter tools, as it leads web's Chapter group
- * (#3897). Its chip is the count of things waiting on the member
- * (`needs_you_count`), drawn only when there is one.
+ * Activity was this hub's first row until it became tab 2 on 2026-11-12
+ * (#4610). Its count now rides on the tab (`GlassTabBar`).
  *
  * ## Rows nobody has set up
  *
@@ -219,16 +214,6 @@ export default function MoreScreen() {
     return formatHoursLabel(minutes);
   }, [sessionsQuery.data, weekStart]);
 
-  // The Activity row's count: what is waiting on the member right now
-  // (`needs_you_count`, counted server-side before the list cap). Nothing is
-  // drawn until the read answers or while nothing waits: a "0" chip would
-  // be noise. This tab is never unmounted, so the count is read again on
-  // every return to it (`useActivityReread`), or it would keep counting a
-  // task the member has since finished on the Tasks tab.
-  useActivityReread();
-  const activity = useActivity().data;
-  const needsYou = activityCountChip(activity);
-
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
     const next = selectNextDueInvoice(
@@ -249,23 +234,6 @@ export default function MoreScreen() {
       />
 
       <ListSection>
-        <ListRow
-          label="Activity"
-          leading={<ActivityGlyph color={glyphColor} />}
-          accessibilityHint="Opens what is waiting on you and what you made."
-          accessibilityValue={needsYou?.spoken}
-          trailing={
-            needsYou ? (
-              <StatusChip
-                label={needsYou.label}
-                // Something to do, not yet settled: the warning role, as the
-                // rows it counts wear on the screen itself.
-                hue={tokens.color.semantic.warning}
-              />
-            ) : undefined
-          }
-          onPress={() => router.push("/activity")}
-        />
         {hiddenFeatures.has("study") ? null : (
           <ListRow
             label="Study hours"

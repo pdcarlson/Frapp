@@ -645,7 +645,7 @@ Advertising Data, Browsing History, Search History.
 Where each answer comes from:
 
 - **Phone Number** — chapters can define a member field of type `phone`
-  (`CustomFieldTypeSchema` in `packages/validation/src/index.ts`). There is no
+  (`CustomFieldTypeSchema` in `packages/validation/src/chapter-config.ts`). There is no
   address field type, which is why **Physical Address** is not declared.
 - **Other User Content** — chat messages **and chat photo attachments**. Apple's
   "Emails or Text Messages" type is not used; in-app chat belongs here.

@@ -1,631 +1,113 @@
-import { z } from "zod";
-import {
-  CHAPTER_SHORT_NAME_MAX_LENGTH,
-  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
-  POINTS_ADJUSTMENT_MAX,
-  POINTS_REASON_MAX_LENGTH,
-  ROLE_NAME_MAX_LENGTH,
-  YEAR_MAX,
-} from "./field-limits";
-import { isBetaOffModule } from "./beta-off-modules";
-
-export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
-export {
-  CHANNEL_ACCESS_ENTRY_KINDS,
-  CHANNEL_ACCESS_ENTRY_PATTERN,
-  CHANNEL_ACCESS_LIST_MAX,
-  channelAccessEntry,
-  normalizeChannelAccessList,
-  parseChannelAccessEntry,
-  sameChannelAccessList,
-  type ChannelAccessEntryKind,
-} from "./channel-access-lists";
-export {
-  RELEASE_NOTES,
-  formatReleaseNoteDate,
-  releaseNoteText,
-  releaseNoteVersion,
-  parseReleaseNoteVersion,
-  isNewerReleaseNoteVersion,
-  decideWhatsNew,
-  accountHasSeenNewest,
-  isLaterReleaseNoteVersion,
-  RELEASE_NOTE_VERSION_PATTERN,
-  type ReleaseNote,
-  type ReleaseNoteVersion,
-  type WhatsNewDecision,
-} from "./release-notes";
-
-// ── Legal / compliance ───────────────────────────────────────────────────────
-// The policy version itself is the API's (`apps/api/src/domain/constants/
-// legal.ts`, #3268): clients never compare against it.
-
-/**
- * The checkbox every acceptance surface shows: the create-chapter wizard, the
- * join screens and the Terms prompt, on web and mobile. The owner approved this
- * wording with the Terms of 2026-09 (#2261), so change it only with them, and
- * with the Terms.
- */
-export const LEGAL_ACCEPTANCE_LABEL =
-  "I'm 18 or older and agree to the Terms of Service and Privacy Policy.";
-
-/**
- * The 403 the API answers with when a caller who hasn't accepted the current
- * Terms tries to join or create a chapter without the checkbox (#2302). It
- * throws both; `isTermsRequiredError` in `@repo/hooks` recognises either.
- *
- * The message matters as much as the code. Clients read the code first, but
- * an API older than #1020 sent none, so the message is the fallback, and it
- * is shared from here so the server and both apps can't drift apart on it.
- */
-export const LEGAL_ACCEPTANCE_REQUIRED_CODE = "legal.acceptance_required";
-export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
-  "Agree to the Terms of Service and Privacy Policy to continue.";
-
-/**
- * The code on every 400 the API's global `ValidationPipe` answers with: a
- * body, query or path DTO it refuses (#4096). The `message` stays the pipe's
- * array of field failures. Clients don't word it (`copyForErrorCode`), since
- * a member's form is validated before it is sent; `@repo/observability`
- * classes it as client-contract, so a client that sends one reports a bug.
- */
-export const REQUEST_VALIDATION_FAILED_CODE = "request.validation_failed";
-
-/**
- * The 404 code on `GET /v1/channels/{id}/messages` when its `since` cursor
- * names no message in the channel (#2807). Chat clients read it
- * (`readMessageRows` in `@repo/chat-core/history`) to tell a cursor they should
- * drop from a channel they can't read, which answers 404 too.
- */
-export const CHAT_SINCE_NOT_FOUND_CODE = "chat.since_not_found";
-
-/**
- * The API's 410 message for a request from an account that has been deleted
- * but whose session hasn't ended yet. Shared so a client can tell it apart
- * from the other 410s it can meet on the same route (an expired invite).
- */
-export const ACCOUNT_DELETED_MESSAGE = "Account has been deleted";
-
-/**
- * The join screens' copy when the box isn't ticked, or when the server refused
- * a join for want of it (#2302). Web `/join` and mobile s02 both render it;
- * `spec/ui/design-system/writing.md` § 7, Join chapter, is its spec.
- */
-export const JOIN_TERMS_REQUIRED_COPY =
-  "Agree to the Terms of Service and Privacy Policy to join.";
-
-/**
- * The Terms prompt's copy (#2302), rendered by mobile `(auth)/terms.tsx` and
- * web's `TermsPrompt`. `spec/ui/design-system/writing.md` § 7, Terms prompt,
- * is its spec.
- */
-export const TERMS_PROMPT_COPY = {
-  title: "Agree to the Terms to continue",
-  body: "We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.",
-  cta: "Agree and continue",
-  unticked: "Agree to the Terms of Service and Privacy Policy to continue.",
-  deleted: "This account has been deleted. Sign out to continue.",
-  failed: "Couldn't save your agreement. Check your connection and try again.",
-} as const;
-
-// ── Chapter branding schema (Chunk 02: chapters.branding jsonb) ──────────────
-
-/**
- * The branding block's shape. No product code parses with it: it is the type
- * source for the config PATCH body (`PatchChapterConfig`) and the API's
- * `ChapterBrandingInput`, and the API's `BrandingDto` is what enforces values.
- * A client reads a stored `branding` as the contract types it, loose jsonb
- * values, and skips one that doesn't fit (`chapter-mark.ts`): a read that
- * refused one value would blank every field beside it (#2844).
- */
-export const ChapterBrandingSchema = z
-  .object({
-    greek_letters: z.string().optional(),
-    // The chapter mark's text options (#2876); precedence is `chapter-mark.ts`.
-    // An empty string is how Settings clears a short name, since the config
-    // PATCH deep-merges and an omitted key keeps its stored value.
-    //
-    // No `.max()` here, deliberately. The cap (`CHAPTER_SHORT_NAME_MAX_LENGTH`)
-    // is enforced by the DTO, whose class-validator count differs from zod's:
-    // it drops variation selectors, so "❤️❤️❤️❤️" is 4 to the API and 8 to zod.
-    // A zod cap would state a stricter limit than the one enforced; the inputs'
-    // `maxLength` is the client-side cap.
-    short_name: z.string().optional(),
-    show_greek_letters: z.boolean().optional(),
-    designation: z.string().optional(),
-    school_short: z.string().optional(),
-    founded_at: z.number().int().min(1776).max(YEAR_MAX).optional(),
-    colors: z
-      .object({
-        // One seed. The legacy second colour (`dark`) fed only the
-        // `derivePalette` token map and went with it in the #920 slice-9
-        // cutover; rows written before that keep an inert stored value, which
-        // nothing reads.
-        accent: z
-          .string()
-          .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
-          .optional(),
-      })
-      .optional(),
-  })
-  .optional();
-
-/** The most addresses one `POST /v1/invites/email` takes. */
-export const MAX_INVITE_EMAILS = 50;
-
-const inviteEmailSchema = z.string().email();
-
-/**
- * Whether `value` is an address `POST /v1/invites/email` accepts. The API's
- * `BulkEmailInviteDto` validates with this same function, so the web chip
- * field marks exactly the addresses the server would refuse.
- */
-export function isInviteEmail(value: string): boolean {
-  return inviteEmailSchema.safeParse(value.trim()).success;
-}
-
-/**
- * Splits pasted or typed text into addresses (a pasted column, a CSV row, a
- * mail client's `Name <a@b.edu>` copy loses its brackets). Web's chip field
- * and mobile's Invite by email field read a draft the same way.
- */
-export function splitAddresses(text: string): string[] {
-  return text
-    .split(/[\s,;]+/)
-    .map((part) => part.trim().replace(/^<|>$/g, ""))
-    .filter(Boolean);
-}
-
-/**
- * Case-insensitively de-dupes email addresses, preserving the first-seen
- * casing to send to. Shared between the API (`InviteService.createWithEmails`)
- * and the web onboarding wizard so the two runtimes' notion of "how many
- * unique addresses" can never drift apart.
- */
-export function dedupeEmails(emails: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const raw of emails) {
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(trimmed);
-  }
-  return result;
-}
-
-// ── Backwork ─────────────────────────────────────────────────────────────────
-
-export const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;
-export const ASSIGNMENT_TYPES = [
-  "Exam",
-  "Midterm",
-  "Final Exam",
-  "Quiz",
-  "Homework",
-  "Lab",
-  "Project",
-  "Study Guide",
-  "Notes",
-  "Other",
-] as const;
-export const DOCUMENT_VARIANTS = [
-  "Student Copy",
-  "Blank Copy",
-  "Answer Key",
-] as const;
-
-// ── Chapter config schemas (Chunk 02) ─────────────────────────────────────────
-
-/** Reusable nonnegative-cents validator. Rejects NaN and negative values. */
-const centsAmount = z.number().int().nonnegative();
-
-export const ChapterDuesConfigSchema = z.object({
-  cadence: z.enum(["monthly", "per_semester", "per_quarter"]),
-  active_amount_cents: centsAmount,
-  new_member_amount_cents: centsAmount,
-  alumni_amount_cents: centsAmount,
-  installments_allowed: z.boolean(),
-  installment_count: z.number().int().min(1),
-  late_fee_cents: centsAmount,
-  grace_days: z.number().int().nonnegative(),
-  scholarship_pool_cents: centsAmount,
-});
-
-/**
- * Ceiling on the configurable hourly adjustment rate. An unbounded value would
- * overflow `int4` on the upsert (a raw Postgres 22003 surfacing as a 500 after
- * a partial write), and short of that would simply switch the control off.
- */
-export const ADJUSTMENT_RATE_LIMIT_MAX = 1000;
-
-/**
- * A chapter's points anti-fraud limits (#394 — `spec/behavior/points.md`
- * § Anti-Fraud), persisted to `chapter_points_config`.
- *
- * Both floors are `min(1)`, mirroring the column CHECKs and the API DTO: a
- * rate limit of 0 refuses every adjustment with no way back out through the
- * append-only ledger, and a threshold of 0 flags every row.
- */
-export const ChapterPointsConfigSchema = z.object({
-  adjustment_rate_limit_per_hour: z
-    .number()
-    .int()
-    .min(1)
-    .max(ADJUSTMENT_RATE_LIMIT_MAX),
-  // Ceiling is the ledger's own per-row bound: an adjustment can never exceed
-  // +/-POINTS_ADJUSTMENT_MAX, so a threshold above it could never fire.
-  anomaly_threshold: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
-});
-
-/**
- * A chapter's service-hours rate (`chapter_service_config`), as the config
- * PATCH takes it. The bounds mirror the API's `ServiceConfigDto`: at least 1
- * (a rate of 0 would divide by zero when awarding), and no more than an
- * entry's own duration cap, above which no entry could earn a point.
- */
-export const ChapterServiceConfigSchema = z.object({
-  minutes_per_point: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
-});
-export type ChapterServiceConfig = z.infer<typeof ChapterServiceConfigSchema>;
-
-/**
- * What a chapter with no `chapter_points_config` row enforces — the values
- * `PointsService` hardcoded before the limits became configurable, which is
- * what makes the migration backfill-free.
- *
- * Lives here, in the package both `apps/api` and `packages/hooks` already
- * depend on, so the API's enforcement default and the number the web renders
- * cannot drift apart. They previously would have: a hand-copied frontend
- * constant compiles fine forever while the server default moves, and the
- * dashboard would then state an anti-fraud limit the server does not apply.
- * The migration's column defaults are the third copy and the one that cannot
- * import this; `chapter-points-config.service.spec.ts` pins them together.
- */
-export const CHAPTER_POINTS_CONFIG_DEFAULTS: ChapterPointsConfig = {
-  adjustment_rate_limit_per_hour: 50,
-  anomaly_threshold: 100,
-};
-
-/**
- * A single workflow override submitted from Settings → Workflows. `key`
- * identifies a workflow in the chapter's catalog; `threshold` guard-parses to a
- * nonnegative integer (NaN/negative rejected — never stored).
- */
-export const ChapterWorkflowConfigSchema = z.object({
-  key: z.string(),
-  enabled: z.boolean(),
-  threshold: z.number().int().nonnegative().optional(),
-});
-
-/**
- * A chapter custom *field* (Settings → Fields), persisted to
- * `chapter_custom_fields`. The set of field types and visibility tiers mirrors
- * the table's CHECK constraints (`supabase/migrations/20260523120000`).
- */
-export const CustomFieldTypeSchema = z.enum([
-  "text",
-  "number",
-  "decimal",
-  "phone",
-  "select",
-  "boolean",
-]);
-
-export const CustomFieldVisibilitySchema = z.enum([
-  "self",
-  "chapter",
-  "exec",
-  "president",
-]);
-
-/**
- * Type-specific configuration stored in the `options` jsonb column.
- * `choices` carries a `select` field's option list; `max_length` is an optional
- * constraint for `text`. Other types carry no config (the column is null).
- */
-export const CustomFieldOptionsSchema = z
-  .object({
-    choices: z.array(z.string().min(1)).optional(),
-    max_length: z.number().int().positive().optional(),
-  })
-  .strict();
-
-export const ChapterCustomFieldSchema = z.object({
-  id: z.string(),
-  chapter_id: z.string(),
-  key: z.string(),
-  label: z.string(),
-  type: CustomFieldTypeSchema,
-  required: z.boolean(),
-  visibility: CustomFieldVisibilitySchema,
-  sensitive: z.boolean(),
-  options: CustomFieldOptionsSchema.nullable(),
-  sort: z.number().int().nonnegative(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-
-/**
- * Body for `POST /custom-fields`. `key` is a lowercase slug unique per chapter.
- * A `select` field must declare a non-empty `choices` list.
- */
-export const CreateCustomFieldSchema = z
-  .object({
-    key: z
-      .string()
-      .min(1)
-      .regex(
-        /^[a-z0-9_]+$/,
-        "key must be lowercase letters, numbers, underscores",
-      ),
-    label: z.string().min(1),
-    type: CustomFieldTypeSchema,
-    required: z.boolean().optional(),
-    visibility: CustomFieldVisibilitySchema.optional(),
-    sensitive: z.boolean().optional(),
-    options: CustomFieldOptionsSchema.optional(),
-    sort: z.number().int().nonnegative().optional(),
-  })
-  .refine((v) => v.type !== "select" || (v.options?.choices?.length ?? 0) > 0, {
-    message: "A select field requires a non-empty options.choices list",
-    path: ["options", "choices"],
-  });
-
-/** Body for `PATCH /custom-fields/:id` (`key` and `type` are immutable). */
-export const UpdateCustomFieldSchema = z.object({
-  label: z.string().min(1).optional(),
-  required: z.boolean().optional(),
-  visibility: CustomFieldVisibilitySchema.optional(),
-  sensitive: z.boolean().optional(),
-  options: CustomFieldOptionsSchema.nullable().optional(),
-  sort: z.number().int().nonnegative().optional(),
-});
-
-export const PatchChapterConfigSchema = z.object({
-  org_archetype: z.string().optional(),
-  // Zod 4: `z.record` takes (key, value). The one-arg form was Zod 3.
-  enabled_modules: z.record(z.string(), z.boolean()).optional(),
-  vocabulary: z.record(z.string(), z.string()).optional(),
-  branding: ChapterBrandingSchema,
-  beta_config: z
-    .object({
-      enabled: z.boolean(),
-      style: z.enum([
-        "sidebar_pill",
-        "top_banner",
-        "corner_badge",
-        "breadcrumb_pill",
-      ]),
-    })
-    .optional(),
-  dues: ChapterDuesConfigSchema.optional(),
-  // Partial by design: an officer may move one limit without restating the
-  // other, and the API merges onto the stored row.
-  points: ChapterPointsConfigSchema.partial().optional(),
-  service: ChapterServiceConfigSchema.partial().optional(),
-  workflows: z.array(ChapterWorkflowConfigSchema).optional(),
-  // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
-  analytics_opt_out: z.boolean().optional(),
-  // #422: role new invites default to. `.nullable()` before `.optional()` is
-  // load-bearing — null is a real value here (clear the default) and must
-  // survive the parse, while absent means "don't touch it". The API rejects a
-  // uuid that is not one of this chapter's roles with a 400.
-  default_invite_role_id: z.string().uuid().nullable().optional(),
-});
-
-// ── Module enablement predicate (issue #264) ─────────────────────────────────
-
-/**
- * Single source of truth for "is this module on for this chapter?".
- *
- * Deliberately shared rather than reimplemented per surface: the web nav, the
- * Cmd+K palette, the chat slash-command palette, and the API's `ChapterGuard`
- * all answer this question, and a disagreement between the client and the
- * server means either a surface the user can see but not use, or a write the
- * UI hides but the API still accepts.
- *
- * A module is enabled unless the chapter explicitly turned it off. Absence is
- * not disablement — a chapter created before a module existed has no key for
- * it, and must not be locked out of something it never disabled. The one
- * exception is a `BETA_OFF_MODULES` key, which is off for every chapter.
- *
- * @param enabledModules the chapter's `enabled_modules` map, if loaded
- * @param key a `MODULE_CATALOG` key, e.g. `"events"`
- */
-export function isModuleEnabled(
-  enabledModules: Record<string, boolean> | null | undefined,
-  key: string,
-): boolean {
-  if (isBetaOffModule(key)) return false;
-  return enabledModules?.[key] !== false;
-}
-
-export {
-  moduleDisabledMessage,
-  moduleRefusalFromServerMessage,
-} from "./module-refusal";
-
-/**
- * The 400 `POST /v1/service-entries` answers when the chapter's
- * `wf_hours_receipt` workflow is on and the entry carries no `proof_path`.
- * `ServiceEntryService.create` throws both, as `{ code, message }` (#1020).
- * A member can't read the workflow itself (`GET /v1/chapters/:id/config`
- * needs `chapter-config:view`), so this answer is how the phone learns of it:
- * mobile s20 recognises the refusal by the code and asks for a photo.
- *
- * The code is the contract, not the message. A mobile build is matched
- * against whatever the API sends for as long as it stays installed, so
- * matching the English sentence would break every shipped build the day it
- * is reworded. The code never changes; the message can, and web shows it as
- * the toast's description.
- */
-export const SERVICE_RECEIPT_REQUIRED_CODE = "service_entry.receipt_required";
-export const SERVICE_RECEIPT_REQUIRED_MESSAGE =
-  "This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit";
-
-// ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
-// Originally shared with the Deno Edge Functions; kept dependency-light
-// (zod only) so any future Deno consumer can still import this file
-// directly via an import map without Node.js-specific resolution. ──────
-
-/**
- * `users.id` of the system actor behind server-originated chat messages — the
- * chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the
- * poll-expiry notice. A real seeded `users` row
- * (`supabase/migrations/20260524120000_chapter_directory_requests.sql`).
- *
- * Canonical here rather than in the API so clients read the same value the
- * server enforces: `spec/behavior/chat/README.md` § Block makes the system
- * actor unblockable (`ChatBlockService` refuses it with a 400), and a client
- * offering "Block" on a system message would be a dead control. The API's
- * `domain/constants/chat.ts` re-exports this rather than keeping a copy.
- */
-export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
-
-/**
- * The author name for a message the server posts as the system actor
- * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
- * poll-expiry notices and invite-accept DMs.
- *
- * The system actor is a real `users` row but never a chapter member, so the
- * roster can't name it, and before this the clients' author line fell through
- * to `memberFallbackLabel` and the welcome post every new chapter sees first read
- * "Member 000000" beside a "00" avatar (#3347). It is the product speaking, so
- * it takes the product's name. The row's own `display_name` ("Frapp System")
- * is not used: it names the account, not the voice, and the roster never
- * serves it anyway. `@repo/hooks`' `resolveAuthorName` and the API's activity
- * feed both read this.
- */
-export const SYSTEM_AUTHOR_LABEL = "Frapp";
-
-/**
- * Where a client's read of its own chat block list stands
- * (`spec/behavior/chat/README.md` § The masking contract). Tri-state, never
- * boolean: a failed read that looked like "nobody is blocked" would fail open
- * on a safety feature — the exact defect #2315 records.
- *
- * Canonical here because two packages that may not import each other share
- * it: `@repo/hooks`' `useBlockedUserIds` produces it, and `@repo/chat-core`'s
- * classifier (`blocks.ts`) consumes it.
- */
-export type BlockListStatus = "ready" | "loading" | "unavailable";
-
-export const CHAT_MESSAGE_KINDS = [
-  "text",
-  "event",
-  "task",
-  "poll",
-  "dues",
-  "points",
-  "hours",
-  "rush",
-  "system_audit",
-  "imported",
-  "loading",
-  "announcement",
-  "signup",
-] as const;
-
-export const SendChatMessageSchema = z.object({
-  /**
-   * Client-generated idempotency key (UUID or UUID-like string).
-   * The server dedupes on (channel_id, sender_id, client_message_id).
-   * Actor identity is resolved from the authenticated session — never from
-   * this payload.
-   */
-  client_message_id: z.string().uuid(),
-  channel_id: z.string().uuid(),
-  content: z.string().min(1).max(CHAT_MESSAGE_CONTENT_MAX_LENGTH),
-  kind: z.enum(CHAT_MESSAGE_KINDS).default("text"),
-  payload: z.record(z.string(), z.unknown()).optional(),
-  reply_to_id: z.string().uuid().optional(),
-});
-
-// ── Alumni permission ────────────────────────────────────────────────────────
-
-/**
- * The permission the seeded Alumni role holds. Chat no longer reads it: since
- * #3722 an alumnus posts where a channel's who-can-post list (or, when anyone
- * who can see may post, its who-can-see list) names the Alumni role. Mobile
- * still reads it to tell an alumnus apart (`lib/more/donation.ts`).
- */
-export const ALUMNI_CHANNEL_PERMISSION = "alumni:post";
-
-// ── Type Exports ─────────────────────────────────────────────────────────────
-
-export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
-export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
-export type ChapterPointsConfig = z.infer<typeof ChapterPointsConfigSchema>;
-export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
-export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
-export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
-export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
-export type CreateCustomField = z.infer<typeof CreateCustomFieldSchema>;
-export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
-
+export * from "./act";
+export * from "./ai-copy";
+// Report this (#4315): the reasons, the request, and the words about what a
+// report keeps.
+export * from "./ai-report";
+// Suggested tasks (#4313): the words web and mobile share.
+export * from "./ai-suggestion-copy";
+export * from "./alumni-permission";
 // ── Analytics payload hygiene (issue #464) ───────────────────────────────────
 export {
   ANALYTICS_APPS,
+  type AnalyticsApp,
+  type AnalyticsEvent,
+  type AnalyticsProperties,
   assertContentFreeProperties,
   CLIENT_ANALYTICS_APPS,
+  type ClientAnalyticsApp,
   ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
   RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT,
 } from "./analytics";
-export type {
-  AnalyticsApp,
-  AnalyticsEvent,
-  AnalyticsProperties,
-  ClientAnalyticsApp,
-} from "./analytics";
-
+// Client-side analytics opt-out. Fourth shared client gate alongside `can`,
+// `isModuleEnabled`, and `subscriptionWriteState`.
+export * from "./analytics-opt-out";
+export * from "./api-error-codes";
+// Ask Frapp (#450): the request, the versioned stream format, and its copy.
+export * from "./ask";
+export * from "./backwork";
+// ── Backwork course names and nicknames (#3848) ──
+export * from "./backwork-courses";
+export * from "./beta-off-modules";
+export * from "./channel-access-lists";
+export * from "./chapter-branding";
+export * from "./chapter-config";
+// ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
+export * from "./chapter-mark";
+export * from "./chat-backgrounds";
+// Catch me up (#3946): a channel's new messages or a thread, summarized.
+export * from "./chat-catch-up";
+export * from "./chat-message";
+export * from "./chat-message-flags";
+export * from "./chat-notification-defaults";
+export * from "./chat-sidebar";
+export * from "./check-in-window";
+export * from "./check-in-zone-copy";
+// Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
+// mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
+// the effects that feed it; this package owns the rule.
+export * from "./connection-state";
+// Discord export (DCE) preamble parsing, shared between the import wizard
+// (apps/web) and the import worker (apps/api). See ./discord-export for why
+// this used to be two copies of the same scanner.
+export * from "./discord-export";
+// Which Discord imports may be cleared off the list, shared so the web never
+// offers a Clear the API refuses. See ./discord-import.
+export * from "./discord-import";
+export * from "./error-copy";
+// Event attendance by role: who an event is for, read the same way by the
+// API's read gate, check-in, auto-absent and pushes, and by both editors.
+export * from "./event-attendance";
+// Editing or deleting an existing event: what a save sends, and whether to
+// ask "this event or all upcoming" first. Web and the phone share it (#3667).
+export * from "./event-edit";
+// The chapter's Everyone role, the Member role renamed and hidden (#4191).
+export {
+  EVERYONE_MEMBER_LIST_HEADING,
+  EVERYONE_MENTION_NAME,
+  EVERYONE_ROLE_NAME,
+  EVERYONE_ROLE_SYSTEM_KEY,
+  HERE_MENTION_NAME,
+  type HereMentionSource,
+  isEveryoneRole,
+  mentionRoleHint,
+  reservedMentionName,
+  rolesAfterSave,
+  withHereMention,
+} from "./everyone-role";
+// ── Field limits ─────────────────────────────────────────────────────────────
+// The bounds a client or a schema here reads. The API-only ones are in
+// `apps/api/src/domain/constants/field-limits.ts` (#3268).
+export * from "./field-limits";
+export * from "./invite-emails";
+// Invite paste/URL extraction and https minting, shared so web `/join`,
+// mobile s02, the API email helper, and the landing `/join` redirect cannot
+// drift on what a copied join link is or whether a public http: origin is
+// allowed. See ./invite-token.
+export * from "./invite-token";
+export * from "./last-year";
+export * from "./legal";
+// The words and date labels the minutes screens share on web and mobile.
+export * from "./meeting-copy";
+// Minutes drafted from notes (#4312): the model's output schema, the draft's
+// states and the words each failure shows.
+export * from "./meeting-draft";
+export * from "./meeting-recording";
+// ── Meeting minutes (#4312) ──────────────────────────────────────────────────
+export * from "./meetings";
 // ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────
 // Shared because the API's authoritative pass and any client-side preview must
 // not disagree about who `@jane` is — but only the API's result is persisted,
 // since mentions override a per-channel mute in the push rules and a
 // client-supplied list would be forgeable.
-export {
-  activeMentionQuery,
-  extractMentionTokens,
-  draftWithMention,
-  findMentionSpans,
-  foldMentionName,
-  matchMentionCandidate,
-  mentionChipFilter,
-  mentionLabelFor,
-  mentionPickLabel,
-  spacedMentionNames,
-  mentionPickerEntries,
-  mentionSuggestions,
-  resolveMentions,
-  sendMentionReading,
-} from "./mentions";
-export type {
-  ActiveMentionQuery,
-  MentionCandidate,
-  MentionChipTargets,
-  MentionChipTest,
-  MentionPickerEntry,
-  MentionRole,
-  MentionRoleOption,
-  MentionSpanOptions,
-  MentionSpan,
-  MentionSuggestion,
-} from "./mentions";
-
-// ── Time zones (issue #687) ──────────────────────────────────────────────────
-export {
-  FALLBACK_TIME_ZONE,
-  isSupportedTimeZone,
-  isUtcOffset,
-  localTimeZone,
-  MAX_TIME_ZONE_LENGTH,
-  timeZoneCity,
-} from "./time-zone";
-
+export * from "./mentions";
+export * from "./message-text";
+export * from "./module-enablement";
+export * from "./module-refusal";
+// The native app's identifiers, store listings and invite hand-off (#4002),
+// shared so web's invite hand-off (`AppHandoff`), the API's update-screen
+// default and the app-link files name one app. See ./native-app.
+export * from "./native-app";
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is
@@ -635,19 +117,7 @@ export {
 // `rowsToNotificationCategoryState` is shared for the same reason the catalog
 // is — it is the fold from server rows onto those keys, and a second copy is
 // how two surfaces come to disagree about what a member's switches say.
-export {
-  NOTIFICATION_CATEGORIES,
-  shownNotificationCategories,
-  isNotificationCategoryKey,
-  defaultNotificationCategoryState,
-  rowsToNotificationCategoryState,
-} from "./notification-categories";
-export type {
-  NotificationCategory,
-  NotificationCategoryKey,
-  NotificationCategoryState,
-} from "./notification-categories";
-
+export * from "./notification-categories";
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
@@ -656,567 +126,74 @@ export type {
 // per-surface copy would drift into dismissal entries that suppress nothing.
 // `selectOpsNudge` carries the spec's priority order, which is behavior rather
 // than presentation, so it is shared too rather than re-derived per surface.
-export {
-  MEMBER_DISMISSAL_KEYS,
-  OPS_NUDGE_MODULES,
-  SETUP_CHECKLIST_DISMISS_KEY,
-  isOpsNudgeModuleKey,
-  selectOpsNudge,
-} from "./ops-nudges";
-export type {
-  MemberDismissalKey,
-  OpsNudgeModule,
-  OpsNudgeModuleKey,
-} from "./ops-nudges";
-
-// Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
-// `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
-export {
-  can,
-  canAll,
-  canAllOfAny,
-  canAny,
-  CHAPTER_PROFILE_PERMISSIONS,
-  CHAT_REPORT_QUEUE_PERMISSIONS,
-  EVENT_CREATE_PERMISSIONS,
-  MEMBER_JOINED_AUDIENCE,
-  memberAccessRoleIds,
-  removesMemberAccess,
-  WILDCARD_PERMISSION,
-} from "./permissions";
-
-// The chapter's Everyone role, the Member role renamed and hidden (#4191).
-export {
-  EVERYONE_MEMBER_LIST_HEADING,
-  EVERYONE_MENTION_NAME,
-  EVERYONE_ROLE_NAME,
-  EVERYONE_ROLE_SYSTEM_KEY,
-  isEveryoneRole,
-  isEveryoneRoleName,
-  rolesAfterSave,
-} from "./everyone-role";
-
+export * from "./ops-nudges";
+export * from "./order-number";
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
 // the same list from here (#4069).
-export {
-  groupPermissionsByModule,
-  PERMISSION_MODULES,
-  PERMISSION_REGISTRY,
-  permissionDefinition,
-  permissionLabel,
-  permissionModuleLabel,
-  RUSH_MEMBER_PERMISSIONS,
-} from "./permission-registry";
-export type {
-  PermissionDefinition,
-  PermissionGroup,
-  PermissionModuleKey,
-  PermissionScope,
-} from "./permission-registry";
-
-// Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
-// so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
-export {
-  SUBSCRIPTION_GRACE_PERIOD_MS,
-  isSubscriptionStatus,
-  isWithinSubscriptionGrace,
-  subscriptionRefusalFromServerMessage,
-  subscriptionWriteState,
-} from "./subscription";
-// Client-side analytics opt-out. Fourth shared client gate alongside `can`,
-// `isModuleEnabled`, and `subscriptionWriteState`.
-export {
-  isAnalyticsOptedOut,
-  isChapterAnalyticsOptedOut,
-} from "./analytics-opt-out";
-
-// Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
-// mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
-// the effects that feed it; this package owns the rule.
-export {
-  CONFIRM_RETRY_MS,
-  DEGRADED_THRESHOLD,
-  deriveConnectionState,
-  connectionIndicator,
-  healthProbeIsReachable,
-} from "./connection-state";
-export type {
-  ConnectionIndicator,
-  ConnectionInput,
-  ConnectionState,
-  RealtimeTransportStatus,
-} from "./connection-state";
-export type {
-  SubscriptionBlockCode,
-  SubscriptionRefusal,
-  SubscriptionStatus,
-  SubscriptionWriteClass,
-  SubscriptionWriteState,
-} from "./subscription";
-
-// ── Field limits ─────────────────────────────────────────────────────────────
-// The bounds a client or a schema here reads. The API-only ones are in
-// `apps/api/src/domain/constants/field-limits.ts` (#3268).
-export {
-  ROLE_NAME_MAX_LENGTH,
-  POINTS_ADJUSTMENT_MAX,
-  POINTS_REASON_MAX_LENGTH,
-  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
-  CHAPTER_SHORT_NAME_MAX_LENGTH,
-};
-export {
-  DOCUMENT_TITLE_MAX_LENGTH,
-  GRADUATION_YEAR_MAX,
-  GRADUATION_YEAR_MIN,
-  MAJOR_MAX_LENGTH,
-  PHONE_MAX_LENGTH,
-  DISPLAY_NAME_MAX_LENGTH,
-  POLL_OPTION_MAX_LENGTH,
-  POLL_OPTIONS_MAX,
-  POLL_OPTIONS_MIN,
-  POLL_QUESTION_MAX_LENGTH,
-  SERVICE_DESCRIPTION_MAX_LENGTH,
-  SIGNUP_NOTE_MAX_LENGTH,
-  SIGNUP_SLOT_CAPACITY_MAX,
-  SIGNUP_SLOT_LABEL_MAX_LENGTH,
-  SIGNUP_SLOTS_MAX,
-  SIGNUP_TITLE_MAX_LENGTH,
-  TASK_SUBTASK_TITLE_MAX_LENGTH,
-  TASK_SUBTASKS_MAX,
-  TASK_TITLE_MAX_LENGTH,
-  PLEDGE_CLASS_NAME_MAX_LENGTH,
-  PLEDGE_CLASSES_MAX,
-  MEMBER_ORDER_NUMBER_MAX,
-  PLEDGE_CLASS_ASSIGNMENTS_MAX,
-  EVENT_TYPE_NAME_MAX_LENGTH,
-  EVENT_TYPES_MAX,
-  YEAR_MAX,
-} from "./field-limits";
-
-export { ORDER_NUMBER_INVALID_MESSAGE, parseOrderNumber } from "./order-number";
-
-export {
-  isPhoneNumber,
-  PHONE_INVALID_MESSAGE,
-  phoneDialString,
-  phoneHref,
-} from "./phone";
-
-export {
-  CORRECTION_MENU_LABEL,
-  CORRECTION_NAME_REQUIRED_MESSAGE,
-  GRADUATION_YEAR_MESSAGE,
-  parseGraduationYear,
-  correctionDraft,
-  correctionPatch,
-  type ProfileCorrectionDraft,
-  type ProfileCorrectionPatch,
-  type ProfileCorrectionResult,
-} from "./profile-correction";
-
-export {
-  PROFILE_ALUMNI_SECTION,
-  PROFILE_FIELD_COPY,
-  showsAfterGraduation,
-} from "./profile-copy";
-
-// ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
-export {
-  chapterInitials,
-  chapterTextMark,
-  displayedGreekLetters,
-  greekLettersShown,
-  resolveChapterMark,
-} from "./chapter-mark";
-export type {
-  ChapterMark,
-  ChapterMarkBranding,
-  ChapterTextMarkSource,
-} from "./chapter-mark";
-
-// ── Backwork course names and nicknames (#3848) ──
-export {
-  MAX_COURSE_NAME_LENGTH,
-  MAX_COURSE_NICKNAMES,
-  MAX_COURSE_NICKNAME_LENGTH,
-  collapseCourseText,
-  courseTextLength,
-  courseTextTooLong,
-  normalizeCourseNicknames,
-  departmentCodeKey,
-  findDepartmentByCode,
-} from "./backwork-courses";
-
-// ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
-export {
-  MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_LABEL,
-  MAX_BACKWORK_UPLOAD_BYTES,
-  MAX_BACKWORK_UPLOAD_LABEL,
-  MAX_BACKWORK_ZIP_FILES,
-  MAX_BACKWORK_ZIP_BYTES,
-  MAX_BACKWORK_ZIP_LABEL,
-  DOCUMENT_UPLOAD_SURFACES,
-  contentTypeByExtension,
-  acceptAttribute,
-  fileExtension,
-  normalizeExtension,
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
-  mimeForUploadFile,
-  inspectUploadFile,
-} from "./upload-allowlists";
-export type { UploadKind, InspectedUpload } from "./upload-allowlists";
-export { isDecodableThumbhash } from "./thumbhash";
-
-// Discord export (DCE) preamble parsing, shared between the import wizard
-// (apps/web) and the import worker (apps/api). See ./discord-export for why
-// this used to be two copies of the same scanner.
-export { parseExportPreamble } from "./discord-export";
-export type { DiscordExportPreamble } from "./discord-export";
-
-// Which Discord imports may be cleared off the list, shared so the web never
-// offers a Clear the API refuses. See ./discord-import.
-export {
-  DISCORD_IMPORT_CLEARABLE_STATUSES,
-  isDiscordImportClearable,
-} from "./discord-import";
-
-// Invite paste/URL extraction and https minting, shared so web `/join`,
-// mobile s02, the API email helper, and the landing `/join` redirect cannot
-// drift on what a copied join link is or whether a public http: origin is
-// allowed. See ./invite-token.
-export {
-  extractInviteToken,
-  extractInviteTokenFromQuery,
-  assertHttpsJoinOrigin,
-  mintJoinUrl,
-  PRODUCTION_APP_ORIGIN,
-  PRODUCTION_API_ORIGIN,
-  PRODUCTION_SUPABASE_PROJECT_REF,
-  isProductionSupabaseUrl,
-  assertProductionAppOrigin,
-  assertProductionApiOrigin,
-  assertProductionSupabaseUrl,
-} from "./invite-token";
-
-// The native app's identifiers, store listings and invite hand-off (#4002),
-// shared so web's invite hand-off (`AppHandoff`), the API's update-screen
-// default and the app-link files name one app. See ./native-app.
-export {
-  APP_LINK_PATHS,
-  APP_STORE_APP_ID,
-  NATIVE_APP_ID,
-  NATIVE_APP_SCHEME,
-  OPENED_FROM_APP_KEY,
-  OPENED_FROM_APP_VALUE,
-  STORE_LISTING_URLS,
-  openAppUrl,
-  openInAppUrl,
-  phonePlatform,
-} from "./native-app";
-export type { NativePlatform } from "./native-app";
-
+export * from "./permission-registry";
+// Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
+// `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
+export * from "./permissions";
+export * from "./phone";
+export * from "./profile-copy";
+export * from "./profile-correction";
 // Event recurrence: the repeat-rule format the DTOs validate against, the
 // stepper the series generator materializes from, and the words both apps
 // describe a series with. One source so the generated series and what the
 // Repeat controls promise cannot describe different meetings (#4488, #3662).
+export * from "./recurrence";
 export {
-  LEGACY_CHILD_COUNT,
-  MAX_REPEAT_INTERVAL,
-  MAX_REPEAT_RULE_LENGTH,
-  MAX_SERIES_MEETINGS,
-  NTH_WEEKS,
-  RECURRENCE_RULES,
-  RECURRENCE_REPEAT_LABELS,
-  RECURRENCE_RULE_LABELS,
-  REPEAT_FREQUENCIES,
-  WEEKDAY_CODES,
-  advanceRepeatRule,
-  checkSeriesLength,
-  describeRepeatPattern,
-  describeSeriesLength,
-  formatRepeatRule,
-  isRecurrenceRule,
-  isRepeatRule,
-  nthWeekdayPhrase,
-  ordinal,
-  parseRepeatRule,
-  seriesChildStarts,
-  seriesExtent,
-  shiftRepeatRule,
-  shiftWeekdays,
-  zonedCalendarDay,
-} from "./recurrence";
-export type {
-  NthWeek,
-  ParsedRepeatRule,
-  RecurrenceRule,
-  RepeatEnd,
-  RepeatFrequency,
-  RepeatRule,
-  WeekdayCode,
-  ZonedCalendarDay,
-} from "./recurrence";
+  accountHasSeenNewest,
+  decideWhatsNew,
+  formatReleaseNoteDate,
+  isLaterReleaseNoteVersion,
+  isNewerReleaseNoteVersion,
+  parseReleaseNoteVersion,
+  RELEASE_NOTE_VERSION_PATTERN,
+  RELEASE_NOTES,
+  type ReleaseNote,
+  releaseNoteText,
+  releaseNoteVersion,
+  type ReleaseNoteVersion,
+  type WhatsNewDecision,
+} from "./release-notes";
 // The Repeat control's state, read and written the same way by the web
 // editor and the phone's New event sheet (#4488).
-export {
-  REPEAT_DAY_LETTERS,
-  REPEAT_DAY_NAMES,
-  REPEAT_DEFAULT_COUNT,
-  REPEAT_PRESETS,
-  REPEAT_PRESET_LABELS,
-  editRepeatDraft,
-  monthlyByFor,
-  monthlyChoices,
-  noRepeatDraft,
-  pickRepeatEnd,
-  pickRepeatPreset,
-  repeatCaption,
-  repeatDays,
-  repeatDraftFromRule,
-  repeatEditAnchor,
-  repeatEditDraft,
-  repeatRuleForEdit,
-  repeatRuleOf,
-  repeatSummary,
-  toggleRepeatDay,
-} from "./repeat-draft";
-export type {
-  MonthlyBy,
-  MonthlyChoice,
-  RepeatDraft,
-  RepeatEditSeries,
-  RepeatField,
-  RepeatPreset,
-  RepeatRuleResult,
-} from "./repeat-draft";
-// Event attendance by role: who an event is for, read the same way by the
-// API's read gate, check-in, auto-absent and pushes, and by both editors.
-export {
-  EVENT_ATTENDANCE_LABELS,
-  EVENT_ATTENDANCE_STATUSES,
-  attendanceFieldsOf,
-  attendanceFromEvent,
-  attendanceToWire,
-  describeAttendance,
-  emptyAttendanceDraft,
-  eventAttendanceFor,
-  eventDefaultAttendance,
-  eventOthersInvited,
-  attendanceInvitesNobody,
-  othersInvitedForCreate,
-  eventLimitsAudience,
-  eventRequiresAnyone,
-  eventSetsRolesApart,
-  ALUMNI_FOLLOWING_NOTE,
-  ATTENDANCE_SEARCH_FROM,
-  alumniRoleIdOf,
-  attendanceChoices,
-  attendanceOfRole,
-  attendanceRows,
-  withEveryone,
-  withRole,
-} from "./event-attendance";
-export type {
-  EventAttendance,
-  EventAttendanceDraft,
-  EventAttendanceFields,
-  EventAttendanceStatus,
-  EventAttendanceWire,
-} from "./event-attendance";
-// Editing or deleting an existing event: what a save sends, and whether to
-// ask "this event or all upcoming" first. Web and the phone share it (#3667).
-export {
-  SERIES_SCOPE_COPY,
-  deleteOffersSeriesChoice,
-  eventEditPatch,
-  eventHasStarted,
-  isEmptyEventPatch,
-  isInSeries,
-  leavesAfterSave,
-  offersSeriesChoice,
-  repeatEditSeriesOf,
-  saveRequestFor,
-  saveScopeFor,
-  seriesRuleOf,
-} from "./event-edit";
-export type {
-  EventEditPatch,
-  EventEditScope,
-  EventEditStored,
-  EventEditTarget,
-  EventEditValues,
-  EventSaveRequest,
-  GeofencePoint,
-  SeriesEventFields,
-} from "./event-edit";
-export {
-  MISSING_SIGNED_UPLOAD,
-  readPreviewUpload,
-  readSignedUpload,
-} from "./signed-upload";
-
-export {
-  CHAT_CHAPTER_LEVELS,
-  CHAT_CHAPTER_LEVEL_OPTIONS,
-  CHAT_NOTIFICATION_LEVELS,
-  builtInChannelDefault,
-  chatChapterLevelLabel,
-  isAnnouncementChannel,
-  isDirectChannel,
-} from "./chat-notification-defaults";
-export type {
-  ChatChapterLevel,
-  ChatNotificationLevel,
-  NotificationDefaultChannel,
-} from "./chat-notification-defaults";
-
-export {
-  SIDEBAR_FIXED_SECTION_KEYS,
-  categoryIdFromSectionKey,
-  categorySectionKey,
-  isSidebarSectionKey,
-} from "./chat-sidebar";
-export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
-
-export {
-  ROLE_COLOR_HEXES,
-  ROLE_COLOR_PALETTE,
-  resolveRoleChips,
-  roleColor,
-  roleColorOrNull,
-  topRoleColor,
-} from "./role-colors";
-export type {
-  MemberRoleChip,
-  RoleColorHex,
-  RoleColorKey,
-  RoleColorSource,
-  RoleColorSwatch,
-} from "./role-colors";
-
-export { STATUS_LABELS, statusLabel } from "./status-labels";
-export type { StatusVocabulary } from "./status-labels";
-export { checkInZoneLine } from "./check-in-zone-copy";
-export {
-  CHECK_IN_GRACE_MINUTES,
-  DEFAULT_CHECK_IN_OPENS_MINUTES,
-  MAX_CHECK_IN_OPENS_MINUTES,
-  checkInOpensMinutes,
-  checkInWindowBounds,
-} from "./check-in-window";
-export type { CheckInWindowBounds } from "./check-in-window";
-export {
-  OFFLINE_COPY,
-  SERVER_MESSAGE_COPY,
-  STATUS_ERROR_COPY,
-  TRY_AGAIN,
-  copyForErrorCode,
-  copyForServerMessage,
-  refusalCopy,
-} from "./error-copy";
-export {
-  SERVICE_MINUTES_PER_POINT_DEFAULT,
-  awardedPointsLabel,
-  type AwardedPointsSource,
-  effectiveMinutesPerPoint,
-  servicePointsForDuration,
-} from "./service-points";
-export {
-  CHAT_BACKGROUND_BUILT_INS,
-  CHAT_BACKGROUND_KEYS,
-  CHAT_BACKGROUND_LABELS,
-  CHAT_BACKGROUND_PHOTO,
-  CHAT_BACKGROUND_PHOTO_NOTE,
-  channelTakesBackground,
-  chatBackgroundDefaultLabel,
-  isChatBackgroundKey,
-} from "./chat-backgrounds";
-export type {
-  ChatBackgroundBuiltIn,
-  ChatBackgroundKey,
-} from "./chat-backgrounds";
-export {
-  CHAT_MESSAGE_FLAGS,
-  CHAT_MESSAGE_FLAG_LABELS,
-  canChangeMessageFlag,
-  isChatMessageFlag,
-} from "./chat-message-flags";
-export type { ChatMessageFlag } from "./chat-message-flags";
-export { withoutObjectReplacement } from "./message-text";
-
-// ── Meeting minutes (#4312) ──────────────────────────────────────────────────
-export {
-  DEFAULT_MEETING_SECTIONS,
-  EMPTY_MEETING_CONTENT,
-  MEETING_ITEM_TEXT_MAX_LENGTH,
-  MEETING_LIST_MAX_ITEMS,
-  MEETING_OTHER_LABEL_MAX_LENGTH,
-  MEETING_SECTIONS,
-  MEETING_SECTION_KEYS,
-  MEETING_STATUSES,
-  MEETING_TEXT_MAX_LENGTH,
-  MEETING_TEXT_SECTIONS,
-  MEETING_TYPES,
-  MEETING_TYPE_LABELS,
-  MEETING_VOTE_MAX,
-  MeetingActionItemSchema,
-  MeetingContentSchema,
-  MeetingDecisionSchema,
-  MeetingVoteSchema,
-  STANDARDS_MEETING_NOTE,
-  STANDARDS_MEETING_REFUSAL,
-  STANDARDS_MEETING_TYPE,
-  isMeetingContentEmpty,
-  isMeetingSectionKey,
-  isMeetingType,
-  meetingSectionHasContent,
-  meetingTypeLabel,
-  normalizeMeetingSections,
-  readMeetingContent,
-  shownMeetingSections,
-  type MeetingActionItem,
-  type MeetingContent,
-  type MeetingDecision,
-  type MeetingSectionKey,
-  type MeetingStatus,
-  type MeetingTextSection,
-  type MeetingType,
-  type MeetingVote,
-} from "./meetings";
-// Minutes drafted from notes (#4312): the model's output schema, the draft's
-// states and the words each failure shows.
-export * from "./meeting-draft";
-// The words and date labels the minutes screens share on web and mobile.
-export * from "./meeting-copy";
-// Suggested tasks (#4313): the words web and mobile share.
-export * from "./ai-suggestion-copy";
-export * from "./meeting-recording";
-
-// Ask Frapp (#450): the request, the versioned stream format, and its copy.
-export * from "./ask";
-export * from "./act";
-// Catch me up (#3946): a channel's new messages or a thread, summarized.
-export * from "./chat-catch-up";
-export * from "./last-year";
-
-// Report this (#4315): the reasons, the request, and the words about what a
-// report keeps.
-export * from "./ai-report";
-
-export {
-  AI_CONSENT_COPY,
-  AI_SETTINGS_COPY,
-  AI_SWITCHES,
-  formatAiAnswerDate,
-  joinNames,
-  type AiChapterSwitchKey,
-  type AiSwitchCopy,
-} from "./ai-copy";
-
+export * from "./repeat-draft";
+export * from "./role-colors";
+export * from "./service-points";
+export * from "./service-receipt";
+export * from "./signed-upload";
+export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle
 // is stored as (map picker, Pick study zones on a map).
 export * from "./study-zone-shape";
+// Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
+// so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
+export * from "./subscription";
+export * from "./thumbhash";
+// ── Time zones (issue #687) ──────────────────────────────────────────────────
+export * from "./time-zone";
+// ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
+export {
+  acceptAttribute,
+  contentTypeByExtension,
+  DOCUMENT_UPLOAD_SURFACES,
+  fileExtension,
+  type InspectedUpload,
+  inspectUploadFile,
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+  isWithinUploadSizeLimit,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
+  MAX_BACKWORK_ZIP_BYTES,
+  MAX_BACKWORK_ZIP_FILES,
+  MAX_BACKWORK_ZIP_LABEL,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  mimeForUploadFile,
+  normalizeExtension,
+  type UploadKind,
+} from "./upload-allowlists";

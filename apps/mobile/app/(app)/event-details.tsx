@@ -161,7 +161,7 @@ export default function EventDetailsScreen() {
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <InlineNote>Open an event from the Events tab.</InlineNote>
+        <InlineNote>Open an event from the Calendar tab.</InlineNote>
       </ScreenShell>
     );
   }

@@ -55,6 +55,7 @@ import type {
   DiscordOAuthState,
   Event,
   EventAttendance,
+  EventCheckInScreen,
   EventType,
   FinancialInvoice,
   FinancialTransaction,
@@ -186,6 +187,7 @@ export interface Database {
       discord_imports: TableDefinition<DiscordImport>;
       discord_oauth_states: TableDefinition<DiscordOAuthState>;
       event_attendance: TableDefinition<EventAttendance>;
+      event_check_in_screens: TableDefinition<EventCheckInScreen>;
       event_types: TableDefinition<EventType>;
       events: TableDefinition<Event>;
       financial_invoices: TableDefinition<FinancialInvoice>;

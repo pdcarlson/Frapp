@@ -9,6 +9,7 @@ import {
   activityGroups,
   activitySummary,
   useActivity,
+  useActivityStanding,
   useActivityUnread,
   useNowDate,
   useCurrentChapter,
@@ -41,10 +42,14 @@ import {
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
 import {
+  ActivityStanding,
+  ActivityStandingSkeleton,
+  type StandingDestination,
+} from "@/components/activity/activity-standing";
+import {
   ActivitySummary,
   ActivitySummarySkeleton,
 } from "@/components/activity/activity-summary";
-import { BACK_TO_MORE } from "@/components/back-row";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
@@ -70,8 +75,10 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
 
 /**
  * Activity: what is waiting on the member and what they made, in one place
- * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home; it
- * is reached from the More hub, whose row carries the "needs you" count.
+ * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
+ * Tab 2 since 2026-11-12 (#4610), whose icon carries the "needs you" count;
+ * before that it was the More hub's first row. The task board left the tab
+ * bar the same day, so its door is here, on the title row.
  *
  * The phone's twin of web's `/activity`
  * (`spec/ui/web-dashboard/README.md` § Activity), on the same row model
@@ -101,7 +108,7 @@ export default function ActivityScreen() {
   const faceFor = useActivityFaces();
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
-  const reread = useActivityReread();
+  const reread = useActivityReread({ standing: true });
   // The chip picked on this visit wins; until then, the one the member
   // last left the screen on, on this phone (#4402).
   const stored = useStoredActivityFilter();
@@ -130,7 +137,21 @@ export default function ActivityScreen() {
     [moduleOn],
   );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  const refresh = useRefetchAll([activity]);
+  // How the member is doing this semester, above what needs them. Its own
+  // read: a failure leaves the rest of the page as it is. `useActivityReread`
+  // reads it again with the list, on each return and after an action here.
+  const standing = useActivityStanding();
+  const router = useRouter();
+  const openStanding = (destination: StandingDestination) => {
+    // Calendar (the `events` route) is a tab: go to it rather than stack a
+    // second copy. The task board is a pushed screen since #4610.
+    if (destination === "/events") {
+      router.navigate(destination);
+    } else {
+      router.push(destination);
+    }
+  };
+  const refresh = useRefetchAll([activity, standing]);
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
@@ -199,6 +220,7 @@ export default function ActivityScreen() {
       return (
         <SkeletonRegion label="Loading activity">
           <View style={styles.body}>
+            <ActivityStandingSkeleton />
             <ActivitySummarySkeleton />
             <View>
               <SectionHeader>Needs you</SectionHeader>
@@ -228,6 +250,11 @@ export default function ActivityScreen() {
     }
     return (
       <View style={styles.body}>
+        {standing.isPending ? (
+          <ActivityStandingSkeleton />
+        ) : standing.data ? (
+          <ActivityStanding standing={standing.data} onOpen={openStanding} />
+        ) : null}
         {summary ? (
           <ActivitySummary
             summary={summary}
@@ -270,7 +297,11 @@ export default function ActivityScreen() {
 
   return (
     <ActivityFaces.Provider value={faceFor}>
-      <ScreenShell back={BACK_TO_MORE} title="Activity" refresh={refresh}>
+      <ScreenShell
+        title="Activity"
+        refresh={refresh}
+        headerAction={moduleOn("tasks") ? <TaskBoardLink /> : undefined}
+      >
         {renderBody()}
         <ActivitySheet
           row={sheetRow}
@@ -288,6 +319,31 @@ export default function ActivityScreen() {
         <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
       ) : null}
     </ActivityFaces.Provider>
+  );
+}
+
+/**
+ * The task board's door (#4610): the board (List and Grid, the points card)
+ * is a pushed screen now that Activity and Calendar hold a member's tasks.
+ * Drawn only while the chapter has Tasks on, since the whole board is behind
+ * that module. A plain neutral control on the title row, never the accent, which marks
+ * only the one primary action (foundations.md § Where the accent goes).
+ */
+function TaskBoardLink() {
+  const router = useRouter();
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Task board"
+      accessibilityHint="Opens all of your tasks as a list or a grid."
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      onPress={() => router.push("/tasks")}
+      style={({ pressed }) => [styles.boardLink, pressed && styles.pressed]}
+    >
+      <Text style={styles.boardLinkText}>Task board</Text>
+    </Pressable>
   );
 }
 
@@ -542,6 +598,20 @@ function createStyles(tokens: SignetTokens) {
     body: {
       gap: tokens.spacing.lg,
     },
+    boardLink: {
+      minHeight: 36,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      justifyContent: "center",
+    },
+    boardLinkText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    pressed: { opacity: 0.7 },
     group: {
       gap: tokens.spacing.sm,
     },

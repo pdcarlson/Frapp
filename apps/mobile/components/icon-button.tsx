@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet } from "react-native";
+import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
  * An icon-only control (`spec/ui/design-system/components.md` § Icon-only
@@ -15,6 +16,9 @@ import { Pressable, StyleSheet } from "react-native";
  * made the one-line network banner about 12pt taller. Slop isn't layout, so
  * the floor holds only where 12pt around the box is free; a control placed
  * flush against another one shares that margin.
+ *
+ * Inside a screen-wide swipe it drops a press that came from the swipe's own
+ * touch (`lib/swipe-claim.ts`).
  */
 export function IconButton({
   label,
@@ -30,6 +34,7 @@ export function IconButton({
   /** The glyph, from `components/control-glyphs.tsx` where one exists. */
   children: ReactNode;
 }) {
+  const guardedPress = useGuardedBySwipe(onPress);
   return (
     <Pressable
       accessibilityRole="button"
@@ -38,7 +43,7 @@ export function IconButton({
       accessibilityState={{ disabled }}
       disabled={disabled}
       hitSlop={ICON_BUTTON_HIT_SLOP}
-      onPress={onPress}
+      onPress={guardedPress}
       style={({ pressed }) => [styles.box, pressed ? styles.pressed : null]}
     >
       {children}

@@ -8,6 +8,9 @@ import { SupabaseEventRepository } from '../../infrastructure/supabase/repositor
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { RbacModule } from '../rbac/rbac.module';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import { SupabaseEventCheckInScreenRepository } from '../../infrastructure/supabase/repositories/supabase-event-check-in-screen.repository';
+import { CheckInScreenSweepService } from '../../application/workers/check-in-screen-sweep.service';
 
 // Imports `RbacModule` so `AttendanceService` can resolve the Alumni lifecycle
 // role and deny event check-in (`spec/behavior/alumni.md`).
@@ -19,6 +22,11 @@ import { RbacModule } from '../rbac/rbac.module';
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
     { provide: EVENT_REPOSITORY, useClass: SupabaseEventRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    {
+      provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
+      useClass: SupabaseEventCheckInScreenRepository,
+    },
+    CheckInScreenSweepService,
   ],
   exports: [AttendanceService],
 })

@@ -173,7 +173,7 @@ describe("Event details clock (#2101)", () => {
 });
 
 /**
- * #3022. s07 draws `‹ Events` above the title, in every state: a notification
+ * #3022. s07 draws `‹ Calendar` (`‹ Events` before #4610) above the title, in every state: a notification
  * or a `frapp://` link can open an event that is gone, and the error screen
  * still needs a way out.
  */
@@ -188,34 +188,34 @@ describe("Event details back row (#3022)", () => {
     chapterId = "chapter-1";
   });
 
-  it("draws ‹ Events over a loaded event", () => {
+  it("draws ‹ Calendar over a loaded event", () => {
     const tree = render();
-    expect(screenText(tree).startsWith("Events\nChapter meeting")).toBe(true);
-    expectBackRow(tree, "Events", "/events");
+    expect(screenText(tree).startsWith("Calendar\nChapter meeting")).toBe(true);
+    expectBackRow(tree, "Calendar", "/events");
   });
 
-  it("draws ‹ Events over the error state", () => {
+  it("draws ‹ Calendar over the error state", () => {
     event = null as unknown as typeof EVENT;
 
     const tree = render();
     expect(screenText(tree)).toContain("Couldn't load this event");
-    expectBackRow(tree, "Events", "/events");
+    expectBackRow(tree, "Calendar", "/events");
   });
 
-  it("draws ‹ Events while the event loads", () => {
+  it("draws ‹ Calendar while the event loads", () => {
     eventPending = true;
 
     const tree = render();
     expect(skeletons(tree).length).toBeGreaterThan(0);
-    expectBackRow(tree, "Events", "/events");
+    expectBackRow(tree, "Calendar", "/events");
   });
 
-  it("draws ‹ Events when the route carries no event id", () => {
+  it("draws ‹ Calendar when the route carries no event id", () => {
     routeId = undefined;
 
     const tree = render();
-    expect(screenText(tree)).toContain("Open an event from the Events tab.");
-    expectBackRow(tree, "Events", "/events");
+    expect(screenText(tree)).toContain("Open an event from the Calendar tab.");
+    expectBackRow(tree, "Calendar", "/events");
   });
 
   /**
@@ -229,8 +229,8 @@ describe("Event details back row (#3022)", () => {
 
     const tree = render();
     expect(screenText(tree)).not.toContain("No chapter selected");
-    expect(screenText(tree).startsWith("Events\nChapter meeting")).toBe(true);
-    expectBackRow(tree, "Events", "/events");
+    expect(screenText(tree).startsWith("Calendar\nChapter meeting")).toBe(true);
+    expectBackRow(tree, "Calendar", "/events");
   });
 });
 

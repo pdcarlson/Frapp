@@ -9,6 +9,9 @@ import { IAttendanceRepository } from '#domain/repositories/attendance.repositor
 import { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 
+/** Event ids per `.in()` filter: 100 UUIDs keep the URL near 4 KB. */
+const IN_CHUNK = 100;
+
 @Injectable()
 export class SupabaseAttendanceRepository implements IAttendanceRepository {
   constructor(
@@ -37,6 +40,26 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
+  }
+
+  async findByUserForEvents(
+    userId: string,
+    eventIds: readonly string[],
+  ): Promise<EventAttendance[]> {
+    const ids = [...new Set(eventIds)];
+    const rows: EventAttendance[] = [];
+    // In chunks, so a semester of events never builds a request URL past
+    // what a proxy in front of PostgREST accepts.
+    for (let start = 0; start < ids.length; start += IN_CHUNK) {
+      const { data, error } = await this.supabase
+        .from('event_attendance')
+        .select('*')
+        .eq('user_id', userId)
+        .in('event_id', ids.slice(start, start + IN_CHUNK));
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data ?? []));
+    }
+    return rows;
   }
 
   async createMany(
