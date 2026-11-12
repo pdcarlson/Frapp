@@ -187,9 +187,10 @@ second, filled variant to swap to.
 | Semantic intent | Glyph (nav set key, Phosphor name) | Notes |
 |---|---|---|
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
-| Events tab | `events`, `calendar-dots` | |
-| Tasks tab | `tasks`, `seal-check` | |
+| Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
+| Calendar tab (the `events` route) | `events`, `calendar-dots` | Named Events until #4610. |
 | More tab | `more`, `squares-four` | Not an ellipsis: Canvas draws a 2×2 grid, and Canvas wins for visuals. |
+| Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.
@@ -226,7 +227,6 @@ until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
-| Activity (#3897) | `activity`, `tray` | `ActivityGlyph` |
 | Study hours | `study`, `graduation-cap` | `StudyGlyph` |
 | Service hours | `service`, `hand-heart` | `ServiceGlyph` |
 | Dues | `billing`, `credit-card` | `BillingGlyph` |
@@ -256,8 +256,8 @@ except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
-| Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Event card | `EventsGlyph` (the Calendar tab's) | `components/tab-glyphs.tsx` |
+| Task card | `TasksGlyph` (the task board's; a tab until #4610) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
 | Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |

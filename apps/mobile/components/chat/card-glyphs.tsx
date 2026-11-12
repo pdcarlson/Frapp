@@ -21,7 +21,7 @@ import {
  * Points and Service hours draw the shared nav set (iconography.md §1.1)
  * through `TabGlyph`, the same shapes as web's cards, drawn at rest in the
  * muted foreground (an eyebrow is a label, never the accent: foundations.md
- * §6); the others below keep the stroke recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * §6); the others below keep the stroke recipe. The event and task cards draw the Calendar tab's glyph and the task board's
  * themselves.
  */
 

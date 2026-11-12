@@ -20,6 +20,19 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
+// Activity's tab carries the needs-you count (#4610).
+const activity = vi.hoisted(() => ({
+  data: undefined as
+    | { needs_you_count: number; unavailable: string[] }
+    | undefined,
+}));
+const rereadOnTab = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/activity/use-activity-reread", () => ({
+  useActivityRereadOnTab: rereadOnTab,
+}));
+vi.mock("@repo/hooks", () => ({
+  useActivity: () => ({ data: activity.data }),
+}));
 
 const quick = vi.hoisted(() => ({
   ask: vi.fn(),
@@ -67,14 +80,14 @@ type Route = { key: string; name: string; params?: object };
 
 const ROUTES: Route[] = [
   { key: "index-1", name: "index" },
+  { key: "activity-1", name: "activity" },
   { key: "events-1", name: "events" },
-  { key: "tasks-1", name: "tasks" },
   { key: "more-1", name: "more" },
 ];
 const TITLES: Record<string, string> = {
   index: "Chat",
-  events: "Events",
-  tasks: "Tasks",
+  activity: "Activity",
+  events: "Calendar",
   more: "More",
 };
 
@@ -89,6 +102,7 @@ beforeEach(() => {
   quick.run.mockReset();
   quick.ready = true;
   quick.notice = null;
+  activity.data = undefined;
   device.bottomInset = 0;
   vi.mocked(BackHandler.addEventListener).mockClear();
 });
@@ -189,25 +203,58 @@ describe("the bar (#3344)", () => {
     );
     expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual([
       "Chat",
-      "Events",
-      "Tasks",
+      "Activity",
+      "Calendar",
       "More",
     ]);
     expect(tabs.map((tab) => tab.props.accessibilityState.selected)).toEqual([
       false,
-      true,
       false,
+      true,
       false,
     ]);
   });
 
+  it("puts the needs-you count on Activity's tab, and only while something waits", () => {
+    const badge = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.testID === "tab-activity-badge",
+      );
+    expect(badge(render())).toHaveLength(0);
+
+    activity.data = { needs_you_count: 0, unavailable: [] };
+    expect(badge(render())).toHaveLength(0);
+
+    activity.data = { needs_you_count: 8, unavailable: [] };
+    const tree = render();
+    expect(badge(tree)).toHaveLength(1);
+    expect(byLabel(tree.root, "Activity, 8 waiting on you")).toBeDefined();
+
+    // A section the server couldn't read: at least, never a false total.
+    activity.data = { needs_you_count: 2, unavailable: ["polls"] };
+    expect(
+      byLabel(render().root, "Activity, at least 2 waiting on you"),
+    ).toBeDefined();
+  });
+
+  it("holds the badge's count fresh, leaving Activity's own re-read to it", () => {
+    // The hook itself is pinned in `use-activity-reread.spec.tsx`.
+    rereadOnTab.mockClear();
+    render("events");
+    expect(rereadOnTab).toHaveBeenLastCalledWith("events-1", false);
+    render("activity");
+    expect(rereadOnTab).toHaveBeenLastCalledWith("activity-1", true);
+  });
+
   it("goes to a tab on press, unless the press was taken", () => {
     const tree = render();
-    act(() => byLabel(tree.root, "Tasks")!.props.onPress());
+    act(() => byLabel(tree.root, "Activity")!.props.onPress());
     expect(navigation.emit).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "tabPress", target: "tasks-1" }),
+      expect.objectContaining({ type: "tabPress", target: "activity-1" }),
     );
-    expect(navigation.navigate).toHaveBeenCalledWith("tasks", undefined);
+    expect(navigation.navigate).toHaveBeenCalledWith("activity", undefined);
 
     navigation.navigate.mockClear();
     act(() => byLabel(tree.root, "Chat")!.props.onPress());

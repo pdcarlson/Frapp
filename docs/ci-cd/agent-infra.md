@@ -813,15 +813,16 @@ its run died in `Checkout` or `Setup Node` before the script ran, or because its
   [ADR-24](../../spec/architecture/adr/adr-24.md): rule I4 (every failure pages within 15 minutes,
   and a skip never reads green) and decision 3 (Sentry Team at the start of the beta, because the
   free plan's single cron monitor can't cover I4). "A check-in from every scheduled workflow" is
-  [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s Team slice.
-- **Accept and document**: the state of every watchdog until that slice ships.
+  [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s Team slice. *(2026-11-12: the owner decided
+  not to pay for Sentry Team, so that slice won't ship and the option below is what stands.)*
+- **Accept and document**: the state of every watchdog, now that the Team slice is dropped.
 
 **One failure a watchdog can't report or clear itself: a frozen concurrency group** ([#3368](https://github.com/pdcarlson/Frapp/issues/3368)). Every workflow in the table above except the sweep itself and `pr-base-sync.yml` (whose runs supersede each other, so it cancels in progress, and which this sweep therefore doesn't watch) sets `cancel-in-progress: false`, so it never cancels a run mid-work. The cost is that one run GitHub never finishes holds the group: from 2026-10-05 to 11-04 a Production guardrails run and a Staging conformance run each sat in progress with zero steps, ignoring `timeout-minutes`, until GitHub's 30-day limit failed them. Every daily run in between waited behind them and was cancelled when the next one queued, and a cancelled run raises no alert. `scheduled-run-sweep.yml` clears that from outside: it force-cancels a watched run that has held its group for six hours, and raises an alert when that doesn't clear it, or when a workflow's last 3 scheduled runs were cancelled with no stuck run in sight. It is not the rejected meta-watch: it asserts nothing about whether a watchdog ran, so a disabled schedule or a GitHub cron outage still raises nothing, and it has no concurrency group of its own to freeze. Those run IDs are recorded on [#2505](https://github.com/pdcarlson/Frapp/issues/2505) as evidence for the paid-plan heartbeats.
 
 Which jobs have a monitor, what each one raises and whether that reaches the owner are owned by
 [`alert-routing.md` § Primary channels](../ops/alert-routing.md#primary-channels); on the
-free plan the only one is the nightly dump's own. Until the Team slice ships and a test firing
-proves the page, the absence of an alert is not evidence of health for any scheduled job.
+free plan the only one is the nightly dump's own. The owner chose on 2026-11-12 to stay on that
+plan, so the absence of an alert is not evidence of health for any other scheduled job.
 
 Two assertions ship degraded on purpose, each saying so in the step summary:
 

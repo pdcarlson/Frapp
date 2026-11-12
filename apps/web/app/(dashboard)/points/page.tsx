@@ -455,7 +455,7 @@ export default function PointsPage() {
       <dl className="space-y-0.5">
         <dt className="text-caption text-muted-foreground">My balance</dt>
         <dd className="text-headline font-bold tabular-nums text-foreground">
-          {balance}{" "}
+          {balance.toLocaleString()}{" "}
           <span className="text-label font-semibold text-muted-foreground">
             points
           </span>

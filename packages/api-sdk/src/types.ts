@@ -2256,6 +2256,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/{eventId}/excuses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an event's excuses (its creator, or events:update) */
+        get: operations["EventExcuseController_list_v1"];
+        put?: never;
+        /**
+         * Send an excuse for an event that requires you
+         * @description Any time before the event and up to 48 hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.
+         */
+        post: operations["EventExcuseController_submit_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own excuse for an event, and who receives it */
+        get: operations["EventExcuseController_mine_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw your pending or approved excuse
+         * @description Only until check-in closes. Withdrawing an approved excuse also removes the EXCUSED attendance it wrote, so the member can check in. 409 for a declined excuse or a finished event.
+         */
+        delete: operations["EventExcuseController_withdraw_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Approve or decline a member's pending excuse
+         * @description The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.
+         */
+        patch: operations["EventExcuseController_decide_v1"];
+        trace?: never;
+    };
     "/v1/points/me": {
         parameters: {
             query?: never;
@@ -6495,6 +6557,69 @@ export interface components {
         AutoAbsentResultDto: {
             /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
             marked: number;
+        };
+        SubmitEventExcuseDto: {
+            /** @description One line on why the member can't attend, 1 to 500 characters after trimming. */
+            reason: string;
+        };
+        EventExcuseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ExcuseReceiverDto: {
+            /** Format: uuid */
+            user_id: string;
+            display_name: string;
+        };
+        MyEventExcuseDto: {
+            /** @description The caller's excuse, or null when they sent none. */
+            excuse: components["schemas"]["EventExcuseDto"] | null;
+            /** @description The event's creator, who receives it ("Excuse sent to Jake"). Null when the event has no creator in the chapter, or the caller made it: it then goes to the officers who can edit events. */
+            receiver: components["schemas"]["ExcuseReceiverDto"] | null;
+        };
+        EventExcuseWithMemberDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description The sender's display name; empty when they set none. */
+            display_name: string;
+        };
+        DecideEventExcuseDto: {
+            /** @enum {string} */
+            decision: "APPROVED" | "DECLINED";
         };
         AdjustPointsDto: {
             /** Format: uuid */
@@ -13753,6 +13878,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoAbsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseWithMemberDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_submit_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitEventExcuseDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_mine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyEventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_withdraw_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideEventExcuseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
                 };
             };
             /** @description Error */

@@ -27,6 +27,7 @@ import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interfac
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
 import type { Event } from '#domain/entities/event.entity';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
@@ -37,6 +38,10 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockExcuseRepo: {
+    findUserIdsByEventAndStatus: jest.Mock;
+    withdrawAtomic: jest.Mock;
+  };
   let mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository>;
   let mockRbac: {
     isAlumni: jest.Mock;
@@ -117,6 +122,12 @@ describe('AttendanceService', () => {
       claimPresidencyAtomic: jest.fn(),
     };
 
+    // Default: nobody holds an excuse.
+    mockExcuseRepo = {
+      findUserIdsByEventAndStatus: jest.fn().mockResolvedValue([]),
+      withdrawAtomic: jest.fn().mockResolvedValue(null),
+    };
+
     // No screen has shown the code unless a test says so.
     mockScreenRepo = {
       findLive: jest.fn().mockResolvedValue([]),
@@ -137,6 +148,7 @@ describe('AttendanceService', () => {
         { provide: ATTENDANCE_REPOSITORY, useValue: mockAttendanceRepo },
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: EVENT_EXCUSE_REPOSITORY, useValue: mockExcuseRepo },
         {
           provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
           useValue: mockScreenRepo,
@@ -456,6 +468,29 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
       mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
 
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it('drops a pending excuse once the member checks in (#3735)', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T18:30:00.000Z'));
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await service.checkIn('evt-1', 'user-1', 'ch-1');
+
+      expect(mockExcuseRepo.withdrawAtomic).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        'user-1',
+      );
+
+      // And a failure there doesn't undo the check-in.
+      mockExcuseRepo.withdrawAtomic.mockRejectedValueOnce(new Error('down'));
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
         baseAttendance,
       );
@@ -936,6 +971,24 @@ describe('AttendanceService', () => {
       expect(payload.map((r) => r.user_id)).not.toContain('user-2');
     });
 
+    it('skips members with a pending or approved excuse (#3735)', async () => {
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockExcuseRepo.findUserIdsByEventAndStatus.mockResolvedValue(['user-2']);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(2);
+      expect(mockExcuseRepo.findUserIdsByEventAndStatus).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        ['PENDING', 'APPROVED'],
+      );
+      const payload = mockAttendanceRepo.createMany.mock.calls[0][0];
+      expect(payload.map((r) => r.user_id)).toEqual(['user-1', 'user-3']);
+    });
+
     it('should reject if called before grace period ends', async () => {
       const futureEvent: Event = {
         ...baseEvent,
@@ -1228,6 +1281,42 @@ describe('AttendanceService', () => {
       await expect(
         service.checkIn('evt-1', 'user-1', 'ch-1', { lat: 0, lng: 0 }),
       ).resolves.toEqual(baseAttendance);
+    });
+  });
+
+  describe('requiresMember', () => {
+    it('is true for a member a mandatory event requires by default', async () => {
+      await expect(
+        service.requiresMember('ch-1', { ...baseEvent, is_mandatory: true }, [
+          'role-member',
+        ]),
+      ).resolves.toBe(true);
+    });
+
+    it('is false on an optional event', async () => {
+      await expect(
+        service.requiresMember('ch-1', baseEvent, ['role-member']),
+      ).resolves.toBe(false);
+    });
+
+    it('leaves out an alumnus required only by the default, as the sweep does', async () => {
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      await expect(
+        service.requiresMember('ch-1', { ...baseEvent, is_mandatory: true }, [
+          'role-alumni',
+        ]),
+      ).resolves.toBe(false);
+    });
+
+    it('holds an alumnus whose role the event names as required', async () => {
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      await expect(
+        service.requiresMember(
+          'ch-1',
+          { ...baseEvent, required_role_ids: ['role-alumni'] },
+          ['role-alumni'],
+        ),
+      ).resolves.toBe(true);
     });
   });
 

@@ -230,8 +230,9 @@ describe("the profile identity header", () => {
   it("keeps the initials legible on the neutral avatar", () => {
     // s15 drew the avatar in the house-gold family, and it took the chapter
     // accent until 2026-11-05 (`foundations.md` §6: people's avatars are
-    // neutral). It is now the chat avatar's recipe at 84px.
-    expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
+    // neutral). Untinted, the initials take `--foreground`, as the phone's
+    // do (#4137); a member tint replaces the colour once your id is known.
+    expect(ratio(TEXT.foreground, SURFACE.popover)).toBeGreaterThanOrEqual(
       AA_TEXT,
     );
   });
