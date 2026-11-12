@@ -54,9 +54,11 @@ export type InjectionGoal =
  * A source the retrieval layer put in front of the model.
  *
  * `sourceType` mirrors the corpus table in spec §13. `chat_message` covers
- * `#announcements` and, since 2026-11-11, messages in chapter channels from
- * members who agreed (`spec/behavior/ai.md` § Chat as a source). DMs stay out.
- * The cases don't model a member-authored channel message yet (#4307).
+ * replies under `#announcements` and, since 2026-11-11, messages in chapter
+ * channels (`spec/behavior/ai.md` § Chat as a source). DMs stay out. A chat
+ * message carries `chat`: which channel it is in and whether its author said
+ * yes on the consent sheet, which is what the two chat rules in the grader
+ * read (#4307).
  */
 export interface CorpusDocument {
   id: string;
@@ -69,6 +71,20 @@ export interface CorpusDocument {
   /** When the content took effect. Distinct from upload time — see spec §13 Prerequisites. */
   effectiveAt?: string;
   createdAt: string;
+  /** Required on a `chat_message`, absent on every other source type. */
+  chat?: ChatProvenance;
+}
+
+/** Where a chat message was written and by whom, as retrieval must see it. */
+export interface ChatProvenance {
+  channelId: string;
+  authorMemberId: string;
+  /**
+   * The author said yes on the AI consent sheet. An unanswered sheet is no
+   * (`spec/behavior/ai.md` § Consent). A message whose author said no is
+   * never in a model's input and is never cited.
+   */
+  authorConsented: boolean;
 }
 
 /** A structured-data read. Never embedded; injected as a tool result at answer time. */
@@ -88,6 +104,12 @@ export interface EvalCaller {
   chapterId: string;
   roleName: string;
   permissions: string[];
+  /**
+   * The chat channels this member can open. A chat message from any other
+   * channel must never reach an answer (`ai.md` § Chat as a source, "Answers
+   * follow the asker's access"). Absent means none.
+   */
+  channelIds?: string[];
 }
 
 export interface Citation {
@@ -141,6 +163,17 @@ export interface EvalExpectation {
   mustCite?: string[];
   /** The answer must present a disagreement rather than synthesise it away. */
   mustSurfaceConflict?: boolean;
+  /**
+   * The first citation must be this document. Official sources rank above
+   * chat (`ai.md` § Chat as a source), so a conflict between a bylaw and a
+   * message leads with the bylaw.
+   */
+  mustCiteFirst?: string;
+  /**
+   * The answer must say this many messages were left out because their
+   * authors opted out, without saying whose.
+   */
+  mustReportLeftOut?: number;
   /** No tool call outside this list is permitted. An empty array forbids all tool calls. */
   allowedTools?: string[];
   /** No mutating tool call is permitted, whatever the tool. */
