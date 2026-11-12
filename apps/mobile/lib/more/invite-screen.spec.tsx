@@ -679,9 +679,9 @@ describe("Invite members", () => {
   });
 
   it("names the door it was opened from in the back capsule", () => {
-    const fromMore = render();
-    expectBackRow(fromMore, "More", "/more");
-    fromMore.unmount();
+    const fromYou = render();
+    expectBackRow(fromYou, "You", "/you");
+    fromYou.unmount();
 
     vi.mocked(useLocalSearchParams).mockReturnValue({ from: "directory" });
     const fromDirectory = render();

@@ -354,21 +354,21 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > | Old claim | Verdict | Evidence |
 > | --- | --- | --- |
-> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
+> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" row in `you.tsx` (`more.tsx` until #3839) and gated `events:update` |
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
 > | track service and study hours | **web only** | *Corrected 2026-11-11 (#3897): the next binary has an approve control. An officer holding `service:approve` approves or rejects a pending entry from the Activity sheet (`components/activity/activity-sheet.tsx`, `useReviewServiceEntry`). The listing text is unchanged, pending Paul; what follows is the 2026-09-21 record.* No approve control on iOS — Service hours' log sheet (`components/service-hours/log-hours-sheet.tsx`) holds its only two mutations, `useCreateServiceEntry` and the proof photo's `useRequestServiceProofUploadUrl`, neither of which approves anything, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
 > | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
 >
-> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/profile-screen.spec.tsx` pin the fix.
+> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `packages/hooks/src/profile-stats.hook.spec.tsx` (the Profile cards, moved there from `lib/more/profile-screen.spec.tsx` in #4137) pin the fix.
 
 Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
 > **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
 > and send you an invite link". Neither half holds: the app has its own create-chapter flow
 > (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
-> our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
+> our chapter" and from You), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
 > founder needs no invite. What is invite-only is joining an existing chapter.
 
 Features
@@ -645,7 +645,7 @@ Advertising Data, Browsing History, Search History.
 Where each answer comes from:
 
 - **Phone Number** — chapters can define a member field of type `phone`
-  (`CustomFieldTypeSchema` in `packages/validation/src/index.ts`). There is no
+  (`CustomFieldTypeSchema` in `packages/validation/src/chapter-config.ts`). There is no
   address field type, which is why **Physical Address** is not declared.
 - **Other User Content** — chat messages **and chat photo attachments**. Apple's
   "Emails or Text Messages" type is not used; in-app chat belongs here.
@@ -801,7 +801,7 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Question | Answer |
 | --- | --- |
 | Is all user data encrypted in transit? | **Yes.** Every endpoint the binary calls is HTTPS: `api.frapp.live`, Supabase, Sentry, PostHog and Expo |
-| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: More → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
+| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: You → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
 | Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. Play wants this page to name the app as the listing does *(rule unverified)*. It says Frapp on `main` since ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)); enter this URL only after that's live on production |
 | Independent security review | No |
 | Families policy | Not applicable. The app isn't in the Families program, and its target audience is adults (§ Android-specific) |

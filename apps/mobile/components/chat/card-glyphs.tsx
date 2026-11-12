@@ -21,7 +21,7 @@ import {
  * Points and Service hours draw the shared nav set (iconography.md §1.1)
  * through `TabGlyph`, the same shapes as web's cards, drawn at rest in the
  * muted foreground (an eyebrow is a label, never the accent: foundations.md
- * §6); the others below keep the stroke recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * §6); the others below keep the stroke recipe. The event and task cards draw the Calendar tab's glyph and the task board's
  * themselves.
  */
 
@@ -102,7 +102,7 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours: the nav set's hand-heart, the More hub's shape, lifted when focused like its sibling eyebrows. */
+/** Service hours: the nav set's hand-heart, the You tab's row shape, lifted when focused like its sibling eyebrows. */
 export function ServiceHoursGlyph(props: TabGlyphProps) {
   return <TabGlyph name="service" {...props} />;
 }

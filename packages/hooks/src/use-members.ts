@@ -573,8 +573,8 @@ export function useDismissOpsNudge() {
 
 /**
  * The viewer's own initials paint (#3860): the color the chapter sees on them,
- * for the surfaces that draw the viewer's own avatar (the account button, the
- * More tab's card, the profile page). `null` until the viewer's id is known.
+ * for the surfaces that draw the viewer's own avatar (the You tab's glyph, the
+ * profile at the top of You, web's account button and profile page). `null` until the viewer's id is known.
  */
 export function useOwnAvatarTint(): MemberAvatarTint | null {
   const viewerId = useViewerUserId();

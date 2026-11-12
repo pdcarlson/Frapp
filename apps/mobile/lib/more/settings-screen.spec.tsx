@@ -259,13 +259,13 @@ function primerWrites(): unknown[] {
     .map(([, value]) => value);
 }
 
-/** #3022. s16 opens from More's Settings row and draws `‹ More`. */
+/** #3022. s16 opens from You's Settings row and draws `‹ You`. */
 describe("Settings back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
 
-    expect(screenText(tree).startsWith("More\nSettings")).toBe(true);
-    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree).startsWith("You\nSettings")).toBe(true);
+    expectBackRow(tree, "You", "/you");
   });
 });
 
@@ -475,7 +475,7 @@ describe("Settings copy", () => {
 
   it("leaves the chapter's side to Chapter settings (#4074)", () => {
     // Even for the President: the accent, chat background and study zones
-    // moved to More → Admin → Chapter settings.
+    // moved to You → Admin → Chapter settings.
     state.permissions = ["*"];
     const text = screenText(render());
     expect(text).not.toContain("Chapter accent");

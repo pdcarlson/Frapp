@@ -1,114 +1,105 @@
 /** @vitest-environment jsdom */
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
 
 /**
- * #3845, PR 3: the ME button carries the member's picked status bottom-right
- * (none while Online), and its menu opens with a Status row.
+ * #3839: the inbox's bell is back on Chat home's header, beside Messages, now
+ * that the avatar that held its count is the You tab. Its count is house gold
+ * and leaves out chat pushes, which the channel rows already badge.
  */
 
-const state: { settings: Record<string, unknown> | undefined } = {
-  settings: undefined,
-};
+const state: { notifications: unknown[] } = { notifications: [] };
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useUserSettings: () => ({ data: state.settings }),
-  useNotifications: () => ({ data: [] }),
+  useNotifications: () => ({ data: state.notifications }),
 }));
 
-import {
-  AccountButton,
-  AccountMenu,
-  type AccountMenuState,
-} from "./home-header";
+import { NotificationsButton } from "./home-header";
 
 const mounted: ReactTestRenderer[] = [];
 
-function menuState(visible: boolean): AccountMenuState {
-  return { visible, top: 0, open: vi.fn(), close: vi.fn() };
-}
-
-function render(node: React.ReactNode) {
+function render() {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <QueryClientProvider client={new QueryClient()}>
-        <FrappThemeProvider>{node}</FrappThemeProvider>
-      </QueryClientProvider>,
+      <FrappThemeProvider>
+        <NotificationsButton />
+      </FrappThemeProvider>,
     );
   });
   mounted.push(tree);
   return tree;
 }
 
-const settings = (status: string) => ({
-  status,
-  status_expires_at: null,
-  custom_status: null,
-  custom_status_expires_at: null,
-});
-
-const button = (tree: ReactTestRenderer) =>
+const bell = (tree: ReactTestRenderer) =>
   tree.root.find(
     (node) =>
       (node.type as unknown) === "Pressable" &&
-      node.props.accessibilityLabel === "Your account",
+      node.props.accessibilityLabel === "Notifications",
   );
 
+const badge = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) =>
+      (node.type as unknown) === "View" &&
+      node.props.testID === "notifications-badge",
+  );
+
+const row = (
+  id: string,
+  screen: string,
+  readAt: string | null = null,
+) => ({
+  id,
+  type: "x",
+  title: "t",
+  body: "b",
+  data: { target: { screen } },
+  read_at: readAt,
+  created_at: "2026-11-12T12:00:00Z",
+});
+
 beforeEach(() => {
-  state.settings = settings("online");
+  state.notifications = [];
 });
 
 afterEach(() => {
   for (const tree of mounted.splice(0)) act(() => tree.unmount());
 });
 
-describe("AccountButton", () => {
-  const props = { initials: "AR", photoUrl: null, fetchedAt: 0 };
-
-  it("draws no status dot while Online", () => {
-    const tree = render(<AccountButton menu={menuState(false)} {...props} />);
-    expect(
-      tree.root.findAll((node) =>
-        String(node.props.testID ?? "").startsWith("account-status-"),
-      ),
-    ).toHaveLength(0);
-    expect(button(tree).props.accessibilityValue).toBeUndefined();
+describe("NotificationsButton", () => {
+  it("draws no badge and no value with nothing unread", () => {
+    const tree = render();
+    expect(badge(tree)).toHaveLength(0);
+    expect(bell(tree).props.accessibilityValue).toBeUndefined();
   });
 
-  it("draws Do Not Disturb's dot and names it", () => {
-    state.settings = settings("dnd");
-    const tree = render(<AccountButton menu={menuState(false)} {...props} />);
-    expect(
-      tree.root.findAll((node) => node.props.testID === "account-status-dnd")
-        .length,
-    ).toBeGreaterThan(0);
-    expect(button(tree).props.accessibilityValue).toEqual({
-      text: "Do Not Disturb",
-    });
+  it("counts unread rows other than chat pushes, in house gold", () => {
+    state.notifications = [
+      row("n-1", "event"),
+      row("n-2", "tasks"),
+      row("n-3", "event", "2026-11-12T12:05:00Z"),
+      // A chat push's row: the channel list already badges it.
+      row("n-4", "chat"),
+    ];
+    const tree = render();
+    const [dot] = badge(tree);
+    expect(dot).toBeDefined();
+    const style = Object.assign({}, ...[dot!.props.style].flat(Infinity));
+    expect(style.backgroundColor).toBe(signetDarkTokens.color.gold.house);
+    expect(bell(tree).props.accessibilityValue).toEqual({ text: "2 unread" });
   });
-});
 
-describe("AccountMenu", () => {
-  it("opens with a Status row that opens the sheet", () => {
-    state.settings = { ...settings("invisible"), custom_status: "Studying" };
-    const onStatus = vi.fn();
-    const menu = menuState(true);
-    const tree = render(<AccountMenu menu={menu} onStatus={onStatus} />);
-    const text = screenText(tree);
-    expect(text.indexOf("Invisible")).toBeLessThan(text.indexOf("Profile"));
-    expect(text).toContain("Studying");
-    act(() => {
-      tree.root
-        .find((node) => node.props.testID === "account-menu-status")
-        .props.onPress();
-    });
-    expect(menu.close).toHaveBeenCalled();
-    expect(onStatus).toHaveBeenCalled();
+  it("opens the inbox", () => {
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => bell(tree).props.onPress());
+    expect(push).toHaveBeenCalledWith("/notifications");
   });
 });

@@ -47,11 +47,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const STATUSES: MemberStatus[] = ["online", "idle", "dnd", "invisible"];
 
 /**
- * The status sheet (#3845), opened from the ME menu's Status row: Online,
+ * The status sheet (#3845), opened from the You tab's Status row: Online,
  * Idle, Do Not Disturb (with how long) and Invisible, then the custom status
  * line. Web puts the same choices in the avatar menu's Status submenu and a
  * small dialog; this follows Discord's and Slack's phone apps, which open a
- * sheet from the avatar with the statuses listed and the custom line one tap
+ * sheet from the member's own screen with the statuses listed and the custom line one tap
  * deeper.
  *
  * - A status pick saves and closes, as any picker here does.

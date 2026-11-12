@@ -5,6 +5,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { GlassSurface } from "@/components/glass-surface";
+import { CREATE_BUTTON_SIZE } from "@/components/floating-create-button";
 import {
   FLOATING_TAB_BAR,
   floatingTabBarTop,
@@ -25,14 +26,18 @@ export const UNDO_WINDOW_MS = 5000;
  * checkbox itself also unchecks until an officer confirms, so this is the
  * discoverable path, not the only one.
  *
- * The screen owns the timer and passes `message` only while it runs.
+ * The screen owns the timer and passes `message` only while it runs. A screen
+ * with a floating create button passes `aboveCreate`, so the bar sits over
+ * the + rather than on it (a pushed screen draws both at the same height).
  */
 export function UndoBar({
   message,
   onUndo,
+  aboveCreate = false,
 }: {
   message: string;
   onUndo: () => void;
+  aboveCreate?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -46,9 +51,11 @@ export function UndoBar({
     AccessibilityInfo.announceForAccessibility(`${message}. Undo available.`);
   }, [message]);
 
-  const offset = tabBar
-    ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
-    : bottom + tokens.spacing.lg;
+  const offset =
+    (tabBar
+      ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
+      : bottom + tokens.spacing.lg) +
+    (aboveCreate ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
 
   return (
     <GlassSurface style={[styles.bar, { bottom: offset }]}>

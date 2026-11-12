@@ -12,7 +12,7 @@ import { useDocuments } from "./use-documents";
  * A chapter with no active study zones has a Study hours page that can only
  * say so, and a chapter with no documents has a Documents page that can only
  * say so. Neither is something a member can fix, so the web nav, the mobile
- * More tab and the web Ask popover leave it out until the first zone or
+ * You tab and the web Ask popover leave it out until the first zone or
  * document exists.
  *
  * Documents stays for whoever can upload, because its page is where the

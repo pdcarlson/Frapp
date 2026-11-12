@@ -57,7 +57,6 @@ import {
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
-  useOwnAvatarTint,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -67,13 +66,10 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { StatusSheet } from "@/components/account/status-sheet";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
-  AccountButton,
-  AccountMenu,
   MessagesButton,
-  useAccountMenu,
+  NotificationsButton,
 } from "@/components/chat/home-header";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
@@ -84,7 +80,6 @@ import {
   type ChannelFormValues,
 } from "@/components/chat/channel-form-sheet";
 import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
-import { selectViewerProfile } from "@/lib/more/profile";
 import {
   ChannelFilterButton,
   ChannelFilterMenu,
@@ -165,14 +160,9 @@ function filterLineText(filters: { unreadOnly: boolean; hideMuted: boolean }) {
 
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
-  // Your initials wear the color the chapter sees on them (#3860).
-  const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
-  // The status sheet is hosted here, by the screen whose avatar menu opens it
-  // (`spec/ui/mobile/patterns.md` § Bottom sheets).
-  const statusSheetRef = useRef<BottomSheetModal>(null);
   // Chat home is titled by the chapter, its mark and name, not by the word
   // "Chat" (`components/chapter-mark.tsx`).
   const { chapterName } = useChapterBranding();
@@ -242,7 +232,6 @@ export default function ChatHomeScreen() {
       }),
     [unread.data, unread.isError],
   );
-  const accountMenu = useAccountMenu();
 
   // The member's own arrangement (#2877): pins, folded sections and the two
   // filters, stored server-side so they match web. A failed read leaves the
@@ -403,10 +392,6 @@ export default function ChatHomeScreen() {
   const sidebarRefetch = useSidebarPreferencesRefetch();
   const rosterQuery = useChapterRoster();
   const viewerQuery = useCurrentUser();
-  const viewerProfile = useMemo(
-    () => selectViewerProfile(viewerQuery.data),
-    [viewerQuery.data],
-  );
   const inboxQuery = useNotifications();
   // The officer setup checklist. Held here, not in its view, so the pull below
   // re-reads the lists it counts.
@@ -688,13 +673,8 @@ export default function ChatHomeScreen() {
       titleMark={<ChapterMark />}
       refresh={refresh}
       overlay={{
-        open: filterMenu.visible || accountMenu.visible,
-        content: accountMenu.visible ? (
-          <AccountMenu
-            menu={accountMenu}
-            onStatus={() => statusSheetRef.current?.present()}
-          />
-        ) : (
+        open: filterMenu.visible,
+        content: (
           <ChannelFilterMenu
             menu={filterMenu}
             unreadOnly={preferences.filters.unreadOnly}
@@ -705,17 +685,10 @@ export default function ChatHomeScreen() {
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* The Messages door, then the member's avatar, whose menu holds
-              Profile, Notifications (the inbox, #3362) and Settings
-              (owner, 2026-11-07). */}
+          {/* The Messages door, then the inbox's bell (#3362). The
+              member's avatar is the You tab since #3839. */}
           <MessagesButton unreadConversations={unreadConversations} />
-          <AccountButton
-            menu={accountMenu}
-            initials={viewerProfile?.initials ?? "?"}
-            photoUrl={viewerProfile?.photoUrl ?? null}
-            fetchedAt={viewerQuery.dataUpdatedAt}
-            tint={ownTint}
-          />
+          <NotificationsButton />
         </View>
       }
     >
@@ -962,7 +935,6 @@ export default function ChatHomeScreen() {
         </>
       )}
 
-      <StatusSheet ref={statusSheetRef} />
       {channelForm ? (
         <ChannelFormSheet
           key={channelForm.key}
@@ -1062,7 +1034,7 @@ export default function ChatHomeScreen() {
   // Swipe left to Messages (#3774), beside the top-right door.
   return (
     <MessagesSwipeArea
-      enabled={!filterMenu.visible && !accountMenu.visible && !menuTarget}
+      enabled={!filterMenu.visible && !menuTarget}
     >
       {screen}
     </MessagesSwipeArea>

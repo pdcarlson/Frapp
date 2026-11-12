@@ -17,6 +17,11 @@ import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import {
+  STORAGE_PROVIDER,
+  type IStorageProvider,
+} from '#domain/adapters/storage.interface';
+import { TASK_PROOF_REQUIRED_CODE } from '@repo/validation';
 import { memberFixture, userFixture } from '#test/helpers/entity-fixtures';
 
 describe('TaskService', () => {
@@ -28,6 +33,15 @@ describe('TaskService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
+  let mockStorage: jest.Mocked<
+    Pick<
+      IStorageProvider,
+      | 'getSignedUploadUrl'
+      | 'getSignedDownloadUrl'
+      | 'listFiles'
+      | 'deleteFiles'
+    >
+  >;
 
   const baseTask: Task = {
     id: 'task-1',
@@ -44,6 +58,9 @@ describe('TaskService', () => {
     completed_at: null,
     confirmed_at: null,
     sent_back_at: null,
+    reference_photo_path: null,
+    proof_photo_path: null,
+    photo_required: false,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -78,6 +95,7 @@ describe('TaskService', () => {
       deleteSubtask: jest.fn(),
       updateUnconfirmed: jest.fn(),
       releaseReminderClaims: jest.fn().mockResolvedValue(undefined),
+      isPhotoPathInUse: jest.fn().mockResolvedValue(false),
     };
 
     mockMemberRepo = {
@@ -102,6 +120,13 @@ describe('TaskService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockStorage = {
+      getSignedUploadUrl: jest.fn().mockResolvedValue('https://upload'),
+      getSignedDownloadUrl: jest.fn().mockResolvedValue('https://view'),
+      listFiles: jest.fn().mockResolvedValue([]),
+      deleteFiles: jest.fn().mockResolvedValue(undefined),
+    };
+
     mockChatService = {
       sendMessage: jest.fn().mockResolvedValue({
         message: { id: 'msg-1' },
@@ -117,6 +142,7 @@ describe('TaskService', () => {
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChatService, useValue: mockChatService },
+        { provide: STORAGE_PROVIDER, useValue: mockStorage },
       ],
     }).compile();
 
@@ -153,6 +179,8 @@ describe('TaskService', () => {
         status: TaskStatus.TODO,
         point_reward: 10,
         points_awarded: false,
+        reference_photo_path: null,
+        photo_required: false,
         completed_at: null,
         confirmed_at: null,
       });
@@ -514,6 +542,8 @@ describe('TaskService', () => {
         expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
           'task-1',
           'ch-1',
+          undefined,
+          null,
         );
         expect(mockTaskRepo.update).not.toHaveBeenCalled();
         expect(result.status).toBe(TaskStatus.IN_PROGRESS);
@@ -867,6 +897,7 @@ describe('TaskService', () => {
         'task-1',
         'ch-1',
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        null,
       );
       expect(result.status).toBe(TaskStatus.IN_PROGRESS);
     });
@@ -1219,6 +1250,7 @@ describe('TaskService', () => {
           status: TaskStatus.TODO,
           completed_at: null,
           sent_back_at: null,
+          proof_photo_path: null,
         },
       );
       expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalled();
@@ -1707,6 +1739,326 @@ describe('TaskService', () => {
       await expect(
         service.addSubtask('task-1', 'ch-1', 'One more'),
       ).rejects.toThrow('up to 20 subtasks');
+    });
+  });
+  describe('photos (#4565)', () => {
+    const PHOTO = 'chapters/ch-1/tasks/p1/mess.jpg';
+    const PROOF = 'chapters/ch-1/tasks/p2/done.jpg';
+    const uploaded = (...paths: string[]) =>
+      mockStorage.listFiles.mockResolvedValue(paths);
+
+    it('mints an upload URL under the chapter tasks prefix, photos only', async () => {
+      const ticket = await service.requestPhotoUploadUrl({
+        chapterId: 'CH-1',
+        filename: 'mess.jpg',
+        contentType: 'image/jpeg',
+      });
+      expect(ticket.storagePath).toMatch(
+        /^chapters\/ch-1\/tasks\/[0-9a-f-]+\/mess\.jpg$/,
+      );
+      expect(mockStorage.getSignedUploadUrl).toHaveBeenCalledWith(
+        'tasks',
+        ticket.storagePath,
+        'image/jpeg',
+      );
+      await expect(
+        service.requestPhotoUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'slip.pdf',
+          contentType: 'application/pdf',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('keeps a checked reference photo and the switch on create', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      uploaded(PHOTO);
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Clean',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        reference_photo_path: PHOTO,
+        photo_required: true,
+      });
+      expect(mockTaskRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reference_photo_path: PHOTO,
+          photo_required: true,
+        }),
+      );
+    });
+
+    it.each([
+      ['another chapter', 'chapters/ch-2/tasks/p1/mess.jpg', []],
+      ['a climb out of the prefix', 'chapters/ch-1/tasks/../service/x.jpg', []],
+      ['nothing uploaded', PHOTO, []],
+    ])('refuses a reference photo from %s', async (_, path, objects) => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      uploaded(...objects);
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Clean',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+          reference_photo_path: path,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a path another task already holds', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      uploaded(PHOTO);
+      mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Clean',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+          reference_photo_path: PHOTO,
+        }),
+      ).rejects.toThrow('already attached');
+    });
+
+    it('refuses Mark done without proof when a photo is required, by code', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+        photo_required: true,
+      });
+      const refusal = await service
+        .updateStatus('task-1', 'ch-1', 'user-1', false, TaskStatus.COMPLETED)
+        .catch((error: BadRequestException) => error);
+      expect(refusal).toBeInstanceOf(BadRequestException);
+      expect((refusal as BadRequestException).getResponse()).toMatchObject({
+        code: TASK_PROOF_REQUIRED_CODE,
+      });
+      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stores the proof with the completion', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+        photo_required: true,
+      });
+      uploaded(PROOF);
+      mockTaskRepo.update.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        proof_photo_path: PROOF,
+      });
+      await service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.COMPLETED,
+        PROOF,
+      );
+      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        expect.objectContaining({
+          status: TaskStatus.COMPLETED,
+          proof_photo_path: PROOF,
+        }),
+      );
+    });
+
+    it.each([
+      ['another chapter', 'chapters/ch-2/tasks/p2/done.jpg', true],
+      ['nothing uploaded', PROOF, false],
+    ])(
+      'refuses a proof photo from %s at Mark done',
+      async (_, path, uploadedIt) => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+          photo_required: true,
+        });
+        uploaded(...(uploadedIt ? [path] : []));
+        await expect(
+          service.updateStatus(
+            'task-1',
+            'ch-1',
+            'user-1',
+            false,
+            TaskStatus.COMPLETED,
+            path,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses as proof a photo another task holds', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+      });
+      uploaded(PROOF);
+      mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
+      await expect(
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+          PROOF,
+        ),
+      ).rejects.toThrow('already attached');
+    });
+
+    it('signs nothing outside the chapter', async () => {
+      await expect(
+        service.getPhotoDownloadUrl(
+          { ...baseTask, proof_photo_path: 'chapters/ch-2/tasks/p/x.jpg' },
+          'ch-1',
+          'proof',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('reopens only the completion whose proof it read', async () => {
+      const done = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        proof_photo_path: PROOF,
+      };
+      mockTaskRepo.findById.mockResolvedValue(done);
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...done,
+        status: TaskStatus.IN_PROGRESS,
+        proof_photo_path: null,
+      });
+      await service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.IN_PROGRESS,
+      );
+      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        undefined,
+        PROOF,
+      );
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+    });
+
+    it('marks done without proof when no photo is required', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+      });
+      mockTaskRepo.update.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+      });
+      await service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.COMPLETED,
+      );
+      expect(mockTaskRepo.update.mock.calls[0][2]).not.toHaveProperty(
+        'proof_photo_path',
+      );
+    });
+
+    it('deletes the proof when an officer sends the completion back', async () => {
+      const done = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        proof_photo_path: PROOF,
+      };
+      mockTaskRepo.findById.mockResolvedValue(done);
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...done,
+        status: TaskStatus.IN_PROGRESS,
+        proof_photo_path: null,
+      });
+      await service.rejectCompletion('task-1', 'ch-1');
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+    });
+
+    it('replaces a reference photo on edit and deletes the old one', async () => {
+      const NEW = 'chapters/ch-1/tasks/p3/new.jpg';
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        reference_photo_path: PHOTO,
+      });
+      uploaded(NEW);
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue({
+        ...baseTask,
+        reference_photo_path: NEW,
+      });
+      await service.update('task-1', 'ch-1', 'admin-1', {
+        reference_photo_path: NEW,
+      });
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { reference_photo_path: NEW },
+      );
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PHOTO]);
+    });
+
+    it('removes the reference photo with null', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        reference_photo_path: PHOTO,
+      });
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
+      await service.update('task-1', 'ch-1', 'admin-1', {
+        reference_photo_path: null,
+      });
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { reference_photo_path: null },
+      );
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PHOTO]);
+    });
+
+    it('a failed delete never fails the write', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        reference_photo_path: PHOTO,
+        proof_photo_path: PROOF,
+      });
+      mockStorage.deleteFiles.mockRejectedValue(new Error('storage down'));
+      await expect(service.delete('task-1', 'ch-1')).resolves.toBeUndefined();
+      expect(mockTaskRepo.delete).toHaveBeenCalled();
+    });
+
+    it('signs only a photo the task has', async () => {
+      await expect(
+        service.getPhotoDownloadUrl(baseTask, 'ch-1', 'proof'),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getPhotoDownloadUrl(
+          { ...baseTask, proof_photo_path: PROOF },
+          'ch-1',
+          'proof',
+        ),
+      ).resolves.toEqual({ url: 'https://view' });
+      expect(mockStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'tasks',
+        PROOF,
+      );
     });
   });
 });

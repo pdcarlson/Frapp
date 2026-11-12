@@ -85,10 +85,9 @@ export default function AppLayout() {
         name="notifications"
         options={{ title: SCREEN_TITLES.notifications }}
       />
-      <Stack.Screen
-        name="activity"
-        options={{ title: SCREEN_TITLES.activity }}
-      />
+      {/* The task board left the tab bar for Activity and Calendar
+          (#4610); it opens from Activity, a task on Calendar and Up next. */}
+      <Stack.Screen name="tasks" options={{ title: SCREEN_TITLES.tasks }} />
       <Stack.Screen
         name="messages"
         options={{ title: SCREEN_TITLES.messages }}
@@ -99,7 +98,6 @@ export default function AppLayout() {
         name="preferences"
         options={{ title: SCREEN_TITLES.preferences }}
       />
-      <Stack.Screen name="profile" options={{ title: SCREEN_TITLES.profile }} />
       <Stack.Screen
         name="service-hours"
         options={{ title: SCREEN_TITLES["service-hours"] }}
@@ -143,7 +141,7 @@ export default function AppLayout() {
         name="arrange-channels"
         options={{ title: SCREEN_TITLES["arrange-channels"] }}
       />
-      {/* Chapter settings and its Roles screens (#4074), from More → Admin. */}
+      {/* Chapter settings and its Roles screens (#4074), from You → Admin. */}
       <Stack.Screen
         name="chapter-settings"
         options={{ title: SCREEN_TITLES["chapter-settings"] }}

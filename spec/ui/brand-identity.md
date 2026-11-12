@@ -82,7 +82,7 @@ These were open questions in the research phase. This document closes them; do n
 | Decision          | Ruling                                                                                                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | UI typeface       | **Figtree** — humanist rounded sans, fitting the warm consumer lane. **Geist is explicitly rejected** for Signet. Weights and scale: [design-system/foundations.md](design-system/foundations.md). |
-| Mobile navigation | **4 tabs: Chat (home), Events, Tasks, More.** There is no Home tab. Spec: [mobile/navigation.md](mobile/navigation.md).                                          |
+| Mobile navigation | **4 tabs**, chat as home and no Home tab: [mobile/navigation.md § Tab bar](mobile/navigation.md#tab-bar--4-tabs-locked) owns which.                                          |
 
 Note: the design-system reference board's panel 4g draws a stale 5-tab bar; the Canvas header and all 23 screens in [design-system/reference/canvas-screens.dc.html](design-system/reference/canvas-screens.dc.html) lock 4 tabs. Four tabs win.
 

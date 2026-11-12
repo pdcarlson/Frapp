@@ -3,11 +3,15 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
+import {
+  PRESENCE_NOT_READY,
+  setChapterPresence,
+} from "@/lib/presence/presence-store";
 import type { DirectoryRow } from "@/lib/more/directory";
 
 /**
@@ -1020,14 +1024,14 @@ describe("s13's frame (#2485)", () => {
   });
 });
 
-/** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
+/** #3022. s13 draws its own header, so it draws the board's `‹ You` itself. */
 describe("s13's back row (#3022)", () => {
-  it("pins ‹ More above the title, outside the scrolling list", () => {
+  it("pins ‹ You above the title, outside the scrolling list", () => {
     const tree = render();
     // Pinned like every screen's capsule, so it never scrolls away: it sits
     // before the list in the tree, and the list's header starts at the title.
-    expectBackRow(tree, "More", "/more");
-    expect(screenText(tree).startsWith("More")).toBe(true);
+    expectBackRow(tree, "You", "/you");
+    expect(screenText(tree).startsWith("You")).toBe(true);
     let header!: ReactTestRenderer;
     act(() => {
       header = create(
@@ -1182,5 +1186,130 @@ describe("s13 as a grid (#4175)", () => {
     );
     expect(screenText(tile)).toContain("Member 1");
     expect(screenText(tile)).toContain("Treasurer · CS '27");
+  });
+  /**
+   * #4137: the row carries the member's custom status line under the name and
+   * their presence dot on the avatar, as web's Directory row and the member
+   * sheet do (`components.md` § Chat member list: "The Directory row carries the
+   * same line under the name"). Nothing until presence has synced: no dot, no
+   * claim of Offline.
+   */
+  describe("Directory row presence and status line (#4137)", () => {
+    const AWAY = { status: "idle" as const, line: "At practice till 6" };
+
+    it("draws the status line under the name and the dot on the avatar", () => {
+      const tree = renderNode(
+        <MemberRow row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+      );
+      const text = screenText(tree);
+      expect(text).toContain("At practice till 6");
+      expect(text.indexOf("Member 1")).toBeLessThan(
+        text.indexOf("At practice till 6"),
+      );
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "member-presence-idle",
+        ),
+      ).not.toHaveLength(0);
+      expect(pressables(tree)[0]!.props.accessibilityLabel).toBe(
+        memberPressLabel(row(1), AWAY),
+      );
+    });
+
+    it("speaks presence and the status line before the meta line", () => {
+      expect(memberPressLabel(row(1), AWAY)).toBe(
+        "View Member 1's profile, Idle, At practice till 6, Treasurer · CS '27",
+      );
+    });
+
+    it("draws neither before presence has synced", () => {
+      const tree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+      expect(screenText(tree)).not.toContain("At practice");
+      expect(
+        tree.root.findAll((node) =>
+          String(node.props.testID ?? "").startsWith("member-presence-"),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("asks to search members, led by the lens, as web's search does", () => {
+      const field = inHeader(
+        render(),
+        (element) =>
+          (element.type as unknown) === SearchFieldStandIn &&
+          element.props.accessibilityLabel === "Search the directory",
+      ) as { placeholder: string; searchGlyph?: boolean };
+      expect(field.placeholder).toBe("Search members");
+      expect(field.searchGlyph).toBe(true);
+    });
+
+    describe("from the screen's chapter presence", () => {
+      afterEach(() => {
+        act(() => setChapterPresence(PRESENCE_NOT_READY));
+      });
+
+      function renderedItem(tree: ReturnType<typeof render>) {
+        const renderItem = list(tree).props.renderItem as (info: {
+          item: unknown;
+          index: number;
+        }) => React.ReactElement;
+        const item = (list(tree).props.data as unknown[])[0];
+        return renderNode(renderItem({ item, index: 0 }));
+      }
+
+      function presenceDots(tree: ReturnType<typeof renderNode>) {
+        return tree.root.findAll((node) =>
+          String(node.props.testID ?? "").startsWith("member-presence-"),
+        );
+      }
+
+      it("hands each row its member's dot and status line once synced", () => {
+        act(() => setListLayout("directory", "list"));
+        act(() =>
+          setChapterPresence({
+            statusOf: () => "idle",
+            lineOf: () => "At practice till 6",
+            isReady: true,
+          }),
+        );
+        const item = renderedItem(render());
+        expect(screenText(item)).toContain("At practice till 6");
+        expect(presenceDots(item)).not.toHaveLength(0);
+      });
+
+      it("hands each tile the same in the Grid layout", () => {
+        act(() => setListLayout("directory", "grid"));
+        act(() =>
+          setChapterPresence({
+            statusOf: () => "idle",
+            lineOf: () => "At practice till 6",
+            isReady: true,
+          }),
+        );
+        const item = renderedItem(render());
+        expect(screenText(item)).toContain("At practice till 6");
+        expect(presenceDots(item)).not.toHaveLength(0);
+      });
+
+      it("draws no Offline dot before the first sync", () => {
+        act(() => setListLayout("directory", "list"));
+        // Unsynced, the store answers "offline" for everyone; the screen must
+        // not pass that on as a fact.
+        act(() => setChapterPresence(PRESENCE_NOT_READY));
+        expect(presenceDots(renderedItem(render()))).toHaveLength(0);
+      });
+    });
+
+    it("gives a tile the same line and dot", () => {
+      const tile = renderNode(
+        <MemberTile row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+      );
+      expect(screenText(tile)).toContain("At practice till 6");
+      expect(
+        tile.root.findAll(
+          (node) => node.props.testID === "member-presence-idle",
+        ),
+      ).not.toHaveLength(0);
+    });
   });
 });

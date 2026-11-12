@@ -417,7 +417,7 @@ export function AuthSessionProvider({
    * `null` is a safe resolution, not a failure: the API resolves a sole
    * membership server-side when no claim is present, so single-chapter members
    * work regardless. A multi-chapter member with no selection reaches the
-   * picker from the More hub (#764) — see `lib/auth-gate.ts` for why that is
+   * picker from the You tab (#764) — see `lib/auth-gate.ts` for why that is
    * not a forced redirect.
    *
    * Selecting a chapter goes through `lib/select-chapter.ts`, which activates
@@ -672,7 +672,7 @@ export function AuthSessionProvider({
         await supabase.auth.signOut();
       }
     } catch {
-      // Never propagate. Callers navigate away on return (`profile.tsx`), so a
+      // Never propagate. Callers navigate away on return (`preferences.tsx`), so a
       // thrown network error would strand the member on an authenticated screen
       // while the local session below is already gone.
     }

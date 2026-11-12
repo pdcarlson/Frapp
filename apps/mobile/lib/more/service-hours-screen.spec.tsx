@@ -386,7 +386,8 @@ describe("Service hours on a module-off refusal (#2718)", () => {
  * screen, which lists the entries and totals them as the viewer's own hours,
  * must ask for the viewer's entries. It once didn't, and an
  * officer saw the chapter's entries, unnamed, totalled as their own.
- * `profile-screen.spec.tsx` pins the same for s12.
+ * `packages/hooks/src/profile-stats.hook.spec.tsx` pins the same for the
+ * Profile cards (s15) on both apps.
  */
 describe("Service hours reads only the viewer's entries", () => {
   beforeEach(() => {
@@ -447,13 +448,13 @@ describe("Service hours pull to refresh (#3385)", () => {
 });
 
 /**
- * #3022. The board never drew this screen, but it opens from a More row like
- * s10–s16, so it draws the same `‹ More`.
+ * #3022. The board never drew this screen, but it opens from a You row like
+ * s10–s16, so it draws the same `‹ You`.
  */
 describe("Service hours back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
-    expectBackRow(tree, "More", "/more");
+    expectBackRow(tree, "You", "/you");
     tree.unmount();
   });
 });

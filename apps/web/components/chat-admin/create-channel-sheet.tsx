@@ -22,11 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { Slot } from "@radix-ui/react-slot";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
+  PanelDescription,
   PanelHeader,
 } from "@/components/shared/panel";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -64,14 +66,24 @@ export function CreateChannelSheet({
   initialCategoryId = null,
   onCreated,
   trigger,
+  docked = false,
+  backLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The category the + was beside, or null for none. Read on open. */
   initialCategoryId?: string | null;
   onCreated?: (channelId: string) => void;
-  /** A `SheetTrigger` child, for a caller whose button opens it. */
+  /** The button that opens it, for a caller that has one. */
   trigger?: ReactNode;
+  /**
+   * Open in place of the page that owns it (Chat admin), beside chat,
+   * rather than over the app (`components.md` § Surface size). Chat's own
+   * + beside a category has no page, so it stays a sheet.
+   */
+  docked?: boolean;
+  /** The back arrow's name when docked. */
+  backLabel?: string;
 }) {
   const { toast } = useToast();
   const createChannel = useCreateChannel();
@@ -190,122 +202,134 @@ export function CreateChannelSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      {trigger ? <SheetTrigger asChild>{trigger}</SheetTrigger> : null}
-      {/*
+    <>
+      {trigger ? (
+        <Slot onClick={() => handleOpenChange(true)}>{trigger}</Slot>
+      ) : null}
+      <Panel
+        open={open}
+        onOpenChange={handleOpenChange}
+        docked={docked}
+        backLabel={backLabel}
+      >
+        {/*
         A panel, not a dialog (`components.md` § Surface size): a channel's
         two access lists and their Add menus would scroll inside a 512px
         dialog capped at 80vh.
       */}
-      <PanelContent>
-        <PanelHeader>Create a channel</PanelHeader>
-        <PanelBody as="form" id="channel-create-form" onSubmit={handleSubmit}>
-          <SheetDescription>
-            Choose who can see the channel and who can post in it. In a
-            category, it starts with the category&apos;s answers and follows
-            them until you change it.
-          </SheetDescription>
-          <div className="grid gap-1">
-            <Label htmlFor="ca-create-name">Name</Label>
-            <Input
-              id="ca-create-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="announcements"
-              required
-            />
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="ca-create-description">Description</Label>
-            <Textarea
-              id="ca-create-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={2}
-            />
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="ca-create-category">Category</Label>
-            <Select value={categoryId} onValueChange={handleCategoryChange}>
-              <SelectTrigger id="ca-create-category">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_CATEGORY}>Uncategorized</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <label className="flex items-center gap-3">
-              <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-              <span className="text-sm">Private channel</span>
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Only people you add can see it, starting with you. Its type
-              can&apos;t be changed after it&apos;s created.
-            </p>
-          </div>
-          {isPrivate ? null : (
-            <div className="grid gap-4 rounded-md border border-border p-3">
-              <ChannelAccessField
-                id="ca-create-see"
-                question="see"
-                value={see}
-                onChange={(next) => {
-                  setSee(next);
-                  setAccessTouched(true);
-                }}
-                options={accessOptions}
-                optionsState={accessOptionsState}
-              />
-              <ChannelAccessField
-                id="ca-create-post"
-                question="post"
-                value={post}
-                onChange={(next) => {
-                  setPost(next);
-                  setAccessTouched(true);
-                }}
-                options={accessOptions}
-                optionsState={accessOptionsState}
+        <PanelContent>
+          <PanelHeader>Create a channel</PanelHeader>
+          <PanelBody as="form" id="channel-create-form" onSubmit={handleSubmit}>
+            <PanelDescription>
+              Choose who can see the channel and who can post in it. In a
+              category, it starts with the category&apos;s answers and follows
+              them until you change it.
+            </PanelDescription>
+            <div className="grid gap-1">
+              <Label htmlFor="ca-create-name">Name</Label>
+              <Input
+                id="ca-create-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="announcements"
+                required
               />
             </div>
-          )}
-          <label className="flex items-center gap-3">
-            <Switch checked={alwaysFormal} onCheckedChange={setAlwaysFormal} />
-            <span className="text-sm">{ALWAYS_FORMAL_LABEL_WITH_HINT}</span>
-          </label>
-        </PanelBody>
-        <PanelFooter>
-          <Button
-            variant="secondary"
-            // Through the same handler as the X and Escape: Radix fires no
-            // `onOpenChange` for a close made by setting state, so a bare
-            // `onOpenChange(false)` would keep the draft.
-            onClick={() => handleOpenChange(false)}
-            disabled={createChannel.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            form="channel-create-form"
-            type="submit"
-            disabled={
-              createChannel.isPending || !name.trim() || accessIncomplete
-            }
-          >
-            {createChannel.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            Create channel
-          </Button>
-        </PanelFooter>
-      </PanelContent>
-    </Sheet>
+            <div className="grid gap-1">
+              <Label htmlFor="ca-create-description">Description</Label>
+              <Textarea
+                id="ca-create-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="ca-create-category">Category</Label>
+              <Select value={categoryId} onValueChange={handleCategoryChange}>
+                <SelectTrigger id="ca-create-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CATEGORY}>Uncategorized</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1">
+              <label className="flex items-center gap-3">
+                <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
+                <span className="text-sm">Private channel</span>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Only people you add can see it, starting with you. Its type
+                can&apos;t be changed after it&apos;s created.
+              </p>
+            </div>
+            {isPrivate ? null : (
+              <div className="grid gap-4 rounded-md border border-border p-3">
+                <ChannelAccessField
+                  id="ca-create-see"
+                  question="see"
+                  value={see}
+                  onChange={(next) => {
+                    setSee(next);
+                    setAccessTouched(true);
+                  }}
+                  options={accessOptions}
+                  optionsState={accessOptionsState}
+                />
+                <ChannelAccessField
+                  id="ca-create-post"
+                  question="post"
+                  value={post}
+                  onChange={(next) => {
+                    setPost(next);
+                    setAccessTouched(true);
+                  }}
+                  options={accessOptions}
+                  optionsState={accessOptionsState}
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-3">
+              <Switch
+                checked={alwaysFormal}
+                onCheckedChange={setAlwaysFormal}
+              />
+              <span className="text-sm">{ALWAYS_FORMAL_LABEL_WITH_HINT}</span>
+            </label>
+          </PanelBody>
+          <PanelFooter>
+            <Button
+              variant="secondary"
+              // Through the same handler as the X and Escape: Radix fires no
+              // `onOpenChange` for a close made by setting state, so a bare
+              // `onOpenChange(false)` would keep the draft.
+              onClick={() => handleOpenChange(false)}
+              disabled={createChannel.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              form="channel-create-form"
+              type="submit"
+              disabled={
+                createChannel.isPending || !name.trim() || accessIncomplete
+              }
+            >
+              {createChannel.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              Create channel
+            </Button>
+          </PanelFooter>
+        </PanelContent>
+      </Panel>
+    </>
   );
 }

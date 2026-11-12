@@ -48,6 +48,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import TabLayout from "@/app/(app)/(tabs)/_layout";
 import AppLayout, { unstable_settings } from "@/app/(app)/_layout";
 import { TAB_ROUTES } from "@/components/glass-tab-bar";
+import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { stackScreenLayout } from "@/components/route-error";
 
 type Node = ReactTestRenderer["root"];
@@ -138,6 +139,23 @@ describe("tab bar", () => {
       .filter((screen) => resolved(screen.props.options).href !== null)
       .map((screen) => screen.props.name);
     expect(visible).toEqual([...TAB_ROUTES]);
+  });
+
+  // #3839: the You tab's glyph is the member's own avatar, ringed in the
+  // accent while active, not a nav-set glyph.
+  it("draws the member's avatar as the You tab's glyph", () => {
+    const you = hosts(render().root, "Tabs.Screen").find(
+      (screen) => screen.props.name === "you",
+    )!;
+    const options = resolved(you.props.options);
+    expect(options.title).toBe("You");
+    const icon = (
+      options.tabBarIcon as (props: object) => React.ReactElement<{
+        focused: boolean;
+      }>
+    )({ focused: true, color: "#000", size: 24 });
+    expect(icon.type).toBe(YouTabAvatar);
+    expect(icon.props.focused).toBe(true);
   });
 
   it("draws the glass pill and + in place of the navigator's bar", () => {

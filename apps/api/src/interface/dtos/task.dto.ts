@@ -3,6 +3,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -129,6 +130,23 @@ export class CreateTaskDto {
 
   @ApiPropertyOptional({
     description:
+      'A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  reference_photo_path?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When true, the task can only be marked done with a proof photo (#4565). Default false.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  photo_required?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates.',
   })
   @IsOptional()
@@ -206,6 +224,27 @@ export class CreateTaskResponseDto implements Task {
       'When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.',
   })
   sent_back_at: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`.',
+  })
+  reference_photo_path: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`.',
+  })
+  proof_photo_path: string | null;
+
+  @ApiProperty({
+    description: 'When true, Mark done is refused without a proof photo.',
+  })
+  photo_required: boolean;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -300,6 +339,25 @@ export class UpdateTaskDto {
   @Min(0)
   @Max(POINTS_ADJUSTMENT_MAX)
   point_reward?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  reference_photo_path?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Turn "Photo required" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  photo_required?: boolean;
 }
 
 export class UpdateTaskSubtaskDto {
@@ -312,6 +370,64 @@ export class UpdateTaskStatusDto {
   @ApiProperty({ enum: TaskStatus })
   @IsEnum(TaskStatus)
   status: TaskStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  proof_photo_path?: string;
+}
+
+export class RequestTaskPhotoUploadUrlDto {
+  @ApiProperty({ description: 'Original filename (a JPEG, PNG, GIF or WebP)' })
+  @IsString()
+  @MaxLength(255)
+  filename: string;
+
+  @ApiProperty({ description: 'MIME content type (e.g. image/jpeg)' })
+  @IsString()
+  content_type: string;
+
+  @ApiPropertyOptional({
+    description:
+      'File size in bytes, if known. Rejected against the upload size ceiling when present.',
+  })
+  // Omitted is "size unknown"; `null` is not a size (#2913).
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsInt()
+  @Min(0)
+  size_bytes?: number;
+}
+
+export class TaskPhotoUploadUrlResponseDto {
+  @ApiProperty({ description: 'Short-lived signed URL; PUT the bytes to it.' })
+  upload_url: string;
+
+  @ApiProperty({
+    description:
+      'Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done).',
+  })
+  storage_path: string;
+}
+
+export const TASK_PHOTOS = ['reference', 'proof'] as const;
+export type TaskPhoto = (typeof TASK_PHOTOS)[number];
+
+export class TaskPhotoUrlQueryDto {
+  @ApiProperty({
+    enum: TASK_PHOTOS,
+    description: 'Which photo: the reference photo or the proof photo.',
+  })
+  @IsIn(TASK_PHOTOS)
+  photo: TaskPhoto;
+}
+
+export class TaskPhotoUrlResponseDto {
+  @ApiProperty({ description: 'Short-lived signed URL to view the photo.' })
+  url: string;
 }
 
 export class RejectTaskCompletionDto {

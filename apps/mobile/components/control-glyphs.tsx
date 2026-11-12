@@ -188,7 +188,7 @@ const BACK_STROKE_WIDTH = 2.2;
 
 /**
  * Back: a left chevron. The chat thread header draws it at 20, and every
- * `BackRow` capsule (`‹ More`, `‹ Events`, `‹ Chat`) at 18, so the two
+ * `BackRow` capsule (`‹ You`, `‹ Calendar`, `‹ Chat`) at 18, so the two
  * kinds of back control show one arrow. Drawn, never typed: a `‹` character
  * sits on the text's x-height, so in a centered row its ink lands below the
  * title's middle (foundations.md §7, Aligning a row).
@@ -198,6 +198,21 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M14.5 6l-6 6 6 6" {...detail} strokeWidth={BACK_STROKE_WIDTH} />
+    </Frame>
+  );
+}
+
+/**
+ * Search, leading a search field (#4137): web's toolbar search draws the same
+ * lens and handle (`apps/web/components/layout/nav-glyphs.tsx` `SearchGlyph`),
+ * as iOS's own search bar, Slack and Discord lead theirs.
+ */
+export function SearchGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx="10.5" cy="10.5" r="6.2" {...detail} />
+      <Path d="M15.2 15.2l4.3 4.3" {...detail} />
     </Frame>
   );
 }

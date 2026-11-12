@@ -53,7 +53,7 @@ import {
   NotificationListRow,
   NotificationListSkeleton,
 } from "@/app/(app)/notifications";
-import { ProfileSkeleton } from "@/app/(app)/profile";
+import { ProfileSkeleton } from "@/components/you/profile-sections";
 
 /**
  * components.md §10: "the skeleton mirrors the layout it becomes — same
@@ -347,7 +347,9 @@ describe("Screen skeletons sit on their screen's frames", () => {
     );
   });
 
-  it("Profile: the photo's circle, two stat cards and the six detail rows every profile draws", () => {
+  // The You tab's head (#3839): its rows draw at once, and Details waits for
+  // the profile, so the skeleton is the head alone.
+  it("Profile: the photo's circle and two stat cards, and no detail rows", () => {
     const tree = render(<ProfileSkeleton />);
     const photo = tree.root
       .findAllByType("Animated.View" as never)
@@ -361,7 +363,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
           style.backgroundColor === tokens.color.surface.card,
       ),
     ).toHaveLength(2);
-    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(6);
+    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(0);
   });
 
   it("Joined channels: rows on the card row's frame", () => {

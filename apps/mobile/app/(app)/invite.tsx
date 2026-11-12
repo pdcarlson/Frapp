@@ -12,7 +12,7 @@ import { can } from "@repo/validation";
 import {
   BACK_TO_CHAT,
   BACK_TO_DIRECTORY,
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   type BackTarget,
 } from "@/components/back-row";
 import { ShareGlyph } from "@/components/control-glyphs";
@@ -55,7 +55,7 @@ import { InlineNote } from "@/components/inline-note";
  *
  * Reached from four doors, each drawn only for a member who holds
  * `members:invite` (the permission every invite route checks; by default the
- * President's alone): the More hub's Admin row, the Directory's floating +,
+ * President's alone): the You tab's Admin row, the Directory's floating +,
  * the tab bar's quick action, and Chat home's setup checklist line. `from`
  * says which one opened it, so the back capsule names where it goes.
  */
@@ -234,7 +234,7 @@ function InviteBody({ focused }: { focused: boolean }) {
 export function backTargetFor(from: string | undefined): BackTarget {
   if (from === "directory") return BACK_TO_DIRECTORY;
   if (from === "chat") return BACK_TO_CHAT;
-  return BACK_TO_MORE;
+  return BACK_TO_YOU;
 }
 
 function createStyles(tokens: SignetTokens) {

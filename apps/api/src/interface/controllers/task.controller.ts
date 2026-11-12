@@ -4,6 +4,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  InternalServerErrorException,
   Param,
   Patch,
   Post,
@@ -43,7 +44,12 @@ import {
   UpdateTaskSubtaskDto,
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
+  RequestTaskPhotoUploadUrlDto,
+  TaskPhotoUploadUrlResponseDto,
+  TaskPhotoUrlQueryDto,
+  TaskPhotoUrlResponseDto,
 } from '../dtos/task.dto';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Tasks')
@@ -90,6 +96,11 @@ export class TaskController {
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
   ) {
+    return this.readableTask(chapterId, userId, id);
+  }
+
+  /** The task, for its assignee or a `tasks:manage` holder; 403 otherwise. */
+  private async readableTask(chapterId: string, userId: string, id: string) {
     const task = await this.taskService.findById(id, chapterId);
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -100,6 +111,49 @@ export class TaskController {
       throw new ForbiddenException('Access denied to this task');
     }
     return task;
+  }
+
+  @Post('photo-upload-url')
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary:
+      'Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)',
+    description:
+      'PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.',
+  })
+  @ApiCreatedResponse({ type: TaskPhotoUploadUrlResponseDto })
+  async requestPhotoUploadUrl(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestTaskPhotoUploadUrlDto,
+  ): Promise<TaskPhotoUploadUrlResponseDto> {
+    const ticket = await this.taskService.requestPhotoUploadUrl({
+      chapterId,
+      filename: dto.filename,
+      contentType: dto.content_type,
+      sizeBytes: dto.size_bytes,
+    });
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return { upload_url: ticket.signedUrl, storage_path: ticket.storagePath };
+  }
+
+  @Get(':id/photo-url')
+  @ApiOperation({
+    summary:
+      "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+  })
+  @ApiOkResponse({ type: TaskPhotoUrlResponseDto })
+  async getPhotoUrl(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Query() query: TaskPhotoUrlQueryDto,
+  ): Promise<TaskPhotoUrlResponseDto> {
+    const task = await this.readableTask(chapterId, userId, id);
+    return this.taskService.getPhotoDownloadUrl(task, chapterId, query.photo);
   }
 
   @Post()
@@ -118,6 +172,8 @@ export class TaskController {
       has_due_time: !!result.due_at,
       has_subtasks: (body?.subtasks?.length ?? 0) > 0,
       has_point_reward: (result.point_reward ?? 0) > 0,
+      has_reference_photo: !!result.reference_photo_path,
+      photo_required: result.photo_required === true,
       posted_to_chat: result.card_posted === true,
     }),
   )
@@ -136,6 +192,8 @@ export class TaskController {
       due_at: dto.due_at ?? null,
       subtasks: dto.subtasks,
       point_reward: dto.point_reward ?? null,
+      reference_photo_path: dto.reference_photo_path,
+      photo_required: dto.photo_required,
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
     });
@@ -164,6 +222,7 @@ export class TaskController {
     'task-status-changed',
     ({ body }: FeatureEventInput<UpdateTaskStatusDto>) => ({
       status: body.status,
+      has_proof_photo: !!body.proof_photo_path,
     }),
   )
   async updateStatus(
@@ -183,6 +242,7 @@ export class TaskController {
       userId,
       isAdmin,
       dto.status,
+      dto.proof_photo_path,
     );
   }
 

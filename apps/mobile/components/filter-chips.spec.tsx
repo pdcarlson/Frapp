@@ -20,6 +20,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+import { SearchGlyph } from "@/components/control-glyphs";
 import { FilterChips, SearchField } from "./filter-chips";
 
 /**
@@ -319,5 +320,42 @@ describe("SearchField", () => {
     expect(flatten(field.props.style).fontSize).toBe(
       signetDarkTokens.typography.role.body.size,
     );
+  });
+
+  it("leads with the search lens when asked, and keeps it off the field's hit area", () => {
+    const tree = render(
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search members"
+        accessibilityLabel="Search members"
+        searchGlyph
+      />,
+    );
+    const glyph = tree.root.findByType(SearchGlyph);
+    expect(glyph).toBeTruthy();
+    const holder = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.pointerEvents === "none" &&
+        node.findAllByType(SearchGlyph).length > 0,
+    );
+    expect(holder).toBeTruthy();
+    const field = tree.root.find(
+      (node) => (node.type as unknown) === "TextInput",
+    );
+    expect(field.props.placeholder).toBe("Search members");
+  });
+
+  it("draws no lens by default", () => {
+    const tree = render(
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search"
+        accessibilityLabel="Search"
+      />,
+    );
+    expect(tree.root.findAllByType(SearchGlyph)).toHaveLength(0);
   });
 });

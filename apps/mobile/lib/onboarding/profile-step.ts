@@ -32,7 +32,7 @@ export function needsName(displayName: string | null | undefined): boolean {
 /**
  * Whether s03 offers the beat. `false` until the profile has loaded: a slow
  * read never holds a member on the welcome screen, it only skips the beat
- * (Profile in More still has both).
+ * (the You tab still has both).
  */
 export function shouldOfferProfileStep(
   profile: { displayName: string | null; photoUrl: string | null } | null,

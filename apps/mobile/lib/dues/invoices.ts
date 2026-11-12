@@ -220,7 +220,7 @@ export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
  * the member tapped Pay.
  *
  * Exported rather than inlined because two surfaces need the same rule — the
- * Dues card and the More hub's trailing chip — and two copies of a tie-break
+ * Dues card and the You tab's trailing chip — and two copies of a tie-break
  * rule are two chips naming different invoices the moment it changes.
  */
 export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {

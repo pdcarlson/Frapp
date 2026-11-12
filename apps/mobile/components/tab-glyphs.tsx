@@ -7,8 +7,9 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Tab bar glyphs, and the stroke recipe the chat card eyebrows still use.
  *
- * The four tabs draw the shared nav set in `@repo/theme/nav-glyphs` through
- * `components/nav-glyph.tsx`: a silhouette at 20% of the glyph's hue (30% when
+ * Three of the four tabs draw the shared nav set in `@repo/theme/nav-glyphs` through
+ * `components/nav-glyph.tsx` (the fourth, You, is the member's own avatar,
+ * `components/you-tab-avatar.tsx`): a silhouette at 20% of the glyph's hue (30% when
  * focused) under a full-strength outline, per
  * `spec/ui/design-system/iconography.md` §1. The web sidebar draws the same
  * set, so a tab and its web row share one silhouette. It replaced the
@@ -134,19 +135,19 @@ export function ChatGlyph(props: TabGlyphProps) {
   return <TabGlyph name="chat" {...props} />;
 }
 
-/** Events: the calendar with day dots. */
+/** Activity: the nav set's tray, the old More row's and web's Activity glyph. */
+export function ActivityTabGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="activity" {...props} />;
+}
+
+/** Calendar (the `events` route): the calendar with day dots. */
 export function EventsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="events" {...props} />;
 }
 
-/** Tasks: the seal with a check. */
+/** Tasks: the seal with a check. Off the tab bar since #4610; chat's task card and Up next still draw it. */
 export function TasksGlyph(props: TabGlyphProps) {
   return <TabGlyph name="tasks" {...props} />;
-}
-
-/** More: a 2x2 grid of squares, not an ellipsis. */
-export function MoreGlyph(props: TabGlyphProps) {
-  return <TabGlyph name="more" {...props} />;
 }
 
 /**

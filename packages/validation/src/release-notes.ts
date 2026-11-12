@@ -19,6 +19,15 @@
  * README owns how the lines get here), so parallel PRs never conflict on this
  * file. Rewording or removing a line already here is a direct edit, as before.
  *
+ * Where a line goes: `changes` holds what reads the same on the web and on
+ * the phone, `web` what is only on the web dashboard, and `phone` what is only
+ * in the phone app (iPhone and Android alike; say "On Android" inside the line
+ * when it is one of them). Every surface lists `changes` first, then a Web
+ * and a Mobile subheading over the other two ({@link releaseNoteGroups}), so
+ * a line under `web` or `phone` doesn't say "on the web" or "on your phone".
+ * Entries before 2026-11-12 keep everything in `changes`, with the place
+ * written into the line, and show no subheadings.
+ *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
  * screen ids, emojis, or em dashes ({@link releaseNoteLineProblem} checks
@@ -37,92 +46,168 @@
  * news, so it shows nothing. Deploy production warns when a release ships with
  * neither a new entry nor new lines, or when the day's entry got shorter
  * (`scripts/ci/release-notes-freshness.mjs`, which reads this file as text at
- * the deployed commit, so keep `date:` and `changes: [...]` literal, one
- * string per line).
+ * the deployed commit, so keep `date:`, `changes: [...]`, `web: [...]` and
+ * `phone: [...]` literal, one string per line). A line's count is across all
+ * three lists ({@link releaseNoteLineCount}), so moving a line between them
+ * is a reword, not news.
  */
 export type ReleaseNote = {
   /** The day its lines joined this list, as `YYYY-MM-DD`. */
   readonly date: string;
   /** One short line that names the batch. */
   readonly title: string;
+  /** Lines true on the web and on the phone alike. */
   readonly changes: readonly string[];
+  /** Lines only on the web dashboard. */
+  readonly web?: readonly string[];
+  /** Lines only in the phone app. */
+  readonly phone?: readonly string[];
 };
+
+/** Where a line applies: both surfaces, or only one. */
+export type ReleaseNotePlace = "everywhere" | "web" | "phone";
+
+/**
+ * Where each place's lines live in an entry (`key`) and the subheading they
+ * show under (`label`), in the order every surface lists them. Lines true on
+ * both come first with no subheading; Web and Mobile follow (Paul,
+ * 2026-11-12: "just 2 subheadings"). The fold script and the deploy check
+ * read the keys from here.
+ */
+export const RELEASE_NOTE_PLACES: readonly {
+  readonly place: ReleaseNotePlace;
+  readonly key: "changes" | "web" | "phone";
+  readonly label: string | null;
+}[] = Object.freeze([
+  { place: "everywhere", key: "changes", label: null },
+  { place: "web", key: "web", label: "Web" },
+  { place: "phone", key: "phone", label: "Mobile" },
+]);
+
+export interface ReleaseNoteGroup {
+  readonly place: ReleaseNotePlace;
+  /** The subheading, or `null` for the lines true on both. */
+  readonly label: string | null;
+  readonly lines: readonly string[];
+}
+
+/**
+ * An entry's lines by place, in {@link RELEASE_NOTE_PLACES} order, leaving
+ * out empty places: the one grouping behind the web dialog and page, the
+ * phone's sheet and screen, the public changelog, the dev log post and the
+ * pasted text. The lines true on both have no subheading; Web and Mobile
+ * do. An entry from before the split is one group with no subheading.
+ * `only` keeps just those places (the store text skips web-only lines).
+ */
+export function releaseNoteGroups(
+  note: ReleaseNote,
+  only?: readonly ReleaseNotePlace[],
+): ReleaseNoteGroup[] {
+  return RELEASE_NOTE_PLACES.filter(
+    ({ place }) => !only || only.includes(place),
+  )
+    .map(({ place, key, label }) => ({ place, label, lines: note[key] ?? [] }))
+    .filter((group) => group.lines.length > 0);
+}
+
+/** Every line of an entry, whatever its place. */
+export function releaseNoteLineCount(note: ReleaseNote): number {
+  return RELEASE_NOTE_PLACES.reduce(
+    (sum, { key }) => sum + (note[key]?.length ?? 0),
+    0,
+  );
+}
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-12",
     title: "New in this update",
     changes: [
-      "In Documents, a starred or pinned file or folder now shows a filled-in star or pin, on the web and on your phone.",
+      "In Documents, a starred or pinned file or folder now shows a filled-in star or pin.",
       "A sticker or picture your keyboard couldn't add no longer leaves a broken box in your messages and notifications.",
       "Notifications now show who each one is from, with their picture and their name in colour, mark a mention of you with a gold @, and group by Today and Earlier on the web.",
-      "Activity now has a Needs you filter, and remembers the filter you last picked, on the web and on your phone.",
-      "On the web, officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
-      "Activity now marks what's new to you with a dot until you open it, on the web and on your phone.",
-      "On your phone, officers who manage roles can now set a member's pledge class and number from their profile.",
-      "On Android, opening the app no longer clears your unread notifications from your phone's notification shade, and on both phones a notification you've read in the app now leaves the shade.",
-      "Closing the slash command list with Escape no longer leaves a stray slash behind that posts as a message on the web.",
-      "A task, service hours or points you add from chat on the web now show up right away on the Tasks, Service and Points pages.",
-      "Direct messages on the web now list your newest conversation first with its last line, and a New message button starts one from the Directory.",
-      "Direct messages have their own place on the web: open them from the new row under Chat, with a count of unread conversations, and the Channels list keeps just the chapter's channels.",
-      "On your phone, swipe left on Chat to open your messages, or keep using the button at the top right.",
+      "Activity now has a Needs you filter, and remembers the filter you last picked.",
+      "Activity now marks what's new to you with a dot until you open it.",
       "Officers who manage channels can now close any poll, and you can still close a poll you started after your role changes.",
       "Panels, cards and menus now stand apart from each other, so screens are easier to read at a glance.",
-      "On your phone, a message with a thread now shows a card with who replied, how many replies are new to you, and the latest reply.",
-      "On the web, a thread's card now shows the latest reply, with who sent it.",
-      "On the web, a thread opens beside the chat on a wide screen, so you can keep reading and writing in the channel while you reply.",
-      "On the web, a Backwork download now saves the file under its own name, and a Documents or Backwork file with brackets or an ampersand in its name keeps that name when saved.",
-      "In Documents on the web, an older photo saved without its file type now opens in the viewer, the way the File type filter already sorts it.",
       "When someone sends several messages in a row and mentions you after you've been told about the first few, you now get a notification for that mention instead of missing it.",
-      "On your phone, you can now confirm a finished task or approve service hours straight from its Activity row, without opening it first.",
-      "On your phone, messages inside a thread now show their reactions, polls and other cards, and a long-press lets you react, edit or delete there.",
       "Officers can now set a photo as the chapter's chat background even when the chapter has no #general channel.",
-      "Officers can start a new channel from the + beside a category in the chat list on the web, and deleting a channel now asks you to type its name first.",
-      "On your phone, channels with new messages usually open with their messages already there, and swiping back no longer shows a pale strip at the edge of the screen.",
-      "On your phone, a sign-in that doesn't work now says why in plain words, and an email you never confirmed gets a button to send the confirmation again.",
-      "On the web, officers now set permissions by tier in Chapter settings, flipping switches grouped by feature instead of working through one big grid.",
-      "On your phone, an open thread's header now shows the message it started from and who wrote it, instead of just \"Thread\".",
-      "Activity rows now show the face of who sent them, and anything closing within a day says how long is left, like \"closes in 2 hours\", on the web and on your phone.",
-      "On your phone, officers can now start a new channel from the + beside a heading in Chat, edit a channel from its long-press menu, and drag channels into order on the new Arrange channels screen.",
-      "Date fields on the web no longer ask for the year: type a day like Friday or November 14, or click to pick one from a calendar.",
+      "Activity rows now show the face of who sent them, and anything closing within a day says how long is left, like \"closes in 2 hours\".",
       "Deleting a chat message now also removes it from everyone's notifications, and editing one updates the text there.",
       "Officers can fix a member's name or graduation year from the menu on their profile.",
       "Profiles read like a contact card now: add your phone number and members can call or text you from your profile, and a chapter's extra fields sit under More details.",
-      "On the web, a role inside a tier can now follow its tier or be switched on or off on its own, and officers can view Frapp as any role before handing it out.",
-      "On your phone, tap any line of your profile to change it.",
-      "On the web, a Backwork department code typed in any case, like math for MATH, now files the upload under the department you already have.",
       "When you make an event, Who's coming now lists every role with Required, Optional or Not invited beside it and says the whole plan in one line, and on your phone it closes with Done back to your event.",
-      "On the web, Settings now lets you set chat to Mentions and DMs only for the whole chapter, and a channel's notification menu shows which level is your default.",
-      "On your phone, officers can now change what each tier and role can do from More, Chapter settings, which also holds the chapter accent and chat background.",
-      "Text boxes, dropdowns, switches and outlined buttons now have a clearer edge, so they are easier to spot, on the web and on your phone.",
+      "Text boxes, dropdowns, switches and outlined buttons now have a clearer edge, so they are easier to spot.",
       "Every member can now add events to the chapter calendar and upload backwork, while making an event required or worth points stays with the officers who manage events.",
       "Chat names someone who just joined as soon as they start typing or posting, instead of \"Member\" and a code, and the typing line never says \"Someone\".",
       "Event and task cards in chat now say when the same way on the web and your phone, and a task in progress or done shows its own colour instead of your chapter's.",
       "Approved service hours now show how many points they earned, like 3 points, instead of only saying points were awarded.",
-      "You can now post a sign-up sheet in chat from the + menu, with named slots and a limit on each, and everyone sees who signed up for what, on the web and on your phone.",
+      "You can now post a sign-up sheet in chat from the + menu, with named slots and a limit on each, and everyone sees who signed up for what.",
       "The Directory can now show members as a grid of faces as well as a list, and it remembers which one you picked.",
       "The Member role is now Everyone, which nobody has to assign, and officers can ping the whole chapter with @everyone.",
       "Repeating events can now meet on more than one day a week, every few weeks, or on a set weekday of the month, and end on a date or after a number of meetings.",
       "Documents can now show your files as a grid of tiles as well as a list, and it remembers which one you picked.",
       "Officers can now write up meeting minutes from an event, and members are told when they're posted.",
-      "Officers can now choose who can see and post in a channel, and move whole categories, from your phone.",
-      "On the web, an Add a time button under a task's due date now sets the time it's due, and an × takes it off.",
-      "On the web, officers now draw study zones on a map, as a circle around a building or a traced outline, right inside Chapter settings.",
       "Your points total and the leaderboard now update right after you check in, have service hours approved, or finish a study session, and on your phone the chat event card shows when you are already checked in.",
-      "Officers can now edit a task from its card in chat and in Activity, not only from the Tasks page, on the web and on your phone.",
-      "On the web, Chat admin, Discord import and Reports now open right inside Chapter settings, so you never lose your place.",
-      "On the web, a message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
+      "Officers can now edit a task from its card in chat and in Activity, not only from the Tasks page.",
       "Taking back a reaction now sticks, so it no longer comes back after you reload.",
-      "Tasks can now show as a list or as a grid of cards, on the web and on your phone, and it remembers which one you picked.",
+      "Tasks can now show as a list or as a grid of cards, and it remembers which one you picked.",
       "You can now put your chapter's events and your tasks on Apple Calendar, Google Calendar or Outlook from the Events page, and they stay up to date.",
-      "On the web, a member's profile and Invite members now open right inside the Directory instead of sliding over the whole screen.",
-      "On the web, when you start minutes for a meeting that isn't on the calendar, you can type the day it met in words, like yesterday or Nov 4.",
       "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
-      "On the web, study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
-      "On the web, changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
       "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
       "Officers can now type @here in chat to notify only the people in a channel who are online right now.",
-      "On your phone, swiping to Messages from Chat no longer also opens the channel your finger started on.",
+      "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
+      "Officers can set goals for points, service hours and study hours in Chapter settings, for everyone or per role, and each member sees a bar toward theirs on Activity and Study hours.",
+      "What's new now lists what changed on the web and on your phone under their own Web and Mobile headings.",
+    ],
+    web: [
+      "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
+      "Closing the slash command list with Escape no longer leaves a stray slash behind that posts as a message.",
+      "A task, service hours or points you add from chat now show up right away on the Tasks, Service and Points pages.",
+      "Direct messages now list your newest conversation first with its last line, and a New message button starts one from the Directory.",
+      "Direct messages have their own place: open them from the new row under Chat, with a count of unread conversations, and the Channels list keeps just the chapter's channels.",
+      "A thread's card now shows the latest reply, with who sent it.",
+      "A thread opens beside the chat on a wide screen, so you can keep reading and writing in the channel while you reply.",
+      "A Backwork download now saves the file under its own name, and a Documents or Backwork file with brackets or an ampersand in its name keeps that name when saved.",
+      "In Documents, an older photo saved without its file type now opens in the viewer, the way the File type filter already sorts it.",
+      "Officers can start a new channel from the + beside a category in the chat list, and deleting a channel now asks you to type its name first.",
+      "Officers now set permissions by tier in Chapter settings, flipping switches grouped by feature instead of working through one big grid.",
+      "Date fields no longer ask for the year: type a day like Friday or November 14, or click to pick one from a calendar.",
+      "A role inside a tier can now follow its tier or be switched on or off on its own, and officers can view Frapp as any role before handing it out.",
+      "A Backwork department code typed in any case, like math for MATH, now files the upload under the department you already have.",
+      "Settings now lets you set chat to Mentions and DMs only for the whole chapter, and a channel's notification menu shows which level is your default.",
+      "An Add a time button under a task's due date now sets the time it's due, and an × takes it off.",
+      "Officers now draw study zones on a map, as a circle around a building or a traced outline, right inside Chapter settings.",
+      "Chat admin, Discord import and Reports now open right inside Chapter settings, so you never lose your place.",
+      "A message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
+      "A member's profile and Invite members now open right inside the Directory instead of sliding over the whole screen.",
+      "When you start minutes for a meeting that isn't on the calendar, you can type the day it met in words, like yesterday or Nov 4.",
+      "Study zones list as one plain line each, saying what a session there earns, with Turn off and Delete in a menu.",
+      "Changing or deleting a repeating event now asks whether you mean just that one or every upcoming one, as it already does on your phone.",
+      "Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
+      "An Activity item, a pledge class's member list and Create a channel in Chat admin now open right inside their page instead of sliding over the whole screen.",
+      "Your profile now shows your points, service hours, pledge class and number, as it does on your phone.",
+      "Upload and Clean up professors and departments in Backwork now open right inside the page instead of sliding over the whole screen.",
+      "The study zone map now shows buildings, streets and building names clearly, so you can find the right building without squinting.",
+    ],
+    phone: [
+      "Officers who manage roles can now set a member's pledge class and number from their profile.",
+      "On Android, opening the app no longer clears your unread notifications from your phone's notification shade, and on both phones a notification you've read in the app now leaves the shade.",
+      "Swipe left on Chat to open your messages, or keep using the button at the top right.",
+      "A message with a thread now shows a card with who replied, how many replies are new to you, and the latest reply.",
+      "You can now confirm a finished task or approve service hours straight from its Activity row, without opening it first.",
+      "Messages inside a thread now show their reactions, polls and other cards, and a long-press lets you react, edit or delete there.",
+      "Channels with new messages usually open with their messages already there, and swiping back no longer shows a pale strip at the edge of the screen.",
+      "A sign-in that doesn't work now says why in plain words, and an email you never confirmed gets a button to send the confirmation again.",
+      "An open thread's header now shows the message it started from and who wrote it, instead of just \"Thread\".",
+      "Officers can now start a new channel from the + beside a heading in Chat, edit a channel from its long-press menu, and drag channels into order on the new Arrange channels screen.",
+      "Tap any line of your profile to change it.",
+      "Officers can now change what each tier and role can do from More, Chapter settings, which also holds the chapter accent and chat background.",
+      "Officers can now choose who can see and post in a channel, and move whole categories.",
+      "Swiping to Messages from Chat no longer also opens the channel your finger started on.",
+      "Activity is now its own tab, Events is now called Calendar, and your task board opens from Activity.",
+      "A message you send no longer sometimes stays in the box afterward, ready to be sent twice.",
+      "The Directory now shows each member's status and custom status line, and its search has a search icon.",
     ],
   },
   {
@@ -262,7 +347,7 @@ export function releaseNoteLineProblem(line: string): string | null {
 }
 
 export function releaseNoteVersion(note: ReleaseNote): string {
-  return `${note.date}#${note.changes.length}`;
+  return `${note.date}#${releaseNoteLineCount(note)}`;
 }
 
 export interface ReleaseNoteVersion {
@@ -377,7 +462,7 @@ export function decideWhatsNew(input: {
   const marker = seen === null ? null : parseReleaseNoteVersion(seen);
   const versionOf = (note: ReleaseNote) => ({
     date: note.date,
-    lines: note.changes.length,
+    lines: releaseNoteLineCount(note),
   });
   if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
     return { show: [], record: null };
@@ -420,15 +505,50 @@ export function formatReleaseNoteDate(date: string): string {
 }
 
 /**
- * A plain-text block for a text message, group chat, TestFlight's "What to
- * Test", or Play's release notes: the title, then one dash line per change.
+ * A plain-text block for a text message or group chat: the title, then one
+ * dash line per change, the Web and Mobile ones under their subheadings
+ * ({@link releaseNoteGroups}; `only` keeps just those places, as
+ * {@link releaseNoteStoreText} keeps the phone's).
  */
-export function releaseNoteText(note: ReleaseNote): string {
+export function releaseNoteText(
+  note: ReleaseNote,
+  only?: readonly ReleaseNotePlace[],
+): string {
+  const groups = releaseNoteGroups(note, only).flatMap((group) => [
+    "",
+    ...(group.label ? [group.label] : []),
+    ...group.lines.map((change) => `- ${change}`),
+  ]);
   return [
     `What's new in Frapp (${formatReleaseNoteDate(note.date)})`,
     "",
     note.title,
-    "",
-    ...note.changes.map((change) => `- ${change}`),
+    ...groups,
   ].join("\n");
+}
+
+/** The places a phone tester can see: the lines for both and the Mobile ones. */
+const PHONE_PLACES: readonly ReleaseNotePlace[] = ["everywhere", "phone"];
+
+/**
+ * The block for TestFlight's "What to Test" and Play's release notes, which
+ * only phone testers read: {@link releaseNoteText} without the web-only
+ * lines. With `limit` (Play takes 500 characters), as many whole lines as
+ * fit, in the order the block lists them.
+ */
+export function releaseNoteStoreText(note: ReleaseNote, limit?: number): string {
+  const full = releaseNoteText(note, PHONE_PLACES);
+  if (limit === undefined || full.length <= limit) return full;
+  let short: ReleaseNote = { ...note, changes: [], web: [], phone: [] };
+  for (const group of releaseNoteGroups(note, PHONE_PLACES)) {
+    const key = group.place === "phone" ? "phone" : "changes";
+    for (const line of group.lines) {
+      const next = { ...short, [key]: [...(short[key] ?? []), line] };
+      if (releaseNoteText(next, PHONE_PLACES).length > limit) {
+        return releaseNoteText(short, PHONE_PLACES);
+      }
+      short = next;
+    }
+  }
+  return releaseNoteText(short, PHONE_PLACES);
 }

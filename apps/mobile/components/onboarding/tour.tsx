@@ -47,7 +47,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The first-run tour's host and its anchors (`lib/onboarding/tour.ts` has the
  * stops and the rules). The host wraps the tab navigator, so its dimmed layer
  * sits over the screens and the glass tab bar alike, and every stop points at
- * the real control: Chat home's channels, the +, and the More tab.
+ * the real control: Chat home's channels, the +, and the You tab.
  */
 
 interface TourContextValue {

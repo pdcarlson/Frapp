@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useCurrentChapter: () => mocks.currentChapter(),
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),

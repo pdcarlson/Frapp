@@ -222,8 +222,8 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
 /** #1208's floor: no row hover in the shell sits under this against its container. */
 const ROW_HOVER_FLOOR = 1.03;
 
-describe("the notification drawer's rows hover off the sheet (#1208)", () => {
-  // The drawer is a `SheetContent`, so every row's container is `--popover`.
+describe("the notification list's rows hover off the popover (#1208)", () => {
+  // The list is a `PopoverContent`, so every row's container is `--popover`.
   // Rows are flat and transparent there (components.md § Chrome weight).
 
   it("lifts a row off the sheet with --card-hover", () => {

@@ -18,6 +18,12 @@ import { useRouter } from "expo-router";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
+import { StatusDot } from "@/components/account/status-dot";
+import {
+  presenceLabel,
+  type PresenceStatus,
+} from "@repo/hooks/presence-status";
+import { useChapterPresence } from "@/lib/presence/presence-store";
 import {
   ErrorState,
   NoChapterState,
@@ -26,7 +32,7 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import {
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   PinnedBackRow,
   pinnedBackClearance,
 } from "@/components/back-row";
@@ -134,7 +140,7 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  * (`lib/directory/actives-filter.ts`). The Alumni tab keeps its own Filters
  * chip and fields, since `GET /v1/alumni` filters server-side by different
  * fields. Like the alumni filters, these stay set across a tab switch and
- * are left alone by a search, which looks across both lists by name.
+ * are left alone by a search, which looks across both lists.
  */
 type Tab = "actives" | "alumni";
 
@@ -147,6 +153,14 @@ export default function DirectoryScreen() {
   // The roster's role-color resolution, so a row's initials match the color
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
+  // Each member's dot and custom status line (#4137), as web's Directory and
+  // the phone's member sheet draw them, off chapter presence: until it has
+  // synced there is neither, never a stand-in Offline.
+  const presence = useChapterPresence();
+  const presenceFor = (userId: string): MemberPresence =>
+    presence.isReady
+      ? { status: presence.statusOf(userId), line: presence.lineOf(userId) }
+      : NO_PRESENCE;
   const canInvite = can("members:invite", usePermissionList());
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
@@ -261,7 +275,7 @@ export default function DirectoryScreen() {
   const orderOffered =
     pledgeClasses !== null && usesFraternalOrder(pledgeClasses, actives);
 
-  // The Actives list alone: search looks across both lists by name, and the
+  // The Actives list alone: search looks across both lists, and the
   // Alumni tab has no sort (see the header).
   const inFraternalOrder =
     sortByOrder && orderOffered && !isSearching && tab === "actives";
@@ -313,8 +327,11 @@ export default function DirectoryScreen() {
       <SearchField
         value={query}
         onChangeText={setQuery}
-        placeholder="Search by name"
+        // "Search members", web's word: `GET /v1/members/search` matches
+        // more than the name, so "by name" undersold it (#4137).
+        placeholder="Search members"
         accessibilityLabel="Search the directory"
+        searchGlyph
       />
 
       {isSearching ? null : (
@@ -500,7 +517,7 @@ export default function DirectoryScreen() {
         {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
           unpadded View so it sits where the content starts. */}
         <View style={styles.listFrame}>
-          <PinnedBackRow back={BACK_TO_MORE} />
+          <PinnedBackRow back={BACK_TO_YOU} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
           <FlatList<DirectoryRow | GridLine>
             // Grid hands the list lines of tiles rather than setting
@@ -541,6 +558,7 @@ export default function DirectoryScreen() {
                   <GridLineView
                     line={item}
                     avatarTintFor={avatarTintFor}
+                    presenceFor={presenceFor}
                     onOpen={open}
                   />
                 );
@@ -549,6 +567,7 @@ export default function DirectoryScreen() {
                 <MemberRow
                   row={item}
                   avatarTint={avatarTintFor(item.userId)}
+                  presence={presenceFor(item.userId)}
                   onPress={() => open(item)}
                 />
               );
@@ -596,9 +615,56 @@ export default function DirectoryScreen() {
   );
 }
 
-/** A row's and a tile's accessible name, one wording for both layouts. */
-export function memberPressLabel(row: DirectoryRow): string {
-  return `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`;
+/** A member's presence as a row draws it: `null` status draws no dot. */
+export interface MemberPresence {
+  status: PresenceStatus | null;
+  line: string | null;
+}
+
+const NO_PRESENCE: MemberPresence = { status: null, line: null };
+
+/**
+ * A row's and a tile's accessible name, one wording for both layouts: who,
+ * their presence and custom status when known, then the meta line.
+ */
+export function memberPressLabel(
+  row: DirectoryRow,
+  presence: MemberPresence = NO_PRESENCE,
+): string {
+  return [
+    `View ${row.displayName}'s profile`,
+    presence.status ? presenceLabel(presence.status) : null,
+    presence.line,
+    row.meta,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+// On the avatar's bottom-right corner, as web pins it and the member sheet
+// draws it. No token in it, so it is built once rather than with every row's
+// stylesheet.
+const presenceDotStyles = StyleSheet.create({
+  dot: {
+    position: "absolute",
+    bottom: -3,
+    right: -3,
+  },
+});
+
+/** The presence dot on an avatar's bottom-right corner, as web pins it. */
+function AvatarPresence({ status }: { status: PresenceStatus | null }) {
+  const { tokens } = useFrappTheme();
+  if (!status) return null;
+  return (
+    <View pointerEvents="none" style={presenceDotStyles.dot}>
+      <StatusDot
+        testID={`member-presence-${status}`}
+        status={status}
+        ring={tokens.color.surface.background}
+      />
+    </View>
+  );
 }
 
 /** One line of the Grid layout (#4175): up to `GRID_COLUMNS` members. */
@@ -622,10 +688,12 @@ export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
 export function GridLineView({
   line,
   avatarTintFor,
+  presenceFor,
   onOpen,
 }: {
   line: GridLine;
   avatarTintFor: (userId: string) => MemberAvatarTint | null;
+  presenceFor?: (userId: string) => MemberPresence;
   onOpen: (row: DirectoryRow) => void;
 }) {
   return (
@@ -635,6 +703,7 @@ export function GridLineView({
           key={row.userId}
           row={row}
           avatarTint={avatarTintFor(row.userId)}
+          presence={presenceFor?.(row.userId)}
           onPress={() => onOpen(row)}
         />
       ))}
@@ -649,11 +718,14 @@ export function GridLineView({
 export function MemberRow({
   row,
   avatarTint,
+  presence = NO_PRESENCE,
   onPress,
 }: {
   row: DirectoryRow;
   /** The member's initials paint (#3860); omit for the neutral circle. */
   avatarTint?: MemberAvatarTint | null;
+  /** Their dot and custom status line (#4137); omit for neither. */
+  presence?: MemberPresence;
   onPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -668,7 +740,7 @@ export function MemberRow({
       // label has to carry it explicitly rather than relying on the nested
       // `Text` nodes.
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
+      accessibilityLabel={onPress ? memberPressLabel(row, presence) : undefined}
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -676,16 +748,26 @@ export function MemberRow({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <MemberAvatar
-        uri={row.avatarUrl}
-        initials={row.initials}
-        size={AVATAR_SIZE}
-        tint={avatarTint}
-        style={styles.avatar}
-        textStyle={styles.avatarText}
-      />
+      <View>
+        <MemberAvatar
+          uri={row.avatarUrl}
+          initials={row.initials}
+          size={AVATAR_SIZE}
+          tint={avatarTint}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
+        <AvatarPresence status={presence.status} />
+      </View>
       <View style={styles.rowText}>
         <Text style={styles.rowName}>{row.displayName}</Text>
+        {/* The custom status line under the name, one line, as web's
+            Directory row draws it (`components.md` § Chat member list). */}
+        {presence.line ? (
+          <Text numberOfLines={1} style={styles.rowStatusLine}>
+            {presence.line}
+          </Text>
+        ) : null}
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       </View>
     </Pressable>
@@ -701,10 +783,12 @@ export function MemberRow({
 export function MemberTile({
   row,
   avatarTint,
+  presence = NO_PRESENCE,
   onPress,
 }: {
   row: DirectoryRow;
   avatarTint?: MemberAvatarTint | null;
+  presence?: MemberPresence;
   onPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -714,7 +798,7 @@ export function MemberTile({
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? memberPressLabel(row) : undefined}
+      accessibilityLabel={onPress ? memberPressLabel(row, presence) : undefined}
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -722,17 +806,25 @@ export function MemberTile({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <MemberAvatar
-        uri={row.avatarUrl}
-        initials={row.initials}
-        size={TILE_AVATAR_SIZE}
-        tint={avatarTint}
-        style={styles.tileAvatar}
-        textStyle={styles.tileAvatarText}
-      />
+      <View style={styles.tileAvatarWrap}>
+        <MemberAvatar
+          uri={row.avatarUrl}
+          initials={row.initials}
+          size={TILE_AVATAR_SIZE}
+          tint={avatarTint}
+          style={styles.tileAvatar}
+          textStyle={styles.tileAvatarText}
+        />
+        <AvatarPresence status={presence.status} />
+      </View>
       <Text style={styles.tileName} numberOfLines={1}>
         {row.displayName}
       </Text>
+      {presence.line ? (
+        <Text style={styles.tileStatusLine} numberOfLines={1}>
+          {presence.line}
+        </Text>
+      ) : null}
       {row.meta ? (
         <Text style={styles.tileMeta} numberOfLines={2}>
           {row.meta}
@@ -870,6 +962,17 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
+    // The status line reads before the meta line: mutedForeground, one
+    // step up the ladder, as the member sheet and web draw it.
+    rowStatusLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    tileStatusLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      textAlign: "center",
+    },
     titleRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -897,6 +1000,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // The space under the face sits on the wrapper, not the avatar, so the
+    // wrapper is the face's size and the dot pins to the face's corner.
+    tileAvatarWrap: {
       marginBottom: tokens.spacing.xs,
     },
     tileAvatarText: {

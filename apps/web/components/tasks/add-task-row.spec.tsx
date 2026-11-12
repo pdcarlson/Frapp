@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { AddTaskRow } from "./add-task-row";
 
+const photo = vi.hoisted(() => ({
+  requestUrl: vi.fn(),
+  put: vi.fn(),
+}));
+
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: photo.requestUrl }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
+  putSignedUpload: photo.put,
+}));
+
 /** An open gate: the row's controls are live. */
 const gate = { controlProps: () => ({}) } as unknown as SubscriptionGate;
 
@@ -44,5 +56,44 @@ describe("AddTaskRow's due time (#4512)", () => {
       await screen.findByText(/That time has already passed/),
     ).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("AddTaskRow's photo (#4565)", () => {
+  it("uploads nothing while the task still lacks an assignee and a due date", async () => {
+    photo.requestUrl.mockResolvedValue({
+      upload_url: "https://upload",
+      storage_path: "chapters/c/tasks/p/mess.jpg",
+    });
+    photo.put.mockResolvedValue(undefined);
+    const onCreate = open();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Clean the kitchen" },
+    });
+    fireEvent.change(screen.getByTestId("task-photo-input"), {
+      target: {
+        files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Photo required" }));
+    // Assignee and due date are required; without them nothing is created,
+    // and nothing is uploaded.
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    await Promise.resolve();
+    expect(photo.requestUrl).not.toHaveBeenCalled();
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a file that isn't a photo before any upload", () => {
+    open();
+    fireEvent.change(screen.getByTestId("task-photo-input"), {
+      target: {
+        files: [new File(["x"], "slip.pdf", { type: "application/pdf" })],
+      },
+    });
+    expect(
+      screen.getByText("Use a JPEG, PNG, GIF or WebP photo."),
+    ).toBeInTheDocument();
+    expect(photo.requestUrl).not.toHaveBeenCalled();
   });
 });

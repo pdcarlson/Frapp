@@ -22,7 +22,7 @@ export const unstable_settings = {
  *
  * Join (s02) and first-run (s03) are *routed to* from `resolveAuthGate` once
  * `GET /v1/chapters` is in, not merely reachable. The chapter picker stays a
- * deliberate destination from More — it is exempt when the gate says `tabs` so
+ * deliberate destination from You — it is exempt when the gate says `tabs` so
  * a finished member can still switch chapters.
  *
  * `create-chapter` (#1102 / #1084) is the first-officer wizard. Listing it

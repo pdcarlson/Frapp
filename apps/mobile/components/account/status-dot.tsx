@@ -14,7 +14,7 @@ import { useFrappTheme } from "@/lib/theme";
  * - Invisible: a grey ring, which only the member themselves ever sees.
  * - Offline: a faint grey fill (web's `bg-muted-foreground/40`).
  *
- * Decorative: whatever renders it names the status (the ME button's value,
+ * Decorative: whatever renders it names the status (the You tab's label,
  * the sheet row's label). `ring` paints a border in the surface behind the
  * dot, for a dot sitting on an avatar's edge.
  */

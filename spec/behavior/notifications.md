@@ -430,6 +430,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Events        | Upcoming event reminder (30min before — see below)                 | NORMAL                      |
 | Events        | New event created                                                  | SILENT                      |
 | Events        | Event updated (time/location change)                               | NORMAL                      |
+| Events        | Excuse sent for an event (to its creator, or the `events:update` holders when it has none; never the sender), its decision (to the member), and one reminder when excuses are still pending as check-in closes (to the receivers). Category `events`; target `events` with `eventId` ([`events.md` § Excuses](events.md#excuses), #3735) | NORMAL |
 | Points        | Points awarded                                                     | NORMAL                      |
 | Points        | Points deducted (fine)                                             | NORMAL                      |
 | Points        | Leaderboard position change                                        | SILENT (weekly digest)      |

@@ -308,9 +308,10 @@ describe("codeWithoutComments", () => {
   });
 });
 
-describe("the notification drawer's row hover (#1208)", () => {
+describe("the notification list's row hover (#1208)", () => {
   /*
-   * The drawer is a `SheetContent`, so every row sits on `--popover`. Rows are
+   * The list is a `PopoverContent` (a `SheetContent` until 2026-11-12), so
+   * every row sits on `--popover`. Rows are
    * flat and transparent since 2026-11-05 (components.md § Chrome weight), and
    * unread is a dot, so read and unread share one hover: `--card-hover`,
    * measured in `elevation-contrast.spec.ts`. Pinned here because a hover
@@ -319,7 +320,7 @@ describe("the notification drawer's row hover (#1208)", () => {
    * replaced is exactly the decorative accent the audit took out.
    */
   const drawer = codeWithoutComments(
-    join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
+    join(WEB, "components", "layout", "notifications-popover.tsx"),
   );
 
   it("paints exactly one background hover, the neutral lift", () => {

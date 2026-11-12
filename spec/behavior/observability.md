@@ -584,13 +584,15 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `event-created` | An officer creates an event (a recurring series is one event). Read from the created row, with the server's defaults applied | `is_mandatory`, `is_recurring`, `has_check_in_zone`, `has_point_value`, `posted_to_chat` |
 | `attendance-checked-in` | A member checks in. `method` is `qr` (a scanned token), `manual_code` (a typed code), `plain` (neither, as from the chat event card), or `qr_or_manual_code` when a request carries both, since either one admits it. A second check-in is a 409 | `method`, `has_location` |
 | `attendance-marked` | An officer sets a member's attendance. `status` is the attendance enum; counts requests | `status`, `has_excuse` |
+| `event-excuse-sent` | A member sends an excuse for an event that requires them ([`events.md` § Excuses](events.md#excuses)) | none |
+| `event-excuse-decided` | The receiver approves or declines an excuse. `decision` is `APPROVED` or `DECLINED` | `decision` |
 
 **Tasks (`tasks`)**
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_subtasks`, `posted_to_chat` |
-| `task-status-changed` | The assignee or an officer moves a task to a new status | `status` |
+| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `photo_required`, `posted_to_chat` |
+| `task-status-changed` | The assignee or an officer moves a task to a new status. `has_proof_photo` is whether a proof photo came with it | `status`, `has_proof_photo` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back | — |
 
