@@ -233,6 +233,11 @@ describe("Signet colors match foundations.md", () => {
     const t = tokenTable("Borders & Hairlines");
     expectColor(color.border.hairline, pin(t, "--border", "Borders & Hairlines"), "--border");
     expectColor(color.border.input, pin(t, "--input", "Borders & Hairlines"), "--input");
+    expectColor(
+      color.border.control,
+      pin(t, "--control-edge", "Borders & Hairlines"),
+      "--control-edge",
+    );
 
     // The spec does not merely pin these two values, it bans the alternative:
     // "Borders MUST be low-opacity white. Fixed-hex border colors are banned."

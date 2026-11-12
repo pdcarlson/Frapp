@@ -6,7 +6,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 /**
  * Segmented control, `spec/ui/design-system/components.md` § Segmented
  * control: two or three answers side by side, the held one lit, so the current
- * answer never hides behind a menu. A 1px `border-input` track on `surface-1`,
+ * answer never hides behind a menu. A 1px `border-control-edge` track on `surface-1`,
  * padding 2, each segment 32px to a mouse and 44 on touch, the held one in the
  * accent's subtle tint with accent text, the rest muted. A radio group to
  * assistive tech.
@@ -58,7 +58,7 @@ export function SegmentedChoice<T extends string>({
       role="radiogroup"
       aria-label={label}
       className={cn(
-        "inline-flex rounded-md border border-input bg-surface-1 p-0.5",
+        "inline-flex rounded-md border border-control-edge bg-surface-1 p-0.5",
         fill ? "w-full" : "shrink-0",
         className,
       )}

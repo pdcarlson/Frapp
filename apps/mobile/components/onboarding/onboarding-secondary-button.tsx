@@ -7,7 +7,7 @@ import { OnboardingPressable } from "./onboarding-pressable";
 
 /**
  * The outlined button beside `OnboardingPrimaryButton`: components.md
- * § Buttons' Secondary, a card fill under the input border's 14% white, the
+ * § Buttons' Secondary, a card fill under the control edge (42% white, 3:1, #4389), the
  * way the board draws s01's "Continue with Apple". For the action next to the
  * one step forward, never a second gold one: s01's second provider and
  * "Continue with email", and setup's logo button.
@@ -84,7 +84,7 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.sm,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.card,
       // The Primary step (foundations.md §9): a full-width button that ends
       // a flow step, the same 48 as the sheet CTAs.

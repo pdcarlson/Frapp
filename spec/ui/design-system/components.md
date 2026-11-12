@@ -29,7 +29,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 - **Touch targets MUST be ≥ 44px** on touch surfaces. Compact 34px controls (§7) are web/pointer-only.
 - **No drop shadows.** Elevation is a lighter surface fill ([foundations.md](foundations.md)).
 - **No pill shapes** except the toggle track (§4) and the proportion meter (§12). The "Ask pill" is a rounded rectangle, not a capsule.
-- **Borders are neutral hairlines or tokens** — `rgba(255,255,255,.08)` structural, `rgba(255,255,255,.14)` on inputs, `accent-7` on accent-tinted chrome, low-opacity semantic on status surfaces (§10). Never a fixed grey hex.
+- **Borders are neutral hairlines or tokens** — `rgba(255,255,255,.08)` structural, `--control-edge` (`rgba(255,255,255,.42)`) on the edge that identifies a control (fields, selects, Secondary buttons, a switch's off track, segmented controls; 3:1, [foundations.md](foundations.md) §3, 2026-11-12), `--input` (`.14`) on quiet edges meant to recede, `accent-7` on accent-tinted chrome, low-opacity semantic on status surfaces (§10). Never a fixed grey hex.
 - **Focus (keyboard/input):** border swaps to `accent-11` plus a 3px ring of `accent-8` at ~25% opacity. Applies to every focusable control.
   - **The border swap is the half that carries it.** `accent-8` at 25% composites to 1.18–1.31:1 against the step it sits on — 0 of the 19 seeds × 4 steps clear the 3:1 non-text floor [README.md](README.md) §6 sets — so the ring is the halo and the solid border is the signal. A control that drops the border swap has no focus indicator, whatever the ring looks like.
     - **The border is `accent-11`, not `accent-9` (owner decision 2026-09-18, shipped 2026-09-30, [#2398](https://github.com/pdcarlson/Frapp/issues/2398)).** `accent-11` against the step behind it is 6.81:1 at the worst of the 19 seeds × 4 steps. `accent-9`, which the framework board draws ("gold border"), was the token until then. It failed 3:1 on 9 of 19 seeds over `--popover` until the engine began holding it to the floor ([accent-engine.md](accent-engine.md) §8, [#2541](https://github.com/pdcarlson/Frapp/issues/2541)), and even then it had no headroom (3.78:1 at the worst). It also drew nothing on a primary button: the fill is `accent-9`, so a border swapped to `accent-9` was the fill's own colour.
@@ -85,7 +85,7 @@ Owner rule, 2026-11-06 ("On every screen, I should be able to swipe to the left 
 | Variant | Fill | Border | Text | Weight |
 | ------- | ---- | ------ | ---- | ------ |
 | Primary | `accent-9` | none | `accent-contrast` | 700 |
-| Secondary | card `#211E1A` | 1px `rgba(255,255,255,.14)` | `#EDEAE3` | 600 |
+| Secondary | card `#211E1A` | 1px `--control-edge` (`rgba(255,255,255,.42)`; `.14` before 2026-11-12, #4389) | `#EDEAE3` | 600 |
 | Tinted | `accent-3` | 1px `accent-7` | `accent-11` | 700 |
 | Ghost | transparent | none | `--muted-foreground` | 600 |
 | Destructive | `--destructive-tint` (danger @ 13%) | none | `--destructive-text` | 700 |
@@ -153,7 +153,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | State | Fill | Border | Text |
 | ----- | ---- | ------ | ---- |
-| Rest | surface `#1A1A1A` | 1px `rgba(255,255,255,.14)` | value `#EDEAE3`, placeholder `#78716A` |
+| Rest | surface `#1A1A1A` | 1px `--control-edge` (`rgba(255,255,255,.42)`; `.14` before 2026-11-12, #4389) | value `#EDEAE3`, placeholder `#78716A` |
 | Focus | surface `#1A1A1A` | 1px `accent-11` + 3px ring `accent-8` @ ~25% (§2) | caret 2px `accent-9` |
 | Error | surface `--surface-1` | 1px `--destructive` + 3px ring danger @ ~25% | caption 12.5 `--destructive` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
@@ -182,7 +182,7 @@ Forms on the hook: mobile Edit profile and the accent picker's hex field (whose 
 
 ### Toggle
 
-Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) and 50×30px with a 24px thumb on touch (two sizes since 2026-11-05, settling [#3057](https://github.com/pdcarlson/Frapp/issues/3057); 50×30 everywhere before), full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb `accent-contrast`, right. Off: track elevated `#2A2621` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
+Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) and 50×30px with a 24px thumb on touch (two sizes since 2026-11-05, settling [#3057](https://github.com/pdcarlson/Frapp/issues/3057); 50×30 everywhere before), full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb `accent-contrast`, right. Off: track elevated `#2A2621` with a 1px `--control-edge` border on web (`.42` since 2026-11-12, #4389; mobile's native switch keeps its `.14` track, which its thumb identifies), thumb `#78716A`, left.
 
 ### Time and date pickers
 

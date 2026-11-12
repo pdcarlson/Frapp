@@ -56,9 +56,22 @@ It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things move
 | Token | Value | Role |
 |-------|-------|------|
 | `--border` | `rgba(255,255,255,.08)` | Default hairline — card edges, dividers, tab rules |
-| `--input` | `rgba(255,255,255,.14)` | Input and secondary-button borders — stronger, so interactive edges read as interactive |
+| `--input` | `rgba(255,255,255,.14)` | The quiet edge: device frames, wells, drop slots, placeholder and done checkboxes, anything meant to recede. Also the secondary badge's neutral fill |
+| `--control-edge` | `rgba(255,255,255,.42)` | The edge that identifies a control: text fields, selects, the Secondary button, a switch's off track, segmented controls, mobile's sheet fields and radios. It clears 3:1 (below) |
 
 Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque border tuned for one surface breaks on every other step of the ladder, while an alpha hairline tracks whatever it sits on.
+
+**A control's edge clears 3:1** (WCAG 2.2 SC 1.4.11, the boundary that identifies a component), on its own fill and on every seat it sits on. Decided 2026-11-12 in [#4389](https://github.com/pdcarlson/Frapp/issues/4389), a follow-up to the owner's legibility ask in [#3826](https://github.com/pdcarlson/Frapp/issues/3826). Controls drew `--input` until then: 1.14:1 for a field inside a dialog, 1.79:1 on the page. A field's fill is `--surface-1`, only about 1.15:1 from the seat around it, so the edge is what tells a member where to click. `.42` is the lowest alpha that clears everywhere. The alpha composites over the control's own fill, because the background paints under the border:
+
+| Control (fill) | Edge | On `--background` | On `--surface-1` | On `--card` | On `--popover` | On its fill |
+|---|---|---|---|---|---|---|
+| Field (`--surface-1`) | `#7A7A7A` | 4.75 | 4.05 | 3.53 | **3.03** | 4.05 |
+| Secondary button (`--card`) | `#818181` | 5.23 | 4.47 | 3.88 | 3.34 | 3.88 |
+| Switch, off (`--popover`) | `#888888` | 5.75 | 4.91 | 4.27 | 3.67 | 3.67 |
+
+`--input` keeps its `.14` because its other users want a quiet edge: a done or placeholder checkbox sits below an open one, and a mockup frame or upload well sits below the content in it. Raising the one shared token would have inverted those. Mobile's off toggle keeps its `--input` track too: on iOS and Android the switch's thumb identifies it.
+
+Rejected: keeping `.14` on controls and relying on the label and placeholder, as GitHub's and Linear's dark themes draw quiet edges (from memory of their published themes, not sampled from the live apps). That fails 1.4.11 as this pass reads it, and it is the dimness the owner asked to remove. Also rejected: a stronger edge only on focus and on error, which leaves a resting field hard to find. The comparable that draws a resting edge at this strength is Material 3's outlined text field: its `outline` role, `#938F99` on the dark baseline surface `#1C1B1F`, is about 5.4:1. `apps/web/components/shared/input-edge-contrast.spec.ts` holds the floor and the list of control sites.
 
 ---
 

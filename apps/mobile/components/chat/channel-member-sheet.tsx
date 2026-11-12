@@ -408,7 +408,7 @@ function createStyles(tokens: SignetTokens) {
     search: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       minHeight: tokens.touch.minimum,

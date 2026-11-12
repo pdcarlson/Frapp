@@ -338,7 +338,7 @@ export function UploadFileField({
         aria-hidden
         htmlFor={id}
         className={cn(
-          "inline-flex h-9 shrink-0 cursor-pointer items-center rounded-md border border-input px-3 text-sm font-semibold text-foreground transition-colors",
+          "inline-flex h-9 shrink-0 cursor-pointer items-center rounded-md border border-control-edge px-3 text-sm font-semibold text-foreground transition-colors",
           "pointer-coarse:h-11",
           disabled && "pointer-events-none opacity-60",
         )}

@@ -156,6 +156,8 @@ const config: Partial<Config> = {
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
+        /* A control's identifying edge (foundations §3, #4389). */
+        "control-edge": colorVar("--control-edge"),
         /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
 

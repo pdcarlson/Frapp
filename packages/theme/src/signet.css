@@ -56,6 +56,13 @@
      * it sits on. Fixed-hex border colors are banned. */
     --border: rgba(255,255,255,0.08);
     --input: rgba(255,255,255,0.14);
+    /* The edge that identifies a control (a field, a select, a Secondary
+     * button, a switch's track, a segmented control): 0.42 since 2026-11-12
+     * (#4389), the lowest alpha at which a field's edge clears WCAG 1.4.11's
+     * 3:1 on every seat (3.03:1 in a dialog, its worst; `--input` there is
+     * 1.14:1). `--input` stays the quiet edge for frames, wells and boxes
+     * meant to recede (foundations §3). */
+    --control-edge: rgba(255,255,255,0.42);
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
