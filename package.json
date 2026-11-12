@@ -56,18 +56,18 @@
     "@electric-sql/pglite-pgvector": "^0.0.16",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "4.1.12",
-    "concurrently": "^10.0.6",
+    "concurrently": "^10.0.7",
     "dependency-cruiser": "^18.7.0",
-    "jscpd": "^5.4.2",
+    "jscpd": "^5.4.3",
     "jsdom": "^30.1.3",
     "prettier": "^3.9.10",
     "sharp": "0.35.5",
-    "squawk-cli": "2.70.0",
+    "squawk-cli": "2.72.0",
     "turbo": "^2.11.10",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.44.14"
+    "@infisical/cli": "0.45.4"
   },
   "overrides": {
     "react": "19.2.3",
