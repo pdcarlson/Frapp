@@ -109,7 +109,11 @@ describe("tallySignups", () => {
     const tally = tallySignups(
       message(card, [
         { user: "u2", slots: ["fri"], at: "2026-11-12T10:05:00Z" },
-        { user: "me", slots: ["sat", "fri", "zzz"], at: "2026-11-12T10:01:00Z" },
+        {
+          user: "me",
+          slots: ["sat", "fri", "zzz"],
+          at: "2026-11-12T10:01:00Z",
+        },
         { user: "u3", slots: [] },
         { user: "u4", slots: ["fri"], type: "vote" },
       ]),
@@ -139,9 +143,7 @@ describe("tallySignups", () => {
       full: true,
     });
     expect(signupSlotAction(card.slots[1]!, tally).label).toBe("Sign up");
-    expect(signupCardEyebrow(card, tally)).toBe(
-      "Sign-up · 3 of 4 spots taken",
-    );
+    expect(signupCardEyebrow(card, tally)).toBe("Sign-up · 3 of 4 spots taken");
     expect(signupCardFooter(card, tally)).toBe("2 people signed up");
   });
 
@@ -161,7 +163,10 @@ describe("tallySignups", () => {
       "You're signed up for Friday and Saturday",
     );
 
-    const open = { ...card, slots: [...card.slots, { id: "x", label: "X", capacity: null }] };
+    const open = {
+      ...card,
+      slots: [...card.slots, { id: "x", label: "X", capacity: null }],
+    };
     const none = tallySignups(message(open), open, "me");
     expect(signupCardEyebrow(open, none)).toBe("Sign-up");
     expect(signupSlotCount(open.slots[2]!, none)).toBe("0");
@@ -179,11 +184,39 @@ describe("claims", () => {
 
   it("builds a second quick tap on the first, before the card has redrawn", () => {
     const pending = { current: null };
-    expect(castSignupClaim(card, [], pending, "fri", 1_000)).toEqual({
+    const none = tallySignups(message(card), card, "me");
+    expect(castSignupClaim(card, none, pending, "fri", 1_000)).toEqual({
       slot_ids: ["fri"],
     });
-    expect(castSignupClaim(card, [], pending, "sat", 2_000)).toEqual({
+    expect(castSignupClaim(card, none, pending, "sat", 2_000)).toEqual({
       slot_ids: ["fri", "sat"],
+    });
+  });
+
+  it("drops a slot the last tap lost to someone else, so the next tap isn't refused too", () => {
+    const pending = { current: null };
+    const held = tallySignups(
+      message(card, [{ user: "me", slots: ["sat"] }]),
+      card,
+      "me",
+    );
+    // The member asks for Friday too; the 409 never reaches the card.
+    expect(castSignupClaim(card, held, pending, "fri", 1_000)).toEqual({
+      slot_ids: ["fri", "sat"],
+    });
+    // Friday filled first, and the card has drawn it full.
+    const lost = tallySignups(
+      message(card, [
+        { user: "me", slots: ["sat"] },
+        { user: "u1", slots: ["fri"] },
+        { user: "u2", slots: ["fri"] },
+      ]),
+      card,
+      "me",
+    );
+    // Giving up Saturday sends no Friday along with it.
+    expect(castSignupClaim(card, lost, pending, "sat", 2_000)).toEqual({
+      slot_ids: [],
     });
   });
 });
@@ -225,15 +258,21 @@ describe("the New sign-up sheet draft", () => {
     const draft = filled();
     const key = draft.slots[0]!.key;
     for (const capacity of ["0", "1.5", "two", "101"]) {
-      expect(checkSignupDraft(setSignupSlot(draft, key, { capacity }))).toEqual({
-        ok: false,
-        problem: SIGNUP_SPOTS_PROBLEM,
-        slotKey: key,
-      });
+      expect(checkSignupDraft(setSignupSlot(draft, key, { capacity }))).toEqual(
+        {
+          ok: false,
+          problem: SIGNUP_SPOTS_PROBLEM,
+          slotKey: key,
+        },
+      );
     }
     expect(
       checkSignupDraft(setSignupSlot(draft, key, { label: " " })),
-    ).toMatchObject({ ok: false, problem: "Give this slot a name.", slotKey: key });
+    ).toMatchObject({
+      ok: false,
+      problem: "Give this slot a name.",
+      slotKey: key,
+    });
     expect(
       checkSignupDraft(setSignupSlot(draft, key, { label: "saturday" })),
     ).toMatchObject({ ok: false, slotKey: draft.slots[1]!.key });

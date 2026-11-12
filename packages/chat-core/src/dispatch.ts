@@ -205,22 +205,44 @@ export const SIGNED_OUT_POST_COPY =
  * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
  * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
  */
-export async function postPoll(
+export function postPoll(
   ctx: ChatActionContext,
   channelId: string,
   poll: { content: string; payload: PollPayload },
-): Promise<
-  { ok: true; warning?: string } | { ok: false; error: string; cause?: unknown }
-> {
+): Promise<PostFormCardResult> {
+  return postFormCard(
+    ctx,
+    channelId,
+    "poll",
+    poll,
+    "Couldn't post that poll. Try again.",
+  );
+}
+
+type PostFormCardResult =
+  | { ok: true; warning?: string }
+  | { ok: false; error: string; cause?: unknown };
+
+/**
+ * The one way a + form posts a card that queues like a message: a poll and a
+ * sign-up sheet. Never rejects; the outcomes are `postPoll`'s.
+ */
+async function postFormCard(
+  ctx: ChatActionContext,
+  channelId: string,
+  kind: "poll" | "signup",
+  card: { content: string; payload: object },
+  failureCopy: string,
+): Promise<PostFormCardResult> {
   if (!ctx.userId) {
     return { ok: false, error: SIGNED_OUT_POST_COPY };
   }
   try {
     const sent = await sendMessage(ctx, {
       channelId,
-      content: poll.content,
-      kind: "poll",
-      payload: poll.payload as unknown as Record<string, unknown>,
+      content: card.content,
+      kind,
+      payload: card.payload as Record<string, unknown>,
       keepDraft: true,
     });
     return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
@@ -228,7 +250,7 @@ export async function postPoll(
     // The outbox refused the row and `sendMessage` took the optimistic card
     // back out, so nothing is queued or on screen. `cause` is for the
     // caller's error reporting, which chat-core has no port for.
-    return { ok: false, error: "Couldn't post that poll. Try again.", cause };
+    return { ok: false, error: failureCopy, cause };
   }
 }
 
@@ -239,32 +261,18 @@ export async function postPoll(
  * offline, and it leaves the channel's saved draft alone. Never rejects; the
  * outcomes are `postPoll`'s.
  */
-export async function postSignup(
+export function postSignup(
   ctx: ChatActionContext,
   channelId: string,
   signup: { content: string; payload: SignupPayload },
-): Promise<
-  { ok: true; warning?: string } | { ok: false; error: string; cause?: unknown }
-> {
-  if (!ctx.userId) {
-    return { ok: false, error: SIGNED_OUT_POST_COPY };
-  }
-  try {
-    const sent = await sendMessage(ctx, {
-      channelId,
-      content: signup.content,
-      kind: "signup",
-      payload: signup.payload as unknown as Record<string, unknown>,
-      keepDraft: true,
-    });
-    return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
-  } catch (cause) {
-    return {
-      ok: false,
-      error: "Couldn't post that sign-up sheet. Try again.",
-      cause,
-    };
-  }
+): Promise<PostFormCardResult> {
+  return postFormCard(
+    ctx,
+    channelId,
+    "signup",
+    signup,
+    "Couldn't post that sign-up sheet. Try again.",
+  );
 }
 
 async function dispatchAnnounce(

@@ -39,7 +39,8 @@ interface SignupCardProps {
  * none), who holds each, and a Sign up / Signed up button per slot. A tap
  * takes the slot or gives it up; a full slot can't be taken, and the API
  * refuses a tap that lost the last spot to someone else (409), which the
- * channel's card-action error path toasts. Reading, counting and the words are
+ * channel's card-action error path shows in the API's words
+ * (`SERVER_MESSAGE_COPY` in `@repo/validation`). Reading, counting and the words are
  * `@repo/chat-core/signups`, shared with the phone's card.
  */
 export function SignupCard({
@@ -71,7 +72,7 @@ export function SignupCard({
     onClaim(
       message.id,
       SIGNUP_CLAIM_ACTION_TYPE,
-      castSignupClaim(payload, tally.mine, pending, slotId),
+      castSignupClaim(payload, tally, pending, slotId),
     );
   };
 

@@ -106,7 +106,7 @@ export function readSignupPayload(message: ChatMessage): SignupPayload | null {
 }
 
 export interface SignupTally {
-  /** Each slot's members, in the order they took it. */
+  /** Each slot's members, in the order they first signed up on the card. */
   bySlot: Record<string, string[]>;
   /** Members holding at least one slot. */
   people: number;
@@ -117,9 +117,11 @@ export interface SignupTally {
 /**
  * Who holds which slot, from the raw `chat_message_actions` rows on the
  * message (one `signup` row per member). Ids the card doesn't list are
- * dropped. A blocked member's row is hidden from the viewer by RLS, so their
- * spot isn't drawn; the API still counts it, and a tap on a slot that looks
- * open answers that it is full.
+ * dropped. A member's row keeps the time of their first claim on the card
+ * (`claim_signup_slots` doesn't move it), so holders are listed in the order
+ * they first signed up. A blocked member's claim is shown like anyone's: the
+ * SELECT policy hides only a blocked member's reactions (#2494), and a
+ * sign-up's point is who holds which slot.
  */
 export function tallySignups(
   message: ChatMessage,
@@ -153,9 +155,13 @@ export function tallySignups(
 }
 
 /** Whether nobody else can take this slot: it has a limit and is at it. */
-export function isSignupSlotFull(slot: SignupSlot, tally: SignupTally): boolean {
+export function isSignupSlotFull(
+  slot: SignupSlot,
+  tally: SignupTally,
+): boolean {
   return (
-    slot.capacity !== null && (tally.bySlot[slot.id]?.length ?? 0) >= slot.capacity
+    slot.capacity !== null &&
+    (tally.bySlot[slot.id]?.length ?? 0) >= slot.capacity
   );
 }
 
@@ -180,7 +186,8 @@ export function signupCardEyebrow(
   }
   const total = payload.slots.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
   const taken = payload.slots.reduce(
-    (sum, s) => sum + Math.min(tally.bySlot[s.id]?.length ?? 0, s.capacity ?? 0),
+    (sum, s) =>
+      sum + Math.min(tally.bySlot[s.id]?.length ?? 0, s.capacity ?? 0),
     0,
   );
   return `Sign-up · ${taken} of ${total} spot${total === 1 ? "" : "s"} taken`;
@@ -245,30 +252,33 @@ export function signupClaimPayload(
  * is fresh, as a multi-choice vote is (`castPollVote`): a claim isn't
  * optimistic, so a second tap before the first answer would otherwise drop
  * the first slot.
+ *
+ * Unlike a vote, a claim is expected to be refused: two members race for the
+ * last spot, and the loser's tap gets a 409 the card never hears about. So a
+ * slot the last tap asked for that the card now shows full of other members
+ * is left out of the next one, or the refused slot would ride along on every
+ * tap for the next ten seconds and have each refused in turn. The winner's
+ * claim reaches the card through Realtime, usually before the member taps
+ * again.
  */
 export function castSignupClaim(
   payload: SignupPayload,
-  mine: readonly string[],
+  tally: SignupTally,
   pending: { current: PendingPollPicks | null },
   slotId: string,
   now: number = Date.now(),
 ): { slot_ids: string[] } {
-  const claim = signupClaimPayload(
-    payload,
-    currentPollPicks(mine, pending.current, now),
-    slotId,
+  const base = currentPollPicks(tally.mine, pending.current, now).filter(
+    (id) => {
+      if (tally.mine.includes(id)) return true;
+      const slot = payload.slots.find((s) => s.id === id);
+      return !!slot && !isSignupSlotFull(slot, tally);
+    },
   );
+  const claim = signupClaimPayload(payload, base, slotId);
   pending.current = { picks: claim.slot_ids, at: now };
   return claim;
 }
-
-/**
- * What a member sees when the API refuses a tap because the slot filled
- * first (409). The API's own sentence says the same; this is the copy a
- * client shows whatever the server's words.
- */
-export const SIGNUP_SLOT_FULL_COPY =
-  "That slot is full. Someone took the last spot just before you.";
 
 // ── The New sign-up sheet form ──────────────────────────────────────────────
 
@@ -370,7 +380,11 @@ export function checkSignupDraft(draft: SignupDraft): SignupDraftCheck {
     const spots = row.capacity.trim();
     if (!label) {
       if (spots) {
-        return { ok: false, problem: "Give this slot a name.", slotKey: row.key };
+        return {
+          ok: false,
+          problem: "Give this slot a name.",
+          slotKey: row.key,
+        };
       }
       continue;
     }

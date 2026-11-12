@@ -109,8 +109,11 @@ begin
   ) into v_updated;
 
   -- One row per member per card (idx_chat_message_actions_dedupe). A change
-  -- of slots updates it in place and bumps `created_at`, as a vote change
-  -- does (ADR-07), so open cards see one UPDATE rather than a second row.
+  -- of slots updates it in place, so open cards see one UPDATE rather than a
+  -- second row (ADR-07). Unlike a vote change it keeps `created_at`: the
+  -- cards list each slot's holders by it, in the order they first signed up,
+  -- and bumping it would move a member who adds a slot to the end of the one
+  -- they already hold.
   insert into chat_message_actions (message_id, user_id, action_type, payload)
   values (
     p_message_id,
@@ -119,7 +122,7 @@ begin
     jsonb_build_object('slot_ids', to_jsonb(coalesce(p_slot_ids, array[]::text[])))
   )
   on conflict (message_id, user_id, action_type)
-  do update set payload = excluded.payload, created_at = now()
+  do update set payload = excluded.payload
   returning * into v_row;
 
   return jsonb_build_object('action', to_jsonb(v_row), 'updated', v_updated);

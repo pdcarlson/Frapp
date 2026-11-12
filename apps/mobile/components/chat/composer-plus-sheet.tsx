@@ -27,15 +27,15 @@ import { ServiceHoursGlyph } from "./card-glyphs";
 
 /**
  * The composer's **+** on the phone (#3865): Photo, then a row per form the
- * member can open here (Poll, Event, Task, Service hours), in web's + menu
+ * member can open here (Poll, Sign-up sheet, Event, Task, Service hours), in web's + menu
  * order. What it offers, greys and explains is `plusMenuModel` in
  * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
  *
  * - a row the role can't use, or whose module the chapter turned off, is left
  *   out, and a line at the bottom says why;
  * - a row that can't work this second (offline, a photo or a reply staged) is
- *   greyed with the reason beside it. A poll queues like a message, so
- *   offline doesn't grey it.
+ *   greyed with the reason beside it. A poll and a sign-up sheet queue like
+ *   a message, so offline doesn't grey them.
  *
  * It always opens, even with Photo alone, so that line can show. Points has no
  * phone form yet, so the host doesn't list it.

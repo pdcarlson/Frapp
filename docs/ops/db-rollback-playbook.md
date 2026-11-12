@@ -3832,6 +3832,8 @@ One function, `claim_signup_slots(uuid, uuid, text[])`, which the API calls for 
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function, and refuses to post a `signup` card. Cards already posted stay in the timeline: a client that doesn't know the kind draws its title as text. Removing the function without reverting the API makes every sign-up tap a 500.
 
+**Roll the web client back with the API, or the slot limits stop holding.** The older API stores any `action_type` it doesn't know with a plain insert, so a client that still draws the card (an unreverted web build, a phone build that shipped with it) gets its first tap on each card stored with no limit check, and every later tap answered with the old row unchanged. A phone build can't be rolled back, so after a revert expect over-full slots on cards posted before it; `select message_id, payload->'slot_ids' from chat_message_actions where action_type = 'signup' order by created_at` lists the claims, and rolling the API forward again leaves those rows as they are.
+
 To remove the function, do it in a later forward migration:
 
 ```sql

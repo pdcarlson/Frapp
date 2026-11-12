@@ -78,7 +78,7 @@ export function SignupCard(props: SignupCardProps) {
     onClaim(
       message.id,
       SIGNUP_CLAIM_ACTION_TYPE,
-      castSignupClaim(payload, tally.mine, pending, slotId),
+      castSignupClaim(payload, tally, pending, slotId),
     );
   };
 

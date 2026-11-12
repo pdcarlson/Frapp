@@ -1010,6 +1010,10 @@ export class ChatReportService {
  * the question, not `content`), then one `- label` line per option. The web
  * queue renders the snapshot with its line breaks.
  *
+ * A sign-up sheet card (`kind: 'signup'`, #3926) is read the same way: its
+ * title on its own line if it differs from `content`, then its details and
+ * each slot's name as `- ` lines.
+ *
  * Polls come in two shapes, and both are read: web's `/poll` and New poll
  * dialog and mobile's New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
  * (both built by chat-core's `buildPollMessage`), and the older
@@ -1037,6 +1041,10 @@ export function reportedContentSnapshot(
 function pollText(
   message: Pick<ChatMessage, 'type' | 'kind' | 'payload' | 'metadata'>,
 ): { question: string | null; labels: string[] } | null {
+  // A sign-up sheet (#3926) is member-written the same way: a title the card
+  // shows instead of `content`, optional details, and slot names. Its details
+  // go first, then one line per slot, so a harassing slot name is kept.
+  if (message.kind === 'signup') return signupText(message.payload);
   let card: unknown;
   if (message.kind === 'poll') card = message.payload;
   else if (message.type === 'POLL') card = message.metadata;
@@ -1057,6 +1065,28 @@ function pollText(
     if (typeof label === 'string') labels.push(label);
   }
   return { question: typeof question === 'string' ? question : null, labels };
+}
+
+function signupText(
+  card: unknown,
+): { question: string | null; labels: string[] } | null {
+  if (!card || typeof card !== 'object') return null;
+  const { title, note, slots } = card as {
+    title?: unknown;
+    note?: unknown;
+    slots?: unknown;
+  };
+  if (!Array.isArray(slots)) return null;
+  const labels: string[] = [];
+  if (typeof note === 'string' && note.trim() !== '') labels.push(note);
+  for (const slot of slots) {
+    const label: unknown =
+      slot && typeof slot === 'object'
+        ? (slot as { label?: unknown }).label
+        : null;
+    if (typeof label === 'string') labels.push(label);
+  }
+  return { question: typeof title === 'string' ? title : null, labels };
 }
 
 /**

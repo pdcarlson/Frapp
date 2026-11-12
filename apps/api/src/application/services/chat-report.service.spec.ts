@@ -1954,6 +1954,24 @@ describe('reportedContentSnapshot', () => {
     ).toBe('hello');
   });
 
+  it("keeps a sign-up sheet's title, details and slot names (#3926)", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'Rides',
+        kind: 'signup',
+        payload: {
+          title: 'Rides Friday',
+          note: '10pm to 2am',
+          slots: [
+            { id: 'a', label: 'Driver 1', capacity: 1 },
+            { id: 'b', label: 'Driver 2', capacity: null },
+          ],
+        },
+      }),
+    ).toBe('Rides\nRides Friday\n- 10pm to 2am\n- Driver 1\n- Driver 2');
+  });
+
   it("adds the card's question when it differs from content, since the card shows the question", () => {
     expect(
       reportedContentSnapshot({

@@ -187,6 +187,24 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
   };
 });
 
+const presentSignupSheet = vi.fn();
+vi.mock("@/components/chat/new-signup-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewSignupSheet: forwardRef(function NewSignupSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentSignupSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewSignupSheet", props);
+    }),
+  };
+});
+
 const presentPlusSheet = vi.fn();
 vi.mock("@/components/chat/composer-plus-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
@@ -2258,6 +2276,22 @@ describe("chat thread + sheet (#3865)", () => {
       await onPost(poll);
     });
     expect(channel.sendPoll).toHaveBeenCalledWith(poll);
+    act(() => tree.unmount());
+  });
+
+  it("opens the New sign-up sheet from its row and posts through sendSignup (#3926)", async () => {
+    presentSignupSheet.mockClear();
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("signup"));
+    expect(presentSignupSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewSignupSheet" as never).props
+      .onPost as (signup: unknown) => Promise<unknown>;
+    const signup = { content: "Sober drivers", payload: {} };
+    await act(async () => {
+      await onPost(signup);
+    });
+    expect(channel.sendSignup).toHaveBeenCalledWith(signup);
     act(() => tree.unmount());
   });
 

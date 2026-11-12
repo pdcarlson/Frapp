@@ -152,6 +152,10 @@ export class ChatReactionService {
    *   23505 path UPSERTS instead — same row id, replaced `payload`,
    *   bumped `created_at` — so subscribed clients see a Realtime UPDATE
    *   rather than a second row.
+   * - Sign-up claims (#3926): `action_type === "signup"` is reserved. It
+   *   takes `payload.slot_ids` and goes through `claimSignupSlots` instead
+   *   of the insert below: 400 on a message that isn't a sign-up card, a
+   *   malformed list or an unknown slot, 409 on a full slot.
    */
   async recordMessageAction(
     messageId: string,

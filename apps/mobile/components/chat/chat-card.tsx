@@ -3,7 +3,10 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { formatPointsChip } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
+import {
+  useChapterBranding,
+  type ChapterBranding,
+} from "@/lib/chapter-branding";
 import {
   deliveryChrome,
   type DeliveryChrome,
@@ -19,8 +22,9 @@ import {
 import type { MessageLink } from "./message-markdown";
 
 /**
- * The frame every mobile chat card shares: the poll, event, task, points,
- * service hours, rush candidate and announcement cards (#3185, #3383). An
+ * The frame every mobile chat card shares: the poll, sign-up sheet, event,
+ * task, points, service hours, rush candidate and announcement cards (#3185,
+ * #3383, #3926). An
  * audit entry is a line, not a card (`system-audit-card.tsx`).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
@@ -112,7 +116,9 @@ export function ChatCardShell({
         accessible={hasActions || message._status === "pending"}
         // The dimmed card is the whole pending state on screen; a screen
         // reader hears it here.
-        accessibilityHint={message._status === "pending" ? "Sending" : undefined}
+        accessibilityHint={
+          message._status === "pending" ? "Sending" : undefined
+        }
         {...a11yActions}
       >
         {header}
@@ -253,7 +259,8 @@ export function CardTitle({ children }: { children: ReactNode }) {
 export function CardMeta({ items }: { items: ReactNode[] }) {
   const styles = useCardStyles();
   const shown = items.filter(
-    (item) => item !== null && item !== undefined && item !== false && item !== "",
+    (item) =>
+      item !== null && item !== undefined && item !== false && item !== "",
   );
   if (shown.length === 0) return null;
   return (
@@ -391,7 +398,9 @@ export function CardButton({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const primary = variant === "primary";
-  const labelColor = primary ? brand.accentOnPrimary : tokens.color.text.foreground;
+  const labelColor = primary
+    ? brand.accentOnPrimary
+    : tokens.color.text.foreground;
   return (
     <Pressable
       accessibilityRole="button"

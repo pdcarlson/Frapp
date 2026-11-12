@@ -85,6 +85,10 @@ export function copyForErrorCode(code: string | null): string | null {
  * vaguer but never wrong.
  */
 export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
+  // A chat sign-up sheet's claim on a slot that filled first (#3926,
+  // `ChatReactionService.claimSignupSlots`, 409). Already in a member's words.
+  "That slot is full. Someone took the last spot just before you.":
+    "That slot is full. Someone took the last spot just before you.",
   // Check-in and study
   "Already checked in for this event": "You're already checked in.",
   "This event has an invalid check-in area; an officer needs to redraw it":
