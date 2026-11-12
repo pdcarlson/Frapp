@@ -6,7 +6,9 @@ import {
   useDiscardMeetingDraft,
   useRequestMeetingDraft,
   useUseMeetingDraft,
+  useRemoveMeetingRecording,
   type MeetingDraftState,
+  type MeetingRecordingState,
 } from "@repo/hooks";
 import {
   MEETING_DRAFT_FAILURE_COPY,
@@ -21,6 +23,7 @@ import type {
 } from "@/components/shared/confirm-dialog";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { ReportAiButton } from "@/components/ai/report-ai";
+import { RecordingUpload } from "@/components/meetings/recording-upload";
 import { getErrorMessage } from "@/lib/utils";
 
 /** `2026-11-09` for the calendar day `value` falls on where the reader is. */
@@ -50,6 +53,7 @@ export function NotesDraftPanel({
   meetingId,
   eventStart,
   state,
+  recording,
   hasContent,
   disabled,
   prepare,
@@ -60,6 +64,11 @@ export function NotesDraftPanel({
   meetingId: string;
   eventStart: string;
   state: MeetingDraftState;
+  /**
+   * Where the meeting's uploaded recording stands, or null when this server
+   * transcribes nothing: the notes box is then all there is.
+   */
+  recording: MeetingRecordingState | null;
   /** The sections below already hold something a draft would replace. */
   hasContent: boolean;
   disabled: boolean;
@@ -80,6 +89,7 @@ export function NotesDraftPanel({
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
+  const removeRecording = useRemoveMeetingRecording();
   // The AI sheet opens here, where the officer first reaches for the draft.
   const { ensureConsent, consentDialog } = useAiConsentGate();
   const [notes, setNotes] = useState(state.notes);
@@ -188,13 +198,19 @@ export function NotesDraftPanel({
     const answer = await confirm({
       title: "Clear your notes?",
       description:
-        "The notes are removed for good. What is written in the minutes below stays.",
+        recording && recording.status !== "none"
+          ? "The notes, the recording and its transcript are removed for good. What is written in the minutes below stays."
+          : "The notes are removed for good. What is written in the minutes below stays.",
       confirmLabel: "Clear notes",
       tone: "destructive",
     });
     if (!answer) return;
     try {
       if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
+      // A transcript is notes too: clearing them removes it and its recording.
+      if (recording && recording.status !== "none") {
+        await removeRecording.mutateAsync({ id: meetingId });
+      }
       setNotes("");
       setProblem(null);
     } catch (error) {
@@ -280,6 +296,24 @@ export function NotesDraftPanel({
           what they leave out.
         </p>
       </div>
+      {recording?.available && recording.blocked !== "chapter_off" ? (
+        <RecordingUpload
+          meetingId={meetingId}
+          state={recording}
+          disabled={drafting || disabled}
+          notes={notes}
+          onTranscript={(transcript) => {
+            setNotes((current) =>
+              current.trim() === ""
+                ? transcript
+                : `${current.trimEnd()}\n\n${transcript}`,
+            );
+            setProblem(null);
+          }}
+          ensureConsent={ensureConsent}
+          confirm={confirm}
+        />
+      ) : null}
       <Textarea
         aria-labelledby={`${ids}-heading`}
         aria-describedby={`${ids}-status`}
@@ -319,7 +353,10 @@ export function NotesDraftPanel({
             Use the draft
           </Button>
         ) : null}
-        {!drafting && (notes !== "" || state.status !== "none") ? (
+        {!drafting &&
+        (notes !== "" ||
+          state.status !== "none" ||
+          (!!recording && recording.status !== "none")) ? (
           <Button
             variant="ghost"
             disabled={disabled || discard.isPending}

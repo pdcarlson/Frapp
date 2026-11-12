@@ -561,25 +561,8 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     });
   }
 
-  /**
-   * A draft is written only for unposted minutes of a type Frapp drafts.
-   * Standards is refused here as well as where minutes are started and
-   * typed, before any text is stored or sent (§ Standards meetings).
-   */
   private assertDraftable(meeting: Meeting): void {
-    if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
-      throw new BadRequestException({
-        code: 'meeting.standards_refused',
-        message: STANDARDS_MEETING_REFUSAL,
-      });
-    }
-    if (meeting.status !== 'draft') {
-      throw new ConflictException({
-        code: 'meeting.draft_posted',
-        message:
-          'These minutes are already posted. Edit them by hand from here.',
-      });
-    }
+    assertMeetingDraftable(meeting);
   }
 
   /** What the model is told: the meeting, the template, the roster, the notes. */
@@ -693,6 +676,27 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       requested_at: draft.requested_at,
       blocked: null,
     };
+  }
+}
+
+/**
+ * A draft is written only for unposted minutes of a type Frapp drafts.
+ * Standards is refused here as well as where minutes are started and typed,
+ * before any text or audio is stored or sent (§ Standards meetings). The
+ * recording upload asks the same question (`MeetingRecordingService`).
+ */
+export function assertMeetingDraftable(meeting: Meeting): void {
+  if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
+    throw new BadRequestException({
+      code: 'meeting.standards_refused',
+      message: STANDARDS_MEETING_REFUSAL,
+    });
+  }
+  if (meeting.status !== 'draft') {
+    throw new ConflictException({
+      code: 'meeting.draft_posted',
+      message: 'These minutes are already posted. Edit them by hand from here.',
+    });
   }
 }
 

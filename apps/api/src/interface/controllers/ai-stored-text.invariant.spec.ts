@@ -43,17 +43,17 @@ import type {
   LanguageModelRequest,
 } from '#domain/adapters/language-model.interface';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { ScriptedLanguageModel } from '../../../infrastructure/ai/scripted-language-model';
-import { SupabaseAiUsageRepository } from '../../../infrastructure/supabase/repositories/supabase-ai-usage.repository';
-import { SupabaseAskDiagnosticsRepository } from '../../../infrastructure/supabase/repositories/supabase-ask-diagnostics.repository';
-import { AskController } from '../../../interface/controllers/ask.controller';
-import type { CorpusPassage } from '../corpus/corpus-retrieval.service';
-import { AskDiagnosticsService } from '../ask/ask-diagnostics.service';
-import type { AskTool } from '../ask/ask-tool';
-import { AskService } from '../ask/ask.service';
-import { AiGatewayService } from './ai-gateway.service';
-import { AiSpendLedgerService } from './ai-spend-ledger.service';
-import { AiTelemetryService } from './ai-telemetry.service';
+import { ScriptedLanguageModel } from '../../infrastructure/ai/scripted-language-model';
+import { SupabaseAiUsageRepository } from '../../infrastructure/supabase/repositories/supabase-ai-usage.repository';
+import { SupabaseAskDiagnosticsRepository } from '../../infrastructure/supabase/repositories/supabase-ask-diagnostics.repository';
+import { AskController } from './ask.controller';
+import type { CorpusPassage } from '../../application/services/corpus/corpus-retrieval.service';
+import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
+import type { AskTool } from '../../application/services/ask/ask-tool';
+import { AskService } from '../../application/services/ask/ask.service';
+import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
+import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
+import { AiTelemetryService } from '../../application/services/ai/ai-telemetry.service';
 
 const sentryCalls: unknown[][] = [];
 jest.mock('@sentry/nestjs', () => {
@@ -96,7 +96,8 @@ jest.mock('@sentry/nestjs', () => {
       getCurrentScope: () => scope,
     },
     {
-      get: (target, name: string) => target[name] ?? record(name),
+      get: (target, name: string) =>
+        (target as Record<string, unknown>)[name] ?? record(name),
     },
   );
 });
@@ -464,7 +465,7 @@ describe('Stored AI text: an AI call with no report made keeps no text (#4315)',
             yield part;
             const { LanguageModelError } =
               await import('#domain/adapters/language-model.interface');
-            throw new LanguageModelError('server', failing.provider);
+            throw new LanguageModelError('unknown', failing.provider);
           }
         }
       },

@@ -29,6 +29,11 @@ export interface AiUsageRecord extends AiCallDescriptor {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  /**
+   * Seconds of audio a transcription call was billed for; absent on every
+   * other call (`billing.md`: "transcription seconds").
+   */
+  audioSeconds?: number;
   /** At the catalog's prices, in millionths of a US dollar. */
   costMicroUsd: number;
   latencyMs: number;

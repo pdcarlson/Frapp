@@ -19,9 +19,10 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 const { ReportAiButton } = await import("./report-ai");
+type AiReportTarget = import("./report-ai").AiReportTarget;
 
-const ASK = {
-  subject: "ask_answer" as const,
+const ASK: AiReportTarget = {
+  subject: "ask_answer",
   subjectId: "11111111-1111-4111-8111-111111111111",
   receipt: "v1.k1.n.t.c",
 };

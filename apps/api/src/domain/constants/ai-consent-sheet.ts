@@ -21,7 +21,7 @@ import type { AiFeatureFamily } from '../adapters/ai-call-context';
  * not a new version; changing what a row covers is.
  */
 export interface AiConsentSheetProvider {
-  key: 'anthropic' | 'google';
+  key: 'anthropic' | 'google' | 'assemblyai';
   /** The company's own name, shown as is. */
   name: string;
 }
@@ -42,11 +42,20 @@ export interface AiConsentSheet {
   data: readonly AiConsentSheetDataKind[];
 }
 
+/**
+ * Version 2 (2026-11-12, #712) added AssemblyAI, which the model catalog
+ * routes a meeting's recording to for transcription. Nobody had answered
+ * version 1: AI was off on every server. The transcription vendor is still
+ * Paul's to pick (ADR-28, "What this record does not decide"); if the
+ * bake-off picks Google, AssemblyAI leaves this list and the catalog
+ * together, as another new version.
+ */
 export const AI_CONSENT_SHEET = {
-  version: 1,
+  version: 2,
   providers: [
     { key: 'anthropic', name: 'Anthropic' },
     { key: 'google', name: 'Google' },
+    { key: 'assemblyai', name: 'AssemblyAI' },
   ],
   data: [
     { key: 'questions', label: 'Questions you ask' },

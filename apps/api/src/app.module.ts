@@ -16,6 +16,7 @@ import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
 import { MeetingModule } from './modules/meeting/meeting.module';
 import { MeetingDraftModule } from './modules/meeting/meeting-draft.module';
+import { MeetingRecordingModule } from './modules/meeting/meeting-recording.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -119,6 +120,7 @@ import { validateEnv } from './config/env.validation';
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
     MeetingDraftModule,
+    MeetingRecordingModule,
   ],
   providers: [
     {

@@ -487,6 +487,7 @@ const KIND_BY_STATUS: Record<number, LanguageModelErrorKind> = {
   403: 'auth',
   404: 'invalid_request',
   408: 'timeout',
+  413: 'invalid_request',
   422: 'invalid_request',
   429: 'rate_limited',
   500: 'overloaded',
@@ -499,7 +500,7 @@ const KIND_BY_STATUS: Record<number, LanguageModelErrorKind> = {
  * Map an SDK error to the port's error, keeping only its status. The SDK's
  * message is dropped: a 400 can quote the request back.
  */
-function toLanguageModelError(error: unknown): LanguageModelError {
+export function toLanguageModelError(error: unknown): LanguageModelError {
   if (error instanceof LanguageModelError) return error;
   if (error instanceof ApiError) {
     const status = typeof error.status === 'number' ? error.status : undefined;

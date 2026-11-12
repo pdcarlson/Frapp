@@ -82,6 +82,7 @@ import type {
   EventType,
   Meeting,
   MeetingDraft,
+  MeetingRecording,
   MeetingTemplate,
   PledgeClassAssignment,
   RushCandidate,
@@ -186,6 +187,7 @@ export interface Database {
       meetings: TableDefinition<Meeting>;
       meeting_templates: TableDefinition<MeetingTemplate>;
       meeting_drafts: TableDefinition<MeetingDraft>;
+      meeting_recordings: TableDefinition<MeetingRecording>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
@@ -397,6 +399,8 @@ export interface Database {
           p_bill_reservation: boolean;
           p_latency_ms: number;
           p_now: string;
+          /** `20261112190000` (#712): seconds of audio, transcription only. */
+          p_audio_seconds?: number;
         };
         Returns: string;
       };
@@ -419,6 +423,8 @@ export interface Database {
           input_tokens: number | string;
           output_tokens: number | string;
           cached_input_tokens: number | string;
+          /** `20261112190000` (#712); absent before that migration. */
+          audio_seconds?: number | string;
           cost_micro_usd: number | string;
           estimated_cost_micro_usd: number | string;
           unsettled_calls: number | string;

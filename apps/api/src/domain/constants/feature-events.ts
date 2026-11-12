@@ -61,6 +61,13 @@ export const FEATURE_EVENTS = {
     feature: 'meetings',
     properties: [],
   },
+  // An officer's recording finished uploading and its transcription was
+  // queued (#712). No property: nothing about the file, and the provider
+  // call is counted by the gateway's own event.
+  'meeting-recording-uploaded': {
+    feature: 'meetings',
+    properties: [],
+  },
 
   // Tasks
   'task-created': {

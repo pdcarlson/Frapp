@@ -26,7 +26,13 @@
  */
 export const LANGUAGE_MODEL_REGISTRY = 'LANGUAGE_MODEL_REGISTRY';
 
-export type AiProvider = 'anthropic' | 'google' | 'scripted';
+/**
+ * Who answers a call. `assemblyai` only transcribes
+ * (`transcription.interface.ts`); it is here because a transcription is a
+ * provider call like any other to the consent check, the caps and the
+ * ledger.
+ */
+export type AiProvider = 'anthropic' | 'google' | 'assemblyai' | 'scripted';
 
 export type LanguageModelEffort = 'low' | 'medium' | 'high';
 

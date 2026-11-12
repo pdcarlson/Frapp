@@ -41,6 +41,8 @@ export interface AiChapterUsageLine {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  /** Seconds of audio transcribed (#712); zero for every other task. */
+  audioSeconds: number;
   /** Holds not yet settled count at their hold, as the caps do. */
   costMicroUsd: number;
   /** The part of `costMicroUsd` that is a hold, not a provider's count. */
