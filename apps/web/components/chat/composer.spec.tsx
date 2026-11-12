@@ -2667,18 +2667,56 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
     return { editor, onSend, onSlashDispatch };
   }
 
-  it("sends nothing for a lone `/`", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send message" });
+
+  it("sends nothing for a lone `/`, and says so with a muted Send", () => {
     const { editor, onSend, onSlashDispatch } = mount("/");
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(sendButton()).toBeDisabled();
+    // Enter reaches `submit` through the editor's keymap, not the button.
+    const submitKeymap = capturedExtensions
+      .at(-1)!
+      .find(
+        (extension) =>
+          (extension as { name?: string } | null)?.name === "submit-on-enter",
+      ) as {
+      config: { addKeyboardShortcuts: () => { Enter: () => boolean } };
+    };
+    act(() => {
+      submitKeymap.config.addKeyboardShortcuts.call({}).Enter();
+    });
     expect(onSend).not.toHaveBeenCalled();
     expect(onSlashDispatch).not.toHaveBeenCalled();
     // Nothing happened, so nothing was cleared either.
     expect(editor.getText()).toBe("/");
   });
 
+  it("sends a file staged beside a lone `/` on its own", async () => {
+    const { onSend, editor } = mount("/");
+    fireEvent.change(
+      document.body.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await waitFor(() => expect(sendButton()).toBeEnabled());
+
+    fireEvent.click(sendButton());
+
+    expect(onSend).toHaveBeenCalledWith("", [
+      expect.objectContaining({ filename: "notes.pdf" }),
+    ]);
+    expect(editor.getText()).toBe("");
+  });
+
   it("still sends text that only starts with a slash", () => {
     const { onSend } = mount("/ shrug");
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(sendButton()).toBeEnabled();
+    fireEvent.click(sendButton());
     expect(onSend).toHaveBeenCalledWith("/ shrug", []);
   });
 
