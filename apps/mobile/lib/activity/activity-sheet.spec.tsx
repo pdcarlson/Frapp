@@ -9,6 +9,7 @@ import { activityGroups, type Activity } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { moduleDisabledMessage } from "@repo/validation";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import type { ActivityRowActionState } from "@/lib/activity/row-action";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { screenText } from "@/test/screen-text";
 
@@ -172,12 +173,17 @@ const linkActions = {
 const present = vi.fn();
 const dismiss = vi.fn();
 
-function sheetElement(row: ActivityRow | null, viewerId: string | null) {
+function sheetElement(
+  row: ActivityRow | null,
+  viewerId: string | null,
+  rowActionState: ActivityRowActionState = "idle",
+) {
   return (
     <FrappThemeProvider>
       <ActivitySheet
         row={row}
         viewerId={viewerId}
+        rowActionState={rowActionState}
         onActed={onActed}
         onClosed={onClosed}
         linkActions={linkActions}
@@ -189,10 +195,11 @@ function sheetElement(row: ActivityRow | null, viewerId: string | null) {
 function render(
   row: ActivityRow | null,
   viewerId: string | null = "me",
+  rowActionState: ActivityRowActionState = "idle",
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheetElement(row, viewerId), {
+    tree = create(sheetElement(row, viewerId, rowActionState), {
       // `vitest.setup.ts` mocks `BottomSheetModal` as a host string, so the
       // sheet's ref lands on whatever this returns for it.
       createNodeMock: (element) =>
@@ -427,6 +434,23 @@ describe("Activity sheet (#3897)", () => {
       expect(onActed).not.toHaveBeenCalled();
       expect(screenText(tree)).toContain("Your role can't do this.");
       expect(button(tree, "Approve").props.disabled).toBe(false);
+    });
+
+    it("holds Approve and Reject while the row's own Approve sends, and records it once it lands (#4437)", () => {
+      const sending = render(rowOf("hours"), "me", "busy");
+      expect(button(sending, "Approve").props.disabled).toBe(true);
+      expect(button(sending, "Reject").props.disabled).toBe(true);
+      const landed = render(rowOf("hours"), "me", "done");
+      expect(screenText(landed)).toContain(
+        "Approved. Points are awarded per the chapter rate.",
+      );
+      expect(
+        landed.root.findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.props.accessibilityLabel === "Approve",
+        ),
+      ).toHaveLength(0);
     });
 
     it("says a subscription refusal in a member's words", async () => {
