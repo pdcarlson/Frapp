@@ -71,6 +71,7 @@ export * from "./use-documents";
 export * from "./use-event-types";
 export * from "./use-events";
 export * from "./use-frapp-client";
+export * from "./use-hidden-permissions";
 export * from "./use-important-messages";
 export * from "./use-invites";
 export * from "./use-invoices";

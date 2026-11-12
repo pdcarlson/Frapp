@@ -34,6 +34,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Study sessions finish and award once
+
+### 20261113040001_finish_study_session_rpc.sql
+
+- **Purpose**: Adds `finish_study_session(...)` (security invoker, `search_path` pinned, EXECUTE for `service_role` only), which finishes a study session as COMPLETED or PAUSED_EXPIRED and writes its STUDY `point_transactions` row in one transaction, behind a compare-and-set on the row the API read (ACTIVE, same `last_heartbeat_at`, same `paused_at`). Before it, two requests ending the same session (a double-tapped Stop, or a heartbeat and a history read settling one grace-expiry) each awarded. Also adds the partial unique index `idx_study_sessions_one_active` on `study_sessions (chapter_id, user_id) where status = 'ACTIVE'`, so a double-tapped Start can't leave two ACTIVE rows (after which every study call failed for that member). Verified in PGlite (`scripts/pglite/tiers/study-session-finish.mjs`). The rule: [`spec/behavior/study-sessions.md` § Points Award](../../../spec/behavior/study-sessions.md#points-award).
+- **Checks**: Before `db push`, the index needs no duplicate ACTIVE pairs: `select chapter_id, user_id, count(*) from study_sessions where status = 'ACTIVE' group by 1, 2 having count(*) > 1;` returns no rows (production had none on 2026-11-12, 54 sessions in all). If it returns any, end all but the newest of each pair with `update study_sessions set status = 'EXPIRED', end_time = now() where id = <older id>;` first. After, `select proname from pg_proc where proname = 'finish_study_session';` returns one row and `select indexname from pg_indexes where indexname = 'idx_study_sessions_one_active';` returns one row.
+- **Promoter notes**: Additive: one new function and one index on a small table (54 rows in production), so the index build's lock is momentary. The API before this PR never calls the function and keeps working with it present; the index refuses only a second ACTIVE row, which that API never meant to write. Deploy the migration with or before the API. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-study-session-finish-20261113040001) § Rollback the study-session finish.
+
 ## 2026-11-12: Removing a reaction works, and clients write no other chat action (#724, #4513)
 
 ### 20261112280000_chat_message_actions_client_writes.sql

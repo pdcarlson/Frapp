@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useId, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CHIP, EYEBROW, MESSAGE_CARD } from "../chip";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import {
+  meterFillClassName,
+  meterTrackDenseClassName,
+} from "@/components/shared/meter";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { PendingPollPicks } from "@repo/chat-core/polls";
@@ -13,8 +17,11 @@ import {
   readSignupPayload,
   signupCardEyebrow,
   signupCardFooter,
+  signupHoldersLine,
   signupSlotAction,
-  signupSlotCount,
+  signupSlotPercent,
+  signupSlotSpoken,
+  signupSlotStatus,
   tallySignups,
 } from "@repo/chat-core/signups";
 import { actorLabel, type NameResolver } from "@repo/hooks";
@@ -36,8 +43,10 @@ interface SignupCardProps {
 
 /**
  * A sign-up sheet card (`kind: "signup"`, #3926): slots with a limit (or
- * none), who holds each, and a Sign up / Signed up button per slot. A tap
- * takes the slot or gives it up; a full slot can't be taken, and the API
+ * none), each a row drawn as the poll card draws an option, with a meter
+ * for a slot with a limit and who holds it named on one line under it, as
+ * iMessage and Discord polls name voters. A tap on a row takes the slot or
+ * gives it up; a full slot can't be taken and says Full, and the API
  * refuses a tap that lost the last spot to someone else (409), which the
  * channel's card-action error path shows in the API's words
  * (`SERVER_MESSAGE_COPY` in `@repo/validation`). Reading, counting and the words are
@@ -56,6 +65,7 @@ export function SignupCard({
     [message, payload, viewerId],
   );
   const pending = useRef<PendingPollPicks | null>(null);
+  const countId = useId();
 
   if (!payload || !tally) {
     return (
@@ -93,70 +103,50 @@ export function SignupCard({
         {payload.slots.map((slot) => {
           const action = signupSlotAction(slot, tally);
           const holders = tally.bySlot[slot.id] ?? [];
+          const percent = signupSlotPercent(slot, tally);
+          const names = signupHoldersLine(
+            holders,
+            viewerId,
+            (userId) => actorLabel(userId, nameFor) ?? "A member",
+          );
           return (
-            <li
-              key={slot.id}
-              className={cn(
-                "rounded-md border p-3",
-                action.held
-                  ? "border-accent-border bg-accent-subtle"
-                  : "border-border",
-              )}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="min-w-0 break-words font-semibold">
-                  {slot.label}
+            <li key={slot.id}>
+              <Button
+                type="button"
+                size="sm"
+                variant={action.held ? "default" : "secondary"}
+                className="h-auto min-h-9 w-full justify-between gap-2 whitespace-normal py-1.5 text-left pointer-coarse:h-auto pointer-coarse:min-h-11"
+                disabled={!canClaim || action.full}
+                aria-pressed={action.held}
+                aria-label={`${action.label}: ${slot.label}`}
+                aria-describedby={`${countId}-${slot.id}`}
+                onClick={() => claim(slot.id)}
+              >
+                <span className="min-w-0 break-words">{slot.label}</span>
+                {/* The button's own foreground, as the poll card's tally. */}
+                <span className="shrink-0 font-mono tabular-nums">
+                  {signupSlotStatus(slot, tally)}
                 </span>
-                <span className="flex items-center gap-2">
-                  <span
-                    className="font-mono text-caption tabular-nums text-muted-foreground"
-                    aria-label={
-                      slot.capacity === null
-                        ? `${holders.length} signed up`
-                        : `${holders.length} of ${slot.capacity} spots taken`
-                    }
-                  >
-                    {signupSlotCount(slot, tally)}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={action.held ? "default" : "secondary"}
-                    disabled={!canClaim || action.full}
-                    aria-pressed={action.held}
-                    aria-label={`${action.label}: ${slot.label}`}
-                    onClick={() => claim(slot.id)}
-                  >
-                    {action.held ? `${action.label} ✓` : action.label}
-                  </Button>
-                </span>
-              </div>
-              {holders.length > 0 ? (
-                <ul
-                  className="mt-2 flex flex-wrap gap-1.5"
-                  aria-label="Signed up"
+              </Button>
+              <span id={`${countId}-${slot.id}`} className="sr-only">
+                {signupSlotSpoken(slot, tally)}
+              </span>
+              {percent !== null ? (
+                <div
+                  className={`mt-1 ${meterTrackDenseClassName}`}
+                  aria-hidden="true"
                 >
-                  {holders.map((userId) => (
-                    <li
-                      key={userId}
-                      className={cn(
-                        CHIP.base,
-                        userId === viewerId ? CHIP.accent : CHIP.neutral,
-                      )}
-                    >
-                      {userId === viewerId
-                        ? "You"
-                        : (actorLabel(userId, nameFor) ?? "A member")}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-1 text-caption text-muted-foreground">
-                  {slot.capacity === null
-                    ? "No limit · no one yet"
-                    : "No one yet"}
+                  <div
+                    className={meterFillClassName}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              ) : null}
+              {names ? (
+                <p className="mt-1 line-clamp-2 px-1 text-caption text-muted-foreground">
+                  {names}
                 </p>
-              )}
+              ) : null}
             </li>
           );
         })}

@@ -61,6 +61,23 @@ const seed = () => ({
       id: 'run-b-other',
       ...run({ requested_by: USER_A, acting_user_id: USER_A }),
     }),
+    // Indexing acts for whoever last changed a source; nobody asked (#4504).
+    inA({
+      id: 'run-a-upkeep',
+      ...run({
+        kind: 'corpus_index',
+        requested_by: null,
+        acting_user_id: USER_SHARED,
+      }),
+    }),
+    inB({
+      id: 'run-b-upkeep',
+      ...run({
+        kind: 'corpus_index',
+        requested_by: null,
+        acting_user_id: USER_SHARED,
+      }),
+    }),
   ],
 });
 
@@ -94,6 +111,19 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
       const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
         repo.listForMember(CHAPTER_A, USER_SHARED, { limit: 20 }),
       );
+      expect(rows.map((row) => row.id).sort()).toEqual([
+        'run-a',
+        'run-a-upkeep',
+      ]);
+    });
+
+    it('listForMember leaves out upkeep runs that only act for the member (#4504)', async () => {
+      const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.listForMember(CHAPTER_A, USER_SHARED, {
+          limit: 20,
+          upkeepKinds: ['corpus_index'],
+        }),
+      );
       expect(rows.map((row) => row.id)).toEqual(['run-a']);
     });
 
@@ -120,6 +150,8 @@ describe('SupabaseAiRunRepository — tenant scope', () => {
         'run-b': 'running',
         'run-a-other': 'running',
         'run-b-other': 'running',
+        'run-a-upkeep': 'running',
+        'run-b-upkeep': 'running',
       });
       expect(harness.rows('ai_runs').find((row) => row.id === 'run-a')).toEqual(
         expect.objectContaining({

@@ -427,6 +427,7 @@ export class AiGatewayService {
       chapterId: context.chapterId,
       actingUserId: context.actingUserId,
       ...(context.runId === undefined ? {} : { runId: context.runId }),
+      ...(context.chapterUpkeep ? { chapterUpkeep: true as const } : {}),
       task,
       family: entry.family,
       // The adapter that will answer, which in scripted mode is not the

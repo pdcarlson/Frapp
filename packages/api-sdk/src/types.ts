@@ -4403,7 +4403,7 @@ export interface paths {
          * Turn off the beta diagnostics window (president only)
          * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
          */
-        delete: operations["AskController_stopDiagnostics_v1"];
+        delete: operations["AskDiagnosticsStopController_stopDiagnostics_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5615,7 +5615,7 @@ export interface components {
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description That role's name, the group's heading, or null when they hold no role. */
+            /** @description The group's heading: that role's name, "Members" for the chapter's Everyone role, or null when they hold no role. */
             role_name: string | null;
         };
         AddChannelMemberDto: {
@@ -18450,7 +18450,7 @@ export interface operations {
             };
         };
     };
-    AskController_stopDiagnostics_v1: {
+    AskDiagnosticsStopController_stopDiagnostics_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -18474,7 +18474,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            /** @description No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on. */
             404: {
                 headers: {
                     [name: string]: unknown;

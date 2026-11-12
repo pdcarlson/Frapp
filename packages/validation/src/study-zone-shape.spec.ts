@@ -3,9 +3,9 @@ import {
   circleToPolygon,
   destinationPoint,
   distanceMeters,
-  formatZoneRadius,
   isValidZoneCircle,
   outlineCenter,
+  studyZoneRulesLine,
   ZONE_RADIUS_MAX_M,
   ZONE_RADIUS_MIN_M,
 } from "./study-zone-shape";
@@ -77,13 +77,6 @@ describe("isValidZoneCircle", () => {
   });
 });
 
-describe("formatZoneRadius", () => {
-  it("speaks feet, then miles", () => {
-    expect(formatZoneRadius(75)).toBe("245 ft");
-    expect(formatZoneRadius(1609.344)).toBe("1.0 mi");
-  });
-});
-
 describe("outlineCenter", () => {
   it("averages the corners, or says nothing for none", () => {
     expect(
@@ -93,5 +86,37 @@ describe("outlineCenter", () => {
       ]),
     ).toEqual({ lat: 1, lng: 2 });
     expect(outlineCenter([])).toBeNull();
+  });
+});
+
+describe("studyZoneRulesLine", () => {
+  it("says what a session earns, in words", () => {
+    expect(
+      studyZoneRulesLine({
+        points_per_interval: 1,
+        minutes_per_point: 30,
+        min_session_minutes: 15,
+      }),
+    ).toBe("1 point every 30 min · 15 min minimum");
+  });
+
+  it("reads an hourly rate as an hour, and leaves out a zero minimum", () => {
+    expect(
+      studyZoneRulesLine({
+        points_per_interval: 5,
+        minutes_per_point: 60,
+        min_session_minutes: 0,
+      }),
+    ).toBe("5 points an hour");
+  });
+
+  it("drops a rule the row does not carry instead of inventing one", () => {
+    expect(
+      studyZoneRulesLine({
+        points_per_interval: 1,
+        minutes_per_point: null,
+        min_session_minutes: 15,
+      }),
+    ).toBe("15 min minimum");
   });
 });

@@ -7,6 +7,7 @@ import { createFrappClient } from "@repo/api-sdk";
 import {
   aiAvailableFrom,
   aiConsentKey,
+  isFirstAiReadInFlight,
   useAiChapterSettings,
   useAiConsent,
   useAnswerAiConsent,
@@ -171,5 +172,27 @@ describe("the AI hooks", () => {
       body: { ask: true },
     });
     await waitFor(() => expect(result.current.settings.data).toEqual(saved));
+  });
+});
+
+describe("isFirstAiReadInFlight (#4504)", () => {
+  const read = (failureCount: number, fetchStatus = "fetching" as const) => ({
+    isPending: true,
+    fetchStatus,
+    failureCount,
+  });
+
+  it("holds only for the first attempt, not the retries after a failure", () => {
+    expect(isFirstAiReadInFlight(read(0))).toBe(true);
+    expect(isFirstAiReadInFlight(read(1))).toBe(false);
+  });
+
+  it("never holds for a paused read or one that has answered", () => {
+    expect(
+      isFirstAiReadInFlight({ ...read(0), fetchStatus: "paused" }),
+    ).toBe(false);
+    expect(isFirstAiReadInFlight({ ...read(0), isPending: false })).toBe(
+      false,
+    );
   });
 });

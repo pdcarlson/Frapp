@@ -60,6 +60,7 @@ export * from "./error-copy";
 export * from "./event-attendance";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
+  EVERYONE_MEMBER_LIST_HEADING,
   EVERYONE_MENTION_NAME,
   EVERYONE_ROLE_NAME,
   EVERYONE_ROLE_SYSTEM_KEY,

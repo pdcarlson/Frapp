@@ -3,9 +3,8 @@
 import { useMemo } from "react";
 import { Check, Minus } from "lucide-react";
 import { groupPermissionsByModule } from "@repo/validation";
-import { useUpdateRole } from "@repo/hooks";
+import { useIsPermissionHidden, useUpdateRole } from "@repo/hooks";
 import { SegmentedChoice } from "@/components/ui/segmented";
-import { useIsPermissionHidden } from "@/components/roles/hidden-permissions";
 import { permissionRows } from "@repo/hooks/role-tiers";
 import {
   useOverrideOverlay,

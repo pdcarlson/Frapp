@@ -4,6 +4,7 @@ import {
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
   SIGNUP_SLOTS_MAX,
   SIGNUP_TITLE_MAX_LENGTH,
+  joinNames,
 } from "@repo/validation";
 import { currentPollPicks, makePollOptionId } from "./polls";
 import type { PendingPollPicks } from "./polls";
@@ -160,6 +161,64 @@ function isSignupSlotFull(slot: SignupSlot, tally: SignupTally): boolean {
     slot.capacity !== null &&
     (tally.bySlot[slot.id]?.length ?? 0) >= slot.capacity
   );
+}
+
+/**
+ * What a slot row shows at its end: "Full" once nobody else can take it and
+ * the viewer doesn't hold it (the row can't be tapped then, and this says
+ * why), otherwise its count (`signupSlotCount`).
+ */
+export function signupSlotStatus(slot: SignupSlot, tally: SignupTally): string {
+  const action = signupSlotAction(slot, tally);
+  return action.full ? "Full" : signupSlotCount(slot, tally);
+}
+
+/**
+ * A slot's count as a screen reader says it: "2 of 4 spots taken", or
+ * "3 signed up" for a slot with no limit.
+ */
+export function signupSlotSpoken(slot: SignupSlot, tally: SignupTally): string {
+  const taken = tally.bySlot[slot.id]?.length ?? 0;
+  return slot.capacity === null
+    ? `${taken} signed up`
+    : `${taken} of ${slot.capacity} spot${slot.capacity === 1 ? "" : "s"} taken`;
+}
+
+/**
+ * How full a limited slot is, 0 to 100, for the meter under its row; `null`
+ * for a slot with no limit, which has nothing to fill.
+ */
+export function signupSlotPercent(
+  slot: SignupSlot,
+  tally: SignupTally,
+): number | null {
+  if (slot.capacity === null) return null;
+  const taken = tally.bySlot[slot.id]?.length ?? 0;
+  return Math.min(100, Math.round((taken / slot.capacity) * 100));
+}
+
+/**
+ * Who holds a slot, as one line under its row: "You" first, then the rest in
+ * the order they signed up, the first few by name and the others counted,
+ * "You, Ryan Castellano, Aaron Whitfield and 3 more". Names, not chips, as iMessage and
+ * Discord name voters: a slot of twenty would otherwise wrap into a wall.
+ * `nameOf` turns a user id into a display name; the viewer is never passed
+ * to it. Empty when nobody holds the slot: the count already says so.
+ */
+export function signupHoldersLine(
+  holders: readonly string[],
+  viewerId: string | null,
+  nameOf: (userId: string) => string,
+  shown = 3,
+): string {
+  const mine = viewerId !== null && holders.includes(viewerId);
+  const names = [
+    ...(mine ? ["You"] : []),
+    ...holders.filter((id) => id !== viewerId).map(nameOf),
+  ];
+  if (names.length <= shown) return joinNames(names);
+  const rest = names.length - shown;
+  return `${names.slice(0, shown).join(", ")} and ${rest} more`;
 }
 
 /** "1/2" for a slot with a limit, "3" for one without. */
