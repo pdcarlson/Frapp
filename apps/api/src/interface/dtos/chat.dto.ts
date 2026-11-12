@@ -979,6 +979,30 @@ export class ResolveAuthorAvatarsDto {
  * `ClassSerializerInterceptor` — so this class documents the wire shape and
  * does not enforce it; the service's return type is what keeps it true.
  */
+/** What a thread's parent holds of its newest reply (#4297). */
+export class ChatThreadLastReplyDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  sender_id: string | null;
+
+  @ApiProperty({ description: 'The reply’s text, cut to 500 characters.' })
+  content: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  kind: string | null;
+
+  @ApiProperty({
+    description:
+      'The reply’s `metadata.attachment_count`, or 0 when it has none.',
+  })
+  attachment_count: number;
+
+  @ApiProperty()
+  created_at: string;
+}
+
 export class ChatMessageDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -1116,6 +1140,15 @@ export class ChatMessageDto {
       'On a thread parent: up to three recent repliers, newest first.',
   })
   thread_recent_sender_ids?: string[];
+
+  @ApiProperty({
+    type: () => ChatThreadLastReplyDto,
+    nullable: true,
+    required: false,
+    description:
+      'On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row, on a parent whose replies are all deleted, and on a read that masks when the viewer blocked that replier.',
+  })
+  thread_last_reply?: ChatThreadLastReplyDto | null;
 
   @ApiProperty()
   created_at: string;

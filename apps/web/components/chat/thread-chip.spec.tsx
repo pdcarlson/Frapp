@@ -85,6 +85,37 @@ describe("ThreadChip (#3785)", () => {
     expect(container.querySelector("svg.lucide-chevron-right")!.getAttribute("class")).toContain("shrink-0");
   });
 
+  it("previews the latest reply under the count, capped in width (#4297)", () => {
+    const { container } = render(
+      <ThreadChip
+        summary={summary}
+        nameFor={nameFor}
+        preview={{
+          id: "r1",
+          sender_id: "u2",
+          content: "",
+          kind: "text",
+          attachment_count: 2,
+          created_at: summary.last_reply_at,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+    const line = container.querySelector('[data-slot="thread-preview"]');
+    // A file-only reply reads as the timeline's quote of it does.
+    expect(line).toHaveTextContent("Shawn2 attachments");
+    expect(
+      container.querySelector('[data-slot="thread-card"]')?.className,
+    ).toContain("max-w-[min(100%,26rem)]");
+  });
+
+  it("draws no preview line without one", () => {
+    const { container } = render(
+      <ThreadChip summary={summary} nameFor={nameFor} onOpen={vi.fn()} />,
+    );
+    expect(container.querySelector('[data-slot="thread-preview"]')).toBeNull();
+  });
+
   it("is plain text where threads can't open", () => {
     render(<ThreadChip summary={summary} nameFor={nameFor} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

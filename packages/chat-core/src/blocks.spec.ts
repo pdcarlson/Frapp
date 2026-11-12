@@ -15,6 +15,7 @@ import {
   isBlockableSender,
   replaceMaskedCopies,
   rowsToRemember,
+  threadPreviewVisible,
   tombstoneCanUnblock,
   visibleReactions,
   visibleTypingUsers,
@@ -343,6 +344,65 @@ describe("classifyMessage", () => {
         "tombstone",
       );
     });
+  });
+});
+
+describe("threadPreviewVisible (#4297)", () => {
+  const preview = (sender: string | null) => ({
+    id: "reply-1",
+    sender_id: sender,
+  });
+  const parent = (raw: RawChatMessage) => one(raw);
+
+  it("shows a cleared replier's preview on a REST parent, even mid-outage", () => {
+    expect(
+      threadPreviewVisible(
+        preview(FRIEND),
+        parent(restRow("p", FRIEND)),
+        unavailable(),
+        VIEWER,
+      ),
+    ).toBe(true);
+  });
+
+  it("hides a replier the viewer blocked, on every path", () => {
+    for (const raw of [restRow("p", FRIEND), echoRow("p", FRIEND)]) {
+      expect(
+        threadPreviewVisible(preview(BLOCKED), parent(raw), ready([BLOCKED]), VIEWER),
+      ).toBe(false);
+    }
+  });
+
+  it("hides it under a parent whose author the viewer blocked, only for its replier", () => {
+    // The card is gone with its tombstoned parent; this is the rule alone.
+    expect(
+      threadPreviewVisible(
+        preview(FRIEND),
+        parent(restRow("p", BLOCKED, { sender_blocked: true })),
+        ready([BLOCKED]),
+        VIEWER,
+      ),
+    ).toBe(true);
+  });
+
+  it("holds an echoed preview back while the list isn't ready (fail closed)", () => {
+    const echoed = parent(echoRow("p", FRIEND));
+    expect(threadPreviewVisible(preview(FRIEND), echoed, loading(), VIEWER)).toBe(
+      false,
+    );
+    expect(threadPreviewVisible(preview(FRIEND), echoed, ready(), VIEWER)).toBe(
+      true,
+    );
+  });
+
+  it("always shows the viewer's own reply and an imported one", () => {
+    const echoed = parent(echoRow("p", FRIEND));
+    expect(threadPreviewVisible(preview(VIEWER), echoed, loading(), VIEWER)).toBe(
+      true,
+    );
+    expect(threadPreviewVisible(preview(null), echoed, loading(), VIEWER)).toBe(
+      true,
+    );
   });
 });
 

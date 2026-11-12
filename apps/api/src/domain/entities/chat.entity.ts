@@ -368,6 +368,29 @@ export interface ChatMessage {
   thread_reply_count?: number;
   thread_last_reply_at?: string | null;
   thread_recent_sender_ids?: string[];
+  /**
+   * On a thread's parent: its newest reply that isn't deleted, for the thread
+   * card's preview line (#4297). Kept by the same trigger, and by
+   * `chat_messages_thread_last_reply` when that reply is edited, deleted or
+   * re-attributed. `null` on every other row, and on a parent whose replies
+   * are all deleted. The REPLIER's content: a read that masks nulls it for a
+   * viewer who blocked them (`chat-block-mask.ts`).
+   */
+  thread_last_reply?: ChatThreadLastReply | null;
+  created_at: string;
+}
+
+/**
+ * What a thread's parent holds of its newest reply (#4297). `content` is cut
+ * to 500 characters; `attachment_count` is the reply's
+ * `metadata.attachment_count`, or 0 when it is absent or not a number.
+ */
+export interface ChatThreadLastReply {
+  id: string;
+  sender_id: string | null;
+  content: string;
+  kind: string | null;
+  attachment_count: number;
   created_at: string;
 }
 

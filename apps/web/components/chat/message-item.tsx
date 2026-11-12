@@ -73,6 +73,7 @@ import {
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
   hiddenQuoteText,
+  threadPreviewVisible,
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
@@ -461,6 +462,14 @@ export function MessageItem({
   // tints the row in danger red, a lighter flag is only a caption. The view
   // drops a blocked flagger's name, since a Realtime echo carries it raw.
   const flagView = messageFlagView(message, viewerId, blockState, nameFor);
+  // The thread card's latest-reply preview (#4297), only where the viewer's
+  // block list clears its replier: the parent's echo carries it raw.
+  const lastReply = message.thread?.last_reply ?? null;
+  const threadPreview =
+    lastReply &&
+    threadPreviewVisible(lastReply, message, blockState, viewerId)
+      ? lastReply
+      : null;
   const importantRow = flagView?.important === true;
   const canFlag =
     !!onFlag && canFlagMessage(message, viewerId, !!canManageChannel);
@@ -1501,6 +1510,8 @@ export function MessageItem({
                       avatarFor={avatarFor}
                       roleColorFor={roleColorFor}
                       unread={threadUnread}
+                      preview={threadPreview}
+                      viewerId={viewerId}
                       onOpen={
                         onOpenThread ? () => onOpenThread(message) : undefined
                       }
@@ -1607,13 +1618,15 @@ export function MessageItem({
                   under the photo (or the follow-on's time) down the gutter's
                   middle, curving into the card's left edge. The card is the
                   column's last item on a confirmed row, so the line ends at
-                  its middle: half its 36px height up from the bottom.
+                  its middle: half its height up from the bottom, 36px, or
+                  60px with the latest reply's preview line.
                 */
                 <span
                   aria-hidden="true"
                   data-slot="thread-spine"
                   className={cn(
-                    "pointer-events-none absolute bottom-[18px] left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    "pointer-events-none absolute left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    threadPreview ? "bottom-[30px]" : "bottom-[18px]",
                     drawsHeader ? "top-10" : "top-7",
                   )}
                 />
@@ -1772,6 +1785,8 @@ export function MessageItem({
                   avatarFor={avatarFor}
                   roleColorFor={roleColorFor}
                   unread={threadUnread}
+                  preview={threadPreview}
+                  viewerId={viewerId}
                   onOpen={
                     onOpenThread ? () => onOpenThread(message) : undefined
                   }

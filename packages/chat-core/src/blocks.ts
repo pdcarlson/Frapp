@@ -148,6 +148,37 @@ export function classifyMessage(
 }
 
 /**
+ * Whether the thread card may show its latest reply's preview (#4297).
+ *
+ * The preview is the replier's words on the parent's row, so it is
+ * classified as the replier's own message would be, with the parent's
+ * provenance: a REST read already dropped a blocked replier's preview
+ * (`chat-block-mask.ts`), so one it served was cleared; the parent's
+ * Realtime echo carries it raw. Anything short of `visible` shows no
+ * preview: there is no tombstone line on a card, and a held one fails
+ * closed until the list is back. The card itself stays either way.
+ */
+export function threadPreviewVisible(
+  reply: { id: string; sender_id: string | null },
+  parent: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): boolean {
+  return (
+    classifyMessage(
+      {
+        id: reply.id,
+        sender_id: reply.sender_id,
+        sender_blocked: false,
+        _blockEvaluated: parent._blockEvaluated,
+      },
+      blockState,
+      viewerId,
+    ) === "visible"
+  );
+}
+
+/**
  * Whether a tombstone should offer Unblock.
  *
  * The one case with nothing to undo is a server-masked copy left over from

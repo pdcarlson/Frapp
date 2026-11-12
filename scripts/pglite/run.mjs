@@ -197,6 +197,7 @@ await import("./tiers/unread-counts-skip-audit-mirror.mjs");
 await import("./tiers/unread-counts-filters.mjs");
 await import("./tiers/channel-latest-messages.mjs");
 await import("./tiers/message-threads.mjs");
+await import("./tiers/thread-last-reply.mjs");
 await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");

@@ -2636,6 +2636,64 @@ describe("MessageItem thread entry points", () => {
     expect(onOpenThread).toHaveBeenCalledWith(parent);
   });
 
+  describe("the card's latest-reply preview (#4297)", () => {
+    const BLOCKED_REPLIER = "33333333-3333-4333-8333-333333333333";
+    const parentWith = (sender_id: string, evaluated = true) =>
+      message({
+        _blockEvaluated: evaluated,
+        thread: {
+          reply_count: 2,
+          last_reply_at: null,
+          recent_sender_ids: [sender_id],
+          last_reply: {
+            id: "reply-9",
+            sender_id,
+            content: "grill is in my **garage**",
+            kind: "text",
+            attachment_count: 0,
+            created_at: "2026-11-11T20:00:00.000Z",
+          },
+        },
+      } as Partial<ChatMessage>);
+
+    it("shows the replier's first name and words, flattened", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(OTHER),
+        onOpenThread: vi.fn(),
+      });
+      const line = container.querySelector('[data-slot="thread-preview"]');
+      expect(line).toHaveTextContent("Alicegrill is in my garage");
+      expect(
+        screen.getByRole("button", {
+          name: "2 replies, latest from Alice: grill is in my garage. Open thread",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("says You for the viewer's own reply", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(VIEWER),
+        onOpenThread: vi.fn(),
+      });
+      expect(
+        container.querySelector('[data-slot="thread-preview"]'),
+      ).toHaveTextContent(/Yougrill/);
+    });
+
+    it("draws none for a replier the viewer blocked, and keeps the card", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(BLOCKED_REPLIER, false),
+        onOpenThread: vi.fn(),
+        blockState: { ...NOBODY_BLOCKED, ids: new Set([BLOCKED_REPLIER]) },
+      });
+      expect(container.querySelector('[data-slot="thread-preview"]')).toBeNull();
+      expect(screen.queryByText(/garage/)).not.toBeInTheDocument();
+      expect(
+        container.querySelector('[data-slot="thread-card"]'),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("passes the viewer's new replies to the card (#4297)", () => {
     renderItemWithProps({
       message: message({

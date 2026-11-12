@@ -141,6 +141,9 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
     thread_reply_count: message.thread_reply_count ?? 0,
     thread_last_reply_at: message.thread_last_reply_at ?? null,
     thread_recent_sender_ids: message.thread_recent_sender_ids ?? [],
+    // The latest reply is another member's content, which this mask is not
+    // about: `maskBlockedMessages` applies the viewer's list to its replier.
+    thread_last_reply: message.thread_last_reply ?? null,
     created_at: message.created_at,
     sender_blocked: true,
   };
@@ -205,10 +208,37 @@ export function maskBlockedMessages(
   const blocked = new Set(blockedUserIds);
 
   return messages.map((message) =>
-    isFromBlockedSender(message.sender_id, blocked)
-      ? maskMessage(message)
-      : withFlaggerMasked({ ...message, sender_blocked: false }, blocked),
+    withThreadPreviewMasked(
+      isFromBlockedSender(message.sender_id, blocked)
+        ? maskMessage(message)
+        : withFlaggerMasked({ ...message, sender_blocked: false }, blocked),
+      blocked,
+    ),
   );
+}
+
+/**
+ * A thread's parent whose latest reply is from a blocked member serves no
+ * preview of it (#4297), whoever wrote the parent.
+ *
+ * The preview is the replier's content riding on someone else's row, so the
+ * row's own mask never reaches it: without this, a blocked member's reply
+ * would read on the card under any parent. The whole preview goes, not just
+ * its text, so the card draws as it does for a thread with no preview; the
+ * replier's face stays among `thread_recent_sender_ids`, as the open thread
+ * keeps their tombstone in place. Nothing replaces it with the next reply: the
+ * trigger keeps one reply, and the open thread is where the rest are read.
+ * The Realtime echo carries it raw, and each client applies its own list.
+ */
+function withThreadPreviewMasked(
+  message: MaskedChatMessage,
+  blocked: ReadonlySet<string>,
+): MaskedChatMessage {
+  const preview = message.thread_last_reply;
+  if (!preview || !isFromBlockedSender(preview.sender_id, blocked)) {
+    return message;
+  }
+  return { ...message, thread_last_reply: null };
 }
 
 /**
