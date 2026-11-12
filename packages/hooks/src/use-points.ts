@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   isRetryableFailure,
   randomClientId,
@@ -11,6 +16,22 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
+
+/**
+ * Refresh every points read (my total, the leaderboard, the ledger) after a
+ * write that awards, revokes or re-windows points somewhere else: a check-in,
+ * a service approval, a study session ending, a semester rollover, a removed
+ * member. Points keys are `["points", chapterId, …]`, so the bare prefix covers
+ * every chapter and window; a chapter switch clears the cache anyway.
+ *
+ * Any mutation whose endpoint writes the points ledger calls this. Without it
+ * the member sees their old total until the 30s `staleTime` lapses on web, or
+ * until the app comes back to the foreground on mobile, where a mounted tab
+ * never refetches on its own.
+ */
+export function invalidatePointReads(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ["points"] });
+}
 
 export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
   const client = useFrappClient();

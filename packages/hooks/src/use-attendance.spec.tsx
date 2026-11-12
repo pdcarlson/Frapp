@@ -688,6 +688,9 @@ describe("useCheckIn", () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["attendance", "event-123"],
     });
+    // The check-in awards the event's points in the same transaction, so the
+    // member's total and the leaderboard must re-read too.
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ["points"] });
   });
 
   it("re-reads the member's own row on a 409, which means they're already in", async () => {
