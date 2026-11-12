@@ -3,6 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { formatTimer } from "@repo/formatting";
 import { CardMessages } from "@/components/card-messages";
+import { Chip } from "@/components/filter-chips";
 
 /**
  * The live-session card — `canvas-screens.dc.html`, `id="s10"`.
@@ -48,6 +49,14 @@ export interface SessionCardProps {
   notice?: string | null;
   failure?: string | null;
   onEnd: () => void;
+  /**
+   * The focus timer's line ("Focus · 18:42 left"), or null while it's off.
+   * `hint` is the break's line; null during focus.
+   */
+  focus?: { text: string; isBreak: boolean; hint: string | null } | null;
+  onToggleFocus?: () => void;
+  keepScreenOn?: boolean;
+  onToggleKeepScreenOn?: () => void;
 }
 
 export function SessionCard({
@@ -60,6 +69,10 @@ export function SessionCard({
   notice = null,
   failure = null,
   onEnd,
+  focus = null,
+  onToggleFocus,
+  keepScreenOn = false,
+  onToggleKeepScreenOn,
 }: SessionCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -94,6 +107,20 @@ export function SessionCard({
         </Text>
       </View>
 
+      {/* Always laid out while the timer is on, so a phase change never moves
+          the End button. */}
+      {focus ? (
+        <View style={styles.focusBlock}>
+          <Text
+            style={[styles.focusText, focus.isBreak ? styles.focusBreak : null]}
+            accessibilityLiveRegion="polite"
+          >
+            {focus.text}
+          </Text>
+          <Text style={styles.focusHint}>{focus.hint ?? " "}</Text>
+        </View>
+      ) : null}
+
       {isPaused ? (
         <Text style={styles.pausedNote}>
           Paused while Frapp was in the background. It resumes on its own — your
@@ -111,6 +138,31 @@ export function SessionCard({
           Move somewhere with signal — sessions that stop reporting for 10
           minutes are closed without points.
         </Text>
+      ) : null}
+
+      {onToggleFocus || onToggleKeepScreenOn ? (
+        <View style={styles.options}>
+          {onToggleFocus ? (
+            <Chip
+              label="Focus timer"
+              on={focus !== null}
+              onPress={onToggleFocus}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: focus !== null }}
+              accessibilityHint="25 minutes of focus, then a short break."
+            />
+          ) : null}
+          {onToggleKeepScreenOn ? (
+            <Chip
+              label="Keep screen on"
+              on={keepScreenOn}
+              onPress={onToggleKeepScreenOn}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: keepScreenOn }}
+              accessibilityHint="Stops the phone locking while this session runs."
+            />
+          ) : null}
+        </View>
       ) : null}
 
       <Pressable
@@ -177,6 +229,32 @@ function createStyles(tokens: SignetTokens) {
     },
     statusText: {
       ...typeRole(tokens.typography.role.label),
+    },
+    focusBlock: {
+      alignItems: "center",
+      marginTop: tokens.spacing.sm,
+    },
+    focusText: {
+      ...typeRole(tokens.typography.role.label),
+      fontVariant: ["tabular-nums"],
+      color: tokens.color.text.foreground,
+    },
+    focusBreak: {
+      color: tokens.color.semantic.success,
+    },
+    focusHint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
+      marginTop: 2,
+      maxWidth: 260,
+    },
+    options: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.lg,
     },
     pausedNote: {
       ...typeRole(tokens.typography.role.caption),
