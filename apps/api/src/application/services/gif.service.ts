@@ -4,10 +4,13 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHmac } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import {
+  GIF_PAGE_MAX,
   GIF_SEARCH,
+  MAX_GIF_EDGE,
   type GifPage,
+  type GifResult,
   type GifSearchOutcome,
   type IGifSearch,
 } from '#domain/adapters/gif-search.interface';
@@ -34,27 +37,44 @@ export interface MessageGifInput {
   url: string;
   width: number;
   height: number;
+  /** The `token` the result carried when this server handed it out. */
+  token: string;
+}
+
+/** A result as a client gets it: signed, so a send can prove where it came from. */
+export interface SignedGifResult extends GifResult {
+  token: string;
+}
+
+export interface SignedGifPage {
+  results: SignedGifResult[];
+  next_page: number | null;
 }
 
 const TRENDING_TTL_MS = 5 * 60_000;
 const SEARCH_TTL_MS = 10 * 60_000;
 const CACHE_MAX_ENTRIES = 300;
-/** Trending is the same for everyone, so its pages are cached under this id. */
-const SHARED_CUSTOMER = 'frapp';
-const MAX_DIMENSION = 4096;
+/** Wider or taller than this draws as a sliver, so a send is refused. */
+const MAX_GIF_ASPECT = 8;
 
 interface CacheEntry {
-  page: GifPage;
+  page: SignedGifPage;
   expires: number;
 }
 
 /**
  * GIF search for the chat picker (#4631): the provider behind
- * {@link IGifSearch}, a member's pseudonymous provider id, and a small cache.
+ * {@link IGifSearch}, a small cache, and the check a GIF message passes.
  *
  * The cache matters because a KLIPY test key allows 100 calls an hour for the
- * whole app: trending is shared by everyone and searches repeat ("lol",
- * "congrats"), so most picker opens never reach the provider.
+ * whole app: trending is the same for everyone and searches repeat ("lol",
+ * "congrats"), so most picker opens never reach the provider. It is one cache
+ * per API process, shared by every chapter: nothing in it is a member's.
+ *
+ * Every result carries a `token`, an HMAC of what a message would store, and
+ * a send must bring it back. That holds a GIF message to what this server's
+ * own PG-13 search returned: a client can't send an arbitrary item from the
+ * provider's media host by naming its URL.
  */
 @Injectable()
 export class GifService {
@@ -69,50 +89,54 @@ export class GifService {
     };
   }
 
-  async trending(page: number): Promise<GifPage> {
+  trending(page: number): Promise<SignedGifPage> {
     return this.cached(`t:${page}`, TRENDING_TTL_MS, () =>
-      this.gifs.trending(page, SHARED_CUSTOMER),
+      this.gifs.trending(page),
     );
   }
 
-  async search(userId: string, query: string, page: number): Promise<GifPage> {
+  search(query: string, page: number): Promise<SignedGifPage> {
     const q = query.trim().toLowerCase().replace(/\s+/g, ' ');
     if (!q) return this.trending(page);
     return this.cached(`s:${page}:${q}`, SEARCH_TTL_MS, () =>
-      this.gifs.search(q, page, this.customerId(userId)),
+      this.gifs.search(q, page),
     );
   }
 
-  /** Never cached: it's one member's own list, and it changes as they send. */
-  async recent(userId: string, page: number): Promise<GifPage> {
-    this.assertConfigured();
-    return this.unwrap(await this.gifs.recent(page, this.customerId(userId)));
-  }
-
   /** Fire and forget: a provider that's down never fails a send. */
-  recordShare(userId: string, gifId: string): void {
+  recordShare(gifId: string): void {
     if (!this.gifs.isConfigured()) return;
-    void this.gifs.recordShare(gifId, this.customerId(userId));
+    void this.gifs.recordShare(gifId);
   }
 
   /**
-   * A client's GIF, checked and normalized for `metadata.gif`, or a 400.
-   * Not checked against the provider: a member who has the URL of a KLIPY
-   * GIF may send it, as they could paste it as a link.
+   * A client's GIF, checked and normalized for `metadata.gif`: a 400 unless
+   * it is a result this server handed out (its token matches), on the
+   * provider's media host, at a size that draws.
    */
   messageGif(input: MessageGifInput): MessageGif {
-    if (!this.isMediaUrl(input.url)) {
+    if (!this.gifs.isConfigured()) {
+      throw new ServiceUnavailableException("GIFs aren't set up yet");
+    }
+    if (!this.gifs.isMediaUrl(input.url)) {
       throw new BadRequestException(
         "gif.url must be the GIF provider's own https media URL",
       );
     }
-    const width = Math.round(input.width);
-    const height = Math.round(input.height);
-    if (
-      !(width > 0 && width <= MAX_DIMENSION) ||
-      !(height > 0 && height <= MAX_DIMENSION)
-    ) {
+    const { width, height } = input;
+    if (!isEdge(width) || !isEdge(height)) {
       throw new BadRequestException('gif width and height are out of range');
+    }
+    if (width > height * MAX_GIF_ASPECT || height > width * MAX_GIF_ASPECT) {
+      throw new BadRequestException('gif is too narrow to draw');
+    }
+    const expected = this.gifs.sign(
+      tokenMessage(input.id, input.url, width, height),
+    );
+    if (!expected || !sameToken(expected, input.token)) {
+      throw new BadRequestException(
+        "That GIF can't be sent. Pick it again from the GIF picker.",
+      );
     }
     return {
       provider: this.gifs.provider.toLowerCase(),
@@ -124,40 +148,24 @@ export class GifService {
     };
   }
 
-  private isMediaUrl(raw: string): boolean {
-    let url: URL;
-    try {
-      url = new URL(raw);
-    } catch {
-      return false;
+  private signed(page: GifPage): SignedGifPage {
+    const results: SignedGifResult[] = [];
+    for (const gif of page.results) {
+      const { url, width, height } = gif.full;
+      const token = this.gifs.sign(tokenMessage(gif.id, url, width, height));
+      // A result a send would refuse is never offered.
+      if (!token || !isEdge(width) || !isEdge(height)) continue;
+      if (width > height * MAX_GIF_ASPECT || height > width * MAX_GIF_ASPECT)
+        continue;
+      results.push({ ...gif, token });
     }
-    if (url.protocol !== 'https:' || url.username || url.password || url.port)
-      return false;
-    const host = url.hostname.toLowerCase();
-    const media = this.gifs.mediaHost.toLowerCase();
-    return host === media || host.endsWith(`.${media}`);
-  }
-
-  /**
-   * A stable id the provider can key a member's recents on that isn't their
-   * Frapp id: an HMAC of the user id under the provider key, which the
-   * provider never sees in this form.
-   */
-  private customerId(userId: string): string {
-    const secret =
-      process.env.ANALYTICS_HMAC_SALT?.trim() ||
-      process.env.KLIPY_API_KEY?.trim() ||
-      'frapp-gifs';
-    return createHmac('sha256', secret)
-      .update(`gif:${userId}`)
-      .digest('hex')
-      .slice(0, 32);
-  }
-
-  private assertConfigured(): void {
-    if (!this.gifs.isConfigured()) {
-      throw new ServiceUnavailableException("GIFs aren't set up yet");
-    }
+    return {
+      results,
+      next_page:
+        page.next_page !== null && page.next_page <= GIF_PAGE_MAX
+          ? page.next_page
+          : null,
+    };
   }
 
   private unwrap(outcome: GifSearchOutcome): GifPage {
@@ -169,12 +177,14 @@ export class GifService {
     key: string,
     ttl: number,
     load: () => Promise<GifSearchOutcome>,
-  ): Promise<GifPage> {
-    this.assertConfigured();
+  ): Promise<SignedGifPage> {
+    if (!this.gifs.isConfigured()) {
+      throw new ServiceUnavailableException("GIFs aren't set up yet");
+    }
     const hit = this.cache.get(key);
     const now = Date.now();
     if (hit && hit.expires > now) return hit.page;
-    const page = this.unwrap(await load());
+    const page = this.signed(this.unwrap(await load()));
     this.cache.delete(key);
     this.cache.set(key, { page, expires: now + ttl });
     // Oldest first, as a Map keeps insertion order.
@@ -184,4 +194,24 @@ export class GifService {
     }
     return page;
   }
+}
+
+function isEdge(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_GIF_EDGE;
+}
+
+/** What a token signs: everything a message stores but the free-text title. */
+function tokenMessage(
+  id: string,
+  url: string,
+  width: number,
+  height: number,
+): string {
+  return JSON.stringify(['gif', id, url, width, height]);
+}
+
+function sameToken(expected: string, given: string): boolean {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(given);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

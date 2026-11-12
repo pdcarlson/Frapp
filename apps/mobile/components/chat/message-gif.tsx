@@ -1,26 +1,10 @@
 import { Pressable, StyleSheet } from "react-native";
 import { Image } from "expo-image";
-import type { MessageGif } from "@repo/chat-core/types";
+import { gifBoxSize, type MessageGif } from "@repo/chat-core/types";
 import { useFrappTheme } from "@/lib/theme";
 
 /** A GIF's box in the thread: at most 240pt wide or 180pt tall. */
-const GIF_MAX_WIDTH = 240;
-const GIF_MAX_HEIGHT = 180;
-
-/** The GIF's box, from its stored edges, so the row never jumps on load. */
-export function gifBoxSize(gif: Pick<MessageGif, "width" | "height">): {
-  width: number;
-  height: number;
-} {
-  const width = Math.round(
-    Math.min(
-      gif.width,
-      GIF_MAX_WIDTH,
-      (GIF_MAX_HEIGHT * gif.width) / gif.height,
-    ),
-  );
-  return { width, height: Math.round((width * gif.height) / gif.width) };
-}
+const GIF_MAX = { width: 240, height: 180 };
 
 /**
  * A GIF message's GIF (#4631): an animated WebP from the provider, looping
@@ -36,7 +20,7 @@ export function MessageGifImage({
   onLongPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const size = gifBoxSize(gif);
+  const size = gifBoxSize(gif, GIF_MAX);
   return (
     <Pressable
       accessibilityRole="image"

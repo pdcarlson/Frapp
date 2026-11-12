@@ -3502,6 +3502,27 @@ describe('ChatService', () => {
   });
 
   describe('editMessage', () => {
+    it('refuses to edit a GIF message, even its own sender (#4631)', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        content: '',
+        metadata: {
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: '',
+            url: 'https://static.klipy.com/h.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      });
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'now with text'),
+      ).rejects.toThrow('A GIF cannot be edited');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
     it('saves an edit with U+FFFC turned into a space, and refuses one left blank (#4346)', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.update.mockResolvedValue(baseMessage);

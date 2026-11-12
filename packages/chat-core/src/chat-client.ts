@@ -34,7 +34,7 @@ import {
   reactionActionType,
   type ChannelCache,
   type ChatMessageKind,
-  type MessageGif,
+  type OutgoingGif,
   type RawChatMessage,
   type RawChatMessageAction,
   type ReplayRequest,
@@ -376,9 +376,10 @@ export interface SendMessageArgs {
   attachmentCount?: number;
   /**
    * A GIF from the picker (#4631). The message is the GIF: `content` is
-   * empty and there are no attachments. The server re-checks its URL.
+   * empty and there are no attachments. The server checks its token, so only
+   * a GIF the API's own search returned is accepted.
    */
-  gif?: MessageGif | null;
+  gif?: OutgoingGif | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -588,6 +589,7 @@ export async function sendMessage(
                 url: args.gif.url,
                 width: args.gif.width,
                 height: args.gif.height,
+                token: args.gif.token,
               }
             : undefined,
         },
@@ -989,6 +991,10 @@ export async function hydrateOutboxIntoCache(
         kind: coerceKind(row.kind),
         payload: row.payload ?? null,
         replyToId: row.replyToId ?? null,
+        // So a queued photo or GIF redraws as itself after a reload, not as
+        // an empty bubble.
+        attachmentCount: row.attachments?.length ?? 0,
+        gif: row.gif ?? null,
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {

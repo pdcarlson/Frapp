@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { GifService } from '../../application/services/gif.service';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
@@ -425,6 +426,56 @@ describe('ChatController', () => {
           enabled_modules: enabledModules,
         }),
       );
+    });
+
+    describe('a GIF send (#4631)', () => {
+      const dtoGif = {
+        id: 'dance',
+        url: 'https://static.klipy.com/h.webp',
+        width: 498,
+        height: 280,
+        token: 'tok',
+      };
+      const checked = {
+        provider: 'klipy',
+        id: 'dance',
+        title: '',
+        url: dtoGif.url,
+        width: 498,
+        height: 280,
+      };
+      const send = () =>
+        controller.sendMessage('chan-1', 'ch-1', 'user-1', null, {
+          content: '',
+          client_message_id: '22222222-2222-2222-2222-222222222222',
+          gif: dtoGif,
+        });
+
+      it('sends only the GIF the check returned, then records the share', async () => {
+        gifs.messageGif.mockReturnValue(checked);
+        service.sendMessage.mockResolvedValue({ deduplicated: false } as never);
+        await send();
+        expect(gifs.messageGif).toHaveBeenCalledWith(dtoGif);
+        expect(service.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ gif: checked }),
+        );
+        expect(gifs.recordShare).toHaveBeenCalledWith('dance');
+      });
+
+      it('writes nothing when the check refuses the GIF', async () => {
+        gifs.messageGif.mockImplementation(() => {
+          throw new BadRequestException('nope');
+        });
+        await expect(send()).rejects.toThrow(BadRequestException);
+        expect(service.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('records no second share for a deduplicated retry', async () => {
+        gifs.messageGif.mockReturnValue(checked);
+        service.sendMessage.mockResolvedValue({ deduplicated: true } as never);
+        await send();
+        expect(gifs.recordShare).not.toHaveBeenCalled();
+      });
     });
 
     it('hands enabled_modules to recordMessageAction', async () => {

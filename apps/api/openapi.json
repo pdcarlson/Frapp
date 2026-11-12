@@ -6732,55 +6732,6 @@
         ]
       }
     },
-    "/v1/gifs/recent": {
-      "get": {
-        "operationId": "GifController_recent_v1",
-        "parameters": [
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 1,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GifPageDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The member's own recently sent GIFs",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -18991,13 +18942,19 @@
             "type": "number",
             "minimum": 1,
             "maximum": 4096
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused."
           }
         },
         "required": [
           "id",
           "url",
           "width",
-          "height"
+          "height",
+          "token"
         ]
       },
       "SendMessageDto": {
@@ -20154,13 +20111,18 @@
                 "$ref": "#/components/schemas/GifRenditionDto"
               }
             ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search."
           }
         },
         "required": [
           "id",
           "title",
           "preview",
-          "full"
+          "full",
+          "token"
         ]
       },
       "GifPageDto": {

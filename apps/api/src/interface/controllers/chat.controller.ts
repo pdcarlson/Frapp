@@ -627,8 +627,8 @@ export class ChatController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: SendMessageDto,
   ) {
-    // Checked before the send, so a GIF from anywhere but the provider's
-    // media host is a 400 and nothing is written (#4631).
+    // Checked before the send, so a GIF this server's search didn't hand out
+    // is a 400 and nothing is written (#4631).
     const gif = dto.gif ? this.gifs.messageGif(dto.gif) : null;
     const sent = await this.chatService.sendMessage({
       chapter_id: chapterId,
@@ -645,8 +645,9 @@ export class ChatController {
       gif,
       enabled_modules: enabledModules,
     });
-    // Feeds the member's Recent GIFs at the provider; never fails the send.
-    if (gif && !sent.deduplicated) this.gifs.recordShare(userId, gif.id);
+    // Tells the provider what got sent, which tunes its results; never fails
+    // the send.
+    if (gif && !sent.deduplicated) this.gifs.recordShare(gif.id);
     return sent;
   }
 

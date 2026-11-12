@@ -27,6 +27,17 @@ export const SENTRY_HTTP_INTEGRATION_OPTIONS = {
   ignoreRequestBody: () => true,
 };
 
+/** Hosts whose request paths carry a credential. */
+const SECRET_PATH_HOSTS: ReadonlySet<string> = new Set(['api.klipy.com']);
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Fetch spans: do not copy request/response headers onto span attributes.
  * `Authorization` and cookies are the realistic leak; an empty list is
@@ -37,6 +48,12 @@ export const SENTRY_NODE_FETCH_INTEGRATION_OPTIONS = {
     requestHeaders: [] as string[],
     responseHeaders: [] as string[],
   },
+  /**
+   * No span and no breadcrumb for a call to a provider that puts its key in
+   * the URL path, where the scrubber can't tell it from an ordinary path
+   * segment. KLIPY's key is one (`/api/v1/<key>/gifs/...`, #4631).
+   */
+  ignoreOutgoingRequests: (url: string) => SECRET_PATH_HOSTS.has(hostOf(url)),
 };
 
 /**

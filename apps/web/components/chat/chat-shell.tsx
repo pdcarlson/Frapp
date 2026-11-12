@@ -74,6 +74,7 @@ import {
   useReorderChannels,
   useImportantMessages,
   useChatCatchUpAvailable,
+  gifToSend,
   useGifAvailability,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
@@ -3805,17 +3806,9 @@ export function ChatShell({
                     const target = replyTo?.id ?? null;
                     if (replyTo) setReplyTarget(null);
                     void channel
-                      .sendGif(
-                        {
-                          provider: gifs.provider.toLowerCase(),
-                          id: gif.id,
-                          title: gif.title,
-                          url: gif.full.url,
-                          width: gif.full.width,
-                          height: gif.full.height,
-                        },
-                        { replyToId: target },
-                      )
+                      .sendGif(gifToSend(gif, gifs.provider), {
+                        replyToId: target,
+                      })
                       .catch(() => {
                         if (target) restoreReply(target);
                       });

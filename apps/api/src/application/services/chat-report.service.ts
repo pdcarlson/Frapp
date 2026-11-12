@@ -1028,6 +1028,8 @@ export function reportedContentSnapshot(
     'content' | 'type' | 'kind' | 'payload' | 'metadata'
   >,
 ): string {
+  const gif = gifText(message.metadata);
+  if (gif) return gif;
   const poll = pollText(message);
   if (!poll || poll.labels.length === 0) return message.content;
   const lines = [message.content];
@@ -1036,6 +1038,21 @@ export function reportedContentSnapshot(
   }
   for (const label of poll.labels) lines.push(`- ${label}`);
   return lines.join('\n');
+}
+
+/**
+ * A GIF message (#4631) has no text and no attachments: its GIF is the
+ * evidence, so the report keeps its address and title, which outlive the
+ * sender deleting the message.
+ */
+function gifText(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const gif = (metadata as { gif?: unknown }).gif;
+  if (!gif || typeof gif !== 'object') return null;
+  const { url, title } = gif as { url?: unknown; title?: unknown };
+  if (typeof url !== 'string') return null;
+  const name = typeof title === 'string' && title.trim() ? title.trim() : '';
+  return name ? `GIF: ${name}\n${url}` : `GIF: ${url}`;
 }
 
 function pollText(

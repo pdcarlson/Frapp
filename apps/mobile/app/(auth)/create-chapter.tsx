@@ -1,11 +1,5 @@
 import { errorCopy } from "@repo/hooks/error-copy";
-import {
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useState, type ComponentProps, type ReactNode, type Ref } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -26,6 +20,7 @@ import {
   useChapterDirectorySearch,
   useConfirmChapterLogo,
   useCurrentChapter,
+  useDebouncedValue,
   useOnboardChapter,
   useRequestChapterLogoUploadUrl,
   type ChapterDirectoryResult,
@@ -147,15 +142,6 @@ export const SETUP_TITLES = {
 
 export function liveTitle(displayName: string): string {
   return `${displayName} is live`;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
 }
 
 /** A directory archetype this app knows, else `null`: the officer picks. */

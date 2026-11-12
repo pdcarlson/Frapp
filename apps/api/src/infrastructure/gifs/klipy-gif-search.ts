@@ -1,10 +1,12 @@
 import { Logger } from '@nestjs/common';
-import type {
-  GifPage,
-  GifRendition,
-  GifResult,
-  GifSearchOutcome,
-  IGifSearch,
+import { createHmac } from 'node:crypto';
+import {
+  GIF_PAGE_MAX,
+  type GifPage,
+  type GifRendition,
+  type GifResult,
+  type GifSearchOutcome,
+  type IGifSearch,
 } from '#domain/adapters/gif-search.interface';
 
 /**
@@ -21,11 +23,18 @@ import type {
  *   `ad` is dropped anyway, in case that changes.
  * - Media hotlinks from `static.klipy.com`. WebP is chosen over GIF: the same
  *   frames are several times smaller.
+ * - Every call sends one fixed `customer_id`, never a member's: results are
+ *   cached and shared across members anyway, and KLIPY learns nothing about
+ *   who searched.
+ * - The key sits in the request path, so Sentry records no span or
+ *   breadcrumb for `api.klipy.com` (`sentry-options.ts`).
  */
 const KLIPY_API = 'https://api.klipy.com/api/v1';
 export const KLIPY_MEDIA_HOST = 'klipy.com';
 const KLIPY_TIMEOUT_MS = 4_000;
 const KLIPY_PER_PAGE = 24;
+/** The one customer id KLIPY ever sees from Frapp. */
+const KLIPY_CUSTOMER_ID = 'frapp';
 
 type Fetch = typeof fetch;
 
@@ -43,9 +52,8 @@ interface KlipyItem {
 }
 
 /**
- * Whether a rendition URL is KLIPY's own https media. Exported because the
- * send route holds a GIF message to the same rule: a message can't smuggle in
- * an arbitrary image URL by calling itself a GIF.
+ * Whether a rendition URL is KLIPY's own https media. The send route holds a
+ * GIF message to the same rule, through {@link KlipyGifSearch.isMediaUrl}.
  */
 export function isKlipyMediaUrl(raw: string): boolean {
   let url: URL;
@@ -108,7 +116,6 @@ export function klipyItemToResult(item: KlipyItem): GifResult | null {
 
 export class KlipyGifSearch implements IGifSearch {
   readonly provider = 'KLIPY';
-  readonly mediaHost = KLIPY_MEDIA_HOST;
   private readonly logger = new Logger(KlipyGifSearch.name);
 
   constructor(
@@ -120,23 +127,29 @@ export class KlipyGifSearch implements IGifSearch {
     return !!this.apiKey;
   }
 
-  trending(page: number, customerId: string): Promise<GifSearchOutcome> {
-    return this.list('trending', { page, customer_id: customerId });
+  isMediaUrl(url: string): boolean {
+    return isKlipyMediaUrl(url);
   }
 
-  search(
-    query: string,
-    page: number,
-    customerId: string,
-  ): Promise<GifSearchOutcome> {
-    return this.list('search', { q: query, page, customer_id: customerId });
+  trending(page: number): Promise<GifSearchOutcome> {
+    return this.list('trending', { page });
   }
 
-  recent(page: number, customerId: string): Promise<GifSearchOutcome> {
-    return this.list(`recent/${encodeURIComponent(customerId)}`, { page });
+  search(query: string, page: number): Promise<GifSearchOutcome> {
+    return this.list('search', { q: query, page });
   }
 
-  async recordShare(id: string, customerId: string): Promise<void> {
+  sign(message: string): string | null {
+    if (!this.apiKey) return null;
+    // A key of its own, derived from the provider key, so the HMAC never
+    // runs under the provider key itself.
+    const key = createHmac('sha256', this.apiKey)
+      .update('frapp-gif-token')
+      .digest();
+    return createHmac('sha256', key).update(message).digest('base64url');
+  }
+
+  async recordShare(id: string): Promise<void> {
     if (!this.apiKey) return;
     try {
       const response = await this.fetchImpl(
@@ -144,7 +157,7 @@ export class KlipyGifSearch implements IGifSearch {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customer_id: customerId }),
+          body: JSON.stringify({ customer_id: KLIPY_CUSTOMER_ID }),
           signal: AbortSignal.timeout(KLIPY_TIMEOUT_MS),
         },
       );
@@ -170,6 +183,7 @@ export class KlipyGifSearch implements IGifSearch {
       locale: 'en',
       rating: 'pg-13',
       content_filter: 'medium',
+      customer_id: KLIPY_CUSTOMER_ID,
     });
     for (const [key, value] of Object.entries(params)) {
       query.set(key, String(value));
@@ -181,33 +195,28 @@ export class KlipyGifSearch implements IGifSearch {
         signal: AbortSignal.timeout(KLIPY_TIMEOUT_MS),
       });
     } catch (error) {
-      this.logger.warn(`KLIPY ${label(path)} failed: ${errorName(error)}`);
+      this.logger.warn(`KLIPY ${path} failed: ${errorName(error)}`);
       return { outcome: 'unavailable' };
     }
     if (!response.ok) {
       // Status only: the body of a 404 echoes the key.
-      this.logger.warn(`KLIPY ${label(path)} answered ${response.status}`);
+      this.logger.warn(`KLIPY ${path} answered ${response.status}`);
       return { outcome: 'unavailable' };
     }
     let body: unknown;
     try {
       body = await response.json();
     } catch {
-      this.logger.warn(`KLIPY ${label(path)} sent a body that isn't JSON`);
+      this.logger.warn(`KLIPY ${path} sent a body that isn't JSON`);
       return { outcome: 'unavailable' };
     }
     const page = pageOf(body, Number(params.page) || 1);
     if (!page) {
-      this.logger.warn(`KLIPY ${label(path)} sent an unexpected shape`);
+      this.logger.warn(`KLIPY ${path} sent an unexpected shape`);
       return { outcome: 'unavailable' };
     }
     return { outcome: 'ok', page };
   }
-}
-
-/** The route name for a log line, never the customer id in a recents path. */
-function label(path: string): string {
-  return path.split('/')[0] ?? 'call';
 }
 
 function errorName(error: unknown): string {
@@ -229,5 +238,9 @@ export function pageOf(body: unknown, page: number): GifPage | null {
     )
     .filter((result): result is GifResult => result !== null);
   const hasNext = (data as { has_next?: unknown }).has_next === true;
-  return { results, next_page: hasNext ? page + 1 : null };
+  // A client may not ask past GIF_PAGE_MAX, so the list ends there.
+  return {
+    results,
+    next_page: hasNext && page < GIF_PAGE_MAX ? page + 1 : null,
+  };
 }

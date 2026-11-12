@@ -1,6 +1,7 @@
 export * from "./use-frapp-client";
 export * from "./permission-preview";
 export * from "./use-now";
+export * from "./use-debounced-value";
 export * from "./display-names";
 export * from "./channel-members";
 export * from "./document-download";

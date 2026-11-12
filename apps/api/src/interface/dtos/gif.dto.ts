@@ -8,9 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-
-/** The provider's pages are small; 50 is far past what anyone scrolls. */
-const GIF_PAGE_MAX = 50;
+import { GIF_PAGE_MAX } from '#domain/adapters/gif-search.interface';
 
 export class GifPageQueryDto {
   @ApiPropertyOptional({ minimum: 1, maximum: GIF_PAGE_MAX, default: 1 })
@@ -58,6 +56,12 @@ export class GifResultDto {
     description: 'What a message shows; send this one.',
   })
   full: GifRenditionDto;
+
+  @ApiProperty({
+    description:
+      "Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search.",
+  })
+  token: string;
 }
 
 export class GifPageDto {

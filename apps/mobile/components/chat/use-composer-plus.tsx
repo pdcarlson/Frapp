@@ -12,6 +12,7 @@ import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useCurrentChapter,
+  gifToSend,
   useGifAvailability,
   useMyPermissions,
   type GifResult,
@@ -292,14 +293,7 @@ export function useComposerPlus({
   }, []);
   const pickGif = useCallback(
     (gif: GifResult) => {
-      void sendGif({
-        provider: gifs.provider.toLowerCase(),
-        id: gif.id,
-        title: gif.title,
-        url: gif.full.url,
-        width: gif.full.width,
-        height: gif.full.height,
-      }).then((result) => {
+      void sendGif(gifToSend(gif, gifs.provider)).then((result) => {
         if (!result.ok) Alert.alert("Couldn't send the GIF", result.error);
       });
     },

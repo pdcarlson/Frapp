@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./display-names": "./src/display-names.ts",
+    "./use-debounced-value": "./src/use-debounced-value.ts",
     "./chapter-identity": "./src/chapter-identity.ts",
     "./channel-start": "./src/channel-start.ts",
     "./field-reveal": "./src/field-reveal.ts",

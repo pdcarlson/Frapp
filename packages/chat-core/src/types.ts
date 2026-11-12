@@ -747,13 +747,38 @@ export interface MessageGif {
   height: number;
 }
 
-/** The API's own bound on a GIF's edges. */
+/** What a client sends: the picker result's GIF and the token the API signed it with. */
+export interface OutgoingGif extends MessageGif {
+  token: string;
+}
+
+/** The API's own bound on a GIF's edges (`MAX_GIF_EDGE` in its GIF port). */
 const MAX_GIF_EDGE = 4096;
 
+/** The hosts GIF media may come from: the GIF provider's own (KLIPY). */
+const GIF_MEDIA_HOSTS: readonly string[] = ["klipy.com"];
+
+/** Whether a URL is the GIF provider's own https media, as the API requires. */
+export function isGifMediaUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port)
+    return false;
+  const host = url.hostname.toLowerCase();
+  return GIF_MEDIA_HOSTS.some(
+    (media) => host === media || host.endsWith(`.${media}`),
+  );
+}
+
 /**
- * Reads `metadata.gif` defensively, as a spreadable field. Anything but an
- * https URL and two whole edges in range reads as no GIF, so a malformed row
- * draws as an ordinary (empty) message rather than a broken image.
+ * Reads `metadata.gif` defensively, as a spreadable field. Anything but the
+ * provider's own https media and two whole edges in range reads as no GIF, so
+ * a malformed row, or one written before the server owned the key, never
+ * draws an image from anywhere else.
  */
 export function messageGifOf(metadata: unknown): MessageGif | null {
   if (!metadata || typeof metadata !== "object") return null;
@@ -763,7 +788,7 @@ export function messageGifOf(metadata: unknown): MessageGif | null {
     string,
     unknown
   >;
-  if (typeof url !== "string" || !url.startsWith("https://")) return null;
+  if (typeof url !== "string" || !isGifMediaUrl(url)) return null;
   const edge = (value: unknown) =>
     typeof value === "number" &&
     Number.isInteger(value) &&
@@ -777,6 +802,27 @@ export function messageGifOf(metadata: unknown): MessageGif | null {
     url,
     width: width as number,
     height: height as number,
+  };
+}
+
+/**
+ * A GIF's box in the thread, from its stored edges, so the row never jumps
+ * on load: as large as fits `max`, never larger than the GIF itself, and
+ * never under a pixel on a side.
+ */
+export function gifBoxSize(
+  gif: Pick<MessageGif, "width" | "height">,
+  max: { width: number; height: number },
+): { width: number; height: number } {
+  const width = Math.max(
+    1,
+    Math.round(
+      Math.min(gif.width, max.width, (max.height * gif.width) / gif.height),
+    ),
+  );
+  return {
+    width,
+    height: Math.max(1, Math.round((width * gif.height) / gif.width)),
   };
 }
 

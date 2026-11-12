@@ -101,7 +101,7 @@ import {
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
-  type MessageGif,
+  type OutgoingGif,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
@@ -292,7 +292,7 @@ export interface UseChatChannelResult {
    * queue.
    */
   sendGif: (
-    gif: MessageGif,
+    gif: OutgoingGif,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
    * The + sheet's Task and Service hours forms (#3865): chat-core's
@@ -1035,7 +1035,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const sendGif = useCallback(
     async (
-      gif: MessageGif,
+      gif: OutgoingGif,
     ): Promise<{ ok: true } | { ok: false; error: string }> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       try {

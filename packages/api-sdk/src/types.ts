@@ -2031,23 +2031,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/gifs/recent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The member's own recently sent GIFs */
-        get: operations["GifController_recent_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -5841,6 +5824,8 @@ export interface components {
             url: string;
             width: number;
             height: number;
+            /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
+            token: string;
         };
         SendMessageDto: {
             /** Format: uuid */
@@ -6229,6 +6214,8 @@ export interface components {
             preview: components["schemas"]["GifRenditionDto"];
             /** @description What a message shows; send this one. */
             full: components["schemas"]["GifRenditionDto"];
+            /** @description Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search. */
+            token: string;
         };
         GifPageDto: {
             results: components["schemas"]["GifResultDto"][];
@@ -13195,36 +13182,6 @@ export interface operations {
             query: {
                 page?: number;
                 q: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GifPageDto"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    GifController_recent_v1: {
-        parameters: {
-            query?: {
-                page?: number;
             };
             header?: never;
             path?: never;

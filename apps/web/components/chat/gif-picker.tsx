@@ -114,12 +114,19 @@ export function GifPickerPanel({
   const columns = useMemo(() => intoColumns(search.results), [search.results]);
   const viewport = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = search;
+  const {
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = search;
 
-  // The next page when the bottom comes into view.
+  // The next page when the bottom comes into view. Not after a failed load:
+  // a fresh observer fires at once, so it would retry in a loop. The member
+  // retries from the button below instead.
   useEffect(() => {
     const target = sentinel.current;
-    if (!target || !hasNextPage) return;
+    if (!target || !hasNextPage || isFetchNextPageError) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (
@@ -133,7 +140,7 @@ export function GifPickerPanel({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
   // A new search starts at the top.
   useEffect(() => {
@@ -247,6 +254,18 @@ export function GifPickerPanel({
                 ))}
           </div>
         )}
+        {isFetchNextPageError ? (
+          <div className="flex justify-center pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void fetchNextPage()}
+            >
+              Couldn&apos;t load more. Try again
+            </Button>
+          </div>
+        ) : null}
         <div ref={sentinel} aria-hidden="true" className="h-px" />
       </div>
     </div>

@@ -41,21 +41,27 @@ export interface GifPage {
 export type GifSearchOutcome =
   { outcome: 'ok'; page: GifPage } | { outcome: 'unavailable' };
 
+/** The longest edge a GIF message may have; any provider's renditions fit. */
+export const MAX_GIF_EDGE = 4096;
+
+/** The last page a client may ask for; a provider's `next_page` stops here. */
+export const GIF_PAGE_MAX = 50;
+
 export interface IGifSearch {
   /** Whether a key is configured at all. */
   isConfigured(): boolean;
   /** The provider's name, for the picker's attribution mark. */
   readonly provider: string;
-  /** The media host every rendition URL this provider returns lives on. */
-  readonly mediaHost: string;
-  trending(page: number, customerId: string): Promise<GifSearchOutcome>;
-  search(
-    query: string,
-    page: number,
-    customerId: string,
-  ): Promise<GifSearchOutcome>;
-  /** The member's own recently sent GIFs, as the provider remembers them. */
-  recent(page: number, customerId: string): Promise<GifSearchOutcome>;
-  /** Tells the provider a GIF was sent, which feeds `recent`. Never throws. */
-  recordShare(id: string, customerId: string): Promise<void>;
+  /** Whether a URL is this provider's own https media. */
+  isMediaUrl(url: string): boolean;
+  trending(page: number): Promise<GifSearchOutcome>;
+  search(query: string, page: number): Promise<GifSearchOutcome>;
+  /** Tells the provider a GIF was sent, which tunes its results. Never throws. */
+  recordShare(id: string): Promise<void>;
+  /**
+   * An HMAC of `message` under a key only this server holds (derived from the
+   * provider key), or `null` when no key is configured. Signs the results the
+   * server hands out, so a send can prove its GIF came from a search here.
+   */
+  sign(message: string): string | null;
 }

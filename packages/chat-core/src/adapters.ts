@@ -1,4 +1,4 @@
-import type { MessageGif } from "./types";
+import type { OutgoingGif } from "./types";
 
 /**
  * The platform ports for `@repo/chat-core`.
@@ -75,7 +75,7 @@ export interface OutboxRow {
    */
   attachments?: OutboxAttachment[] | null;
   /** The GIF this message is (#4631); optional, for rows older builds queued. */
-  gif?: MessageGif | null;
+  gif?: OutgoingGif | null;
   attempts: number;
   queuedAt: number;
   status: OutboxStatus;

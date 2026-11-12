@@ -29,6 +29,7 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import { MAX_GIF_EDGE } from '#domain/adapters/gif-search.interface';
 import {
   CHAT_MESSAGE_KINDS,
   CHAT_THREAD_FOLLOW_STATES,
@@ -510,17 +511,27 @@ export class MessageGifDto {
   @MaxLength(2048)
   url: string;
 
-  @ApiProperty({ minimum: 1, maximum: 4096 })
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
   @IsInt()
   @Min(1)
-  @Max(4096)
+  @Max(MAX_GIF_EDGE)
   width: number;
 
-  @ApiProperty({ minimum: 1, maximum: 4096 })
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
   @IsInt()
   @Min(1)
-  @Max(4096)
+  @Max(MAX_GIF_EDGE)
   height: number;
+
+  @ApiProperty({
+    maxLength: 128,
+    description:
+      'The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  token: string;
 }
 
 export class SendMessageDto {

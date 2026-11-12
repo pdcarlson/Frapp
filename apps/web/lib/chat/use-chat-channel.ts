@@ -84,7 +84,7 @@ import {
   browserKeyValueStore,
   type OutboxAttachment,
 } from "@repo/chat-core/adapters";
-import type { MessageGif, ReplayRequest } from "@repo/chat-core/types";
+import type { OutgoingGif, ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
   postHours,
@@ -143,7 +143,7 @@ export interface UseChatChannelResult {
   ) => Promise<void>;
   /** A GIF from the picker, as its own message (#4631). */
   sendGif: (
-    gif: MessageGif,
+    gif: OutgoingGif,
     opts?: { replyToId?: string | null },
   ) => Promise<void>;
   /*
@@ -590,7 +590,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
    * the draft in the composer stays where it is.
    */
   const sendGif = useCallback(
-    async (gif: MessageGif, opts?: { replyToId?: string | null }) => {
+    async (gif: OutgoingGif, opts?: { replyToId?: string | null }) => {
       if (!channelId) return;
       await sendMessage(ctx, {
         channelId,

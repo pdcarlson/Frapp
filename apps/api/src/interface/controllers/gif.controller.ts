@@ -11,7 +11,6 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
-import { CurrentUser } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   GifAvailabilityDto,
@@ -22,8 +21,8 @@ import {
 
 /**
  * GIF search for chat's GIF picker (#4631). The provider's key never leaves
- * the server: clients search here, and the provider sees only Frapp's server
- * and a pseudonymous id per member. Same guard chain as `ChatController`,
+ * the server: clients search here, and the provider sees only Frapp's server,
+ * never which member searched. Same guard chain as `ChatController`,
  * since only someone who can read chat has a use for it.
  */
 @ApiTags('Chat')
@@ -52,20 +51,7 @@ export class GifController {
   @Get('search')
   @ApiOperation({ summary: 'Search GIFs (rated PG-13 at most)' })
   @ApiOkResponse({ type: GifPageDto })
-  search(
-    @CurrentUser('id') userId: string,
-    @Query() query: GifSearchQueryDto,
-  ): Promise<GifPageDto> {
-    return this.gifs.search(userId, query.q, query.page ?? 1);
-  }
-
-  @Get('recent')
-  @ApiOperation({ summary: "The member's own recently sent GIFs" })
-  @ApiOkResponse({ type: GifPageDto })
-  recent(
-    @CurrentUser('id') userId: string,
-    @Query() query: GifPageQueryDto,
-  ): Promise<GifPageDto> {
-    return this.gifs.recent(userId, query.page ?? 1);
+  search(@Query() query: GifSearchQueryDto): Promise<GifPageDto> {
+    return this.gifs.search(query.q, query.page ?? 1);
   }
 }

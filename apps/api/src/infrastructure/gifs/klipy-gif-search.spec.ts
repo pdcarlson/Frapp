@@ -84,6 +84,12 @@ describe('pageOf', () => {
     expect(page?.next_page).toBe(3);
   });
 
+  it('ends at the last page a client may ask for', () => {
+    const body = { result: true, data: { data: [item('a')], has_next: true } };
+    expect(pageOf(body, 49)?.next_page).toBe(50);
+    expect(pageOf(body, 50)?.next_page).toBeNull();
+  });
+
   it('is null for a shape it does not know', () => {
     expect(pageOf({ result: false }, 1)).toBeNull();
     expect(pageOf(null, 1)).toBeNull();
@@ -98,7 +104,7 @@ describe('KlipyGifSearch', () => {
     const fetchImpl = jest.fn();
     const gifs = new KlipyGifSearch(null, fetchImpl);
     expect(gifs.isConfigured()).toBe(false);
-    await expect(gifs.trending(1, 'c')).resolves.toEqual({
+    await expect(gifs.trending(1)).resolves.toEqual({
       outcome: 'unavailable',
     });
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -109,13 +115,14 @@ describe('KlipyGifSearch', () => {
       ok({ result: true, data: { data: [item('a')], has_next: false } }),
     );
     const gifs = new KlipyGifSearch('key-123', fetchImpl);
-    const outcome = await gifs.search('party', 1, 'cust');
+    const outcome = await gifs.search('party', 1);
     expect(outcome).toMatchObject({ outcome: 'ok' });
     const url = new URL((fetchImpl.mock.calls[0] as unknown[])[0] as string);
     expect(url.pathname).toBe('/api/v1/key-123/gifs/search');
     expect(url.searchParams.get('q')).toBe('party');
     expect(url.searchParams.get('rating')).toBe('pg-13');
-    expect(url.searchParams.get('customer_id')).toBe('cust');
+    // One fixed id for all of Frapp, never a member's.
+    expect(url.searchParams.get('customer_id')).toBe('frapp');
     expect([...url.searchParams.keys()].some((k) => k.startsWith('ad'))).toBe(
       false,
     );
@@ -129,7 +136,7 @@ describe('KlipyGifSearch', () => {
     ];
     for (const answer of statuses) {
       const gifs = new KlipyGifSearch('key-123', jest.fn(answer));
-      await expect(gifs.trending(1, 'c')).resolves.toEqual({
+      await expect(gifs.trending(1)).resolves.toEqual({
         outcome: 'unavailable',
       });
     }
@@ -138,12 +145,21 @@ describe('KlipyGifSearch', () => {
   it('records a share without throwing when KLIPY is down', async () => {
     const fetchImpl = jest.fn(() => Promise.reject(new Error('down')));
     const gifs = new KlipyGifSearch('key-123', fetchImpl);
-    await expect(gifs.recordShare('dance', 'cust')).resolves.toBeUndefined();
+    await expect(gifs.recordShare('dance')).resolves.toBeUndefined();
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [
       string,
       RequestInit,
     ];
     expect(url).toBe('https://api.klipy.com/api/v1/key-123/gifs/share/dance');
-    expect(JSON.parse(init.body as string)).toEqual({ customer_id: 'cust' });
+    expect(JSON.parse(init.body as string)).toEqual({ customer_id: 'frapp' });
+  });
+
+  it('signs only with a key, and differently per key', () => {
+    expect(new KlipyGifSearch(null).sign('m')).toBeNull();
+    const a = new KlipyGifSearch('key-a').sign('m');
+    expect(a).toMatch(/^[\w-]{43}$/);
+    expect(new KlipyGifSearch('key-a').sign('m')).toBe(a);
+    expect(new KlipyGifSearch('key-b').sign('m')).not.toBe(a);
+    expect(a).not.toContain('key-a');
   });
 });

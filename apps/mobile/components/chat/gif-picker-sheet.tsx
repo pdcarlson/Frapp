@@ -110,6 +110,16 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
         <View style={[styles.tile, styles.skeleton]} />
         <View style={[styles.tile, styles.skeleton]} />
       </View>
+    ) : search.isFetchNextPageError ? (
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => void search.fetchNextPage()}
+        style={styles.message}
+      >
+        <Text style={styles.empty}>
+          Couldn&apos;t load more. Tap to try again.
+        </Text>
+      </Pressable>
     ) : null;
 
     const empty = search.isLoading ? (
@@ -164,7 +174,12 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
           stickyHeaderIndices={[0]}
           onEndReachedThreshold={0.6}
           onEndReached={() => {
-            if (search.hasNextPage && !search.isFetchingNextPage) {
+            // Not after a failed load: the footer offers the retry.
+            if (
+              search.hasNextPage &&
+              !search.isFetchingNextPage &&
+              !search.isFetchNextPageError
+            ) {
               void search.fetchNextPage();
             }
           }}

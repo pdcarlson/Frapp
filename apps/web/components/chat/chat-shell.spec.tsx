@@ -526,6 +526,9 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
     ) : null,
 }));
 
+const gifState = vi.hoisted(() => ({
+  value: { available: false, provider: "" },
+}));
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -574,7 +577,7 @@ vi.mock("@repo/hooks", async () => ({
   useChatBackground: () => ({ data: undefined }),
   useChapterChatBackground: () => ({ data: undefined }),
   // GIFs (#4631): off here, so the composer shows no GIF button.
-  useGifAvailability: () => ({ available: false, provider: "" }),
+  useGifAvailability: () => gifState.value,
   useSetChannelBackground: () => ({
     mutate: vi.fn(),
     reset: vi.fn(),
@@ -1040,8 +1043,10 @@ vi.mock("./composer", () => ({
     plusDrafts,
     isAuditLog,
     dropAttachRef,
+    onSendGif,
   }: {
     channelId: string;
+    onSendGif?: unknown;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
@@ -1103,6 +1108,7 @@ vi.mock("./composer", () => ({
       <div
         data-testid="composer"
         data-audit-log={String(isAuditLog ?? false)}
+        data-gif={onSendGif ? "on" : "off"}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
@@ -2593,6 +2599,23 @@ describe("ChatShell audit log (#3909)", () => {
         "false",
       );
     });
+  });
+});
+
+describe("ChatShell GIF button (#4631)", () => {
+  afterEach(() => {
+    gifState.value = { available: false, provider: "" };
+  });
+
+  it("offers the composer no GIF send while GIFs aren't set up", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.gif).toBe("off");
+  });
+
+  it("offers it once the server says GIFs are set up", async () => {
+    gifState.value = { available: true, provider: "KLIPY" };
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.gif).toBe("on");
   });
 });
 

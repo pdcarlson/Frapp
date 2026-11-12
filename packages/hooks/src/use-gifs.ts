@@ -1,11 +1,11 @@
-import { throwUnlessOk } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import {
   keepPreviousData,
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { createChapterQueryKeys } from "./chapter-query-keys";
+import { useDebouncedValue } from "./use-debounced-value";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -15,17 +15,37 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  */
 export const gifKeys = createChapterQueryKeys("gifs");
 
-export interface GifRendition {
+export type GifRendition = components["schemas"]["GifRenditionDto"];
+
+/** One picker result. Send its `token` with the GIF: the API refuses one without. */
+export type GifResult = components["schemas"]["GifResultDto"];
+
+/**
+ * What a send carries for a picked result: the full rendition, which the
+ * message shows, and the token the API signed the result with. The shape of
+ * chat-core's `OutgoingGif`, restated because `@repo/hooks` does not depend on
+ * chat-core.
+ */
+export interface GifToSend {
+  provider: string;
+  id: string;
+  title: string;
   url: string;
   width: number;
   height: number;
+  token: string;
 }
 
-export interface GifResult {
-  id: string;
-  title: string;
-  preview: GifRendition;
-  full: GifRendition;
+export function gifToSend(gif: GifResult, provider: string): GifToSend {
+  return {
+    provider: provider.toLowerCase(),
+    id: gif.id,
+    title: gif.title,
+    url: gif.full.url,
+    width: gif.full.width,
+    height: gif.full.height,
+    token: gif.token,
+  };
 }
 
 /** How long a typed search waits for the member to stop typing. */
@@ -53,16 +73,6 @@ export function useGifAvailability() {
     available: query.data?.available === true,
     provider: query.data?.provider ?? "",
   };
-}
-
-/** `value`, once it has stopped changing for `delayMs`. */
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), delayMs);
-    return () => clearTimeout(timer);
-  }, [value, delayMs]);
-  return settled;
 }
 
 /**
@@ -114,6 +124,8 @@ export function useGifSearch(query: string, enabled = true) {
       (result.isFetching && result.isPlaceholderData),
     hasNextPage: result.hasNextPage,
     isFetchingNextPage: result.isFetchingNextPage,
+    /** The last next-page load failed; nothing loads more until a retry. */
+    isFetchNextPageError: result.isFetchNextPageError,
     fetchNextPage: result.fetchNextPage,
     refetch: result.refetch,
   };
