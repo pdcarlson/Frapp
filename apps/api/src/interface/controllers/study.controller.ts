@@ -59,6 +59,7 @@ export class StudyGeofenceController {
     return this.studyService.createGeofence(chapterId, {
       name: dto.name,
       coordinates: dto.coordinates,
+      circle: dto.circle,
       is_active: dto.is_active,
       minutes_per_point: dto.minutes_per_point,
       points_per_interval: dto.points_per_interval,

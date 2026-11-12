@@ -28,7 +28,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI. A Verce
 - **Events** — Create/edit events with configurable point values, mandatory flags, location, and recurrence rules. View attendance per event. Calendar view, which a chapter with no events opens on (2026-11-06).
 - **Backwork Admin** — Browse uploaded resources with rich filters (department, course, professor, semester, year, assignment type, document variant). Manage departments and professors. View redacted vs. original indicators.
 - **Points Ledger** — Leaderboard (all-time, semester, month). Full transaction log with audit trail (who adjusted, reason). Manual point adjustments. Anomaly flagging and audit tab (chapter-wide list via `GET /v1/points/transactions`, gated by `points:view_all`; see [`spec/behavior/points.md`](../behavior/points.md)).
-- **Study Geofences** — Draw/manage geofence polygons for study locations. Configure reward rates and minimum session lengths.
+- **Study Geofences** — Inside Chapter settings' Study zones page: list zones, and draw each on a map as a circle or a traced outline. Configure reward rates and minimum session lengths.
 - **Chat (admin view)** — Channel management: create/edit/delete channels, organize into categories, set permission requirements. Manage pinned messages. View #announcements posting.
 - **Tasks** — Create/assign tasks to members. Track status (TODO, IN_PROGRESS, COMPLETED, OVERDUE). Confirm completion and award points. Filter by assignee, status, due date.
 - **Service Hours** — Admin review queue for submitted service entries. Approve/reject with optional comments. Chapter-wide service report. Configure points-per-hour rate.

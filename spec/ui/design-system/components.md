@@ -316,7 +316,6 @@ There is no ⌘K. Cmd/Ctrl+F opens the Find dialog without being advertised: the
 | --- | --- | --- |
 | A question, a confirmation, or a short form that fits without scrolling | **Dialog**: centered, the primitive's 512px, never scrolls | **Sheet** sized to its content, or a confirm alert |
 | Anything that scrolls, holds a list that grows, or shows a whole record (an event, a member, a long form, every live invite) | **Panel**: full height from the right edge, 576px, title row and footer pinned while the body scrolls ([`apps/web/components/shared/panel.tsx`](../../../apps/web/components/shared/panel.tsx)) | **Tall sheet**: full height, stopping just under the status bar, with an icon X in the header ([`apps/mobile/components/sheet-scaffold.tsx`](../../../apps/mobile/components/sheet-scaffold.tsx) `useTallSheetProps`, `TallSheetHeader`) |
-| Switches you change while watching the page | **Drawer**: the per-page settings drawer, `4c`'s 400px ([`../web-dashboard/README.md`](../web-dashboard/README.md) § Page grammar) | not used |
 
 Rules that go with it:
 

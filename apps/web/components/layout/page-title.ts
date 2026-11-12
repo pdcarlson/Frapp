@@ -83,7 +83,10 @@ export function resolvePageTitle(
 ): PageTitle | null {
   if (!pathname) return null;
 
-  const tool = SETTINGS_TOOLS.find((t) => matchesRoute(pathname, t.href));
+  // An embedded tool (Study zones) has no route of its own to title.
+  const tool = SETTINGS_TOOLS.find(
+    (t) => !t.embedded && matchesRoute(pathname, t.href),
+  );
   if (tool) {
     const parentRow = DASHBOARD_NAV_ITEMS.find((item) =>
       item.activeFor?.some((href) => matchesRoute(pathname, href)),

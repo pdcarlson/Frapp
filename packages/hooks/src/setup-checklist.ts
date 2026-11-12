@@ -71,7 +71,8 @@ export const SETUP_CHECKLIST_WEB_PATH: Readonly<
 > = {
   invite: "/members",
   event: "/events",
-  "study-zone": "/geofences",
+  // Zones are listed and drawn on Chapter settings' Study zones page.
+  "study-zone": "/settings?tab=geofences",
   document: "/documents",
   // Member invoices sit in Plan and billing since #3827.
   dues: "/settings?tab=billing",

@@ -50,13 +50,9 @@ const ZONE = {
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  // Read by the board `4c` settings drawer's Access section, which reports
-  // which roles hold each `geofences:*` permission.
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  // Drives the `4c` gear beside the page title. Read as a boolean rather than
-  // through a second `<Can>`, so `can-fallback.spec.tsx`'s per-surface lookup
-  // still finds this file's screen-level gate.
+  // Drives the New study zone button. Read as a boolean rather than through
+  // a second `<Can>`, so `can-fallback.spec.tsx`'s per-surface lookup still
+  // finds this file's screen-level gate.
   useMyPermissions: () => ({
     data: { permissions: ["geofences:manage"] },
     isPending: false,
@@ -95,7 +91,48 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-const { GeofencesAdminPage } = await import("./geofences-admin-page");
+// No network in a test: the campus lookup and place search answer nothing.
+vi.mock("@/lib/maps/map-provider", () => ({
+  MAP_STYLE_URL: "about:blank",
+  searchPlaces: vi.fn().mockResolvedValue([]),
+}));
+
+// MapLibre needs WebGL, which jsdom has none of. The stand-in draws what the
+// real map would let an officer do: drop the pin, or click three corners.
+vi.mock("@/components/geofences/zone-map", () => ({
+  ZoneMap: ({
+    draft,
+    onChange,
+  }: {
+    draft: import("./zone-shape").ZoneDraft;
+    onChange: (next: import("./zone-shape").ZoneDraft) => void;
+  }) => (
+    <div data-testid="zone-map">
+      <button
+        type="button"
+        onClick={() =>
+          onChange(
+            draft.mode === "circle"
+              ? { ...draft, center: { lat: 42.7298, lng: -73.6826 } }
+              : {
+                  ...draft,
+                  points: [
+                    { lat: 30.286, lng: -97.74 },
+                    { lat: 30.287, lng: -97.74 },
+                    { lat: 30.287, lng: -97.739 },
+                  ],
+                },
+          )
+        }
+      >
+        Draw on map
+      </button>
+    </div>
+  ),
+}));
+
+const { StudyZonesManager } = await import("./study-zones-manager");
+const GeofencesAdminPage = StudyZonesManager;
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -105,7 +142,7 @@ const editButton = () => screen.getByRole("button", { name: /^edit /i });
 const disableButton = () => screen.getByRole("button", { name: /disable/i });
 const deleteButton = () => screen.getByRole("button", { name: /delete/i });
 
-describe("GeofencesAdminPage subscription gating", () => {
+describe("StudyZonesManager subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("leaves every write alone on an active chapter", () => {
@@ -255,7 +292,7 @@ describe("GeofencesAdminPage subscription gating", () => {
   });
 });
 
-describe("GeofencesAdminPage layout", () => {
+describe("StudyZonesManager layout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
@@ -271,34 +308,115 @@ describe("GeofencesAdminPage layout", () => {
     expect(rows).toHaveLength(1);
     expect(
       within(rows[0]!).getByText(
-        "1 pt every 30 min · min 15 min session · 5 min pause grace",
+        "Outline, 3 corners · 1 pt every 30 min · min 15 min session · 5 min pause grace",
       ),
     ).toBeInTheDocument();
     expect(within(rows[0]!).getByText("Active")).toBeInTheDocument();
   });
 
-  it("keeps the polygon behind Edit rather than on the row", async () => {
+  it("keeps coordinates off the row and out of the editor", async () => {
     render(<GeofencesAdminPage />);
 
     expect(document.body.textContent).not.toContain("30.286");
     await userEvent.click(editButton());
-    expect(screen.getByLabelText(/vertices/i)).toHaveValue(
-      "30.286, -97.74\n30.287, -97.74\n30.287, -97.739",
-    );
+    // The shape is the map's, never a box of numbers (Paul, 2026-11-12).
+    expect(screen.queryByLabelText(/vertices/i)).toBeNull();
+    expect(screen.getByTestId("zone-map")).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Outline" }),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
-  it("puts New study zone in the action row, with no page h1", () => {
+  it("puts New study zone beside the Zones heading, with no page h1", () => {
     render(<GeofencesAdminPage />);
 
-    // The title, "Settings › Study zones", is the top bar's (`top-bar.tsx`).
+    // The page's title is Chapter settings'; this is one section of it.
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Zones" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /new study zone/i }),
     ).toBeInTheDocument();
   });
 });
 
-describe("GeofencesAdminPage study-rule guard (#2206)", () => {
+describe("StudyZonesManager map editor", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("creates a circle zone from a dropped pin, at the default radius", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(createTrigger());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Folsom Library" },
+    });
+    // A new zone starts as a circle.
+    expect(screen.getByRole("radio", { name: "Circle" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Draw on map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
+
+    await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
+    const body = mockCreateMutate.mock.calls[0]![0];
+    expect(body).toMatchObject({
+      name: "Folsom Library",
+      circle: { lat: 42.7298, lng: -73.6826, radius_m: 75 },
+    });
+    expect(body).not.toHaveProperty("coordinates");
+  });
+
+  it("sizes the circle in feet and stores meters", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(createTrigger());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Quad" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Draw on map" }));
+    const radius = screen.getByLabelText(/^radius$/i);
+    expect(radius).toHaveValue("246");
+    fireEvent.change(radius, { target: { value: "500" } });
+    fireEvent.blur(radius);
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
+
+    await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
+    expect(mockCreateMutate.mock.calls[0]![0].circle.radius_m).toBe(152);
+  });
+
+  it("says where to start instead of saving a zone with no place", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(createTrigger());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Nowhere" },
+    });
+    fireEvent.submit(document.getElementById("study-zone-form")!);
+
+    expect(
+      await screen.findByText(/search for the place or click the map/i),
+    ).toBeInTheDocument();
+    expect(mockCreateMutate).not.toHaveBeenCalled();
+  });
+
+  it("saves a traced outline as corners, which clears any circle", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(createTrigger());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Science library" },
+    });
+    await userEvent.click(screen.getByRole("radio", { name: "Outline" }));
+    await userEvent.click(screen.getByRole("button", { name: "Draw on map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
+
+    await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
+    const body = mockCreateMutate.mock.calls[0]![0];
+    expect(body.coordinates).toHaveLength(3);
+    expect(body).not.toHaveProperty("circle");
+  });
+});
+
+describe("StudyZonesManager study-rule guard (#2206)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
@@ -310,37 +428,35 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     fireEvent.change(screen.getByLabelText(/^name$/i), {
       target: { value: "Science library" },
     });
-    fireEvent.change(screen.getByLabelText(/vertices/i), {
-      target: { value: "30.286,-97.74\n30.287,-97.74\n30.287,-97.739" },
-    });
+    await userEvent.click(screen.getByRole("button", { name: "Draw on map" }));
   }
 
   const rate = (label: RegExp) => screen.getByLabelText(label);
   const submitCreate = () =>
-    fireEvent.submit(document.getElementById("geofence-create-form")!);
+    fireEvent.submit(document.getElementById("study-zone-form")!);
 
   it("keeps each rate's last whole number through a negative or a decimal", async () => {
     await openCreate();
-    expectRefusedEntriesKeep(rate(/minutes per point/i), "30");
-    expectRefusedEntriesKeep(rate(/points per interval/i), "2");
-    expectRefusedEntriesKeep(rate(/min session/i), "15");
+    expectRefusedEntriesKeep(rate(/every \(minutes\)/i), "30");
+    expectRefusedEntriesKeep(rate(/^points$/i), "2");
+    expectRefusedEntriesKeep(rate(/shortest session/i), "15");
     expectRefusedEntriesKeep(rate(/pause grace/i), "5");
   });
 
   it("reads an emptied or unparseable rate as blank", async () => {
     await openCreate();
-    expectClearingEntriesEmpty(rate(/minutes per point/i), "30");
-    expectClearingEntriesEmpty(rate(/points per interval/i), "2");
-    expectClearingEntriesEmpty(rate(/min session/i), "15");
+    expectClearingEntriesEmpty(rate(/every \(minutes\)/i), "30");
+    expectClearingEntriesEmpty(rate(/^points$/i), "2");
+    expectClearingEntriesEmpty(rate(/shortest session/i), "15");
     expectClearingEntriesEmpty(rate(/pause grace/i), "5");
   });
 
   it("keeps the 0 left by deleting a leading digit, so the edit isn't refused mid-way", async () => {
     await openCreate();
     for (const label of [
-      /minutes per point/i,
-      /points per interval/i,
-      /min session/i,
+      /every \(minutes\)/i,
+      /^points$/i,
+      /shortest session/i,
       /pause grace/i,
     ]) {
       fireEvent.change(rate(label), { target: { value: "30" } });
@@ -349,7 +465,7 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     }
   });
 
-  it.each([/minutes per point/i, /points per interval/i, /pause grace/i])(
+  it.each([/every \(minutes\)/i, /^points$/i, /pause grace/i])(
     "refuses %s under its floor of 1 at save, on create",
     async (label) => {
       await openCreate();
@@ -357,26 +473,26 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
       submitCreate();
 
       await waitFor(() =>
-        expect(mockToast).toHaveBeenCalledWith(
-          expect.objectContaining({ title: "Check the zone's numbers" }),
-        ),
+        expect(
+          screen.getByText(/each needs a whole number of 1 or more/i),
+        ).toBeInTheDocument(),
       );
       expect(mockCreateMutate).not.toHaveBeenCalled();
     },
   );
 
-  it.each([/minutes per point/i, /points per interval/i, /pause grace/i])(
+  it.each([/every \(minutes\)/i, /^points$/i, /pause grace/i])(
     "refuses %s under its floor of 1 at save, on edit",
     async (label) => {
       render(<GeofencesAdminPage />);
       await userEvent.click(editButton());
       fireEvent.change(rate(label), { target: { value: "0" } });
-      fireEvent.submit(document.getElementById("geofence-edit-form")!);
+      fireEvent.submit(document.getElementById("study-zone-form")!);
 
       await waitFor(() =>
-        expect(mockToast).toHaveBeenCalledWith(
-          expect.objectContaining({ title: "Check the zone's numbers" }),
-        ),
+        expect(
+          screen.getByText(/each needs a whole number of 1 or more/i),
+        ).toBeInTheDocument(),
       );
       expect(mockUpdateMutate).not.toHaveBeenCalled();
     },
@@ -384,8 +500,8 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
 
   it("creates with the kept whole numbers, never NaN or Infinity", async () => {
     await openCreate();
-    fireEvent.change(rate(/minutes per point/i), { target: { value: "45" } });
-    fireEvent.change(rate(/minutes per point/i), { target: { value: "1.5" } });
+    fireEvent.change(rate(/every \(minutes\)/i), { target: { value: "45" } });
+    fireEvent.change(rate(/every \(minutes\)/i), { target: { value: "1.5" } });
     // Through the footer's button, which sits outside the form and reaches it
     // only through `form=`. The refusal cases submit the form directly because
     // a click runs the browser's own min/required check first.
@@ -402,35 +518,35 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
 
   it("refuses an emptied rate rather than sending 1 in its place", async () => {
     await openCreate();
-    fireEvent.change(rate(/minutes per point/i), { target: { value: "" } });
+    fireEvent.change(rate(/every \(minutes\)/i), { target: { value: "" } });
     submitCreate();
 
     await waitFor(() =>
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Check the zone's numbers" }),
-      ),
+      expect(
+        screen.getByText(/each needs a whole number of 1 or more/i),
+      ).toBeInTheDocument(),
     );
     expect(mockCreateMutate).not.toHaveBeenCalled();
   });
 
-  it("guards the edit dialog's four rates the same way", async () => {
+  it("guards the edit form's four rates the same way", async () => {
     render(<GeofencesAdminPage />);
     await userEvent.click(editButton());
-    expectRefusedEntriesKeep(rate(/minutes per point/i), "30");
-    expectRefusedEntriesKeep(rate(/points per interval/i), "1");
-    expectRefusedEntriesKeep(rate(/min session/i), "15");
+    expectRefusedEntriesKeep(rate(/every \(minutes\)/i), "30");
+    expectRefusedEntriesKeep(rate(/^points$/i), "1");
+    expectRefusedEntriesKeep(rate(/shortest session/i), "15");
     expectRefusedEntriesKeep(rate(/pause grace/i), "5");
-    expectClearingEntriesEmpty(rate(/minutes per point/i), "30");
-    expectClearingEntriesEmpty(rate(/points per interval/i), "1");
-    expectClearingEntriesEmpty(rate(/min session/i), "15");
+    expectClearingEntriesEmpty(rate(/every \(minutes\)/i), "30");
+    expectClearingEntriesEmpty(rate(/^points$/i), "1");
+    expectClearingEntriesEmpty(rate(/shortest session/i), "15");
     expectClearingEntriesEmpty(rate(/pause grace/i), "5");
   });
 
   it("saves a 0-minute minimum session as 0, not rewritten to 1", async () => {
     render(<GeofencesAdminPage />);
     await userEvent.click(editButton());
-    fireEvent.change(rate(/min session/i), { target: { value: "0" } });
-    fireEvent.submit(document.getElementById("geofence-edit-form")!);
+    fireEvent.change(rate(/shortest session/i), { target: { value: "0" } });
+    fireEvent.submit(document.getElementById("study-zone-form")!);
 
     await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
     expect(mockUpdateMutate.mock.calls[0]![0].body.min_session_minutes).toBe(0);

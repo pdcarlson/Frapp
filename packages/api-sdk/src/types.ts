@@ -7171,9 +7171,18 @@ export interface components {
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
+        GeofenceCircleDto: {
+            lat: number;
+            lng: number;
+            /** @description Radius in meters. */
+            radius_m: number;
+        };
         CreateGeofenceDto: {
             name: string;
-            coordinates: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             /** @default true */
             is_active: boolean;
             /** @default 30 */
@@ -7190,7 +7199,10 @@ export interface components {
         };
         UpdateGeofenceDto: {
             name?: string;
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
             coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             is_active?: boolean;
             minutes_per_point?: number;
             points_per_interval?: number;

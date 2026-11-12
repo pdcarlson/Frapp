@@ -705,7 +705,10 @@ export function StudyPage() {
             <InlineNote>
               No study zones yet.{" "}
               {canManageZones ? (
-                <Link href="/geofences" className={inlineNoteActionClassName}>
+                <Link
+                  href="/settings?tab=geofences"
+                  className={inlineNoteActionClassName}
+                >
                   Add a study zone
                 </Link>
               ) : (

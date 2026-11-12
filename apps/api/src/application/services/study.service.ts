@@ -16,9 +16,11 @@ import type { IPointTransactionRepository } from '#domain/repositories/point-tra
 import type {
   StudyGeofence,
   StudySession,
+  GeofenceCircle,
   GeofenceCoordinate,
 } from '#domain/entities/study.entity';
 import { pointInPolygon } from '#domain/utils/geofence';
+import { circleToPolygon } from '@repo/validation';
 
 const HEARTBEAT_STALE_MINUTES = 10;
 const MS_PER_MINUTE = 60 * 1000;
@@ -226,11 +228,49 @@ export class StudyService {
     return this.geofenceRepo.findByChapter(chapterId);
   }
 
+  /**
+   * A zone's stored shape from what the officer drew: a circle becomes the
+   * polygon containment is checked against, derived here so the stored
+   * polygon always matches the circle; an outline is kept as traced and
+   * clears any circle. `undefined` when the request names no shape (an
+   * update that only renames or changes a rate).
+   */
+  private zoneShape(data: {
+    coordinates?: GeofenceCoordinate[];
+    circle?: GeofenceCircle;
+  }):
+    | { coordinates: GeofenceCoordinate[]; circle: GeofenceCircle | null }
+    | undefined {
+    if (data.circle !== undefined && data.coordinates !== undefined) {
+      throw new BadRequestException(
+        'Send a circle or an outline for the study zone, not both',
+      );
+    }
+    if (data.circle !== undefined) {
+      const circle = {
+        lat: data.circle.lat,
+        lng: data.circle.lng,
+        radius_m: data.circle.radius_m,
+      };
+      return { coordinates: circleToPolygon(circle), circle };
+    }
+    if (data.coordinates !== undefined) {
+      if (data.coordinates.length < 3) {
+        throw new BadRequestException(
+          'Coordinates must form a polygon with at least 3 points',
+        );
+      }
+      return { coordinates: data.coordinates, circle: null };
+    }
+    return undefined;
+  }
+
   async createGeofence(
     chapterId: string,
     data: {
       name: string;
-      coordinates: GeofenceCoordinate[];
+      coordinates?: GeofenceCoordinate[];
+      circle?: GeofenceCircle;
       is_active?: boolean;
       minutes_per_point?: number;
       points_per_interval?: number;
@@ -238,7 +278,8 @@ export class StudyService {
       pause_grace_minutes?: number;
     },
   ): Promise<StudyGeofence> {
-    if (!data.coordinates || data.coordinates.length < 3) {
+    const shape = this.zoneShape(data);
+    if (!shape) {
       throw new BadRequestException(
         'Coordinates must form a polygon with at least 3 points',
       );
@@ -246,7 +287,8 @@ export class StudyService {
     return this.geofenceRepo.create({
       chapter_id: chapterId,
       name: data.name,
-      coordinates: data.coordinates,
+      coordinates: shape.coordinates,
+      circle: shape.circle,
       is_active: data.is_active ?? true,
       minutes_per_point: data.minutes_per_point ?? 30,
       points_per_interval: data.points_per_interval ?? 1,
@@ -262,6 +304,7 @@ export class StudyService {
     data: Partial<{
       name: string;
       coordinates: GeofenceCoordinate[];
+      circle: GeofenceCircle;
       is_active: boolean;
       minutes_per_point: number;
       points_per_interval: number;
@@ -273,12 +316,9 @@ export class StudyService {
     if (!existing) {
       throw new NotFoundException('Geofence not found');
     }
-    if (data.coordinates !== undefined && data.coordinates.length < 3) {
-      throw new BadRequestException(
-        'Coordinates must form a polygon with at least 3 points',
-      );
-    }
-    return this.geofenceRepo.update(id, chapterId, data);
+    const { coordinates, circle, ...rest } = data;
+    const shape = this.zoneShape({ coordinates, circle });
+    return this.geofenceRepo.update(id, chapterId, { ...rest, ...shape });
   }
 
   async deleteGeofence(id: string, chapterId: string): Promise<void> {

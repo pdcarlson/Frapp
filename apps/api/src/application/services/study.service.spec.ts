@@ -5,6 +5,8 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { circleToPolygon } from '@repo/validation';
+import { pointInPolygon } from '#domain/utils/geofence';
 import { StudyService } from './study.service';
 import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository.interface';
@@ -37,6 +39,7 @@ describe('StudyService', () => {
       { lat: 10, lng: 10 },
       { lat: 10, lng: 0 },
     ],
+    circle: null,
     is_active: true,
     minutes_per_point: 30,
     points_per_interval: 1,
@@ -226,6 +229,7 @@ describe('StudyService', () => {
           chapter_id: 'ch-1',
           name: 'Library',
           coordinates: baseGeofence.coordinates,
+          circle: null,
           is_active: true,
           minutes_per_point: 30,
           points_per_interval: 1,
@@ -233,6 +237,41 @@ describe('StudyService', () => {
         }),
       );
       expect(result).toEqual(baseGeofence);
+    });
+
+    it('stores a circle with the polygon derived from it, never a client polygon', async () => {
+      mockGeofenceRepo.create.mockResolvedValue(baseGeofence);
+      const circle = { lat: 42.7298, lng: -73.6826, radius_m: 75 };
+
+      await service.createGeofence('ch-1', { name: 'Folsom Library', circle });
+
+      const written = mockGeofenceRepo.create.mock.calls[0][0];
+      expect(written.circle).toEqual(circle);
+      expect(written.coordinates).toEqual(circleToPolygon(circle));
+      // The member at the center is inside the stored zone, one 100 m out is not.
+      const polygon = written.coordinates as { lat: number; lng: number }[];
+      expect(pointInPolygon(circle.lat, circle.lng, polygon)).toBe(true);
+      expect(pointInPolygon(circle.lat + 0.0009, circle.lng, polygon)).toBe(
+        false,
+      );
+    });
+
+    it('refuses a circle and an outline together', async () => {
+      await expect(
+        service.createGeofence('ch-1', {
+          name: 'Both',
+          coordinates: baseGeofence.coordinates,
+          circle: { lat: 0, lng: 0, radius_m: 75 },
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a zone with no shape at all', async () => {
+      await expect(
+        service.createGeofence('ch-1', { name: 'Nothing' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
     });
 
     it('throws BadRequestException when coordinates have fewer than 3 points', async () => {
@@ -281,6 +320,36 @@ describe('StudyService', () => {
           coordinates: [{ lat: 0, lng: 0 }],
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('redraws a zone as a circle, replacing its polygon', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+      const circle = { lat: 5, lng: 5, radius_m: 200 };
+
+      await service.updateGeofence('geo-1', 'ch-1', { circle });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        coordinates: circleToPolygon(circle),
+        circle,
+      });
+    });
+
+    it('clears the circle when a circle zone is retraced as an outline', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue({
+        ...baseGeofence,
+        circle: { lat: 5, lng: 5, radius_m: 200 },
+      });
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+
+      await service.updateGeofence('geo-1', 'ch-1', {
+        coordinates: baseGeofence.coordinates,
+      });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
     });
   });
 
