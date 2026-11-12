@@ -4,6 +4,9 @@ import { render, screen, within } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   section: null as string | null,
   chapter: undefined as { name?: string } | undefined,
+  // `null` is a server with AI off (`useAiConsent`), the default.
+  aiConsent: null as Record<string, unknown> | null | undefined,
+  aiFetching: false,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -13,6 +16,13 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({ data: mocks.chapter }),
+  useAiConsent: () => ({
+    data: mocks.aiConsent,
+    isPending: mocks.aiConsent === undefined,
+    fetchStatus: mocks.aiFetching ? "fetching" : "idle",
+  }),
+  aiAvailableFrom: (query: { data: unknown }) =>
+    query.data === undefined ? undefined : query.data !== null,
 }));
 // Each section has its own spec; here they are named stand-ins, so this file
 // is about which one the page mounts.
@@ -27,6 +37,9 @@ vi.mock("@/components/personal-settings/account-section", () => ({
 }));
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => <p>blocked members section</p>,
+}));
+vi.mock("@/components/personal-settings/ai-section", () => ({
+  AiSection: () => <p>ai section</p>,
 }));
 vi.mock("@/components/profile/discord-history-card", () => ({
   DiscordHistoryCard: () => <p>discord history section</p>,
@@ -45,6 +58,17 @@ describe("PersonalSettingsPage (#3856)", () => {
   beforeEach(() => {
     mocks.section = null;
     mocks.chapter = { name: "Beta Theta Omega" };
+    mocks.aiConsent = null;
+    mocks.aiFetching = false;
+  });
+
+  it("holds the rail until the AI read answers, so no row is inserted after it draws", () => {
+    mocks.aiConsent = undefined;
+    mocks.aiFetching = true;
+    render(<PersonalSettingsPage />);
+    expect(
+      screen.queryByRole("navigation", { name: "Settings" }),
+    ).toBeNull();
   });
 
   it("groups the rail by what a setting belongs to, the chapter group by name", () => {
@@ -108,6 +132,37 @@ describe("PersonalSettingsPage (#3856)", () => {
     expect(screen.getByRole("radio", { name: /compact/i })).toBeInTheDocument();
   });
 
+  it("adds AI to My account only while the server has AI (#4308)", () => {
+    mocks.aiConsent = { answer: null };
+    mocks.section = "ai";
+    render(<PersonalSettingsPage />);
+    expect(screen.getByText("ai section")).toBeInTheDocument();
+    expect(
+      within(rail())
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Notifications",
+      "Appearance and chat",
+      "Account",
+      "AI",
+      "Chapter alerts",
+      "Blocked members",
+      "Discord history",
+    ]);
+  });
+
+  it.each([
+    ["off", null],
+    ["not known yet", undefined],
+  ])("has no AI row while AI is %s, and opens the default for it", (_, data) => {
+    mocks.aiConsent = data;
+    mocks.section = "ai";
+    render(<PersonalSettingsPage />);
+    expect(screen.getByText("quiet hours section")).toBeInTheDocument();
+    expect(within(rail()).queryByRole("link", { name: "AI" })).toBeNull();
+  });
+
   it("falls back to Notifications for a section it does not have", () => {
     mocks.section = "constructor";
     render(<PersonalSettingsPage />);
@@ -123,6 +178,7 @@ describe("personal settings sections", () => {
       "/preferences",
       "/preferences?section=appearance",
       "/preferences?section=account",
+      "/preferences?section=ai",
       "/preferences?section=alerts",
       "/preferences?section=blocked",
       "/preferences?section=invoices",

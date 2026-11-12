@@ -1054,3 +1054,13 @@ export {
   type MeetingType,
   type MeetingVote,
 } from "./meetings";
+
+export {
+  AI_CONSENT_COPY,
+  AI_SETTINGS_COPY,
+  AI_SWITCHES,
+  formatAiAnswerDate,
+  joinNames,
+  type AiChapterSwitchKey,
+  type AiSwitchCopy,
+} from "./ai-copy";

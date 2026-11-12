@@ -119,6 +119,13 @@ How the first two gates are kept (#4308):
 - **A refused call says why.** A route answers `ai.consent.required` when the member has not said yes, so the app shows the sheet, and `ai.chapter_off` when the president has not turned the feature on, so the app hides it.
 - **Who may use AI at all is also a permission.** `ai:use` is in every starting tier of a chapter created from #4308 on, so every active member holds it and Alumni do not ([`rbac.md`](rbac.md)). Chapters created before that grant it from the Roles page.
 
+Where the sheet appears (#4308's screens, web first):
+
+- **At the first AI entry point a member reaches**, not on sign-in. The way iOS asks for the camera when a member first taps the camera, each AI feature asks before its first call. On web every AI entry point calls `useAiConsentGate` (the minutes screen is the first to): a member who said yes goes straight through, anyone else is shown the sheet, and the feature goes ahead only on Yes. Closing the sheet is not an answer, so nothing is recorded and the next AI entry point asks again. In the beta the only AI feature is an officer's (minutes from notes), so asking every member at sign-in would ask most of them about something they never see.
+- **In personal Settings, under My account, as AI** ([`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) lists the sections). The whole sheet is on the page under one switch, "Use AI features", with the answer and its date ("You said yes on November 12, 2026."), so turning it on there is as informed as answering the sheet. Turning it off is a No.
+- **Neither shows while the server has AI off.** Both wait for `GET /v1/ai/consent`, which answers 404 `ai.not_available` then.
+- The sheet's rows (providers and kinds of data) come from the server; the framing around them (the title, what No means, the buttons) is `AI_CONSENT_COPY` in `@repo/validation`, shared by web and mobile. Yes and No are the same size side by side, and No is a real button, never a link.
+
 A No is therefore not a promise that nothing about the member reaches a model. It keeps their own messages out and their own use off. The sheet and the privacy page must say it that way.
 
 The sheet is asked up front because Apple requires an explicit yes before personal data goes to a third-party AI (App Review Guideline 5.1.2(i)). The sheet, the privacy page's list of providers and the store answers ship in the same release that first sends member data to a model ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
