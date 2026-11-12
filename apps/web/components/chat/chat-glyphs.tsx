@@ -155,6 +155,26 @@ export function AnnouncementGlyph({ className, active }: ChatGlyphProps) {
   );
 }
 
+/**
+ * Sign-up sheet, in the composer's **+** menu (#3926): a clipboard, its board
+ * filled, the clip and a ticked line stroke-only.
+ */
+export function SignupGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M6.6 5h10.8a1.6 1.6 0 011.6 1.6v12.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 19.4V6.6A1.6 1.6 0 016.6 5z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path
+        d="M9.4 3.4h5.2v3.2H9.4zM8.8 12.2l1.6 1.6 3-3M8.8 16.8h6.4"
+        {...detail}
+      />
+    </Svg>
+  );
+}
+
 /** `#chapter-audit` — a shield, distinct from the shell's shield-and-check Roles intent. */
 export function AuditGlyph({ className, active }: ChatGlyphProps) {
   return (

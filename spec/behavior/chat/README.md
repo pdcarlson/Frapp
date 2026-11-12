@@ -1530,6 +1530,7 @@ on their imported messages in that chapter are theirs.
 | `event` | Event RSVP card (created by `/event` slash command) |
 | `task` | Task assignment card |
 | `poll` | Poll (inline vote) |
+| `signup` | Sign-up sheet: named slots with a limit, and who holds which, on web and mobile ([integrations.md § Sign-up sheet cards](./integrations.md#sign-up-sheet-cards), #3926) |
 | `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `points` | Points grant or deduction notification (`/points`) |
 | `hours` | Service hours log confirmation (created by `/hours log`) |

@@ -526,6 +526,7 @@ export const CHAT_MESSAGE_KINDS = [
   "imported",
   "loading",
   "announcement",
+  "signup",
 ] as const;
 
 export const SendChatMessageSchema = z.object({
@@ -775,6 +776,11 @@ export {
   POLL_OPTIONS_MIN,
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
+  SIGNUP_NOTE_MAX_LENGTH,
+  SIGNUP_SLOT_CAPACITY_MAX,
+  SIGNUP_SLOT_LABEL_MAX_LENGTH,
+  SIGNUP_SLOTS_MAX,
+  SIGNUP_TITLE_MAX_LENGTH,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,

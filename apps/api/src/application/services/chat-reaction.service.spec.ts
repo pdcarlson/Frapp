@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { moduleDisabledMessage } from '@repo/validation';
 import { ChatReactionService } from './chat-reaction.service';
 import {
@@ -6,7 +10,10 @@ import {
   createChatServiceFixture,
   type ChatServiceFixture,
 } from '#test/helpers/chat-service.fixture';
-import { ChatMessageActionDuplicateError } from '#domain/repositories/chat.repository.interface';
+import {
+  ChatMessageActionDuplicateError,
+  SignupClaimRefusedError,
+} from '#domain/repositories/chat.repository.interface';
 import type {
   ChatMessage,
   ChatMessageAction,
@@ -196,6 +203,122 @@ describe('ChatReactionService', () => {
       payload: {},
       created_at: '2026-01-01T12:00:00.000Z',
     };
+
+    describe('sign-up card claims (#3926)', () => {
+      const signupMessage: ChatMessage = {
+        ...baseMessage,
+        kind: 'signup',
+        payload: {
+          title: 'Sober drivers',
+          slots: [
+            { id: 'fri', label: 'Friday', capacity: 2 },
+            { id: 'sat', label: 'Saturday', capacity: null },
+          ],
+        },
+      };
+      const claimRow: ChatMessageAction = {
+        ...baseAction,
+        action_type: 'signup',
+        payload: { slot_ids: ['fri'] },
+      };
+
+      const claim = (payload: Record<string, unknown>) =>
+        reactions.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          { action_type: 'signup', payload },
+          null,
+        );
+
+      it('writes the claim through the locked RPC, never the plain insert', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: claimRow,
+          updated: false,
+        });
+
+        const result = await claim({ slot_ids: ['fri', 'fri'] });
+
+        expect(mockActionRepo.claimSignupSlots).toHaveBeenCalledWith(
+          signupMessage.id,
+          'user-1',
+          ['fri'],
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+        expect(result).toEqual({ action: claimRow, deduplicated: false });
+      });
+
+      it('answers a change of slots as an update, as a vote change is', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: claimRow,
+          updated: true,
+        });
+
+        await expect(claim({ slot_ids: [] })).resolves.toEqual({
+          action: claimRow,
+          deduplicated: false,
+          updated: true,
+        });
+      });
+
+      it('is a 409 when the slot filled up first', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockRejectedValue(
+          new SignupClaimRefusedError('full', 'fri'),
+        );
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      });
+
+      it('is a 400 for a slot the card does not list', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockRejectedValue(
+          new SignupClaimRefusedError('unknown_slot', 'zzz'),
+        );
+
+        await expect(claim({ slot_ids: ['zzz'] })).rejects.toThrow(
+          'Invalid slot: zzz',
+        );
+      });
+
+      it('refuses a malformed claim before writing anything', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+
+        await expect(claim({ slot_ids: 'fri' })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+      });
+
+      it('refuses a sign-up claim on a message that is not a sign-up card', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          kind: 'text',
+        });
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+          'Message is not a sign-up card',
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a claim on a deleted card', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...signupMessage,
+          is_deleted: true,
+        });
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+          'Cannot act on a deleted message',
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+      });
+    });
 
     describe('poll-card vote validation (#871)', () => {
       // The card payload the composer writes (@repo/chat-core/dispatch):

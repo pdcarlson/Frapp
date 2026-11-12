@@ -849,7 +849,7 @@ export class ChatController {
   @Post('messages/:messageId/actions')
   @ApiOperation({
     summary:
-      'Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)',
+      'Record a reaction / vote / sign-up claim / card action (hot path; atomic dedup; vote and sign-up claim UPSERT; 409 on a full sign-up slot)',
   })
   // Neither event carries the `action_type`: a reaction's holds the emoji, and
   // any other is free-form. A repeated reaction answers `deduplicated: true`

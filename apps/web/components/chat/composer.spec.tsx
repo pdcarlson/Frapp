@@ -2401,6 +2401,21 @@ describe("Composer + menu (#3865)", () => {
     );
   });
 
+  it("opens the sign-up sheet's form straight away: it has no command to ask about (#3926)", async () => {
+    const renderPlusForm = vi.fn((command: string) => (
+      <p>{`form:${command}`}</p>
+    ));
+    const { user, onOpenCommandForm } = await openPlus({
+      commandForms: [...FORMS, { command: "signup", roleAllows: true }],
+      renderPlusForm,
+    });
+    await user.click(
+      await screen.findByRole("menuitem", { name: /sign-up sheet/i }),
+    );
+    expect(await screen.findByText("form:signup")).toBeInTheDocument();
+    expect(onOpenCommandForm).not.toHaveBeenCalled();
+  });
+
   it("greys the rows while a reply is staged", async () => {
     await openPlus({
       replyTo: { id: "msg-1", author: "Alice Chen", preview: "the original" },

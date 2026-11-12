@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollChoiceMode,
@@ -9,9 +14,14 @@ import {
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
 import {
+  SIGNUP_ACTION_TYPE,
+  signupClaimSlotIds,
+} from '#domain/utils/signup-card-rules';
+import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   ChatMessageActionDuplicateError,
+  SignupClaimRefusedError,
   type IChatMessageActionRepository,
   type IMessageReactionRepository,
 } from '#domain/repositories/chat.repository.interface';
@@ -142,6 +152,10 @@ export class ChatReactionService {
    *   23505 path UPSERTS instead — same row id, replaced `payload`,
    *   bumped `created_at` — so subscribed clients see a Realtime UPDATE
    *   rather than a second row.
+   * - Sign-up claims (#3926): `action_type === "signup"` is reserved. It
+   *   takes `payload.slot_ids` and goes through `claimSignupSlots` instead
+   *   of the insert below: 400 on a message that isn't a sign-up card, a
+   *   malformed list or an unknown slot, 409 on a full slot.
    */
   async recordMessageAction(
     messageId: string,
@@ -170,6 +184,13 @@ export class ChatReactionService {
 
     const payload = input.payload ?? {};
     const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
+
+    // A claim on a sign-up card (#3926) has its own write: the slot limits are
+    // checked against everyone else's claims under a lock on the card, which
+    // the insert-then-upsert below can't do.
+    if (input.action_type === SIGNUP_ACTION_TYPE) {
+      return this.claimSignupSlots(message, userId, payload);
+    }
 
     // #871: this path used to check channel access and then insert whatever it
     // was handed, so a member could vote on a closed poll, pick an option that
@@ -217,6 +238,52 @@ export class ChatReactionService {
       );
       if (!existing) throw error;
       return { action: existing, deduplicated: true };
+    }
+  }
+
+  /**
+   * Set the member's slots on a sign-up card. `payload.slot_ids` is every
+   * slot they want to hold, so a tap that adds one sends the old list plus
+   * it, and an empty list drops out of all of them; the row stays, as an
+   * emptied multi-choice vote does. Taking a full slot is a 409 naming it;
+   * a slot the member already holds is never full to them.
+   */
+  private async claimSignupSlots(
+    message: { id: string; kind?: string | null },
+    userId: string,
+    payload: Record<string, unknown>,
+  ): Promise<{
+    action: ChatMessageAction;
+    deduplicated: boolean;
+    updated?: boolean;
+  }> {
+    if (message.kind !== 'signup') {
+      throw new BadRequestException('Message is not a sign-up card');
+    }
+    const slotIds = signupClaimSlotIds(payload);
+    if (slotIds === null) {
+      throw new BadRequestException('slot_ids must be a list of slot ids');
+    }
+    try {
+      const { action, updated } = await this.actionRepo.claimSignupSlots(
+        message.id,
+        userId,
+        slotIds,
+      );
+      return { action, deduplicated: false, ...(updated ? { updated } : {}) };
+    } catch (error) {
+      if (!(error instanceof SignupClaimRefusedError)) throw error;
+      switch (error.reason) {
+        case 'full':
+          throw new ConflictException(
+            'That slot is full. Someone took the last spot just before you.',
+          );
+        case 'unknown_slot':
+          throw new BadRequestException(`Invalid slot: ${error.slotId}`);
+        case 'missing':
+          // Deleted between the access check and the lock.
+          throw new BadRequestException('Cannot act on a deleted message');
+      }
     }
   }
 }

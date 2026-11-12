@@ -151,6 +151,7 @@ export async function createChatServiceFixture() {
     findOne: jest.fn(),
     updateForVote: jest.fn(),
     findActionsOnMessages: jest.fn(),
+    claimSignupSlots: jest.fn(),
   };
 
   const mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository> = {

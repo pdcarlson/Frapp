@@ -6,6 +6,7 @@ import {
   postHours,
   postPointsAdjustment,
   postPoll,
+  postSignup,
   postTask,
   retryPointsDispatch,
   trackEventCard,
@@ -1238,6 +1239,41 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
       expect(onlyRow(ctx).kind).toBe(which.kind);
     },
   );
+});
+
+describe("postSignup — the New sign-up sheet's send (#3926)", () => {
+  const SIGNUP = {
+    content: "Sober drivers",
+    payload: {
+      title: "Sober drivers",
+      slots: [{ id: "fri", label: "Friday", capacity: 2 }],
+    },
+  };
+
+  it("queues a signup card with its title as the text, leaving the draft alone", async () => {
+    const post = postingApi();
+    const clearDraft = vi.fn();
+    const ctx = buildSimpleCtx(post, stubOutbox({ clearDraft }));
+
+    expect(await postSignup(ctx, CHANNEL_ID, SIGNUP)).toEqual({ ok: true });
+    expect(onlyRow(ctx).kind).toBe("signup");
+    expect(onlyRow(ctx).content).toBe("Sober drivers");
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("says what failed, in its own words, when the outbox refuses it", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+      }),
+    );
+    expect(await postSignup(ctx, CHANNEL_ID, SIGNUP)).toEqual({
+      ok: false,
+      error: "Couldn't post that sign-up sheet. Try again.",
+      cause: expect.any(Error),
+    });
+  });
 });
 
 describe("postPoll — the New poll form's send (#3865)", () => {

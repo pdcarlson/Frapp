@@ -29,6 +29,7 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
   dues: "Dues",
   hours: "Service hours",
   rush: "Candidate",
+  signup: "Sign-up",
   loading: "Card",
 };
 

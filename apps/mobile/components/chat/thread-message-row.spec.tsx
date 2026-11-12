@@ -1035,6 +1035,13 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       },
       eyebrow: "Poll",
     },
+    signup: {
+      payload: {
+        title: "Sober drivers",
+        slots: [{ id: "fri", label: "Friday", capacity: 2 }],
+      },
+      eyebrow: "Sign-up",
+    },
     event: {
       payload: {
         event_id: "evt-1",

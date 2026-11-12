@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: the Member role becomes Everyone (20261112241000) ─────────
+// ─── Functional: the Member role becomes Everyone (20261112251000) ─────────
 //
 // Replay runs the rename against chapters with no roles, so replay alone
 // proves nothing about it. This tier seeds chapters and checks:
@@ -23,7 +23,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back.
 console.log(
-  "\n=== Functional: the Member role becomes Everyone (20261112241000) ===",
+  "\n=== Functional: the Member role becomes Everyone (20261112251000) ===",
 );
 {
   const A = "a4191000-0000-4000-8000-00000000000a";
@@ -41,7 +41,7 @@ console.log(
     bMember: id(6),
   };
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261112241000_everyone_role.sql"),
+    join(process.cwd(), "supabase/migrations/20261112251000_everyone_role.sql"),
     "utf8",
   );
   const results = [];
