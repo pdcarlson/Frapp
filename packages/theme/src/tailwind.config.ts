@@ -156,6 +156,8 @@ const config: Partial<Config> = {
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
+        /* A neutral wash as a fill, not an edge (foundations §3, #4389). */
+        "neutral-fill": colorVar("--neutral-fill"),
         /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
 

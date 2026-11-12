@@ -47,6 +47,14 @@ export type SignetTokens = {
     };
     /** Low-opacity white so a hairline tracks whatever surface it sits on. Fixed-hex borders are banned. */
     border: { hairline: string; input: string };
+    /**
+     * A neutral white wash laid over a surface as a FILL: the secondary badge,
+     * the chat-density preview bars, mobile's off toggle track. It is the old
+     * `border.input` value, split off on 2026-11-12 (#4389) when the input
+     * edge was raised to clear 3:1, so these fills keep their look and their
+     * text's contrast.
+     */
+    fill: { neutral: string };
     text: {
       foreground: string;
       mutedForeground: string;
@@ -160,7 +168,10 @@ const SIGNET_DARK: SignetTokens = {
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
-      input: "rgba(255,255,255,0.14)",
+      input: "rgba(255,255,255,0.42)",
+    },
+    fill: {
+      neutral: "rgba(255,255,255,0.14)",
     },
     text: {
       foreground: "#F5F5F5",
@@ -265,6 +276,7 @@ export function getSignetCssVars(
 
     "--border": t.color.border.hairline,
     "--input": t.color.border.input,
+    "--neutral-fill": t.color.fill.neutral,
 
     "--foreground": t.color.text.foreground,
     "--muted-foreground": t.color.text.mutedForeground,

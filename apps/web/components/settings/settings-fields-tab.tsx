@@ -479,12 +479,12 @@ function AddFieldForm({
                       /*
                         `--accent` was an alias of `--popover` (deleted, #3036),
                         so `hover:bg-accent` on a chip inside a card composited
-                        to 1.085:1 at the time. The chip is `bg-input`, a white
-                        wash, so the X hovers to a second `bg-input` laid over
+                        to 1.085:1 at the time. The chip is `bg-neutral-fill`, a white
+                        wash, so the X hovers to a second `bg-neutral-fill` laid over
                         it: a step lighter than the chip, which `--card-hover`
                         (an opaque fill darker than the chip) could not be.
                       */
-                      className={`rounded-sm hover:bg-input ${FOCUS_RING_OFFSET}`}
+                      className={`rounded-sm hover:bg-neutral-fill ${FOCUS_RING_OFFSET}`}
                     >
                       <X className="h-3 w-3" />
                     </button>

@@ -39,12 +39,12 @@ import {
 const WHITE = "#FFFFFF";
 
 /**
- * Parsed from the token for `HAIRLINE_ALPHA`'s reason: `--input` is
- * `rgba(255,255,255,.14)` today, and a hardcoded `0.14` here would stop
- * tracking it the moment the token moves.
+ * The poll card's old `bg-input` track: a 14% white wash. Parsed from the token
+ * for `HAIRLINE_ALPHA`'s reason. Since #4389 that wash is `--neutral-fill`
+ * (`--input` became a 42% control edge, which no track should borrow).
  */
 const INPUT_ALPHA = Number(
-  /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.border.input)?.[1] ??
+  /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.fill.neutral)?.[1] ??
     "0.14",
 );
 

@@ -56,9 +56,22 @@ It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things move
 | Token | Value | Role |
 |-------|-------|------|
 | `--border` | `rgba(255,255,255,.08)` | Default hairline — card edges, dividers, tab rules |
-| `--input` | `rgba(255,255,255,.14)` | Input and secondary-button borders — stronger, so interactive edges read as interactive |
+| `--input` | `rgba(255,255,255,.42)` | The edge of a control: text fields, selects, the Secondary button, a switch's track, segmented controls, chips. Strong enough to identify the control (below) |
+| `--neutral-fill` | `rgba(255,255,255,.14)` | A neutral white wash used as a **fill**, never an edge: the secondary badge, the chat-density preview bars, mobile's off toggle track |
 
 Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque border tuned for one surface breaks on every other step of the ladder, while an alpha hairline tracks whatever it sits on.
+
+**A control's edge clears 3:1** (WCAG 2.2 SC 1.4.11, the boundary that identifies a component), on its own fill and on every seat it sits on. 2026-11-12, [#4389](https://github.com/pdcarlson/Frapp/issues/4389), a follow-up to the owner's legibility ask in [#3826](https://github.com/pdcarlson/Frapp/issues/3826). At `.14` a field's edge measured 1.14:1 inside a dialog and 1.79:1 on the page. A field's fill is `--surface-1`, only about 1.15:1 from the seat around it, so the edge is what tells a member where to click. `.42` is the lowest alpha that clears everywhere. The alpha composites over the control's own fill, because the background paints under the border:
+
+| Control (fill) | Edge | On `--background` | On `--surface-1` | On `--card` | On `--popover` | On its fill |
+|---|---|---|---|---|---|---|
+| Field (`--surface-1`) | `#7A7A7A` | 4.75 | 4.05 | 3.53 | **3.03** | 4.05 |
+| Secondary button (`--card`) | `#818181` | 5.23 | 4.47 | 3.88 | 3.34 | 3.88 |
+| Switch, off (`--popover`) | `#888888` | 5.75 | 4.91 | 4.27 | 3.67 | 3.67 |
+
+Rejected: keeping `.14` and relying on the label and placeholder, as GitHub's and Linear's dark themes draw quiet edges (from memory of their published themes, not sampled from the live apps). That fails 1.4.11 as the brief for this pass reads it, and it is the dimness the owner asked to remove. Also rejected: a stronger edge only on focus and on error, which leaves a resting field unfindable. The comparable that draws a resting edge at this strength is Material 3's outlined text field: its `outline` role, `#938F99` on the dark baseline surface `#1C1B1F`, is about 5.4:1.
+
+The old `.14` was also borrowed as a fill: a neutral badge, the density preview, mobile's toggle track. At `.42`, foreground on the secondary badge would fall to 4.06:1, so those fills moved to `--neutral-fill` at the old value and look exactly as before. `apps/web/components/shared/input-edge-contrast.spec.ts` holds the floor. *(Before 2026-11-12 the row read `rgba(255,255,255,.14)`, "Input and secondary-button borders — stronger, so interactive edges read as interactive".)*
 
 ---
 
