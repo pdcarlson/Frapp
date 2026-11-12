@@ -14,6 +14,7 @@ import {
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { StatusChip } from "@/components/status-chip";
+import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -40,9 +41,16 @@ export function ActivityListRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
+  const dotStyles = createUnreadDotStyles(tokens);
   const rowStyle = [styles.row, isFirst ? null : styles.divider];
   const content = (
     <>
+      {/* The unread mark (#4405): the notification list's dot, in a slot of
+          its own that stays when read so rows don't shift. */}
+      <View
+        style={row.unread ? dotStyles.dot : dotStyles.spacer}
+        testID={row.unread ? "activity-unread-dot" : undefined}
+      />
       <ActivityRowLead row={row} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
@@ -73,7 +81,7 @@ export function ActivityListRow({
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      accessibilityLabel={row.unread ? `Unread: ${row.title}` : row.title}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
       accessibilityHint={listRowHint(row.detail || null, undefined)}
@@ -166,6 +174,7 @@ export function ActivityRowSkeleton({
   const { label, caption } = tokens.typography.role;
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
+      <View style={createUnreadDotStyles(tokens).spacer} />
       <SkeletonBlock
         width={LEAD_SIZE}
         height={LEAD_SIZE}

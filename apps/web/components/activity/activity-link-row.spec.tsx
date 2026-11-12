@@ -220,4 +220,58 @@ describe("ActivityLinkRow", () => {
     answerFirst();
     await waitFor(() => expect(mockToast).toHaveBeenCalledTimes(2));
   });
+
+  it("dots an unread link, says so, and reports the open on a click or a middle-click (#4405)", () => {
+    const onOpen = vi.fn();
+    const unread = {
+      ...row(),
+      unread: true,
+      readRef: { kind: "link", item_id: "l1" },
+    } as Extract<ActivityRow, { kind: "link" }>;
+    const actions = { done: vi.fn(), hide: vi.fn(), remove: vi.fn() };
+    const { rerender } = render(
+      <ul>
+        <ActivityLinkRow
+          row={unread}
+          rowClassName=""
+          canRemove={false}
+          actions={actions}
+          onOpen={onOpen}
+        />
+      </ul>,
+    );
+    const link = screen.getByRole("link", { name: /Google Form/ });
+    expect(link).toHaveAccessibleName(/^Unread:\s?Google Form/);
+    expect(link.querySelector("[data-unread-dot]")).not.toBeNull();
+
+    // A test DOM doesn't follow the link; the click is what matters.
+    link.addEventListener("click", (event) => event.preventDefault());
+    link.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    link.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+    );
+    link.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, button: 2 }),
+    );
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    expect(onOpen).toHaveBeenCalledWith(unread);
+
+    rerender(
+      <ul>
+        <ActivityLinkRow
+          row={{ ...unread, unread: false }}
+          rowClassName=""
+          canRemove={false}
+          actions={actions}
+          onOpen={onOpen}
+        />
+      </ul>,
+    );
+    expect(document.querySelector("[data-unread-dot]")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /Google Form/ }),
+    ).not.toHaveAccessibleName(/^Unread/);
+  });
 });

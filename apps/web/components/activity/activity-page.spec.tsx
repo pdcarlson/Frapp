@@ -4,6 +4,7 @@ import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
+const mockMarkRead = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
 const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
   () => undefined,
@@ -20,6 +21,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
+    activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
@@ -27,6 +29,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
   };
 });
@@ -71,6 +74,38 @@ vi.mock("./activity-panel", () => ({
 
 // The link row's actions are its own spec's (`activity-link-row.spec.tsx`);
 // this page owes drawing one per link, with Remove only for an officer.
+/** The chapter's plan: `state.allowed` false refuses the row actions. */
+const mockGate = vi.fn(() => ({
+  allowed: true,
+  isOffline: false,
+  isPending: false,
+  state: { allowed: true },
+}));
+vi.mock("@/components/shared/subscription-gate", () => ({
+  useSubscriptionGate: () => mockGate(),
+}));
+const mockActed = vi.fn();
+// The button itself is tested in `activity-row-action.spec.tsx`; the gate
+// rule (`activity-row-action-gate.ts`) is the real one.
+vi.mock("./activity-row-action", () => ({
+  ActivityRowActionButton: ({
+    row,
+    action,
+    onActed,
+  }: {
+    row: ActivityRow;
+    action: string;
+    onActed: (row: ActivityRow) => Promise<unknown>;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        mockActed(action, row.key);
+        void onActed(row);
+      }}
+    >{`act:${action}:${row.title}`}</button>
+  ),
+}));
 vi.mock("./activity-link-row", () => ({
   useActivityLinkActions: () => ({}),
   ActivityLinkRow: ({
@@ -144,6 +179,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockGate.mockReturnValue({
+    allowed: true,
+    isOffline: false,
+    isPending: false,
+    state: { allowed: true },
+  });
 });
 
 describe("ActivityPage", () => {
@@ -329,6 +370,33 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
+  it("dots an unread row and records the open when it is opened (#4405)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [{ ...task, unread: false }],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [{ ...poll, unread: true }],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+
+    const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
+    const taskRow = screen.getByRole("button", { name: /Book the venue/ });
+    expect(pollRow).toHaveAccessibleName(/^Unread:\s?Formal venue\?/);
+    expect(pollRow.querySelector("[data-unread-dot]")).not.toBeNull();
+    expect(taskRow.querySelector("[data-unread-dot]")).toBeNull();
+
+    fireEvent.click(taskRow);
+    expect(mockMarkRead).not.toHaveBeenCalled();
+    fireEvent.click(pollRow);
+    expect(mockMarkRead).toHaveBeenCalledWith([
+      { kind: "poll", item_id: "p1" },
+    ]);
+  });
+
   it("keeps the panel open when the row has left the list after an action", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
@@ -473,6 +541,122 @@ describe("ActivityPage", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  describe("asks on the row (#4402)", () => {
+    const officerRead = () =>
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [
+            {
+              ...task,
+              id: "t2",
+              title: "Sweep the porch",
+              status: "COMPLETED",
+            },
+          ],
+          hours_approvals: [
+            {
+              id: "h1",
+              user_id: "u2",
+              member_name: "Sam",
+              date: "2026-11-10",
+              duration_minutes: 90,
+              description: "Food bank",
+              created_at: "2026-11-10T00:00:00.000Z",
+            },
+          ],
+          polls: [poll],
+        },
+        coming_up: [
+          {
+            id: "e1",
+            name: "Chapter meeting",
+            location: null,
+            start_time: "2026-11-12T19:00:00.000Z",
+            end_time: "2099-01-01T20:00:00.000Z",
+            attendance: "required",
+            point_value: 10,
+            check_in_opens_minutes: 10,
+            check_in_open: true,
+            checked_in: false,
+            created_by: "officer",
+            created_at: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+      });
+
+    it("puts Confirm and Approve on the row, and keeps Vote and Check in opening the panel", () => {
+      mockActivity.mockReturnValue(officerRead());
+      render(<ActivityPage />);
+
+      for (const name of [
+        "act:confirm:Sweep the porch",
+        "act:approve:Food bank",
+      ]) {
+        expect(screen.getByRole("button", { name })).toBeInTheDocument();
+      }
+      // An event may need the member's location, which the web can't give
+      // (#4427): Check in stays the row's ask and opens the panel.
+      expect(
+        screen.queryByRole("button", { name: /^act:check-in/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Chapter meeting/ }),
+      ).toHaveAccessibleName(/Check in/);
+      // The ask moved out of the row: the row itself no longer names it,
+      // and only holds its place for the button laid over it.
+      const row = screen.getByRole("button", { name: /^Sweep the porch/ });
+      expect(row).not.toHaveAccessibleName(/Confirm/);
+      expect(
+        row.querySelector('[aria-hidden="true"].invisible'),
+      ).toHaveTextContent("Confirm");
+      // A vote asks which option, so it stays the row's ask and opens the panel.
+      expect(
+        screen.queryByRole("button", { name: /^act:.*Formal/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Formal venue\?/ }),
+      ).toHaveTextContent("Vote");
+
+      // The row beside the button still opens the panel.
+      fireEvent.click(screen.getByRole("button", { name: /^Sweep the porch/ }));
+      expect(screen.getByText("panel:Sweep the porch")).toBeInTheDocument();
+    });
+
+    it("reads the item and re-reads the page after acting on the row", () => {
+      const read = officerRead();
+      const hours = read.data.needs_you.hours_approvals as Array<
+        Record<string, unknown>
+      >;
+      hours[0] = { ...hours[0], unread: true };
+      mockActivity.mockReturnValue(read);
+      render(<ActivityPage />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "act:approve:Food bank" }),
+      );
+      expect(mockActed).toHaveBeenCalledWith("approve", "needs:hours:h1");
+      expect(mockMarkRead).toHaveBeenCalledWith([
+        { kind: "hours_entry", item_id: "h1" },
+      ]);
+      expect(mockInvalidate).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps every ask in its row, opening the panel, when the chapter's plan refuses the writes", () => {
+      mockGate.mockReturnValue({
+        allowed: false,
+        isOffline: false,
+        isPending: false,
+        state: { allowed: false },
+      });
+      mockActivity.mockReturnValue(officerRead());
+      render(<ActivityPage />);
+      expect(screen.queryByRole("button", { name: /^act:/ })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /^Sweep the porch/ }),
+      ).toHaveAccessibleName(/Confirm/);
+    });
   });
 
   it("gives an officer the confirm and approve tiles", () => {
