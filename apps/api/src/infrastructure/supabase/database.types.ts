@@ -65,6 +65,8 @@ import type {
   FinancialInvoice,
   FinancialTransaction,
   FollowedThreadUnread,
+  GoogleCalendarConnection,
+  GoogleCalendarOAuthState,
   Invite,
   Meeting,
   MeetingDraft,
@@ -201,6 +203,8 @@ export interface Database {
       events: TableDefinition<Event>;
       financial_invoices: TableDefinition<FinancialInvoice>;
       financial_transactions: TableDefinition<FinancialTransaction>;
+      google_calendar_connections: TableDefinition<GoogleCalendarConnection>;
+      google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
       meeting_drafts: TableDefinition<MeetingDraft>;
       meeting_recordings: TableDefinition<MeetingRecording>;
@@ -381,6 +385,14 @@ export interface Database {
       claim_corpus_sources: {
         Args: { p_fingerprint: string; p_now: string; p_limit: number };
         Returns: CorpusSource[];
+      };
+      /**
+       * `20261113040008` (#3322) — Google Calendar connections to sync or
+       * clean up next, each leased; `returns setof google_calendar_connections`.
+       */
+      claim_google_calendar_syncs: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: GoogleCalendarConnection[];
       };
       /**
        * `20260901183000` — `returns boolean`. `true` on a successful claim,

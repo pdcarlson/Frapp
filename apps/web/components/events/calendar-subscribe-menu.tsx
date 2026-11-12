@@ -1,11 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { CalendarPlus, ChevronDown, Copy, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  CalendarPlus,
+  ChevronDown,
+  Copy,
+  RotateCcw,
+  Unlink,
+} from "lucide-react";
 import {
   calendarAppLinks,
+  errorCopy,
+  GOOGLE_CALENDAR_RETURN_PARAMS,
+  readGoogleCalendarReturn,
+  useActiveChapterId,
   useCalendarFeedLink,
+  useConfirmGoogleCalendarConnect,
+  useDisconnectGoogleCalendar,
+  useGoogleCalendarStatus,
   useResetCalendarFeedLink,
+  useStartGoogleCalendarConnect,
+  type GoogleCalendarReturn,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,14 +50,62 @@ import { useToast } from "@/lib/hooks/use-toast";
  * The link is asked for only when the menu opens, so a member who never
  * opens it never has one made. Until it arrives the rows are drawn but
  * disabled, so the menu never changes size.
+ *
+ * Google Calendar (#3322, step 2; § Google Calendar): where the server offers
+ * it, the Google row connects the member's Google account instead of handing
+ * Google the link, because Google re-reads a subscribed link only every few
+ * hours while a connection updates within minutes. That is the shape Reclaim,
+ * Motion and Cal.com use, and the one TeamSnap and Spond's link-only menus
+ * leave out: one "Google Calendar" row that goes to Google's own sign-in, a
+ * calendar of Frapp's own in the account, and a Disconnect beside Reset link.
+ * Connected, the row opens Google Calendar and says which account.
  */
 export function CalendarSubscribeMenu() {
   const [open, setOpen] = useState(false);
   const link = useCalendarFeedLink({ enabled: open });
   const reset = useResetCalendarFeedLink();
+  const google = useGoogleCalendarStatus();
+  const startGoogle = useStartGoogleCalendarConnect();
+  const disconnectGoogle = useDisconnectGoogleCalendar();
   const { confirm, confirmDialog } = useConfirmDialog();
   const { toast } = useToast();
   const apps = link.data ? calendarAppLinks(link.data) : null;
+  const googleConnect = google.data?.available ? google.data : null;
+  useGoogleCalendarReturn();
+
+  async function connectGoogle() {
+    try {
+      const url = await startGoogle.mutateAsync({ client: "web" });
+      window.location.assign(url);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: errorCopy(error, "Couldn't open Google. Try again."),
+      });
+    }
+  }
+
+  async function disconnectGoogleCalendar() {
+    const account = googleConnect?.google_email;
+    const ok = await confirm({
+      title: "Disconnect Google Calendar?",
+      description: `Frapp's calendar is removed from ${
+        account ? `your Google account (${account})` : "your Google account"
+      }. Your other calendars aren't touched.`,
+      confirmLabel: "Disconnect",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    try {
+      await disconnectGoogle.mutateAsync();
+      toast({ description: "Google Calendar disconnected." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: errorCopy(error, "Couldn't disconnect. Try again."),
+      });
+    }
+  }
 
   async function copyLink() {
     if (!link.data) return;
@@ -106,11 +169,38 @@ export function CalendarSubscribeMenu() {
           <DropdownMenuItem asChild disabled={!apps}>
             <a href={apps?.apple}>Apple Calendar</a>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild disabled={!apps}>
-            <a href={apps?.google} target="_blank" rel="noopener noreferrer">
+          {googleConnect?.connected && googleConnect.status === "active" ? (
+            <DropdownMenuItem asChild>
+              <a
+                href="https://calendar.google.com/calendar/r"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Google Calendar
+                <span className="ml-auto truncate text-caption text-muted-foreground">
+                  Connected
+                </span>
+              </a>
+            </DropdownMenuItem>
+          ) : googleConnect ? (
+            <DropdownMenuItem
+              disabled={startGoogle.isPending}
+              onSelect={() => void connectGoogle()}
+            >
               Google Calendar
-            </a>
-          </DropdownMenuItem>
+              {googleConnect.status === "needs_reconnect" ? (
+                <span className="ml-auto text-caption text-destructive">
+                  Reconnect
+                </span>
+              ) : null}
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem asChild disabled={!apps}>
+              <a href={apps?.google} target="_blank" rel="noopener noreferrer">
+                Google Calendar
+              </a>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem asChild disabled={!apps}>
             <a href={apps?.outlook} target="_blank" rel="noopener noreferrer">
               Outlook.com
@@ -133,6 +223,15 @@ export function CalendarSubscribeMenu() {
             Copy link
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {googleConnect?.connected ? (
+            <DropdownMenuItem
+              disabled={disconnectGoogle.isPending}
+              onSelect={() => void disconnectGoogleCalendar()}
+            >
+              <Unlink aria-hidden="true" />
+              Disconnect Google Calendar
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             disabled={!link.data || reset.isPending}
             onSelect={() => void resetLink()}
@@ -141,12 +240,81 @@ export function CalendarSubscribeMenu() {
             Reset link
           </DropdownMenuItem>
           <p className="px-2 pt-1 pb-1.5 text-caption text-muted-foreground">
-            Your calendar app checks for changes on its own schedule. Google
-            Calendar can take several hours.
+            {googleConnect?.connected && googleConnect.google_email
+              ? `Google Calendar is connected as ${googleConnect.google_email} and updates within minutes. Other calendar apps check on their own schedule.`
+              : googleConnect
+                ? "Google Calendar updates within minutes once connected. Other calendar apps check on their own schedule."
+                : "Your calendar app checks for changes on its own schedule. Google Calendar can take several hours."}
           </p>
         </DropdownMenuContent>
       </DropdownMenu>
       {confirmDialog}
     </>
   );
+}
+
+const GOOGLE_RETURN_COPY: Record<
+  Exclude<GoogleCalendarReturn["kind"], "confirm">,
+  string
+> = {
+  denied: "Google Calendar wasn't connected.",
+  expired: "That Google sign-in expired. Connect Google Calendar again.",
+  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
+};
+
+/**
+ * Finishes a Google sign-in when Google sends the member back to Events.
+ *
+ * Read once, on mount, and stripped from the address bar at once: the code is
+ * a one-time credential, and a URL is the most-copied place a value can sit.
+ * The confirm runs as soon as a chapter is active, exactly once (the ref is
+ * cleared first, so React's development double-invoke can't spend it twice).
+ */
+function useGoogleCalendarReturn() {
+  const chapterId = useActiveChapterId();
+  const confirmConnect = useConfirmGoogleCalendarConnect().mutateAsync;
+  const { toast } = useToast();
+  const pending = useRef<{ code: string; state: string } | null>(null);
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (handled.current) return;
+    handled.current = true;
+    const url = new URL(window.location.href);
+    const outcome = readGoogleCalendarReturn(url.searchParams);
+    if (!outcome) return;
+    if (outcome.kind === "confirm") {
+      pending.current = { code: outcome.code, state: outcome.state };
+    } else {
+      toast({
+        variant: outcome.kind === "denied" ? undefined : "destructive",
+        description: GOOGLE_RETURN_COPY[outcome.kind],
+      });
+    }
+    for (const param of GOOGLE_CALENDAR_RETURN_PARAMS) {
+      url.searchParams.delete(param);
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [toast]);
+
+  useEffect(() => {
+    const finish = pending.current;
+    if (!finish || !chapterId) return;
+    pending.current = null;
+    confirmConnect(finish)
+      .then(() =>
+        toast({
+          description:
+            "Google Calendar connected. Your events show up there within a minute.",
+        }),
+      )
+      .catch((error: unknown) =>
+        toast({
+          variant: "destructive",
+          description: errorCopy(error, GOOGLE_RETURN_COPY.failed, {
+            serverWritesForMembers: true,
+          }),
+        }),
+      );
+  }, [chapterId, confirmConnect, toast]);
 }

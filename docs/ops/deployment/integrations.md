@@ -378,3 +378,64 @@ The allowances and per-GB rates are the providers' to state and change:
 quotas as of the Pro upgrade are in [`supabase.md` § Plan and quotas](supabase.md#plan-and-quotas).
 
 ---
+
+## 7B. Google Calendar
+
+**Optional.** Unset, the Subscribe menu's Google Calendar row hands Google the
+subscription link as before; set, it connects the member's Google account and
+Frapp writes their events and tasks into a calendar of its own there
+([`events.md` § Google Calendar](../../../spec/behavior/events.md#google-calendar),
+#3322). Everything below is provider-side configuration no repo state creates.
+Owner-only: it is the `signet-frapp` Google Cloud project, the one whose
+consent screen Google sign-in already uses (brand "Frapp", verified;
+publishing status In production, user type External:
+[`supabase.md`](supabase.md#auth-oauth-providers-google-and-apple)).
+
+1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
+   Services → Library → **Google Calendar API** → Enable.
+2. **Add the permission.** Google Auth Platform → Data Access → Add or remove
+   scopes → `https://www.googleapis.com/auth/calendar.app.created` ("Make
+   secondary Google calendars, and see, create, change and delete events on
+   them") → Update → Save. `openid` and `email` are there already for sign-in.
+   The console files it under non-sensitive or sensitive scopes. If
+   **sensitive**, Google reviews the app before the warning screen goes away
+   (the console's Verification Center; about 3 to 5 business days, with a
+   short video of the connect flow and a sentence on why: "Frapp makes one
+   calendar of its own and keeps the chapter's events on it; it reads nothing
+   else"). Until then members see "Google hasn't verified this app" and at
+   most 100 accounts can connect. Non-sensitive needs no review.
+3. **Make two clients**, one per environment, so production's secret is never
+   in staging (agent sandboxes read staging's Infisical, never prod's).
+   Google Auth Platform → Clients → Create client → type **Web
+   application**, name **Frapp Calendar (staging)** (a dashboard label;
+   members see the brand), one authorized redirect URI, exactly
+   `https://api-staging.frapp.live/v1/google-calendar/callback` (add
+   `http://localhost:3001/v1/google-calendar/callback` to try it locally,
+   on this client only). Then again, **Frapp Calendar**, with only
+   `https://api.frapp.live/v1/google-calendar/callback`. No JavaScript
+   origins on either. The redirect is the API's origin plus that path:
+   `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
+   **Frapp Web client 1**, whose secret lives in Supabase: these live in
+   Infisical.
+4. **Store the values in Infisical**, names only here: in staging, the
+   staging client's `GOOGLE_CALENDAR_CLIENT_ID` and
+   `GOOGLE_CALENDAR_CLIENT_SECRET`; in prod, the production client's. And
+   `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
+   `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
+   to boot on a partial set. Redeploy the API after the sync reaches Render.
+
+**Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
+answers `"available": true`. Then connect from the web Subscribe menu: Google's
+page names Frapp and asks only to make calendars and manage their events; back
+on Events, a toast says connected, and within a minute a calendar named
+"<chapter> (Frapp)" appears in Google Calendar holding the chapter's events.
+
+**What goes wrong.**
+
+| Symptom | Cause |
+| --- | --- |
+| Google says `redirect_uri_mismatch` | Step 3's redirect URI differs from the API's origin (`API_URL` less any trailing `/v1`) + `/v1/google-calendar/callback`, or the environment holds the other environment's client |
+| Connected, but nothing appears, and the API logs `Google Calendar sync failed for connection …: … accessNotConfigured` | Step 1: the sign-in works without the Calendar API, the first sync doesn't |
+| The member is told Frapp needs permission to make its calendar | They unticked it on Google's page, or step 2's scope is missing |
+| "Google hasn't verified this app" | Step 2's scope is sensitive and the review is pending |
+| Connected, but nothing appears | The API logs `Google Calendar sync failed for connection …` with Google's reason |
