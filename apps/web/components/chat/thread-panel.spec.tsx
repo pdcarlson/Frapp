@@ -71,7 +71,12 @@ vi.mock("react-virtuoso", async () => {
 // `useAuthorAvatars` needs `FrappClientProvider`, which a bare render lacks.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
+  return {
+    ...actual,
+    useAuthorAvatars: () => ({ data: {} }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: () => undefined,
+  };
 });
 
 // Radix mounts an avatar's `<img>` only once the browser loads it, which

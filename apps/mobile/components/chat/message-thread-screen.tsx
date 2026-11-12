@@ -45,6 +45,7 @@ import {
   useChannel,
   useMemberDisplayNames,
   usePermissionList,
+  useRosterCatchUp,
   useViewerUserId,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -242,6 +243,15 @@ export function MessageThreadScreen({
     visibleTypingUsers(thread.typingUsers, blockState, viewerId),
     nameFor,
   );
+  // A typist or replier the roster doesn't hold yet is named once it's re-read.
+  const namedHere = useMemo(
+    () => [
+      ...thread.typingUsers,
+      ...thread.messages.map((message) => message.sender_id),
+    ],
+    [thread.typingUsers, thread.messages],
+  );
+  useRosterCatchUp(namedHere);
 
   // The app-wide pill says the transport while this screen is up, as s05
   // does while it is (`spec/ui/resilience/connection-state.md` § One indicator).

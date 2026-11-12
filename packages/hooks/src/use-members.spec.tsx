@@ -8,8 +8,10 @@ import {
   useMembers,
   useMemberSearch,
   useRemoveMember,
+  useRosterCatchUp,
   useUpdateMemberRoles,
 } from "./use-members";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { memberAvatarTint, memberHashHue } from "./member-avatar-color";
 
@@ -154,9 +156,7 @@ describe("useMemberSearch", () => {
 
   it("returns members matching the query when the API request succeeds", async () => {
     const query = "test";
-    const members = [
-      { id: "member-1", name: "Test User 1" },
-    ];
+    const members = [{ id: "member-1", name: "Test User 1" }];
     const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
 
     mockUseFrappClient.mockReturnValue({
@@ -404,6 +404,75 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     expect(result.current.nameFor("user-1")).toBeNull();
+  });
+});
+
+// A member who joined after the roster loaded, typing or posting in chat, is
+// named once the roster is re-read, instead of `Member 2f4a1c` or an unnamed
+// typing line (2026-11-12).
+describe("useRosterCatchUp", () => {
+  let queryClient: QueryClient;
+  const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
+  const first = [
+    { user_id: "user-1", display_name: "Marcus Reid", avatar_url: null },
+  ];
+  const after = [
+    ...first,
+    { user_id: "new-joiner", display_name: "Alex Kim", avatar_url: null },
+  ];
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+  });
+
+  function mountWith(get: ReturnType<typeof vi.fn>, ids: string[]) {
+    mockUseFrappClient.mockReturnValue({
+      GET: get,
+    } as unknown as ReturnType<typeof useFrappClient>);
+    return renderHook(
+      ({ wanted }: { wanted: string[] }) => {
+        useRosterCatchUp(wanted);
+        return useMemberDisplayNames();
+      },
+      { wrapper: createWrapper(queryClient), initialProps: { wanted: ids } },
+    );
+  }
+
+  it("re-reads the roster for an id it lacks, and names them", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: first, error: null })
+      .mockResolvedValue({ data: after, error: null });
+    const { result } = mountWith(get, ["user-1", "new-joiner"]);
+
+    await waitFor(() => {
+      expect(result.current.nameFor("new-joiner")).toBe("Alex Kim");
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks only once for an id the roster never gains", async () => {
+    const get = vi.fn().mockResolvedValue({ data: first, error: null });
+    const { rerender } = mountWith(get, ["gone-member"]);
+
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    rerender({ wanted: ["gone-member", "user-1"] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("never re-reads for known members or the system sender", async () => {
+    const get = vi.fn().mockResolvedValue({ data: first, error: null });
+    const { result } = mountWith(get, ["user-1", SYSTEM_SENDER_ID]);
+
+    await waitFor(() => expect(result.current.hasData).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });
 

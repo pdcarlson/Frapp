@@ -18,7 +18,7 @@ import {
 import { typingLabel } from "@repo/chat-core/typing-label";
 import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { resolveAuthorAvatar } from "@repo/hooks";
+import { resolveAuthorAvatar, useRosterCatchUp } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -237,6 +237,8 @@ export function ThreadPanel({
 
   const typists = visibleTypingUsers(thread.typingUsers, blockState, viewerId);
   const typing = typingLabel(typists, nameFor);
+  // A typist the roster doesn't hold yet is named once it's re-read.
+  useRosterCatchUp(thread.typingUsers);
   const following = thread.followState === "following";
 
   const notSent = useCallback(

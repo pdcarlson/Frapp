@@ -57,6 +57,7 @@ import {
   useMarkChannelRead,
   useMemberDisplayNames,
   usePermissionList,
+  useRosterCatchUp,
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
   useImportantMessages,
@@ -610,6 +611,13 @@ function ChannelThreadScreen() {
   );
   // Who, by name, as Discord says it and the thread line already does.
   const typingLine = typingLabel(shownTypingUsers, nameFor);
+  // Someone who joined after the roster loaded, typing or posting here, is
+  // named a moment later rather than left as `Member 2f4a1c` (2026-11-12).
+  const namedHere = useMemo(
+    () => [...typingUsers, ...messages.map((message) => message.sender_id)],
+    [typingUsers, messages],
+  );
+  useRosterCatchUp(namedHere);
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);

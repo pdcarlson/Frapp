@@ -657,6 +657,8 @@ vi.mock("@repo/hooks", async () => ({
           refetch: vi.fn(),
         },
   useChapterRoster: () => mockChapterRoster(),
+  useRosterCatchUp: (ids: readonly (string | null | undefined)[]) =>
+    mockRosterCatchUp(ids),
   useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -983,6 +985,7 @@ const displayLockState = vi.hoisted(() => ({
 }));
 const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
 const mockChapterRoster = vi.hoisted(() => vi.fn());
+const mockRosterCatchUp = vi.hoisted(() => vi.fn());
 
 const mockDropAttach = vi.fn();
 vi.mock("./composer", () => ({
@@ -4613,13 +4616,32 @@ describe("ChatShell block list (#2313)", () => {
       ...blockListState.value,
       ids: new Set(["blocked-1"]),
     };
+    sidebarState.memberNames = {
+      "blocked-1": "Blocked Member",
+      "friend-1": "Winston Hewitt",
+    };
+    onTestFinished(() => {
+      sidebarState.memberNames = {};
+    });
     mockUseChatChannel.mockReturnValue(
       chatChannelResult({ typingUsers: ["blocked-1", "friend-1"] }),
     );
     render(<ChatShell initialChannelId="chan-general" />);
 
-    // `nameFor` knows nobody here, so the one typist left reads as Someone.
-    expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
+    expect(screen.getByText("Winston Hewitt is typing…")).toBeInTheDocument();
+  });
+
+  it("holds back a typist the roster can't name, and asks for a re-read (2026-11-12)", () => {
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ typingUsers: ["new-joiner"] }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    // Never "Someone is typing…": the line waits for the roster to name them.
+    expect(screen.queryByText(/is typing|are typing/)).not.toBeInTheDocument();
+    expect(mockRosterCatchUp).toHaveBeenLastCalledWith(
+      expect.arrayContaining(["new-joiner"]),
+    );
   });
 
   it("names the typist and keeps the line's space when nobody types", () => {

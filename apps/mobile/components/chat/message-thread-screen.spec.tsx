@@ -188,6 +188,8 @@ let viewerId: string | null = VIEWER;
 let permissions: string[] = [];
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The roster catch-up has its own spec in `@repo/hooks`.
+  useRosterCatchUp: () => undefined,
   useChannel: () => ({ data: channelRow, isFetching: false }),
   useViewerUserId: () => viewerId,
   useAuthorAvatars: () => ({ data: undefined }),

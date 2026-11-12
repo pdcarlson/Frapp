@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   useQuery,
   useMutation,
@@ -8,7 +8,11 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
+import {
+  roleColorOrNull,
+  SYSTEM_SENDER_ID,
+  type MemberDismissalKey,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 import { useViewerUserId } from "./use-user";
@@ -85,6 +89,57 @@ export function useChapterRoster() {
     staleTime: 60_000,
     enabled: !!chapterId,
   });
+}
+
+/**
+ * Re-reads the roster when a surface is about to name a member it doesn't
+ * hold, such as someone who joined after the roster loaded and is now typing
+ * or posting (Paul, 2026-11-12). The roster is otherwise only re-read once it
+ * is a minute stale *and* something remounts or refocuses, so a new joiner
+ * read as `Member 2f4a1c` in the timeline and went unnamed on the typing line
+ * for that long, which during the beta's onboarding is most of their first
+ * conversation.
+ *
+ * Each missing id triggers at most one re-read per chapter, so a member who
+ * really is gone (a removed member's old messages, an imported author) costs
+ * one read, not a loop. The system sender is never looked up. Pass every id
+ * the surface names: typists and message senders alike.
+ */
+export function useRosterCatchUp(
+  userIds: readonly (string | null | undefined)[],
+): void {
+  const chapterId = useActiveChapterId();
+  const { data, isFetching, refetch } = useChapterRoster();
+  const tried = useRef<{ chapterId: string | null; ids: Set<string> }>({
+    chapterId: null,
+    ids: new Set(),
+  });
+  // A string, so a fresh array of the same ids each render reruns nothing.
+  const wanted = useMemo(
+    () =>
+      [
+        ...new Set(
+          userIds.filter((id): id is string => !!id && id !== SYSTEM_SENDER_ID),
+        ),
+      ]
+        .sort()
+        .join(","),
+    [userIds],
+  );
+
+  useEffect(() => {
+    if (!data || isFetching || !wanted) return;
+    if (tried.current.chapterId !== chapterId) {
+      tried.current = { chapterId, ids: new Set() };
+    }
+    const known = new Set(data.map((row) => row.user_id));
+    const missing = wanted
+      .split(",")
+      .filter((id) => !known.has(id) && !tried.current.ids.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) tried.current.ids.add(id);
+    void refetch();
+  }, [chapterId, data, isFetching, refetch, wanted]);
 }
 
 export interface MemberDisplayNames {
@@ -286,7 +341,13 @@ export function useUpdateMemberRoles() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["members", "update-member-roles"],
-    mutationFn: async ({ id, role_ids }: { id: string; role_ids: string[] }) => {
+    mutationFn: async ({
+      id,
+      role_ids,
+    }: {
+      id: string;
+      role_ids: string[];
+    }) => {
       const { data, error } = await client.PATCH("/v1/members/{id}/roles", {
         params: { path: { id } },
         body: { role_ids },

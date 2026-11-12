@@ -49,6 +49,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useRosterCatchUp,
   useMentionRoles,
   useMyPermissions,
   useBookmarks,
@@ -1196,6 +1197,16 @@ export function ChatShell({
     userId,
   );
   const typingLine = typingLabel(typingUsers, nameFor);
+  // Someone who joined after the roster loaded, typing or posting here, is
+  // named a moment later rather than left as `Member 2f4a1c` (2026-11-12).
+  const namedHere = useMemo(
+    () => [
+      ...channel.typingUsers,
+      ...channel.messages.map((message) => message.sender_id),
+    ],
+    [channel.typingUsers, channel.messages],
+  );
+  useRosterCatchUp(namedHere);
   // The rows drawn in full: what every surface beside the timeline that prints
   // a message's author or words reads (the Pinned panel and its count). A
   // tombstoned row carries a blocked member's words whenever an echo put them

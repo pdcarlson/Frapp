@@ -437,6 +437,8 @@ const requestUploadUrl = { mutateAsync: vi.fn() };
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The roster catch-up has its own spec in `@repo/hooks`.
+  useRosterCatchUp: () => undefined,
   useActiveChapterId: () => "chapter-1",
   useChannel: (id: string) =>
     channelRow === "found"
