@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: Suggested tasks from minutes (#4313, on `ai-integration`)
+
+### 20261112190000_meeting_task_suggestions.sql
+
+- **Purpose**: Adds `ai_suggestions.dedupe_key` (nullable text, 1 to 200 characters): a fingerprint of the thing in its source a suggestion was made from, which for a suggested task is one action item of posted minutes. The unique index `idx_ai_suggestions_source_dedupe` on `(source_type, source_id, kind, dedupe_key) where dedupe_key is not null` makes one proposal per item, whatever became of the first. Adds the trigger `meetings_drop_ai_suggestions` (`after delete on meetings`, running the existing `ai_suggestions_drop_for_source('meeting')`), so a meeting's waiting suggestions go with its minutes. Writes no row on apply. The rule is [`meetings.md` § Suggested tasks](../../../spec/behavior/meetings.md#suggested-tasks).
+- **Checks**: After `db push`, `select count(*) from pg_indexes where indexname = 'idx_ai_suggestions_source_dedupe';` returns `1`, `select tgname from pg_trigger where tgname = 'meetings_drop_ai_suggestions';` returns 1 row, and `select count(*) from ai_suggestions where dedupe_key is not null;` returns `0`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Must sort after `20261112130001_ai_suggestions.sql` and `20261112120400_meetings.sql`. The older API never writes the column; the newer API with `AI_ENABLED` unset proposes nothing. `ai_suggestions` and `meetings` arrive empty in the same release, so the column's check, the index build and the trigger's lock are milliseconds. `if not exists` and `drop trigger if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-suggested-tasks-from-minutes-20261112190000) § Rollback suggested tasks from minutes.
+
 ## 2026-11-12: Minutes drafted from notes (#4312, on `ai-integration`)
 
 ### 20261112180000_meeting_drafts.sql

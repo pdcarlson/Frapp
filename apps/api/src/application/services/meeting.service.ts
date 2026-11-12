@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -34,6 +35,16 @@ import { EventService } from './event.service';
 import { RbacService } from './rbac.service';
 import { NotificationService } from './notification.service';
 import { isInvited } from './event-role-targeting';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+
+/**
+ * What a feature does each time posted minutes are saved: when they are
+ * posted, and on every edit after. See `MeetingService.onPostedMinutesSaved`.
+ */
+export type PostedMinutesListener = (
+  meeting: Meeting,
+  change: { reason: 'posted' | 'edited'; actorId: string },
+) => Promise<void>;
 
 /** The most minutes the list reads; a chapter meets about weekly. */
 export const MEETING_LIST_LIMIT = 500;
@@ -113,6 +124,9 @@ interface ViewerAccess {
  */
 @Injectable()
 export class MeetingService {
+  private readonly logger = new Logger(MeetingService.name);
+  private readonly postedListeners: PostedMinutesListener[] = [];
+
   constructor(
     @Inject(MEETING_REPOSITORY)
     private readonly meetingRepo: IMeetingRepository,
@@ -123,6 +137,36 @@ export class MeetingService {
     private readonly rbac: RbacService,
     private readonly notifications: NotificationService,
   ) {}
+
+  /**
+   * Runs `listener` after minutes are posted and after each later save of
+   * posted minutes, so what is made from them follows them (suggested tasks,
+   * #4313). A feature registers in its own `onModuleInit`. The save has
+   * already happened: a listener that fails is reported and never fails the
+   * officer's post or edit, so each must be safe to run again on the next
+   * save.
+   */
+  onPostedMinutesSaved(listener: PostedMinutesListener): void {
+    this.postedListeners.push(listener);
+  }
+
+  private async tellPostedListeners(
+    meeting: Meeting,
+    change: { reason: 'posted' | 'edited'; actorId: string },
+  ): Promise<void> {
+    for (const listener of this.postedListeners) {
+      try {
+        await listener(meeting, change);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'meeting-posted-listener',
+          message: `a follow-up to saving minutes ${meeting.id} failed`,
+          error,
+        });
+      }
+    }
+  }
 
   /** The minutes the viewer may read, newest meeting first. */
   async list(
@@ -327,6 +371,12 @@ export class MeetingService {
       write,
     );
     if (!saved) throw this.stale();
+    if (saved.status === 'posted' && write.content) {
+      await this.tellPostedListeners(saved, {
+        reason: 'edited',
+        actorId: userId,
+      });
+    }
     return this.view(chapterId, saved, event, userId, access);
   }
 
@@ -361,6 +411,12 @@ export class MeetingService {
       },
     );
     if (!saved) throw this.stale();
+    // Before the audience is told: a listener never fails the post, and a
+    // post that failed after this point is not run again on the retry.
+    await this.tellPostedListeners(saved, {
+      reason: 'posted',
+      actorId: userId,
+    });
     if (event) await this.notifyAudience(chapterId, saved, event, userId);
     return this.view(chapterId, saved, event, userId, access);
   }

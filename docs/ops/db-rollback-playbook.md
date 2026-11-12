@@ -3926,3 +3926,19 @@ drop function if exists public.meeting_drafts_drop_on_post();
 drop function if exists public.meeting_drafts_drop_for_deleted_user();
 drop table if exists public.meeting_drafts;
 ```
+
+## Rollback suggested tasks from minutes (20261112190000)
+
+* **Migration**: `20261112190000_meeting_task_suggestions.sql`
+
+One nullable column and its unique index on `ai_suggestions`, and a delete trigger on `meetings`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset, or the chapter's meeting notes switch off, posting minutes proposes nothing. Suggestions already waiting expire after 14 days as any do, and tasks already accepted are ordinary `tasks` rows and stay.
+
+To remove it all, in a later forward migration (the API from this release must be rolled back first, because it writes the column):
+
+```sql
+drop trigger if exists meetings_drop_ai_suggestions on public.meetings;
+drop index if exists public.idx_ai_suggestions_source_dedupe;
+alter table public.ai_suggestions drop column if exists dedupe_key;
+```

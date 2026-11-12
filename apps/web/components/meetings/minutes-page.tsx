@@ -64,6 +64,7 @@ import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
+import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -581,6 +582,19 @@ function Minutes({
           </section>
         ))}
       </fieldset>
+
+      {/*
+        Under the minutes, so the list arriving never moves what is being
+        read. Posted minutes only, and never beside the editor: a suggestion
+        follows the saved action items, not ones still being typed.
+      */}
+      {!isDraft && !editing ? (
+        <SuggestedTasks
+          source={{ type: "meeting", id: meeting.id }}
+          headingId={`${ids}-suggested`}
+          className="mt-8"
+        />
+      ) : null}
 
       {confirmDialog}
     </div>

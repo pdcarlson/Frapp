@@ -17,9 +17,12 @@
  * reply, before Frapp's checks drop an ungrounded line or a guessed owner:
  * the table should show which model needs those checks least.
  *
- * The suggested-tasks prompt and schema are still the bake-off's own,
- * version `bake-off-suggest-tasks@v1`. When suggested tasks (#4313) land,
- * this file should import theirs instead.
+ * The suggested-tasks prompt and schema are the bake-off's own, version
+ * `bake-off-suggest-tasks@v1`, and nothing ships them: suggested tasks
+ * (#4313) are the posted minutes' action items as written, with no model
+ * call (`#domain/utils/minutes-task-proposals`). The task stays as the
+ * measure of how well a model would name an owner and a due day, for the
+ * day a suggestion is drafted from more than the saved item.
  */
 import { z } from 'zod';
 import {

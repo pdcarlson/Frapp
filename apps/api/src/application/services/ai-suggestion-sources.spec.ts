@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   ChannelSuggestionSource,
   EventSuggestionSource,
+  MeetingSuggestionSource,
 } from './ai-suggestion-sources';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
@@ -53,6 +54,17 @@ describe('AI suggestion source access (#4309)', () => {
         [OPEN, HIDDEN],
         { includeArchived: true },
       );
+    });
+  });
+
+  describe('MeetingSuggestionSource (#4313)', () => {
+    it('asks the one read rule for minutes, and nothing else', async () => {
+      const readableAmong = jest.fn(async () => new Set([OPEN]));
+      const source = new MeetingSuggestionSource({ readableAmong } as never);
+      const open = await source.filterOpenable(CHAPTER, USER, [OPEN, HIDDEN]);
+      expect(source.sourceType).toBe('meeting');
+      expect([...open]).toEqual([OPEN]);
+      expect(readableAmong).toHaveBeenCalledWith(CHAPTER, USER, [OPEN, HIDDEN]);
     });
   });
 });
