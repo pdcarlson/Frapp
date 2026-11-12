@@ -71,6 +71,17 @@ import {
   type StudyZoneModel,
 } from "@/lib/study/zones";
 import { useFrappTheme } from "@/lib/theme";
+import { successHaptic } from "@/lib/haptics";
+import {
+  BREAK_HINT,
+  breakMinutesFor,
+  focusTimerCopy,
+  readFocusTimer,
+} from "@/lib/study/focus-timer";
+import {
+  useKeepScreenAwake,
+  useKeepScreenOnPreference,
+} from "@/lib/study/keep-screen-on";
 import {
   bestZoneId,
   measureZones,
@@ -800,6 +811,41 @@ export default function StudyScreen() {
     };
   }, [history, weekStart]);
 
+  /**
+   * The focus timer: when it was turned on, for this session only. Turning it
+   * off forgets it, and so does the session ending. It reads the same `now`
+   * the credited clock ticks, so it moves only while that does.
+   */
+  const [focusStartedAt, setFocusStartedAt] = useState<number | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the timer belongs to the session it was started in
+    if (!session) setFocusStartedAt(null);
+  }, [session]);
+  const breakMinutes = breakMinutesFor(
+    activeZone?.pauseGraceMinutes ?? 5,
+  );
+  const focusReading =
+    focusStartedAt === null
+      ? null
+      : readFocusTimer(focusStartedAt, now.getTime(), breakMinutes);
+  const focusPhase = focusReading?.phase ?? null;
+  const focusRound = focusReading?.round ?? null;
+  // One tap on the wrist when focus turns to break and back, so a member who
+  // isn't watching the screen knows.
+  const lastPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = focusPhase === null ? null : `${focusRound}:${focusPhase}`;
+    if (lastPhaseRef.current !== null && key !== null && key !== lastPhaseRef.current) {
+      successHaptic();
+    }
+    lastPhaseRef.current = key;
+  }, [focusPhase, focusRound]);
+
+  const [keepScreenOn, setKeepScreenOn] = useKeepScreenOnPreference();
+  // Only while a session is on screen and the screen is on top: leaving the
+  // screen or ending the session hands the lock back to the system.
+  useKeepScreenAwake(keepScreenOn && session !== null && isFocused);
+
   const beginSession = useCallback(async () => {
     if (!selectedZoneId) return;
     // The member chose this zone by tapping Start for it: a fix landing now
@@ -1073,6 +1119,22 @@ export default function StudyScreen() {
             notice={notice}
             failure={failure}
             onEnd={confirmEnd}
+            focus={
+              focusReading
+                ? {
+                    text: focusTimerCopy(focusReading),
+                    isBreak: focusReading.phase === "break",
+                    hint: focusReading.phase === "break" ? BREAK_HINT : null,
+                  }
+                : null
+            }
+            onToggleFocus={() =>
+              setFocusStartedAt((current) =>
+                current === null ? Date.now() : null,
+              )
+            }
+            keepScreenOn={keepScreenOn}
+            onToggleKeepScreenOn={() => setKeepScreenOn(!keepScreenOn)}
           />
         ) : (
           <StartCard

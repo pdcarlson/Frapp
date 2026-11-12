@@ -1080,6 +1080,61 @@ describe("Study says where you are before Start", () => {
   });
 });
 
+describe("Study focus timer and keep screen on", () => {
+  const chip = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "switch" &&
+        node.props.label === label,
+    );
+
+  it("runs the focus timer on the session card without touching the session", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+      const tree = render();
+      expect(screenText(tree)).not.toContain("Focus ·");
+
+      act(() => chip(tree, "Focus timer").props.onPress());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(screenText(tree)).toMatch(/Focus · 2[45]:\d\d left/);
+
+      // 25 minutes on, the break (a minute under the 5-minute grace window).
+      api.heartbeat.mockImplementation(async () => LIVE_SESSION[0]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25 * 60 * 1000);
+      });
+      expect(screenText(tree)).toMatch(/Break · [34]:\d\d left/);
+      expect(api.pause).not.toHaveBeenCalled();
+      expect(api.stop).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds the screen awake during a session only when asked", async () => {
+    const { activateKeepAwakeAsync, deactivateKeepAwake } = await import(
+      "expo-keep-awake"
+    );
+    vi.mocked(activateKeepAwakeAsync).mockClear();
+    vi.mocked(deactivateKeepAwake).mockClear();
+    sessions = LIVE_SESSION;
+    const tree = render();
+    expect(activateKeepAwakeAsync).not.toHaveBeenCalled();
+
+    act(() => chip(tree, "Keep screen on").props.onPress());
+    expect(activateKeepAwakeAsync).toHaveBeenCalledWith("study-session");
+
+    act(() => chip(tree, "Keep screen on").props.onPress());
+    expect(deactivateKeepAwake).toHaveBeenCalledWith("study-session");
+    act(() => tree.unmount());
+  });
+});
+
 describe("Study loading and empty states", () => {
   it("loads as the card and the list it becomes, not one card of bars", () => {
     isLoading = true;
