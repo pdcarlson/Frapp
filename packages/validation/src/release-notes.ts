@@ -50,6 +50,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-12",
+    title: "New in this update",
+    changes: [
+      "In Documents, a starred or pinned file or folder now shows a filled-in star or pin, on the web and on your phone.",
+      "A sticker or picture your keyboard couldn't add no longer leaves a broken box in your messages and notifications.",
+      "Notifications now show who each one is from, with their picture and their name in colour, mark a mention of you with a gold @, and group by Today and Earlier on the web.",
+    ],
+  },
+  {
     date: "2026-11-11",
     title:
       "Activity, polls with more than one choice, and a Settings page of your own",
