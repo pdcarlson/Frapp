@@ -23,8 +23,6 @@
 // The push is refused, and the PR gets a wake comment carrying the exact command
 // instead, whenever the fix is not mechanical or not safe to push from here:
 //   * the head branch is not in this repository (a fork), or is the base itself;
-//   * GitHub's test merge is not of this head and this base (computed against an
-//     older base, or not at all);
 //   * the branch changes `.github/workflows`: GitHub refuses an App without the
 //     Workflows permission a ref whose workflows differ from `main`'s
 //     (docs/ci-cd/agent-infra.md, the Release tags row), and that permission is
@@ -32,7 +30,12 @@
 //   * a changed file still names an old version on its own after the rewrite (an
 //     anchor, a prose mention): it may be `main`'s migration of the same version,
 //     which a person has to judge, as the local command says;
-//   * the branch changes more files than this reads in one sweep.
+//   * the branch changes more files than this reads in one sweep (MAX_REWRITE_FILES).
+// Two states are not refusals but "can't tell yet", and the PR takes its usual
+// path until the next sweep looks again: GitHub's test merge not yet computed
+// against this head and the new base (it updates lazily, like `mergeable`), and
+// a compare list long enough to be cut (COMPARE_FILE_CAP), which could hide the
+// migration itself.
 // Reads go through GITHUB_TOKEN; the tree, commit and non-forced ref update go
 // through the base-sync App's token, because only its push starts the PR's CI.
 //
@@ -40,7 +43,7 @@
 // database has applied the branch's own migrations. Staging and production apply
 // from `main`, so that holds unless someone applied one by hand.
 
-import { ghRequest } from "./lib/github.mjs";
+import { ghCaller, ghRequest } from "./lib/github.mjs";
 import { MIGRATION_LEDGER_DIR } from "./lib/ops-docs.mjs";
 import { planRenames, rewriteReferences } from "./lib/migration-versions.mjs";
 
@@ -52,10 +55,13 @@ const WORKFLOWS = ".github/workflows/";
 const NEW_FILE = new Set(["added", "renamed", "copied"]);
 
 // The compare API lists at most this many files. A list that long may be cut,
-// and a cut list could hide a reference, so the sweep never pushes on one.
+// and a cut list could hide the migration or a reference to it, so the sweep
+// can't tell and leaves such a PR alone.
 export const COMPARE_FILE_CAP = 300;
-// Each changed file costs one blob read, inside the sweep's ten-minute job.
-export const MAX_REWRITE_FILES = 150;
+// Each changed file costs one blob read through GITHUB_TOKEN, whose hourly
+// budget every workflow in the repository shares, and a PR refused after its
+// reads is read again on the next push to main.
+export const MAX_REWRITE_FILES = 60;
 
 const ledgerPage = (file) => `${MIGRATION_LEDGER_DIR}/${file.replace(/\.sql$/, ".md")}`;
 
@@ -77,7 +83,12 @@ export function planMigrationRenames({ files, baseMigrations, taken = [], now = 
     .filter((f) => NEW_FILE.has(f.status))
     .map((f) => MIGRATION_PATH.exec(f.filename)?.[1])
     .filter((name) => name && !onBase.has(name));
-  // `taken` holds bare versions; planRenames reads only a name's first 14 characters.
+  // Whether anything moves is decided against the base alone: a version another
+  // PR got this sweep is not on the base, and a PR that sorts after the base's
+  // newest is fine whatever else is open. Only once something moves do those
+  // versions join the floor, so two PRs don't land on the same one. `taken`
+  // holds bare versions; planRenames reads only a name's first 14 characters.
+  if (planRenames(introduced, baseMigrations, now).length === 0) return { introduced, renames: [] };
   const floor = [...baseMigrations, ...taken.map((v) => `${v}_taken.sql`)];
   return { introduced, renames: planRenames(introduced, floor, now) };
 }
@@ -144,18 +155,6 @@ export function planRenumberTree({ renames, tree, texts }) {
   return { ok: true, entries, rewritten };
 }
 
-/** A `ghRequest` that returns the data or throws naming the call. */
-function caller({ token, fetchImpl }) {
-  return async (method, path, body) => {
-    const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
-    if (!res.ok) {
-      const detail = typeof res.data === "string" ? res.data : res.data?.message ?? "";
-      throw new Error(`${method} ${path.split("?")[0]} failed (HTTP ${res.status}${detail ? `: ${detail}` : ""})`);
-    }
-    return res.data;
-  };
-}
-
 /**
  * The migration file names on the base tip, or null when they can't be read.
  * One read per sweep: the caller keeps the answer.
@@ -205,7 +204,7 @@ export async function planMigrationRenumber({
 }) {
   const headSha = pr?.head?.sha;
   const branch = pr?.head?.ref;
-  const call = caller({ token, fetchImpl });
+  const call = ghCaller({ token, fetchImpl });
   let files;
   try {
     // per_page=1 keeps the commit list short; the file list is the whole comparison.
@@ -215,6 +214,9 @@ export async function planMigrationRenumber({
     return { needed: null, reason: error.message };
   }
   if (files === null) return { needed: null, reason: "the compare with the base returned no file list" };
+  if (files.length >= COMPARE_FILE_CAP) {
+    return { needed: null, reason: `the PR changes ${COMPARE_FILE_CAP} files or more, so the compare's list may be cut` };
+  }
   if (!files.some((f) => MIGRATION_PATH.test(f?.filename ?? ""))) return { needed: false };
 
   const baseMigrations = await getBaseMigrations();
@@ -225,7 +227,6 @@ export async function planMigrationRenumber({
   const refuse = (reason) => ({ needed: true, ok: false, reason, renames });
   if (pr?.head?.repo?.full_name !== repo) return refuse("the head branch lives in a fork, which this sweep cannot push to");
   if (typeof branch !== "string" || branch === pr?.base?.ref) return refuse("the head branch is not a PR branch of this repository");
-  if (files.length >= COMPARE_FILE_CAP) return refuse(`the PR changes ${COMPARE_FILE_CAP} files or more, more than the sweep reads`);
   const changed = files.filter((f) => f.status !== "removed").map((f) => f.filename);
   if (changed.length > MAX_REWRITE_FILES) return refuse(`the PR changes more than ${MAX_REWRITE_FILES} files`);
   if (files.some((f) => f.filename?.startsWith(WORKFLOWS))) {
@@ -237,11 +238,11 @@ export async function planMigrationRenumber({
     // session would have made. A test merge of another head or an older base is
     // stale, and nothing is pushed on it.
     const mergeSha = pr?.merge_commit_sha;
-    if (typeof mergeSha !== "string") return refuse("GitHub has no test merge for this PR yet");
+    if (typeof mergeSha !== "string") return { needed: null, reason: "GitHub has no test merge for this PR yet" };
     const merge = await call("GET", `/repos/${repo}/git/commits/${mergeSha}`);
     const parents = new Set((merge?.parents ?? []).map((p) => p?.sha));
     if (parents.size !== 2 || !parents.has(baseSha) || !parents.has(headSha)) {
-      return refuse("GitHub's test merge is not of this head and the new base yet");
+      return { needed: null, reason: "GitHub's test merge is not of this head and the new base yet" };
     }
     const treeSha = merge?.tree?.sha;
     const listing = await call("GET", `/repos/${repo}/git/trees/${treeSha}?recursive=1`);
@@ -274,8 +275,10 @@ export async function planMigrationRenumber({
  *
  * @returns {Promise<{ resolved: true, sha: string } | { resolved: false, reason: string }>}
  */
-export async function pushMigrationRenumber({ pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
-  const write = caller({ token: pushToken, fetchImpl });
+export async function pushMigrationRenumber({ token, pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
+  const read = ghCaller({ token, fetchImpl });
+  const write = ghCaller({ token: pushToken, fetchImpl });
+  const ref = plan.branch.split("/").map(encodeURIComponent).join("/");
   try {
     const tree = await write("POST", `/repos/${repo}/git/trees`, {
       base_tree: plan.treeSha,
@@ -293,8 +296,15 @@ export async function pushMigrationRenumber({ pushToken, repo, plan, baseRef, ba
       tree: tree?.sha,
       parents: [plan.headSha, baseSha],
     });
-    // Not forced: a head that moved since it was read refuses the update.
-    const ref = plan.branch.split("/").map(encodeURIComponent).join("/");
+    // Not forced, so a head that moved on since it was read refuses the update.
+    // A head moved BACK (a force-push that dropped a commit) would still accept
+    // it as a fast-forward and get the dropped commit back, so the head is read
+    // again first. That narrows the window rather than closing it: REST has no
+    // compare-and-swap on a ref (#4589).
+    const now = await read("GET", `/repos/${repo}/git/ref/heads/${ref}`);
+    if (now?.object?.sha !== plan.headSha) {
+      return { resolved: false, reason: `the branch moved since the sweep read it (now ${String(now?.object?.sha).slice(0, 12)})` };
+    }
     await write("PATCH", `/repos/${repo}/git/refs/heads/${ref}`, { sha: commit?.sha, force: false });
     return { resolved: true, sha: commit.sha };
   } catch (error) {

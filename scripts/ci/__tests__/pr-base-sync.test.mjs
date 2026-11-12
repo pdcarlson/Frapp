@@ -2234,6 +2234,7 @@ function renumberRoutes(pr, {
   baseMigrations = [MAIN_MIG],
   parents = [BASE_SHA, pr.head.sha],
   listed = true,
+  headNow,
 } = {}) {
   const merge = pr.merge_commit_sha;
   const paths = Object.keys(texts);
@@ -2260,6 +2261,7 @@ function renumberRoutes(pr, {
     ...paths.map((path, i) => ({ method: "GET", path: `/git/blobs/blob${i}`, body: blobOf(texts[path]) })),
     { method: "POST", path: "/git/trees", body: { sha: "newtree" } },
     { method: "POST", path: "/git/commits", body: { sha: "8".repeat(40) } },
+    { method: "GET", path: `/git/ref/heads/${pr.head.ref}`, body: { object: { sha: headNow ?? pr.head.sha } } },
     { method: "PATCH", path: "/git/refs/heads/", body: {} },
     emptyCommentsRoute,
     { method: "POST", path: `/issues/${pr.number}/comments`, status: 201, body: { id: 1 } },
@@ -2338,7 +2340,6 @@ test("without the app token the PR gets the exact command, and nothing touches g
 });
 
 for (const [name, options, reason] of [
-  ["GitHub's test merge is of an older base", { parents: ["0".repeat(40), "50".padStart(40, "0")] }, /test merge is not of this head and the new base/],
   ["the branch changes a workflow", { files: [{ filename: MIG, status: "added" }, { filename: ".github/workflows/ci.yml", status: "modified" }] }, /\.github\/workflows/],
   [
     "a changed file still names the old version on its own",
@@ -2359,6 +2360,84 @@ for (const [name, options, reason] of [
     assert.match(JSON.parse(commentPosts(calls)[0].body).body, reason);
   });
 }
+
+test("a test merge not yet of the new base is left for the next sweep: no push, no wake", async () => {
+  const pr = migrationPr(54);
+  const { logger, lines } = capture();
+  const { results, calls } = await sweep({
+    routes: renumberRoutes(pr, { parents: ["0".repeat(40), pr.head.sha] }),
+    updateToken: "pat",
+    requireUpToDate: false,
+    logger,
+  });
+  assert.deepEqual(results, [{ number: 54, verdict: "clean", action: "none" }]);
+  assert.equal(gitWrites(calls).length, 0);
+  assert.equal(commentPosts(calls).length, 0);
+  assert.ok(lines.some((l) => /#54: could not check its migrations' order \(GitHub's test merge is not of this head/.test(l)));
+});
+
+test("a compare list long enough to be cut is not read as 'no migration'", async () => {
+  // The migration sorts last by path, so it is the file a cut list drops.
+  const files = Array.from({ length: 300 }, (_, i) => ({ filename: `apps/web/f${i}.ts`, status: "modified" }));
+  const pr = migrationPr(61);
+  const { logger, lines } = capture();
+  const { results, calls } = await sweep({ routes: renumberRoutes(pr, { files }), updateToken: "pat", requireUpToDate: false, logger });
+  assert.deepEqual(results, [{ number: 61, verdict: "clean", action: "none" }]);
+  assert.ok(!calls.some((c) => c.url.includes("/contents/")));
+  assert.ok(lines.some((l) => /#61: could not check .*300 files or more/.test(l)));
+});
+
+test("more changed files than the sweep reads gets the command, not a push", async () => {
+  const files = [{ filename: MIG, status: "added" }, ...Array.from({ length: 60 }, (_, i) => ({ filename: `apps/web/f${i}.ts`, status: "modified" }))];
+  const pr = migrationPr(62);
+  const { results, calls } = await sweep({ routes: renumberRoutes(pr, { files }), updateToken: "pat", requireUpToDate: false });
+  assert.equal(results[0].action, "commented");
+  assert.ok(!calls.some((c) => c.url.includes("/git/")));
+  assert.match(JSON.parse(commentPosts(calls)[0].body).body, /more than 60 files/);
+});
+
+test("a cut tree listing gets the command, not a push", async () => {
+  const pr = migrationPr(63);
+  const routes = renumberRoutes(pr).map((r) =>
+    r.path === "/git/trees/mergetree?recursive=1" ? { ...r, body: { ...r.body, truncated: true } } : r,
+  );
+  const { results, calls } = await sweep({ routes, updateToken: "pat", requireUpToDate: false });
+  assert.equal(results[0].action, "commented");
+  assert.equal(gitWrites(calls).length, 0);
+  assert.match(JSON.parse(commentPosts(calls)[0].body).body, /cut short/);
+});
+
+test("a branch moved back since it was read is not fast-forwarded over", async () => {
+  // A force-push that dropped a commit (a leaked secret, say) would otherwise get it back.
+  const pr = migrationPr(64);
+  const { results, calls } = await sweep({
+    routes: renumberRoutes(pr, { headNow: "1".repeat(40) }),
+    updateToken: "pat",
+    requireUpToDate: false,
+  });
+  assert.equal(results[0].renumberRefused, true);
+  assert.ok(!calls.some((c) => c.method === "PATCH"), "the ref is never moved");
+  assert.match(JSON.parse(commentPosts(calls)[0].body).body, /branch moved since the sweep read it/);
+});
+
+test("a PR already in order is not renumbered because another PR was earlier in the sweep", async () => {
+  const a = migrationPr(65);
+  const b = migrationPr(66, { merge_commit_sha: "6".repeat(40) });
+  const inOrder = "supabase/migrations/20261112170000_later.sql";
+  const { results, calls } = await sweep({
+    routes: [
+      listRoute([a, b]),
+      detailRoute(a),
+      detailRoute(b),
+      ...renumberRoutes(a, { listed: false }),
+      ...renumberRoutes(b, { listed: false, files: [{ filename: inOrder, status: "added" }] }),
+    ],
+    updateToken: "pat",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results.map((r) => r.action), ["renumbered", "none"]);
+  assert.equal(calls.filter((c) => c.method === "PATCH").length, 1, "only the PR that was out of order is pushed");
+});
 
 test("a fork's PR is never pushed to; it gets the command", async () => {
   const pr = migrationPr(55, { head: { ref: "feature", sha: "55".padStart(40, "0"), repo: { full_name: "someone/Frapp" } } });
@@ -2413,22 +2492,26 @@ test("a compare that can't be read leaves the PR on its usual path", async () =>
 });
 
 test("with the up-to-date rule on, a renumber is an update: it takes the slot", async () => {
-  const pr = migrationPr(60, { auto_merge: { merge_method: "squash" } });
+  const first = migrationPr(60, AUTO);
+  const second = autoPr(70);
   const { results, calls } = await sweep({
-    routes: [
-      ...renumberRoutes(pr),
-      compareRoute(pr.head.sha, 1),
-      { method: "GET", path: "/check-runs", body: { check_runs: [] } },
-    ],
-    updateToken: "pat",
+    routes: [...renumberRoutes(first, { listed: false }), ...slotRoutes([first, second])],
+    updateToken: "app",
   });
-  assert.equal(results[0].action, "renumbered");
-  assert.ok(!calls.some((c) => c.url.includes("/update-branch")), "no second update on top of the renumber");
+  const r = byNumber(results);
+  assert.equal(r[60].action, "renumbered");
+  assert.equal(r[70].action, "held", "a second PR updated beside it would race its CI");
+  assert.deepEqual(puts(calls), [], "no update-branch for either");
 });
 
-test("the conflict wake tells the session to renumber after the merge", () => {
-  const body = buildConflictComment({ baseRef: BASE_REF, baseSha: BASE_SHA, pr: makePr(7) });
-  assert.match(body, /npm run migration:renumber/);
+test("a refused renumber never closes the token alert", async () => {
+  const pr = migrationPr(67);
+  const routes = renumberRoutes(pr).map((r) =>
+    r.method === "PATCH" ? { ...r, status: 403, body: { message: "Resource not accessible by integration" } } : r,
+  );
+  const { calls } = await sweep({ routes: [...routes, compareRoute(pr.head.sha, 1), ...openAlertRoutes], updateToken: "app" });
+  assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/git/refs/heads/")), "the push was tried");
+  assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")));
 });
 
 test("the renumber wake names each migration and the reason", () => {

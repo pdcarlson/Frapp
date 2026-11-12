@@ -32,6 +32,16 @@ test("versions this sweep already handed out are kept clear", () => {
   assert.deepEqual(renames, [{ from: "20261112150000_a.sql", to: "20261112160002_a.sql" }]);
 });
 
+test("versions handed out this sweep never make an in-order PR move", () => {
+  const { renames } = planMigrationRenames({
+    files: [added("supabase/migrations/20261112170000_b.sql")],
+    baseMigrations: ["20261112160000_m.sql"],
+    taken: ["20261112180000"],
+    now: NOW,
+  });
+  assert.deepEqual(renames, []);
+});
+
 const blob = (sha, mode = "100644") => ({ sha, mode });
 const renames = [{ from: "20261112150000_a.sql", to: "20261112160001_a.sql" }];
 

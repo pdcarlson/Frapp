@@ -271,8 +271,8 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   `main`'s is refused it, which the merge's tree, being `main`'s, should avoid).
 - **Clean, but its migrations no longer sort after `main`'s** (#4558) → `main` took a later
   migration version first, which git doesn't see as a conflict and which staging's `db push` would
-  refuse once this PR merged. For every clean PR the sweep reads the files it adds (one compare
-  call), and when one is a migration it reads `main`'s list once per sweep and plans the same
+  refuse once this PR merged. For every clean PR it reaches, the sweep reads the files it changes
+  (one compare call), and when it adds a migration it reads `main`'s list once per sweep and plans the same
   renames as `npm run migration:renumber`, with the same code
   ([`lib/migration-versions.mjs`](../../scripts/ci/lib/migration-versions.mjs)). With the app token
   minted it then pushes one two-parent merge commit (the PR head, then `main`) whose tree is
@@ -280,14 +280,25 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   references rewritten in the files the branch changed, never forced, and posts no comment
   (`scripts/ci/resolve-migration-order.mjs`). It is the merge plus the command the session would
   have run, so it brings the PR up to date too, and with the up-to-date rule on it takes the update
-  slot like an update. Two PRs renumbered in one sweep get different versions. It pushes nothing,
-  and posts a wake with the exact command instead, when that can't be done safely: a fork head, a
-  test merge not of this head and the new base, a branch that changes `.github/workflows` (the
-  App has no Workflows permission), a changed file that still names an old version on its own (it
-  may be `main`'s migration of the same version, which a person judges), more files than one
-  sweep reads, no app token, or a push GitHub refuses. A session whose next push is refused as
+  slot like an update. Whether a PR moves is judged against `main` alone; versions already handed
+  out in the same sweep only keep two PRs off the same new one. It pushes nothing, and posts a wake
+  with the exact command instead, when that can't be done safely: a fork head, a branch that
+  changes `.github/workflows` (the App has no Workflows permission), a changed file that still
+  names an old version on its own (it may be `main`'s migration of the same version, which a person
+  judges), more than 60 changed files (each costs a read of the shared `GITHUB_TOKEN` budget, again
+  on every push while it stays refused), a tree listing GitHub cut short, no app token, a branch
+  that moved since it was read, or a push GitHub refuses. It does nothing, and the next push to
+  `main` looks again, when it can't tell yet: GitHub's test merge not yet of this head and the new
+  base, or a PR of 300 or more changed files, whose compare list may be cut and hide the migration.
+  Before the ref update it reads the head again, because a non-forced update still fast-forwards
+  over a branch force-pushed back to an older commit and would restore what that push dropped; the
+  read narrows that window without closing it (#4589). A session whose next push is refused as
   non-fast-forward should pull: the sweep's commit is on its branch. Like the command, it assumes
-  nobody applied the branch's own migration to a hosted database by hand, which it can't see.
+  nobody applied the branch's own migration to a hosted database by hand, which it can't see. With
+  the up-to-date rule on, an auto-merge PR held behind the slot isn't checked until it takes the
+  slot, and one the slot sweep already updated (update-branch merges `main` but renumbers nothing)
+  reads as in sync and isn't checked until `main` moves again; its `migration-order` check goes red
+  in between.
 - **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
   reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
   `expected_head_sha`, **only when the base-sync app token minted**. Pushes made with the default
@@ -321,8 +332,8 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     comments on every raise, which suits `deploy-alert.mjs` (it fires per failed deploy) and not this
     sweep (it fires per merge to `main`), so raising unconditionally would relocate the fan-out from
     N PRs to one issue rather than remove it.
-  - It closes on a real `update-branch` success (a registry merge is not one, and a sweep whose
-    registry merge GitHub refused proves nothing either way), or on a sweep that held a token and blocked on
+  - It closes on a real `update-branch` success (a registry merge or a migration renumber is not
+    one, and a sweep whose registry merge or renumber GitHub refused proves nothing either way), or on a sweep that held a token and blocked on
     nothing. That second condition is deliberate: this repo merges about one PR at a time, so the
     usual sweep has no *other* open PR to update, and an alert gated on a same-sweep success would
     stay open for weeks after the fix. A sweep with **no** token and nothing behind proves nothing

@@ -766,8 +766,7 @@ export function buildConflictComment({ baseRef, baseSha, pr }) {
       `1. \`git fetch origin ${baseRef}\``,
       `2. \`git merge origin/${baseRef}\` on this PR's branch`,
       "3. Resolve the conflicts — keep both sides' behavior; only ask when a conflict is genuinely ambiguous (both sides changed the same logic and picking one loses behavior).",
-      "4. If this branch adds a migration, run `npm run migration:renumber` (it changes nothing when every one still sorts after the base's) and commit what it moves.",
-      "5. Run the checks you can locally, then push. Your push re-runs CI against the new base.",
+      "4. Run the checks you can locally, then push. Your push re-runs CI against the new base.",
     ],
   });
 }
@@ -1561,6 +1560,7 @@ async function renumberMigrations({
     reason = "the workflow minted no app token to push with";
   } else if (plan.ok) {
     const fix = await pushMigrationRenumber({
+      token,
       pushToken: updateToken,
       repo,
       plan,
