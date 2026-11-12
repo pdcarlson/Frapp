@@ -21,8 +21,9 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
 // to a starting tier or a seeded role fails here and has to be meant. The
 // exec roles carry the officer defaults Paul set on 2026-11-10 (#4068
 // decision 9) on top of what they held before tiers; Member, New Member and
-// Alumni are unchanged.
+// Alumni are unchanged, except that every tier gives `ai:use` (#4308).
 const EXEC_BOARD = [
+  'ai:use',
   'announcements:post',
   'channels:create',
   'channels:manage',
@@ -60,6 +61,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       VICE_PRESIDENT: EXEC_BOARD,
       SECRETARY: EXEC_BOARD,
       MEMBER: [
+        'ai:use',
         'backwork:upload',
         'members:view',
         'polls:create',
@@ -71,7 +73,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         'rush:vote',
         'service:log',
       ],
-      NEW_MEMBER: ['backwork:upload', 'members:view'],
+      NEW_MEMBER: ['ai:use', 'backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
     });
   });
@@ -104,6 +106,20 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       expect(exec.has(permission)).toBe(true);
       expect(chairs.has(permission)).toBe(false);
     }
+  });
+
+  // #4308: every active member may use the AI features a president turns on,
+  // once they say yes on the AI sheet. Alumni sit outside the tiers and do
+  // not; nobody is seeded `ai:act`.
+  it('gives ai:use to every starting tier, and ai:act to none', () => {
+    for (const tier of STARTING_ROLE_TIERS) {
+      expect(tier.permissions).toContain(SystemPermissions.AI_USE);
+      expect(tier.permissions).not.toContain(SystemPermissions.AI_ACT);
+    }
+    const alumni = DEFAULT_SYSTEM_ROLES.find(
+      (role) => role.system_key === 'ALUMNI',
+    );
+    expect(alumni?.permissions).not.toContain(SystemPermissions.AI_USE);
   });
 
   it('never puts the wildcard on a starting tier', () => {

@@ -3003,6 +3003,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the AI sheet and the caller’s answer
+         * @description The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.
+         */
+        get: operations["AiConsentController_getConsent_v1"];
+        /**
+         * Answer the AI sheet
+         * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
+         */
+        put: operations["AiConsentController_answerConsent_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the chapter’s AI switches
+         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then.
+         */
+        get: operations["AiChapterSettingsController_getSettings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Turn the chapter’s AI features on or off
+         * @description President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.
+         */
+        patch: operations["AiChapterSettingsController_updateSettings_v1"];
+        trace?: never;
+    };
     "/v1/pledge-classes": {
         parameters: {
             query?: never;
@@ -6537,6 +6585,74 @@ export interface components {
         };
         AiSuggestionDecideResponseDto: {
             outcomes: components["schemas"]["AiSuggestionDecideOutcomeDto"][];
+        };
+        AiConsentSheetProviderDto: {
+            /** @enum {string} */
+            key: "anthropic" | "google";
+            /**
+             * @description The company's own name, shown as is.
+             * @example Anthropic
+             */
+            name: string;
+        };
+        AiConsentSheetDataKindDto: {
+            /** @enum {string} */
+            key: "questions" | "chapter_records" | "roster" | "channel_messages" | "meetings";
+            /**
+             * @description What is sent, in words a client shows as is.
+             * @example Questions you ask
+             */
+            label: string;
+        };
+        AiConsentSheetDto: {
+            /**
+             * @description The sheet version. Send it back with the answer; a new version asks everyone again.
+             * @example 1
+             */
+            version: number;
+            /** @description Every provider member data is sent to. */
+            providers: components["schemas"]["AiConsentSheetProviderDto"][];
+            /** @description Every kind of data that is sent. */
+            data: components["schemas"]["AiConsentSheetDataKindDto"][];
+        };
+        AiConsentStateDto: {
+            sheet: components["schemas"]["AiConsentSheetDto"];
+            /**
+             * @description The answer on the current version. Null when not answered, which counts as No.
+             * @enum {string|null}
+             */
+            answer: "yes" | "no" | null;
+            /** Format: date-time */
+            answered_at: string | null;
+            /** @description True when the caller answered an earlier version but not this one, so the sheet changed since. */
+            sheet_changed: boolean;
+        };
+        AnswerAiConsentDto: {
+            /**
+             * @description The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.
+             * @example 1
+             */
+            sheet_version: number;
+            /** @enum {string} */
+            answer: "yes" | "no";
+        };
+        AiChapterSettingsDto: {
+            /** @description Ask Frapp is on for the chapter. */
+            ask: boolean;
+            /** @description Drafting minutes, and tasks suggested from them, is on. */
+            meeting_notes: boolean;
+            /** @description Messages in chapter channels, from members who said yes, are a source. */
+            chat_source: boolean;
+            /**
+             * Format: date-time
+             * @description When a switch last changed. Null when none ever has.
+             */
+            updated_at: string | null;
+        };
+        UpdateAiChapterSettingsDto: {
+            ask?: boolean;
+            meeting_notes?: boolean;
+            chat_source?: boolean;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -14440,6 +14556,168 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AiSuggestionDecideResponseDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_getConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_answerConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerAiConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_getSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAiChapterSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.settings.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

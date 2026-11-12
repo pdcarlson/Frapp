@@ -217,4 +217,20 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
+
+  async dropQuotesBy(userId: string): Promise<number> {
+    // Cross-chapter by design: one answer on the AI sheet covers every
+    // chapter the person is in. Decided rows already hold no quote.
+    const update: TablesUpdate<'ai_suggestions'> = {
+      quote: null,
+      quote_author_id: null,
+    };
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .update(update)
+      .eq('quote_author_id', userId)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
 }

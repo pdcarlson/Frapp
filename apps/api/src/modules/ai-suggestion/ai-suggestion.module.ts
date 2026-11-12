@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiSuggestionService } from '../../application/services/ai-suggestion.service';
+import { AiSuggestionConsentListener } from '../../application/services/ai-suggestion-consent.listener';
 import { AI_SUGGESTION_KIND_HANDLERS } from '../../application/services/ai-suggestion-kinds';
 import { TaskSuggestionKind } from '../../application/services/ai-suggestion-task-kind';
 import {
@@ -20,6 +21,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import { EventModule } from '../event/event.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
+import { AiConsentModule } from '../ai-consent/ai-consent.module';
 
 /**
  * AI suggestions (#4309). A new kind is a handler added to the kinds list; a
@@ -34,10 +36,13 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
     TaskModule,
     EventModule,
     ChannelAccessModule,
+    // A No on the AI sheet takes the member's words out of suggestions.
+    AiConsentModule,
   ],
   controllers: [AiSuggestionController],
   providers: [
     AiSuggestionService,
+    AiSuggestionConsentListener,
     AiSuggestionExpiryService,
     AiEnabledGuard,
     TaskSuggestionKind,

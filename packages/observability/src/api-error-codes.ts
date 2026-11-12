@@ -66,6 +66,16 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a
   // client learns to hide its AI entry points.
   "ai.not_available",
+  // AI consent (#4308). The chapter has not turned the feature on, or the
+  // member has not said yes on the AI sheet: states a member is in, which
+  // the client answers with the sheet or by hiding the entry point.
+  "ai.chapter_off",
+  "ai.consent.required",
+  // The AI sheet changed between being shown and being answered.
+  "ai.consent.stale_sheet",
+  // A member who is not the president tried an AI switch, as when the
+  // presidency changed hands in another tab.
+  "ai.settings.president_only",
   "legal.acceptance_required",
   "service_entry.receipt_required",
   // AI suggestions (#4309): one another officer decided first, one that

@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: AI consent (#4308)
+
+### 20261112130100_ai_consent.sql
+
+- **Purpose**: Adds the two consent gates the AI gateway checks before every model call ([`spec/behavior/ai.md` § Consent](../../../spec/behavior/ai.md#consent)). `chapter_ai_settings` holds the president's switches, one row per chapter (`ask_enabled`, `meeting_notes_enabled`, `chat_source_enabled`, all default false, plus `updated_by` and `updated_at`); a chapter with no row has every switch off. `user_ai_consents` holds each person's answer on the AI sheet, keyed `(user_id, sheet_version)`, with `accepted` true for Yes and false for No; no row for the current version counts as No. RLS on, no policies on either (API only, service role). Redefines `anonymize_user` in full from `20261111235900_chat_important_seen.sql` with two added statements: `delete from user_ai_consents where user_id = p_user_id`, and an update that clears `quote` and `quote_author_id` on the `ai_suggestions` rows quoting the member (so this file must sort after `20261112130001_ai_suggestions.sql`). Writes no row.
+- **Checks**: After `db push`, `select relname, relrowsecurity from pg_class where relname in ('chapter_ai_settings', 'user_ai_consents');` returns `true` for both, `select count(*) from pg_policies where tablename in ('chapter_ai_settings', 'user_ai_consents');` returns `0`, and `select count(*) from chapter_ai_settings;` returns `0`. `select prosrc like '%user_ai_consents%' and prosrc like '%ai_suggestions%' from pg_proc where proname = 'anonymize_user';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the tables. The newer API with `AI_ENABLED` unset never reads them either: the four `/v1/ai/consent` and `/v1/ai/settings` routes answer 404 `ai.not_available`, and no feature calls the gateway. With `AI_ENABLED` on against an unmigrated database, those routes and every AI call fail with a 5xx. The two foreign keys to `users` and the one to `chapters` take a brief `SHARE ROW EXCLUSIVE` lock on each while the tables are created; redefining `anonymize_user` locks the function only. `if not exists` and `create or replace` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/anonymize-user.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ai-consent-20261112130100) § Rollback AI consent.
+
 ## 2026-11-12: AI suggestions (#4309, on `ai-integration`)
 
 ### 20261112130001_ai_suggestions.sql

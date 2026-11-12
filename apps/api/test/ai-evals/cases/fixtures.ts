@@ -63,8 +63,8 @@ export const ALUMNUS: EvalCaller = {
 };
 
 /**
- * Seeded Member role: members:view, backwork:upload, service:log,
- * polls:create, and the six member recruitment keys (#4070).
+ * Seeded Member role: members:view, ai:use (#4308), backwork:upload,
+ * service:log, polls:create, and the six member recruitment keys (#4070).
  */
 export const MEMBER: EvalCaller = {
   memberId: 'member-rank-and-file',
@@ -72,6 +72,7 @@ export const MEMBER: EvalCaller = {
   roleName: 'Member',
   permissions: [
     'members:view',
+    'ai:use',
     'backwork:upload',
     'service:log',
     'polls:create',
@@ -112,6 +113,7 @@ export const TREASURER: EvalCaller = {
   roleName: 'Treasurer',
   permissions: [
     'members:view',
+    'ai:use',
     'polls:view_all',
     'announcements:post',
     'channels:create',
@@ -147,6 +149,7 @@ export const PRESIDENT: EvalCaller = {
   roleName: 'President',
   permissions: [
     'members:view',
+    'ai:use',
     'polls:view_all',
     'announcements:post',
     'channels:create',

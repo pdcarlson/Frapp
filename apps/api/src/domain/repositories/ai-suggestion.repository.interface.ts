@@ -119,4 +119,12 @@ export interface IAiSuggestionRepository {
   expireDue(
     now: string,
   ): Promise<{ chapter_id: string; kind: AiSuggestionKind }[]>;
+
+  /**
+   * Takes a person's words out of every suggestion that quotes them, in every
+   * chapter: they said No on the AI sheet, which covers every chapter they
+   * are in (#4308). The suggestion stays and shows its source without the
+   * quote. Returns how many rows changed; running it again changes none.
+   */
+  dropQuotesBy(userId: string): Promise<number>;
 }

@@ -46,6 +46,7 @@ import { DiscordImportModule } from './modules/discord-import/discord-import.mod
 import { ClientPolicyModule } from './modules/client-policy/client-policy.module';
 import { DevLogModule } from './modules/dev-log/dev-log.module';
 import { AiModule } from './modules/ai/ai.module';
+import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -107,6 +108,7 @@ import { validateEnv } from './config/env.validation';
     ClientPolicyModule,
     DevLogModule,
     AiModule,
+    AiConsentModule,
   ],
   providers: [
     {

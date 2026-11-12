@@ -3,10 +3,18 @@ import { Test } from '@nestjs/testing';
 import { AI_CONSENT_CHECK } from '#domain/adapters/ai-consent-check.interface';
 import { AI_SPEND_RESERVATION } from '#domain/adapters/ai-spend-reservation.interface';
 import { AI_USAGE_RECORDER } from '#domain/adapters/ai-usage-recorder.interface';
+import { AI_CONSENT_SHEET } from '#domain/constants/ai-consent-sheet';
+import type {
+  ChapterAiSettings,
+  UserAiConsent,
+} from '#domain/entities/ai-consent.entity';
+import { AI_CONSENT_REPOSITORY } from '#domain/repositories/ai-consent.repository.interface';
+import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
 import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
 import { AnalyticsService } from '../../application/services/analytics.service';
-import { AllowAllAiConsentCheck } from '../../infrastructure/ai/allow-all-ai-consent-check';
+import { AiConsentService } from '../../application/services/ai/ai-consent.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentSeamModule } from './ai-consent-seam.module';
@@ -15,6 +23,20 @@ import { AiUsageSeamModule } from './ai-usage-seam.module';
 import { AiModule } from './ai.module';
 
 const track = jest.fn().mockResolvedValue(undefined);
+
+// The consent tables, in memory: chapter `c` with Ask on, and member `u`'s
+// answer, which each test sets.
+const consentRows: {
+  settings: ChapterAiSettings | null;
+  consent: UserAiConsent | null;
+} = {
+  settings: null,
+  consent: null,
+};
+const fakeConsentRepository = {
+  findChapterSettings: jest.fn(() => Promise.resolve(consentRows.settings)),
+  findConsent: jest.fn(() => Promise.resolve(consentRows.consent)),
+};
 
 @Global()
 @Module({
@@ -47,7 +69,10 @@ const rpc = jest.fn((fn: string) => {
   });
 });
 
-/** The app's Supabase module is global; this stands in for it. */
+/**
+ * The app's Supabase module is global; this stands in for it. The spend
+ * ledger calls its RPCs; the consent routes' guards take it and never call it.
+ */
 @Global()
 @Module({
   providers: [{ provide: SUPABASE_CLIENT, useValue: { rpc } }],
@@ -70,6 +95,12 @@ async function compile(env: Record<string, string>) {
     })
       .overrideModule(AnalyticsModule)
       .useModule(FakeAnalyticsModule)
+      .overrideProvider(AI_CONSENT_REPOSITORY)
+      .useValue(fakeConsentRepository)
+      .overrideProvider(ROLE_REPOSITORY)
+      .useValue({})
+      .overrideProvider(CHAPTER_AUDIT_LOG_REPOSITORY)
+      .useValue({})
       .compile();
   } finally {
     process.env = saved;
@@ -83,13 +114,15 @@ describe('AiModule', () => {
     else process.env.AI_ENABLED = original;
     track.mockClear();
     rpc.mockClear();
+    consentRows.settings = null;
+    consentRows.consent = null;
   });
 
-  it('binds each seam from its own module: spend and usage to one ledger', async () => {
+  it('binds each seam from its own module: consent to the gates, spend and usage to one ledger', async () => {
     const moduleRef = await compile({});
     expect(
       moduleRef.select(AiConsentSeamModule).get<unknown>(AI_CONSENT_CHECK),
-    ).toBeInstanceOf(AllowAllAiConsentCheck);
+    ).toBeInstanceOf(AiConsentService);
     const spend = moduleRef
       .select(AiSpendSeamModule)
       .get<unknown>(AI_SPEND_RESERVATION);
@@ -128,9 +161,57 @@ describe('AiModule', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it('refuses a call for a member who has not said yes, or in a chapter with the family off', async () => {
+    const moduleRef = await compile({ AI_PROVIDER: 'scripted' });
+    process.env.AI_ENABLED = 'true';
+    const ask = () =>
+      moduleRef
+        .get(AiGatewayService)
+        .generateCited(
+          'ask.answer',
+          { promptVersion: 'ask@v1', messages: [], sources: [] },
+          { chapterId: 'c', actingUserId: 'u' },
+        );
+
+    await expect(ask()).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'consent',
+      detail: 'chapter_off',
+    });
+
+    consentRows.settings = {
+      chapter_id: 'c',
+      ask_enabled: true,
+      meeting_notes_enabled: false,
+      chat_source_enabled: false,
+      updated_by: 'p',
+      updated_at: '2026-11-12T00:00:00.000Z',
+    };
+    await expect(ask()).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'consent',
+      detail: 'member_declined',
+    });
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it('serves a call end to end through the scripted adapter', async () => {
     const moduleRef = await compile({ AI_PROVIDER: 'scripted' });
     process.env.AI_ENABLED = 'true';
+    consentRows.settings = {
+      chapter_id: 'c',
+      ask_enabled: true,
+      meeting_notes_enabled: false,
+      chat_source_enabled: false,
+      updated_by: 'p',
+      updated_at: '2026-11-12T00:00:00.000Z',
+    };
+    consentRows.consent = {
+      user_id: 'u',
+      sheet_version: AI_CONSENT_SHEET.version,
+      accepted: true,
+      answered_at: '2026-11-12T00:00:00.000Z',
+    };
 
     const result = await moduleRef.get(AiGatewayService).generateCited(
       'ask.answer',

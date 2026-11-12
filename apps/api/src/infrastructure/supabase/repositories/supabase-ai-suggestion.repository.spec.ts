@@ -60,8 +60,9 @@ const lapsed = (batch: string) => ({
 
 const seed = () => ({
   ai_suggestions: [
-    inA({ id: SUG_A, ...waiting(BATCH_A) }),
-    inB({ id: SUG_B, ...waiting(BATCH_B) }),
+    // The waiting twins quote the same member, for the consent scrub.
+    inA({ id: SUG_A, ...waiting(BATCH_A), quote_author_id: USER_A }),
+    inB({ id: SUG_B, ...waiting(BATCH_B), quote_author_id: USER_A }),
     inA({ id: SUG_A_DONE, ...lapsed(BATCH_A) }),
     inB({ id: SUG_B_DONE, ...lapsed(BATCH_B) }),
   ],
@@ -249,5 +250,21 @@ describe('SupabaseAiSuggestionRepository — tenant scope', () => {
       .rows('ai_suggestions')
       .filter((r) => r.status === 'expired');
     expect(rows.every((r) => r.quote === null)).toBe(true);
+  });
+
+  it('dropQuotesBy crosses chapters by design and takes only that person’s words', async () => {
+    // One answer on the AI sheet covers every chapter the person is in.
+    expect(await repo.dropQuotesBy(USER_A)).toBe(2);
+    const rows = harness.rows('ai_suggestions');
+    for (const id of [SUG_A, SUG_B]) {
+      expect(rows.find((r) => r.id === id)).toEqual(
+        expect.objectContaining({
+          quote: null,
+          quote_author_id: null,
+          status: 'pending',
+        }),
+      );
+    }
+    expect(await repo.dropQuotesBy(USER_A)).toBe(0);
   });
 });

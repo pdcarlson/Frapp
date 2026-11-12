@@ -3810,11 +3810,26 @@ One new table, `ai_suggestions`, and one trigger function fired after deletes on
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
 
-To remove it all, in a later forward migration:
+To remove it all, in a later forward migration. Since `20261112130100_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
 
 ```sql
 drop trigger if exists events_drop_ai_suggestions on public.events;
 drop trigger if exists chat_channels_drop_ai_suggestions on public.chat_channels;
 drop function if exists public.ai_suggestions_drop_for_source();
 drop table if exists public.ai_suggestions;
+```
+
+## Rollback AI consent (20261112130100)
+
+* **Migration**: `20261112130100_ai_consent.sql`
+
+Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents` and clear the member's quotes from `ai_suggestions`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API makes every AI route answer 404 `ai.not_available` and stops every model call. Switches and answers stay as they were, and hold again when it is on. Do not roll back to an API whose consent seam allows every call while `AI_ENABLED` is on: that build sends member data to a model without the chapter's switch or the member's Yes.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261111235900_chat_important_seen.sql` body, plus the `ai_suggestions` quote update if that table stays), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.user_ai_consents;
+drop table if exists public.chapter_ai_settings;
 ```

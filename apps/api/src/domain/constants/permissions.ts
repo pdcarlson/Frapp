@@ -76,11 +76,13 @@ export const SystemPermissions = {
 
   SEMESTER_ROLLOVER: 'semester:rollover',
 
-  // AI (ADR-28). No seeded role or starting tier holds either, so only the
-  // President's wildcard has them until a chapter grants them. They gate no
-  // route yet: `AI_USE` is for the first member-facing AI route, `AI_ACT` for
-  // the acting agent (#718). Left out of the permissions catalog while the
-  // server switch is off (`RbacService.getPermissionsCatalog`).
+  // AI (ADR-28). `AI_USE` is in every starting tier (#4308), so a chapter
+  // created today lets every active member use the AI features the president
+  // turns on, once that member says yes on the AI sheet; Alumni, outside the
+  // tiers, do not hold it. `AI_ACT` is held by no seeded role. Neither gates
+  // a route yet: `AI_USE` is for the first member-facing AI route, `AI_ACT`
+  // for the acting agent (#718). Left out of the permissions catalog while
+  // the server switch is off (`RbacService.getPermissionsCatalog`).
   AI_USE: 'ai:use',
   AI_ACT: 'ai:act',
 
@@ -188,6 +190,7 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.ROLES_MANAGE,
       SystemPermissions.CHAPTER_CONFIG_VIEW,
       SystemPermissions.CHAPTER_CONFIG_MANAGE,
+      SystemPermissions.AI_USE,
       // The exec board writes minutes (`meetings.md` § Permissions); migration
       // `20261112120400_meetings.sql` gives existing chapters' top tier the same.
       SystemPermissions.MEETINGS_RECORD,
@@ -198,6 +201,7 @@ export const STARTING_ROLE_TIERS = [
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
       ...OFFICER_DEFAULT_PERMISSIONS,
+      SystemPermissions.AI_USE,
     ],
   },
   {
@@ -210,6 +214,7 @@ export const STARTING_ROLE_TIERS = [
       // What any member could do in recruitment before it had permissions
       // (#4070); a chapter tightens it from here.
       ...RUSH_MEMBER_PERMISSIONS,
+      SystemPermissions.AI_USE,
     ],
   },
   {
@@ -217,6 +222,7 @@ export const STARTING_ROLE_TIERS = [
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.BACKWORK_UPLOAD,
+      SystemPermissions.AI_USE,
     ],
   },
 ] as const satisfies readonly {

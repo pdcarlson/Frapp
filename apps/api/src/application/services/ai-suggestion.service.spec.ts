@@ -167,6 +167,14 @@ class FakeRepo implements IAiSuggestionRepository {
     }
     return due.map((r) => ({ chapter_id: r.chapter_id, kind: r.kind }));
   });
+
+  dropQuotesBy = jest.fn(async (userId: string) => {
+    const quoted = this.rows.filter((r) => r.quote_author_id === userId);
+    for (const row of quoted) {
+      Object.assign(row, { quote: null, quote_author_id: null });
+    }
+    return quoted.length;
+  });
 }
 
 const NO_TEXT = { payload: {}, quote: null, quote_author_id: null };

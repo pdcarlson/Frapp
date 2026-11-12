@@ -221,6 +221,13 @@ try {
   // Out of tries: the next claim fails it and moves on.
   const doomed = (await enqueue(CH, "meeting:doomed", {}, 2))[0];
   const next = (await enqueue(CH, "meeting:next"))[0];
+  // Claims go oldest first by `(created_at, id)`. Two enqueues can land in
+  // the same clock tick, and then the random ids pick the order, so pin
+  // `doomed` as the older of the two.
+  await db.query(
+    `update ai_runs set created_at = created_at - interval '1 second' where id = $1`,
+    [doomed.id],
+  );
   const base = 40 * LEASE;
   const d1 = await claim("worker-a", at(base));
   const d2 = await claim("worker-a", at(base + LEASE));

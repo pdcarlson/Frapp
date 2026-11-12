@@ -26,7 +26,10 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 > the caps of decision 1 are built: `ai_usage_events`, one row per provider call, held before the
 > call against the chapter's month, the member's day and the provider's month, and settled before
 > the gateway returns ([`billing.md` § Caps](../../behavior/billing.md#caps)).
-> Consent is still to come.
+>
+> **Updated 2026-11-12 ([#4308](https://github.com/pdcarlson/Frapp/issues/4308)).** Consent is built:
+> the gateway refuses every call unless the chapter has switched the call's family on and the member
+> it acts for said yes on the current AI sheet ([`ai.md` § Consent](../../behavior/ai.md#consent)).
 
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
