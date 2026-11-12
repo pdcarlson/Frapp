@@ -139,11 +139,12 @@ describe("AppNav", () => {
     expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
   });
 
-  it("marks Settings as the current section while one of its tools is open", () => {
-    renderNav({ pathname: "/reports" });
+  it("marks Chapter settings as the page while one of its tools is open (#3837)", () => {
+    // The tools open inside Chapter settings now, so the row is the page.
+    renderNav({ pathname: "/settings" });
     expect(screen.getByRole("link", { name: "Chapter settings" })).toHaveAttribute(
       "aria-current",
-      "true",
+      "page",
     );
   });
 

@@ -10,8 +10,8 @@ import type { NavItem } from "@/components/layout/nav-config";
 type Props = {
   item: NavItem;
   /**
-   * `"page"` when this row's own route is open; `"true"` when a route listed in
-   * the row's `activeFor` is open (a Settings tool, for the Settings row).
+   * `"page"` when this row's own route is open; `"true"` when the row stands
+   * for something open in place (the Chat row while the chat panel is open).
    * Both paint the active fill; only the first claims to be the current page.
    */
   current?: "page" | "true";

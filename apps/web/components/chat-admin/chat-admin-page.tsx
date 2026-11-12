@@ -83,6 +83,11 @@ import {
 } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
 import { CreateChannelSheet } from "./create-channel-sheet";
+import {
+  CHAT_SETTINGS_PATH,
+  channelSettingsPath,
+} from "@/components/settings/settings-paths";
+import { SettingsBackLink } from "@/components/settings/settings-subpage";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -175,18 +180,23 @@ function categoryAccessSummary(
 }
 
 /**
- * Two pages on one route, the way Discord splits channel settings from server
- * settings (Paul, 2026-11-11: "scope the chat admin panel to whatever channel
- * you're editing"):
+ * Chat admin, inside Chapter settings' Chat page (#3837). Two views, the way
+ * Discord splits channel settings from server settings (Paul, 2026-11-11:
+ * "scope the chat admin panel to whatever channel you're editing"):
  *
- * - **`?channel=<id>`: that channel's settings, and nothing else.** The
- *   channel start's Edit channel shortcut (`components/chat/channel-start.tsx`)
- *   and the chat rail's right-click Edit channel (`chat-shell.tsx`) open it.
- *   Its settings first, then its pins, then the reports filed in it. No list
- *   of every channel: the chat rail beside the page already is one.
- * - **No channel: the chapter's chat settings.** New channel, a picker to open
- *   one channel's settings, categories, the chapter's chat background, and the
- *   whole report queue last (the only place a report about a DM shows).
+ * - **`?channel=<id>`: that channel's settings, and nothing else**, drawn in
+ *   place of the Chat page. The channel start's Edit channel shortcut
+ *   (`components/chat/channel-start.tsx`) and the chat rail's right-click
+ *   Edit channel (`chat-shell.tsx`) open it, as Discord's Edit Channel opens
+ *   its full-screen settings. Its settings first, then its pins, then the
+ *   reports filed in it, and a way back to all chat settings.
+ * - **No channel: the chapter's chat settings**, the body of the Chat page.
+ *   New channel, a picker to open one channel's settings, categories, the
+ *   chapter's chat background, and the whole report queue last (the only
+ *   place a report about a DM shows).
+ *
+ * It used to be its own route, `/chat-admin`, beside chat; that route only
+ * redirects here now.
  */
 export function ChatAdminPage({
   initialChannelId = null,
@@ -241,7 +251,7 @@ export function ChatAdminPage({
         down. The card carries its own gate (`CHAT_REPORT_QUEUE_PERMISSIONS`,
         which includes channels:manage) and renders nothing for an officer it
         refuses. The new-report notification links to its anchor
-        (`/chat-admin#reported-messages`).
+        (`CHAT_REPORTS_SETTINGS_PATH`).
       */}
       <div className="mt-10">
         <ChatReportsCard channelId={initialChannelId ?? undefined} />
@@ -606,7 +616,7 @@ function ChatAdminBody({
     await deleteChannelFlow(channel, () => {
       if (selectedChannelId === channel.id) setSelectedChannelId(null);
       // The page was this channel's; back to the chapter's chat settings.
-      if (channelMode) router.replace("/chat-admin");
+      if (channelMode) router.replace(CHAT_SETTINGS_PATH);
     });
   }
 
@@ -701,32 +711,29 @@ function ChatAdminBody({
           {selectedChannel ? (
             // Its own container: the form's fields count the page's width.
             <div className="@container">
-              <section aria-labelledby="ca-edit-label" className="space-y-4">
-                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
-                  <h2
-                    id="ca-edit-label"
-                    className="min-w-0 truncate text-lg font-bold"
-                  >
-                    #{selectedChannel.name}
-                  </h2>
-                  <Badge variant="outline">
-                    {CHANNEL_TYPE_LABEL[selectedChannel.type]}
-                  </Badge>
-                  {selectedChannel.is_default ? (
-                    <Badge variant="secondary">Default</Badge>
-                  ) : null}
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="ml-auto gap-1.5 text-muted-foreground"
-                  >
-                    <Link href="/chat-admin">
-                      <ArrowLeft className="h-4 w-4" />
-                      All chat settings
-                    </Link>
-                  </Button>
-                </div>
+              <section aria-labelledby="ca-edit-label" className="space-y-6">
+                {/*
+                  Drawn in place of the Chat page of Chapter settings, so it
+                  heads itself the way that page does, with the way back to
+                  it above (`SettingsSubpage`'s shape, plus the badges).
+                */}
+                <header className="space-y-1 border-b border-border pb-6">
+                  <SettingsBackLink href={CHAT_SETTINGS_PATH} label="Chat" />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2
+                      id="ca-edit-label"
+                      className="min-w-0 truncate text-title text-foreground"
+                    >
+                      #{selectedChannel.name}
+                    </h2>
+                    <Badge variant="outline">
+                      {CHANNEL_TYPE_LABEL[selectedChannel.type]}
+                    </Badge>
+                    {selectedChannel.is_default ? (
+                      <Badge variant="secondary">Default</Badge>
+                    ) : null}
+                  </div>
+                </header>
                 <div className="grid gap-3 @md:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="ca-name">Name</Label>
@@ -1005,7 +1012,7 @@ function ChatAdminBody({
                 This channel isn&apos;t here anymore. It may have been deleted.
               </InlineNote>
               <Button asChild variant="secondary" size="sm" className="gap-1.5">
-                <Link href="/chat-admin">
+                <Link href={CHAT_SETTINGS_PATH}>
                   <ArrowLeft className="h-4 w-4" />
                   All chat settings
                 </Link>
@@ -1038,11 +1045,7 @@ function ChatAdminBody({
                 {channels.length > 0 ? (
                   <Select
                     value=""
-                    onValueChange={(id) =>
-                      router.push(
-                        `/chat-admin?channel=${encodeURIComponent(id)}`,
-                      )
-                    }
+                    onValueChange={(id) => router.push(channelSettingsPath(id))}
                   >
                     <SelectTrigger
                       aria-label="Edit a channel"
