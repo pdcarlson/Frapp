@@ -147,6 +147,7 @@ const writes = {
   edit: vi.fn(async () => {}),
   remove: vi.fn(async () => {}),
   closePoll: vi.fn(async () => {}),
+  closeSignup: vi.fn(async () => {}),
   reactionError: null as string | null,
   clearReactionError: vi.fn(),
   actionError: null as string | null,

@@ -4478,6 +4478,52 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/close": {
+      "post": {
+        "operationId": "ChatController_closeSignup_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/pins": {
       "get": {
         "operationId": "ChatController_getPinnedMessages_v1",

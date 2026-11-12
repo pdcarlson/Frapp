@@ -386,7 +386,12 @@ export interface Database {
         Returns: boolean;
       };
       claim_signup_slots: {
-        Args: { p_message_id: string; p_user_id: string; p_slot_ids: string[] };
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_slot_ids: string[];
+          p_note?: string | null;
+        };
         Returns: Json;
       };
       /**

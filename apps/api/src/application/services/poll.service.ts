@@ -26,6 +26,7 @@ import type {
   PollMetadata,
   PollWithResults,
 } from '#domain/entities/poll-vote.entity';
+import { stampCardClosed } from './card-close';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedPoll } from './chat-block-mask';
@@ -425,18 +426,13 @@ export class PollService {
       throw new BadRequestException('Poll has expired');
     }
 
-    // Only while the card is live: this payload was read before the write, and
-    // a delete landing in between cleared it (#1575). An unconditional update
-    // would put the removed question and options back on the tombstone.
-    const closed = await this.messageRepo.updateIfLive(message.id, {
-      payload: {
-        ...payload,
-        closed_at: new Date().toISOString(),
-        closed_by: userId,
-      },
-    });
-    if (!closed) throw new BadRequestException('Cannot close a deleted poll');
-    return closed;
+    return stampCardClosed(
+      this.messageRepo,
+      message,
+      payload as Record<string, unknown>,
+      userId,
+      'Cannot close a deleted poll',
+    );
   }
 
   /**

@@ -79,12 +79,13 @@ export class ChatMessageActionDuplicateError extends Error {
 
 /**
  * Why `claimSignupSlots` refused a claim (#3926): the card is gone or isn't a
- * sign-up card (`missing`), it lists no slot by that id (`unknown_slot`), or
- * the slot is at its limit (`full`). `slotId` names the slot when there is one.
+ * sign-up card (`missing`), it lists no slot by that id (`unknown_slot`), the
+ * slot is at its limit (`full`), or sign-ups are closed (`closed`, step 2).
+ * `slotId` names the slot when there is one.
  */
 export class SignupClaimRefusedError extends Error {
   constructor(
-    public readonly reason: 'missing' | 'unknown_slot' | 'full',
+    public readonly reason: 'missing' | 'unknown_slot' | 'full' | 'closed',
     public readonly slotId: string | null,
   ) {
     super(`Sign-up claim refused: ${reason}`);
@@ -422,13 +423,16 @@ export interface IChatMessageActionRepository {
    * the `claim_signup_slots` RPC locks the card's message row, refuses a slot
    * that is full of other members' claims, and writes the member's one
    * `signup` row (inserted, or updated in place as a vote change is, ADR-07).
-   * Throws {@link SignupClaimRefusedError} on a refusal. No chapter argument:
-   * the caller has already authorized the member against the card's channel.
+   * `note` is a headcount answer's note (null for none). Throws
+   * {@link SignupClaimRefusedError} on a refusal, including a closed card. No
+   * chapter argument: the caller has already authorized the member against
+   * the card's channel.
    */
   claimSignupSlots(
     messageId: string,
     userId: string,
     slotIds: string[],
+    note: string | null,
   ): Promise<{ action: ChatMessageAction; updated: boolean }>;
 }
 
