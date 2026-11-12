@@ -8,6 +8,7 @@ import {
 } from "@repo/chat-core/emoji";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
+import { undrawableEmoji } from "@/lib/chat/drawable-emoji";
 import { recordRecentEmoji, useRecentEmoji } from "@/lib/chat/recent-emoji";
 import { cn } from "@/lib/utils";
 
@@ -29,35 +30,52 @@ import { cn } from "@/lib/utils";
  * tab row is here: search and recents cover the reach, and the section name
  * pinned at the top of the grid says where the scroll is.
  *
+ * Emoji this browser draws as a box or as letters (country flags on Windows,
+ * the newest emoji on an older system font) are left out (`undrawableEmoji`).
+ *
  * Not imported directly by anything but `emoji-picker.tsx`, the boundary that
  * keeps the catalog out of the chunk that gates first paint.
  */
 
-/** 8 columns of 38px cells (the §3 Compact size), plus the 4px gutters. */
+/**
+ * Eight columns of cells 38px tall (the §3 Compact size). Their width is the
+ * row's eighth, 38px less whatever a classic scrollbar takes.
+ */
 const COLUMNS = 8;
 const CELL = 38;
 const HEADING = 28;
 /** Rows drawn above and below the visible ones, so a fast scroll stays filled. */
 const OVERSCAN = 4;
-/** The grid's height: six and a half lines, so the half line says it scrolls. */
-const VIEWPORT = CELL * 6 + CELL / 2;
+/**
+ * The grid's height, a little over what the panel's 336px leaves it, for the
+ * slice to draw (the overscan covers the difference). `reveal` reads the real
+ * height.
+ */
+const VIEWPORT_ESTIMATE = 260;
 
 interface Placed {
   row: EmojiPickerRow;
   top: number;
   height: number;
+  /** The index of the row's first emoji among all the grid's emoji. */
+  first: number;
 }
 
 /** Each row with its offset from the top of the grid. */
-function placeRows(rows: readonly EmojiPickerRow[]): Placed[] {
+function placeRows(rows: readonly EmojiPickerRow[]): {
+  placed: Placed[];
+  count: number;
+} {
   const placed: Placed[] = [];
   let top = 0;
+  let count = 0;
   for (const row of rows) {
     const height = row.kind === "heading" ? HEADING : CELL;
-    placed.push({ row, top, height });
+    placed.push({ row, top, height, first: count });
     top += height;
+    if (row.kind === "emoji") count += row.emojis.length;
   }
-  return placed;
+  return { placed, count };
 }
 
 /** Where an arrowed-to emoji is: its row in `rows`, and its column. */
@@ -77,15 +95,27 @@ export function EmojiPickerPanel({
   const [scrollTop, setScrollTop] = useState(0);
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
+  /**
+   * Where the pointer last moved. Scrolling the grid under a still pointer
+   * fires `mouseenter` on whatever cell slides beneath it, which would steal
+   * the cursor from the arrow keys mid-move; only a real move hovers.
+   */
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const [hidden] = useState(undrawableEmoji);
 
   // The recents are read once per open: a pick closes the panel, so the list
   // never reshuffles under the pointer.
   const [openingRecent] = useState(recent);
   const rows = useMemo(
-    () => emojiPickerRows(search, { columns: COLUMNS, recent: openingRecent }),
-    [search, openingRecent],
+    () =>
+      emojiPickerRows(search, {
+        columns: COLUMNS,
+        recent: openingRecent,
+        hidden,
+      }),
+    [search, openingRecent, hidden],
   );
-  const placed = useMemo(() => placeRows(rows), [rows]);
+  const { placed, count } = useMemo(() => placeRows(rows), [rows]);
   const total = placed.length
     ? placed[placed.length - 1]!.top + placed[placed.length - 1]!.height
     : 0;
@@ -119,7 +149,10 @@ export function EmojiPickerPanel({
       else hi = mid - 1;
     }
     let end = lo;
-    while (end < placed.length && placed[end]!.top < scrollTop + VIEWPORT) {
+    while (
+      end < placed.length &&
+      placed[end]!.top < scrollTop + VIEWPORT_ESTIMATE
+    ) {
       end += 1;
     }
     return {
@@ -147,8 +180,8 @@ export function EmojiPickerPanel({
     // Clear of the pinned heading when scrolling up to a line.
     const topEdge = at.top - (rowIndex > 0 ? HEADING : 0);
     if (topEdge < el.scrollTop) el.scrollTop = Math.max(0, topEdge);
-    else if (at.top + at.height > el.scrollTop + VIEWPORT) {
-      el.scrollTop = at.top + at.height - VIEWPORT;
+    else if (at.top + at.height > el.scrollTop + el.clientHeight) {
+      el.scrollTop = at.top + at.height - el.clientHeight;
     }
   };
 
@@ -166,7 +199,8 @@ export function EmojiPickerPanel({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!active) return;
+    // Enter while an IME is composing confirms the text, not a pick.
+    if (!active || event.nativeEvent.isComposing) return;
     let next: Cursor | null = null;
     switch (event.key) {
       case "ArrowRight":
@@ -222,8 +256,12 @@ export function EmojiPickerPanel({
         role="combobox"
         aria-expanded="true"
         aria-controls={`${id}-grid`}
+        // Only a cell that is in the page: the grid draws the visible slice,
+        // and a wheel scroll can carry the active cell out of it.
         aria-activedescendant={
-          active && activeEmoji ? cellId(active.row, active.col) : undefined
+          active && activeEmoji && active.row >= from && active.row < to
+            ? cellId(active.row, active.col)
+            : undefined
         }
         aria-label="Search emoji"
         placeholder="Search emoji"
@@ -268,47 +306,56 @@ export function EmojiPickerPanel({
             </p>
           ) : (
             <div className="relative" style={{ height: total }}>
-              {placed.slice(from, to).map(({ row, top, height }, offset) => {
-                const rowIndex = from + offset;
-                if (row.kind === "heading") {
+              {placed
+                .slice(from, to)
+                .map(({ row, top, height, first }, offset) => {
+                  const rowIndex = from + offset;
+                  if (row.kind === "heading") {
+                    return (
+                      <div
+                        key={row.key}
+                        role="presentation"
+                        className={cn(
+                          "absolute inset-x-0 flex items-end px-2 pb-1 text-muted-foreground",
+                          EYEBROW,
+                        )}
+                        style={{ top, height }}
+                      >
+                        {row.name}
+                      </div>
+                    );
+                  }
                   return (
                     <div
                       key={row.key}
                       role="presentation"
-                      className={cn(
-                        "absolute inset-x-0 flex items-end px-2 pb-1 text-muted-foreground",
-                        EYEBROW,
-                      )}
+                      className="absolute inset-x-0 flex"
                       style={{ top, height }}
                     >
-                      {row.name}
+                      {row.emojis.map((emoji, col) => {
+                        const isActive =
+                          active?.row === rowIndex && active.col === col;
+                        return (
+                          <EmojiCell
+                            key={emoji}
+                            id={cellId(rowIndex, col)}
+                            emoji={emoji}
+                            active={isActive}
+                            position={first + col + 1}
+                            count={count}
+                            onHover={(x, y) => {
+                              const last = pointer.current;
+                              pointer.current = { x, y };
+                              if (last && last.x === x && last.y === y) return;
+                              setCursor({ row: rowIndex, col });
+                            }}
+                            onPick={pick}
+                          />
+                        );
+                      })}
                     </div>
                   );
-                }
-                return (
-                  <div
-                    key={row.key}
-                    role="presentation"
-                    className="absolute inset-x-0 flex"
-                    style={{ top, height }}
-                  >
-                    {row.emojis.map((emoji, col) => {
-                      const isActive =
-                        active?.row === rowIndex && active.col === col;
-                      return (
-                        <EmojiCell
-                          key={emoji}
-                          id={cellId(rowIndex, col)}
-                          emoji={emoji}
-                          active={isActive}
-                          onHover={() => setCursor({ row: rowIndex, col })}
-                          onPick={pick}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              })}
+                })}
             </div>
           )}
         </div>
@@ -345,13 +392,18 @@ function EmojiCell({
   id,
   emoji,
   active,
+  position,
+  count,
   onHover,
   onPick,
 }: {
   id: string;
   emoji: string;
   active: boolean;
-  onHover: () => void;
+  /** 1-based place among all the grid's emoji, since only a slice is drawn. */
+  position: number;
+  count: number;
+  onHover: (x: number, y: number) => void;
   onPick: (emoji: string) => void;
 }) {
   const label = emojiLabel(emoji) ?? emoji;
@@ -362,12 +414,14 @@ function EmojiCell({
       role="option"
       aria-selected={active}
       aria-label={label}
+      aria-posinset={position}
+      aria-setsize={count}
       tabIndex={-1}
       onMouseDown={(event) => event.preventDefault()}
-      onMouseEnter={onHover}
+      onMouseMove={(event) => onHover(event.clientX, event.clientY)}
       onClick={() => onPick(emoji)}
       className={cn(
-        "flex h-[38px] w-[38px] items-center justify-center rounded-sm border border-transparent text-xl leading-none transition-colors",
+        "flex h-[38px] w-[12.5%] items-center justify-center rounded-sm border border-transparent text-xl leading-none transition-colors",
         "hover:bg-card-hover",
         active && "border-border bg-card-hover",
       )}

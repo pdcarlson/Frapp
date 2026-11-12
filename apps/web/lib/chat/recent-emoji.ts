@@ -13,8 +13,9 @@ import {
  * drawn first in the emoji picker.
  *
  * localStorage, best-effort: a private window or blocked site data reads as
- * no recents and the picker opens on Smileys. The snapshot is cached so every
- * render reads one array; the `storage` event carries a use in another tab.
+ * no recents and the picker opens on Smileys. The snapshot is cached while a
+ * picker is open, so every render reads one array, and the `storage` event
+ * carries a use in another tab meanwhile; between opens it is read afresh.
  */
 const EMPTY: readonly string[] = [];
 const listeners = new Set<() => void>();
@@ -56,7 +57,12 @@ function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener("storage", onStorage);
+    if (listeners.size === 0) {
+      window.removeEventListener("storage", onStorage);
+      // Nothing is listening for other tabs' writes now, so the next open
+      // reads storage afresh rather than this page's last copy.
+      snapshot = null;
+    }
   };
 }
 

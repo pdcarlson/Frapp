@@ -4,6 +4,12 @@ import { RECENT_EMOJI_STORAGE_KEY } from "@repo/chat-core/emoji-recent";
 import { resetRecentEmojiForTests } from "@/lib/chat/recent-emoji";
 import { EmojiPickerPanel } from "./emoji-picker-panel";
 
+// jsdom has no 2D canvas; the drawability check has its own browser behavior.
+const undrawable = vi.hoisted(() => ({ set: new Set<string>() }));
+vi.mock("@/lib/chat/drawable-emoji", () => ({
+  undrawableEmoji: () => undrawable.set,
+}));
+
 function field() {
   return screen.getByRole("combobox", { name: "Search emoji" });
 }
@@ -64,6 +70,21 @@ describe("EmojiPickerPanel", () => {
     render(<EmojiPickerPanel onPick={onPick} />);
     fireEvent.click(screen.getByRole("option", { name: "grinning face" }));
     expect(onPick).toHaveBeenCalledWith("😀");
+  });
+
+  it("leaves out what this browser can't draw", () => {
+    undrawable.set = new Set(["\u{1F600}"]);
+    render(<EmojiPickerPanel onPick={vi.fn()} />);
+    expect(screen.queryByRole("option", { name: "grinning face" })).toBeNull();
+    undrawable.set = new Set();
+  });
+
+  it("ignores Enter while an IME is composing", () => {
+    const onPick = vi.fn();
+    render(<EmojiPickerPanel onPick={onPick} />);
+    fireEvent.change(field(), { target: { value: "fire" } });
+    fireEvent.keyDown(field(), { key: "Enter", isComposing: true });
+    expect(onPick).not.toHaveBeenCalled();
   });
 
   it("says so when nothing matches", () => {

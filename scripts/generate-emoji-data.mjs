@@ -49,6 +49,9 @@ const groups = messages.groups
     entries: [],
   }));
 const byOrder = new Map(groups.map((g) => [g.order, g]));
+/** Emoji from `NEWEST_FROM` on, by version, for web's per-browser check. */
+const NEWEST_FROM = 13;
+const newer = new Map();
 
 for (const e of [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
   if (typeof e.group !== "number" || e.version > MAX_VERSION) continue;
@@ -58,6 +61,9 @@ for (const e of [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
   const label = clean(e.label);
   const tags = clean((e.tags ?? []).join(" "));
   group.entries.push(`${e.emoji}|${label}|${tags}`);
+  if (e.version >= NEWEST_FROM) {
+    newer.set(e.version, [...(newer.get(e.version) ?? []), e.emoji]);
+  }
 }
 
 const body = groups
@@ -83,6 +89,23 @@ export interface EmojiGroup {
 
 export const EMOJI_GROUPS: readonly EmojiGroup[] = [
 ${body}
+];
+
+/**
+ * The catalog's newest emoji (Emoji ${NEWEST_FROM} on), by the version that added
+ * them, so a picker can leave out what the device's font predates.
+ */
+export const NEWER_EMOJI: readonly {
+  version: number;
+  emojis: readonly string[];
+}[] = [
+${[...newer.entries()]
+  .sort((a, b) => a[0] - b[0])
+  .map(
+    ([v, list]) =>
+      `  {\n    version: ${v},\n    emojis: [${list.map((x) => JSON.stringify(x)).join(", ")}],\n  },`,
+  )
+  .join("\n")}
 ];
 `;
 writeFileSync(

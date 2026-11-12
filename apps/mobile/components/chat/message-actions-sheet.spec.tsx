@@ -36,6 +36,12 @@ vi.mock("@/lib/chat/block-actions", async () => {
   return { ...actual, useBlockActions: () => blockActions };
 });
 
+const recents = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock("@/lib/chat/recent-emoji", () => ({
+  recordRecentEmoji: recents.record,
+  useRecentEmoji: () => [],
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#C49A3A",
@@ -452,8 +458,10 @@ describe("MessageActionsSheet — quick reactions", () => {
     const onUnreact = vi.fn();
     const dismiss = vi.fn();
     const tree = renderWith(TARGET, { onReact, onUnreact }, dismiss);
+    recents.record.mockClear();
     pressByLabel(tree, quickReactionLabel("👍", false));
     expect(onReact).toHaveBeenCalledWith("m4", "👍");
+    expect(recents.record).toHaveBeenCalledWith("👍");
     expect(onUnreact).not.toHaveBeenCalled();
     expect(dismiss).toHaveBeenCalled();
   });
@@ -507,10 +515,14 @@ describe("MessageActionsSheet — quick reactions", () => {
         Array.isArray(node.props.selected),
     );
     expect(picker.props.selected).toEqual(["🔥"]);
+    recents.record.mockClear();
     act(() => picker.props.onPick("🎉", false));
     expect(onReact).toHaveBeenCalledWith("m4", "🎉");
+    expect(recents.record).toHaveBeenCalledWith("🎉");
     act(() => picker.props.onPick("🔥", true));
     expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+    // Taking a reaction back off isn't a use.
+    expect(recents.record).toHaveBeenCalledTimes(1);
   });
 
   it("closes the keyboard before it opens, so the menu isn't drawn under it (#4142)", () => {

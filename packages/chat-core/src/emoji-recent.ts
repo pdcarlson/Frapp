@@ -29,7 +29,7 @@ export const RECENT_EMOJI_STORAGE_KEY = "frapp.recent-emoji.v1";
  * a picker must hand back the spelling already in use.
  */
 export function emojiKey(emoji: string): string {
-  return emoji.replace(/[︎️]/gu, "");
+  return emoji.replace(/[\uFE0E\uFE0F]/gu, "");
 }
 
 /**
@@ -57,21 +57,31 @@ export function withRecentEmoji(
 }
 
 /**
+ * Whether a stored token is one emoji: a pictograph (which ℹ️ is, though
+ * Unicode also files U+2139 as a letter), a flag's regional indicators, or a
+ * keycap (digit, U+FE0F, U+20E3), with no ASCII letter or bare digit, and at
+ * most a dozen code points (the longest ZWJ family is 11).
+ */
+function isEmojiToken(token: string): boolean {
+  if (!token || [...token].length > 12) return false;
+  if (/^[0-9#*]\uFE0F?\u20E3$/u.test(token)) return true;
+  return (
+    /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(token) &&
+    !/[A-Za-z0-9]/.test(token)
+  );
+}
+
+/**
  * The stored list, read defensively: storage is the member's own browser or
  * phone, but a value from an older build or a hand edit must not put a
- * paragraph in a 38px cell. An emoji is at most a few code points (the longest
- * ZWJ family is 11), so anything longer, or anything with a letter or digit in
- * it, is dropped.
+ * paragraph in a 38px cell.
  */
 export function parseRecentEmoji(raw: unknown): string[] {
   if (typeof raw !== "string") return [];
   const out: string[] = [];
   const seen = new Set<string>();
   for (const token of raw.split(" ")) {
-    if (!token || [...token].length > 12 || /[\p{L}\p{N}]/u.test(token)) {
-      // Keycaps (`1️⃣`) carry a digit; let the combining keycap through.
-      if (!/^[0-9#*]️?⃣$/u.test(token)) continue;
-    }
+    if (!isEmojiToken(token)) continue;
     const key = emojiKey(token);
     if (seen.has(key)) continue;
     seen.add(key);

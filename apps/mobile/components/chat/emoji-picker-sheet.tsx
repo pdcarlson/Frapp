@@ -62,7 +62,12 @@ export const EmojiPickerSheet = forwardRef<
   const tallSheet = useTallSheetProps();
   const close = useSheetClose(ref);
   const [search, setSearch] = useState("");
-  const recent = useRecentEmoji();
+  const liveRecent = useRecentEmoji();
+  // Held from a pick until the sheet has closed: the pick records itself as
+  // recent, and the Recent row growing would shift every row below it while
+  // the sheet animates away.
+  const [heldRecent, setHeldRecent] = useState<readonly string[] | null>(null);
+  const recent = heldRecent ?? liveRecent;
   const rows = useMemo(
     () => emojiPickerRows(search, { recent }),
     [search, recent],
@@ -86,7 +91,10 @@ export const EmojiPickerSheet = forwardRef<
                   isMine ? `Remove ${emoji} reaction` : `React with ${emoji}`
                 }
                 accessibilityState={{ selected: isMine }}
-                onPress={() => onPick(emoji, isMine)}
+                onPress={() => {
+                  setHeldRecent(recent);
+                  onPick(emoji, isMine);
+                }}
                 style={({ pressed }) => [
                   styles.cell,
                   isMine ? { backgroundColor: accentSubtle } : null,
@@ -107,7 +115,7 @@ export const EmojiPickerSheet = forwardRef<
         </View>
       );
     },
-    [accentSubtle, mine, onPick, styles],
+    [accentSubtle, mine, onPick, recent, styles],
   );
 
   return (
@@ -122,6 +130,7 @@ export const EmojiPickerSheet = forwardRef<
       onAnimate={onAnimate}
       onDismiss={() => {
         setSearch("");
+        setHeldRecent(null);
         onDismiss?.();
       }}
     >

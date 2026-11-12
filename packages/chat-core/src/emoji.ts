@@ -17,14 +17,11 @@ export { canonicalEmoji, emojiKey } from "./emoji-recent";
 /**
  * The rows a picker draws: a section heading, or one line of emoji. The list
  * is flat so one virtualized list can draw ~1,850 emoji without laying out
- * the ones off screen. A heading's `section` names what the category bar
- * jumps to: `recent`, or the group's index in `EMOJI_GROUPS`.
+ * the ones off screen.
  */
 export type EmojiPickerRow =
-  | { kind: "heading"; key: string; name: string; section: EmojiSection }
-  | { kind: "emoji"; key: string; emojis: string[]; section: EmojiSection };
-
-type EmojiSection = "recent" | number;
+  | { kind: "heading"; key: string; name: string }
+  | { kind: "emoji"; key: string; emojis: string[] };
 
 /** Emoji per line: eight 44pt cells fit the narrowest supported phone. */
 export const EMOJI_COLUMNS = 8;
@@ -40,7 +37,6 @@ function chunk(
   emojis: readonly string[],
   columns: number,
   keyPrefix: string,
-  section: EmojiSection,
 ): EmojiPickerRow[] {
   const rows: EmojiPickerRow[] = [];
   for (let i = 0; i < emojis.length; i += columns) {
@@ -48,7 +44,6 @@ function chunk(
       kind: "emoji",
       key: `${keyPrefix}-${i}`,
       emojis: emojis.slice(i, i + columns),
-      section,
     });
   }
   return rows;
@@ -90,38 +85,42 @@ export function emojiPickerRows(
     columns = EMOJI_COLUMNS,
     groups = EMOJI_GROUPS,
     recent = [],
+    hidden,
   }: {
     columns?: number;
     groups?: readonly EmojiGroup[];
     /** Most recent first (`@repo/chat-core/emoji-recent`). */
     recent?: readonly string[];
+    /**
+     * Emoji to leave out, by `emojiKey`: what this device can't draw (web's
+     * `drawableEmoji`). A group left empty loses its heading too.
+     */
+    hidden?: ReadonlySet<string>;
   } = {},
 ): EmojiPickerRow[] {
+  const shown = (emoji: string) => !hidden?.has(emojiKey(emoji));
   const query = search.toLowerCase().trim().replace(/\s+/g, " ");
   if (!query) {
-    const recentRows: EmojiPickerRow[] =
-      recent.length > 0
-        ? [
-            {
-              kind: "heading",
-              key: "h-recent",
-              name: RECENT_EMOJI_HEADING,
-              section: "recent",
-            },
-            ...chunk(recent, columns, "recent", "recent"),
-          ]
-        : [];
+    const recentRows: EmojiPickerRow[] = recent.some(shown)
+      ? [
+          {
+            kind: "heading",
+            key: "h-recent",
+            name: RECENT_EMOJI_HEADING,
+          },
+          ...chunk(recent.filter(shown), columns, "recent"),
+        ]
+      : [];
     return [
       ...recentRows,
-      ...groups.flatMap((group, index) => [
-        {
-          kind: "heading",
-          key: `h-${group.name}`,
-          name: group.name,
-          section: index,
-        } as const,
-        ...chunk(group.entries.map(emojiOf), columns, group.name, index),
-      ]),
+      ...groups.flatMap((group): EmojiPickerRow[] => {
+        const emojis = group.entries.map(emojiOf).filter(shown);
+        if (emojis.length === 0) return [];
+        return [
+          { kind: "heading", key: `h-${group.name}`, name: group.name },
+          ...chunk(emojis, columns, group.name),
+        ];
+      }),
     ];
   }
   const words = query.split(" ");
@@ -131,6 +130,7 @@ export function emojiPickerRows(
     for (const entry of group.entries) {
       order += 1;
       const [emoji, label = "", tags = ""] = entry.split("|");
+      if (!shown(emoji!)) continue;
       const text = `${label} ${tags}`;
       if (!words.every((word) => text.includes(word))) continue;
       const rank =
@@ -149,6 +149,5 @@ export function emojiPickerRows(
     ranked.map((r) => r.emoji),
     columns,
     "search",
-    0,
   );
 }

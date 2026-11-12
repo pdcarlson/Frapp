@@ -62,8 +62,11 @@ describe("emojiPickerRows", () => {
   it("puts the member's recent emoji first, under Recent", () => {
     const rows = emojiPickerRows("", { recent: ["🎉", "🔥"] });
     expect(rows[0]).toMatchObject({ kind: "heading", name: "Recent" });
-    expect(rows[1]).toMatchObject({ emojis: ["🎉", "🔥"], section: "recent" });
-    expect(rows[2]).toMatchObject({ kind: "heading", section: 0 });
+    expect(rows[1]).toMatchObject({ kind: "emoji", emojis: ["🎉", "🔥"] });
+    expect(rows[2]).toMatchObject({
+      kind: "heading",
+      name: "Smileys & emotion",
+    });
   });
 
   it("draws no Recent heading before anything is used, nor while searching", () => {
@@ -74,12 +77,18 @@ describe("emojiPickerRows", () => {
     expect(searched.some((row) => row.kind === "heading")).toBe(false);
   });
 
-  it("tags each row with its section, for the category bar", () => {
-    const rows = emojiPickerRows("");
-    const flags = rows.filter(
-      (row) => row.kind === "heading" && row.name === "Flags",
+  it("leaves out hidden emoji, and a group left empty loses its heading", () => {
+    const flags = EMOJI_GROUPS.find((g) => g.name === "Flags")!;
+    const hidden = new Set(
+      flags.entries.map((e) => emojiKey(e.slice(0, e.indexOf("|")))),
     );
-    expect(flags[0]?.section).toBe(EMOJI_GROUPS.length - 1);
+    hidden.add(emojiKey("🔥"));
+    const rows = emojiPickerRows("", { hidden });
+    expect(rows.some((r) => r.kind === "heading" && r.name === "Flags")).toBe(
+      false,
+    );
+    expect(emojis(rows)).not.toContain("🔥");
+    expect(emojis(emojiPickerRows("fire", { hidden }))).not.toContain("🔥");
   });
 });
 
@@ -108,6 +117,16 @@ describe("recent emoji", () => {
   it("round-trips through storage", () => {
     const list = ["👨‍👩‍👧‍👦", "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "1️⃣", "🇺🇸", "❤️"];
     expect(parseRecentEmoji(serializeRecentEmoji(list))).toEqual(list);
+  });
+
+  it("keeps every emoji in the catalog, one at a time", () => {
+    // ℹ️ is a letter to Unicode (U+2139 is Ll), and keycaps carry a digit.
+    for (const group of EMOJI_GROUPS) {
+      for (const entry of group.entries) {
+        const emoji = entry.slice(0, entry.indexOf("|"));
+        expect(parseRecentEmoji(emoji)).toEqual([emoji]);
+      }
+    }
   });
 
   it("drops anything that isn't an emoji, and a non-string", () => {
