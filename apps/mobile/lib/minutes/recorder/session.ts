@@ -70,6 +70,23 @@ const subscribe = (listener: () => void) => {
 const snapshot = (): RecorderState => current?.controller.getState() ?? IDLE;
 const controllerSnapshot = () => current?.controller ?? null;
 
+/**
+ * Is the recorder in the middle of something a reload would cut off: asking
+ * the server to start, recording (also in the background, with the phone
+ * locked), closing the file, or uploading it? Read outside React by
+ * `lib/updates/use-resume-updates.ts`, which never reloads into an update
+ * then.
+ */
+export function isMeetingRecorderBusy(): boolean {
+  const { phase } = snapshot();
+  return (
+    phase === "starting" ||
+    phase === "recording" ||
+    phase === "saving" ||
+    phase === "uploading"
+  );
+}
+
 /** What the phone's recorder is doing, and the recorder itself when there is one. */
 export function useMeetingRecorder(): {
   state: RecorderState;
