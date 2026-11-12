@@ -32,11 +32,12 @@ import { cn } from "@/lib/utils";
  * turning into its editor rather than a second box on top. Below `sm` it is
  * the whole viewport, which holds the 375px floor.
  *
- * **The bands are the upload sheet's** (`upload-sheet.tsx`, board `1j`): a
- * 56px title row at 18/700 with `pr-14` clearing the close button, a body at
- * the 20px inset, a right-aligned footer at the same inset. A panel is that
- * sheet at full height, so it uses the same rhythm rather than inventing a
- * second one. The close button `SheetContent` draws is a 26px box (a 16px
+ * **The bands came from the upload sheet** (board `1j`): a 56px title row at
+ * 18/700 with `pr-14` clearing the close button, a body at the 20px inset, a
+ * right-aligned footer at the same inset. A panel was that sheet at full
+ * height, so it took the same rhythm rather than inventing a second one; the
+ * sheet's own chrome is gone since both uploads moved onto `Panel` (#4593),
+ * so these bands are defined here now. The close button `SheetContent` draws is a 26px box (a 16px
  * glyph, `p-1` and a 1px border) at `top-4`, so its centre sits at 29px, a
  * pixel under the 56px row's centre.
  */

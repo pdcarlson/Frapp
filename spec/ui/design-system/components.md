@@ -333,11 +333,11 @@ Rules that go with it:
 
 **The Ask panel is its own size, 440px, and is not modal (2026-11-12, #450).** It is read beside the page, not instead of it: nothing dims, and from `lg` up the shell moves over to make room, so the top bar and the page a cited source opens are never under it and the answer stays open. Below `lg` it covers the page, and following a source closes it; the answer is there when it reopens. It keeps the panel's bands (pinned title row, scrolling body, pinned field) and closes with the X, the Ask pill, or Escape pressed inside it. Escape pressed on the page belongs to the page.
 
-Not covered here: the Find dialog, whose size and scrolling result list §7's app bar table owns (its Find row), and the backwork upload sheet, board `1j`'s drawn dialog.
+Not covered here: the Find dialog, whose size and scrolling result list §7's app bar table owns (its Find row). *(The backwork upload sheet, board `1j`'s drawn dialog, was the other exception until 2026-11-12, when it became a docked panel, #4593.)*
 
 **Chapter document upload is a panel (2026-11-06).** It holds a file plus four fields that grow, so it moved off board `1j`'s dialog onto the panel. Since 2026-11-12 it opens docked in place of the Documents page (§ Surface size, [#4593](https://github.com/pdcarlson/Frapp/issues/4593)), and a subscription lapse that closes it sends focus to the gate's notice as the sheet did. Its file well (`UploadFileField`, shared with the backwork sheet) is a drop target on both: a dragged file lights the well to the neutral hover step, and the Documents page takes a file dropped anywhere on it and opens the panel with it. A picked file fills the title from its name and guesses the type; type is a chip row (the find dialog's filter chip) and folder a picker of the chapter's folders. Free text is the fallback, not the field: an Other chip and a New folder item each open an input, and both values still reach the API as free text until #3642. Optional details wait behind one disclosure line. Role visibility, expiry and AI autofill are #3642.
 
-Not on this yet: the notifications drawer and the backwork category drawer and merge dialog keep their own widths (#3517); three mobile sheets are still fixed boxes closed with a word, two of which (Edit profile and the report step) scroll their primary button away with the body (#3519).
+Not on this yet: the notifications drawer and the backwork merge dialog keep their own widths (#3517; the backwork category drawer became a docked panel 2026-11-12, #4593); three mobile sheets are still fixed boxes closed with a word, two of which (Edit profile and the report step) scroll their primary button away with the body (#3519).
 
 ### More options
 
