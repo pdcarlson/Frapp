@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nameForThisYear, sameWeekdayThisYear } from "./last-year-dates";
+import { nameForThisYear, sameWeekdayThisYear } from "./last-year";
 
 describe("last-year dates (#3930)", () => {
   it("moves an event 52 weeks on, so its weekday stays", () => {

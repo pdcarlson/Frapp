@@ -52,6 +52,7 @@ type ControlProps = {
   isSaving?: boolean;
   writeBlockedReason?: string | null;
   fromChapterLevel?: boolean;
+  actions?: readonly { label: string; onPress: () => void }[];
 };
 
 const ANCHOR = { top: 57, right: 16 };
@@ -79,6 +80,7 @@ function Thread({
   isSaving,
   writeBlockedReason,
   fromChapterLevel,
+  actions,
 }: ControlProps) {
   const menu = useNotificationLevelMenu({
     level,
@@ -96,6 +98,7 @@ function Thread({
         onChange={onChange}
         isSaving={isSaving}
         anchor={ANCHOR}
+        actions={actions}
       />
     </>
   );
@@ -682,6 +685,45 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     const tree = openMenu(onChange);
     press(byLabel(tree, MUTE));
     expect(onChange).toHaveBeenCalledWith("off");
+    expect(menu(tree)).toHaveLength(0);
+  });
+});
+
+describe("the channel's own actions in the menu (#3946)", () => {
+  const TRIGGER = "Notifications: every message. Change notification level";
+
+  it("draws none unless the screen hands some in", () => {
+    const tree = renderControl({ level: "all" });
+    press(byLabel(tree, TRIGGER));
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "menuitem",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("lists an action above the levels, runs it, and closes on the pick", () => {
+    const onPress = vi.fn();
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: "all",
+      onChange,
+      actions: [{ label: "Catch me up", onPress }],
+    });
+    press(byLabel(tree, TRIGGER));
+    const row = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+    expect(row).toHaveLength(1);
+    expect(row[0]!.props.accessibilityLabel).toBe("Catch me up");
+    press(row[0]!);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    // An action is not a level: nothing is written.
+    expect(onChange).not.toHaveBeenCalled();
     expect(menu(tree)).toHaveLength(0);
   });
 });

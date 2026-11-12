@@ -4,6 +4,11 @@
  */
 export const AI_SUGGESTION_COPY = {
   heading: "Suggested tasks",
+  /**
+   * The phone's one list of everything waiting: suggested tasks and, since
+   * #3930, events from this time last year.
+   */
+  listHeading: "Suggested",
   fromActionItems:
     "From the action items above. Nothing is a task until you accept it.",
   fromMinutesOf: "From the minutes of",

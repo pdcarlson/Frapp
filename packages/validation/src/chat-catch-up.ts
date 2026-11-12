@@ -217,6 +217,13 @@ export const CHAT_CATCH_UP_COPY = {
   /** The strip above a channel opened with many new messages. */
   offer_action: "Catch me up",
   offer_dismiss: "Dismiss",
+  /**
+   * On the phone the summary is a sheet, and opening a line closes it to
+   * show the message. The strip above the channel then leads back to the
+   * same summary, so the next line doesn't cost another request.
+   */
+  resume_line: "Your summary is still here.",
+  resume_action: "Back to summary",
 } as const;
 
 function count(n: number, one: string, many: string): string {
@@ -226,6 +233,11 @@ function count(n: number, one: string, many: string): string {
 /** "140 new messages since you were last here." */
 export function chatCatchUpOfferLine(unread: number): string {
   return `${count(unread, "new message", "new messages")} since you were last here.`;
+}
+
+/** The same offer on a long thread: "34 replies in this thread." */
+export function chatCatchUpThreadOfferLine(replies: number): string {
+  return `${count(replies, "reply", "replies")} in this thread.`;
 }
 
 /** A group's heading, or the last group's for a kind this build does not know. */

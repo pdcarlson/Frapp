@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
   },
   settingsEnabled: undefined as boolean | undefined,
   permissions: { data: undefined as unknown, isPending: true },
+  actEnabled: undefined as boolean | undefined,
+  actions: undefined as unknown,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -26,14 +28,34 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return state.settings;
   },
   useMyPermissions: () => state.permissions,
+  useActStatus: (options: { enabled: boolean }) => {
+    state.actEnabled = options.enabled;
+    return { data: options.enabled ? state.actions : undefined };
+  },
 }));
 
-import { useAiSurfaces, type AiSurfaces } from "./availability";
+import {
+  useActActions,
+  useAiSurfaces,
+  type AiSurfaces,
+} from "./availability";
 
 function read(): AiSurfaces {
   let value!: AiSurfaces;
   function Probe() {
     value = useAiSurfaces();
+    return null;
+  }
+  act(() => {
+    create(<Probe />);
+  });
+  return value;
+}
+
+function readActions(enabled?: boolean): readonly string[] {
+  let value!: readonly string[];
+  function Probe() {
+    value = useActActions(enabled === undefined ? undefined : { enabled });
     return null;
   }
   act(() => {
@@ -54,6 +76,7 @@ beforeEach(() => {
     data: { permissions: ["ai:use"] },
     isPending: false,
   };
+  state.actions = ["points", "task"];
 });
 
 describe("useAiSurfaces", () => {
@@ -62,6 +85,7 @@ describe("useAiSurfaces", () => {
     expect(read()).toEqual({
       available: false,
       ask: false,
+      catchUp: false,
       meetingNotes: false,
       ready: true,
     });
@@ -108,5 +132,37 @@ describe("useAiSurfaces", () => {
 
   it("doesn't need the member's own yes: the sheet is asked at first use", () => {
     expect(read()).toMatchObject({ ask: true, meetingNotes: true });
+  });
+
+  it("offers Catch me up only where Ask is on and chat is a source", () => {
+    expect(read().catchUp).toBe(false);
+    state.settings = {
+      data: { ask: true, meeting_notes: true, chat_source: true },
+      isPending: false,
+    };
+    expect(read().catchUp).toBe(true);
+    state.settings = {
+      data: { ask: false, meeting_notes: true, chat_source: true },
+      isPending: false,
+    };
+    expect(read().catchUp).toBe(false);
+  });
+});
+
+describe("useActActions", () => {
+  it("lists what the server says this member can ask Frapp to do", () => {
+    expect(readActions()).toEqual(["points", "task"]);
+    expect(state.actEnabled).toBe(true);
+  });
+
+  it("asks nothing while the sheet is closed", () => {
+    expect(readActions(false)).toEqual([]);
+    expect(state.actEnabled).toBe(false);
+  });
+
+  it("asks nothing, and offers nothing, for a member without Ask", () => {
+    state.permissions = { data: { permissions: [] }, isPending: false };
+    expect(readActions()).toEqual([]);
+    expect(state.actEnabled).toBe(false);
   });
 });

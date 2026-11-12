@@ -136,6 +136,8 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  */
 
 export interface EventCreatedOutcome {
+  /** The new event's id, when the server's answer carried one. */
+  id: string | null;
   name: string;
   /** From chat: the event keeps someone out, so no card was asked for. */
   cardKeptOut: boolean;
@@ -164,6 +166,13 @@ export interface NewEventSheetProps {
   };
   /** Set to edit this event instead of creating one. */
   editing?: EventEditTarget;
+  /**
+   * What a new event's form opens filled in with: last year's event, moved
+   * to this year (#3930, `lib/events/last-year-template.ts`). Still a plain
+   * create, and every field is the officer's to change. Mount one sheet per
+   * template (`key`), since the draft starts from it once.
+   */
+  template?: NewEventDraft;
   /**
    * Fired after an edit saves. `leave` says the event on screen may have been
    * replaced by the save, so the host should go back to the list.
@@ -233,7 +242,7 @@ const GATE_COPY = {
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   function NewEventSheet(
-    { now, onCreated, chat, editing, onSaved, onDeleted },
+    { now, onCreated, chat, editing, template, onSaved, onDeleted },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -266,8 +275,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
     const at = useMemo(() => now ?? new Date(), [now]);
     const freshDraft = useCallback(
-      () => (editing ? draftFromEvent(editing) : emptyEventDraft()),
-      [editing],
+      () =>
+        editing ? draftFromEvent(editing) : (template ?? emptyEventDraft()),
+      [editing, template],
     );
     const [draft, setDraft] = useState<NewEventDraft>(freshDraft);
     const [focused, setFocused] = useState<
@@ -516,7 +526,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       const card =
         chat && !cardKeptOut ? chat.trackCard(result.body.name) : null;
       const handlers = {
-        onSuccess: (created?: { card_posted?: boolean }) => {
+        onSuccess: (created?: { id?: unknown; card_posted?: boolean }) => {
           sending.current = false;
           const cardLost = card !== null && created?.card_posted === false;
           if (cardLost) card.lost();
@@ -524,7 +534,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           // Saved, so the draft goes whichever visit is on screen.
           reset();
           if (isSameVisit(sentFrom)) dismiss();
-          onCreated?.({ name: result.body.name, cardKeptOut, cardLost });
+          onCreated?.({
+            id: typeof created?.id === "string" ? created.id : null,
+            name: result.body.name,
+            cardKeptOut,
+            cardLost,
+          });
         },
         onError: (error: unknown) => {
           sending.current = false;

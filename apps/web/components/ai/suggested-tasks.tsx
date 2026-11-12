@@ -16,7 +16,11 @@ import {
   type TaskSuggestionEdits,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
+import {
+  dueEntryFields,
+  dueEntryFromTask,
+  lastYearBareDay,
+} from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
 import {
   AI_SUGGESTION_COPY,
@@ -24,7 +28,7 @@ import {
   aiSuggestionRefusalLine,
   lastYearTaskLine,
 } from "@repo/validation";
-import { lastYearBareDay } from "@/components/ai/last-year-dates";
+
 import { Button } from "@/components/ui/button";
 import {
   Select,

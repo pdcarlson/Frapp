@@ -697,6 +697,7 @@ describe("New event from a chat's + (#3865)", () => {
       }),
     );
     expect(onCreated).toHaveBeenCalledWith({
+      id: null,
       name: "Formal",
       cardKeptOut: false,
       cardLost: false,

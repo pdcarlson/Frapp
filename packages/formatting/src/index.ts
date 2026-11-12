@@ -40,3 +40,9 @@ export {
   parseDueEntryWithTime,
 } from "./due-entry";
 export { nextUpLine } from "./next-up";
+export {
+  lastYearBareDay,
+  lastYearDay,
+  nameForThisYear,
+  sameWeekdayThisYear,
+} from "./last-year";

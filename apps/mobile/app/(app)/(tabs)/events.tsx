@@ -41,6 +41,7 @@ import {
   EventRowFlat,
 } from "@/components/events/event-rows";
 import { EventsCalendar } from "@/components/events/events-calendar";
+import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry";
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
 import {
   selectAllEventRows,
@@ -351,6 +352,7 @@ export default function EventsScreen() {
 
       {renderBody()}
 
+      {chapterId ? <SuggestedEventsEntry /> : null}
     </ScreenShell>
   );
 }

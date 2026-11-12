@@ -41,7 +41,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * "Report this" on the phone, for anything the AI made: an Ask answer, a
- * drafted set of minutes, a suggested task (#4315, `spec/behavior/ai.md`
+ * drafted set of minutes, a suggested task or event, a proposed change, a
+ * channel summary (#4315, `spec/behavior/ai.md`
  * § Stored AI text). Web's twin is `apps/web/components/ai/report-ai.tsx`,
  * and both read the same words and reasons (`AI_REPORT_COPY`).
  *
@@ -55,9 +56,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** What is being reported. */
 export interface AiReportTarget {
   subject: AiReportSubject;
-  /** The ask's id, the meeting's id (for its draft), or the suggestion's id. */
+  /**
+   * The ask's id, the meeting's id (for its draft), the suggestion's id, or
+   * the summary's id.
+   */
   subjectId: string;
-  /** Ask only: the answer's `report_receipt`, exactly as it came. */
+  /** An Ask answer or a channel summary: its `report_receipt`, as it came. */
   receipt?: string | null;
   /**
    * Tells one thing from the next under the same id: each draft of a
@@ -74,11 +78,21 @@ const RADIO_SIZE = 20;
 const keyOf = (target: AiReportTarget) =>
   `${target.subject}:${target.subjectId}:${target.version ?? ""}`;
 
-function failureLine(error: unknown): string {
+/** The subjects whose text exists only in the receipt the response carried. */
+function isSealed(subject: AiReportSubject): boolean {
+  return subject === "ask_answer" || subject === "chat_summary";
+}
+
+function failureLine(error: unknown, subject: AiReportSubject): string {
   const code = codeOf(error);
-  if (code === "ai.report.too_old") return AI_REPORT_COPY.too_old;
+  const summary = subject === "chat_summary";
+  if (code === "ai.report.too_old") {
+    return summary ? AI_REPORT_COPY.summary_too_old : AI_REPORT_COPY.too_old;
+  }
   if (code === "ai.report.receipt_invalid") {
-    return AI_REPORT_COPY.receipt_invalid;
+    return summary
+      ? AI_REPORT_COPY.summary_receipt_invalid
+      : AI_REPORT_COPY.receipt_invalid;
   }
   if (code === "ai.report.not_found") return AI_REPORT_COPY.gone;
   return AI_REPORT_COPY.failed;
@@ -107,8 +121,8 @@ export const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
     const [outcome, setOutcome] = useState<Outcome | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
 
-    // An answer from a server with no key carries no receipt; neither keeps
-    // the text, and the sheet says so. Until the server has said, the line
+    // An answer or a summary from a server with no key carries no receipt;
+    // neither keeps the text, and the sheet says so. Until the server has said, the line
     // keeps its place and Send waits, so a member never confirms unseen. If
     // the server's answer can't be read, the sheet says the most a report
     // could keep, so a member never sends more than they were told.
@@ -120,7 +134,7 @@ export const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
     const keepsText =
       !target || serverKeeps === null
         ? null
-        : serverKeeps && (target.subject !== "ask_answer" || !!target.receipt);
+        : serverKeeps && (!isSealed(target.subject) || !!target.receipt);
 
     const submit = useCallback(async () => {
       if (!target || !reason || report.isPending || keepsText === null) return;
@@ -140,7 +154,9 @@ export const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
           setOutcome(filed.already_reported ? "already" : "sent");
         }
       } catch (error) {
-        if (isSameVisit(sentFrom)) setFailure(failureLine(error));
+        if (isSameVisit(sentFrom)) {
+          setFailure(failureLine(error, target.subject));
+        }
       }
     }, [isSameVisit, keepsText, note, onReported, reason, report, target, visit]);
 
