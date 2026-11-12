@@ -135,6 +135,37 @@ describe("splitByHorizon", () => {
 });
 
 describe("seriesCadenceLabel", () => {
+  it("reads a structured rule from its own days (#4488)", () => {
+    expect(
+      seriesCadenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/New_York",
+        // Noon in New York: the same day on the test device's calendar.
+        "2027-01-04T17:00:00Z",
+      ),
+    ).toBe("Every Mon and Thu");
+    expect(
+      seriesCadenceLabel(
+        "FREQ=MONTHLY;INTERVAL=1;BYDAY=-1FR;COUNT=4;TZID=America/New_York",
+        "2027-01-29T17:00:00Z",
+      ),
+    ).toBe("Every month on the last Friday");
+  });
+
+  it("names a by-date structured rule's usual day, not a clamped row's", () => {
+    // Built from local parts so the day holds in any test zone.
+    const on31 = [
+      new Date(2027, 0, 31, 12).toISOString(),
+      new Date(2027, 2, 31, 12).toISOString(),
+    ];
+    const feb28 = new Date(2027, 1, 28, 12).toISOString();
+    expect(
+      seriesCadenceLabel("FREQ=MONTHLY;INTERVAL=1;COUNT=6;TZID=UTC", feb28, [
+        ...on31,
+        feb28,
+      ]),
+    ).toBe("Every month on the 31st");
+  });
+
   // Built from local parts so the weekday holds in any test zone.
   const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
   it("names the weekday most meetings fall on, not one moved meeting's", () => {

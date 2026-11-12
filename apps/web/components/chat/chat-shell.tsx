@@ -73,6 +73,7 @@ import {
   useReorderCategories,
   useReorderChannels,
   useImportantMessages,
+  useChatCatchUpAvailable,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
@@ -85,6 +86,9 @@ import {
   can,
   canAll,
   isAnnouncementChannel,
+  CHAT_CATCH_UP_OFFER_AT,
+  chatCatchUpOfferLine,
+  type ChatCatchUpPoint,
   isDirectChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -147,6 +151,11 @@ import {
 import { ChannelListSkeleton } from "./channel-list-skeleton";
 import { ChatBackground, useChapterLetters } from "./chat-background";
 import { ChatDropTarget } from "./chat-drop-target";
+import {
+  CatchUpOffer,
+  useCatchUpPanel,
+  type CatchUpScope,
+} from "./catch-up-panel";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -226,6 +235,8 @@ import {
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
 import { PollForm } from "./poll-form";
+import { SignupForm } from "./signup-form";
+import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import {
   EventQuickForm,
   eventQuickDraftFrom,
@@ -1553,6 +1564,28 @@ export function ChatShell({
               }}
             />
           );
+        case "signup":
+          return (
+            <SignupForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<SignupDraft>(channelId, "signup") ??
+                emptySignupDraft()
+              }
+              onDiscard={discard}
+              onPost={async (signup) => {
+                const result = await channel.sendSignup(channelId, signup);
+                if (result.ok && result.warning) {
+                  toast({
+                    title: "Sign-up sheet posted",
+                    description: result.warning,
+                  });
+                }
+                return result;
+              }}
+            />
+          );
         case "event":
           return (
             <EventQuickForm
@@ -2371,14 +2404,124 @@ export function ChatShell({
     threadRootId,
   );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
+  // Where a summary's line asked a thread to scroll. Dropped whenever a
+  // thread is opened or closed any other way, so it never replays.
+  const [threadJump, setThreadJump] = useState<{
+    messageId: string;
+    nonce: number;
+  } | null>(null);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {
       if (!activeChannel) return;
+      setThreadJump(null);
       setOpenThread({ channelId: activeChannel.id, rootId: message.id });
     },
     [activeChannel],
   );
-  const closeThread = useCallback(() => setOpenThread(null), []);
+  const closeThread = useCallback(() => {
+    setThreadJump(null);
+    setOpenThread(null);
+  }, []);
+
+  // Catch me up (#3946). Offered only where the server, the president's two
+  // switches and the member's `ai:use` all allow it, and only on a channel a
+  // summary may read: never a DM, a group DM or the audit log.
+  const catchUpAvailable = useChatCatchUpAvailable();
+  const canCatchUpHere =
+    catchUpAvailable &&
+    !!activeChannel &&
+    activeChannel.type !== "DM" &&
+    activeChannel.type !== "GROUP_DM" &&
+    activeChannel.is_audit_log !== true;
+  // How many messages were new when this channel was opened. Opening stamps
+  // it read, so the live count is gone by the time a member asks; the server
+  // finds the stretch again from this count and the moment of opening.
+  const liveUnread = !activeChannelId
+    ? null
+    : unreadByChannelId
+      ? (unreadByChannelId.get(activeChannelId)?.unreadCount ?? 0)
+      : null;
+  const [arrival, setArrival] = useState<{
+    channelId: string | null;
+    unread: number | null;
+    offerDismissed: boolean;
+  }>({ channelId: null, unread: null, offerDismissed: false });
+  if (arrival.channelId !== activeChannelId) {
+    setArrival({
+      channelId: activeChannelId,
+      unread: liveUnread,
+      offerDismissed: false,
+    });
+  } else if (arrival.unread === null && liveUnread !== null) {
+    // The counts landed after the channel did (a first load).
+    setArrival({ ...arrival, unread: liveUnread });
+  }
+  const arrivedAt = useRef<{ channelId: string; at: string } | null>(null);
+  useEffect(() => {
+    arrivedAt.current = activeChannelId
+      ? { channelId: activeChannelId, at: new Date().toISOString() }
+      : null;
+  }, [activeChannelId]);
+  const openCatchUpPoint = useCallback(
+    (point: ChatCatchUpPoint) => {
+      if (!activeChannelId) return;
+      if (point.thread_root_id) {
+        // A reply lives in its thread, not on the timeline.
+        setOpenThread({
+          channelId: activeChannelId,
+          rootId: point.thread_root_id,
+        });
+        setThreadJump((previous) => ({
+          messageId: point.message_id,
+          nonce: (previous?.nonce ?? 0) + 1,
+        }));
+        setNarrowPane("thread");
+        return;
+      }
+      setOpenThread(null);
+      jumpToChannelMessage(activeChannelId, point.message_id);
+    },
+    [activeChannelId, jumpToChannelMessage],
+  );
+  const catchUp = useCatchUpPanel({
+    activeChannelId,
+    nameFor,
+    onOpenPoint: openCatchUpPoint,
+  });
+  const startCatchUp = catchUp.start;
+  const startChannelCatchUp = useCallback(() => {
+    if (!activeChannel) return;
+    const unread =
+      arrival.channelId === activeChannel.id &&
+      arrival.unread &&
+      arrivedAt.current?.channelId === activeChannel.id
+        ? { count: arrival.unread, as_of: arrivedAt.current.at }
+        : null;
+    const scope: CatchUpScope = {
+      kind: "channel",
+      channelId: activeChannel.id,
+      channelName: activeChannel.name ?? null,
+      unread,
+    };
+    startCatchUp(scope);
+  }, [activeChannel, arrival, startCatchUp]);
+  const startThreadCatchUp = useCallback(() => {
+    if (!activeChannel || !threadRootId) return;
+    startCatchUp({
+      kind: "thread",
+      channelId: activeChannel.id,
+      channelName: activeChannel.name ?? null,
+      rootId: threadRootId,
+    });
+  }, [activeChannel, threadRootId, startCatchUp]);
+  const catchUpOfferLine =
+    canCatchUpHere &&
+    arrival.channelId === activeChannelId &&
+    !arrival.offerDismissed &&
+    catchUp.openChannelId === null &&
+    (arrival.unread ?? 0) >= CHAT_CATCH_UP_OFFER_AT
+      ? chatCatchUpOfferLine(arrival.unread ?? 0)
+      : null;
   // On a wide window the open thread is a column of its own beside the chat
   // (#4297, as Discord and Slack do on a computer), so the channel stays in
   // view and usable; it takes the members column's place while open, as
@@ -2892,6 +3035,8 @@ export function ChatShell({
           // An edit authorizes as a post (#2775), the timeline's gate.
           canPost={activeChannel.can_post !== false}
           onClose={closeThread}
+          onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
+          jumpTo={threadJump}
         />
       </MentionChipTargetsContext.Provider>
     ) : null;
@@ -3141,6 +3286,9 @@ export function ChatShell({
                         }),
                     }
                   : undefined
+              }
+              catchUp={
+                canCatchUpHere ? { onStart: startChannelCatchUp } : undefined
               }
               pinToTop={
                 activeChannel && !activeChannel.hidden
@@ -3423,6 +3571,16 @@ export function ChatShell({
               }
               onJump={jumpToImportant}
               onDismiss={important.dismiss}
+            />
+            <CatchUpOffer
+              line={catchUpOfferLine}
+              onStart={() => {
+                setArrival((previous) => ({ ...previous, offerDismissed: true }));
+                startChannelCatchUp();
+              }}
+              onDismiss={() =>
+                setArrival((previous) => ({ ...previous, offerDismissed: true }))
+              }
             />
             {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
@@ -3723,6 +3881,7 @@ export function ChatShell({
         }
       />
 
+      {catchUp.element}
       {confirmDialog}
       {canManageChannel ? (
         <CreateChannelSheet

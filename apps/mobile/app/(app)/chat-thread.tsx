@@ -39,9 +39,10 @@ import { setChannelLocked } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { canFlagMessage } from "@repo/chat-core/flags";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   otherMemberId,
   resolveAuthorAvatar,
   resolveAuthorLabel,
@@ -62,11 +63,22 @@ import {
   useSetChannelNotificationLevel,
   useImportantMessages,
 } from "@repo/hooks";
-import { can, draftWithMention, type ChatMessageFlag } from "@repo/validation";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_OFFER_AT,
+  can,
+  chatCatchUpOfferLine,
+  draftWithMention,
+  type ChatCatchUpPoint,
+  type ChatMessageFlag,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ImportantStrip } from "@/components/chat/important-strip";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
+import { useAiSurfaces } from "@/lib/ai/availability";
+import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
 import {
@@ -200,14 +212,23 @@ export default function ChatThreadRoute() {
   const params = useLocalSearchParams<{
     channelId?: string | string[];
     threadRootId?: string | string[];
+    focusMessageId?: string | string[];
   }>();
   const channelId = firstParam(params.channelId);
   const threadRootId = firstParam(params.threadRootId);
+  const focusMessageId = firstParam(params.focusMessageId);
   // A message thread (#3785) is this route pushed again with its root, so
   // the frozen stack layout needs no new route and the back gesture returns
   // to the channel under it (`MessageThreadScreen`).
   if (channelId && threadRootId) {
-    return <MessageThreadScreen channelId={channelId} rootId={threadRootId} />;
+    return (
+      <MessageThreadScreen
+        channelId={channelId}
+        rootId={threadRootId}
+        // A reply a summary's line rests on (#3946): the thread opens on it.
+        focusMessageId={focusMessageId}
+      />
+    );
   }
   return <ChannelThreadScreen />;
 }
@@ -293,6 +314,7 @@ function ChannelThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    sendSignup,
     postTask,
     postHours,
     trackEventCard,
@@ -424,12 +446,14 @@ function ChannelThreadScreen() {
       is_audit_log: postCapability.isAuditLog,
     });
   const openThreadFor = useCallback(
-    (rootId: string) => {
+    (rootId: string, focusMessageId?: string) => {
       if (!channelId) return;
       Keyboard.dismiss();
       router.push({
         pathname: "/chat-thread",
-        params: { channelId, threadRootId: rootId },
+        params: focusMessageId
+          ? { channelId, threadRootId: rootId, focusMessageId }
+          : { channelId, threadRootId: rootId },
       });
     },
     [channelId, router],
@@ -659,6 +683,104 @@ function ChannelThreadScreen() {
     markImportantSeen([nextImportant.id]);
     jumpToImportant(nextImportant.id);
   }, [nextImportant, markImportantSeen, jumpToImportant]);
+  // Catch me up (#3946). Offered only where the server, the president's two
+  // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
+  // only on a channel a summary may read: never a DM, a group DM or the
+  // audit log.
+  const canCatchUpHere =
+    useAiSurfaces().catchUp &&
+    !!channelId &&
+    !!openChannel &&
+    !isDirectChannel(openChannel.channel) &&
+    !postCapability.isAuditLog;
+  // How many messages were new when this channel was opened, and when.
+  // Opening stamps it read, so the live count is gone by the time a member
+  // asks; the server finds the stretch again from this count and moment. Read
+  // once per channel from what Chat home already holds, never fetched here:
+  // a channel opened cold (from a push) offers the last 24 hours instead.
+  const [arrival, setArrival] = useState(() => ({
+    channelId,
+    unread: arrivalUnread(
+      queryClient.getQueryData(CHANNEL_UNREAD_COUNTS_KEY),
+      channelId,
+    ),
+    at: new Date().toISOString(),
+    offerDismissed: false,
+  }));
+  if (arrival.channelId !== channelId) {
+    setArrival({
+      channelId,
+      unread: arrivalUnread(
+        queryClient.getQueryData(CHANNEL_UNREAD_COUNTS_KEY),
+        channelId,
+      ),
+      at: new Date().toISOString(),
+      offerDismissed: false,
+    });
+  }
+  // The counts can land after the channel does: a cold launch opens the last
+  // channel while Chat home's read is still out. Taken once, as web does;
+  // never asked for from here.
+  const liveUnread = arrivalUnread(
+    useQuery({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, enabled: false }).data,
+    channelId,
+  );
+  if (
+    arrival.channelId === channelId &&
+    arrival.unread === null &&
+    liveUnread !== null
+  ) {
+    setArrival({ ...arrival, unread: liveUnread });
+  }
+  const openCatchUpPoint = useCallback(
+    (point: ChatCatchUpPoint) => {
+      // A reply lives in its thread, not on the timeline.
+      if (point.thread_root_id) {
+        openThreadFor(point.thread_root_id, point.message_id);
+        return;
+      }
+      // May be older than the loaded window, as an Important message can be.
+      jumpToImportant(point.message_id);
+    },
+    [openThreadFor, jumpToImportant],
+  );
+  const catchUp = useCatchUp({
+    channelId,
+    nameFor,
+    onOpenPoint: openCatchUpPoint,
+  });
+  const startCatchUp = catchUp.start;
+  const startChannelCatchUp = useCallback(() => {
+    if (!channelId || !openChannel) return;
+    startCatchUp({
+      kind: "channel",
+      channelId,
+      channelName: openChannel.channel.name ?? null,
+      unread:
+        arrival.channelId === channelId && arrival.unread
+          ? {
+              // Capped to what a request may name by `useChatCatchUp`.
+              count: arrival.unread,
+              as_of: arrival.at,
+            }
+          : null,
+    });
+  }, [channelId, openChannel, arrival, startCatchUp]);
+  const catchUpOffer =
+    canCatchUpHere &&
+    !catchUp.active &&
+    arrival.channelId === channelId &&
+    !arrival.offerDismissed &&
+    (arrival.unread ?? 0) >= CHAT_CATCH_UP_OFFER_AT
+      ? chatCatchUpOfferLine(arrival.unread ?? 0)
+      : null;
+  const headerMenuActions = useMemo(
+    () =>
+      canCatchUpHere
+        ? [{ label: CHAT_CATCH_UP_COPY.name, onPress: startChannelCatchUp }]
+        : undefined,
+    [canCatchUpHere, startChannelCatchUp],
+  );
   // FlatList refuses a new `onViewableItemsChanged` after mount, so the pair
   // is made once and reads the latest report through a ref when it fires.
   const reportVisibleRef = useRef(important.reportVisible);
@@ -1102,7 +1224,14 @@ function ChannelThreadScreen() {
 
   const composerPlus = useComposerPlus({
     channelId,
-    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    channel: {
+      sendPoll,
+      sendSignup,
+      postTask,
+      postHours,
+      trackEventCard,
+      photos,
+    },
     replying: staging.context?.kind === "reply",
     offline: appOffline,
     onPhoto: handleAttach,
@@ -1135,6 +1264,7 @@ function ChannelThreadScreen() {
     ),
     disabled: !channelId,
     writeBlockedReason,
+    hasActions: canCatchUpHere,
   });
   const [headerFrame, setHeaderFrame] = useState({ bottom: 0, width: 0 });
   const [muteTriggerRight, setMuteTriggerRight] = useState(0);
@@ -1310,6 +1440,37 @@ function ChannelThreadScreen() {
               total={important.total}
               onShow={showImportant}
               onDismiss={important.dismiss}
+            />
+          ) : null}
+
+          {/*
+            One strip, in one place: back to a summary a line was opened
+            from, or the offer on a channel opened with many new messages.
+          */}
+          {catchUp.waiting ? (
+            <CatchUpStrip
+              line={CHAT_CATCH_UP_COPY.resume_line}
+              action={CHAT_CATCH_UP_COPY.resume_action}
+              onAction={catchUp.resume}
+              onDismiss={catchUp.drop}
+            />
+          ) : catchUpOffer ? (
+            <CatchUpStrip
+              line={catchUpOffer}
+              action={CHAT_CATCH_UP_COPY.offer_action}
+              onAction={() => {
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }));
+                startChannelCatchUp();
+              }}
+              onDismiss={() =>
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }))
+              }
             />
           ) : null}
 
@@ -1567,7 +1728,7 @@ function ChannelThreadScreen() {
               // An edit changes text only, so the staged photos and the + stand
               // aside until it is saved or cancelled.
               photos={staging.isEditing ? undefined : photos}
-              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // The + (#3865): Photo, Poll, Sign-up sheet, Event, Task and Service hours, in
               // a sheet that greys what can't work this second and says why
               // (offline Photo among them: an upload has no outbox).
               onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
@@ -1586,6 +1747,7 @@ function ChannelThreadScreen() {
         */}
         <NotificationLevelMenu
           menu={muteMenu}
+          actions={headerMenuActions}
           isSaving={setNotificationLevel.isPending}
           anchor={{
             top: headerFrame.bottom,
@@ -1610,6 +1772,7 @@ function ChannelThreadScreen() {
         openChannelId={channelId ?? null}
       />
       {composerPlus.sheets}
+      {catchUp.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

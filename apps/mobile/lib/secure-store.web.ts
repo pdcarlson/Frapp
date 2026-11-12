@@ -22,8 +22,7 @@
  * Only the exact string `"1"` switches persistence on; unset, empty, `"0"`,
  * `"true"`, anything else leaves this module behaving exactly as the stub does
  * today — it delegates to `expo-secure-store` and lets the same `TypeError`
- * reach the same catch. The strictness follows `lib/ask/flag.ts`: when the
- * parse is ambiguous the safe answer is off.
+ * reach the same catch. When the parse is ambiguous the safe answer is off.
  *
  * Off is the safe answer because `localStorage` is not secure storage. It is
  * readable by any script on the origin and survives until it is cleared, so a
@@ -39,11 +38,17 @@
  *
  * ## The read must stay static
  *
- * `process.env.EXPO_PUBLIC_WEB_SECURE_STORE` is written out longhand for the
- * reason `lib/ask/flag.ts` documents at length: `babel-preset-expo`'s
- * inline-env-vars plugin only rewrites a member expression whose property name
- * literally starts with `EXPO_PUBLIC_`, so a computed lookup is left untouched
- * and reads `undefined` in the bundle no matter what the build set.
+ * `process.env.EXPO_PUBLIC_WEB_SECURE_STORE` is written out longhand, and
+ * this is where the app records why. `babel-preset-expo`'s inline-env-vars
+ * plugin only rewrites a member expression whose *property name* literally
+ * starts with `EXPO_PUBLIC_`; for a computed `process.env[SOME_KEY]`, or a
+ * read through an alias of `process.env`, the check fails and the access is
+ * left untouched. React Native then initializes `global.process.env` to `{}`
+ * plus `NODE_ENV`, so the value is always `undefined` on device whatever the
+ * build set, and no spec catches it, because vitest runs on Node where
+ * `process.env` is a live object. Every env read in this app
+ * (`frapp-client.tsx`, `more/legal.ts`, `payments/stripe.ts`, `supabase.ts`)
+ * uses the static form for this reason.
  */
 import * as SecureStore from "expo-secure-store";
 

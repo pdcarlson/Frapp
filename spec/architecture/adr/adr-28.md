@@ -10,6 +10,35 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 `apps/api/src/modules`, no AI SDK in any `package.json`, and no vector or usage table in
 `supabase/migrations/`.
 
+> **Updated 2026-11-12 ([#4306](https://github.com/pdcarlson/Frapp/issues/4306)).** The gateway of
+> decisions 1, 2, 4 and 12 is built: the `ai` module, the port, the model catalog, the Anthropic
+> and scripted adapters, the quote check and the content-free telemetry. It is off unless the
+> server sets `AI_ENABLED=true`, and no feature calls it yet. Consent, the caps and the ledger are
+> still to come; the gateway asks for each through an interface that allows everything today.
+>
+> **Updated 2026-11-12 ([#4311](https://github.com/pdcarlson/Frapp/issues/4311)).** The Google
+> adapter of decision 1 is built on `@google/genai`, in Vertex AI mode with a service account and no
+> API-key path. It is off until `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_CREDENTIALS_JSON` are set.
+> The eval harness is provider-neutral and the bake-off command exists; its first paid run waits on
+> the credentials, so "Not verified" below still stands.
+>
+> **Updated 2026-11-12 ([#714](https://github.com/pdcarlson/Frapp/issues/714)).** The ledger and
+> the caps of decision 1 are built: `ai_usage_events`, one row per provider call, held before the
+> call against the chapter's month, the member's day and the provider's month, and settled before
+> the gateway returns ([`billing.md` § Caps](../../behavior/billing.md#caps)).
+>
+> **Updated 2026-11-12 ([#4308](https://github.com/pdcarlson/Frapp/issues/4308)).** Consent is built:
+> the gateway refuses every call unless the chapter has switched the call's family on and the member
+> it acts for said yes on the current AI sheet ([`ai.md` § Consent](../../behavior/ai.md#consent)).
+>
+> **Updated 2026-11-12 ([#720](https://github.com/pdcarlson/Frapp/issues/720)).** The index and the
+> retrieval of decision 3 are built for chapter documents and posted minutes
+> ([`../README.md` §13](../README.md#what-is-built-2026-11-12-720)). Two of the points under "What
+> this record does not decide" were settled with it and are marked there: how retrieval is isolated,
+> and the index type. Both wait on Paul's read of the pull request. Indexing a chapter's own records
+> needs the chapter's switch and no member's yes; embedding a member's question needs that member's
+> yes. Chat is not indexed yet (#4314), and nothing calls retrieval until Ask (#450).
+
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
 [#2534](https://github.com/pdcarlson/Frapp/issues/2534) asked for, and records that issue's
@@ -32,6 +61,9 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 3. **Both providers, split by job, for the beta.**
    - Claude, on Anthropic's own API, runs the text features: minutes, suggested tasks, and later Ask
      Frapp and the acting agent. It also judges evals.
+     Overridden in #4313 by pdcarlson's suggested-tasks session, 2026-11-12; pending Paul: suggested
+     tasks call no model. They are the posted minutes' action items as written
+     ([`meetings.md` § Suggested tasks](../../behavior/meetings.md#suggested-tasks)).
    - Gemini, on Google Cloud's paid platform (Vertex AI, which Google now calls the Gemini
      Enterprise Agent Platform), runs embeddings from the first day there is an index: Gemini
      Embedding at 1,536 dimensions. It is the first candidate for bulk PDF reading, and Google's
@@ -72,12 +104,20 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 7. **Recording rules** (Paul). Standards meetings are never recorded and never reach a model. Raw
    audio is deleted when the minutes post, and after 30 days if they never post. Frapp stores no
    voiceprint and never recognises a member by voice.
+   Overridden in #712 by pdcarlson's recording-upload session, 2026-11-12; pending Paul: the audio
+   is deleted sooner, as soon as the transcript is written or the transcription fails for good,
+   because nothing built reads it after that
+   ([`meetings.md` § Retention](../../behavior/meetings.md#retention)).
 8. **AI text is stored in two cases only.** A member can report an answer or a draft, which keeps
    that one exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one
    chapter can have a 14-day diagnostics window on Ask, with a visible notice. The research that
    proposed the window kept it off meeting and chat-derived features, so it has nothing to keep
    until Ask exists, and Ask comes after the beta (decision 6). Until then the report is the only
    stored text. Nothing else stores prompt or answer text, and no external sink ever receives it.
+   Overridden in #4312 by pdcarlson's drafting session, 2026-11-12; pending Paul: an officer's
+   notes for drafted minutes, and what the draft is checked against, are kept beside the unposted
+   minutes and deleted when they post, at most 30 days
+   ([`meetings.md` § Drafting from notes](../../behavior/meetings.md#drafting-from-notes)).
 9. **Google Cloud holds model calls only** (Paul: "no set date" for anything more). The calls run
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing
@@ -213,6 +253,12 @@ The catalog names the models. This table is a dated observation, not a pin.
 - **The transcription vendor.** A second bake-off, on one real recorded meeting, between Google's
   transcription model and AssemblyAI. [#712](https://github.com/pdcarlson/Frapp/issues/712) stays
   open for it.
+  - Added 2026-11-12 (#712, pending Paul): the upload and both adapters are built, and the bake-off
+    has not run. Until it does, the catalog routes `meetings.transcribe` to AssemblyAI, because a
+    two-hour recording is one request there and four or more under Google's 30-minute cap. That is
+    a default to be confirmed or replaced by the bake-off, not the decision. The audio is deleted
+    when the transcript is written, sooner than decision 7's wording; the reason is in
+    [`meetings.md` § Retention](../../behavior/meetings.md#retention).
 - **The monthly allowance.** [`billing.md`](../../behavior/billing.md#ai-usage-pricing) still reads
   it off real usage.
 - **When hosting moves.** ADR-24's triggers.
@@ -223,10 +269,24 @@ The catalog names the models. This table is a dated observation, not a pin.
   The API reads with the service role today, which bypasses row-level security, and a background
   job has no caller. It is settled with the corpus schema
   ([#720](https://github.com/pdcarlson/Frapp/issues/720)).
+  - **Settled 2026-11-12 in #720, pending Paul.** Retrieval does not run under a member's database
+    token. The API has no client that carries one (the anon key is deliberately not loaded), and a
+    background run has no token at all, so a rule that lived in row-level security would not cover
+    the runs that most need it. What the research wanted from it is kept another way: the one
+    function that reads passages takes the chapter and the acting member, and returns nothing unless
+    that member belongs to that chapter. If it is ever called with a member's token, the token must
+    be the acting member's. Row-level security stays on with no policies, only the service role may
+    run the function, and the migration gate proves the isolation cases against the real SQL.
 - **The eval gate's thresholds and how often live models run** (#2534's decision 5). #3282 owns
   both. The research recommended manual runs plus runs on pull requests that touch prompts,
   retrieval or the catalog during the beta, and nightly from about ten chapters.
 - **The vector index type and the database plan it needs.** Settled with the corpus schema (#720).
+  - **Settled 2026-11-12 in #720, pending Paul.** No approximate index in the first version, so no
+    change of database plan. One chapter holds a few thousand passages, and an exact scan of one
+    chapter's rows is fast and always right. An approximate index spans every chapter and is
+    filtered by chapter afterwards, so it returns mostly other chapters' neighbours and loses recall
+    as chapters are added. HNSW with pgvector's iterative scan is the later, additive step once one
+    chapter passes about 20,000 passages. The word half has a GIN index.
 - **AI over vault content, rush data and backwork.** All three stay out.
   [`ai.md`](../../behavior/ai.md)'s list of sources is closed.
 

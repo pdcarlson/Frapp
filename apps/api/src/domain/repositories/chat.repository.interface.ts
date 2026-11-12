@@ -77,6 +77,21 @@ export class ChatMessageActionDuplicateError extends Error {
   }
 }
 
+/**
+ * Why `claimSignupSlots` refused a claim (#3926): the card is gone or isn't a
+ * sign-up card (`missing`), it lists no slot by that id (`unknown_slot`), or
+ * the slot is at its limit (`full`). `slotId` names the slot when there is one.
+ */
+export class SignupClaimRefusedError extends Error {
+  constructor(
+    public readonly reason: 'missing' | 'unknown_slot' | 'full',
+    public readonly slotId: string | null,
+  ) {
+    super(`Sign-up claim refused: ${reason}`);
+    this.name = 'SignupClaimRefusedError';
+  }
+}
+
 export interface IChatChannelRepository {
   findById(id: string, chapterId: string): Promise<ChatChannel | null>;
   findByChapter(chapterId: string): Promise<ChatChannel[]>;
@@ -402,6 +417,19 @@ export interface IChatMessageActionRepository {
     userId: string,
     actionType: string,
   ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
+  /**
+   * Set this member's slots on a sign-up card (#3926) in one atomic step:
+   * the `claim_signup_slots` RPC locks the card's message row, refuses a slot
+   * that is full of other members' claims, and writes the member's one
+   * `signup` row (inserted, or updated in place as a vote change is, ADR-07).
+   * Throws {@link SignupClaimRefusedError} on a refusal. No chapter argument:
+   * the caller has already authorized the member against the card's channel.
+   */
+  claimSignupSlots(
+    messageId: string,
+    userId: string,
+    slotIds: string[],
+  ): Promise<{ action: ChatMessageAction; updated: boolean }>;
 }
 
 export interface IMessageReactionRepository {

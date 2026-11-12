@@ -104,9 +104,11 @@ import {
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
+import type { SignupPayload } from "@repo/chat-core/signups";
 import {
   postHours,
   postPoll,
+  postSignup,
   postTask,
   SIGNED_OUT_POST_COPY,
   trackEventCard,
@@ -272,6 +274,15 @@ export interface UseChatChannelResult {
   sendPoll: (poll: {
     content: string;
     payload: PollPayload;
+  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
+   * The + sheet's New sign-up sheet (#3926): a `kind: "signup"` card into this
+   * channel through chat-core's `postSignup`, the call web's form makes, with
+   * `sendPoll`'s outcomes. Never rejects.
+   */
+  sendSignup: (signup: {
+    content: string;
+    payload: SignupPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
    * The + sheet's Task and Service hours forms (#3865): chat-core's
@@ -997,6 +1008,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendSignup = useCallback(
+    async (signup: {
+      content: string;
+      payload: SignupPayload;
+    }): Promise<
+      { ok: true; warning?: string } | { ok: false; error: string }
+    > => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      const result = await postSignup(ctx, channelId, signup);
+      if (result.ok) return result;
+      return { ok: false, error: result.error };
+    },
+    [channelId, ctx],
+  );
+
   // No channel or identity means no + (the composer can't send), so these,
   // like `sendPoll`, only answer a caller that raced a sign-out.
   const postTaskHere = useCallback(
@@ -1314,6 +1340,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     sendInFlight,
     sendPoll,
+    sendSignup,
     postTask: postTaskHere,
     postHours: postHoursHere,
     trackEventCard: trackEventCardHere,

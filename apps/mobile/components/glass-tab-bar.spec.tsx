@@ -22,6 +22,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
 
 const quick = vi.hoisted(() => ({
+  ask: vi.fn(),
+  hasAsk: false,
   run: vi.fn(),
   save: vi.fn(),
   ready: true,
@@ -38,8 +40,18 @@ vi.mock("@/components/quick-actions/use-quick-actions", () => ({
 vi.mock("@/components/quick-actions/quick-actions-host", () => ({
   useQuickActionsHost: () => ({
     run: quick.run,
+    ask: quick.ask,
     sheets: null,
     notice: quick.notice,
+  }),
+}));
+// Whether this member has Ask is the server's answer (`useAiSurfaces`).
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({
+    available: quick.hasAsk,
+    ask: quick.hasAsk,
+    meetingNotes: false,
+    ready: true,
   }),
 }));
 // The panel has its own spec; here it only has to be there or not.
@@ -216,6 +228,22 @@ describe("the +", () => {
 
     act(() => plus(tree.root)!.props.onPress());
     expect(panel(tree.root)).toBeUndefined();
+  });
+
+  it("offers Ask in the panel only to a member who has it", () => {
+    quick.hasAsk = false;
+    const without = render();
+    act(() => plus(without.root)!.props.onPress());
+    expect(panel(without.root).props.onAsk).toBeUndefined();
+
+    quick.hasAsk = true;
+    const tree = render();
+    act(() => plus(tree.root)!.props.onPress());
+    act(() => panel(tree.root).props.onAsk());
+    expect(quick.ask).toHaveBeenCalledTimes(1);
+    // Ask opens over the tabs, so the panel is gone behind it.
+    expect(panel(tree.root)).toBeUndefined();
+    quick.hasAsk = false;
   });
 
   it("goes straight to editing on a hold", () => {

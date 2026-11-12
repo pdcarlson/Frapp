@@ -80,6 +80,11 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import {
+  SuggestedEvents,
+  useRecordPlannedEvent,
+  type EventPlan,
+} from "@/components/ai/suggested-events";
+import {
   EventEditorDialog,
   isoToLocalInput,
 } from "@/components/events/event-editor-dialog";
@@ -232,6 +237,9 @@ export function EventsPage() {
   const eventWriteGate = useSubscriptionGate();
   const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  // The suggestion a create was opened from, while its form is open.
+  const [eventPlan, setEventPlan] = useState<EventPlan | null>(null);
+  const recordPlannedEvent = useRecordPlannedEvent();
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   // The series a list row stands for, by key; its upcoming meetings are
   // derived from the live events below, so a realtime change reaches the
@@ -686,6 +694,18 @@ export function EventsPage() {
     setActiveEvent(null);
     setActiveSeriesKey(null);
     setCalendarCreateDay(day);
+    setEventPlan(null);
+    editorDialog.setOpen(true);
+  }
+
+  // "This time last year" (#3930): the same form, opened as a copy of last
+  // year's event on the same weekday this year.
+  function openPlan(plan: EventPlan) {
+    setEditorMode("create");
+    setActiveEvent(null);
+    setActiveSeriesKey(null);
+    setCalendarCreateDay(null);
+    setEventPlan(plan);
     editorDialog.setOpen(true);
   }
 
@@ -953,6 +973,18 @@ export function EventsPage() {
         feature="creating and editing events"
       />
 
+      {/*
+        What the chapter held around now last year and hasn't planned (#3930).
+        Only for an officer who could add it; nothing waiting draws nothing.
+      */}
+      {canCreateEvents ? (
+        <SuggestedEvents
+          headingId="events-last-year"
+          onPlan={openPlan}
+          disabled={eventWriteControls.disabled}
+        />
+      ) : null}
+
       {currentView === "list" ? (
         /*
           The section stays at zero: its label and count, then one line where
@@ -1192,8 +1224,14 @@ export function EventsPage() {
         backLabel={editorMode === "edit" ? "Back to event" : "Back to events"}
         event={activeEvent}
         usingPreviewData={false}
-        initialStartAt={calendarCreateDefaults?.startAt}
-        initialEndAt={calendarCreateDefaults?.endAt}
+        initialStartAt={eventPlan?.startAt ?? calendarCreateDefaults?.startAt}
+        initialEndAt={eventPlan?.endAt ?? calendarCreateDefaults?.endAt}
+        template={eventPlan?.template}
+        onCreated={async (eventId) => {
+          if (eventPlan) {
+            await recordPlannedEvent(eventPlan.suggestionId, eventId);
+          }
+        }}
         onSaved={async () => {
           await eventsQuery.refetch();
         }}

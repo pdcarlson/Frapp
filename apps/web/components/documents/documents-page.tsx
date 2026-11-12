@@ -1,6 +1,14 @@
 "use client";
 
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useSearchParams } from "next/navigation";
 import {
   useDeleteDocument,
   useDocumentFolders,
@@ -31,6 +39,7 @@ import {
   type DocumentSort,
 } from "@repo/hooks/document-library";
 import { DocumentViewer } from "@/components/documents/document-viewer";
+import { DOCUMENT_LINK_PARAM } from "@/components/ask/ask-source-link";
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
@@ -498,6 +507,22 @@ function ChapterDocumentsPage() {
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
       <FolderDialog gate={gate} management={folderManagement} />
+      <Suspense fallback={null}>
+        <OpenLinkedDocument
+          known={documents}
+          shown={visibleDocs}
+          onReveal={() => {
+            // The viewer reads the list as shown, so show all of it.
+            setActiveFolder(null);
+            setFilters(NO_DOCUMENT_FILTERS);
+            setSearch("");
+          }}
+          onOpen={(id) => {
+            viewerOpener.current = null;
+            setOpenId(id);
+          }}
+        />
+      </Suspense>
       <DocumentViewer
         documents={visibleDocs}
         openId={openId}
@@ -508,4 +533,48 @@ function ChapterDocumentsPage() {
       {confirmDialog}
     </div>
   );
+}
+
+/**
+ * `/documents?document=<id>`: opens that file in the viewer, which is how a
+ * source cited by Ask opens (`ask-source-link.ts`). It waits for the library
+ * to hold the file, clears a folder, filter or search that hides it (the
+ * viewer closes on a file the list does not show), opens it once the list
+ * shows it, and takes the parameter back out of the
+ * address so closing the viewer and following the same link again works. A
+ * file the member cannot see, or one since deleted, opens nothing and leaves
+ * them on the library. Its own component because `useSearchParams` needs a
+ * Suspense boundary.
+ */
+function OpenLinkedDocument({
+  known,
+  shown,
+  onReveal,
+  onOpen,
+}: {
+  known: readonly ChapterDocument[];
+  shown: readonly ChapterDocument[];
+  onReveal: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const linked = useSearchParams()?.get(DOCUMENT_LINK_PARAM) ?? null;
+  const found = linked !== null && known.some((doc) => doc.id === linked);
+  const visible = found && shown.some((doc) => doc.id === linked);
+  // The latest callbacks without making the effect depend on their identity.
+  const callbacks = useRef({ onReveal, onOpen });
+  useEffect(() => {
+    callbacks.current = { onReveal, onOpen };
+  });
+  useEffect(() => {
+    if (!linked || !found) return;
+    if (!visible) {
+      callbacks.current.onReveal();
+      return;
+    }
+    callbacks.current.onOpen(linked);
+    // Next keeps `useSearchParams` in step with the History API, so this
+    // clears the parameter without a navigation.
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [linked, found, visible]);
+  return null;
 }

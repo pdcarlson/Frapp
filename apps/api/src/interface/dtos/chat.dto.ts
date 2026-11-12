@@ -582,7 +582,7 @@ export class SendMessageDto {
 export class ChatMessageActionDto {
   @ApiProperty({
     description:
-      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions.',
+      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions.',
   })
   @IsString()
   @MinLength(1)

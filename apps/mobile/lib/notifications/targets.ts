@@ -12,7 +12,8 @@
  *
  * The keys below are the values `apps/api` actually emits, found by grepping
  * `target: {` across its services: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`, `chat_reports`, `discord_import`.
+ * `points`, `service`, `members`, `ai_suggestions`, `chat_reports`,
+ * `discord_import`.
  * `lib/more/notifications.ts` maps a
  * deliberately *wider* set to display labels, because a label that is merely
  * absent costs a member nothing. A route does: navigating somewhere on a guess
@@ -72,7 +73,16 @@ const ROUTES: Record<
   billing: { pathname: "/dues" },
   service: { pathname: "/service-hours" },
   members: { pathname: "/directory" },
+  // Tasks suggested from posted minutes (#4313): the officer's list.
+  ai_suggestions: { pathname: "/suggested-tasks" },
 };
+
+/**
+ * Where a "minutes posted" push opens (#4312). It is an `events` target that
+ * also names the minutes (`meetingId`), and the member tapped it to read
+ * them, not to see the event.
+ */
+const MINUTES: NotificationTarget = { pathname: "/minutes-details" };
 
 /**
  * Where an unrecognized or malformed target lands. Always renderable.
@@ -149,6 +159,8 @@ export function resolveNotificationTarget(data: unknown): NotificationTarget {
   if (!isRecord(target)) return FALLBACK;
 
   const screen = str(target, "screen");
+  const meetingId = screen === "events" ? str(target, "meetingId") : null;
+  if (meetingId) return { ...MINUTES, params: { id: meetingId } };
   const route = screen ? ROUTES[screen] : undefined;
   if (!route) return FALLBACK;
 

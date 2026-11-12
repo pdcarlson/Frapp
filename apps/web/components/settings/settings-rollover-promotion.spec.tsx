@@ -21,6 +21,9 @@ let permissions: string[] = [
 ];
 
 vi.mock("@repo/hooks", () => ({
+  // A server with AI off: no AI row (#4308).
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => false,
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions() },

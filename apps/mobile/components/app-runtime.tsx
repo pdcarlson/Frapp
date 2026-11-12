@@ -4,6 +4,7 @@ import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { useNotificationSyncRuntime } from "@/lib/notifications/use-notification-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
+import { useMeetingRecorderRuntime } from "@/lib/minutes/recorder/use-recorder-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
 import { useMemberInviteHandoff } from "@/lib/onboarding/use-member-invite-handoff";
 import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
@@ -52,6 +53,12 @@ import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
  * **Chapter presence** (#3917) publishes the member on the chapter's
  * presence topic and reads everyone's dot off it, while the app is in the
  * foreground; screens read the result (`lib/presence/chapter-presence.ts`).
+ *
+ * **The meeting recorder** (`spec/behavior/meetings.md` § Recording in the
+ * app) outlives the minutes screen it was started on: the secretary leaves
+ * that screen, locks the phone, and it records for two hours. So the one
+ * recorder is bound here to the signed-in member, and finds a recording a
+ * killed app left on the phone (`lib/minutes/recorder`).
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
@@ -66,5 +73,6 @@ export function AppRuntime(): null {
   useBadgeSyncRuntime();
   useNotificationSyncRuntime();
   useChapterPresenceRuntime();
+  useMeetingRecorderRuntime();
   return null;
 }

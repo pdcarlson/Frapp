@@ -134,6 +134,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useSetDocumentPin: () => ({ mutateAsync: mockSetPin, isPending: false }),
 }));
 
+// `/documents?document=<id>`: what a source cited by Ask links to.
+const linkedDocument = vi.hoisted(() => ({ current: null as string | null }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () =>
+    new URLSearchParams(
+      linkedDocument.current ? { document: linkedDocument.current } : {},
+    ),
+}));
+
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
@@ -306,6 +315,35 @@ describe("DocumentsPage subscription gating", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+  });
+
+  // #451: a source cited by Ask opens its file, and the link is spent so
+  // closing the viewer does not reopen it.
+  it("opens the document a link names, and takes it out of the address", async () => {
+    chapter.active();
+    linkedDocument.current = "doc-1";
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    try {
+      render(<DocumentsPage />);
+      expect(
+        await screen.findByRole("dialog", { name: "Chapter bylaws" }),
+      ).toBeVisible();
+      expect(replaceState).toHaveBeenCalledWith(null, "", window.location.pathname);
+    } finally {
+      linkedDocument.current = null;
+      replaceState.mockRestore();
+    }
+  });
+
+  it("opens nothing for a link to a document the member cannot see", () => {
+    chapter.active();
+    linkedDocument.current = "doc-gone";
+    try {
+      render(<DocumentsPage />);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      linkedDocument.current = null;
+    }
   });
 
   it("never gates reading the library", () => {

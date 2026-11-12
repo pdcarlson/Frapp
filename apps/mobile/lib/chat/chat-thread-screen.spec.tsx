@@ -60,6 +60,12 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { CHANNEL_UNREAD_COUNTS_KEY } from "@repo/hooks";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_OFFER_AT,
+  chatCatchUpOfferLine,
+} from "@repo/validation";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
@@ -183,6 +189,24 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
         dismiss: dismissPollSheet,
       }));
       return createElement("NewPollSheet", props);
+    }),
+  };
+});
+
+const presentSignupSheet = vi.fn();
+vi.mock("@/components/chat/new-signup-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewSignupSheet: forwardRef(function NewSignupSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentSignupSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewSignupSheet", props);
     }),
   };
 });
@@ -328,6 +352,7 @@ function channelState(
     send: vi.fn(async () => true),
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
+    sendSignup: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
     trackEventCard: vi.fn(() => ({
@@ -491,6 +516,40 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMessageAttachments: () => ({ data: [IMAGE] }),
 }));
 
+/** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
+const catchUp = vi.hoisted(() => ({
+  surface: false,
+  waiting: false,
+  active: false,
+  start: vi.fn(),
+  resume: vi.fn(),
+  drop: vi.fn(),
+  options: undefined as
+    | { onOpenPoint: (point: Record<string, unknown>) => void }
+    | undefined,
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({ catchUp: catchUp.surface }),
+}));
+vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/chat/catch-up-sheet")
+  >()),
+  useCatchUp: (options: {
+    onOpenPoint: (point: Record<string, unknown>) => void;
+  }) => {
+    catchUp.options = options;
+    return {
+      start: catchUp.start,
+      waiting: catchUp.waiting,
+      active: catchUp.active,
+      resume: catchUp.resume,
+      drop: catchUp.drop,
+      sheets: null,
+    };
+  },
+}));
+
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ isOffline: false, writeBlockedReason: null }),
 }));
@@ -620,6 +679,9 @@ beforeEach(() => {
   enabledModules = {};
   chapterUnread = false;
   queryClient = new QueryClient();
+  catchUp.surface = false;
+  catchUp.waiting = false;
+  catchUp.active = false;
 });
 
 describe("chat thread way back", () => {
@@ -2169,7 +2231,8 @@ describe("chat thread + sheet (#3865)", () => {
     const open = composer(tree).props.onOpenPlus as () => void;
     act(() => open());
     expect(presentPlusSheet).toHaveBeenCalledTimes(1);
-    expect(rowsOf(tree)).toEqual([]);
+    // A sign-up sheet needs no grant (#3926), so it is always offered.
+    expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup"]);
     expect(footerOf(tree)).toEqual([
       "Your role can't create polls, events, tasks or service hours.",
     ]);
@@ -2181,6 +2244,7 @@ describe("chat thread + sheet (#3865)", () => {
     const tree = render();
     expect(rowsOf(tree).map((row) => row.command)).toEqual([
       "poll",
+      "signup",
       "event",
       "task",
       "hours",
@@ -2205,6 +2269,8 @@ describe("chat thread + sheet (#3865)", () => {
     const tree = render();
     expect(rowsOf(tree)).toEqual([
       { command: "poll", label: "Poll", disabledReason: "Still loading" },
+      // It needs no module, so it waits on nothing (#3926).
+      { command: "signup", label: "Sign-up sheet", disabledReason: null },
     ]);
     act(() => tree.unmount());
   });
@@ -2253,6 +2319,22 @@ describe("chat thread + sheet (#3865)", () => {
       await onPost(poll);
     });
     expect(channel.sendPoll).toHaveBeenCalledWith(poll);
+    act(() => tree.unmount());
+  });
+
+  it("opens the New sign-up sheet from its row and posts through sendSignup (#3926)", async () => {
+    presentSignupSheet.mockClear();
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("signup"));
+    expect(presentSignupSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewSignupSheet" as never).props
+      .onPost as (signup: unknown) => Promise<unknown>;
+    const signup = { content: "Sober drivers", payload: {} };
+    await act(async () => {
+      await onPost(signup);
+    });
+    expect(channel.sendSignup).toHaveBeenCalledWith(signup);
     act(() => tree.unmount());
   });
 
@@ -2620,6 +2702,156 @@ describe("chat thread Important strip (#4186)", () => {
 
     act(() => byLabel(tree, "Dismiss important messages").props.onPress());
     expect(importantState.dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Catch me up in a channel (#3946)", () => {
+  const strips = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" && node.props.testID === "catch-up-strip",
+    );
+  /** What Chat home held when the channel was opened. */
+  const arriveWith = (unread: number) =>
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: unread },
+    ]);
+  const menuActions = (tree: ReactTestRenderer) =>
+    tree.root.findByType(NotificationLevelMenu).props.actions as
+      | { label: string; onPress: () => void }[]
+      | undefined;
+
+  it("offers nothing where the chapter has no summaries", () => {
+    arriveWith(60);
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    openMuteMenu(tree);
+    expect(menuActions(tree)).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers nothing in a direct message or the audit log", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    channelType = "DM";
+    const dm = render();
+    expect(strips(dm)).toHaveLength(0);
+    act(() => dm.unmount());
+
+    channelType = "PUBLIC";
+    channelIsAuditLog = true;
+    const log = render();
+    expect(strips(log)).toHaveLength(0);
+    act(() => log.unmount());
+  });
+
+  it("offers the summary under the header on a channel opened far behind", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    const tree = render();
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
+    act(() =>
+      byLabel(
+        tree,
+        `${chatCatchUpOfferLine(60)} ${CHAT_CATCH_UP_COPY.offer_action}`,
+      ).props.onPress(),
+    );
+    // The stretch that was new at the door, by its count and that moment:
+    // opening the channel already stamped it read.
+    expect(catchUp.start).toHaveBeenCalledWith({
+      kind: "channel",
+      channelId: CHANNEL,
+      channelName: "general",
+      unread: { count: 60, as_of: expect.any(String) },
+    });
+    // Asked once: the strip does not come back over the summary.
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the strip for a channel far behind, never a few messages", () => {
+    catchUp.surface = true;
+    arriveWith(CHAT_CATCH_UP_OFFER_AT - 1);
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("takes Dismiss as the answer, and still has the header's row", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    const tree = render();
+    act(() => byLabel(tree, CHAT_CATCH_UP_COPY.offer_dismiss).props.onPress());
+    expect(strips(tree)).toHaveLength(0);
+    expect(catchUp.start).not.toHaveBeenCalled();
+
+    openMuteMenu(tree);
+    const actions = menuActions(tree)!;
+    expect(actions.map((action) => action.label)).toEqual([
+      CHAT_CATCH_UP_COPY.name,
+    ]);
+    act(() => actions[0]!.onPress());
+    expect(catchUp.start).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("asks for no unread stretch on a channel opened cold", () => {
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    openMuteMenu(tree);
+    act(() => menuActions(tree)![0]!.onPress());
+    expect(catchUp.start).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "channel", unread: null }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("opens a reply's line in its thread, on that reply", () => {
+    catchUp.surface = true;
+    const tree = render();
+    act(() =>
+      catchUp.options!.onOpenPoint({
+        message_id: "r9",
+        thread_root_id: "m1",
+      }),
+    );
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m1", focusMessageId: "r9" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("hands a thread the reply to open on", () => {
+    params = {
+      channelId: CHANNEL,
+      threadRootId: "m1",
+      focusMessageId: "r9",
+    } as typeof params;
+    const tree = render();
+    expect(
+      tree.root.findByType("MessageThreadScreen" as never).props,
+    ).toMatchObject({ rootId: "m1", focusMessageId: "r9" });
+    act(() => tree.unmount());
+  });
+
+  it("leads back to a summary left for one of its lines", () => {
+    catchUp.surface = true;
+    catchUp.waiting = true;
+    arriveWith(60);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(CHAT_CATCH_UP_COPY.resume_line);
+    expect(text).not.toContain(chatCatchUpOfferLine(60));
+    act(() =>
+      byLabel(
+        tree,
+        `${CHAT_CATCH_UP_COPY.resume_line} ${CHAT_CATCH_UP_COPY.resume_action}`,
+      ).props.onPress(),
+    );
+    expect(catchUp.resume).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

@@ -104,7 +104,7 @@
 ## Events & Attendance
 
 - Members create events with name, description, location, start/end time, and optional recurrence rule: every member holds `events:create` by default (#3709). Point value and the mandatory flag are for officers who hold `events:update`; anyone else's event is worth 0 points and required for nobody.
-- **Recurring events:** Weekly, biweekly, or monthly. Auto-generates individual event instances.
+- **Recurring events:** Daily, weekly on chosen days, or monthly by date or by nth weekday, every N days, weeks or months, ending after a number of meetings or on a date, and keeping the wall-clock time across DST (#4488, #3662). Auto-generates individual event instances. Format and behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
 - Check-in atomically creates an attendance record AND awards the event's point value.
@@ -237,7 +237,7 @@ Not every paid module has a slash command: a module gets one only when it has a 
 | Reports | `reports` | Health dashboard, nationals export, advisor digest |
 | Onboarding | `onboarding` | Structured new-member pathway |
 | Geofences | `geofences` | Geo-fenced check-in zones |
-| Meetings | `meetings` | AI-drafted minutes from notes or a recording, with suggested tasks + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
+| Meetings | `meetings` | Minutes written by hand, or drafted from notes or a recording, with suggested tasks and one template per chapter ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
 | Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
 | AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements, and channel messages from members who agreed ([`spec/behavior/ai.md`](../behavior/ai.md)) |
 
@@ -291,14 +291,14 @@ Free always-on modules (chat, members, announcements, audit-log, chapter-setting
 
 ### Beta-off modules
 
-A module in `BETA_OFF_MODULES` (`@repo/validation`) is off for **every** chapter, whatever its `enabled_modules` holds, until the key is removed from that list. Today that is `dues` (Paul, 2026-11-06: the beta chapter doesn't collect dues in Frapp). `isModuleEnabled` answers `false` for it, so every gate above treats it as switched off, and it answers so before any chapter has loaded. On top of the ordinary disabled behavior:
+A module in `BETA_OFF_MODULES` (`@repo/validation`) is off for **every** chapter, whatever its `enabled_modules` holds, until the key is removed from that list. Today that is `dues` (Paul, 2026-11-06: the beta chapter doesn't collect dues in Frapp) and `meetings`, which is built on the AI integration branch and stays off until that work ships ([ADR-28](../architecture/adr/adr-28.md)). `isModuleEnabled` answers `false` for it, so every gate above treats it as switched off, and it answers so before any chapter has loaded. On top of the ordinary disabled behavior:
 
 - Settings → Modules leaves it out, and the plan matrix on `/billing` has no row for it, rather than offering what can't be turned on. No ops-setup nudge asks to enable it, and a slash command typed out in full says it is off for the beta rather than pointing at Settings → Modules.
 - For dues, its own surfaces read `isBetaOffModule` directly, because a chapter's ordinary dues switch must not hide them (the paragraph above): `/billing` drops the member invoice list, Settings drops the Dues tab and the dues grace workflow, mobile More drops the Dues row (the Dues screen sends a stray deep link back to More), copy that promises dues reminders drops them, the officer setup checklist has no dues line (it follows `isModuleEnabled`), the Billing notification switch is hidden on mobile Settings and web Profile (URGENT subscription alerts bypass it, so it would govern nothing; the stored preference is kept), and the API sends no invoice due or overdue reminders. The member-invoice routes stay ungated, per the paragraph above.
 
 Nothing is deleted. Removing the key turns the module back on with each chapter's own setting, configuration and invoices as they were. Reminders are skipped, not queued: once dues returns, the sweep reminds only about invoices still inside its windows ([`billing.md`](../behavior/billing.md)), so one that came due during the beta gets none.
 
-> The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.
+> The toggle UI lists the modules present in `MODULE_CATALOG` today. `vault` and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship. `meetings` is in the catalog (2026-11-12, #4312) and gets its Settings page once it leaves the beta-off list.
 
 ## AI feature pricing
 

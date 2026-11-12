@@ -3,6 +3,7 @@ import {
   attendanceInvitesNobody,
   attendanceToWire,
   isRecurrenceRule,
+  isRepeatRule,
   type EventAttendanceWire,
   type RecurrenceRule,
 } from "@repo/validation";
@@ -80,12 +81,20 @@ export interface EventEditTarget {
   parent: Pick<EventDetail, "id" | "start_time" | "end_time"> | null;
 }
 
-/** Whether the event belongs to a repeating series. */
+/**
+ * Whether the event belongs to a repeating series: any rule the API accepts,
+ * a structured one included, so a rename on a structured series' head goes
+ * series-wide.
+ */
 export function isInSeries(event: EventDetail): boolean {
-  return !!event.parent_event_id || isRecurrenceRule(event.recurrence_rule);
+  return !!event.parent_event_id || isRepeatRule(event.recurrence_rule);
 }
 
-/** The series rule an edit form should show for this event. */
+/**
+ * The series rule an edit form should show for this event. Legacy tokens only
+ * until the Repeat control reads structured rules (#4488's UI PR); a
+ * structured rule shows as none and is left as it is.
+ */
 export function seriesRuleOf(
   event: EventDetail,
   parent: Pick<EventDetail, "recurrence_rule"> | null,

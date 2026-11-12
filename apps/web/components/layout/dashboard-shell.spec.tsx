@@ -111,6 +111,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       fetchStatus: mockPermissions.value === undefined ? "fetching" : "idle",
     }),
     useHiddenUnsetFeatures: () => new Set(),
+    // A server with no AI, the default: the Ask pill is its "not ready" shell.
+    aiAvailableFrom: actual.aiAvailableFrom,
+    useAiConsent: () => ({ data: null, isError: false }),
+    useAiChapterSettings: () => ({ data: undefined, isPending: true }),
     useNotifications: () => ({ data: [] }),
     // What an ordinary member's config read looks like: `GET /chapters/:id/config`
     // needs `chapter-config:view`, so it errors and never yields data.

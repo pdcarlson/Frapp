@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  AiReport,
+  AiRun,
+  AiSuggestion,
+  AskDiagnosticsExchange,
+  AskDiagnosticsWindow,
+  ChapterAiSettings,
+  UserAiConsent,
   ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
@@ -15,6 +22,8 @@ import type {
   ChapterDocument,
   ChapterDocumentFolder,
   ChapterDocumentStar,
+  CorpusCandidate,
+  CorpusSource,
   ChapterDuesConfig,
   ChapterServiceConfig,
   ChapterPointsConfig,
@@ -71,6 +80,10 @@ import type {
   TaskSubtask,
   PledgeClass,
   EventType,
+  Meeting,
+  MeetingDraft,
+  MeetingRecording,
+  MeetingTemplate,
   PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
@@ -151,6 +164,8 @@ export interface Database {
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      ai_suggestions: TableDefinition<AiSuggestion>;
+      corpus_sources: TableDefinition<CorpusSource>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
@@ -169,6 +184,10 @@ export interface Database {
       task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
+      meetings: TableDefinition<Meeting>;
+      meeting_templates: TableDefinition<MeetingTemplate>;
+      meeting_drafts: TableDefinition<MeetingDraft>;
+      meeting_recordings: TableDefinition<MeetingRecording>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
@@ -191,9 +210,226 @@ export interface Database {
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
+      ai_runs: TableDefinition<AiRun>;
+      chapter_ai_settings: TableDefinition<ChapterAiSettings>;
+      user_ai_consents: TableDefinition<UserAiConsent>;
+      ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
+      ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
+      ai_reports: TableDefinition<AiReport>;
     };
     Views: Record<string, never>;
     Functions: {
+      /**
+       * `20261112165000` (#4310) — the run for (chapter, kind, dedupe key),
+       * new or existing; `returns setof ai_runs`.
+       */
+      enqueue_ai_run: {
+        Args: {
+          p_chapter_id: string;
+          p_kind: string;
+          p_dedupe_key: string;
+          p_requested_by: string | null;
+          p_acting_user_id: string | null;
+          p_input_ref: AiRun['input_ref'];
+          p_max_attempts: number;
+        };
+        Returns: AiRun[];
+      };
+      /**
+       * `20261112165050` (#720) — sources that need indexing, each with its
+       * next attempt pushed out; `returns setof corpus_sources`.
+       */
+      claim_corpus_sources: {
+        Args: { p_fingerprint: string; p_now: string; p_limit: number };
+        Returns: CorpusSource[];
+      };
+      /**
+       * `20261112165050` (#720) — one batch of a source's passages, written
+       * only while the source is at `p_revision`. Each chunk's `embedding` is
+       * the vector as text (`[0.1,0.2]`).
+       */
+      write_corpus_chunks: {
+        Args: {
+          p_source_id: string;
+          p_revision: number;
+          p_first: boolean;
+          p_embedding_model: string;
+          p_chunks: Json;
+        };
+        Returns: boolean;
+      };
+      /** `20261112165050` (#720) — marks a source indexed or skipped. */
+      finish_corpus_source: {
+        Args: {
+          p_source_id: string;
+          p_revision: number;
+          p_fingerprint: string;
+          p_title: string | null;
+          p_source_at: string | null;
+          p_decays: boolean;
+          p_chunk_count: number;
+          p_skip_reason: string | null;
+          /** `20261112170000` (#4314): what a chat window left out, and whose. */
+          p_left_out_count?: number;
+          p_left_out_author_ids?: string[] | null;
+        };
+        Returns: boolean;
+      };
+      /**
+       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * conversation first; one row with a null `message_id` when it holds
+       * none, no row when it is gone or its channel is a DM.
+       */
+      read_chat_corpus_window: {
+        Args: { p_chapter_id: string; p_window_id: string };
+        Returns: {
+          channel_id: string;
+          channel_name: string;
+          day: string;
+          message_id: string | null;
+          sender_id: string | null;
+          sender_name: string | null;
+          content: string | null;
+          created_at: string | null;
+          thread_root_id: string | null;
+          conversation_at: string | null;
+        }[];
+      };
+      /** `20261112170000` (#4314) — each chat window's channel, DMs refused. */
+      chat_corpus_window_channels: {
+        Args: { p_chapter_id: string; p_window_ids: string[] };
+        Returns: { window_id: string; channel_id: string }[];
+      };
+      /**
+       * `20261112170000` (#4314) — reads again every chat window that holds or
+       * left out one of `p_user_ids`; returns how many.
+       */
+      requeue_chat_corpus_by_authors: {
+        Args: { p_user_ids: string[]; p_chapter_id: string | null };
+        Returns: number;
+      };
+      /** `20261112170000` (#4314) — chapters that hold chat windows. */
+      chat_corpus_chapters: {
+        Args: Record<string, never>;
+        Returns: string[];
+      };
+      /** `20261112170000` (#4314) — who the chapter's chat index holds or left out. */
+      chat_corpus_authors: {
+        Args: { p_chapter_id: string };
+        Returns: { user_id: string; indexed: boolean }[];
+      };
+      /**
+       * `20261112165050` (#720) — retrieval candidates for one chapter, for a
+       * member of it only.
+       */
+      match_corpus_chunks: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_query: string;
+          p_embedding: string;
+          p_embedding_model: string;
+          p_limit: number;
+        };
+        Returns: CorpusCandidate[];
+      };
+      /**
+       * `20261112165000` (#4310) — leases the oldest claimable run, or returns
+       * no row; `returns setof ai_runs`.
+       */
+      claim_ai_run: {
+        Args: {
+          p_worker_id: string;
+          p_now: string;
+          p_lease_seconds: number;
+          p_kinds: string[];
+        };
+        Returns: AiRun[];
+      };
+      /**
+       * `20261112165020` (#714) — holds an AI call's worst-case cost against
+       * the platform, chapter and member caps. One row: the hold's id, or the
+       * cap it would cross. Amounts are bigint micro-USD.
+       */
+      reserve_ai_spend: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string | null;
+          p_run_id: string | null;
+          p_task: string;
+          p_family: string;
+          p_provider: string;
+          p_model: string;
+          p_prompt_version: string;
+          p_reserved_cost_micro_usd: number;
+          p_chapter_cap_micro_usd: number | null;
+          p_member_cap_micro_usd: number | null;
+          p_platform_cap_micro_usd: number | null;
+          p_now: string;
+        };
+        Returns: {
+          reservation_id: string | null;
+          refused: string | null;
+          platform_spent_before: number | string;
+          platform_spent_after: number | string;
+        }[];
+      };
+      /**
+       * `20261112165020` (#714) — settles a hold with the call's real counts
+       * and cost, or records a call made with no hold. Returns `settled`,
+       * `inserted` or `missing`.
+       */
+      settle_ai_spend: {
+        Args: {
+          p_reservation_id: string | null;
+          p_chapter_id: string;
+          p_user_id: string | null;
+          p_run_id: string | null;
+          p_task: string;
+          p_family: string;
+          p_provider: string;
+          p_model: string;
+          p_prompt_version: string;
+          p_outcome: string;
+          p_error_kind: string | null;
+          p_input_tokens: number;
+          p_output_tokens: number;
+          p_cached_input_tokens: number;
+          p_cost_micro_usd: number;
+          p_bill_reservation: boolean;
+          p_latency_ms: number;
+          p_now: string;
+          /** `20261112190000` (#712): seconds of audio, transcription only. */
+          p_audio_seconds?: number;
+        };
+        Returns: string;
+      };
+      /** `20261112165020` (#714) — expires unsettled holds; returns the count. */
+      expire_ai_spend_holds: {
+        Args: { p_older_than: string };
+        Returns: number;
+      };
+      /**
+       * `20261112165020` (#714) — a chapter's AI usage in `[p_from, p_to)`, one
+       * row per task, provider and model. Bigint columns may arrive as strings.
+       */
+      ai_chapter_usage: {
+        Args: { p_chapter_id: string; p_from: string; p_to: string };
+        Returns: {
+          task: string;
+          provider: string;
+          model: string;
+          calls: number | string;
+          input_tokens: number | string;
+          output_tokens: number | string;
+          cached_input_tokens: number | string;
+          /** `20261112190000` (#712); absent before that migration. */
+          audio_seconds?: number | string;
+          cost_micro_usd: number | string;
+          estimated_cost_micro_usd: number | string;
+          unsettled_calls: number | string;
+        }[];
+      };
       /**
        * `20261112151000` (#3583). The caller's `users.id`, the chapter's
        * subscription state and module toggles, the caller's membership row
@@ -306,6 +542,10 @@ export interface Database {
           p_clamp?: boolean;
         };
         Returns: BackworkCourse;
+      };
+      claim_signup_slots: {
+        Args: { p_message_id: string; p_user_id: string; p_slot_ids: string[] };
+        Returns: Json;
       };
       get_poll_vote_option_totals: {
         Args: { p_message_ids: string[] };

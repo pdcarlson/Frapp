@@ -166,6 +166,19 @@ export const POLL_QUESTION_MAX_LENGTH = 500;
 export const POLL_OPTION_MAX_LENGTH = 200;
 
 /**
+ * A sign-up sheet card in chat (`kind: 'signup'`, #3926): its title, the
+ * optional details under it, how many slots it lists and each slot's label,
+ * and the most spots one slot may hold. The chat send route enforces every
+ * one of these on the card (`normalizeSignupCard` in the API); the forms on
+ * both clients stop at the same numbers.
+ */
+export const SIGNUP_TITLE_MAX_LENGTH = 200;
+export const SIGNUP_NOTE_MAX_LENGTH = 1_000;
+export const SIGNUP_SLOTS_MAX = 20;
+export const SIGNUP_SLOT_LABEL_MAX_LENGTH = 120;
+export const SIGNUP_SLOT_CAPACITY_MAX = 100;
+
+/**
  * Pledge classes and a member's order number (#3939). The name and number
  * bounds mirror the CHECK constraints in
  * `20261110170000_chapter_pledge_classes.sql`; the two counts are API-side

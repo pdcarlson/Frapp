@@ -11,6 +11,7 @@ import { RushCard } from "./rush-card";
 import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
+import { SignupCard } from "./signup-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 import { TextRenderer } from "./text-renderer";
@@ -95,6 +96,16 @@ export function MessageRenderer({
           isConfirmed={isConfirmed}
           onVote={onAct}
           onClosePoll={onClosePoll}
+        />
+      );
+    case "signup":
+      return (
+        <SignupCard
+          message={message}
+          viewerId={viewerId}
+          nameFor={nameFor}
+          isConfirmed={isConfirmed}
+          onClaim={onAct}
         />
       );
     case "announcement":

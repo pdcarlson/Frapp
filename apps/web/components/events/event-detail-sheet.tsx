@@ -50,6 +50,10 @@ import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  EventMinutes,
+  useMeetingsModuleOn,
+} from "@/components/meetings/event-minutes";
 
 type EventRecord = Record<string, unknown>;
 
@@ -103,6 +107,9 @@ export function EventDetailSheet({
   // gating only the editor's submit would let the user reopen and refill it.
   const gate = useSubscriptionGate();
   const { confirm, confirmDialog } = useConfirmDialog();
+  // With meetings on, the minutes are their own document and this field is
+  // the event's notes (`spec/behavior/meetings.md` § Where minutes live).
+  const meetingsOn = useMeetingsModuleOn();
   const rolesQuery = useRoles();
   const { toast } = useToast();
   // Edit and Delete are `events:update` and `events:delete` on the server, so
@@ -191,7 +198,10 @@ export function EventDetailSheet({
   // `null` for a one-time event, which then shows no cadence badge at all.
   // The head's rule when the caller knows the series: a generated meeting
   // carries none of its own, and would otherwise read as one-time.
-  const cadence = recurrenceLabel(seriesRule ?? resolvedEvent?.recurrence_rule);
+  const cadence = recurrenceLabel(
+    seriesRule ?? resolvedEvent?.recurrence_rule,
+    resolvedEvent?.start_time,
+  );
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,
@@ -541,10 +551,14 @@ export function EventDetailSheet({
               </div>
             ) : null}
 
+            {eventId && !usingPreviewData ? (
+              <EventMinutes eventId={eventId} eventName={eventName} />
+            ) : null}
+
             {notes ? (
               <div className="rounded-lg border border-border p-3">
                 <p className="mb-1 text-caption text-muted-foreground">
-                  Meeting minutes
+                  {meetingsOn ? "Notes" : "Meeting minutes"}
                 </p>
                 {/* Same plain-text convention as chat's TextRenderer (#369 owns
                   a real markdown renderer if that lands later) — preserve the

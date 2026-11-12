@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   draftFromEvent,
   isEmptyPatch,
+  isInSeries,
   leavesAfterSave,
   saveRequestFor,
   saveScopeFor,
@@ -278,5 +279,19 @@ describe("seriesRuleOf", () => {
       seriesRuleOf(occurrence.event, { recurrence_rule: "BIWEEKLY" }),
     ).toBe("BIWEEKLY");
     expect(seriesRuleOf(occurrence.event, null)).toBeNull();
+  });
+});
+
+describe("isInSeries", () => {
+  it("counts a head carrying a structured rule as a series", () => {
+    const structured = {
+      ...EVENT,
+      recurrence_rule:
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=8;TZID=America/New_York",
+    };
+    expect(isInSeries(structured)).toBe(true);
+    // The form shows legacy tokens only until the Repeat control reads more.
+    expect(seriesRuleOf(structured, null)).toBeNull();
+    expect(isInSeries({ ...EVENT, recurrence_rule: null })).toBe(false);
   });
 });

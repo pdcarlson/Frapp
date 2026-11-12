@@ -2756,6 +2756,67 @@ describe('ChatService', () => {
       });
     });
 
+    // `claim_signup_slots` trusts the stored slots' ids and limits on every
+    // claim, so the card is checked and rebuilt on send (#3926).
+    describe('a sign-up card is checked on send (#3926)', () => {
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      const sendSignup = (payload: Record<string, unknown>) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Sober drivers',
+          kind: 'signup',
+          payload,
+        });
+
+      it('stores the card rebuilt from its known fields', async () => {
+        await sendSignup({
+          title: ' Sober drivers ',
+          slots: [{ id: 'fri', label: 'Friday', capacity: 2 }],
+          closed_at: '2026-01-01T00:00:00.000Z',
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: 'signup',
+            payload: {
+              title: 'Sober drivers',
+              slots: [{ id: 'fri', label: 'Friday', capacity: 2 }],
+            },
+          }),
+        );
+      });
+
+      it('refuses a card it cannot read, writing nothing', async () => {
+        await expect(
+          sendSignup({
+            title: 'Sober drivers',
+            slots: [{ id: 'fri', label: 'Friday', capacity: 0 }],
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('needs no module: a sign-up posts with every module off', async () => {
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Sober drivers',
+          kind: 'signup',
+          payload: { title: 'Sober drivers', slots: [{ id: 'a', label: 'A' }] },
+          enabled_modules: { polls: false },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+    });
+
     describe('module gate on card kinds (#2993)', () => {
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({

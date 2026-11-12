@@ -19,6 +19,14 @@ describe("recurrenceLabel", () => {
     expect(recurrenceLabel("")).toBeNull();
   });
 
+  it("reads a structured rule as its pattern", () => {
+    expect(
+      recurrenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York",
+      ),
+    ).toBe("Every Mon and Thu");
+  });
+
   it("never prints a raw token it does not know", () => {
     expect(recurrenceLabel("EVERY_OTHER_DAY")).toBe("Every other day");
   });
