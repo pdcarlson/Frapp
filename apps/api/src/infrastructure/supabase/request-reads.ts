@@ -11,7 +11,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * the session check is still in flight (`prefetchChapterContext`). The keys
  * are `readMemberByUserAndChapter` and `readRolesByIds` (so every
  * `findByUserAndChapter` / `findByIds` call in the request) and
- * `ChapterGuard`'s user and chapter rows.
+ * `ChapterGuard`'s user and chapter rows. With a chapter named, the prefetch
+ * gets all four from one call (`get_request_context`, #3583): the user and
+ * chapter rows through `readOncePerRequest` as before, the membership and
+ * roles recorded with `keepForRequest`.
  *
  * **Never across requests.** `spec/behavior/rbac.md` § Permission Check
  * Algorithm and `spec/behavior/multi-tenancy.md` promise that each request resolves
@@ -94,4 +97,18 @@ export async function readOncePerRequest<T>(
     });
   }
   return structuredClone(await pending);
+}
+
+/**
+ * Records `value` as the request's answer for `key`, as if a read had just
+ * returned it, unless something already holds that key. For one call that
+ * answers several keys' reads at once (`get_request_context`, #3583): each
+ * reader then finds its own row. Does nothing outside a request or once the
+ * store is sealed, so it never hands a write's handler a row from before its
+ * own write.
+ */
+export function keepForRequest(key: string, value: unknown): void {
+  const store = storage.getStore();
+  if (!store || store.sealed || store.reads.has(key)) return;
+  store.reads.set(key, Promise.resolve(value));
 }
