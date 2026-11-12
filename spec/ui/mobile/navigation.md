@@ -240,6 +240,16 @@ is the file half of the last two: a PDF or Office file on s21 needs
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
 whether s20's proof takes a PDF from Files too.
 
+**`package.json` and `app.json` gained `expo-audio`** (2026-11-12, the meeting
+recorder). The dependency, its `plugins` entry (`microphonePermission`,
+`enableBackgroundRecording: true`, `enableBackgroundPlayback: false`), the microphone
+text on the camera and picker entries, and the native version (0.11.0 to 0.12.0) are the
+same integrator carve-out. Two more edits ride with it. `app/_layout.tsx` gained one
+line, `<RecordingBar />` beside `<NetworkBanner />`: the recorder runs for two hours
+across every screen, so its always-visible state has to draw above them all, sheets
+included, which only the root can do. `components/app-runtime.tsx` gained
+`useMeetingRecorderRuntime()`, which is what that component exists for.
+
 **Both were removed again** (#2296) — the three surfaces were still unbuilt a month
 later, and the declarations were not merely premature but actively harmful. The
 `photosPermission` string shipped in the binary as a purpose string for a feature that
@@ -338,6 +348,14 @@ key at all**. Each of those three is load-bearing:
   Guideline 5.1.1(i) shape `photosPermission` used to be. Declining strips nothing
   another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
   and so never adds RECORD_AUDIO either.
+  *Changed 2026-11-12 (the meeting recorder, [`meetings.md` § Recording in the app](../../behavior/meetings.md#recording-in-the-app)):*
+  the app now has a microphone surface, so this decline is gone. A `false` here
+  blocks RECORD_AUDIO for every plugin, the recorder's included, and a `false` on
+  `expo-camera`'s option deletes the purpose string the recorder needs. So
+  `expo-image-picker`, `expo-camera` and `expo-audio` all carry the same
+  `microphonePermission` text, which `IOS_PURPOSE_STRINGS` pins with the recorder's
+  request as its caller; `expo-camera` keeps `recordAudioAndroid: false`, since the
+  recorder's own plugin declares the permission.
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
   unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.

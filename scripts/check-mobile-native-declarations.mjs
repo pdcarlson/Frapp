@@ -105,6 +105,8 @@ import { dirname, join, relative } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const MOBILE_DIR = "apps/mobile";
+/** Where the meeting recorder asks for the microphone and starts recording. */
+const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
 
 /**
  * Every iOS purpose string the binary ships, keyed by its Info.plist key.
@@ -124,12 +126,14 @@ const MOBILE_DIR = "apps/mobile";
  * expo-secure-store links Face ID, both declined below. So an entry is added
  * when Apple names the key, not for every symbol a library links.
  *
- * Two plugin options that write no string here are load-bearing, and the
- * checks below catch either one changing:
- *   - expo-camera's and expo-image-picker's `microphonePermission: false`.
- *     Omitting either ships the plugin's default microphone string (check 1),
- *     and omitting image-picker's also stops it from declaring RECORD_AUDIO
- *     removed (check 3).
+ * Plugin options that are load-bearing, which the checks below catch changing:
+ *   - Three plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
+ *     recorder, the only microphone surface), expo-camera and
+ *     expo-image-picker. All three carry the same text in app.json. Omitting
+ *     one ships that plugin's default string, and `false` on expo-camera's
+ *     deletes the key the recorder needs, either of which check 1 fails;
+ *     `false` on image-picker's compiles to a blocked RECORD_AUDIO, which
+ *     would strip the recorder's permission on Android (check 2).
  *   - expo-image-picker has no `cameraPermission` key at all. `false` compiles
  *     to `withBlockedPermissions(['android.permission.CAMERA'])`, which broke QR
  *     check-in on every Android build (#2296); check 2 fails on it. Omitting it
@@ -165,6 +169,15 @@ export const IOS_PURPOSE_STRINGS = new Map([
     },
   ],
   [
+    // The meeting recorder (spec/behavior/meetings.md § Recording in the app),
+    // the app's one microphone surface. Draft text until Paul approves it.
+    "NSMicrophoneUsageDescription",
+    {
+      text: "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record.",
+      requestedBy: { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" },
+    },
+  ],
+  [
     // Never requested: nothing in the app asks for motion activity. expo-location
     // links CMMotionActivityManager for its motion permission requester, and
     // App Store Connect rejected build 8 without this key (ITMS-90683).
@@ -182,15 +195,31 @@ export const IOS_PURPOSE_STRINGS = new Map([
 ]);
 
 /**
- * The iOS background modes the binary declares. None: location is foreground
- * only (expo-location's `isIosBackgroundLocationEnabled: false`), and push
- * needs no mode while expo-notifications' `enableBackgroundRemoteNotifications`
- * is off. A mode for work the app doesn't do is a Guideline 2.5.4 finding.
+ * The iOS background modes the binary declares. `audio` is the meeting
+ * recorder's (expo-audio's `enableBackgroundRecording`): a secretary records a
+ * two-hour meeting with the phone locked on the table. Nothing else: location
+ * is foreground only (expo-location's `isIosBackgroundLocationEnabled: false`),
+ * push needs no mode while expo-notifications'
+ * `enableBackgroundRemoteNotifications` is off, and expo-audio's
+ * `enableBackgroundPlayback` is off because the app plays no audio. A mode for
+ * work the app doesn't do is a Guideline 2.5.4 finding.
  */
-export const IOS_BACKGROUND_MODES = [];
+export const IOS_BACKGROUND_MODES = ["audio"];
 
-/** Android permissions a screen requests at runtime, which a config plugin adds. */
+/**
+ * Android permissions a config plugin adds for a feature, each with the call
+ * that puts it to use: a runtime request, or for the recorder's
+ * foreground-service set, the call that starts the service. expo-audio's
+ * `enableBackgroundRecording` adds the last four; POST_NOTIFICATIONS is there
+ * because Android refuses a foreground service whose notification it can't
+ * show, so the recorder asks for it before it records.
+ */
 export const ANDROID_RUNTIME_PERMISSIONS = new Map([
+  ["android.permission.RECORD_AUDIO", { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" }],
+  ["android.permission.MODIFY_AUDIO_SETTINGS", { file: RECORDER_DEVICE, call: "setAudioModeAsync(" }],
+  ["android.permission.POST_NOTIFICATIONS", { file: RECORDER_DEVICE, call: "requestNotificationPermissionsAsync(" }],
+  ["android.permission.FOREGROUND_SERVICE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
+  ["android.permission.FOREGROUND_SERVICE_MICROPHONE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
   ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
@@ -217,12 +246,7 @@ export const ANDROID_TEMPLATE_PERMISSIONS = new Map([
  * Permissions the app manifest strips with `tools:node="remove"`, each with the
  * reason nothing in the app needs it.
  */
-export const ANDROID_REMOVED_PERMISSIONS = new Map([
-  [
-    "android.permission.RECORD_AUDIO",
-    "expo-image-picker's `microphonePermission: false`. Nothing records audio, and expo-camera's `recordAudioAndroid: false` keeps it from adding the permission. A slice that adds a microphone surface removes this entry and both declines",
-  ],
-]);
+export const ANDROID_REMOVED_PERMISSIONS = new Map();
 
 /**
  * Required-reason API symbols per privacy-manifest category, from Apple's

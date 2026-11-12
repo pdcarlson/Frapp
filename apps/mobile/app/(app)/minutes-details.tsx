@@ -7,6 +7,7 @@ import {
   useAiSuggestions,
   useMeeting,
   useMeetingDraft,
+  useMeetingRecording,
   useMemberDisplayNames,
   usePostMeeting,
   type MeetingMinutes,
@@ -30,6 +31,8 @@ import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { MinutesBody } from "@/components/minutes/minutes-body";
 import { NotesDraftSheet } from "@/components/minutes/notes-draft-sheet";
+import { RecordingRow } from "@/components/minutes/recording-row";
+import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -60,6 +63,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * by hand is on the web, and the page says so in one line, because the web's
  * editor (decisions with vote counts, action items with owners and due days)
  * is a form built for a keyboard and has no phone twin yet.
+ *
+ * **And records the meeting here** (§ Recording in the app): above Draft
+ * minutes, where the server offers transcription, `RecordingRow` is the
+ * recorder for this meeting. The transcript becomes the notes the draft is
+ * written from.
  *
  * Posting asks first, as web does: it tells every invited member once.
  */
@@ -150,6 +158,16 @@ function LoadedMinutes({
   // moves under a thumb and the line below never says "web" and then changes.
   const draftLoading = finishing && notesOffered && draftQuery.isPending;
 
+  // The recorder is offered with drafting, which is what a transcript is for,
+  // and only where the server can transcribe.
+  const recordingQuery = useMeetingRecording(meeting.id, {
+    enabled: finishing && notesOffered,
+  });
+  const recordingState =
+    (finishing && notesOffered ? recordingQuery.data : null) ?? null;
+  const recorderOffered = recordingState?.available === true;
+  const { ensureConsent, consentSheet } = useAiConsentGate();
+
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
   const suggestions = useAiSuggestions({
@@ -170,6 +188,7 @@ function LoadedMinutes({
   const refresh = useRefetchAll([
     { refetch: meetingRefresh },
     draftQuery,
+    recordingQuery,
     suggestions,
   ]);
 
@@ -250,6 +269,15 @@ function LoadedMinutes({
 
         {finishing ? (
           <View style={styles.actions}>
+            {recorderOffered && recordingState ? (
+              <RecordingRow
+                meetingId={meeting.id}
+                eventName={meeting.event_name}
+                server={recordingState}
+                ensureConsent={ensureConsent}
+                onOpenNotes={() => notesRef.current?.present()}
+              />
+            ) : null}
             {draftState || draftLoading ? (
               <OnboardingSecondaryButton
                 fill
@@ -290,10 +318,12 @@ function LoadedMinutes({
           eventStart={meeting.event_start_time}
           state={draftState}
           hasContent={!empty}
+          recording={recorderOffered ? recordingState : null}
           getVersion={async () => (await refetch())?.updated_at ?? null}
           onSettled={() => void refetch()}
         />
       ) : null}
+      {consentSheet}
     </>
   );
 }

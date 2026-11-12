@@ -27,6 +27,10 @@ const state = vi.hoisted(() => ({
   suggestionsEnabled: undefined as boolean | undefined,
   post: vi.fn(),
   notesSheet: 0,
+  recording: null as Record<string, unknown> | null,
+  recordingEnabled: undefined as boolean | undefined,
+  recordingRow: null as Record<string, unknown> | null,
+  notesProps: null as Record<string, unknown> | null,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -55,6 +59,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       refetch: vi.fn(),
     };
   },
+  useMeetingRecording: (_id: string, options: { enabled: boolean }) => {
+    state.recordingEnabled = options.enabled;
+    return {
+      data: options.enabled ? (state.recording ?? undefined) : undefined,
+      refetch: vi.fn(),
+    };
+  },
   usePostMeeting: () => ({ mutateAsync: state.post, isPending: false }),
   useMemberDisplayNames: () => ({ nameFor: () => null }),
 }));
@@ -79,12 +90,27 @@ vi.mock("@/components/minutes/minutes-body", () => ({
 vi.mock("@/components/minutes/notes-draft-sheet", async () => {
   const { forwardRef } = await import("react");
   return {
-    NotesDraftSheet: forwardRef(function NotesDraftSheet() {
+    NotesDraftSheet: forwardRef(function NotesDraftSheet(
+      props: Record<string, unknown>,
+    ) {
       state.notesSheet += 1;
+      state.notesProps = props;
       return null;
     }),
   };
 });
+vi.mock("@/components/minutes/recording-row", () => ({
+  RecordingRow: (props: Record<string, unknown>) => {
+    state.recordingRow = props;
+    return React.createElement("RecordingRow");
+  },
+}));
+vi.mock("@/components/ai/ai-consent-sheet", () => ({
+  useAiConsentGate: () => ({
+    ensureConsent: vi.fn(),
+    consentSheet: null,
+  }),
+}));
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/minutes/meetings-on", () => ({ confirmAlert: confirm }));
 const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
@@ -145,11 +171,61 @@ beforeEach(() => {
   state.draft = { status: "none" };
   state.suggestions = [];
   state.notesSheet = 0;
+  state.recording = null;
+  state.recordingRow = null;
+  state.notesProps = null;
   state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
   state.post.mockResolvedValue({});
   confirm.mockResolvedValue(true);
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ id: "m1" });
+});
+
+describe("Recording on the minutes screen", () => {
+  const available = {
+    status: "none",
+    available: true,
+    blocked: null,
+    max_seconds: 7200,
+  };
+
+  it("offers the recorder to a draft's editor where the server can transcribe", () => {
+    state.recording = available;
+    render();
+    expect(state.recordingEnabled).toBe(true);
+    expect(state.recordingRow).toMatchObject({
+      meetingId: "m1",
+      eventName: "Chapter meeting",
+      server: available,
+    });
+    // And the notes sheet is handed the same record, for its transcript.
+    expect(state.notesProps).toMatchObject({ recording: available });
+  });
+
+  it("offers none where transcription isn't set up, and hands the notes none", () => {
+    state.recording = { ...available, available: false };
+    render();
+    expect(state.recordingRow).toBeNull();
+    expect(state.notesProps).toMatchObject({ recording: null });
+  });
+
+  it("never asks about a recording for a member, for posted minutes, or with drafting off", () => {
+    state.recording = available;
+    state.meeting = meeting({ can_edit: false });
+    render();
+    expect(state.recordingEnabled).toBe(false);
+    expect(state.recordingRow).toBeNull();
+
+    state.meeting = meeting({ status: "posted", posted_at: "2026-11-10T02:00:00Z" });
+    render();
+    expect(state.recordingEnabled).toBe(false);
+
+    state.meeting = meeting();
+    state.surfaces = { available: true, meetingNotes: false };
+    render();
+    expect(state.recordingEnabled).toBe(false);
+    expect(state.recordingRow).toBeNull();
+  });
 });
 
 describe("Minutes on the phone", () => {

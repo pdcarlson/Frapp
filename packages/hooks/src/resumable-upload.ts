@@ -6,7 +6,11 @@
  * how much it has and carry on from there.
  *
  * Used for a meeting's recording (#712), where a 100 MB file on chapter-house
- * wifi must survive a blip without starting over.
+ * wifi must survive a blip without starting over. The web sends a `Blob`
+ * (`blobSource`); the phone reads the file it recorded a piece at a time, so
+ * the thing uploaded is a `ResumableSource`, not a `Blob`. Nothing here
+ * needs a browser: no `btoa`, `DOMException` or `Response` is constructed,
+ * because React Native's runtime doesn't promise them.
  */
 
 /** Supabase Storage takes every piece but the last at exactly this size. */
@@ -38,9 +42,29 @@ export class ResumableUploadError extends Error {
   }
 }
 
+/** What is uploaded: its size, and any stretch of its bytes on request. */
+export interface ResumableSource {
+  size: number;
+  /** Bytes `from` (inclusive) to `to` (exclusive), as a request body. */
+  read: (from: number, to: number) => BodyInit | Promise<BodyInit>;
+}
+
+/** A browser `File` or `Blob` as a source. */
+export function blobSource(blob: Blob): ResumableSource {
+  return { size: blob.size, read: (from, to) => blob.slice(from, to) };
+}
+
 export interface ResumableUploadOptions {
   /** The project's Supabase URL. */
   supabaseUrl: string;
+  /**
+   * An upload begun earlier for this same target (`onUploadUrl` gave it):
+   * carry on from what Storage already holds instead of starting over. When
+   * Storage no longer knows it, a new upload is created.
+   */
+  resumeUrl?: string | null;
+  /** Storage's address for this upload, once it exists. Keep it to resume. */
+  onUploadUrl?: (uploadUrl: string) => void;
   /** Bytes the server has, after each piece. */
   onProgress?: (sentBytes: number, totalBytes: number) => void;
   signal?: AbortSignal;
@@ -51,8 +75,35 @@ export interface ResumableUploadOptions {
 
 const TUS_VERSION = "1.0.0";
 
+const BASE64 =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Base64 of a string's UTF-8 bytes, without leaning on `btoa`. */
+export function base64Utf8(value: string): string {
+  const bytes: number[] = [];
+  for (const char of encodeURIComponent(value).match(/%[0-9A-F]{2}|[^%]/g) ?? []) {
+    bytes.push(char.length === 3 ? parseInt(char.slice(1), 16) : char.charCodeAt(0));
+  }
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const [a, b, c] = [bytes[i]!, bytes[i + 1], bytes[i + 2]];
+    out += BASE64[a >> 2]!;
+    out += BASE64[((a & 3) << 4) | ((b ?? 0) >> 4)]!;
+    out += b === undefined ? "=" : BASE64[((b & 15) << 2) | ((c ?? 0) >> 6)]!;
+    out += c === undefined ? "=" : BASE64[c & 63]!;
+  }
+  return out;
+}
+
+/** What a stopped upload rejects with, shaped like the platform's own. */
+function abortError(): Error {
+  const error = new Error("Upload stopped");
+  error.name = "AbortError";
+  return error;
+}
+
 function metadata(target: ResumableUploadTarget): string {
-  const encode = (value: string) => btoa(unescape(encodeURIComponent(value)));
+  const encode = base64Utf8;
   return [
     `bucketName ${encode(target.bucket)}`,
     `objectName ${encode(target.path)}`,
@@ -71,7 +122,7 @@ function refusal(status: number): ResumableUploadError {
  * caller stopped it.
  */
 export async function uploadResumable(
-  file: Blob,
+  file: ResumableSource,
   target: ResumableUploadTarget,
   options: ResumableUploadOptions,
 ): Promise<void> {
@@ -84,9 +135,7 @@ export async function uploadResumable(
   const base = { "Tus-Resumable": TUS_VERSION, "x-signature": target.token };
   const stopped = () => {
     if (signal?.aborted) {
-      throw signal.reason instanceof Error
-        ? signal.reason
-        : new DOMException("Upload stopped", "AbortError");
+      throw signal.reason instanceof Error ? signal.reason : abortError();
     }
   };
 
@@ -108,54 +157,80 @@ export async function uploadResumable(
     }
   }
 
-  const created = await withRetries(() =>
-    send(endpoint, {
-      method: "POST",
-      headers: {
-        ...base,
-        "Upload-Length": String(file.size),
-        "Upload-Metadata": metadata(target),
-      },
-      signal,
-    }),
-  );
-  const location = created.headers.get("Location");
-  if (created.status !== 201 || !location) throw refusal(created.status);
-  const uploadUrl = new URL(location, endpoint).toString();
+  /** How much Storage has of the upload at `url`, or null when it has none. */
+  async function offsetAt(url: string): Promise<number | null> {
+    const head = await withRetries(() =>
+      send(url, { method: "HEAD", headers: base, signal }),
+    );
+    const offset = Number(head.headers.get("Upload-Offset"));
+    return head.ok && Number.isFinite(offset) ? offset : null;
+  }
+
+  let uploadUrl: string | null = null;
+  let offset = 0;
+  if (options.resumeUrl) {
+    // Storage forgets an upload nobody finished; then this one starts over.
+    const held = await offsetAt(options.resumeUrl);
+    if (held !== null) {
+      uploadUrl = options.resumeUrl;
+      offset = held;
+    }
+  }
+  if (!uploadUrl) {
+    const created = await withRetries(() =>
+      send(endpoint, {
+        method: "POST",
+        headers: {
+          ...base,
+          "Upload-Length": String(file.size),
+          "Upload-Metadata": metadata(target),
+        },
+        signal,
+      }),
+    );
+    const location = created.headers.get("Location");
+    if (created.status !== 201 || !location) throw refusal(created.status);
+    uploadUrl = new URL(location, endpoint).toString();
+  }
+  const url = uploadUrl;
+  options.onUploadUrl?.(url);
 
   /** How much Storage has, by its own count. */
   async function serverOffset(): Promise<number> {
-    const head = await withRetries(() =>
-      send(uploadUrl, { method: "HEAD", headers: base, signal }),
-    );
-    const offset = Number(head.headers.get("Upload-Offset"));
-    if (!head.ok || !Number.isFinite(offset)) throw refusal(head.status);
-    return offset;
+    const held = await offsetAt(url);
+    if (held === null) throw new ResumableUploadError("rejected");
+    return held;
   }
 
-  let offset = 0;
-  options.onProgress?.(0, file.size);
+  options.onProgress?.(Math.min(offset, file.size), file.size);
   while (offset < file.size) {
     const from = offset;
     let resync = false;
+    /** Set when a retry finds Storage already holds everything. */
+    let complete = false;
     const response = await withRetries(async () => {
       // After a failed piece the server may hold part of it.
       const at = resync ? await serverOffset() : from;
       resync = true;
       offset = at;
-      if (at >= file.size) return new Response(null, { status: 204 });
-      return send(uploadUrl, {
+      if (at >= file.size) {
+        complete = true;
+        return { status: 204 } as Response;
+      }
+      return send(url, {
         method: "PATCH",
         headers: {
           ...base,
           "Upload-Offset": String(at),
           "Content-Type": "application/offset+octet-stream",
         },
-        body: file.slice(at, at + RESUMABLE_CHUNK_BYTES),
+        body: await file.read(at, Math.min(file.size, at + RESUMABLE_CHUNK_BYTES)),
         signal,
       });
     });
-    if (response.status === 409) {
+    if (complete) {
+      offset = file.size;
+    } else if (response.status === 409) {
       // The server's count and ours disagree: take the server's.
       offset = await serverOffset();
     } else if (response.status !== 204) {
@@ -169,43 +244,4 @@ export async function uploadResumable(
     }
     options.onProgress?.(Math.min(offset, file.size), file.size);
   }
-}
-
-/**
- * How long an audio file is, in seconds, as this browser reads it, or null
- * when it can't (a format the browser doesn't play). Nothing is uploaded or
- * played: only the file's header is read.
- */
-export function readAudioDuration(
-  file: Blob,
-  timeoutMs = 15_000,
-): Promise<number | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const audio = document.createElement("audio");
-    let done = false;
-    const finish = (seconds: number | null) => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timer);
-      audio.removeAttribute("src");
-      URL.revokeObjectURL(url);
-      resolve(seconds);
-    };
-    const timer = window.setTimeout(() => finish(null), timeoutMs);
-    const read = () => {
-      const { duration } = audio;
-      if (Number.isFinite(duration) && duration > 0) finish(duration);
-      else if (duration === Infinity) {
-        // A recording with no length in its header: seeking past the end
-        // makes the browser work it out, and `durationchange` fires again.
-        audio.currentTime = 1e9;
-      }
-    };
-    audio.preload = "metadata";
-    audio.addEventListener("loadedmetadata", read);
-    audio.addEventListener("durationchange", read);
-    audio.addEventListener("error", () => finish(null));
-    audio.src = url;
-  });
 }

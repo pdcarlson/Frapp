@@ -11,6 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
 import { ClientPolicyGate } from "@/components/client-policy-gate";
 import { AppErrorScreen } from "@/components/route-error";
+import { RecordingBar } from "@/components/minutes/recording-bar";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
@@ -153,6 +154,7 @@ function RootLayout() {
                         (`components/network-banner.tsx`).
                       */}
                       <NetworkBanner />
+                      <RecordingBar />
                     </ClientPolicyGate>
                   </KeyboardProviderGuarded>
                 </AnalyticsProvider>

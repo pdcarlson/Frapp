@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   RESUMABLE_CHUNK_BYTES,
   ResumableUploadError,
+  base64Utf8,
+  blobSource,
   uploadResumable,
 } from "./resumable-upload";
 
@@ -40,6 +42,7 @@ function storage(fileSize: number) {
       });
     }
     if (method === "HEAD") {
+      if (String(url).endsWith("/gone")) return new Response(null, { status: 404 });
       return new Response(null, {
         status: 200,
         headers: { "Upload-Offset": String(have), "Upload-Length": String(fileSize) },
@@ -66,10 +69,19 @@ function storage(fileSize: number) {
       headers: { "Upload-Offset": String(have) },
     });
   });
-  return { send: send as unknown as typeof fetch, calls, fail, received: () => have };
+  return {
+    send: send as unknown as typeof fetch,
+    calls,
+    fail,
+    received: () => have,
+    /** As if an earlier try had already delivered this much. */
+    hold: (bytes: number) => {
+      have = bytes;
+    },
+  };
 }
 
-const file = (bytes: number) => new Blob([new Uint8Array(bytes)]);
+const file = (bytes: number) => blobSource(new Blob([new Uint8Array(bytes)]));
 
 describe("uploadResumable", () => {
   it("creates the upload with the signature, then sends it in six-megabyte pieces", async () => {
@@ -179,5 +191,83 @@ describe("uploadResumable", () => {
     });
     await expect(stopped).rejects.toMatchObject({ name: "AbortError" });
     expect(server.received()).toBe(RESUMABLE_CHUNK_BYTES);
+  });
+
+  it("carries on an upload begun earlier from what Storage already holds", async () => {
+    const size = RESUMABLE_CHUNK_BYTES * 2 + 10;
+    const server = storage(size);
+    server.hold(RESUMABLE_CHUNK_BYTES);
+    const progress: number[] = [];
+    const urls: string[] = [];
+    await uploadResumable(file(size), TARGET, {
+      ...OPTIONS,
+      fetch: server.send,
+      resumeUrl: "http://supabase.test/storage/v1/upload/resumable/sign/abc",
+      onUploadUrl: (url) => urls.push(url),
+      onProgress: (sent) => progress.push(sent),
+    });
+    expect(server.received()).toBe(size);
+    // No new upload was created: Storage was asked, then sent the rest.
+    expect(server.calls.map((call) => call.method)).toEqual([
+      "HEAD",
+      "PATCH",
+      "PATCH",
+    ]);
+    expect(progress[0]).toBe(RESUMABLE_CHUNK_BYTES);
+    expect(urls).toEqual([
+      "http://supabase.test/storage/v1/upload/resumable/sign/abc",
+    ]);
+  });
+
+  it("starts over when Storage no longer knows the earlier upload", async () => {
+    const server = storage(10);
+    const urls: string[] = [];
+    await uploadResumable(file(10), TARGET, {
+      ...OPTIONS,
+      fetch: server.send,
+      resumeUrl: "http://supabase.test/storage/v1/upload/resumable/sign/gone",
+      onUploadUrl: (url) => urls.push(url),
+    });
+    expect(server.received()).toBe(10);
+    expect(server.calls.map((call) => call.method)).toEqual([
+      "HEAD",
+      "POST",
+      "PATCH",
+    ]);
+    expect(urls).toEqual([
+      "http://supabase.test/storage/v1/upload/resumable/sign/abc",
+    ]);
+  });
+
+  it("reads each piece from the source only when it is about to be sent", async () => {
+    const size = RESUMABLE_CHUNK_BYTES + 5;
+    const server = storage(size);
+    const reads: [number, number][] = [];
+    await uploadResumable(
+      {
+        size,
+        read: async (from, to) => {
+          reads.push([from, to]);
+          return new Blob([new Uint8Array(to - from)]);
+        },
+      },
+      TARGET,
+      { ...OPTIONS, fetch: server.send },
+    );
+    expect(reads).toEqual([
+      [0, RESUMABLE_CHUNK_BYTES],
+      [RESUMABLE_CHUNK_BYTES, size],
+    ]);
+  });
+});
+
+describe("base64Utf8", () => {
+  it("matches the platform's base64 for plain and accented text", () => {
+    for (const value of ["", "a", "ab", "abc", "meeting-audio", "audio/aac"]) {
+      expect(base64Utf8(value)).toBe(btoa(value));
+    }
+    expect(base64Utf8("Réunion é")).toBe(
+      Buffer.from("Réunion é", "utf8").toString("base64"),
+    );
   });
 });

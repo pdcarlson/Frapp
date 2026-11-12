@@ -8,9 +8,11 @@ import {
 import { codeOf } from "@repo/api-sdk";
 import {
   useDiscardMeetingDraft,
+  useRemoveMeetingRecording,
   useRequestMeetingDraft,
   useUseMeetingDraft,
   type MeetingDraftState,
+  type MeetingRecordingState,
 } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
@@ -19,6 +21,7 @@ import {
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
+  MEETING_RECORDER_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
 } from "@repo/validation";
@@ -63,6 +66,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The phone has no section editor, so nothing typed elsewhere can be lost:
  * the version a draft builds on is read fresh from the server (`getVersion`)
  * each time one is asked for.
+ *
+ * A recording's transcript is notes too (§ Recording in the app). It goes
+ * into an empty box by itself, once per recording, whether the sheet is open
+ * or not, so the officer who taps "Open your notes" finds it there. Notes
+ * they already typed are theirs, so then it waits behind "Add the
+ * transcript". Clearing the notes removes the transcript with them, as web
+ * does.
  */
 export interface NotesDraftSheetProps {
   meetingId: string;
@@ -70,6 +80,8 @@ export interface NotesDraftSheetProps {
   state: MeetingDraftState;
   /** The minutes already hold something a draft would replace. */
   hasContent: boolean;
+  /** The server's record of this meeting's recording, where one is read. */
+  recording?: MeetingRecordingState | null;
   /** The minutes' current version, read fresh, or null when that failed. */
   getVersion: () => Promise<string | null>;
   /** A draft stopped being written, however it ended: read the minutes again. */
@@ -80,7 +92,15 @@ export const NotesDraftSheet = forwardRef<
   BottomSheetModal,
   NotesDraftSheetProps
 >(function NotesDraftSheet(
-  { meetingId, eventStart, state, hasContent, getVersion, onSettled },
+  {
+    meetingId,
+    eventStart,
+    state,
+    hasContent,
+    recording = null,
+    getVersion,
+    onSettled,
+  },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -93,6 +113,7 @@ export const NotesDraftSheet = forwardRef<
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
+  const removeRecording = useRemoveMeetingRecording();
   const { ensureConsent, consentSheet } = useAiConsentGate();
   const reporting = useAiReport();
   const [notes, setNotes] = useState(state.notes);
@@ -123,6 +144,33 @@ export const NotesDraftSheet = forwardRef<
     lastStatus.current = state.status;
     if (was === "drafting" || state.status === "applied") settled.current();
   }, [state.status]);
+
+  // Put in once per recording, so a box emptied by hand stays emptied.
+  const transcript =
+    recording?.status === "ready" ? (recording.transcript ?? null) : null;
+  const uploadId = recording?.upload_id ?? null;
+  const delivered = useRef<string | null>(null);
+  const notesNow = useRef(notes);
+  useEffect(() => {
+    notesNow.current = notes;
+  });
+  useEffect(() => {
+    if (!transcript || delivered.current === uploadId) return;
+    delivered.current = uploadId;
+    if (notesNow.current.trim() === "") setNotes(transcript);
+  }, [transcript, uploadId]);
+  const transcriptWaiting =
+    transcript !== null && !notes.includes(transcript.slice(0, 200));
+
+  function handleAddTranscript() {
+    if (!transcript) return;
+    setNotes((current) =>
+      current.trim() === ""
+        ? transcript
+        : `${current.trimEnd()}\n\n${transcript}`,
+    );
+    if (problem) setProblem(null);
+  }
 
   async function handleDraft() {
     const text = notes.trim();
@@ -199,15 +247,20 @@ export const NotesDraftSheet = forwardRef<
   }
 
   async function handleClear() {
+    const hasRecording = recording !== null && recording.status !== "none";
     const yes = await confirmAlert({
       title: MEETING_NOTES_COPY.clearTitle,
-      body: MEETING_NOTES_COPY.clearBody,
+      body: hasRecording
+        ? MEETING_NOTES_COPY.clearBodyRecording
+        : MEETING_NOTES_COPY.clearBody,
       confirmLabel: MEETING_NOTES_COPY.clear,
       destructive: true,
     });
     if (!yes) return;
     try {
       if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
+      // A transcript is notes too: clearing them removes it and its recording.
+      if (hasRecording) await removeRecording.mutateAsync({ id: meetingId });
       setNotes("");
       setProblem(null);
     } catch (error) {
@@ -258,6 +311,7 @@ export const NotesDraftSheet = forwardRef<
   const reviewed = state.status === "applied" || state.status === "ready";
   const { gaps, left_out: leftOut } = state.review;
   const canClear = !drafting && (notes !== "" || state.status !== "none");
+  const clearing = discard.isPending || removeRecording.isPending;
   // A draft the AI wrote can be reported, like an Ask answer. Each draft is
   // its own thing to report.
   const reportTarget: AiReportTarget = {
@@ -356,11 +410,18 @@ export const NotesDraftSheet = forwardRef<
               onPress={() => void handleDraft()}
             />
           ) : null}
+          {transcriptWaiting && !drafting ? (
+            <OnboardingSecondaryButton
+              fill
+              label={MEETING_RECORDER_COPY.addTranscript}
+              onPress={handleAddTranscript}
+            />
+          ) : null}
           {canClear ? (
             <OnboardingSecondaryButton
               fill
               label={MEETING_NOTES_COPY.clear}
-              disabled={discard.isPending}
+              disabled={clearing}
               onPress={() => void handleClear()}
             />
           ) : null}
