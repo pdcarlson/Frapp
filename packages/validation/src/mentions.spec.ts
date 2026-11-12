@@ -331,6 +331,46 @@ describe("resolveMentions with roles", () => {
     expect(resolveMentions("@Member hi", roster, roles)).toEqual([]);
   });
 
+  describe("@here", () => {
+    const HERE: MentionRole = {
+      role_id: "role-member",
+      name: "here",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    const herbert = {
+      user_id: "55555555-5555-5555-5555-555555555555",
+      display_name: "Herebert",
+    };
+
+    it("reaches the online members its entry holds", () => {
+      expect(
+        resolveMentions("@here who's around", roster, [...roles, HERE]),
+      ).toEqual([BOB.user_id]);
+    });
+
+    it("never falls through to a member's prefix, even with no entry or nobody online", () => {
+      const withHerbert = [...roster, herbert];
+      expect(resolveMentions("@here", withHerbert, roles)).toEqual([]);
+      expect(resolveMentions("@here", withHerbert, [])).toEqual([]);
+      expect(
+        resolveMentions("@HERE", withHerbert, [
+          ...roles,
+          { ...HERE, member_ids: [] },
+        ]),
+      ).toEqual([]);
+    });
+
+    it("reaches nobody when the sender may not use it", () => {
+      expect(
+        resolveMentions("@here", roster, [
+          ...roles,
+          { ...HERE, mentionable: false },
+        ]),
+      ).toEqual([]);
+    });
+  });
+
   it("collapses a member named twice, once by role", () => {
     expect(resolveMentions("@Jane and @Officers", roster, roles)).toEqual([
       JANE.user_id,

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   isEveryoneRole,
   isEveryoneRoleName,
+  mentionRoleHint,
+  reservedMentionName,
   rolesAfterSave,
+  withHereMention,
   type EveryoneSaveRole,
 } from "./everyone-role";
 
@@ -42,6 +45,52 @@ describe("isEveryoneRoleName (#4191)", () => {
     expect(isEveryoneRoleName("Everyone (role)")).toBe(false);
     expect(isEveryoneRoleName("Everyone else")).toBe(false);
     expect(isEveryoneRoleName("Member")).toBe(false);
+  });
+});
+
+describe("reservedMentionName (@here)", () => {
+  it("names the chapter-wide mention a role name would read as", () => {
+    expect(reservedMentionName("Every One")).toBe("everyone");
+    expect(reservedMentionName(" HERE ")).toBe("here");
+    expect(reservedMentionName("he-re")).toBe("here");
+    expect(reservedMentionName("Here and now")).toBeNull();
+    expect(reservedMentionName("Officers")).toBeNull();
+  });
+});
+
+describe("withHereMention", () => {
+  const list = [
+    { role_id: "r1", name: "Officers", mentionable: true, color: "blue" },
+    { role_id: "r2", name: "everyone", mentionable: false, color: null },
+    { role_id: "r3", name: "Brothers", mentionable: true, color: null },
+  ];
+
+  it("puts @here right after @everyone, on its switch", () => {
+    const out = withHereMention(list);
+    expect(out.map((role) => role.name)).toEqual([
+      "Officers",
+      "everyone",
+      "here",
+      "Brothers",
+    ]);
+    expect(out[2]).toEqual({
+      role_id: "r2:here",
+      name: "here",
+      mentionable: false,
+      color: null,
+    });
+  });
+
+  it("adds nothing without @everyone", () => {
+    expect(withHereMention([list[0]!])).toEqual([list[0]]);
+  });
+});
+
+describe("mentionRoleHint", () => {
+  it("says who @everyone and @here reach, and Role otherwise", () => {
+    expect(mentionRoleHint("everyone")).toBe("Notifies the whole channel");
+    expect(mentionRoleHint("here")).toBe("Notifies who's online");
+    expect(mentionRoleHint("Officers")).toBe("Role");
   });
 });
 

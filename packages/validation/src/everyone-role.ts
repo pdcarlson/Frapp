@@ -23,6 +23,15 @@ export const EVERYONE_ROLE_NAME = "Everyone";
 export const EVERYONE_MENTION_NAME = "everyone";
 
 /**
+ * `@here`: the members of the channel who are online right now, as Slack and
+ * Discord have it (2026-11-12). Not a role: the API reads who is online off
+ * the chapter's presence when the message lands, and the Everyone role's
+ * switch says who may use it, as one Discord permission covers both
+ * (`spec/behavior/chat/README.md` § Role mentions).
+ */
+export const HERE_MENTION_NAME = "here";
+
+/**
  * Whether a role row is the chapter's Everyone role. Read defensively, since
  * `GET /v1/roles` declares no response schema.
  */
@@ -41,6 +50,62 @@ export function isEveryoneRole(role: unknown): boolean {
  */
 export function isEveryoneRoleName(name: string): boolean {
   return foldMentionName(name) === EVERYONE_MENTION_NAME;
+}
+
+/**
+ * The chapter-wide mention a role name would read as, `everyone` or `here`,
+ * or `null` when it reads as neither. The API refuses either name for a new
+ * or renamed role (the Everyone role keeps its own), since the token would
+ * stop reaching what it says.
+ */
+export function reservedMentionName(
+  name: string,
+): typeof EVERYONE_MENTION_NAME | typeof HERE_MENTION_NAME | null {
+  const folded = foldMentionName(name);
+  if (folded === EVERYONE_MENTION_NAME) return EVERYONE_MENTION_NAME;
+  if (folded === HERE_MENTION_NAME) return HERE_MENTION_NAME;
+  return null;
+}
+
+/** A row of `GET /v1/channels/mention-roles`, as far as {@link withHereMention} reads it. */
+export interface HereMentionSource {
+  role_id: string;
+  name: string;
+  mentionable: boolean;
+}
+
+/**
+ * The mention roles with `@here` added right after `@everyone`, for both
+ * pickers and the chip test. It follows `@everyone`'s `mentionable`, which is
+ * the Everyone role's switch, the rule the API applies when the message lands
+ * (`ChatMentionService`). The API's list leaves it out because `role_id` is a
+ * role's uuid and `@here` is not a role; its row here takes a client-only id.
+ * No `@everyone` row (the legacy gap with no Everyone role) adds none.
+ */
+export function withHereMention<R extends HereMentionSource>(
+  roles: readonly R[],
+): R[] {
+  const at = roles.findIndex((role) => role.name === EVERYONE_MENTION_NAME);
+  if (at === -1) return [...roles];
+  const everyone = roles[at]!;
+  const here: R = {
+    ...everyone,
+    role_id: `${everyone.role_id}:${HERE_MENTION_NAME}`,
+    name: HERE_MENTION_NAME,
+  };
+  return [...roles.slice(0, at + 1), here, ...roles.slice(at + 1)];
+}
+
+/**
+ * What a mention picker's role row says at its end: `@everyone` and `@here`
+ * say who they reach, as Slack's and Discord's pickers do, and any other role
+ * says "Role".
+ */
+export function mentionRoleHint(name: string): string {
+  const reserved = reservedMentionName(name);
+  if (reserved === EVERYONE_MENTION_NAME) return "Notifies the whole channel";
+  if (reserved === HERE_MENTION_NAME) return "Notifies who's online";
+  return "Role";
 }
 
 /** The seeded roles that rank below Everyone: making someone one of these

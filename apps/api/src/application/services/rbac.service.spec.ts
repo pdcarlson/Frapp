@@ -528,6 +528,18 @@ describe('RbacService', () => {
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a role named so it reads as @here', async () => {
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      await expect(
+        service.create('ch-1', ACTOR, { name: 'Here', permissions: [] }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'role.everyone_name',
+          message: '"Here" is what @here reads as. Pick another name.',
+        }),
+      });
+    });
+
     it('keeps its name and tier, and leaves the rest editable', async () => {
       mockRoleRepo.findById.mockResolvedValue(everyone);
       await expect(

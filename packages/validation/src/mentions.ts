@@ -450,6 +450,12 @@ export interface MentionRole {
   mentionable: boolean;
 }
 
+/** `@everyone` and `@here`, folded; `EVERYONE_MENTION_NAME` and
+ * `HERE_MENTION_NAME` in `everyone-role.ts`, which imports this module, so
+ * they are spelled here rather than imported. */
+const EVERYONE_FOLDED = "everyone";
+const HERE_FOLDED = "here";
+
 /**
  * The role `token` names, `null` when it names a role but resolves to nobody,
  * or `undefined` when it names no role and member matching should run.
@@ -459,19 +465,23 @@ export interface MentionRole {
  * A role named in full outranks a member's shorthand (first word, prefix), but
  * not a member's own exact name: when "Rush" is both a role and a member, the
  * token is ambiguous and, like every ambiguity here, reaches nobody.
+ * `@everyone` and `@here` are the exceptions below.
  */
-/** `@everyone`, folded; `EVERYONE_MENTION_NAME` in `everyone-role.ts`, which
- * imports this module, so it is spelled here rather than imported. */
-const EVERYONE_FOLDED = "everyone";
-
 function matchMentionRole(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
   token: string,
 ): MentionRole | null | undefined {
-  if (roles.length === 0) return undefined;
   const folded = fold(token);
   if (folded.length === 0) return undefined;
+  // `@here` is reserved (2026-11-12): it is the online members the caller's
+  // `here` entry holds, and it reaches nobody when there is no entry or no one
+  // is online. It never falls through to a member, or an empty room would page
+  // whoever's name starts with "here" past their mute.
+  if (folded === HERE_FOLDED) {
+    return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;
+  }
+  if (roles.length === 0) return undefined;
   // A role nobody holds is not a target: it would reach nobody, and letting
   // it claim the token would take the name from a member it collides with.
   const hits = roles.filter(

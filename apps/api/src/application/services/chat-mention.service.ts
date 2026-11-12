@@ -3,7 +3,9 @@ import {
   EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
+  HERE_MENTION_NAME,
   isEveryoneRole,
+  reservedMentionName,
   resolveMentions,
   sendMentionReading,
   type MentionRole,
@@ -18,6 +20,7 @@ import type { Role } from '#domain/entities/role.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import { RbacService } from './rbac.service';
+import { ChapterPresenceReader } from './chapter-presence-reader.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** A chapter role as the mention picker and the resolver see it. */
@@ -53,6 +56,7 @@ export class ChatMentionService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly rbac: RbacService,
+    private readonly presence: ChapterPresenceReader,
   ) {}
 
   /**
@@ -77,7 +81,7 @@ export class ChatMentionService {
     replyTo: ReplyTarget | null = null,
   ): Promise<string[]> {
     return withMention(
-      await this.resolveBody(chapterId, senderId, content),
+      await this.resolveBody(chapterId, senderId, content, 'read'),
       replyPingTarget(senderId, replyTo),
     );
   }
@@ -93,6 +97,10 @@ export class ChatMentionService {
    * `quotedAuthorId` is `undefined` when the quoted message could not be read.
    * Then every previous mention is kept: an edit cannot tell the ping apart,
    * and losing it to a read blip is worse than keeping a name the edit removed.
+   *
+   * `@here` is not re-read on an edit: it keeps the members the message
+   * already mentions, so an edit never pings someone who came online since,
+   * and one that adds `@here` pings nobody new, as on Discord.
    */
   async resolveForEdit(
     chapterId: string,
@@ -101,7 +109,12 @@ export class ChatMentionService {
     previousMentions: readonly string[],
     quotedAuthorId: string | null | undefined,
   ): Promise<string[]> {
-    const body = await this.resolveBody(chapterId, senderId, content);
+    const body = await this.resolveBody(
+      chapterId,
+      senderId,
+      content,
+      previousMentions,
+    );
     if (quotedAuthorId === undefined) {
       return previousMentions.reduce(withMention, body);
     }
@@ -113,10 +126,16 @@ export class ChatMentionService {
     );
   }
 
+  /**
+   * `here` says who `@here` may reach: `'read'` reads who is online now (a
+   * send), and a list is used as it is (an edit, which passes the message's
+   * previous mentions).
+   */
   private async resolveBody(
     chapterId: string,
     senderId: string,
     content: string,
+    here: 'read' | readonly string[],
   ): Promise<string[]> {
     // Parse before querying. `content.includes('@')` admits every email
     // address, every `@here`, and every `user@host` in a pasted log, all of
@@ -147,7 +166,17 @@ export class ChatMentionService {
       ]);
       if (candidates.length === 0) return [];
 
-      const views = mentionRoleViews(roles, candidates);
+      // Who is online is read only when the body says `@here`, the one token
+      // it decides: a join on the chapter's presence topic is the costliest
+      // read here, and an ordinary send must not wait on it.
+      const hereIds = !tokens.some(
+        (token) => foldMentionName(token) === HERE_MENTION_NAME,
+      )
+        ? []
+        : here === 'read'
+          ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
+          : here;
+      const views = mentionRoleViews(roles, candidates, hereIds);
       // The sender's permissions cost two more reads, so they are fetched only
       // when a token names a role that is switched off, the one case they decide.
       // Re-read as the resolver will (`sendMentionReading`), now that the
@@ -203,8 +232,12 @@ export class ChatMentionService {
       this.rbac.getEffectivePermissions(chapterId, userId),
     ]);
     const officer = canPingAnyRole(permissions);
+    // `@here` is left out: it is no role, and the clients add its row after
+    // `@everyone`'s (`withHereMention`), which is the switch it follows.
     return mentionRoleViews(roles, candidates)
-      .filter((view) => view.member_ids.length > 0)
+      .filter(
+        (view) => view.member_ids.length > 0 && view.name !== HERE_MENTION_NAME,
+      )
       .map((view) => withMentionable(view, officer));
   }
 }
@@ -261,12 +294,19 @@ export function canPingAnyRole(permissions: readonly string[]): boolean {
 
 /**
  * Every role of the chapter with its holders, in role order, and its own
- * switch. `mentionable` is left for the caller to set, since it depends on
- * who is sending.
+ * switch, then `@here`. `mentionable` is left for the caller to set, since it
+ * depends on who is sending.
+ *
+ * `@here` (2026-11-12) reaches `hereIds`, the members online now, narrowed to
+ * the roster. It follows the Everyone role's switch, as Discord's one
+ * permission covers `@everyone` and `@here`, and is officers-only where a
+ * chapter has no Everyone role. A role an older chapter named "Here" before
+ * the name was reserved is left out, so the token means one thing.
  */
 export function mentionRoleViews(
   roles: readonly Role[],
   members: readonly ChapterMemberIdentity[],
+  hereIds: readonly string[] = [],
 ): MentionRoleView[] {
   const holders = new Map<string, string[]>();
   for (const member of members) {
@@ -276,7 +316,12 @@ export function mentionRoleViews(
       else holders.set(roleId, [member.user_id]);
     }
   }
-  return [...roles]
+  const views: MentionRoleView[] = [...roles]
+    .filter(
+      (role) =>
+        isEveryoneRole(role) ||
+        reservedMentionName(role.name) !== HERE_MENTION_NAME,
+    )
     .sort((a, b) => a.display_order - b.display_order)
     .map((role) => {
       // The Everyone role is `@everyone` (#4191): it reaches every member of
@@ -297,6 +342,17 @@ export function mentionRoleViews(
         mentionable: false,
       };
     });
+  const everyone = roles.find(isEveryoneRole);
+  const onRoster = new Set(members.map((member) => member.user_id));
+  views.push({
+    role_id: everyone?.id ?? HERE_MENTION_NAME,
+    name: HERE_MENTION_NAME,
+    color: null,
+    member_ids: hereIds.filter((id) => onRoster.has(id)),
+    open_to_all: everyone ? everyone.mentionable !== false : false,
+    mentionable: false,
+  });
+  return views;
 }
 
 function withMentionable(
