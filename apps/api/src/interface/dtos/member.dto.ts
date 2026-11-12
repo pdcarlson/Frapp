@@ -1,7 +1,61 @@
-import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MEMBER_DISMISSAL_KEYS } from '@repo/validation';
+import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  MEMBER_DISMISSAL_KEYS,
+  DISPLAY_NAME_MAX_LENGTH,
+} from '@repo/validation';
+
+/**
+ * An officer's fix to another member's profile (#4367,
+ * `PATCH /v1/members/{id}/profile`): their name and graduation year only. The
+ * rest of a profile is the member's own (`spec/behavior/members.md`
+ * § Profiles).
+ */
+export class CorrectMemberProfileDto {
+  @ApiPropertyOptional({
+    description:
+      "The member's name as the chapter knows them. Trimmed; it may not be blank.",
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach a NOT NULL column as a 500: only an absent name is skipped.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty({ message: 'Enter a name.' })
+  @MaxLength(DISPLAY_NAME_MAX_LENGTH)
+  display_name?: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: "The member's graduation year, or null to clear it.",
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(GRADUATION_YEAR_MIN)
+  @Max(GRADUATION_YEAR_MAX)
+  graduation_year?: number | null;
+}
 
 export class UpdateMemberRolesDto {
   @ApiProperty({ type: [String] })

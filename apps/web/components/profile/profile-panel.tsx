@@ -10,7 +10,10 @@ import {
 import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
+  isPhoneNumber,
   MAJOR_MAX_LENGTH,
+  PHONE_INVALID_MESSAGE,
+  PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   showsAfterGraduation,
@@ -39,11 +42,12 @@ type CurrentUser = {
   major?: string | null;
   current_city?: string | null;
   current_company?: string | null;
+  phone?: string | null;
 };
 
 /**
- * `/profile`: who you are in the directory. Name, photo, major, year, bio and
- * the after-graduation fields, and nothing else: quiet hours, chapter alerts,
+ * `/profile`: who you are in the directory. Name, photo, phone, major, year,
+ * bio and the after-graduation fields, and nothing else: quiet hours, chapter alerts,
  * chat density, blocked members, Discord history and the account controls
  * moved to the personal Settings page (`/preferences`,
  * `components/personal-settings/`, #3856).
@@ -58,6 +62,9 @@ export function ProfilePanel() {
   const updateUser = useUpdateUser();
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
+  // Set on a submit the phone refused, cleared when the member edits it
+  // (validate on submit, not per keystroke: components.md § Text input).
+  const [phoneError, setPhoneError] = useState(false);
 
   // The server payload the draft was last seeded from, so a re-seed can tell a
   // field the member edited from one they left alone.
@@ -135,9 +142,16 @@ export function ProfilePanel() {
 
   async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const phone = profileDraft.phone?.trim() ?? "";
+    if (phone.length > 0 && !isPhoneNumber(phone)) {
+      setPhoneError(true);
+      return;
+    }
     try {
       await updateUser.mutateAsync({
         display_name: profileDraft.display_name ?? undefined,
+        // Blank clears it; the API trims and stores null.
+        phone: profileDraft.phone === undefined ? undefined : phone,
         bio: profileDraft.bio ?? undefined,
         major: profileDraft.major ?? undefined,
         graduation_year:
@@ -255,6 +269,40 @@ export function ProfilePanel() {
                 }
                 placeholder={PROFILE_FIELD_COPY.displayName.placeholder}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="phone">{PROFILE_FIELD_COPY.phone.label}</Label>
+              <Input
+                id="phone"
+                type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                maxLength={PHONE_MAX_LENGTH}
+                value={profile.phone ?? ""}
+                aria-invalid={phoneError || undefined}
+                aria-describedby="phone-hint"
+                onChange={(event) => {
+                  setPhoneError(false);
+                  setProfileDraft((prev) => ({
+                    ...prev,
+                    phone: event.target.value,
+                  }));
+                }}
+                placeholder={PROFILE_FIELD_COPY.phone.placeholder}
+              />
+              <p
+                id="phone-hint"
+                role={phoneError ? "alert" : undefined}
+                className={
+                  phoneError
+                    ? "text-caption text-destructive-text"
+                    : "text-caption text-muted-foreground"
+                }
+              >
+                {phoneError
+                  ? PHONE_INVALID_MESSAGE
+                  : PROFILE_FIELD_COPY.phone.hint}
+              </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <div className="grid gap-2">

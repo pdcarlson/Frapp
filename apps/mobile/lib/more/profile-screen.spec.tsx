@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import { backRowView } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -137,31 +136,32 @@ describe("Profile back row (#3022)", () => {
   ])("draws ‹ More above the title when %s", (_state, user) => {
     currentUser = user;
     const tree = render();
-    // The loaded profile also draws Edit at the far end of the row (#3387).
-    expect(screenText(tree)).toMatch(/^More\n(Edit\n)?Profile/);
+    expect(screenText(tree)).toMatch(/^More\nProfile/);
     expectBackRow(tree, "More", "/more");
     tree.unmount();
   });
 });
 
 /**
- * #3387. Edit (a pencil since 2026-11-05) sits at the far end of the `‹ More` row, where the board draws
- * it, and opens the edit sheet. It appears only over a loaded profile: a sheet
- * opened while loading would prefill blanks over fields already set.
+ * #3711 (Paul, 2026-11-07: "The pencil button isn't obvious; drop it"). There
+ * is no Edit control: the name, and every Details row that is the member's to
+ * set, opens the edit sheet. Email is the account's, so it doesn't. None of it
+ * is drawn over a loading or failed profile: a sheet opened then would prefill
+ * blanks over fields already set.
  */
-describe("Profile Edit (#3387)", () => {
+describe("Profile tap to edit (#3711)", () => {
   afterEach(() => {
     currentUser = LOADED_USER;
   });
 
-  const editControls = (tree: ReactTestRenderer) =>
+  const nameButton = (tree: ReactTestRenderer) =>
     tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Edit profile",
+        node.props.accessibilityHint === "Edits your profile",
     );
 
-  it("draws Edit on the back row and presents the sheet", () => {
+  function renderWithSheet() {
     const present = vi.fn();
     let tree!: ReactTestRenderer;
     act(() => {
@@ -177,33 +177,54 @@ describe("Profile Edit (#3387)", () => {
         },
       );
     });
+    return { tree, present };
+  }
 
-    const [edit] = editControls(tree);
-    expect(edit).toBeDefined();
-    // Same row as `‹ More`: the back row's own view holds both.
-    expect(backRowView(tree).findAll((node) => node === edit)).toHaveLength(1);
-    // A pencil, not the word (components.md § Icon-only actions), in the
-    // back row's own colour: the chapter accent (the mock's), not gold.
+  it("draws no pencil on the back row", () => {
+    const { tree } = renderWithSheet();
+    expect(tree.root.findAllByType(PencilGlyph)).toHaveLength(0);
     expect(
-      edit!.findAllByType("Text" as unknown as React.ElementType),
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Edit profile",
+      ),
     ).toHaveLength(0);
-    expect(edit!.findByType(PencilGlyph).props.color).toBe("#DDB844");
+    tree.unmount();
+  });
 
-    act(() => {
-      edit!.props.onPress();
-    });
+  it("opens the sheet from the name", () => {
+    const { tree, present } = renderWithSheet();
+    const [name] = nameButton(tree);
+    act(() => name!.props.onPress());
     expect(present).toHaveBeenCalledTimes(1);
-    expect(screenText(tree)).not.toContain("web dashboard");
+    tree.unmount();
+  });
+
+  it("opens the sheet from each row the member sets, and not from Email", () => {
+    const { tree, present } = renderWithSheet();
+    const rows = tree.root.findAllByType(ListRow);
+    const tappable = rows
+      .filter((row) => typeof row.props.onPress === "function")
+      .map((row) => row.props.label);
+    expect(tappable).toEqual([
+      "Phone",
+      "Major",
+      "Graduation",
+      "City",
+      "Company",
+      "Bio",
+    ]);
+    act(() => rows.find((row) => row.props.label === "Phone")!.props.onPress());
+    expect(present).toHaveBeenCalledTimes(1);
     tree.unmount();
   });
 
   // TanStack keeps `data` through a failed background refetch; the screen,
   // and an Edit sheet open over it, stay rather than turning into the error.
-  it("keeps the profile and Edit when a background refetch fails", () => {
+  it("keeps the profile and its edit taps when a background refetch fails", () => {
     currentUser = { ...LOADED_USER, isError: true, refetch: vi.fn() };
     const tree = render();
 
-    expect(editControls(tree)).toHaveLength(1);
+    expect(nameButton(tree)).toHaveLength(1);
     expect(screenText(tree)).not.toContain("Couldn't load your profile");
     tree.unmount();
   });
@@ -214,11 +235,11 @@ describe("Profile Edit (#3387)", () => {
       "fails to load",
       { isPending: false, isError: true, data: undefined, refetch: vi.fn() },
     ],
-  ])("draws no Edit, and no sheet, while the profile %s", (_state, user) => {
+  ])("draws nothing to edit, and no sheet, while the profile %s", (_state, user) => {
     currentUser = user;
     const tree = render();
 
-    expect(editControls(tree)).toHaveLength(0);
+    expect(nameButton(tree)).toHaveLength(0);
     expect(
       tree.root.findAll(
         (node) => (node.type as unknown) === "BottomSheetModal",
@@ -250,10 +271,12 @@ describe("Profile stat cards and Details", () => {
     const rows = tree.root.findAllByType(ListRow);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
+      "Phone",
       "Major",
       "Graduation",
       "City",
       "Company",
+      "Bio",
     ]);
     for (const row of rows) expect(row.props.variant).toBe("detail");
     tree.unmount();
@@ -290,7 +313,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
     const tree = render();
 
-    expect(detailRows(tree).slice(2, 5)).toEqual([
+    expect(detailRows(tree).slice(3, 6)).toEqual([
       ["Graduation", "Not set"],
       ["Pledge class", "Alpha"],
       ["Fraternal order", "14"],
@@ -304,7 +327,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     vocabulary = { class: "Line", order: "line number" };
     const tree = render();
 
-    expect(detailRows(tree).slice(3, 5)).toEqual([
+    expect(detailRows(tree).slice(4, 6)).toEqual([
       ["Line", "Alpha"],
       ["line number", "14"],
     ]);
@@ -316,7 +339,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     pledgeClasses = undefined;
     const tree = render();
 
-    expect(detailRows(tree)[3]).toEqual(["Pledge class", "Loading"]);
+    expect(detailRows(tree)[4]).toEqual(["Pledge class", "Loading"]);
     tree.unmount();
   });
 
@@ -340,10 +363,12 @@ describe("Profile pledge class and order number (#3939)", () => {
 
     expect(detailRows(tree).map(([label]) => label)).toEqual([
       "Email",
+      "Phone",
       "Major",
       "Graduation",
       "City",
       "Company",
+      "Bio",
     ]);
     expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
     tree.unmount();

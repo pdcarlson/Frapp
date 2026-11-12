@@ -40,6 +40,28 @@ describe('UpdateUserDto', () => {
     },
   );
 
+  // #3711: the member's own phone, trimmed; blank clears it.
+  it('accepts a phone number as typed, trimmed', async () => {
+    await expect(
+      transform(UpdateUserDto, { phone: ' (518) 555-0142 ' }),
+    ).resolves.toEqual({ phone: '(518) 555-0142' });
+  });
+
+  it.each(['', '   ', null])('clears the phone for %j', async (phone) => {
+    await expect(transform(UpdateUserDto, { phone })).resolves.toEqual({
+      phone: null,
+    });
+  });
+
+  it.each(['call me', '555-01', '+1 (518) 555-0142 ext 12345678'])(
+    'refuses phone %j',
+    async (phone) => {
+      await expect(transform(UpdateUserDto, { phone })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    },
+  );
+
   it('accepts a major up to the shared limit, and refuses one past it', async () => {
     const major = 'M'.repeat(MAJOR_MAX_LENGTH);
     await expect(transform(UpdateUserDto, { major })).resolves.toEqual({

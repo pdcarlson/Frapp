@@ -39,8 +39,18 @@ export interface MemberDetail {
   /** Signed photo URL, or `null` for initials. */
   avatarUrl: string | null;
   displayName: string;
+  /**
+   * The stored name, trimmed, or `""` when none is set: what an officer's
+   * correction opens on, where {@link displayName} would put the "Member
+   * 1a2b3c4d" fallback label in the field.
+   */
+  storedName: string;
   initials: string;
   email: string | null;
+  /** The member's own phone (#3711), as they typed it, or `null`. */
+  phone: string | null;
+  /** Their graduation year, the value the officer's editor opens on. */
+  graduationYear: number | null;
   bio: string | null;
   /**
    * e.g. `"Economics · Acme Inc. · Chicago · '27"`, or `null` when nothing is
@@ -63,6 +73,11 @@ export interface MemberDetail {
    * ranks below them). `false` when the read doesn't say.
    */
   canRemove: boolean;
+  /**
+   * The API's `viewer_can_edit_profile` (#4367): whether this viewer may fix
+   * this member's name and graduation year. `false` when the read doesn't say.
+   */
+  canEditProfile: boolean;
 }
 
 export function selectMemberDetail(data: unknown): MemberDetail | null {
@@ -78,8 +93,11 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
     // same "no name set" case — matches `DirectoryRow`'s fallback.
     displayName: memberLabel(rawDisplayName, userId),
+    storedName: rawDisplayName?.trim() ?? "",
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
+    phone: str(data, "phone"),
+    graduationYear: num(data, "graduation_year"),
     bio: str(data, "bio"),
     meta: metaLine([
       str(data, "major"),
@@ -93,6 +111,7 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     pledgeClassId: str(data, "pledge_class_id"),
     orderNumber: num(data, "order_number"),
     canRemove: data.viewer_can_remove === true,
+    canEditProfile: data.viewer_can_edit_profile === true,
   };
 }
 

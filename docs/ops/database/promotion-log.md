@@ -39,6 +39,17 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-request-context-lookup-20261112151000) § Rollback request context lookup.
 
+## 2026-11-12: A member's phone number (#3711)
+
+### 20261112150000_users_phone.sql
+
+- **Purpose**: Adds `users.phone text` (nullable) with the check `users_phone_length` (`phone is null or char_length(phone) <= 32`, added `not valid` then validated; every existing row is null). Redefines `anonymize_user` as written in `20261111235900_chat_important_seen.sql` with one more line, `phone = null`, so account deletion erases it. The member sets it through `PATCH /v1/users/me`; profile reads return it. The rule is [`spec/behavior/members.md` § Profiles](../../../spec/behavior/members.md#profiles).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'phone';` returns `1`, `select convalidated from pg_constraint where conname = 'users_phone_length';` returns `true`, and `select prosrc like '%phone = null%' from pg_proc where proname = 'anonymize_user';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never names the column. The newer API against an unmigrated database fails every profile read and `PATCH /v1/users/me` that names it, so don't deploy the API first. Adding a nullable column is metadata-only, and validating the check scans `users` once (a few hundred rows). `if not exists`, `drop constraint if exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-a-members-phone-number-20261112150000) § Rollback a member's phone number.
+
+
 ## 2026-11-12: Deleting a chat message deletes its notifications (#4418)
 
 ### 20261112140000_notifications_chat_message_id.sql

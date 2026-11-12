@@ -69,3 +69,43 @@ export function courseTextTooLong(
   }
   return null;
 }
+
+/**
+ * A department code as matched (#3918): trimmed and upper-cased, so "math",
+ * " Math " and "MATH" are one department. New departments are stored this
+ * way; an existing one keeps the spelling it was filed under.
+ */
+export function departmentCodeKey(code: string): string {
+  return code.trim().toUpperCase();
+}
+
+/**
+ * The chapter department a typed code files under, by {@link departmentCodeKey}.
+ * The API's upload (`confirmUpload`) and the web upload sheet's course lookup
+ * both pick with this, so they agree. Where case variants already exist side by
+ * side (filed before #3918), the exact trimmed spelling wins, then the
+ * first code in code-unit order, then the lowest id: an order both ends can
+ * compute from the rows alone.
+ */
+export function findDepartmentByCode<T extends { id: string; code: string }>(
+  departments: readonly T[],
+  code: string,
+): T | undefined {
+  const key = departmentCodeKey(code);
+  if (!key) return undefined;
+  const typed = code.trim();
+  const rank = (d: T) => (d.code.trim() === typed ? 0 : 1);
+  let best: T | undefined;
+  for (const d of departments) {
+    if (departmentCodeKey(d.code) !== key) continue;
+    if (
+      !best ||
+      rank(d) < rank(best) ||
+      (rank(d) === rank(best) &&
+        (d.code < best.code || (d.code === best.code && d.id < best.id)))
+    ) {
+      best = d;
+    }
+  }
+  return best;
+}
