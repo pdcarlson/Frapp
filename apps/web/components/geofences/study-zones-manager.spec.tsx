@@ -138,39 +138,45 @@ const chapter = chapterSubscription(mockCurrentChapter);
 
 const createTrigger = () =>
   screen.getByRole("button", { name: /new study zone/i });
-const editButton = () => screen.getByRole("button", { name: /^edit /i });
-const disableButton = () => screen.getByRole("button", { name: /disable/i });
-const deleteButton = () => screen.getByRole("button", { name: /delete/i });
+/** The row itself, which opens the zone's editor. */
+const editButton = () => screen.getByRole("button", { name: /^main library/i });
+const menuButton = () =>
+  screen.getByRole("button", { name: "More for Main library" });
+/** Opens the row's ⋯ menu and finds an item on it. */
+async function menuItem(name: RegExp) {
+  await userEvent.click(menuButton());
+  return screen.getByRole("menuitem", { name });
+}
+const turnOffItem = () => menuItem(/turn off/i);
+const deleteItem = () => menuItem(/delete/i);
 
 describe("StudyZonesManager subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("leaves every write alone on an active chapter", () => {
+  it("leaves every write alone on an active chapter", async () => {
     chapter.active();
     render(<StudyZonesManager />);
 
     expect(createTrigger()).toBeEnabled();
     expect(editButton()).toBeEnabled();
-    expect(disableButton()).toBeEnabled();
-    expect(deleteButton()).toBeEnabled();
+    expect(await turnOffItem()).not.toHaveAttribute("data-disabled");
+    expect(screen.getByRole("menuitem", { name: /delete/i })).not.toHaveAttribute(
+      "data-disabled",
+    );
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  // components.md § Icon-only actions: each row action is its glyph alone,
-  // named for the zone it acts on, with the same words as its tooltip.
-  it("draws the row actions as icons named for the zone", () => {
+  // The row opens the zone, as a Settings row does; turning it off and
+  // deleting it are on its ⋯ menu, named for the zone.
+  it("opens the zone from its row and keeps the rest on a ⋯ menu", async () => {
     chapter.active();
     render(<StudyZonesManager />);
 
-    for (const [button, name] of [
-      [editButton(), "Edit Main library"],
-      [disableButton(), "Disable Main library"],
-      [deleteButton(), "Delete Main library"],
-    ] as const) {
-      expect(button).toHaveAccessibleName(name);
-      expect(button).toHaveAttribute("title", name);
-      expect(button.textContent).toBe("");
-    }
+    expect(menuButton()).toHaveAccessibleName("More for Main library");
+    await userEvent.click(menuButton());
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Edit", "Turn off", "Delete"]);
   });
 
   it("disables the create trigger and names blocker plus recovery when incomplete", async () => {
@@ -193,7 +199,7 @@ describe("StudyZonesManager subscription gating", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("gates the row writes too, not just the create trigger", () => {
+  it("gates the row writes too, not just the create trigger", async () => {
     // PATCH and DELETE /v1/geofences/:id sit behind the same guard, so leaving
     // these live would have the page claim writes are blocked while offering
     // three of them.
@@ -201,17 +207,20 @@ describe("StudyZonesManager subscription gating", () => {
     render(<StudyZonesManager />);
 
     expect(editButton()).toBeDisabled();
-    expect(disableButton()).toBeDisabled();
-    expect(deleteButton()).toBeDisabled();
+    expect(await turnOffItem()).toHaveAttribute("data-disabled");
+    expect(screen.getByRole("menuitem", { name: /delete/i })).toHaveAttribute(
+      "data-disabled",
+    );
   });
 
-  it("ties every disabled control to the one explanation", () => {
+  it("ties every disabled control to the one explanation", async () => {
     chapter.incomplete();
     render(<StudyZonesManager />);
 
     const describedBy = createTrigger().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
-    expect(deleteButton()).toHaveAttribute("aria-describedby", describedBy);
+    expect(editButton()).toHaveAttribute("aria-describedby", describedBy);
+    expect(await deleteItem()).toHaveAttribute("aria-describedby", describedBy);
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       /subscription is not active/i,
     );
@@ -251,7 +260,7 @@ describe("StudyZonesManager subscription gating", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("fails open when the chapter record cannot be read", () => {
+  it("fails open when the chapter record cannot be read", async () => {
     // A failed chapter fetch must not lock a paying chapter out of its study
     // zones; the server guard is still the enforcement.
     chapter.unreadable();
@@ -259,7 +268,7 @@ describe("StudyZonesManager subscription gating", () => {
 
     expect(createTrigger()).toBeEnabled();
     expect(editButton()).toBeEnabled();
-    expect(deleteButton()).toBeEnabled();
+    expect(await deleteItem()).not.toHaveAttribute("data-disabled");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -283,7 +292,7 @@ describe("StudyZonesManager subscription gating", () => {
     chapter.active();
     render(<StudyZonesManager />);
 
-    await userEvent.click(disableButton());
+    await userEvent.click(await turnOffItem());
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
 
     await userEvent.click(editButton());
@@ -307,11 +316,10 @@ describe("StudyZonesManager layout", () => {
     ).getAllByRole("listitem");
     expect(rows).toHaveLength(1);
     expect(
-      within(rows[0]!).getByText(
-        "Outline, 3 corners · 1 pt every 30 min · min 15 min session · 5 min pause grace",
-      ),
+      within(rows[0]!).getByText("1 point every 30 min · 15 min minimum"),
     ).toBeInTheDocument();
-    expect(within(rows[0]!).getByText("Active")).toBeInTheDocument();
+    // Only the exception is marked: an active zone carries no badge.
+    expect(within(rows[0]!).queryByText("Active")).toBeNull();
   });
 
   it("keeps coordinates off the row and out of the editor", async () => {
