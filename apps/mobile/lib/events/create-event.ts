@@ -1,17 +1,18 @@
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
-  RECURRENCE_REPEAT_LABELS,
   attendanceInvitesNobody,
   attendanceToWire,
   othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
   eventRequiresAnyone,
-  describeSeriesLength,
+  noRepeatDraft,
+  repeatRuleOf,
+  repeatSummary,
   withEveryone,
   type EventAttendanceDraft,
-  type RecurrenceRule,
+  type RepeatDraft,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 
@@ -78,8 +79,11 @@ export interface NewEventDraft {
   checkInOpensInput: string;
   /** Who's coming, by role (`spec/behavior/events.md` § Attendance by role). */
   attendance: EventAttendanceDraft;
-  /** `null` for a one-time event. */
-  recurrenceRule: RecurrenceRule | null;
+  /**
+   * The Repeat control (`@repo/validation` `repeat-draft.ts`): a preset, its
+   * options and how the series ends.
+   */
+  repeat: RepeatDraft;
   description: string;
   /** Whether "More options" is open: kept with the draft, so a reopen keeps it. */
   showMore: boolean;
@@ -99,7 +103,7 @@ export function emptyEventDraft(): NewEventDraft {
     // Optional for everyone, as `/event` creates it: a required event marks
     // everyone who misses it absent, so it is a choice, not a default.
     attendance: emptyAttendanceDraft(),
-    recurrenceRule: null,
+    repeat: noRepeatDraft(),
     description: "",
     showMore: false,
   };
@@ -214,7 +218,7 @@ export interface ValidatedNewEvent {
   required_role_ids?: string[];
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
-  recurrence_rule?: RecurrenceRule;
+  recurrence_rule?: string;
   check_in_opens_minutes?: number;
   event_type_id?: string;
 }
@@ -226,6 +230,8 @@ export interface NewEventErrors {
   points?: string;
   checkInOpens?: string;
   attendance?: string;
+  /** Under the Repeat options: why the series can't be saved as set. */
+  repeat?: string;
 }
 
 /**
@@ -291,6 +297,9 @@ export function validateNewEvent(
       "Only officers who manage events can make one required. Set it to optional.";
   }
 
+  const repeat = repeatRuleOf(draft.repeat, start);
+  if (!repeat.ok) errors.repeat = repeat.error;
+
   if (Object.keys(errors).length > 0 || opens === null) {
     return { ok: false, errors };
   }
@@ -319,7 +328,7 @@ export function validateNewEvent(
   if (wire.excluded_role_ids.length > 0) {
     body.excluded_role_ids = wire.excluded_role_ids;
   }
-  if (draft.recurrenceRule) body.recurrence_rule = draft.recurrenceRule;
+  if (repeat.ok && repeat.rule) body.recurrence_rule = repeat.rule;
   // Sent only when one is picked, so a plain event still creates against an
   // API that predates types.
   if (draft.eventTypeId) body.event_type_id = draft.eventTypeId;
@@ -332,17 +341,6 @@ export function validateNewEvent(
 }
 
 /**
- * The line under the Repeat choices: how long the series runs, since it isn't
- * open-ended. `null` for a one-time event.
- */
-export function repeatCaption(
-  start: Date,
-  rule: RecurrenceRule | null,
-): string | null {
-  return rule ? describeSeriesLength(start, rule) : null;
-}
-
-/**
  * What "More options" holds, said in one line while it is closed, so the
  * officer can see what the event will do without opening it:
  * "10 pts · Optional for everyone · Doesn't repeat". A check-in lead other
@@ -352,9 +350,10 @@ export function repeatCaption(
 export function moreOptionsSummary(
   draft: Pick<
     NewEventDraft,
-    "pointsInput" | "attendance" | "recurrenceRule" | "checkInOpensInput"
+    "pointsInput" | "attendance" | "repeat" | "checkInOpensInput"
   >,
   roleName: (roleId: string) => string | undefined,
+  start: Date,
   /** False hides points, for a member who can't attach them (#3709). */
   setsRequirements = true,
 ): string {
@@ -366,9 +365,7 @@ export function moreOptionsSummary(
       : points.kind === "omit"
         ? "0 pts"
         : "Points need a fix";
-  const repeat = draft.recurrenceRule
-    ? RECURRENCE_REPEAT_LABELS[draft.recurrenceRule]
-    : "Doesn't repeat";
+  const repeat = repeatSummary(draft.repeat, start);
   const opens = parseCheckInOpens(draft.checkInOpensInput);
   const opensText =
     opens === null

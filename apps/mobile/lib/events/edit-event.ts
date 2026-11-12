@@ -2,10 +2,10 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
-  isRecurrenceRule,
   isRepeatRule,
+  repeatDraftFromRule,
+  repeatRuleOf,
   type EventAttendanceWire,
-  type RecurrenceRule,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 import {
@@ -71,9 +71,10 @@ export interface EventEditTarget {
   /**
    * The series' rule: the event's own on a parent, the parent's on a
    * generated occurrence (whose own column is always empty). `null` for a
-   * one-time event.
+   * one-time event. A legacy token or a structured rule
+   * (`spec/behavior/events.md` § Recurring events).
    */
-  seriesRule: RecurrenceRule | null;
+  seriesRule: string | null;
   /**
    * The series parent, when the event is a generated occurrence and the
    * parent could be read. A series time change is sent to it.
@@ -98,11 +99,11 @@ export function isInSeries(event: EventDetail): boolean {
 export function seriesRuleOf(
   event: EventDetail,
   parent: Pick<EventDetail, "recurrence_rule"> | null,
-): RecurrenceRule | null {
+): string | null {
   const rule = event.parent_event_id
     ? parent?.recurrence_rule
     : event.recurrence_rule;
-  return isRecurrenceRule(rule) ? rule : null;
+  return isRepeatRule(rule) ? rule : null;
 }
 
 /** The stored event as the form's draft. */
@@ -118,7 +119,7 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
     pointsInput: String(event.point_value ?? 0),
     checkInOpensInput: String(event.check_in_opens_minutes),
     attendance: attendanceFromEvent(event.attendance),
-    recurrenceRule: seriesRule,
+    repeat: repeatDraftFromRule(seriesRule),
     description: event.description ?? "",
     showMore: false,
   };
@@ -138,7 +139,7 @@ export interface EventEditPatch {
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
   /** `null` ends the series. */
-  recurrence_rule?: RecurrenceRule | null;
+  recurrence_rule?: string | null;
   check_in_opens_minutes?: number;
   /** `null` clears the type. */
   event_type_id?: string | null;
@@ -202,7 +203,12 @@ export function validateEventEdit(
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
-  if (Object.keys(errors).length > 0 || opens === null) {
+  // A rule steps from the series' first meeting, which is the parent's start
+  // on a generated occurrence, and the event's own otherwise.
+  const repeat = repeatRuleOf(draft.repeat, repeatAnchor(target, start));
+  if (!repeat.ok) errors.repeat = repeat.error;
+
+  if (Object.keys(errors).length > 0 || opens === null || !repeat.ok) {
     return { ok: false, errors };
   }
 
@@ -233,10 +239,21 @@ export function validateEventEdit(
   if (draft.eventTypeId !== event.event_type_id) {
     patch.event_type_id = draft.eventTypeId;
   }
-  if (draft.recurrenceRule !== seriesRule) {
-    patch.recurrence_rule = draft.recurrenceRule;
-  }
+  // By value: an unchanged rule is not sent, because a changed one rebuilds
+  // the series. An untouched draft gives back the stored string itself.
+  if (repeat.rule !== seriesRule) patch.recurrence_rule = repeat.rule;
   return { ok: true, patch };
+}
+
+/**
+ * The first meeting of the series the Repeat control describes: the parent's
+ * on a generated occurrence (when it could be read), else the event's own
+ * start as the draft holds it.
+ */
+export function repeatAnchor(target: EventEditTarget, start: Date): Date {
+  return target.event.parent_event_id && target.parent
+    ? new Date(target.parent.start_time)
+    : start;
 }
 
 /** Whether the patch writes nothing. */

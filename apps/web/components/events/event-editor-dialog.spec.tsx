@@ -194,9 +194,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
         await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
       ).getByRole("radio", { name: "Required" }),
     );
-    // The app's Select (Radix), not a native one.
-    fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
     expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -206,9 +204,48 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       is_mandatory: false,
       others_invited: true,
       required_role_ids: ["r1"],
-      recurrence_rule: "WEEKLY",
+      recurrence_rule: expect.stringMatching(
+        /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2};COUNT=13;TZID=/,
+      ),
     });
     expect(body).not.toHaveProperty("optional_role_ids");
+  });
+
+  it("makes a twice-a-week series that ends on a date (#4488, #3662)", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
+    // The start's weekday is on; one more chip makes it twice a week.
+    const pressed = screen
+      .getAllByRole("button", { pressed: true })
+      .map((chip) => chip.getAttribute("aria-label"));
+    expect(pressed).toHaveLength(1);
+    const other = pressed[0] === "Monday" ? "Thursday" : "Monday";
+    fireEvent.click(screen.getByRole("button", { name: other }));
+    fireEvent.click(screen.getByRole("radio", { name: "On date" }));
+    // Offered the day the 13 meetings would have ended on.
+    expect(screen.getByText(/meetings, the last on/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2},[A-Z]{2};UNTIL=\d{8};TZID=/,
+    );
+  });
+
+  it("keeps Create from sending a series it can't make", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("radio", { name: "Monthly" }));
+    fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+      target: { value: "1" },
+    });
+    expect(screen.getByText("A series holds 2 to 120 meetings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
   });
 
   it("sends no role list on create when nothing differs", async () => {

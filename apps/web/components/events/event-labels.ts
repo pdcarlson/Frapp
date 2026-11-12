@@ -18,7 +18,10 @@ import {
  */
 
 /**
- * `WEEKLY` → `"Weekly"`, through the catalog the editor's picker already uses.
+ * `WEEKLY` → `"Weekly"`, through the legacy token catalog; a structured rule
+ * (#4488) says its pattern, `"Every Mon and Thu"`, as both editors and the
+ * phone do (`describeRepeatPattern`). `start` is the meeting the badge sits
+ * on, which supplies the day a by-date monthly rule meets on.
  * `null` for an event that does not repeat: the row and the sheet print no
  * cadence at all for a one-time event rather than a "One-time" badge, because
  * an absent value is absent (`spec/ui/web-dashboard/README.md` § Page grammar).
