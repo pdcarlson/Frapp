@@ -39,6 +39,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-request-context-lookup-20261112140000) § Rollback request context lookup.
 
+## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
+
+### 20261112131300_chat_search_filter_only.sql
+
+- **Purpose**: Adds `search_chat_messages_filtered(uuid[], uuid, timestamptz, timestamptz, text[], integer)` (security invoker, EXECUTE for `service_role` only), which `GET /v1/search` calls when `q` is empty beside a message filter. It takes each handed channel's newest matches through a `(channel_id, created_at desc)` index and merges them, instead of reading every message of the caller's channels and sorting. Adds two partial indexes that hold only their trait's rows: `idx_chat_messages_search_poll` (`kind = 'poll'`) and `idx_chat_messages_search_link` (`content ilike '%http%://%'`), both `where is_deleted = false and thread_root_id is null`, on `(channel_id, created_at desc, id desc)`. Changes no row. Measurements: [`spec/behavior/search.md` § Message filters](../../../spec/behavior/search.md#message-filters).
+- **Checks**: After `db push`, `select indexname from pg_indexes where indexname in ('idx_chat_messages_search_poll', 'idx_chat_messages_search_link');` returns 2 rows, `select has_function_privilege('authenticated', 'public.search_chat_messages_filtered(uuid[], uuid, timestamptz, timestamptz, text[], integer)', 'execute');` returns `false`, and the same for `service_role` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never calls it; the newer API against an unmigrated database fails every message search with a filter and no text as a whole-request 500 (a filter makes search messages-only, and a source that errors fails the request); searches with text are unaffected. Both indexes are built with a plain `create index`, which blocks writes to `chat_messages` (sends) for the build; production has about 44,000 rows and both indexes hold a small share of them, so expect well under a second. `create or replace` and `if not exists` make re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/chat-search-filter-only.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-search-with-a-filter-and-no-text-20261112131300) § Rollback chat search with a filter and no text.
+
 ## 2026-11-12: The thread card's latest-reply preview (#4297)
 
 ### 20261112121000_chat_thread_last_reply.sql

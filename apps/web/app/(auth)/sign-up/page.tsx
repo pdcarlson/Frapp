@@ -17,6 +17,7 @@ import {
 } from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/hooks/use-toast";
+import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 import {
@@ -103,6 +104,9 @@ function SignUpPageContent() {
       }
 
       if (isExistingAccountSignUp(data.user)) {
+        // GoTrue's stand-in for a taken address is a success, so the reporter
+        // is told the code it would have refused with.
+        reportAuthFailure({ flow: "sign_up", screen: "/sign-up", code: "user_already_exists" });
         toast({
           title: "You already have an account",
           description: EXISTING_ACCOUNT_COPY,
@@ -113,6 +117,7 @@ function SignUpPageContent() {
       setPassword("");
       setSent({ email, cooldown: RESEND_COOLDOWN_SECONDS });
     } catch (error) {
+      reportAuthFailure({ flow: "sign_up", screen: "/sign-up", error });
       // Refused inside GoTrue's minute: this address already has an
       // unconfirmed account whose email went out moments ago (a resubmit
       // after "Use a different email", a double tap). That email is the one
@@ -145,6 +150,7 @@ function SignUpPageContent() {
       );
       if (error) throw error;
     } catch (error) {
+      reportAuthFailure({ flow: "oauth_start", screen: "/sign-up", error });
       toast({
         title: "Unable to create account",
         description: describeOAuthKickoffError(error),

@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
 import { createRejectedSessionHandler, isSessionOver } from "./rejected-session";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
+
+const reportAuthFailure = vi.hoisted(() => vi.fn());
+vi.mock("./sentry/auth-failures", () => ({ reportAuthFailure }));
 
 function fakeSupabase(result: { data: { user: unknown }; error: unknown }) {
   let session: unknown = { access_token: "t" };
@@ -37,6 +40,8 @@ describe("isSessionOver", () => {
 });
 
 describe("createRejectedSessionHandler", () => {
+  beforeEach(() => reportAuthFailure.mockClear());
+
   it("signs out once for a burst of 401s when Auth agrees", async () => {
     const supabase = fakeSupabase({
       data: { user: null },
@@ -57,6 +62,12 @@ describe("createRejectedSessionHandler", () => {
 
     expect(signOut).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledTimes(1);
+    // Auth's reason is counted once, with the error it answered (#3832).
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "session_check",
+      error: { code: "user_not_found" },
+    });
   });
 
   it("leaves a session Auth still recognises", async () => {
@@ -71,6 +82,7 @@ describe("createRejectedSessionHandler", () => {
     await flush();
 
     expect(signOut).not.toHaveBeenCalled();
+    expect(reportAuthFailure).not.toHaveBeenCalled();
   });
 });
 

@@ -268,6 +268,23 @@ export interface Database {
         Returns: ChapterDirectoryEntry[];
       };
       /**
+       * `20261112131300` (#3965). Chat search with a filter and no text: each
+       * handed channel's newest matches through an index, merged, newest
+       * first. Reads only the channel ids it is handed (the caller decides
+       * access); `p_has` is `file | image | link | poll`; at most 100 rows.
+       */
+      search_chat_messages_filtered: {
+        Args: {
+          p_channel_ids: string[];
+          p_sender_id: string | null;
+          p_after: string | null;
+          p_before: string | null;
+          p_has: string[];
+          p_limit: number;
+        };
+        Returns: ChatMessage[];
+      };
+      /**
        * `20261106190000` (#585). Backwork search over title, course,
        * department, professor and tags, with trigram typo tolerance, ranked
        * word matches first. One chapter only; at most 50 rows.

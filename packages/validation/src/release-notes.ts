@@ -74,6 +74,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, a Backwork download now saves the file under its own name, and a Documents or Backwork file with brackets or an ampersand in its name keeps that name when saved.",
       "In Documents on the web, an older photo saved without its file type now opens in the viewer, the way the File type filter already sorts it.",
       "When someone sends several messages in a row and mentions you after you've been told about the first few, you now get a notification for that mention instead of missing it.",
+      "On your phone, you can now confirm a finished task or approve service hours straight from its Activity row, without opening it first.",
+      "On your phone, messages inside a thread now show their reactions, polls and other cards, and a long-press lets you react, edit or delete there.",
     ],
   },
   {

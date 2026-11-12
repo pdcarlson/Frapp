@@ -21,6 +21,7 @@ import {
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
+import { reportAuthFailure } from "./sentry/auth-failures";
 import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -120,6 +121,8 @@ function readAuthParams(url: string): {
   otpType: string | null;
   errorDescription: string | null;
   errorCode: string | null;
+  /** The bare `error` identifier (`access_denied`), kept apart from the sentence. */
+  error: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -146,6 +149,7 @@ function readAuthParams(url: string): {
     // sign in the provider's message into a space.
     errorDescription: read("error_description") ?? read("error"),
     errorCode: read("error_code"),
+    error: read("error"),
   };
 }
 
@@ -174,9 +178,23 @@ async function createSessionFromUrl(
     otpType,
     errorDescription,
     errorCode,
+    error: errorIdentifier,
   } = readAuthParams(url);
 
+  // A link or provider return that didn't become a session (#3832). Only the
+  // code is read, never the URL, which holds the code or token itself.
+  const reportCallback = (error: unknown, linkCode?: string) =>
+    reportAuthFailure({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error,
+      code: linkCode,
+    });
+
   if (errorDescription || errorCode) {
+    // `error_code` is GoTrue's, `error` the provider's identifier
+    // (`access_denied`); `error_description` is a sentence and never sent.
+    reportCallback(undefined, errorCode ?? errorIdentifier ?? undefined);
     return describeOAuthKickoffError({
       message: errorDescription ?? errorCode ?? undefined,
       code: errorCode ?? undefined,
@@ -190,24 +208,29 @@ async function createSessionFromUrl(
         access_token: accessToken,
         refresh_token: refreshToken,
       });
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
+        reportCallback(undefined, "verify_failed");
         return "That sign-in link could not be used. Request a new one.";
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) reportCallback(error);
       return error ? describeOAuthKickoffError(error) : null;
     }
     return null;
   } catch (error) {
+    reportCallback(error);
     return error instanceof Error
       ? describeOAuthKickoffError(error)
       : "That sign-in link could not be used. Request a new one.";
@@ -504,7 +527,10 @@ export function AuthSessionProvider({
         email,
         password,
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "password_sign_in", screen: "/sign-in", error });
+        throw error;
+      }
     },
     [supabase],
   );
@@ -525,23 +551,39 @@ export function AuthSessionProvider({
         email,
         options: { emailRedirectTo },
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
+        throw error;
+      }
     },
     [supabase],
   );
 
   const signInWithOAuthProvider = useCallback(
     async (provider: OAuthProvider) => {
-      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      // Each failure below is reported once, here, as `oauth_start` with the
+      // error it came from (#3832). A return that reached the app but didn't
+      // become a session was already reported by `createSessionFromUrl` as
+      // `auth_callback`, so its rethrow is not reported again. A cancel is
+      // not a failure.
+      const startFailed = (error: unknown): unknown => {
+        reportAuthFailure({ flow: "oauth_start", screen: "/sign-in", error });
+        return error;
+      };
+      if (!supabase) throw startFailed(new Error(NOT_CONFIGURED_MESSAGE));
       setCallbackError(null);
 
-      if (provider === "apple") {
-        const native = await signInWithNativeApple(supabase);
-        if (native === "completed" || native === "cancelled") return;
-      }
-      if (provider === "google") {
-        const native = await signInWithNativeGoogle(supabase);
-        if (native === "completed" || native === "cancelled") return;
+      try {
+        if (provider === "apple") {
+          const native = await signInWithNativeApple(supabase);
+          if (native === "completed" || native === "cancelled") return;
+        }
+        if (provider === "google") {
+          const native = await signInWithNativeGoogle(supabase);
+          if (native === "completed" || native === "cancelled") return;
+        }
+      } catch (error) {
+        throw startFailed(error);
       }
 
       const redirectTo = oauthRedirectTo();
@@ -555,12 +597,13 @@ export function AuthSessionProvider({
         },
       });
       if (error) {
+        startFailed(error);
         throw Object.assign(new Error(describeOAuthKickoffError(error)), {
           code: error.code,
         });
       }
       if (!data.url) {
-        throw new Error("Unable to start sign-in. Retry in a moment.");
+        throw startFailed(new Error("Unable to start sign-in. Retry in a moment."));
       }
 
       const result = await WebBrowser.openAuthSessionAsync(
@@ -569,7 +612,7 @@ export function AuthSessionProvider({
       );
       if (result.type === "cancel" || result.type === "dismiss") return;
       if (result.type !== "success") {
-        throw new Error("Unable to finish sign-in. Retry in a moment.");
+        throw startFailed(new Error("Unable to finish sign-in. Retry in a moment."));
       }
 
       // `openAuthSessionAsync` returning success and `Linking.useURL`

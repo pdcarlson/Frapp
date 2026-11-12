@@ -7,6 +7,7 @@ import {
 } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
  * The `/sign-in` query value that says why the member landed there. The
@@ -105,7 +106,16 @@ export async function handleRejectedSession(): Promise<void> {
     const supabase = createSupabaseBrowserClient();
     const { data: local } = await supabase.auth.getSession();
     if (!local.session) return;
-    if (!isSessionOver(await supabase.auth.getUser())) return;
+    const verdict = await supabase.auth.getUser();
+    if (!isSessionOver(verdict)) return;
+    // Auth's reason (`user_not_found` for an account deleted elsewhere,
+    // `session_not_found` for a revoked one) is the count; a code nobody
+    // expects here (`bad_jwt`) is a fault (#3832).
+    reportAuthFailure({
+      flow: "session_check",
+      screen: window.location.pathname,
+      error: verdict.error,
+    });
     // Before the sign-out: its `SIGNED_OUT` reaches the identity effect in
     // `frapp-client-provider.tsx`, which must not send this tab to a bare
     // `/sign-in` over the URL that carries the notice.
@@ -147,7 +157,11 @@ export async function getLiveSessionUser(): Promise<User | null> {
   if (result.data.user) return result.data.user;
   // No session in this browser at all: nothing to clear.
   if (isAuthSessionMissingError(result.error)) return null;
-  if (!isSessionOver(result)) throw result.error;
+  if (!isSessionOver(result)) {
+    reportAuthFailure({ flow: "session_check", screen: "/join", error: result.error });
+    throw result.error;
+  }
+  reportAuthFailure({ flow: "session_check", screen: "/join", error: result.error });
   await signOutCurrentSession({ scope: "local" });
   return null;
 }
