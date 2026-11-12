@@ -3,7 +3,6 @@ import {
   describeOAuthKickoffError,
   IDENTITY_COLLISION_COPY,
   isApplePrivateRelayEmail,
-  isIdentityCollisionError,
   isPlaceholderAuthEmail,
   OAUTH_UNAVAILABLE_COPY,
   FIRST_SIGN_IN_WINDOW_MS,
@@ -28,25 +27,6 @@ describe("isPlaceholderAuthEmail", () => {
   });
 });
 
-describe("isIdentityCollisionError", () => {
-  it("matches GoTrue codes and the registered-email message", () => {
-    expect(isIdentityCollisionError({ code: "identity_already_exists" })).toBe(
-      true,
-    );
-    expect(isIdentityCollisionError({ code: "user_already_exists" })).toBe(true);
-    expect(isIdentityCollisionError({ code: "email_exists" })).toBe(true);
-    expect(
-      isIdentityCollisionError({
-        message: "A user with this email address has already been registered",
-      }),
-    ).toBe(true);
-    expect(isIdentityCollisionError({ message: "Invalid login credentials" })).toBe(
-      false,
-    );
-    expect(isIdentityCollisionError(null)).toBe(false);
-  });
-});
-
 describe("describeOAuthKickoffError", () => {
   it("guides a colliding email back to password or magic link", () => {
     expect(
@@ -62,9 +42,9 @@ describe("describeOAuthKickoffError", () => {
     ).toBe(OAUTH_UNAVAILABLE_COPY);
   });
 
-  it("passes other provider messages through", () => {
+  it("never shows the provider's own sentence", () => {
     expect(describeOAuthKickoffError({ message: "Access denied" })).toBe(
-      "Access denied",
+      "Unable to start sign-in. Retry in a moment.",
     );
   });
 });

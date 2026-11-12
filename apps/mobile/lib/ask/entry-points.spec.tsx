@@ -101,6 +101,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useSetChannelBackground: () => ({ mutateAsync: vi.fn() }),
     useRequestChatBackgroundPhotoUrl: () => ({ mutateAsync: vi.fn() }),
     useDeleteChannel: () => ({ mutateAsync: vi.fn() }),
+    MANAGE_CHANNELS_PERMISSION: "channels:manage",
+    ARRANGE_CHANNELS_LABEL: "Arrange channels",
+    errorCopy: () => "",
+    deleteChannelTypeLabel: (name: string) => `Type ${name} to confirm`,
+    deleteChannelNameMatches: () => false,
+    useCreateChannel: () => ({ mutateAsync: vi.fn() }),
+    useUpdateChannel: () => ({ mutateAsync: vi.fn() }),
     channelRowActions: () => ({ member: [], officer: [] }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),
     canHideConversation: () => false,
@@ -130,6 +137,12 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     HIDE_MUTED_LABEL: "Hide muted",
   };
 });
+
+// The read-ahead reaches the real Supabase client (secure store); these
+// specs are about the list, not the thread it opens.
+vi.mock("@/lib/chat/prefetch-channel", () => ({
+  usePrefetchUnreadChannels: () => undefined,
+}));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({

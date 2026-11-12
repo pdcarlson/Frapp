@@ -59,6 +59,8 @@ const {
   setLevelMutate,
   setDisplayLock,
   deleteMutateAsync,
+  createMutateAsync,
+  updateMutateAsync,
   connection,
   latestCalls,
   setChannelBackground,
@@ -72,6 +74,8 @@ const {
   markReadMutate: vi.fn(),
   setLevelMutate: vi.fn(),
   deleteMutateAsync: vi.fn(),
+  createMutateAsync: vi.fn(),
+  updateMutateAsync: vi.fn(),
   connection: { writeBlockedReason: null as string | null },
   // The officer setup checklist's state (#3535's hook), null for a member.
   setupChecklist: { value: null as unknown },
@@ -299,6 +303,14 @@ vi.mock("@repo/hooks", async () => {
     // The row menu (owner, 2026-11-06): its rule runs for real.
     channelRowActions: actual.channelRowActions,
     deleteChannelConfirmTitle: actual.deleteChannelConfirmTitle,
+    deleteChannelTypeLabel: actual.deleteChannelTypeLabel,
+    deleteChannelNameMatches: actual.deleteChannelNameMatches,
+    ARRANGE_CHANNELS_LABEL: actual.ARRANGE_CHANNELS_LABEL,
+    MANAGE_CHANNELS_PERMISSION: actual.MANAGE_CHANNELS_PERMISSION,
+    errorCopy: actual.errorCopy,
+    // New channel and Edit channel (#3838).
+    useCreateChannel: () => ({ mutateAsync: createMutateAsync }),
+    useUpdateChannel: () => ({ mutateAsync: updateMutateAsync }),
     DELETE_CHANNEL_CONFIRM_BODY: actual.DELETE_CHANNEL_CONFIRM_BODY,
     DELETE_CHANNEL_LABEL: actual.DELETE_CHANNEL_LABEL,
     MARK_AS_READ_LABEL: actual.MARK_AS_READ_LABEL,
@@ -329,6 +341,12 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
 }));
 
+// The read-ahead reaches the real Supabase client (secure store); these
+// specs are about the list, not the thread it opens.
+vi.mock("@/lib/chat/prefetch-channel", () => ({
+  usePrefetchUnreadChannels: () => undefined,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
@@ -350,6 +368,9 @@ import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
+import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
+import { ChannelFormSheet } from "@/components/chat/channel-form-sheet";
+import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
@@ -397,6 +418,14 @@ function rowNamed(tree: ReactTestRenderer, name: string) {
 
 function pressableLabelled(tree: ReactTestRenderer, label: string) {
   return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === label,
+  );
+}
+
+function pressablesLabelled(tree: ReactTestRenderer, label: string) {
+  return tree.root.findAll(
     (node) =>
       (node.type as unknown) === "Pressable" &&
       node.props.accessibilityLabel === label,
@@ -1061,9 +1090,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target).toBeNull();
     // iOS: nothing is written until the modal reports it has gone.
     expect(setChannelBackground).not.toHaveBeenCalled();
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
@@ -1092,16 +1119,17 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         node.props.testID === "chat-background-swatch-photo",
     );
     act(() => photoSwatch.props.onPress());
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
       modal.props.onDismiss();
     });
 
     const [pick, deps] = save.mock.calls[0]!;
     expect(pick).toBe("photo");
-    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    await deps.requestPhotoUrl({
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
     expect(requestBackgroundPhotoUrl).toHaveBeenCalledWith({
       scope: "channel",
       filename: "a.jpg",
@@ -1170,7 +1198,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menuLabels(officer)).not.toContain("Background");
   });
 
-  it("offers Delete channel only with channels:manage, and asks first", () => {
+  it("offers Delete channel only with channels:manage, and asks for the typed name (#3838)", async () => {
     channelsData.value = [general];
     const tree = render();
     longPress(tree, "general");
@@ -1180,14 +1208,49 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const officer = render();
     longPress(officer, "general");
     expect(menuLabels(officer).at(-1)).toBe("Delete channel");
+    expect(menuLabels(officer)).toEqual(
+      expect.arrayContaining(["Edit channel", "Arrange channels"]),
+    );
     longPress(officer, "general");
     pressItem(officer, "Delete channel");
-    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    expect(title).toBe("Delete #general?");
+    const sheet = officer.root.findByType(DeleteChannelSheet);
+    const field = sheet.findByProps({
+      accessibilityLabel: "Type general to confirm",
+    });
+    const button = () =>
+      sheet.findAllByType(SheetPrimaryButton).at(-1)!;
+    act(() => field.props.onChangeText("General"));
+    expect(button().props.disabled).toBe(true);
+    act(() => field.props.onChangeText("general"));
+    expect(button().props.disabled).toBe(false);
     expect(deleteMutateAsync).not.toHaveBeenCalled();
     deleteMutateAsync.mockResolvedValue(undefined);
-    act(() => buttons!.at(-1)!.onPress?.());
+    await act(async () => button().props.onPress());
     expect(deleteMutateAsync).toHaveBeenCalledWith(general.id);
+  });
+
+  it("puts a New channel + on section headings for officers only (#3838)", async () => {
+    channelsData.value = [general];
+    expect(pressablesLabelled(render(), "New channel")).toHaveLength(0);
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    const plus = pressablesLabelled(officer, "New channel");
+    expect(plus.length).toBeGreaterThan(0);
+    act(() => plus[0]!.props.onPress());
+    const form = officer.root.findByType(ChannelFormSheet);
+    expect(form.props.mode).toEqual({ kind: "create", categoryId: null });
+    createMutateAsync.mockResolvedValue({ id: "c-new" });
+    await act(async () =>
+      form.props.onSubmit({
+        name: "rush",
+        description: "",
+        categoryId: null,
+        isPrivate: false,
+      }),
+    );
+    expect(createMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "rush" }),
+    );
   });
 
   it.each(["pin", "fold", "filter"] as const)(

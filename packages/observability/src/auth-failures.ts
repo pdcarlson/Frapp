@@ -180,7 +180,7 @@ const NETWORK_ERROR_NAMES: ReadonlySet<string> = new Set([
 /**
  * GoTrue refuses both the one-email-a-minute cooldown for an address and the
  * project's hourly email cap with `429 over_email_send_rate_limit`; only the
- * cooldown's sentence names seconds (`apps/web/lib/auth/email-auth-errors.ts`).
+ * cooldown's sentence names seconds (`packages/hooks/src/auth-error-copy.ts`).
  * The cap means no auth email goes out to anyone, so it is reported under its
  * own code, which is not expected and so arrives at `error`. The sentence is
  * read for this one test and never sent.

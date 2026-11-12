@@ -10,10 +10,8 @@ const threadRepoStub = {
   findFollowStates: jest.fn().mockResolvedValue(new Map()),
 };
 import { NotificationService } from '../services/notification.service';
-import {
-  ChatPushWorkerService,
-  chatPushPreview,
-} from './chat-push-worker.service';
+import { ChatPushWorkerService } from './chat-push-worker.service';
+import { chatPushPreview } from '../services/chat-push-preview';
 import {
   CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
   type ChatNotificationPreferenceRow,
@@ -772,6 +770,11 @@ describe('ChatPushWorkerService', () => {
         data: expect.objectContaining({ bundled: true, count: 3 }),
       }),
     );
+    // A single push is tied to the message it quotes, so deleting the message
+    // deletes its row (#4418); a bundle quotes no one message and is not.
+    expect(notifyUser.mock.calls[0][2]).toMatchObject({ chatMessageId: 'm0' });
+    expect(notifyUser.mock.calls[1][2]).toMatchObject({ chatMessageId: 'm1' });
+    expect(bundledCall[2]).not.toHaveProperty('chatMessageId');
   });
   it('does not push a private channel to a chapter member who is not in it', async () => {
     // The recipient list starts as the whole chapter roster, and `decidePush`

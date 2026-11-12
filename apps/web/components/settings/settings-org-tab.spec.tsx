@@ -41,7 +41,7 @@ describe("SettingsOrgTab", () => {
     expect(screen.getByPlaceholderText("Line")).toBeInTheDocument();
   });
 
-  it("saves the order word with the other three, and a cleared field as blank (#3939)", () => {
+  it("saves the order and tier words with the other three, and a cleared field as blank (#3939)", () => {
     const onPatchConfig = vi.fn();
     render(
       <SettingsOrgTab
@@ -56,6 +56,10 @@ describe("SettingsOrgTab", () => {
         onPatchConfig={onPatchConfig}
       />,
     );
+    // What the chapter calls a tier of roles (#4068 decision 5).
+    fireEvent.change(screen.getByLabelText("Role tier"), {
+      target: { value: "Level" },
+    });
     fireEvent.change(screen.getByLabelText("Member order number"), {
       target: { value: " Roll number " },
     });
@@ -71,6 +75,7 @@ describe("SettingsOrgTab", () => {
         pledge: "New member",
         class: "",
         order: "Roll number",
+        tier: "Level",
       },
     });
   });

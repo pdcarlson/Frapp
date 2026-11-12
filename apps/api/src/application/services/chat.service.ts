@@ -74,6 +74,7 @@ import { ChannelAccessListService } from './channel-access-list.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { chatPushPreview } from './chat-push-preview';
 import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -1410,11 +1411,51 @@ export class ChatService {
       await this.quotedAuthorId(message.reply_to_id ?? null),
     );
 
-    return this.messageRepo.update(messageId, {
+    const edited = await this.messageRepo.update(messageId, {
       content,
       mentions,
       edited_at: new Date().toISOString(),
     });
+    await this.rewriteNotificationsForEdit(edited, chapterId, senderId);
+    return edited;
+  }
+
+  /**
+   * The in-app rows this message produced quote its old text (#4418). Only
+   * members who can still read the channel get the new text: a row its owner
+   * kept after losing access holds only what they were sent while they had
+   * it, and an edit must not hand them more. Best-effort, like the rewrite
+   * itself: the edit has landed, so a failed reader lookup is reported and
+   * leaves the old text.
+   */
+  private async rewriteNotificationsForEdit(
+    edited: ChatMessage,
+    chapterId: string,
+    editorId: string,
+  ): Promise<void> {
+    let readerIds: string[];
+    try {
+      const readers = await this.channelAccess.listChannelMembers(
+        edited.channel_id,
+        chapterId,
+        editorId,
+      );
+      readerIds = readers.map((r) => r.user_id);
+    } catch (err) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-edit-notification-readers',
+        message: `Could not resolve the readers of channel ${edited.channel_id} to rewrite the notifications for edited message ${edited.id}`,
+        error: err,
+      });
+      return;
+    }
+    await this.notifications.rewriteChatMessagePreview(
+      chapterId,
+      edited.id,
+      chatPushPreview(edited),
+      readerIds,
+    );
   }
 
   async deleteMessage(
@@ -1553,6 +1594,9 @@ export class ChatService {
       flagged_by: null,
       flagged_at: null,
     });
+    // The in-app notifications that quote the message go in the same
+    // statement: `chat_messages_forget_notifications` deletes every row whose
+    // `chat_message_id` is this message as `is_deleted` turns true (#4418).
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
     // rows in place (they cascade only with the message itself), so nothing is

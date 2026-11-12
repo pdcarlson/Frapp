@@ -75,6 +75,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "In Documents on the web, an older photo saved without its file type now opens in the viewer, the way the File type filter already sorts it.",
       "When someone sends several messages in a row and mentions you after you've been told about the first few, you now get a notification for that mention instead of missing it.",
       "On your phone, you can now confirm a finished task or approve service hours straight from its Activity row, without opening it first.",
+      "On your phone, messages inside a thread now show their reactions, polls and other cards, and a long-press lets you react, edit or delete there.",
+      "Officers can now set a photo as the chapter's chat background even when the chapter has no #general channel.",
+      "Officers can start a new channel from the + beside a category in the chat list on the web, and deleting a channel now asks you to type its name first.",
+      "On your phone, channels with new messages usually open with their messages already there, and swiping back no longer shows a pale strip at the edge of the screen.",
+      "On your phone, a sign-in that doesn't work now says why in plain words, and an email you never confirmed gets a button to send the confirmation again.",
+      "On the web, officers now set permissions by tier in Chapter settings, flipping switches grouped by feature instead of working through one big grid.",
+      "On your phone, an open thread's header now shows the message it started from and who wrote it, instead of just \"Thread\".",
     ],
   },
   {

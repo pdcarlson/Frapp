@@ -44,6 +44,7 @@ export const SCREEN_TITLES = {
   "check-in": "Check in",
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
+  "arrange-channels": "Arrange channels",
 } as const satisfies Record<string, string>;
 
 /** The group in `app/(app)/` that holds the tab navigator. */

@@ -21,13 +21,13 @@ import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 import {
-  EXISTING_ACCOUNT_COPY,
   describeSignUpError,
   emailCooldownSeconds,
   isExistingAccountSignUp,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
 import {
   describeOAuthKickoffError,
+  IDENTITY_COLLISION_COPY,
   startWebOAuth,
   type OAuthProvider,
 } from "@/lib/auth/oauth";
@@ -109,7 +109,7 @@ function SignUpPageContent() {
         reportAuthFailure({ flow: "sign_up", screen: "/sign-up", code: "user_already_exists" });
         toast({
           title: "You already have an account",
-          description: EXISTING_ACCOUNT_COPY,
+          description: IDENTITY_COLLISION_COPY,
         });
         return;
       }
@@ -130,7 +130,7 @@ function SignUpPageContent() {
       }
       toast({
         title: "Unable to create account",
-        description: describeSignUpError(error),
+        description: describeSignUpError(error, IDENTITY_COLLISION_COPY),
         variant: "destructive",
       });
     } finally {

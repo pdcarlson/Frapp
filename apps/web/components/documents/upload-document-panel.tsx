@@ -9,6 +9,7 @@ import {
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -375,10 +376,7 @@ export function UploadDocumentPanel({
           <Upload className="h-4 w-4" /> Upload document
         </Button>
       </SheetTrigger>
-      <PanelContent
-        {...uploadDialog.contentProps}
-        aria-describedby={undefined}
-      >
+      <PanelContent {...uploadDialog.contentProps} aria-describedby={undefined}>
         <PanelHeader>Upload document</PanelHeader>
         <PanelBody as="form" id="doc-upload-form" onSubmit={handleUpload}>
           <UploadFileField
@@ -504,14 +502,13 @@ export function UploadDocumentPanel({
                 />
               </UploadField>
               <UploadField id="doc-effective-date" label="Effective date">
-                <Input
+                <DateField
                   id="doc-effective-date"
-                  type="date"
+                  lean="back"
+                  placeholder="e.g. September 1"
                   className={cn(UPLOAD_FIELD_CLASS, "w-48")}
                   value={uploadDraft.effectiveDate}
-                  onChange={(event) =>
-                    set("effectiveDate", event.target.value)
-                  }
+                  onChange={(date) => set("effectiveDate", date)}
                 />
               </UploadField>
             </>
@@ -666,8 +663,7 @@ export function DocumentsPageDropTarget({
   // Where the drop will land: a kept or hand-picked folder wins over the one
   // on screen, as `openPanel` decides.
   const draft = upload.uploadDraft;
-  const target =
-    draft.file || !draft.autoFolder ? draft.folder : activeFolder;
+  const target = draft.file || !draft.autoFolder ? draft.folder : activeFolder;
   return (
     <div
       aria-hidden

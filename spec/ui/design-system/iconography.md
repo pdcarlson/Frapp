@@ -627,6 +627,15 @@ the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link` and `confirm` were added for the two kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
 
+A row from another member leads with that member's face instead
+([#4463](https://github.com/pdcarlson/Frapp/issues/4463), 2026-11-12): their
+photo or initials on their tint in a 40px circle, with the same kind glyph at
+12px in a 20px `--surface-1` disc with a 1px `--border` on the face's lower
+corner (on the phone, 12pt in a 20pt `surface1` disc with a hairline border).
+The glyph keeps its neutral colour there; only the member's own tint is
+coloured. Which rows take a face:
+[`spec/ui/web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity).
+
 | Row kind | Shape (nav set key, Phosphor name) |
 |---|---|
 | Your task, a task you assigned | `tasks`, `seal-check` |

@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CHANNEL_LEVEL_DETAIL,
   CHANNEL_NOTIFICATIONS_LABEL,
+  ARRANGE_CHANNELS_LABEL,
   DELETE_CHANNEL_LABEL,
   HIDE_CONVERSATION_LABEL,
   MARK_AS_READ_LABEL,
@@ -29,6 +30,7 @@ import {
   useChapterChatBackground,
   useChatBackground,
 } from "@repo/hooks";
+import { EDIT_CHANNEL_LABEL } from "@repo/hooks/channel-start";
 import {
   CHAT_BACKGROUND_LABELS,
   type ChatBackgroundKey,
@@ -283,11 +285,15 @@ function MenuBody({
         return CHANNEL_NOTIFICATIONS_LABEL;
       case "hide":
         return HIDE_CONVERSATION_LABEL;
+      case "edit":
+        return EDIT_CHANNEL_LABEL;
+      case "arrange":
+        return ARRANGE_CHANNELS_LABEL;
       case "delete":
         return DELETE_CHANNEL_LABEL;
       default:
-        // Copy link and Edit channel are web's; mobile's surface leaves them
-        // out of `channelRowActions`, so they never reach here.
+        // Copy link is web's; mobile's surface leaves it out of
+        // `channelRowActions`, so it never reaches here.
         return key;
     }
   };
