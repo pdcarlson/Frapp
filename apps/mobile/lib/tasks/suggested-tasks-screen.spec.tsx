@@ -157,7 +157,7 @@ const FORMAL = {
   quote: null,
   source: { type: "event", id: "e-last" },
   task: null,
-  event: { name: "Spring formal", last_year_at: "2025-04-13T23:00:00Z", times: 1 },
+  event: { name: "Spring formal", last_year_at: "2025-04-13T15:00:00Z", times: 1 },
 };
 /** A task finished around now last year. */
 const LAST_YEAR_TASK = {
