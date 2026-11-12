@@ -123,7 +123,7 @@ import {
   matchLocalPhotos,
   rememberLocalPhotos,
 } from "./local-photos";
-import { taskKeys, useFrappClient } from "@repo/hooks";
+import { invalidateAfterChatWrite, useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
@@ -992,8 +992,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       const result = await postTask(ctx, channelId, input);
       // `postTask` writes the chat's cache, not the task board's. A lost
       // answer refreshes it too: the task may exist.
-      if (result.ok)
-        void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      invalidateAfterChatWrite(queryClient, "task", result);
       return result;
     },
     [channelId, ctx, queryClient],
@@ -1003,9 +1002,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       const result = await postHours(ctx, channelId, input);
       // As above, for the Service page's entries.
-      if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["service-entries"] });
-      }
+      invalidateAfterChatWrite(queryClient, "hours", result);
       return result;
     },
     [channelId, ctx, queryClient],
