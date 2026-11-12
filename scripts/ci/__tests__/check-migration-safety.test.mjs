@@ -503,6 +503,22 @@ test("the ratchet holds against the real corpus", () => {
       ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
     ]),
   );
+  // As the gate does: a ledger page stands in for an entry in both shared
+  // docs, for a migration on disk. Without this the first migration ledgered
+  // on its own page reads as missing from both.
+  const ledgerDir = join(REPO_ROOT, "docs", "ops", "database", "migrations");
+  const pages = ledgerPageEntries(
+    readdirSync(ledgerDir)
+      .filter((name) => name.endsWith(".md") && name !== "README.md")
+      .map((name) => ({ name, text: readFileSync(join(ledgerDir, name), "utf8") })),
+  );
+  assert.deepEqual(pages.malformed, []);
+  const onDisk = new Set(migrations);
+  for (const entries of entriesByDoc.values()) {
+    for (const migration of pages.covered) {
+      if (onDisk.has(migration)) entries.add(migration);
+    }
+  }
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
   assert.deepEqual(
