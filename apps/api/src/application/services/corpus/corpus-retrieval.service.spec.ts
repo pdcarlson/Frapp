@@ -24,6 +24,12 @@ const candidate = (overrides: Partial<CorpusCandidate>): CorpusCandidate => ({
   dense_rank: null,
   sparse_rank: null,
   distance: null,
+  author_ids: null,
+  anchor_id: null,
+  anchor_at: null,
+  message_count: null,
+  left_out_count: 0,
+  channel_id: null,
   ...overrides,
 });
 
@@ -110,6 +116,7 @@ describe('CorpusRetrievalService', () => {
     await expect(retrieve('   ')).resolves.toEqual({
       status: 'ok',
       passages: [],
+      leftOutMessages: 0,
     });
     expect(embed).not.toHaveBeenCalled();
   });
@@ -189,6 +196,10 @@ describe('CorpusRetrievalService', () => {
       sourceAt: '2026-01-01T00:00:00.000Z',
       score: 2 / 62,
       matchedBy: ['semantic', 'words'],
+      channelId: null,
+      messageId: null,
+      authorIds: [],
+      messageCount: null,
     });
     expect(result.passages[2].matchedBy).toEqual(['words']);
   });
@@ -236,5 +247,151 @@ describe('CorpusRetrievalService', () => {
     expect(ids(await retrieve('dues'))).toHaveLength(8);
     expect(ids(await retrieve('dues', 3))).toEqual(['c00', 'c01', 'c02']);
     expect(ids(await retrieve('dues', 500))).toHaveLength(20);
+  });
+});
+
+describe('CorpusRetrievalService — chat (#4314)', () => {
+  const chat = (overrides: Partial<CorpusCandidate>): CorpusCandidate =>
+    candidate({
+      source_type: 'chat_message',
+      source_id: 'window-1',
+      title: '#general',
+      heading: 'November 9, 2026',
+      content: 'Sam: who has the van keys?\nLee: I do.',
+      page_start: null,
+      page_end: null,
+      source_at: '2026-11-09T22:00:00.000Z',
+      decays: true,
+      author_ids: ['sam', 'lee'],
+      anchor_id: 'msg-1',
+      anchor_at: '2026-11-09T22:00:00.000Z',
+      message_count: 2,
+      left_out_count: 0,
+      channel_id: 'channel-general',
+      ...overrides,
+    });
+
+  function chatSetup(
+    candidates: CorpusCandidate[],
+    admission: (list: readonly CorpusCandidate[]) => {
+      admitted: Set<string>;
+      withheldBySource: Map<string, number>;
+    } = (list) => ({
+      admitted: new Set(list.map((c) => c.chunk_id)),
+      withheldBySource: new Map(),
+    }),
+    readable: (ids: readonly string[]) => Set<string> = (ids) => new Set(ids),
+  ) {
+    const base = setup(candidates);
+    const chatAdapter: jest.Mocked<CorpusSourceAdapter> = {
+      type: 'chat_message',
+      read: jest.fn(),
+      readableBy: jest.fn((_c: string, _u: string, ids: readonly string[]) =>
+        Promise.resolve(readable(ids)),
+      ),
+      admit: jest.fn(
+        (_c: string, _u: string, list: readonly CorpusCandidate[]) =>
+          Promise.resolve(admission(list)),
+      ),
+    };
+    const service = new CorpusRetrievalService(
+      base.corpus,
+      [base.documents, base.minutes, chatAdapter],
+      { embed: base.embed } as unknown as AiGatewayService,
+    );
+    const retrieve = () =>
+      service.retrieve(
+        { chapterId: CHAPTER, actingUserId: ASKER, query: 'van keys' },
+        NOW,
+      );
+    return { retrieve, chatAdapter };
+  }
+
+  it('hands back a chat passage with its channel, first message and authors, ranked below a document at the same rank', async () => {
+    const { retrieve } = chatSetup([
+      chat({ chunk_id: 'chat', dense_rank: 1, sparse_rank: 1 }),
+      candidate({ chunk_id: 'doc', dense_rank: 2, sparse_rank: 2 }),
+    ]);
+    const result = await retrieve();
+    if (result.status !== 'ok') throw new Error('expected passages');
+    // The chat passage matched better, and still comes after the document.
+    expect(result.passages.map((p) => p.id)).toEqual(['doc', 'chat']);
+    expect(result.passages[1]).toMatchObject({
+      sourceType: 'chat_message',
+      sourceId: 'window-1',
+      title: '#general',
+      channelId: 'channel-general',
+      messageId: 'msg-1',
+      authorIds: ['sam', 'lee'],
+      messageCount: 2,
+      sourceAt: '2026-11-09T22:00:00.000Z',
+    });
+    expect(result.passages[1].score).toBeLessThan(result.passages[0].score);
+  });
+
+  it('weights chat down, so a document wins a place at the limit over chat that matched as well', async () => {
+    const { retrieve } = chatSetup([
+      chat({ chunk_id: 'chat', dense_rank: 1, source_at: NOW.toISOString() }),
+      candidate({ chunk_id: 'doc', dense_rank: 1 }),
+    ]);
+    const result = await retrieve();
+    if (result.status !== 'ok') throw new Error('expected passages');
+    expect(result.passages[0].id).toBe('doc');
+  });
+
+  it('drops a passage the source refuses to admit, and counts the withheld messages with what indexing left out of that window', async () => {
+    const { retrieve, chatAdapter } = chatSetup(
+      [
+        chat({ chunk_id: 'kept', dense_rank: 1, left_out_count: 3 }),
+        chat({ chunk_id: 'withheld', dense_rank: 2, left_out_count: 3 }),
+        chat({
+          chunk_id: 'other-window',
+          source_id: 'window-2',
+          dense_rank: 3,
+          left_out_count: 5,
+        }),
+      ],
+      () => ({
+        admitted: new Set(['kept', 'other-window']),
+        withheldBySource: new Map([['window-1', 2]]),
+      }),
+    );
+    const result = await retrieve();
+    if (result.status !== 'ok') throw new Error('expected passages');
+    expect(result.passages.map((p) => p.id)).toEqual(['kept', 'other-window']);
+    // window-1: 3 left out at indexing + 2 withheld now; window-2: 5.
+    expect(result.leftOutMessages).toBe(10);
+    expect(chatAdapter.admit).toHaveBeenCalledWith(
+      CHAPTER,
+      ASKER,
+      expect.arrayContaining([expect.objectContaining({ chunk_id: 'kept' })]),
+    );
+  });
+
+  it('counts nothing from a channel the asker cannot open, and admits nothing from it', async () => {
+    const { retrieve, chatAdapter } = chatSetup(
+      [
+        chat({
+          chunk_id: 'exec',
+          source_id: 'window-exec',
+          dense_rank: 1,
+          left_out_count: 4,
+        }),
+      ],
+      undefined,
+      () => new Set(),
+    );
+    const result = await retrieve();
+    expect(result).toEqual({ status: 'ok', passages: [], leftOutMessages: 0 });
+    expect(chatAdapter.admit).not.toHaveBeenCalled();
+  });
+
+  it('reports no left-out messages when no chat passage is returned', async () => {
+    const { retrieve } = chatSetup([
+      candidate({ chunk_id: 'doc', dense_rank: 1 }),
+    ]);
+    const result = await retrieve();
+    if (result.status !== 'ok') throw new Error('expected passages');
+    expect(result.leftOutMessages).toBe(0);
   });
 });

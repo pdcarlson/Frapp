@@ -234,7 +234,7 @@ console.log("\n=== Functional: the AI corpus (20261112140000, #720) ===");
     const fns = [
       "public.match_corpus_chunks(uuid, uuid, text, text, text, integer)",
       "public.write_corpus_chunks(uuid, bigint, boolean, text, jsonb)",
-      "public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text)",
+      "public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text, integer, uuid[])",
       "public.claim_corpus_sources(text, timestamptz, integer)",
       "public.note_corpus_source(uuid, text, uuid, uuid)",
       "public.drop_corpus_source(uuid, text, uuid)",

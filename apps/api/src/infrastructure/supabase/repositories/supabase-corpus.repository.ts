@@ -8,6 +8,7 @@ import type {
   CorpusSource,
 } from '#domain/entities/corpus.entity';
 import type {
+  ChatWindowRead,
   FinishCorpusSourceInput,
   ICorpusRepository,
   MatchCorpusInput,
@@ -124,6 +125,10 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
       p_decays: input.decays,
       p_chunk_count: input.chunkCount,
       p_skip_reason: input.skipReason,
+      p_left_out_count: input.leftOutCount ?? 0,
+      p_left_out_author_ids: input.leftOutAuthorIds?.length
+        ? [...input.leftOutAuthorIds]
+        : null,
     });
     if (error) throw new SupabaseQueryError(error);
     return data === true;
@@ -140,5 +145,85 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
     });
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async readChatWindow(
+    chapterId: string,
+    windowId: string,
+  ): Promise<ChatWindowRead | null> {
+    const { data, error } = await this.supabase.rpc('read_chat_corpus_window', {
+      p_chapter_id: chapterId,
+      p_window_id: windowId,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const rows = data ?? [];
+    if (rows.length === 0) return null;
+    return {
+      channelId: rows[0].channel_id,
+      channelName: rows[0].channel_name,
+      day: String(rows[0].day).slice(0, 10),
+      messages: rows.flatMap((row) =>
+        row.message_id && row.created_at && row.conversation_at
+          ? [
+              {
+                id: row.message_id,
+                senderId: row.sender_id,
+                senderName: row.sender_name ?? '',
+                content: row.content ?? '',
+                createdAt: row.created_at,
+                threadRootId: row.thread_root_id,
+                conversationAt: row.conversation_at,
+              },
+            ]
+          : [],
+      ),
+    };
+  }
+
+  async chatWindowChannels(
+    chapterId: string,
+    windowIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    if (windowIds.length === 0) return new Map();
+    const { data, error } = await this.supabase.rpc(
+      'chat_corpus_window_channels',
+      { p_chapter_id: chapterId, p_window_ids: [...windowIds] },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return new Map((data ?? []).map((row) => [row.window_id, row.channel_id]));
+  }
+
+  async requeueChatByAuthors(
+    userIds: readonly string[],
+    chapterId: string | null,
+  ): Promise<number> {
+    if (userIds.length === 0) return 0;
+    const { data, error } = await this.supabase.rpc(
+      'requeue_chat_corpus_by_authors',
+      { p_user_ids: [...userIds], p_chapter_id: chapterId },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? 0;
+  }
+
+  async chatCorpusChapters(): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc('chat_corpus_chapters');
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async chatCorpusAuthors(
+    chapterId: string,
+  ): Promise<{ indexed: string[]; leftOut: string[] }> {
+    const { data, error } = await this.supabase.rpc('chat_corpus_authors', {
+      p_chapter_id: chapterId,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const indexed: string[] = [];
+    const leftOut: string[] = [];
+    for (const row of data ?? []) {
+      (row.indexed ? indexed : leftOut).push(row.user_id);
+    }
+    return { indexed, leftOut };
   }
 }

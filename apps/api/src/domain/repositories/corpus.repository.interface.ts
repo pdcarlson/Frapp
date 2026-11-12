@@ -4,6 +4,7 @@ import type {
   CorpusSkipReason,
   CorpusSource,
 } from '../entities/corpus.entity';
+import type { ChatWindowMessage } from '../utils/corpus-chat';
 
 export const CORPUS_REPOSITORY = 'CORPUS_REPOSITORY';
 
@@ -18,6 +19,10 @@ export interface FinishCorpusSourceInput {
   chunkCount: number;
   /** Set to end the source as skipped; its passages are removed. */
   skipReason: CorpusSkipReason | null;
+  /** Chat only (#4314): messages left out because their author had not said yes. */
+  leftOutCount?: number;
+  /** And whose; kept in the database only. */
+  leftOutAuthorIds?: string[];
 }
 
 export interface MatchCorpusInput {
@@ -36,6 +41,16 @@ export interface MatchCorpusInput {
  * one chapter and the acting member; there is no method that reads passages
  * without both.
  */
+/** A chat window as `read_chat_corpus_window` returns it (#4314). */
+export interface ChatWindowRead {
+  channelId: string;
+  channelName: string;
+  /** `YYYY-MM-DD`. */
+  day: string;
+  /** Readable messages only, oldest conversation first. */
+  messages: ChatWindowMessage[];
+}
+
 export interface ICorpusRepository {
   /**
    * Up to `limit` sources that need indexing, each with its next attempt
@@ -69,4 +84,38 @@ export interface ICorpusRepository {
   /** Marks the source indexed or skipped. False when it moved on. */
   finishSource(input: FinishCorpusSourceInput): Promise<boolean>;
   match(input: MatchCorpusInput): Promise<CorpusCandidate[]>;
+
+  /**
+   * A chat window's readable messages, or null when the window is gone, is
+   * in another chapter, or its channel is a DM or group DM: the query
+   * refuses those itself (#4314).
+   */
+  readChatWindow(
+    chapterId: string,
+    windowId: string,
+  ): Promise<ChatWindowRead | null>;
+
+  /** Of `windowIds`, each one's channel; DM windows and other chapters' are left out. */
+  chatWindowChannels(
+    chapterId: string,
+    windowIds: readonly string[],
+  ): Promise<Map<string, string>>;
+
+  /**
+   * Reads again every chat window that holds a passage by, or left out, one
+   * of `userIds`: their passages go now. In `chapterId`, or in every chapter
+   * when it is null. Returns how many windows.
+   */
+  requeueChatByAuthors(
+    userIds: readonly string[],
+    chapterId: string | null,
+  ): Promise<number>;
+
+  /** The chapters that hold chat windows. */
+  chatCorpusChapters(): Promise<string[]>;
+
+  /** Who the chapter's chat index holds a passage by, and who it left out. */
+  chatCorpusAuthors(
+    chapterId: string,
+  ): Promise<{ indexed: string[]; leftOut: string[] }>;
 }

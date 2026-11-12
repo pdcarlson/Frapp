@@ -24,9 +24,11 @@ import {
   type IRoleRepository,
 } from '#domain/repositories/role.repository.interface';
 import { isAiEnabled } from '#domain/utils/ai-enabled';
+import type { ChatPassageDraft } from '#domain/utils/corpus-chat';
 import {
   chunkSections,
   corpusEmbeddingText,
+  type CorpusChunkDraft,
 } from '#domain/utils/corpus-chunker';
 import { corpusFingerprint } from '#domain/utils/corpus-ranking';
 import { AiGatewayService, type AiUnavailable } from '../ai/ai-gateway.service';
@@ -66,6 +68,9 @@ const SERVER_PAUSE_MS = 15 * MINUTE;
 const CONSENT_RETRY_MS = 10 * MINUTE;
 /** How long a chapter's sources wait after a spending cap refused. */
 const SPEND_RETRY_MS = 6 * 60 * MINUTE;
+
+/** A passage ready to embed, with its chat provenance when it is chat. */
+type PreparedChunk = CorpusChunkDraft & { chat: ChatPassageDraft | null };
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && value.length === 36;
@@ -221,14 +226,29 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
       await this.corpus.deleteSource(run.chapter_id, source.id);
       return superseded;
     }
+    const { content } = read.status === 'ok' ? read : { content: null };
+    const leftOut = content?.leftOut ?? null;
     const skip = async (reason: Parameters<typeof this.finish>[3]) => {
-      await this.finish(source, fingerprint, null, reason, 0);
+      await this.finish(source, fingerprint, null, reason, 0, leftOut);
       return superseded;
     };
-    if (read.status === 'skipped') return skip(read.reason);
+    if (read.status === 'skipped' || content === null) {
+      return skip(read.status === 'skipped' ? read.reason : 'no_text');
+    }
 
-    const { content } = read;
-    const chunks = chunkSections(content.sections);
+    // A source that cut its own passages (chat) is used as it cut them.
+    const chunks: PreparedChunk[] = content.passages
+      ? content.passages.map((passage) => ({
+          heading: passage.heading,
+          content: passage.content,
+          pageStart: null,
+          pageEnd: null,
+          chat: passage,
+        }))
+      : chunkSections(content.sections).map((chunk) => ({
+          ...chunk,
+          chat: null,
+        }));
     if (chunks.length === 0) return skip('no_text');
     if (chunks.length > CORPUS_MAX_CHUNKS_PER_SOURCE) return skip('too_large');
 
@@ -274,6 +294,14 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
         page_start: chunk.pageStart,
         page_end: chunk.pageEnd,
         embedding: embedded.vectors[index],
+        ...(chunk.chat
+          ? {
+              author_ids: chunk.chat.authorIds,
+              anchor_id: chunk.chat.anchorId,
+              anchor_at: chunk.chat.anchorAt,
+              message_count: chunk.chat.messageCount,
+            }
+          : {}),
       }));
       const written = await this.corpus.writeChunks(
         source.id,
@@ -291,6 +319,7 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
       content,
       null,
       chunks.length,
+      leftOut,
     );
     return {
       corpus_source_id: source.id,
@@ -304,6 +333,7 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
     content: { title: string; sourceAt: string; decays: boolean } | null,
     skipReason: CorpusSource['skip_reason'],
     chunkCount: number,
+    leftOut: { count: number; authorIds: string[] } | null,
   ): Promise<boolean> {
     return this.corpus.finishSource({
       sourceId: source.id,
@@ -314,6 +344,8 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
       decays: content?.decays ?? source.decays,
       chunkCount,
       skipReason,
+      leftOutCount: leftOut?.count ?? 0,
+      leftOutAuthorIds: leftOut?.authorIds ?? [],
     });
   }
 

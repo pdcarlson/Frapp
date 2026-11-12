@@ -248,10 +248,18 @@ implementation. The suite grades the corpus, the enforcement logic, and (since 2
 every behavioural case against the AI gateway with a scripted model. That run has no model's
 judgment in it, and of the rules it exercises only the gateway's quote check is product code: the
 chapter filter, the chat filters and ordering of C8 (consent, channel access, chat after official
-sources) and the refusal on silence are in the suite's test agent, so nothing in the product applies
-them yet, and the tool cases pass
+sources) and the refusal on silence are in the suite's test agent, and the tool cases pass
 because that agent has no tools (the suite's README has the table). CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
 agent registered fails.
+
+(Updated 2026-11-12, #4314.) The chat filters of C8 are now also product code, in the corpus layer
+the product's Ask will call: indexing reads only the words of members who said yes, retrieval
+withholds a passage whose author no longer does or whom the asker blocked, keeps only windows in
+channels the asker can open (`ChannelAccessService`, the timeline's check), orders official
+passages before chat, and reports how many messages were left out, and `chatPassagesStillAllowed`
+checks consent once more before text is sent. Their unit tests and the migration gate
+(`scripts/pglite/tiers/ai-corpus-chat.mjs`) cover them. No eval case runs through that path until
+Ask's test agent does (#450).
 
 Mapping of control to enforcement:
 
@@ -264,7 +272,7 @@ Mapping of control to enforcement:
 | C5 mutating tools opt-in | `forbidsMutation` / `allowedTools` | rule tested |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding` | rule tested |
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | rule tested |
-| C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustCiteFirst`; `gateway-agent.eval-spec.ts` for chat after official sources and labelled as chat | rule tested |
+| C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustCiteFirst`; `gateway-agent.eval-spec.ts` for chat after official sources and labelled as chat | rule tested; consent, channel access, blocks and ordering also in corpus retrieval (#4314) |
 
 "Rule tested" means a mutation that disables the rule turns the suite red — verified by deleting each
 rule in turn. It does **not** mean an agent has been graded against it. (Corrected 2026-11-12: the
