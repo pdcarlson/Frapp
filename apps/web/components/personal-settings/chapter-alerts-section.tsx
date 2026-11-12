@@ -184,10 +184,13 @@ export function ChapterAlertsSection() {
     >
       {/* The chapter-wide chat level (#4124) has its own read and its own
           states, so it is drawn whenever there is a chapter to set it for,
-          even while the switches below are still loading. */}
+          even while the switches below are still loading. Keyed by the
+          chapter: a switch made in another tab moves the active chapter in
+          place (`use-claim-chapter-sync.ts`), and a save still in flight for
+          the old chapter must not show, or fail, under the new one. */}
       {chapterId ? (
         <div className="mb-4">
-          <ChatLevelControl />
+          <ChatLevelControl key={chapterId} />
         </div>
       ) : null}
       {categoriesState ?? (

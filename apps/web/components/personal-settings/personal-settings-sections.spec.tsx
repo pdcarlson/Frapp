@@ -711,6 +711,20 @@ describe("ChapterAlertsSection — notification categories (#564)", () => {
       .filter((element) => element.id.startsWith("notification-category-"));
   }
 
+  // #4124: the chapter-wide Chat messages choice sits above the switches,
+  // and only while there is a chapter to set it for.
+  it("draws the Chat messages choice for the active chapter only", () => {
+    const { unmount } = render(<ChapterAlertsSection />);
+    expect(
+      screen.getByRole("group", { name: "Chat messages" }),
+    ).toBeInTheDocument();
+    unmount();
+
+    mocks.chapterId = null;
+    render(<ChapterAlertsSection />);
+    expect(screen.queryByRole("group", { name: "Chat messages" })).toBeNull();
+  });
+
   it("renders a switch for every catalog category", () => {
     render(<ChapterAlertsSection />);
     expect(categorySwitches()).toHaveLength(NOTIFICATION_CATEGORIES.length);
