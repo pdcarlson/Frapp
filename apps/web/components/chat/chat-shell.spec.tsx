@@ -1326,8 +1326,13 @@ vi.mock("./thread-panel", () => ({
     canReply,
     canPost,
     onClose,
+    beside,
   }: import("./thread-panel").ThreadPanelProps) => (
-    <section aria-label="Thread" data-testid="thread-panel">
+    <section
+      aria-label="Thread"
+      data-testid="thread-panel"
+      data-beside={String(!!beside)}
+    >
       <span data-testid="thread-root">{rootId}</span>
       <span data-testid="thread-held-root">{heldRoot?.content ?? "none"}</span>
       <span data-testid="thread-can-reply">{String(canReply)}</span>
@@ -4667,6 +4672,78 @@ describe("ChatShell opens on the last channel", () => {
     } finally {
       chapterStoreState.value = "chapter-1";
     }
+  });
+});
+
+/** The open thread beside the chat on a wide window (#4297). */
+describe("ChatShell thread beside the chat", () => {
+  const realMatchMedia = window.matchMedia;
+
+  function stubWide(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  it("opens beside the timeline from 1280px, in the members column's place", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+
+    expect(screen.getByTestId("thread-panel")).toHaveAttribute(
+      "data-beside",
+      "true",
+    );
+    // The channel stays: its timeline, and no members column beside both.
+    expect(screen.getByTestId("message-timeline")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show members" }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    // Closing it brings the members back.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channel" }));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives way to the members when the member asks for them", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" defaultMembersHidden />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=0");
+  });
+
+  it("covers the chat column below 1280px, as before", () => {
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel")).toHaveAttribute(
+      "data-beside",
+      "false",
+    );
   });
 });
 

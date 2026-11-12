@@ -132,6 +132,7 @@ function renderPanel(
     heldRoot: ChatMessage | null;
     avatarFor: (id: string) => string | null;
     onClosePanel: () => void;
+    beside: boolean;
   }> = {},
 ) {
   const onClose = vi.fn();
@@ -155,6 +156,7 @@ function renderPanel(
       canPost={overrides.canPost ?? true}
       onClose={onClose}
       onClosePanel={overrides.onClosePanel}
+      beside={overrides.beside}
     />,
   );
   return { onClose, writes, onUnblock };
@@ -288,6 +290,17 @@ describe("ThreadPanel (#3785)", () => {
     await userEvent.setup().click(close);
     expect(onClosePanel).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes with an X, and has no Back, beside the chat (#4297)", async () => {
+    const { onClose } = renderPanel({ beside: true });
+    expect(
+      screen.queryByRole("button", { name: "Back to channel" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Close thread" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("draws no Close chat X with chat alone", () => {
