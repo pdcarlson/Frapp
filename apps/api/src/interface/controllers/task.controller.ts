@@ -33,7 +33,6 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import { parseBooleanQueryParam } from '../utils/query-boolean';
 import {
   ListTasksQueryDto,
   CreateTaskDto,
@@ -77,7 +76,6 @@ export class TaskController {
     );
     const paged = query.limit !== undefined || query.before !== undefined;
     return this.taskService.list(chapterId, userId, isAdmin, {
-      confirmed: parseBooleanQueryParam(query.confirmed),
       ...(query.before && query.before_id
         ? { after: { created_at: query.before, id: query.before_id } }
         : {}),

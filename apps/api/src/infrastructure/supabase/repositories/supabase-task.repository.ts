@@ -68,9 +68,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
         const at = escapeFilterValue(query.after.created_at);
         q = q
           .lte('created_at', query.after.created_at)
-          .or(
-            `created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`,
-          );
+          .or(`created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`);
       }
       return q
         .order('created_at', { ascending: false })

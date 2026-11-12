@@ -7,6 +7,8 @@ import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   deriveDisplayStatus,
+  readAllTaskPages,
+  TASK_PAGE_SIZE,
   taskKeys,
   useConfirmTask,
   subtaskProgress,
@@ -130,12 +132,9 @@ describe("deriveDisplayStatus", () => {
     // Only TODO and IN_PROGRESS derive; the others pass through untouched.
     ["COMPLETED", "2026-08-16", "2026-08-17", "COMPLETED"],
     ["OVERDUE", "2026-08-16", "2026-08-17", "OVERDUE"],
-  ] as const)(
-    "%s due %s on %s → %s",
-    (stored, dueDate, today, expected) => {
-      expect(deriveDisplayStatus(stored, dueDate, today)).toBe(expected);
-    },
-  );
+  ] as const)("%s due %s on %s → %s", (stored, dueDate, today, expected) => {
+    expect(deriveDisplayStatus(stored, dueDate, today)).toBe(expected);
+  });
 
   it("passes through when the due date is missing or blank", () => {
     expect(deriveDisplayStatus("TODO", undefined, "2026-08-17")).toBe("TODO");
@@ -342,7 +341,9 @@ describe("useUpdateTaskStatus", () => {
     });
 
     await act(async () => {
-      await fail(0, { message: "Invalid status transition from TODO to COMPLETED" });
+      await fail(0, {
+        message: "Invalid status transition from TODO to COMPLETED",
+      });
     });
 
     await waitFor(() => {
@@ -692,5 +693,75 @@ describe("useSetSubtaskDone (#4003)", () => {
       await fail();
     });
     await waitFor(() => expect(ids()).toEqual(["s1", "s2"]));
+  });
+});
+
+/**
+ * #4037: the list is read in bounded pages, each resuming at the last row's
+ * `created_at` and `id` exactly as received, so a list past the server's
+ * row cap arrives whole.
+ */
+describe("readAllTaskPages", () => {
+  const row = (index: number) => ({
+    id: `task-${index}`,
+    // Microseconds, as Postgres answers: passed back verbatim, never reparsed.
+    created_at: "2026-01-01T00:00:00.123456+00:00",
+  });
+
+  it("follows the cursor until a short page, and returns one array", async () => {
+    const pages = [
+      Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+      Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(TASK_PAGE_SIZE + i)),
+      [row(2 * TASK_PAGE_SIZE)],
+    ];
+    const GET = vi.fn();
+    for (const page of pages) {
+      GET.mockResolvedValueOnce({ data: page, error: undefined });
+    }
+
+    const rows = await readAllTaskPages({ GET } as never);
+
+    expect(rows).toHaveLength(2 * TASK_PAGE_SIZE + 1);
+    expect(GET).toHaveBeenCalledTimes(3);
+    expect(GET).toHaveBeenNthCalledWith(1, "/v1/tasks", {
+      params: { query: { limit: TASK_PAGE_SIZE } },
+    });
+    expect(GET).toHaveBeenNthCalledWith(2, "/v1/tasks", {
+      params: {
+        query: {
+          limit: TASK_PAGE_SIZE,
+          before: "2026-01-01T00:00:00.123456+00:00",
+          before_id: `task-${TASK_PAGE_SIZE - 1}`,
+        },
+      },
+    });
+  });
+
+  it("asks once more after an exactly full last page, and stops on empty", async () => {
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+        error: undefined,
+      })
+      .mockResolvedValueOnce({ data: [], error: undefined });
+
+    const rows = await readAllTaskPages({ GET } as never);
+
+    expect(rows).toHaveLength(TASK_PAGE_SIZE);
+    expect(GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a failed page rather than returning part of the list", async () => {
+    const failure = { message: "boom" };
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+        error: undefined,
+      })
+      .mockResolvedValueOnce({ data: undefined, error: failure });
+
+    await expect(readAllTaskPages({ GET } as never)).rejects.toBe(failure);
   });
 });

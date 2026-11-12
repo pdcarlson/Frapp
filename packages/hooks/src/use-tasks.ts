@@ -336,6 +336,8 @@ function invalidateTask(
  * else, which is strictly worse than no parameter: two callers asking for
  * different assignees got two entries holding identical data.
  *
+ * The list is read in pages ({@link readAllTaskPages}) but cached whole.
+ *
  * Assignee scoping is the server's, and no client argument can reproduce or
  * override it: `TaskService.list` returns the chapter's whole task set to a
  * `tasks:manage` holder and only the caller's own rows to everyone else. A
@@ -348,14 +350,42 @@ export function useTasks() {
   const scope = useChapterScope();
   return useQuery({
     queryKey: taskKeys.lists(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/tasks");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => readAllTaskPages(client),
     staleTime: 30_000,
     enabled: scope === "chapter",
   });
+}
+
+/** Rows per `GET /v1/tasks` page: the route's largest `limit` (#4037). */
+export const TASK_PAGE_SIZE = 200;
+
+type TaskPageRow = { id: string; created_at: string };
+
+/**
+ * Every task the server scopes to the caller, read a page at a time
+ * (#4037). Each request is bounded, and the cursor is the last row's
+ * `created_at` and `id` passed back exactly as received: the server orders
+ * by both, so no row repeats or drops at a page edge. A page shorter than
+ * the limit is the last. The result is one array, the shape the board and
+ * every optimistic write on this cache expect.
+ */
+export async function readAllTaskPages(
+  client: ReturnType<typeof useFrappClient>,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let cursor: { before: string; before_id: string } | undefined;
+  for (;;) {
+    const { data, error } = await client.GET("/v1/tasks", {
+      params: { query: { limit: TASK_PAGE_SIZE, ...cursor } },
+    });
+    if (error) throw error;
+    const page = (Array.isArray(data) ? data : []) as TaskPageRow[];
+    rows.push(...page);
+    const last = page[TASK_PAGE_SIZE - 1];
+    if (!last) break;
+    cursor = { before: last.created_at, before_id: last.id };
+  }
+  return rows;
 }
 
 export function useTask(id: string) {

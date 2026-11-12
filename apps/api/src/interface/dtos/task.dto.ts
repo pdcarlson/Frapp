@@ -27,8 +27,6 @@ import {
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
-import type { BooleanStringQueryValue } from '../utils/query-boolean';
 import {
   ISO_INSTANT_MESSAGE,
   ISO_INSTANT_PATTERN,
@@ -45,15 +43,6 @@ import {
  * none still gets the whole list, which is what shipped mobile builds send.
  */
 export class ListTasksQueryDto {
-  @ApiPropertyOptional({
-    description:
-      'Only confirmed tasks (`true`) or only unconfirmed ones (`false`). Boolean string: `true`, `false`, `1`, or `0`.',
-    enum: ['true', 'false', '1', '0'],
-  })
-  @IsOptional()
-  @IsBooleanQueryString()
-  confirmed?: BooleanStringQueryValue;
-
   @ApiPropertyOptional({
     description:
       'Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task.',

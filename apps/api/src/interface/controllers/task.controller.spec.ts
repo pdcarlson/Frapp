@@ -55,14 +55,19 @@ describe('TaskController', () => {
       const mockTasks = [{ id: 'task-1' }] as any[];
       taskService.list.mockResolvedValue(mockTasks);
 
-      const result = await controller.list(chapterId, userId);
+      const result = await controller.list(chapterId, userId, {});
 
       expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
         chapterId,
         userId,
         [SystemPermissions.TASKS_MANAGE],
       );
-      expect(taskService.list).toHaveBeenCalledWith(chapterId, userId, true);
+      expect(taskService.list).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        true,
+        {},
+      );
       expect(result).toBe(mockTasks);
     });
 
@@ -72,9 +77,52 @@ describe('TaskController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
       taskService.list.mockResolvedValue([]);
 
-      await controller.list(chapterId, userId);
+      await controller.list(chapterId, userId, {});
 
-      expect(taskService.list).toHaveBeenCalledWith(chapterId, userId, false);
+      expect(taskService.list).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        false,
+        {},
+      );
+    });
+
+    it('pages when asked, clamping the limit (#4037)', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+      taskService.list.mockResolvedValue([]);
+      const before = '2026-01-01T00:00:00.123456+00:00';
+      const beforeId = '0b000000-0000-4000-8000-000000000001';
+
+      await controller.list(chapterId, userId, {
+        limit: 500,
+        before,
+        before_id: beforeId,
+      });
+      await controller.list(chapterId, userId, { before, before_id: beforeId });
+
+      // Clamped to the 200 maximum; `before` alone pages at the default 50.
+      expect(taskService.list).toHaveBeenNthCalledWith(
+        1,
+        chapterId,
+        userId,
+        true,
+        {
+          after: { created_at: before, id: beforeId },
+          limit: 200,
+        },
+      );
+      expect(taskService.list).toHaveBeenNthCalledWith(
+        2,
+        chapterId,
+        userId,
+        true,
+        {
+          after: { created_at: before, id: beforeId },
+          limit: 50,
+        },
+      );
     });
   });
 

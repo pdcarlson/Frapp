@@ -98,28 +98,33 @@ describe('SupabaseTaskRepository — tenant scope', () => {
   );
 
   describe('findByChapter past the 1,000-row cap (#4037)', () => {
-    /** 2,500 tasks; the first 1,500 share one `created_at`, as one transaction's inserts do. */
+    /**
+     * 2,500 tasks in each chapter (the harness pairs twins); the first 1,500
+     * share one `created_at`, as one transaction's inserts do.
+     */
     const many = () =>
       Array.from({ length: 2500 }, (_, index) => {
         const n = String(index).padStart(12, '0');
-        return inB({
-          id: `0b000000-0000-4000-8000-${n}`,
-          title: `Task ${index}`,
-          description: null,
-          assignee_id: USER_SHARED,
-          created_by: USER_SHARED,
-          due_date: '2026-09-01',
-          status: 'TODO',
-          point_reward: null,
-          points_awarded: 0,
-          completed_at: null,
-          confirmed_at: index % 2 === 0 ? '2026-03-01T00:00:00.000Z' : null,
-          created_at:
-            index < 1500
-              ? '2026-01-01T00:00:00.000Z'
-              : `2026-02-01T00:00:${String(index % 60).padStart(2, '0')}.${String(index).padStart(6, '0')}Z`,
-        });
-      });
+        return [inA, inB].map((scope, side) =>
+          scope({
+            id: `0${side === 0 ? 'a' : 'b'}000000-0000-4000-9000-${n}`,
+            title: `Task ${index}`,
+            description: null,
+            assignee_id: USER_SHARED,
+            created_by: USER_SHARED,
+            due_date: '2026-09-01',
+            status: 'TODO',
+            point_reward: null,
+            points_awarded: 0,
+            completed_at: null,
+            confirmed_at: index % 2 === 0 ? '2026-03-01T00:00:00.000Z' : null,
+            created_at:
+              index < 1500
+                ? '2026-01-01T00:00:00.000Z'
+                : `2026-02-01T00:00:${String(index % 60).padStart(2, '0')}.${String(index).padStart(6, '0')}Z`,
+          }),
+        );
+      }).flat();
 
     beforeEach(() => {
       // The database answers at most 1,000 rows a request, as PostgREST does.
