@@ -126,6 +126,10 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
       "On the web, Upload document and New minutes now open right inside Documents and Meetings instead of sliding over the whole screen.",
       "On your phone, Activity is now its own tab, Events is now called Calendar, and your task board opens from Activity.",
+      "On the web, an Activity item, a pledge class's member list and Create a channel in Chat admin now open right inside their page instead of sliding over the whole screen.",
+      "On your phone, a message you send no longer sometimes stays in the box afterward, ready to be sent twice.",
+      "On your phone, the Directory now shows each member's status and custom status line, and its search has a search icon.",
+      "On the web, your profile now shows your points, service hours, pledge class and number, as it does on your phone.",
     ],
   },
   {
